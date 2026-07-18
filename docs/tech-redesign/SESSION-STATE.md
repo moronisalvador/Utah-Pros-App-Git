@@ -55,8 +55,9 @@ as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) 
   a color-setting rule; now §10.8 law in the standard ("every <button> sets explicit color").
 
 **REMAINING — the to-do (to finish the flows session, then move to Session 3 = build):**
-1. **Job Hub loose ends** — ALERT + Crew DONE (above; owner reaction pending). Still open: owner
-   picks the **drying-module name** (Arid / Dry Logs / Evap / …).
+1. **Job Hub loose ends** — ✅ CLOSED 2026-07-17: ALERT + Crew built (above; owner visual reaction
+   pending) and the module name picked — **"Dry Logs"** (relabeled in job-hub widget + hydro-b
+   mockup; "Drying" kept where it names the job PHASE).
 2. **New Job flow rework** (brief §4a) — built (`new-job-flow.html`) but owner wants it improved; needs
    his specifics. His stated priority order was schedule → job creation → hub, so this is next.
 3. **New Customer** flow (§4b) — not built; land-back-with-toast.
@@ -260,9 +261,9 @@ Text · Docs** (3). Pills: **Claim · Customer** (Job pill dropped — the hub I
 from the Docs-page signature row), Crew row, and (built as a CTA on s-docs) Water Loss Report gen.
 
 **OPEN DECISIONS:**
-- **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
-  plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
-  owner picks; then relabel everywhere.
+- ~~**Module name**~~ RESOLVED 2026-07-17: owner picked **"Dry Logs"** (over Arid / Evap / Dryft).
+  Relabeled: hub widget title + widget toasts (job-hub.html ×6), hydro-b.html h1/title/caption.
+  Rule: "Dry Logs" = the MODULE; "Drying" stays where it names the job PHASE (chips, status).
 - My tile proposal for Visits / Job & Claim (compact tiles vs full sections) — still on the table.
 - Room ⇄ drying reconciliation: hub Rooms (photos/notes) and the drying module (moisture readings)
   reference the same physical rooms — unify as one room list surfaced two ways (build-phase concern).

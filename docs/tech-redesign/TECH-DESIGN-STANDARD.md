@@ -1147,7 +1147,7 @@ the job). Action bar: **Call · Text · Docs · Notes** (icon + label; Notes car
 Notes open dedicated pages (§12.5.3). **No Photo in the bar** — capture is room-first (§12.5.2).
 
 **Do-now zone (active work, in order):** **Drying widget** (Day N · materials dry · readings-due; taps
-into the drying / "Dry Logs" module — *module name is a pending owner pick: Arid / Dry Logs / Evap / …*) →
+into the **"Dry Logs"** module — *name picked by the owner 2026-07-17*) →
 **Tasks** (collapsible, DEFAULT-COLLAPSED per owner) → **Scope-sheet entry** (fill-on-site) → **Rooms
 grid**.
 
@@ -1211,7 +1211,9 @@ on-device reaction):**
   crew changes go through the stage Edit chip. (Alternative if the owner prefers: fold it into the
   hero card under the office-note glance — 2-minute move.)
 
-The drying-module **name** remains a pending owner pick (Arid / Dry Logs / Evap / …).
+The drying module is named **"Dry Logs"** (owner pick, 2026-07-17). "Dry Logs" labels the MODULE
+(widget title, module page header, module toasts); the word "Drying" stays wherever it names the job
+**phase** ("Drying · Day 4" chips, phase status) — the phase is a state, the module is a tool.
 
 ### 12.6 Schedule — month & day (LOCKED 2026-07-14)
 
