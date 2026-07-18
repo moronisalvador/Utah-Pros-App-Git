@@ -208,6 +208,11 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
   const [returningJob, setReturningJob] = useState(false);
   const [supersede, setSupersede] = useState(null); // precheck result when OMW would supersede another open clock
   const confirmReturnTimer = useRef(null);
+  // Synchronous re-entrancy guard for doAction — `acting` state only flips true
+  // inside performClock, which for 'omw' is after an awaited precheck. A second
+  // tap during that window would race the same clock RPC before React re-renders
+  // the disabled button, so this ref blocks re-entry the instant a tap is handled.
+  const actionLockRef = useRef(false);
 
   // ─── SECTION: Data fetching ──────────────
   const loadEntries = useCallback(async () => {
@@ -267,11 +272,18 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       if (onUpdate) onUpdate();
       ok = true;
     } catch (e) {
+      const msg = String(e.message || '');
       // Backstop: enforce flag flipped on between precheck and call → show hard-block sheet.
-      if (action === 'omw' && String(e.message || '').includes('OPEN_ENTRY_EXISTS')) {
+      if (action === 'omw' && msg.includes('OPEN_ENTRY_EXISTS')) {
         const pc = await runOmwPrecheck(db, appt.id, employee.id);
         if (pc.open_entry) setSupersede({ ...pc, enforce_explicit: true });
         else toast(t('toastClockElsewhere'), 'error');
+      } else if (action === 'omw' && msg.includes('23505')) {
+        // A duplicate OMW tap raced the DB's uq_jte_one_open_clock_per_employee guard —
+        // an earlier tap already clocked this in. Harmless; just refresh quietly.
+        await loadEntries();
+        if (onUpdate) onUpdate();
+        ok = true;
       } else {
         toast(t('tech:toast.actionFailed', { message: e.message }), 'error');
       }
@@ -285,15 +297,21 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
       if (!confirmFinish) { setConfirmFinish(true); impact('light'); return; }
       setConfirmFinish(false);
     }
-    // Before On-My-Way, check whether it would supersede another open clock.
-    if (action === 'omw') {
-      const pc = await runOmwPrecheck(db, appt.id, employee.id);
-      if (pc.open_entry && (pc.enforce_explicit || pc.requires_confirmation)) {
-        setSupersede(pc);
-        return;
+    if (actionLockRef.current) return; // drop a double/triple tap while one is in flight
+    actionLockRef.current = true;
+    try {
+      // Before On-My-Way, check whether it would supersede another open clock.
+      if (action === 'omw') {
+        const pc = await runOmwPrecheck(db, appt.id, employee.id);
+        if (pc.open_entry && (pc.enforce_explicit || pc.requires_confirmation)) {
+          setSupersede(pc);
+          return;
+        }
       }
+      await performClock(action);
+    } finally {
+      actionLockRef.current = false;
     }
-    await performClock(action);
   };
 
   const handleSupersedeConfirm = async () => {
