@@ -220,6 +220,6 @@ same convention as this repo's other "owner-gated" items.
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
 - [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)
+- [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
 - [ ] Owner: Xcode build-verify of F1 before any real device sees it
-- [ ] Owner: merge PRs #451/#452/#453/#454 into `dev`
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
