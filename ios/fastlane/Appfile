@@ -1,0 +1,29 @@
+# ════════════════════════════════════════════════
+# FILE: Appfile
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Tells fastlane which app this is and which Apple Developer team to use
+#   when it talks to App Store Connect. It reads those values from
+#   environment variables instead of hardcoding them, because the real
+#   values don't exist yet (see the Fastfile header for the full story).
+#
+# NOTES / GOTCHAS:
+#   - Signing credentials do not exist yet — this scaffold is inert until
+#     the owner completes Apple Developer Program enrollment and CI
+#     secrets (APPLE_TEAM_ID, APPLE_ID, an App Store Connect API key or a
+#     signing certificate/profile) are added. Running any lane before then
+#     will fail fast with a missing-env-var error, which is the intended,
+#     safe failure mode.
+#   - app_identifier matches PRODUCT_BUNDLE_IDENTIFIER in
+#     ios/App/App.xcodeproj/project.pbxproj — keep them in sync if the
+#     bundle ID ever changes.
+# ════════════════════════════════════════════════
+
+app_identifier("com.utahprosrestoration.upr")
+apple_id(ENV["APPLE_ID"]) # App Store Connect account email — CI secret, not yet set
+team_id(ENV["APPLE_TEAM_ID"]) # Apple Developer Program team ID — CI secret, not yet set
+
+# Only needed if/when an App Store Connect API key (JSON) is used instead of
+# apple_id + 2FA for CI auth — left commented until that decision is made.
+# itc_team_id(ENV["APPLE_ITC_TEAM_ID"])

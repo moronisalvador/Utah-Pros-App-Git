@@ -1,0 +1,88 @@
+name: iOS release (TestFlight)
+
+on:
+  # PAUSED (scaffold, 2026-07-17): Apple Developer Program enrollment + CI
+  # signing secrets (APPLE_TEAM_ID, a signing certificate/profile or an App
+  # Store Connect API key, APPLE_ID) do not exist yet, so this workflow
+  # cannot complete a run. It is workflow_dispatch-only (manual) so nobody
+  # accidentally triggers it before those secrets are added — mirrors
+  # capgo-deploy.yml's paused-safe pattern. Once signing secrets exist, this
+  # can gain a real trigger (e.g. a release tag) if desired.
+  workflow_dispatch: {}
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Build web bundle (native target)
+        env:
+          VITE_BUILD_TARGET: native
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npx vite build
+
+      - name: Sync Capacitor iOS project
+        run: npx cap sync ios
+
+      - name: Setup Ruby + bundler
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Decode signing certificate
+        working-directory: ios
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE_BASE64" ]; then
+            echo "APPLE_CERTIFICATE_BASE64 secret not set yet — signing secrets are pending" \
+              "Apple Developer Program enrollment. This step is a no-op scaffold until then."
+            exit 0
+          fi
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > signing_certificate.p12
+
+      - name: Decode provisioning profile
+        working-directory: ios
+        env:
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          if [ -z "$APPLE_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "APPLE_PROVISIONING_PROFILE_BASE64 secret not set yet — signing secrets are pending" \
+              "Apple Developer Program enrollment. This step is a no-op scaffold until then."
+            exit 0
+          fi
+          echo "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > signing_profile.mobileprovision
+
+      - name: Run fastlane beta lane
+        if: ${{ secrets.APPLE_TEAM_ID != '' }}
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
+        run: bundle exec fastlane beta
+
+      - name: Signing secrets not configured yet
+        if: ${{ secrets.APPLE_TEAM_ID == '' }}
+        run: |
+          echo "APPLE_TEAM_ID secret is not set — this workflow is an inert scaffold until" \
+            "Apple Developer Program enrollment completes and CI signing secrets are added" \
+            "(see ios/fastlane/Fastfile header and docs/app-store-readiness-roadmap.md)."
+          exit 1
