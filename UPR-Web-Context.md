@@ -6947,3 +6947,18 @@ status read (never falls through to the button). Same edit migrated the file's l
 copies to the sanctioned `@/lib/toast` and the disconnect button's hardcoded red to `--danger*` tokens.
 An admin actions the actual access deactivation + data retention (no admin-action UI built this phase —
 the bell notification is the surfacing hook; a future admin queue can read `account_deletion_requests`).
+
+**2026-07-18 update — Wave 1 all four PRs open (#451–#454), CI green, no review comments** (F1
+signing/push, A backend hardening incl. the live `device_tokens` RLS fix, B account deletion, D CI
+scaffold). **Phase F2's non-Xcode-gated slice also shipped** this session (branch
+`app-store-f2-polish-metadata`), per owner direction to get everything not blocked on Xcode done
+now: real UPR-branded `AppIcon-512@2x.png` (1024×1024) + `splash-2732x2732*.png`, rendered from the
+actual brand mark in `public/favicon.svg` via headless Chromium (Playwright, already installed) with
+the alpha channel stripped via `pngjs` (Apple's icon format forbids transparency) — replacing the
+stock Capacitor placeholder; a new public `/support` page (`src/pages/Legal.jsx` `Support` export +
+`src/App.jsx` route) since App Store Connect requires a Support URL and none existed; and
+`docs/app-store-connect-metadata.md`, a full submission-packet draft (description, keywords,
+category, age rating, nutrition-label table, export-compliance answer, review notes) ready to paste
+into App Store Connect. Still genuinely owner-only: the distribution-model decision, Apple Developer
+Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/Simulator
+build), merging the four open PRs, and the actual App Store Connect data entry.

@@ -84,6 +84,22 @@ Wave 2 (after distribution-model decision + Wave 1 merges + owner Xcode-side bui
                 Connect / ABM metadata assembly — ships last, blocks nothing else.
 ```
 
+**2026-07-17 update — F2's non-Xcode-gated slice done ahead of the gate, per owner direction**
+("get everything we can that doesn't need Xcode; I'll handle Xcode separately"). Orientation-lock
+was already shipped in F1. This session additionally shipped, on branch `app-store-f2-polish-metadata`:
+- Real UPR-branded app icon (`AppIcon-512@2x.png`, 1024×1024, RGB/no-alpha) and splash screen
+  (`splash-2732x2732*.png`) — rendered from the real brand mark in `public/favicon.svg` (headless
+  Chromium via Playwright, alpha channel stripped with `pngjs` since Apple's icon format forbids
+  transparency), replacing the stock Capacitor placeholder.
+- A public `/support` page (`src/pages/Legal.jsx` + `src/App.jsx`) — App Store Connect requires a
+  Support URL and none existed.
+- `docs/app-store-connect-metadata.md` — the full submission packet drafted (description, keywords,
+  category, age rating, nutrition-label table, export-compliance answer, review notes) so the owner
+  pastes into App Store Connect rather than starting blank.
+Still genuinely owner-gated (nobody else can do these): the distribution-model decision (§0), Apple
+Developer Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/
+Simulator build), and the actual App Store Connect data entry.
+
 ### Phase F1 — Signing & Push Foundation
 > **Branch:** `app-store-f1-signing-push` · **Model · effort:** Opus · high · **Read scope:** this
 > block + `.claude/rules/app-store-readiness-wave-ownership.md`
@@ -190,10 +206,13 @@ same convention as this repo's other "owner-gated" items.
 
 ## 6. Status
 
-- [x] Phase F1 — code shipped 2026-07-17 (PR into `dev`); **still owner-gated** on Xcode build-verify (cannot be compile-verified in the Linux env — see §5 / F1 block)
-- [x] Phase A — built 2026-07-17: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning, guarded `markBundleReady()` on App mount. PR into `dev` open (owner merges).
-- [ ] Phase B — dispatched 2026-07-17
-- [ ] Phase D — dispatched 2026-07-17
+- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; **still owner-gated** on Xcode build-verify (cannot be compile-verified in the Linux env — see §5 / F1 block)
+- [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning, guarded `markBundleReady()` on App mount.
+- [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
+- [x] Phase D — dispatched 2026-07-17, PR #453 merged
+- [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
 - [ ] Owner: distribution-model decision (§0)
 - [ ] Owner: Xcode build-verify of F1 before any real device sees it
+- [ ] Owner: merge PRs #451/#452/#453/#454 into `dev`
+- [ ] Owner: screenshots + demo credentials + App Store Connect data entry
