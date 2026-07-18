@@ -100,6 +100,7 @@ const Status = lazyRetry(() => import('@/pages/Status'));
 const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
+const Support = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.Support })));
 const AdminFeedback = lazyRetry(() => import('@/pages/settings/FeedbackInbox'));
 const Feedback = lazyRetry(() => import('@/pages/Feedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
@@ -324,6 +325,7 @@ function WebRoutes() {
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/support" element={<Support />} />
       {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
           visitor via the anon-granted get_crm_build_progress RPC. The ONLY
           public CRM surface; every other /crm/* route stays behind page:crm. */}

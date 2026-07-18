@@ -6919,3 +6919,18 @@ Sonnet, mechanical). Owner action items: kick off Apple Developer Program + ABM 
 lead time, EIN now accepted for ABM itself per an April 2026 Apple Business platform change — but the
 separate paid Developer Program still shows D-U-N-S as of this writing, verify live at signup); make
 the distribution-model call; Xcode-side build-verify of F1 before any real device sees it.
+
+**2026-07-18 update — Wave 1 all four PRs open (#451–#454), CI green, no review comments** (F1
+signing/push, A backend hardening incl. the live `device_tokens` RLS fix, B account deletion, D CI
+scaffold). **Phase F2's non-Xcode-gated slice also shipped** this session (branch
+`app-store-f2-polish-metadata`), per owner direction to get everything not blocked on Xcode done
+now: real UPR-branded `AppIcon-512@2x.png` (1024×1024) + `splash-2732x2732*.png`, rendered from the
+actual brand mark in `public/favicon.svg` via headless Chromium (Playwright, already installed) with
+the alpha channel stripped via `pngjs` (Apple's icon format forbids transparency) — replacing the
+stock Capacitor placeholder; a new public `/support` page (`src/pages/Legal.jsx` `Support` export +
+`src/App.jsx` route) since App Store Connect requires a Support URL and none existed; and
+`docs/app-store-connect-metadata.md`, a full submission-packet draft (description, keywords,
+category, age rating, nutrition-label table, export-compliance answer, review notes) ready to paste
+into App Store Connect. Still genuinely owner-only: the distribution-model decision, Apple Developer
+Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/Simulator
+build), merging the four open PRs, and the actual App Store Connect data entry.
