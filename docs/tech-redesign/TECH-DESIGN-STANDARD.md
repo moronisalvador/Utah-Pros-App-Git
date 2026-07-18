@@ -977,6 +977,12 @@ tiebreaker** — for those screens the rules are:
    inline `<svg>` in redesigned files; no raw hex/duration/easing literal where a token
    exists; the JS hex mirrors touched by the screen deleted; both themes visually verified;
    the section 3.4 contrast watch-list re-checked if any token moved.
+8. **Every `<button>` sets an explicit `color` in its CSS chain** (buttons do not inherit text
+   color). Chromium's UA default is near-ink and MASKS the omission; Safari/WebKit's is
+   systemBlue — the hub header name rendered blue on the first real-WebKit open (found
+   2026-07-17, local loop; `.hub-name.hub-link`, `.ck-head`, `.pk-opt` fixed). Any new button
+   whose bare text or `currentColor` icon relies on inheritance is a defect; verify under
+   WebKit, not just Chromium.
 
 ## 11. Open items (honest)
 
@@ -1190,9 +1196,22 @@ Both open from the action bar; both are full pages with the app shell + a back b
   Completion, Certificate of Satisfaction, Authorization to Pay Direct, Mold Remediation Consent,
   Non-Restorable Contents Release) → generate & send.
 
-**Still-open hub foundations (not yet built):** the **Work Authorization compliance ALERT** (a prominent
-banner near the top when unsigned — distinct from the calm signed-row on the Docs page) and the **Crew**
-row. The drying-module **name** is a pending owner pick (Arid / Dry Logs / Evap / …).
+**Hub foundations (BUILT 2026-07-17, local session — WebKit-verified light+dark, pending owner
+on-device reaction):**
+- **Work Authorization compliance ALERT** (`.wa-alert`): a prominent red-tinted banner (icon tile +
+  title + sub + chevron), the FIRST element in `.main` — above the action bar. **Data rule: renders on
+  EVERY hub screen (any clock state, either hero mode) while the job's `work_auth_signed === false`;
+  disappears once signed** — the calm Signed row lives on the Docs page. Tap → the Docs page, starting
+  the Work Authorization e-sign (live app precedent: `startEsign:'work_auth'`). Copy carried verbatim
+  from the live app: "No signed Work Authorization" / "Tap to collect the customer's signature".
+  Demoed on `s-scheduled` (the natural sign-before-you-start moment).
+- **Crew strip** (`.crew-strip`): a quiet one-line card directly AFTER the hero in all 5 clock states —
+  overlapping initial avatars (lead = solid `--pill-bg`, others `--surface2`) + "**You** (Lead) ·
+  Diego R. · Priya N.". Visit-scoped (`appointment_crew`), so job mode carries no strip; read-only —
+  crew changes go through the stage Edit chip. (Alternative if the owner prefers: fold it into the
+  hero card under the office-note glance — 2-minute move.)
+
+The drying-module **name** remains a pending owner pick (Arid / Dry Logs / Evap / …).
 
 ### 12.6 Schedule — month & day (LOCKED 2026-07-14)
 

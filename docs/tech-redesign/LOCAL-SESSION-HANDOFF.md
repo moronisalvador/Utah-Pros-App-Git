@@ -46,11 +46,15 @@ Design-phase needs (enough to finish + verify every prototype):
 - [ ] **Safari** — open any prototype file directly (`open -a Safari docs/tech-redesign/prototypes/full-app.html`).
       This alone is already real WebKit — the single biggest upgrade over the cloud loop.
 - [ ] **Xcode + iOS Simulator** — `xcrun simctl list devices | grep Booted` or boot one
-      (e.g. iPhone 15 Pro). Open prototypes in the simulator's Safari for true iOS rendering:
-      `xcrun simctl openurl booted "file://$PWD/docs/tech-redesign/prototypes/full-app.html"`
-      (if file:// is blocked, serve the dir: `python3 -m http.server 8899` → open `http://localhost:8899/...`).
-- [ ] **Owner's iPhone (same Wi-Fi):** serve the prototypes dir (`http.server` as above or
-      `npx vite preview`), owner opens `http://<mac-ip>:8899/full-app.html` in iPhone Safari.
+      (e.g. iPhone 15 Pro). Serve the prototypes with **`node docs/tech-redesign/prototypes/serve.cjs`**
+      (port 8899) and open in the simulator's Safari for true iOS rendering:
+      `xcrun simctl openurl booted "http://localhost:8899/full-app.html#s-working@530"`
+      (`#s-<screen>` opens a screen directly; `@<px>` scrolls it — simctl can't swipe).
+      ⚠ **Never serve with bare `python3 -m http.server` / file://** — the prototypes are HTML
+      FRAGMENTS (the artifact wrapper used to add doctype+viewport) and render BLANK on iOS
+      without serve.cjs's on-the-fly wrapper (quirks mode + 980px legacy viewport; found 2026-07-17).
+- [ ] **Owner's iPhone (same Wi-Fi):** with serve.cjs running, owner opens
+      `http://<mac-ip>:8899/full-app.html` in iPhone Safari (`ipconfig getifaddr en0` for the IP).
       This replaces the claude.ai artifact round-trip — instant, and it's the REAL device.
 - [ ] Safari **Develop menu** enabled (Settings → Advanced) → attach Web Inspector to the
       simulator/iPhone page for console + timeline when something feels slow.

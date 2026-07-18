@@ -5,7 +5,7 @@ compaction, or a fresh one opened later — reads **this file + `UX-FLOWS-BRIEF.
 + the prototypes on disk** and is fully caught up **without needing the chat history.** Update this file
 as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) predates the work below.
 
-**Last-updated: 2026-07-15** (end of a long day — Job Hub LOCKED)
+**Last-updated: 2026-07-17** (FIRST LOCAL SESSION — WebKit loop live; Job Hub loose ends built)
 
 ---
 
@@ -37,9 +37,26 @@ as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) 
   verified superset). Lesson for the build session: keep per-screen `<use>` count modest; don't render
   invisible sprite icons on long lists.
 
-**REMAINING — tomorrow's to-do (to finish the flows session, then move to Session 3 = build):**
-1. **Job Hub loose ends** (quick): the **Work Auth compliance ALERT** (red banner when unsigned) + the
-   **Crew** row + owner picks the **drying-module name** (Arid / Dry Logs / Evap / …).
+**LOCAL SESSION ROUND 1 (2026-07-17 — MacBook, the LOCAL-SESSION-HANDOFF loop, now live):**
+- **Job Hub loose ends BUILT + WebKit-verified** (light+dark, iPhone 17 simulator + Chromium, zero
+  console errors — pending owner on-device reaction): the **Work-Auth compliance ALERT** (`.wa-alert`,
+  red banner above the action bar, live-app copy verbatim, demoed on s-scheduled, data rule = every
+  hub screen while unsigned) and the **Crew strip** (`.crew-strip`, quiet avatar row after the hero,
+  all 5 clock states, lead = solid avatar). Spec folded into `TECH-DESIGN-STANDARD.md` §12.5.
+- **New local tooling (committed):** `prototypes/serve.cjs` — the prototypes are HTML FRAGMENTS
+  (the claude.ai artifact wrapper used to supply doctype+viewport); raw-served on iOS they render
+  BLANK (quirks mode + 980px legacy viewport). serve.cjs wraps them on the fly — always serve with
+  it, never bare `python3 -m http.server`. Harness gained **`#s-<screen>` deep-links +
+  `#s-<screen>@<px>` scroll offsets** (all 3 prototypes, byte-identical copies) — one-command
+  simulator/iPhone verification: `xcrun simctl openurl booted "http://localhost:8899/full-app.html#s-working@530"`.
+- **WebKit-only bug class found + swept:** buttons don't inherit color; Safari's UA default is
+  systemBlue while Chromium's is near-ink — the hub header name rendered BLUE on first real-WebKit
+  open. Fixed `.hub-name.hub-link`, `.ck-head`, `.pk-opt` (all 3 files); swept every button class for
+  a color-setting rule; now §10.8 law in the standard ("every <button> sets explicit color").
+
+**REMAINING — the to-do (to finish the flows session, then move to Session 3 = build):**
+1. **Job Hub loose ends** — ALERT + Crew DONE (above; owner reaction pending). Still open: owner
+   picks the **drying-module name** (Arid / Dry Logs / Evap / …).
 2. **New Job flow rework** (brief §4a) — built (`new-job-flow.html`) but owner wants it improved; needs
    his specifics. His stated priority order was schedule → job creation → hub, so this is next.
 3. **New Customer** flow (§4b) — not built; land-back-with-toast.
