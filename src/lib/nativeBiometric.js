@@ -31,19 +31,35 @@ export function setBiometricEnabled(enabled) {
   } catch { /* storage may be disabled in some contexts */ }
 }
 
+// Ceiling on how long a hung native authenticate() call can block the app's
+// BiometricGate. A real Face ID/passcode prompt resolves in a few seconds;
+// this is generous enough to never fire during normal use, and short enough
+// that a stuck native bridge falls through to sign-out → login instead of
+// freezing the launch screen forever (the failure mode this guards against).
+const AUTH_TIMEOUT_MS = 20000;
+
 // Shows the iOS Face ID / Touch ID / passcode prompt.
-// Returns true on success, false on cancel or failure.
+// Returns true on success, false on cancel, failure, or timeout.
 export async function verifyBiometric(reason = 'Unlock UPR') {
   if (!isNative()) return true;
   try {
-    await BiometricAuth.authenticate({
-      reason,
-      cancelTitle: 'Cancel',
-      allowDeviceCredential: true, // fall back to device passcode if Face ID unavailable
-      iosFallbackTitle: 'Use Passcode',
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('verifyBiometric timed out')), AUTH_TIMEOUT_MS);
     });
+    await Promise.race([
+      BiometricAuth.authenticate({
+        reason,
+        cancelTitle: 'Cancel',
+        allowDeviceCredential: true, // fall back to device passcode if Face ID unavailable
+        iosFallbackTitle: 'Use Passcode',
+      }),
+      timeout,
+    ]);
     return true;
-  } catch {
+  } catch (err) {
+    if (err?.message === 'verifyBiometric timed out') {
+      console.warn('verifyBiometric: native call did not resolve within', AUTH_TIMEOUT_MS, 'ms — treating as failed');
+    }
     return false;
   }
 }
