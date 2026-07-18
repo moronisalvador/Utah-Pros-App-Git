@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { impact } from '@/lib/nativeHaptics';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 import NotificationBell from '@/components/NotificationBell';
+import { adminDashHref } from '@/components/admin-mobile';
 
 /**
  * @param {{ employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
@@ -81,7 +82,7 @@ export default function DashHeader({ employee, count, isAdmin, onLogout }) {
         {showMenu && (
           <div className="tv2-dash-menu">
             {isAdmin && (
-              <button type="button" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowMenu(false); navigate('/'); }}>
+              <button type="button" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowMenu(false); navigate(adminDashHref()); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
                 {t('menu.adminView')}
               </button>
