@@ -12,6 +12,14 @@ the cause — WebKit instantiating ~89 SVG `<use>` shadow trees — had to be fo
 Locally that bug dies in the first on-device look. Verification moves from "the wrong engine +
 owner round-trips" to "the right engine, immediately."
 
+**Owner decisions at handoff (2026-07-18 — settled, don't re-ask):**
+1. The repo is **already cloned** on the MacBook — preflight is a verify pass, not a setup pass.
+2. The **cloud session stays alive as a standby** (away-from-desk phone sessions, artifact
+   publishing, the weekly reminder routine). It does NOT work this branch while local is active.
+3. **Design-first, then build:** finish the remaining flows (§5 order — Job Hub loose ends →
+   New Job rework → …) before starting Session-3 build work. The §6 blur option stays available
+   but only on the owner's explicit ask.
+
 ---
 
 ## 1. Read order (cold start)
