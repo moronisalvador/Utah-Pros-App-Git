@@ -617,7 +617,10 @@ export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
     // gradient-hero screens still override it on mount/unmount.
-    // Blur the app snapshot in the app-switcher / on background
+    // App-switcher snapshot blur is NOT yet live — enablePrivacyScreen() is an
+    // intentional no-op stub (see nativeBiometric.js) pending a Capacitor
+    // 8-compatible privacy-screen plugin. Kept as a call site so wiring the
+    // real plugin later is a one-file change.
     enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();

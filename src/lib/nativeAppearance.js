@@ -21,5 +21,7 @@ export function statusBarLight() {
 // mounted — Capacitor shows the storyboard/Splash image before this is reached.
 export function hideSplash() {
   if (!isNative()) return;
-  SplashScreen.hide({ fadeOutDuration: 180 }).catch(() => {});
+  SplashScreen.hide({ fadeOutDuration: 180 }).catch((err) => {
+    console.warn('SplashScreen.hide failed — splash may stay stuck:', err?.message || err);
+  });
 }
