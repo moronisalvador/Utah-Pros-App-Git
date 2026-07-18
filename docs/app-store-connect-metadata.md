@@ -8,9 +8,13 @@ yet** — this is prep only.
 
 ## Distribution decision (confirm before submitting — see roadmap §0)
 
-Recommended: **Apple Business Manager → Custom Apps** (private distribution to UPR's own
-employees). If the owner instead chooses the public App Store, everything below still applies
-except the submission type selected in App Store Connect and the review-notes framing (§ below).
+**Owner direction (2026-07-18): public App Store**, with Utah Pros Restoration's own roadmap
+to eventually open UPR to other restoration companies (multi-tenant) strengthening the case that
+this is a real, growing business app rather than a one-off internal tool (the Guideline 3.2/4.2
+risk area). Everything else in this packet is written for that path. The original ABM Custom Apps
+recommendation (§0 of the roadmap) remains documented as the fallback if App Review pushes back —
+switching later only changes the App Store Connect submission type and the review-notes wording
+below, nothing in the shipped code changes either way.
 
 ## App Information
 
@@ -27,10 +31,11 @@ except the submission type selected in App Store Connect and the review-notes fr
 
 ## Description (App Store Connect "Description" field)
 
-> UPR is Utah Pros Restoration's internal field-operations app for our own technicians and staff.
-> It's used to manage job scheduling, insurance claims, time tracking, photo documentation, and
-> billing for restoration work. UPR is private software for Utah Pros Restoration employees and
-> contractors only — it is not available for public sign-up.
+> UPR is a field-operations platform built by Utah Pros Restoration to run restoration and repair
+> work end to end — job scheduling, insurance claims, time tracking, photo documentation, and
+> billing. Today UPR runs Utah Pros Restoration's own field team; the platform is being built to
+> extend to other restoration businesses over time. Accounts are provisioned by the operating
+> company — there is no public self-service sign-up in the app today.
 
 ## Keywords (100 char max, comma-separated, no spaces after commas)
 
@@ -63,11 +68,15 @@ Not used for tracking or third-party advertising (no ad SDKs present in the app)
 
 ## Review notes (paste into App Review Information)
 
-> UPR is Utah Pros Restoration's internal business app, used only by our own employees and
-> contractors — there is no public sign-up. [If submitting via ABM Custom Apps: delete the next
-> sentence.] [If submitting to the public App Store: "This app supports our field-service workforce
-> and is intended for our own staff's use; it is not offered to the general public for sign-up."]
-> A demo/test account is provided below for review.
+> UPR is a field-service management platform operated by Utah Pros Restoration. It currently runs
+> Utah Pros Restoration's own technician and office workforce, with the platform being extended to
+> support other restoration businesses over time — accounts are provisioned by the operating
+> company rather than a public self-service sign-up. A demo/test account is provided below for
+> review.
+>
+> (Fallback if this draws a Guideline 3.2/4.2 rejection: resubmit via Apple Business Manager's
+> Custom Apps program instead of the public Store — see `docs/app-store-readiness-roadmap.md` §0.
+> No app code changes either way.)
 
 - **Demo account:** _(owner to provide a real employee login + password here before submission —
   do not commit real credentials to this repo)._
@@ -89,7 +98,7 @@ Job detail, Time tracking).
 - [x] Export compliance key set (F1)
 - [x] Account deletion flow shipped (Phase B)
 - [x] Nutrition label content drafted (this doc)
-- [ ] Distribution-model decision confirmed (owner)
+- [x] Distribution-model decision — public App Store (owner, 2026-07-18); ABM Custom Apps kept as documented fallback
 - [ ] Apple Developer Program / Apple Business Manager enrollment complete (owner)
 - [ ] Demo account credentials prepared (owner, not committed to git)
 - [ ] Screenshots captured (owner, needs a real Xcode/Simulator build)

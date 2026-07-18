@@ -34,6 +34,13 @@ so no phase is blocked on this decision.
 challenge-pass-verified, no ABM/enterprise exemption exists (unlike Sign-in-with-Apple's 4.8, which
 DOES have one and correctly does not apply to UPR's email/password-only auth).
 
+**Decided 2026-07-18 (owner): public App Store.** Rationale: Utah Pros Restoration plans to open
+UPR to other restoration businesses (multi-tenant) over time, which is exactly the "real, growing
+business" fact pattern that weakens the 3.2/4.2 rejection risk (vs. a one-off internal-only tool).
+ABM Custom Apps stays documented as the fallback if App Review pushes back — see
+`docs/app-store-connect-metadata.md` for the submission copy written for this path. No phase's
+shipped code changes either way (§ above, unchanged).
+
 ## 1. Gap audit (live-verified 2026-07-17)
 
 | Area | Verdict | Evidence |
@@ -212,7 +219,7 @@ same convention as this repo's other "owner-gated" items.
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
-- [ ] Owner: distribution-model decision (§0)
+- [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)
 - [ ] Owner: Xcode build-verify of F1 before any real device sees it
 - [ ] Owner: merge PRs #451/#452/#453/#454 into `dev`
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
