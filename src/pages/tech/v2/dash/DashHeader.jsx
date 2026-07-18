@@ -31,7 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { impact } from '@/lib/nativeHaptics';
 import { currentLocaleTag } from '@/lib/techDateUtils';
 import NotificationBell from '@/components/NotificationBell';
-import { adminDashHref } from '@/components/admin-mobile';
+import { adminDashHref } from '@/components/admin-mobile/href';
 
 /**
  * @param {{ employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
