@@ -1124,7 +1124,7 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
 .fpick .fpick-chev{ color:var(--ink3); flex:none; }
 
 /* picker sheet option rows */
-.pk-opt{ display:flex; align-items:center; gap:12px; min-height:52px; padding:12px 4px; border:0; width:100%; background:transparent; font-family:inherit; text-align:left; cursor:pointer; }
+.pk-opt{ display:flex; align-items:center; gap:12px; min-height:52px; padding:12px 4px; border:0; width:100%; background:transparent; font-family:inherit; color:var(--ink); text-align:left; cursor:pointer; }
 .pk-opt + .pk-opt{ border-top:1px solid var(--hair); }
 .pk-opt:active{ background:var(--surface2); }
 .pk-opt-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
@@ -2020,5 +2020,15 @@ textarea.fld{ min-height:96px; max-height:140px; resize:none; overflow-y:auto; }
   }
   setInterval(tick,1000);
   if (bar){ var themeBtn=bar.querySelector('[data-theme-toggle]'); if(themeBtn) themeBtn.addEventListener('click',function(){ var n=stage.getAttribute('data-theme')==='light'?'dark':'light'; stage.setAttribute('data-theme',n); themeBtn.textContent=n==='light'?'Light':'Dark'; }); }
+  // deep-link: #s-<screen> opens that screen directly; #s-<screen>@<px> also scrolls its .main
+  // (simulator / iPhone verification QoL — simctl can open a URL but cannot swipe)
+  function goHash(){ var h=(location.hash||'').slice(1); if(!h) return; var p=h.split('@'), id=p[0], off=parseInt(p[1],10)||0;
+    if(!document.getElementById(id)) return; show(id);
+    if(off){ var apply=function(){ var sc=document.getElementById(id); if(!sc) return true; var done=false;
+      [sc.querySelector('.app'), sc.querySelector('.main')].forEach(function(m){ if(m && m.scrollHeight>m.clientHeight+4){ m.scrollTop=off; if(m.scrollTop>0) done=true; } });
+      return done; };
+      if(!apply()){ var t=0, iv=setInterval(function(){ if(apply() || ++t>20) clearInterval(iv); }, 50); } } }
+  window.addEventListener('hashchange', goHash);
+  goHash();
   window.__protoToast = toast;
 })();</script>
