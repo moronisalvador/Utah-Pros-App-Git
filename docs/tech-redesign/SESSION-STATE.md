@@ -1,0 +1,274 @@
+# Session 2 — Live State & Decision Log (the "save game")
+
+**Purpose:** the single re-hydration file for the flows session. Any session — this one after a
+compaction, or a fresh one opened later — reads **this file + `UX-FLOWS-BRIEF.md` + `TECH-DESIGN-STANDARD.md`
++ the prototypes on disk** and is fully caught up **without needing the chat history.** Update this file
+as each screen locks (it is part of close-out). The brief (`UX-FLOWS-BRIEF.md`) predates the work below.
+
+**Last-updated: 2026-07-15** (end of a long day — Job Hub LOCKED)
+
+---
+
+## ★ STATUS & TOMORROW'S TO-DO (read this first) ★
+
+> **⚠ HANDOFF TO LOCAL (2026-07-18):** the owner is moving this work to a local Claude session on
+> his MacBook (Safari/WebKit, iOS Simulator, Xcode, real iPhone). **A new local session must read
+> [`LOCAL-SESSION-HANDOFF.md`](LOCAL-SESSION-HANDOFF.md) FIRST** — it adapts the working loop
+> (WebKit-first verification, local phone review instead of artifact round-trips) and carries the
+> machine preflight. Plan/arc/deliverables unchanged; only where + how verification happens changes.
+> One branch, one line of work: never run cloud and local sessions on this branch simultaneously.
+
+**LOCKED / done this session** (prototypes committed + pushed on branch
+`claude/upr-field-tech-ux-flows-2-zt5bg4`; folded into `TECH-DESIGN-STANDARD.md` §12):
+- **Schedule** (month/day + Add-visit appointment creation) — `schedule.html`, §12.3/§12.6.
+- **Job Hub** — `job-hub.html`, §12.5. Owner: *"amazing, we nailed it."* Includes: 5 clock states +
+  job-mode view (adaptive hero) + room detail (Photos/Notes) + activity page + **Notes page**
+  (titles + photos) + **Docs page** (signatures + Generate Water-Loss-Report + request-signature FAB
+  sheet). Artifact: `claude.ai/code/artifact/96992ae5-afe9-4ed7-9d5d-b44f3ee35c86` (re-publishable
+  from the committed HTML anytime — the file is the source of truth).
+- **Combined clickable app** (`full-app.html`) — all three flows in one navigable prototype
+  (Schedule → tap appointment → Job Hub → rooms/notes/docs → New Job), grouped jump-bar at the
+  bottom. Artifact: `claude.ai/code/artifact/c7a22959-8a60-403a-8d4f-c000b08e730e`. Rebuilt from the
+  three prototypes by `prototypes/_combine.js` (now committed; union kit + all screens + all scripts).
+  **Perf fix (owner reported Add-visit froze for seconds on open):** root cause was WebKit/iOS
+  instantiating ~89 SVG `<use>` shadow trees on that screen (every hidden time-picker checkmark counted).
+  Now emit the check only on the selected row → 89→41 `<use>` (in line with other screens); Chromium
+  never showed it. Also deduped the combined CSS (was 3× the kit = 338KB → 121KB; job-hub's block is a
+  verified superset). Lesson for the build session: keep per-screen `<use>` count modest; don't render
+  invisible sprite icons on long lists.
+
+**REMAINING — tomorrow's to-do (to finish the flows session, then move to Session 3 = build):**
+1. **Job Hub loose ends** (quick): the **Work Auth compliance ALERT** (red banner when unsigned) + the
+   **Crew** row + owner picks the **drying-module name** (Arid / Dry Logs / Evap / …).
+2. **New Job flow rework** (brief §4a) — built (`new-job-flow.html`) but owner wants it improved; needs
+   his specifics. His stated priority order was schedule → job creation → hub, so this is next.
+3. **New Customer** flow (§4b) — not built; land-back-with-toast.
+4. **New Event + Edit Appointment** (§4c) — extend the Add-visit work (edit/reschedule, new non-job event).
+5. **Hydro / drying WRITE flows** (§4g) — Add-reading sheet · Place/Pull equipment · Chambers/rooms mgmt.
+   (The drying *module* mockup exists — `hydro-b.html` — but its write flows aren't designed.)
+6. **TechClaims** list + detail (§4h/§5) · **TechTasks** (§5) · **Messages pane** reskin (frozen seams) ·
+   **TechMore/Help/Feedback** (light).
+7. **Fold each newly-locked flow into `TECH-DESIGN-STANDARD.md` §12** as it locks (§12.1 New Job, §12.2
+   New Customer, §12.4 clock already there, §12.7 hydro-entry).
+
+Everything above is committed + pushed — resumable tomorrow on the same branch. Nothing is merged yet
+(design session continues; PR/merge when the session's deliverables are complete).
+
+---
+
+---
+
+## 0. How to stay consistent across compaction (the method)
+
+The design is **derived from disk, never from chat memory.** The durable sources, in precedence order:
+
+1. `docs/tech-redesign/prototypes/kit.html` — the shared foundation: tokens, SVG sprite, fonts,
+   component classes. Cloned verbatim from the 3 mockups. **Inlined into every prototype.** Token drift
+   is a blocker — the tokens are UNPREFIXED (`--ground --surface --surface2 --ink --ink2 --ink3 --hair
+   --pill-bg --pill-ink --amber/-bg --green/-bg --red/-bg --blue/-bg --gray/-bg --focus --frost --sh-card
+   --sh-hero`) scoped to `.stage` (light) / `.stage[data-theme="dark"]` (dark). NOT `--t-*`, NOT
+   `.tech-layout`.
+2. `TECH-DESIGN-STANDARD.md` — the law. §12 (this session's flow amendments) folds in as each screen locks.
+3. The prototypes — the actual locked screens.
+4. This file — the owner decisions + progress that the above don't yet carry.
+
+When in doubt: re-read the prototype and the kit, don't reconstruct from memory.
+
+---
+
+## 1. Working loop (keep it)
+
+Build (helper builder agents) → adversarial persona + craft critics → mechanical QA → orchestrator
+renders in headless Chromium and reviews with eyes → **owner reacts on their phone (marks up
+screenshots) → I apply here with full system context → lock.** Owner reactions are the tuning
+mechanism. The owner stays in THIS chat (not a separate "claude design" session) because the design
+system, kit, repo, and standard context all live here — a fresh design session would lose them.
+
+**Render harness:** `/tmp/kit/shoot.mjs` uses `import pkg from '<abs>/node_modules/playwright-core/index.js';
+const {chromium}=pkg;`. Renders framed at 1040×940, or mobile at 430×860 (triggers `@media max-width:500px`).
+
+---
+
+## 2. Owner decisions (binding — do not relitigate)
+
+### From AskUserQuestion batches
+| # | Topic | Ruling |
+|---|---|---|
+| 4a | Job save → destination | **Land on the new job hub** (not a forced schedule chain). Hub carries a quiet "Schedule a visit" row. |
+| 4a | Quick-add customer scope | **Job-flow-only, minimal** (name + phone). |
+| 4c | Tech scheduling | **Full tech self-service** — "Add visit" is first-class (FAB on Schedule). |
+| 4c | Appointment title | **Editable with auto-suggestion** (pre-filled from job type; pencil affordance). |
+| 4d | Finish pill | **Finish is ALWAYS the solid black two-tap pill** — never gated/quieted. |
+| 4f | Last task completes | **Both** Done-collapse **and** a coordinated emphasis moment. Finish stays black; the "clear to finish" ack is collapse + check-pop + `notify()` haptic + toast — NOT a pill state change. |
+| 4b | Customer save → destination | **Land back with a success toast** (stay in `/tech/*`). |
+| 4g | Chamber setup | **Full tech chamber control** (create chambers, assign rooms, set tolerances). Chambers have no native table — separate reviewed change; Rooms is the fallback grouping. |
+| 4e | Burst photo capture | **Not adopted** — single snap-first loop stays the law. |
+| Create-new-job from Add-visit | **Launch full New Job, return the selected job** (not an inline mini-form). |
+| Activity log content | **System-automated messages only** (not tech-sent messages). PLUS: invoices created & sent, estimates created & sent, on top of the base list (on-my-way, report generated, equipment placed, visit scheduled, job created). |
+
+### Verbal refinements made this session (all applied to prototypes)
+- **Schedule month view:** tapping a different day **updates the day's appointments in-place (preview
+  panel)** — it does NOT switch to the daily view. Daily view is optional/separate.
+- **Add-visit start/end:** show **Start and End time as two blocks side-by-side**; make clear you must
+  pick the end time too.
+- **Add-visit job picker:** show the **address of the job** so you pick the right one; also show an
+  **abbreviated date of loss** (people have >1 flood in the same month).
+- **Add-visit job picker results = MATCH the polished search result layout** (below), plus a
+  "Create new job" entry.
+- **Type-of-visit choices:** **no checkmark** (it clipped "Reconstruction"). Removed at kit level.
+- **Date & time pickers:** must use **native iOS pickers** (`<input type="date"/time">`), NOT the
+  Chromium/desktop dropdown — owner will test on iPhone via the live artifact.
+- **Add-visit = FULL-SCREEN PAGE, not a bottom sheet** (definitive fix after repeated iPhone scroll /
+  cut-off-title / unreachable-X reports). Long creation forms = full-screen pages; pickers/quick actions
+  = bottom sheets. Add-visit has a header with a reachable X + `.main` scroller + pinned footer pill.
+- **Add-visit crew:** ship a version with **4–5 technicians** to test scrolling.
+- **Add-visit notes:** add notes to a visit; **show who added each note + date/time**; if someone else
+  edits a note, **ownership transfers to the editor.**
+- **Activity log** lives inside the **job hub** (built next).
+- **Visit-notes model (hub, 2026-07-15):** ONE notes stream per visit, surfaced twice — (1) the
+  stage-card quiet "Office note" line is the *pinned* note (glanceable access/billing instruction);
+  (2) a below-fold **Notes section** (between Documents and Activity) shows the full authored list
+  with author + timestamp + edit + ownership-transfer, and "+ Add note". The Add-visit notes feed
+  this same stream. Notes are SEPARATE from the Activity log (Activity = system-automated events
+  only, per the owner's rule). Pinned = a surfacing property, independent of authorship (editing a
+  pinned office note transfers ownership to the editor but keeps the pin).
+
+### Polished SEARCH RESULT layout (locked — reuse everywhere a job/claim is searched)
+Line 1: **water-loss type + abbreviated date of loss** on the same line.
+Line 2: **full street address + city.**
+Line 3: **claim number + job number** — standardized **smaller (12px, nowrap)** so they always fit on
+one line (previously only fit when the Done chip was narrow).
+
+---
+
+## 3. File inventory (all under `docs/tech-redesign/prototypes/`)
+
+| File | Status | Contents |
+|---|---|---|
+| `kit.html` | foundation | tokens + sprite (30 verbatim + 18 authored gap glyphs) + fonts + components. Inlined into each prototype. |
+| `schedule.html` | **LOCKED** (owner: "we nailed the schedule and appointment creation part") | month (in-place day preview) · day (week strip + day-switch + prev/next) · day-empty · loading skeleton · error-over-stale · search (polished result layout) · **add-visit full-screen page** (job fpick→matching picker + create-new-job · date/time native pickers · start+end side-by-side · type choices no check · 5-tech crew · notes w/ ownership transfer). |
+| `new-job-flow.html` | built; **owner wants rework** (deferred to after hub) | 7-step: FAB menu → customer → job type (division+referral) → claim fork → review → non-blocking sync → land on hub. |
+| `job-hub.html` | **in Chromium review** (this session) — being reworked into a "job dashboard" | 5 clock states + Tasks (collapsible, default-open) + Drying WIDGET (taps→hydro) + below-fold (Visits/Job&Claim/Photos/Documents/Notes) + Activity as a collapsed ROW → dedicated `s-activity` page (full log). Sample: Gary Sorensen #26-1173, 1420 N Oak Dr Layton. |
+
+**Job Hub rework (owner direction, 2026-07-15) — "treat it like a job dashboard":**
+- LOCKED/frozen (owner: "perfect, don't mess with it"): the stage card (clock/OMW→Start→Finish/time
+  tracking) + address row + the office-note glance. **Office note = the notes entered during
+  appointment creation.** Activity stays pinned at the very BOTTOM, always.
+- DONE this session (the owner's 3 asks + my advice, all approved): ① Activity → a collapsed row with a
+  latest-event preview that opens a dedicated full Activity page (`s-activity`). ② Checklist → renamed
+  **Tasks**, now a collapsible card (owner wanted default-collapsed; I recommended + shipped
+  **default-OPEN** because tasks are the primary on-site work and the Done-collapse already keeps it
+  short — one-line flip if owner still wants collapsed). ③ Drying gateway → a **progress widget**
+  (Day 4 · 2/3 dry · 1 wet · Readings due) that taps into the hydro page.
+- DONE (Rooms, 2026-07-15): **Rooms tile grid** on the hub (cover-photo tiles + name overlay + count
+  badge + "Add room" + an "Unsorted" bucket for snap-first photos) → each tile opens a **room-detail
+  screen** (`s-room`) with **Photos | Notes** instant sub-tabs (Encircle's function; Contents/Sketches
+  noted as possible future tabs). Translated from the 4 owner-supplied Encircle screenshots — FUNCTION
+  only, Direction B look (ink/gray, NO orange chrome, no loud grid). The flat "Photos" section was
+  **retired** (photos now live under rooms — the length win). Room notes reuse the note component
+  (edit + ownership-transfer). Verified in Chromium (grid, both tabs, tab switch, no console errors).
+- DONE (2026-07-15, later): Tasks now default-COLLAPSED (owner override after seeing it live); Drying
+  widget moved ABOVE Tasks (every visit has drying; not every has tasks). **Scope sheet** = a do-now
+  entry (owner: techs fill it on-site; in the app it's a standalone tool opened from TechAppointment,
+  same place as the documents/signature section). **Documents & signatures** section = Work Auth
+  (Signed) + an Unsigned doc (tap to send for signature) + reports — the paperwork home (mirrors the
+  app's `sign_requests` + `/tech/jobs/:id/documents` hub). Work-auth row moved out of Job & Claim into
+  it. **Empty rooms** show the house icon (`#i-house`); Unsorted keeps the photo icon.
+- Current hub order — do-now: Drying widget → Tasks (collapsed) → Scope sheet → Rooms grid ·
+  look-up: Visits → Job & Claim → Documents & signatures → Notes → Activity row (bottom).
+- App reality confirmed in repo: `rooms` table exists (photos assign via `move_photo_to_room`);
+  Scope Sheet is a standalone tool; signatures in `sign_requests` (doc_type/status); Documents hub at
+  `/tech/jobs/:id/documents`. The hub design lines up with the real data model.
+
+**ACTION-MODEL RE-ARCHITECTURE (debated 2026-07-15, pending 2 owner locks):**
+- **Photos leave the hub entirely — capture is ROOM-FIRST** (owner integrity call, beats the critics'
+  hub-Photo-button: capturing from the hub forces a "which room?" pick → misfile risk). Room detail
+  keeps Add Photo. This also ends the floating-dock-vs-top-bar debate: no bottom capture dock on the hub.
+- **Two action critics (persona + apple-design) both independently said SPLIT BY FREQUENCY** — but with
+  Photo now room-only, everything left is occasional, so → a top action bar (owner's preference, familiar).
+- **Three note scopes, must be visibly distinct:** appointment note (= pinned "Office note" glance,
+  created at appt creation, editable from hub) · job notes (hub Notes section) · room notes (room tab).
+  Note action adds job-note from hub, room-note from a room.
+- **Edit STAYS** (reschedule/change appointment — occasional but real). Keep both Edit AND Documents.
+- **Customer + Claim + Job = page links** the owner wants accessible. My challenge: don't wall the top
+  with 8 equal icons. Proposed: page-link PILLS (Job · Claim · Customer) + action bar (Navigate · Call ·
+  Message · Documents · Edit, icon+label, no Photo) — mirrors the current app's structure.
+- Knock-on: remove the down-page **Job & Claim** section (now top pills) + **Documents & signatures**
+  section (now the Documents top button). Work Auth compliance alert stays prominent.
+- **LOCKED + BUILT (2026-07-15):** (1) label = **"Documents"** (owner: photos & PDFs are different
+  documentation types; Documents = the files/signatures place). (2) **Two rows** — page pills
+  (Job · Claim · Customer) + action bar (Navigate · Call · Message · Documents · Edit, icon+label);
+  maps ~1:1 onto the current app (just Photo→Documents), least retraining. Floating dock REMOVED from
+  all 5 hub states (kept in room detail); Job & Claim + Documents & signatures sections REMOVED; hub
+  Notes relabeled **"Job notes"**. Chrome currently SCROLLS (matches current app); can go sticky if owner wants.
+  Verified in Chromium, no console errors.
+- Still-pending foundations from the live-hub screenshots: **Work Auth compliance alert**, **Crew** row,
+  **Water Loss Report** generate-or-open affordance. Carry the live hub's empty-state copy verbatim.
+
+**ADAPTIVE HERO — bulletproof rule (owner confirmed B, 2026-07-15):** the hub is JOB-centric; the hero
+is chosen by a deterministic ladder (no guessing):
+1. **Any visit on this job IN PROGRESS** (timer running: OMW/Working/Paused) → that visit's **live clock
+   card**. Always wins (you can't be "just reviewing" while clocked in). Regardless of entry point.
+2. **Else arrived from a specific appointment** (schedule route carries the appt id) → **that
+   appointment's clock card** in its pre-start state (Scheduled → On my way).
+3. **Else (from Jobs/Claims nav, nothing running)** → the **job-status hero** (no clock): phase +
+   Drying-day chip + stat tiles (rooms dry / open tasks / photos) + a "Next visit" row (tap → focuses/
+   starts that visit = appointment mode) + the address row (navigate) + a note glance.
+Mode is driven by DATA (timer running? appt id in the route?), never a guess → works right every time.
+Built as `s-job` (job-mode) alongside the 5 clock states. `Next visit` row → s-scheduled demo.
+
+**ACTION BAR final:** Navigate REMOVED (the clock-card/job-hero **address row** is the maps affordance,
+present in BOTH hero modes → nav works with no Navigate button). Labels **Docs** + **Text** (not
+Documents/SMS — persona clarity + space). **Edit** moved OUT of the bar INTO the clock card, paired with
+a new **appointment date/time strip** ("Today · 9:00–11:30 AM"); Edit is appointment-scoped, so in
+job-mode (no appt) there's no global Edit — you edit a visit from the Visits list. Bar is now **Call ·
+Text · Docs** (3). Pills: **Claim · Customer** (Job pill dropped — the hub IS the job).
+
+**HEADER + DEDICATED PAGES (2026-07-15):**
+- **Pills REMOVED.** Header customer name **"Gary Sorensen" → tappable (chevron) → Customer page**;
+  **#26-1173 → tappable (underline) → Claim page**. Saves the whole pill row (owner call; discoverability
+  tradeoff mitigated with chevron/underline — on-device confirm).
+- **Notes** added to the action bar with a **count badge** → **Call · Text · Docs · Notes** (4). Both
+  **Docs** and **Notes** now open **dedicated pages** (`s-docs`, `s-notes`), twins of each other.
+- **Inline "Job notes" section REMOVED** from the hub (now behind the Notes button — declutters).
+  Three note scopes stay: appointment note = pinned glance in clock card · job notes = Notes page ·
+  room notes = inside rooms.
+- **s-notes** = full job-notes list (pinned office note + tech/office notes) + Add note.
+- **s-docs** = Signatures (Work Auth Signed + Certificate Unsigned/request) + **Generate Water Loss
+  Report** CTA + documents list. Folds in 2 of the pending live-hub foundations.
+- **Done-state travel duplicate FIXED** (rail shows stage TIMES; breakdown shows Travel/On-site/Total once).
+- **Tab-bar bug FIXED** on all new screens (was nested in `.app`; moved under `.screen` to pin).
+
+**STILL PENDING FOUNDATIONS:** Work Auth compliance ALERT (prominent banner when unsigned — distinct
+from the Docs-page signature row), Crew row, and (built as a CTA on s-docs) Water Loss Report gen.
+
+**OPEN DECISIONS:**
+- **Module name** (drying/dry-log system, our "Hydro" equivalent): owner wants a COOL name, not a
+  plain one. Shortlist offered (Arid / Evap / Xero / Kiln / Dryft…). Widget label stays "Drying" until
+  owner picks; then relabel everywhere.
+- My tile proposal for Visits / Job & Claim (compact tiles vs full sections) — still on the table.
+- Room ⇄ drying reconciliation: hub Rooms (photos/notes) and the drying module (moisture readings)
+  reference the same physical rooms — unify as one room list surfaced two ways (build-phase concern).
+
+**Sequencing (owner):** calendar/schedule 100% ✓ → **job creation rework (next)** → job hub ("most
+important"). NOTE: hub was built first as a draft to react to; the owner may still reorder.
+
+---
+
+## 4. Pending / open
+
+- **Finish Job Hub review → commit → publish artifact** (in progress).
+- **New Job flow rework** — owner said "needs improving," held specifics; deferred to after hub.
+- **Fold locked specs into `TECH-DESIGN-STANDARD.md` §12** — schedule/appointment are lockable now;
+  the draft lives at `/tmp/kit/standard-amendment-draft.md` (NOT committed — copy into the standard).
+- **Claim vs job numbering scheme** — placeholder job numbers (#4821 etc.); confirm real scheme
+  (is `#26-1173` the claim or the job number?).
+- **Finish-pill §6.A.1/§8.2 supersession** — strike the "ripened quiet-pill" variant in the standard
+  once the owner confirms on the hub reaction.
+
+## 5. Artifact URLs (update-in-place via `url` param)
+- Dashboard `claude.ai/code/artifact/d4713aec-ed7c-459e-8a7b-2b72166dcc17`
+- Hub (mockup of record) `…/5bceeb63-769b-40e1-9bac-0038d5a52b5e`
+- Drying `…/7af73e82-195d-4675-a841-1bd7a132bb53`
+- Style guide `…/7b89687f-2495-4cb4-af8d-90a6c57dccfa`
+- Session-2 prototype artifacts: recorded here as they publish (schedule, new-job, job-hub).
