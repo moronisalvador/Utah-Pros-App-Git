@@ -8640,6 +8640,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    Main-kit twin of this), reimplemented with --crm-* tokens for this kit. */
 @keyframes crmLeadsPopoverIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { .crm-leads-popover { animation: none; } }
+/* Edge-overflow flips — anything using .crm-leads-popover can opt in by
+   measuring its own trigger's position and adding these modifiers (see
+   CrmDatePicker/CrmTimePicker) instead of always anchoring top-left, which
+   runs the popover off-screen for a trigger near the right edge or bottom. */
+.crm-leads-popover.flip-x { left: auto; right: 0; transform-origin: top right; }
+.crm-leads-popover.flip-y { top: auto; bottom: calc(100% + 6px); }
 .crm-leads-datepicker { min-width: 200px; }
 .crm-leads-popover-field { display: flex; flex-direction: column; gap: var(--space-1); font-size: 12px; font-weight: 600; color: var(--crm-text-secondary); }
 

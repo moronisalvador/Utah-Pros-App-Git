@@ -50,11 +50,34 @@ function IconClockSm() {
   );
 }
 
+// Popover's own footprint — kept in sync with .crm-timepicker-pop's CSS
+// width/max-height so the overflow check doesn't need a post-paint measure.
+const POP_WIDTH = 160;
+const POP_HEIGHT = 260;
+
 export default function CrmTimePicker({ value, onChange, placeholder = 'Select time', compact, className, 'aria-label': ariaLabel }) {
   const [open, setOpen] = useState(false);
+  const [flipX, setFlipX] = useState(false);
+  const [flipY, setFlipY] = useState(false);
   const wrapRef = useRef(null);
   const listRef = useRef(null);
   const selectedRef = useRef(null);
+
+  // Flip left/up if the popover would render off-screen — measured on the
+  // open action itself, not a value-sync effect.
+  const toggleOpen = useCallback(() => {
+    setOpen((prevOpen) => {
+      const wantOpen = !prevOpen;
+      if (wantOpen) {
+        const rect = wrapRef.current?.getBoundingClientRect();
+        if (rect) {
+          setFlipX(rect.left + POP_WIDTH > window.innerWidth);
+          setFlipY(rect.bottom + POP_HEIGHT > window.innerHeight);
+        }
+      }
+      return wantOpen;
+    });
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -81,12 +104,12 @@ export default function CrmTimePicker({ value, onChange, placeholder = 'Select t
           label={ariaLabel || (value ? `${displayTime(value)} — click to change` : placeholder)}
           size="sm"
           className={`crm-task-date-toggle${value ? ' active' : ''}`}
-          onClick={() => setOpen(v => !v)}
+          onClick={toggleOpen}
         >
           <IconClockSm />
         </IconButton>
       ) : (
-        <button type="button" className="crm-input crm-datepicker-trigger" aria-label={ariaLabel} onClick={() => setOpen(v => !v)}>
+        <button type="button" className="crm-input crm-datepicker-trigger" aria-label={ariaLabel} onClick={toggleOpen}>
           <IconClockSm />
           <span className={value ? '' : 'crm-datepicker-placeholder'}>{value ? displayTime(value) : placeholder}</span>
         </button>
@@ -95,7 +118,7 @@ export default function CrmTimePicker({ value, onChange, placeholder = 'Select t
       {open && (
         <>
           <div className="crm-leads-popover-backdrop" onClick={() => setOpen(false)} />
-          <div className="crm-leads-popover crm-timepicker-pop">
+          <div className={`crm-leads-popover crm-timepicker-pop${flipX ? ' flip-x' : ''}${flipY ? ' flip-y' : ''}`}>
             <div ref={listRef} className="crm-timepicker-list">
               {TIMES.map(t => (
                 <button

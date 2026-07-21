@@ -66,18 +66,33 @@ function IconCalendarSm() {
   );
 }
 
+// Popover's own footprint — kept in sync with .crm-datepicker-cal's CSS
+// width/approx height so the overflow check doesn't need a post-paint measure.
+const CAL_WIDTH = 260;
+const CAL_HEIGHT = 340;
+
 export default function CrmDatePicker({ value, onChange, min, max, placeholder = 'Select date', compact, className, autoFocus, 'aria-label': ariaLabel }) {
   const [open, setOpenRaw] = useState(Boolean(autoFocus));
   const [viewDate, setViewDate] = useState(() => parseDate(value) || new Date());
+  const [flipX, setFlipX] = useState(false);
+  const [flipY, setFlipY] = useState(false);
   const wrapRef = useRef(null);
 
-  // Jump the calendar to whatever month `value` is in each time it opens —
-  // this is a response to the open action, not a value sync effect (a
-  // setState-in-effect anti-pattern the base DatePicker.jsx has; fixed here).
+  // Jump the calendar to whatever month `value` is in each time it opens, and
+  // flip left/up if it would render off-screen — both a response to the open
+  // action, not a value-sync effect (a setState-in-effect anti-pattern the
+  // base DatePicker.jsx has; fixed here).
   const setOpen = useCallback((next) => {
     setOpenRaw((prevOpen) => {
       const wantOpen = typeof next === 'function' ? next(prevOpen) : next;
-      if (wantOpen && !prevOpen) setViewDate(parseDate(value) || new Date());
+      if (wantOpen && !prevOpen) {
+        setViewDate(parseDate(value) || new Date());
+        const rect = wrapRef.current?.getBoundingClientRect();
+        if (rect) {
+          setFlipX(rect.left + CAL_WIDTH > window.innerWidth);
+          setFlipY(rect.bottom + CAL_HEIGHT > window.innerHeight);
+        }
+      }
       return wantOpen;
     });
   }, [value]);
@@ -127,7 +142,7 @@ export default function CrmDatePicker({ value, onChange, min, max, placeholder =
       {open && (
         <>
           <div className="crm-leads-popover-backdrop" onClick={() => setOpen(false)} />
-          <div className="crm-leads-popover crm-datepicker-cal">
+          <div className={`crm-leads-popover crm-datepicker-cal${flipX ? ' flip-x' : ''}${flipY ? ' flip-y' : ''}`}>
             <div className="crm-datepicker-cal-header">
               <button type="button" className="crm-datepicker-nav" onClick={() => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1))}>‹</button>
               <span>{MONTHS[month]} {year}</span>
