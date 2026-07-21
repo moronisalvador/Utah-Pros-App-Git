@@ -318,6 +318,21 @@ export default function CrmLeads() {
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [filters, setFilters] = useState(emptyFilters);
 
+  // Card AI-summary inline expand/collapse — a lead id in this set shows its
+  // full transcript_analysis.summary in place instead of the one-line
+  // snippet. Deliberately separate from selectedLead (the side panel): the
+  // whole card still opens the panel, only the summary line itself toggles
+  // this, via stopPropagation.
+  const [expandedSummaries, setExpandedSummaries] = useState(() => new Set());
+  const toggleSummaryExpanded = useCallback((e, leadId) => {
+    e.stopPropagation();
+    setExpandedSummaries(prev => {
+      const next = new Set(prev);
+      if (next.has(leadId)) next.delete(leadId); else next.add(leadId);
+      return next;
+    });
+  }, []);
+
   // Touch drag-and-drop — a parallel path to the HTML5 DnD above, only ever
   // wired up when isTouchDevice() (see NOTES). Position/ghost tracking uses
   // refs + imperative style updates, not state, so a fast finger drag on a
@@ -849,7 +864,19 @@ export default function CrmLeads() {
                         {lead.source ? ` · ${lead.source}` : ''}
                       </div>
                       {lead.caller_number && <div className="crm-board-card-phone">{formatPhone(lead.caller_number)}</div>}
-                      {summarySnippet(lead) && <div className="crm-board-card-summary">{summarySnippet(lead)}</div>}
+                      {summarySnippet(lead) && (
+                        <div
+                          className={`crm-board-card-summary${expandedSummaries.has(lead.id) ? ' expanded' : ''}`}
+                          draggable={false}
+                          role="button"
+                          tabIndex={0}
+                          onClick={e => toggleSummaryExpanded(e, lead.id)}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSummaryExpanded(e, lead.id); } }}
+                          title={expandedSummaries.has(lead.id) ? 'Click to collapse' : 'Click to expand'}
+                        >
+                          {expandedSummaries.has(lead.id) ? lead.transcript_analysis.summary : summarySnippet(lead)}
+                        </div>
+                      )}
                       <div className="crm-board-card-footer">
                         {lead.value != null && <span className="crm-board-card-value">{formatMoney(lead.value)}</span>}
                         {isUrgent(lead) && <StatusPill tone="danger" label="Urgent" title="Urgent — restoration keywords detected" />}
