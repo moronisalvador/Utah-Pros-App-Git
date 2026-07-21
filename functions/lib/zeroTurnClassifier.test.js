@@ -45,25 +45,39 @@ describe('buildZeroTurnPrompt', () => {
 
 describe('parseZeroTurnResponse', () => {
   it('reads caller_never_responded true from a clean JSON object', () => {
-    expect(parseZeroTurnResponse('{"caller_never_responded":true}')).toEqual({ callerNeverResponded: true });
+    expect(parseZeroTurnResponse('{"caller_never_responded":true,"is_customer_inquiry":true}')).toEqual({
+      callerNeverResponded: true,
+      isCustomerInquiry: true,
+    });
   });
 
   it('reads caller_never_responded false from a clean JSON object', () => {
-    expect(parseZeroTurnResponse('{"caller_never_responded":false}')).toEqual({ callerNeverResponded: false });
+    expect(parseZeroTurnResponse('{"caller_never_responded":false,"is_customer_inquiry":true}')).toEqual({
+      callerNeverResponded: false,
+      isCustomerInquiry: true,
+    });
   });
 
   it('extracts JSON out of markdown fences or surrounding prose', () => {
-    const fenced = '```json\n{"caller_never_responded":true}\n```';
-    expect(parseZeroTurnResponse(fenced)).toEqual({ callerNeverResponded: true });
-    const chatty = 'Sure! Here is the result:\n{"caller_never_responded":true}\nHope that helps.';
-    expect(parseZeroTurnResponse(chatty)).toEqual({ callerNeverResponded: true });
+    const fenced = '```json\n{"caller_never_responded":true,"is_customer_inquiry":true}\n```';
+    expect(parseZeroTurnResponse(fenced)).toEqual({ callerNeverResponded: true, isCustomerInquiry: true });
+    const chatty = 'Sure! Here is the result:\n{"caller_never_responded":true,"is_customer_inquiry":true}\nHope that helps.';
+    expect(parseZeroTurnResponse(chatty)).toEqual({ callerNeverResponded: true, isCustomerInquiry: true });
   });
 
-  it('reads the boolean leniently — only a literal true counts, anything else (or missing) is false', () => {
-    expect(parseZeroTurnResponse('{"caller_never_responded":"true"}')).toEqual({ callerNeverResponded: false });
-    expect(parseZeroTurnResponse('{"caller_never_responded":1}')).toEqual({ callerNeverResponded: false });
-    expect(parseZeroTurnResponse('{}')).toEqual({ callerNeverResponded: false });
-    expect(parseZeroTurnResponse('{"other_field":"x"}')).toEqual({ callerNeverResponded: false });
+  it('reads caller_never_responded leniently — only a literal true counts, anything else (or missing) is false', () => {
+    expect(parseZeroTurnResponse('{"caller_never_responded":"true"}').callerNeverResponded).toBe(false);
+    expect(parseZeroTurnResponse('{"caller_never_responded":1}').callerNeverResponded).toBe(false);
+    expect(parseZeroTurnResponse('{}').callerNeverResponded).toBe(false);
+    expect(parseZeroTurnResponse('{"other_field":"x"}').callerNeverResponded).toBe(false);
+  });
+
+  it('reads is_customer_inquiry leniently in the OPPOSITE direction — only a literal false counts, anything else (or missing) defaults to true', () => {
+    expect(parseZeroTurnResponse('{"is_customer_inquiry":false}').isCustomerInquiry).toBe(false);
+    expect(parseZeroTurnResponse('{"is_customer_inquiry":"false"}').isCustomerInquiry).toBe(true);
+    expect(parseZeroTurnResponse('{"is_customer_inquiry":0}').isCustomerInquiry).toBe(true);
+    expect(parseZeroTurnResponse('{}').isCustomerInquiry).toBe(true);
+    expect(parseZeroTurnResponse('{"other_field":"x"}').isCustomerInquiry).toBe(true);
   });
 
   it('returns null on garbage / no JSON / blank input — never a false positive from an unparseable answer', () => {
