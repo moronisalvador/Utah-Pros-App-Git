@@ -451,11 +451,16 @@ export async function onRequestPost(context) {
   // Reclassify mode — re-run the AI naming + clean-up/classification passes
   // against already-transcribed leads (no Deepgram/CallRail creds needed, no
   // re-transcription cost). Default targets leads whose stored analysis
-  // predates inspection_scheduled (the sentinel: `->>` on a genuinely-missing
-  // key reads as SQL NULL, so this never re-touches an already-reclassified
-  // row on routine catch-up runs). `force:true` re-processes EVERY matching
-  // call regardless — e.g. to pick up a naming-prompt improvement (fuller
-  // names) on leads that already have inspection_scheduled set.
+  // predates customer_full_name — the NEWEST signal this pass writes, so it's
+  // the correct "still needs the current pass" sentinel (a lead that already
+  // has it was fully reprocessed under the current code and is skipped on the
+  // next round, so `force:true` sweeps make real forward progress instead of
+  // reprocessing the same head-of-list leads every timed-out round; `->>` on a
+  // genuinely-missing key reads as SQL NULL). `force:true` widens the target
+  // set to every matching call within the day window regardless of
+  // inspection_scheduled/other older signals (still skips ones with
+  // customer_full_name already set) — e.g. after a NEW prompt/signal ships
+  // that even an inspection_scheduled-having lead should pick up.
   if (body.reclassify) {
     let leads;
     try {
@@ -466,7 +471,9 @@ export async function onRequestPost(context) {
       } else {
         const days = Number(body.days) > 0 ? Number(body.days) : 90;
         const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
+        const freshOnly = body.force
+          ? '&transcript_analysis->>customer_full_name=is.null'
+          : '&transcript_analysis->>inspection_scheduled=is.null&transcript_analysis->>customer_full_name=is.null';
         leads = await db.select(
           'inbound_leads',
           `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
