@@ -734,7 +734,7 @@ export default function CrmLeads() {
             </div>
 
             <div className="crm-leads-filter-wrap">
-              <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setShowFilterPanel(v => !v)}>
+              <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm crm-leads-filter-btn" onClick={() => setShowFilterPanel(v => !v)}>
                 <IconFilter style={CARD_ACTION_ICON_STYLE} /> Filters
                 {(filters.sources.size + filters.campaigns.size + filters.sentiments.size + filters.services.size + filters.stageAges.size) > 0 && (
                   <span className="crm-leads-filter-count">

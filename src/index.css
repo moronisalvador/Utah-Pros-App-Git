@@ -8617,6 +8617,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-board-period-calendar.active { color: var(--crm-accent); background: var(--crm-bg-page); }
 
 .crm-leads-filter-wrap { position: relative; }
+/* Match the date-range pill's 38px total height (its tallest child, the 30px
+   calendar IconButton, plus the pill's 3px+3px padding + 1px+1px border) —
+   without touching the shared .crm-btn-sm used elsewhere in the CRM kit. */
+.crm-leads-filter-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; }
 .crm-leads-filter-count {
   display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px;
   margin-left: 4px; padding: 0 4px; border-radius: var(--radius-full); background: var(--crm-accent);
