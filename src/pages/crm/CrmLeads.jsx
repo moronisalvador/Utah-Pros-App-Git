@@ -1119,6 +1119,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [savingNotes, setSavingNotes] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [tasksError, setTasksError] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [addingTask, setAddingTask] = useState(false);
   const [stageHistory, setStageHistory] = useState([]);
@@ -1145,26 +1146,29 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
 
   // This lead's tasks (any status, mirrors CrmTasks.jsx) + its pipeline-stage
   // move history, so "progress on this lead" is visible without leaving the panel.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setTasksLoading(true);
-      try {
-        const [taskRows, historyRows] = await Promise.all([
-          db.rpc('get_crm_tasks', { p_lead_id: lead.id }),
-          db.select('lead_stage_history', `lead_id=eq.${lead.id}&select=id,stage_id,from_stage_id,lost_reason,moved_at&order=moved_at.desc&limit=20`),
-        ]);
-        if (cancelled) return;
-        setTasks(taskRows || []);
-        setStageHistory(historyRows || []);
-      } catch {
-        if (!cancelled) { setTasks([]); setStageHistory([]); err('Failed to load tasks and stage history'); }
-      } finally {
-        if (!cancelled) setTasksLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+  const loadTasks = useCallback(async (signal) => {
+    setTasksLoading(true);
+    try {
+      const [taskRows, historyRows] = await Promise.all([
+        db.rpc('get_crm_tasks', { p_lead_id: lead.id }),
+        db.select('lead_stage_history', `lead_id=eq.${lead.id}&select=id,stage_id,from_stage_id,lost_reason,moved_at&order=moved_at.desc&limit=20`),
+      ]);
+      if (signal?.cancelled) return;
+      setTasks(taskRows || []);
+      setStageHistory(historyRows || []);
+      setTasksError(false);
+    } catch {
+      if (!signal?.cancelled) { setTasks([]); setStageHistory([]); setTasksError(true); err('Failed to load tasks and stage history'); }
+    } finally {
+      if (!signal?.cancelled) setTasksLoading(false);
+    }
   }, [db, lead.id]);
+
+  useEffect(() => {
+    const signal = { cancelled: false };
+    loadTasks(signal);
+    return () => { signal.cancelled = true; };
+  }, [loadTasks]);
 
   // Log a click-to-call as an activity event, then let the tel: link dial.
   // Fire-and-forget — never block or fail the call on a logging error.
@@ -1373,6 +1377,8 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
           <div className="crm-panel-section-title">Tasks</div>
           {tasksLoading ? (
             <TabLoading />
+          ) : tasksError ? (
+            <ErrorState message="Couldn't load tasks and stage history for this lead." onRetry={() => loadTasks()} />
           ) : (
             <>
               {tasks.length === 0 && <p className="crm-panel-empty">No tasks for this lead yet.</p>}
