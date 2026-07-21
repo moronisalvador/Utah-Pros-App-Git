@@ -7304,21 +7304,34 @@ the existing `OverdueTasksWidget`.
 - **Weighted-$ pipeline was structurally $0** — inbound leads carry no `value` (0/70 live). Dropped the
   whole $ dimension: the pipeline card is now count-based, and the `ForecastWidget` (also $0) is no
   longer rendered on the Overview.
-- **Missed-call count was wrong (root-cause fix)** — the Calls chart defined "missed" as CallRail
-  `duration_sec = 0` (1 call all-time), but the curated pipeline's **Missed Calls stage has 19** — and
-  **18 of those 19 connected** (`duration > 0`: voicemail, quick hangup, ring-then-drop). `duration > 0`
-  ≠ "handled". Root cause: the Overview mixed the **curated pipeline** (source of truth) with
-  **mechanical CallRail/QBO feeds** that define the same words differently. Fix: source calls from the
-  pipeline via `crmCharts.callOutcome` (missed = call-lead in the Missed Calls stage; handled = any other
-  stage) → drops `get_call_volume` entirely (and with it the 30-day-window bug). The Missed Calls stage
-  is matched by `is_lost` + a `/miss/i` name. **Follow-up (flagged, not done):** an explicit
-  `pipeline_stages` attribute (e.g. `stage_kind`) so metrics stop string-matching stage names — a small
-  additive migration. Same "two populations" note applies to headline "Won jobs" (all QBO booked jobs)
-  vs the CRM "lead win rate" — different populations by design.
+- **Pipeline card showed the same breakdown twice (looked like a bug).** `Donut` always renders its own
+  legend (name/value/%) below the ring; `PipelineStageCard` also rendered a separate name/bar/count list
+  beside it — same stage names and counts, printed twice. Fixed by giving `Donut` an opt-out
+  (`showLegend={false}`, still shows its "No data" empty state) and making the row list the SINGLE place
+  the breakdown lives — it also now shows each stage's %-of-open-pipeline (a number the legend used to
+  carry that the bar-only version had dropped), distinct from the bar's relative-to-largest width. The
+  other three `OverviewCharts` donuts (calls/source/division/campaign) keep their legend — they have no
+  side list duplicating it.
+- **Missed-call count was wrong — root cause was the RPC's math, not its source.** `get_call_volume`
+  defined "missed" as CallRail `duration_sec = 0` → **1 call all-time**. But CallRail's OWN disposition
+  (`raw_payload.answered`, present on every call row) says **20 missed of 68** — a call can ring, drop to
+  voicemail with a few seconds of greeting, and still be a miss by CallRail's judgment; `duration > 0`
+  ≠ answered. **v2 (reverted, wrong instinct):** briefly sourced calls from the CRM lead pipeline's
+  "Missed Calls" stage instead — the owner correctly rejected this: calls are a CallRail/telephony fact,
+  not a business/pipeline judgment, and matching on a stage NAME (`is_lost` + `/miss/i`) is fragile (a
+  rename silently breaks it). **v3 (shipped) — fix the RPC, not the frontend:** standalone migration
+  `20260721_crm_call_volume_uses_answered_field.sql` body-replaces `get_call_volume` (signature/return
+  shape unchanged — every caller, incl. `CrmReports.jsx`, keeps working) to split on
+  `raw_payload->>'answered'` with a `duration_sec > 0` fallback for any older row missing the field.
+  Verified live: 20 missed / 48 answered / 68 total, matching CallRail directly. The frontend still
+  passes an explicit `ALL_TIME_FLOOR` start under "All time" (the RPC defaults to a 30-day window on a
+  null bound). The pipeline's own "Missed Calls" stage stays a **separate**, human-curated signal (it
+  still drives the lead win rate) — the two are related but not forced to agree, since one is a
+  telephony fact and the other is a business judgment about what happened after.
 
-- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 33 tests) — `toDonutSegments`,
-  `callOutcome` (pipeline-sourced calls), `pipelineOutcome` (won/lost/open + bounded win rate),
-  `agingOverThreshold`, `leadsByCampaign`, `leadsByChannel`, `newLeadsSince`, `callVolumeSplit`, plus
+- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 29 tests) — `toDonutSegments`,
+  `pipelineOutcome` (won/lost/open + bounded win rate), `agingOverThreshold`, `leadsByCampaign`,
+  `leadsByChannel`, `newLeadsSince`, `callVolumeSplit` (now driven by the CallRail-corrected RPC), plus
   `CHART_PALETTE` / `CHANNEL_COLOR` / `CHANNEL_LABELS` / `DIVISION_LABELS` / `paletteColor`. All `var(--crm-*)`
   token colors; charts are CSS `conic-gradient` + inline SVG (no chart lib — perf-budget).
 - **New charting primitives:** `src/components/crm/charts/Donut.jsx` (conic-gradient donut + legend, empty

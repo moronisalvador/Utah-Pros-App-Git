@@ -18,9 +18,10 @@
  * EXPORTS:
  *   Imported by the CRM Overview chart components (Donut, PipelineStageCard,
  *   OverviewCharts, ConversionTrendCard) and the CrmOverview page. Palette +
- *   channel/division maps, paletteColor, toDonutSegments, callVolumeSplit,
- *   agingOverThreshold, leadsByCampaign, leadsByChannel, newLeadsSince,
- *   pipelineOutcome (won/lost/open + bounded lead win rate).
+ *   channel/division maps, paletteColor, toDonutSegments, callVolumeSplit
+ *   (CallRail-sourced answered/missed), agingOverThreshold, leadsByCampaign,
+ *   leadsByChannel, newLeadsSince, pipelineOutcome (won/lost/open + bounded
+ *   lead win rate).
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -272,38 +273,4 @@ export function pipelineOutcome(sortedStages, grouped) {
     total: won + lost + open,
     win_rate: decided > 0 ? won / decided : null,
   };
-}
-
-// ─── SECTION: Call outcomes (pipeline-sourced, not CallRail duration) ──────────
-
-/**
- * Split call-type leads into handled vs missed using the CRM PIPELINE as the
- * source of truth, NOT CallRail's duration_sec. A call is "missed" when its
- * current stage is a missed-call stage (is_lost + a name matching /miss/i) —
- * because most real missed calls actually connected (voicemail, quick hangup,
- * ring-then-drop) and so carry duration_sec > 0, which the mechanical
- * duration=0 definition wrongly counts as "answered".
- *
- * `leads` are inbound_leads rows carrying {id, source_type}; `stages` are
- * get_pipeline_stages rows ({id, name, is_lost}); `positions` is the
- * {[lead_id]: {stage_id}} map. A call-lead with no/other stage is "handled".
- * handle_rate is handled/total, or null when there are no calls (guards 0/0).
- */
-export function callOutcome(leads, stages, positions) {
-  const list = Array.isArray(leads) ? leads : [];
-  const missedStageIds = new Set(
-    (Array.isArray(stages) ? stages : [])
-      .filter((s) => s?.is_lost && /miss/i.test(String(s?.name ?? '')))
-      .map((s) => s?.id),
-  );
-  let total = 0;
-  let missed = 0;
-  for (const l of list) {
-    if (l?.source_type !== 'call') continue;
-    total += 1;
-    const stageId = positions?.[l?.id]?.stage_id;
-    if (stageId != null && missedStageIds.has(stageId)) missed += 1;
-  }
-  const handled = total - missed;
-  return { total, handled, missed, handle_rate: total > 0 ? handled / total : null };
 }

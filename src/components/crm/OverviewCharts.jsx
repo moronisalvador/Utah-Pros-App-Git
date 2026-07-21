@@ -24,11 +24,12 @@
  *
  * NOTES / GOTCHAS:
  *   - Purely presentational: no useAuth/db/RPC calls. The parent page loads and
- *     shapes the data (calls → callOutcome pipeline split, channels →
+ *     shapes the data (calls → callVolumeSplit of get_call_volume, channels →
  *     leadsByChannel, divisions → get_crm_revenue_by_division, campaigns →
  *     leadsByCampaign).
- *   - "Missed" here is a PIPELINE judgment (the Missed Calls stage), not CallRail
- *     duration = 0 — see callOutcome. Most missed calls actually connected.
+ *   - "Missed" here is CallRail's OWN disposition (raw_payload.answered), not a
+ *     duration_sec = 0 proxy — a call can have real talk time and still be a
+ *     miss by CallRail's judgment.
  *   - Empty datasets are handled by Donut's own muted empty ring — this file
  *     never fabricates slices.
  *   - Owned by Phase 9 (.claude/rules/crm-wave-ownership.md).
@@ -43,9 +44,9 @@ function sumBy(arr, fn) {
 }
 
 export default function OverviewCharts({ calls, channels, divisions, campaigns }) {
-  // ─── Calls: handled vs missed (pipeline-sourced) ──────────────
+  // ─── Calls: answered vs missed (CallRail's own disposition) ──────────────
   const callSegments = [
-    { label: 'Handled', value: Number(calls?.handled) || 0, color: 'var(--crm-success)' },
+    { label: 'Answered', value: Number(calls?.answered) || 0, color: 'var(--crm-success)' },
     { label: 'Missed', value: Number(calls?.missed) || 0, color: 'var(--crm-danger-text)' },
   ];
   const callsTotal = Number(calls?.total) || 0;
@@ -80,7 +81,7 @@ export default function OverviewCharts({ calls, channels, divisions, campaigns }
       <div className="crm-card">
         <h2 className="crm-section-title">Calls</h2>
         <Donut segments={callSegments} total={callsTotal} label="CALLS" />
-        <p className="crm-note">Missed = calls in the Missed Calls pipeline stage, not just unanswered rings.</p>
+        <p className="crm-note">From CallRail's own answered/missed disposition, not just talk time.</p>
       </div>
 
       <div className="crm-card">

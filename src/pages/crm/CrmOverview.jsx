@@ -9,9 +9,10 @@
  *   jobs, real revenue, return on ad spend), a strip of sales-and-response KPIs
  *   (incl. an honest lead win rate — won ÷ decided, always ≤ 100%), the open
  *   sales pipeline (a donut plus a per-stage count list), four donut charts
- *   (calls answered vs missed, leads by source, won jobs by division, leads by
- *   campaign), and a lead-vs-won trend over time. This is the screen that
- *   replaces flipping between five different tools to see the whole story.
+ *   (calls answered vs missed — from CallRail, leads by source, won jobs by
+ *   division, leads by campaign), and a lead-vs-won trend over time. This is
+ *   the screen that replaces flipping between five different tools to see the
+ *   whole story.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/overview
@@ -27,7 +28,7 @@
  *              ./attributionParts (RangePicker, MetricCard),
  *              ./attributionData (deriveRows, rangeToDates),
  *              @/lib/crmPipeline (sortStages, groupLeadsByStage),
- *              @/lib/crmCharts (callOutcome, agingOverThreshold,
+ *              @/lib/crmCharts (callVolumeSplit, agingOverThreshold,
  *                leadsByCampaign, leadsByChannel, newLeadsSince, pipelineOutcome),
  *              @/components/ui (ErrorState),
  *              @/components/crm/OverviewKpiStrip,
@@ -38,14 +39,16 @@
  *   Data:      reads  →
  *                get_attribution_rollup RPC (ad_spend + inbound_leads + estimates
  *                  + jobs, per channel),
+ *                get_call_volume RPC (CallRail's own answered/missed
+ *                  disposition — raw_payload.answered, NOT a duration proxy),
  *                get_speed_to_lead RPC (response-time buckets),
  *                get_estimate_aging RPC (open-estimate aging buckets),
  *                get_conversion_trend RPC (leads → won over time),
  *                get_crm_revenue_by_division RPC (won jobs by division),
  *                get_pipeline_stages RPC (all pipeline stages + won/lost flags),
  *                lead_pipeline_stage table (which stage each lead sits in),
- *                inbound_leads table (leads: source_type, value, campaign,
- *                  source, time — drives calls, pipeline, campaign, new-leads)
+ *                inbound_leads table (leads: value, campaign, source, time —
+ *                  drives the pipeline, campaign donut, and new-leads KPI)
  *              writes → none
  *
  * NOTES / GOTCHAS:
@@ -56,12 +59,13 @@
  *     population from the "Won jobs" headline (all booked jobs from QBO, most of
  *     which arrive through non-CRM channels). We do NOT show won_jobs ÷ estimates
  *     as a closing rate — those populations don't nest, so it can exceed 100%.
- *   - Calls are sourced from the PIPELINE (callOutcome), not CallRail duration: a
- *     call is "missed" when it sits in the Missed Calls stage. Most missed calls
- *     actually connected (duration > 0), so the old duration = 0 definition
- *     wildly undercounted them (1 vs the pipeline's real 19). The Missed Calls
- *     stage is matched by is_lost + a /miss/i name — a stage rename would need a
- *     more robust stage attribute (flagged as a follow-up).
+ *   - Calls are sourced from CallRail's OWN answered/missed disposition
+ *     (get_call_volume → raw_payload.answered), NOT the CRM pipeline stage and
+ *     NOT a duration_sec proxy: a call can have real talk time (voicemail,
+ *     brief greeting) and still be a miss by CallRail's own judgment — the old
+ *     duration=0 proxy wildly undercounted misses (1 vs CallRail's real 20).
+ *     get_call_volume defaults to a 30-day window when a bound is null, so
+ *     under "All time" we pass ALL_TIME_FLOOR to keep the window aligned.
  *   - A failed load renders a DISTINCT error card with a Retry button — never the
  *     funnel/empty success state, never a blank page (loading-error-states.md §1).
  *   - The loading gate fires on cold load AND on range change (range is a param
@@ -85,7 +89,7 @@ import { RangePicker, MetricCard } from './attributionParts';
 import { deriveRows, rangeToDates } from './attributionData';
 import { sortStages, groupLeadsByStage } from '@/lib/crmPipeline';
 import {
-  callOutcome,
+  callVolumeSplit,
   agingOverThreshold,
   leadsByCampaign,
   leadsByChannel,
@@ -100,6 +104,11 @@ import OverdueTasksWidget from '@/components/crm/OverdueTasksWidget';
 import { ErrorState } from '@/components/ui';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+// get_call_volume defaults to the last 30 days when a bound is null — which would
+// silently show a 30-day answer rate under an "All time" range. Pass an explicit
+// floor so the call window matches the rest of the page.
+const ALL_TIME_FLOOR = '2000-01-01';
 
 export default function CrmOverview() {
   const { db } = useAuth();
@@ -116,8 +125,11 @@ export default function CrmOverview() {
     setError(false);
     try {
       const { start, end } = rangeToDates(range);
+      const callStart = start ?? ALL_TIME_FLOOR;
+      const callEnd = end ?? new Date().toISOString().slice(0, 10);
       const [
         rollup,
+        callVolume,
         speed,
         aging,
         trend,
@@ -127,6 +139,7 @@ export default function CrmOverview() {
         leads,
       ] = await Promise.all([
         db.rpc('get_attribution_rollup', { p_start_date: start, p_end_date: end }),
+        db.rpc('get_call_volume', { p_start: callStart, p_end: callEnd }),
         db.rpc('get_speed_to_lead', { p_start: start, p_end: end }),
         db.rpc('get_estimate_aging', {}),
         db.rpc('get_conversion_trend', { p_start: start, p_end: end }),
@@ -135,7 +148,7 @@ export default function CrmOverview() {
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id'),
         db.select(
           'inbound_leads',
-          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,source_type,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
+          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
         ),
       ]);
 
@@ -144,6 +157,7 @@ export default function CrmOverview() {
 
       setData({
         rollup: rollup || [],
+        callVolume: callVolume || [],
         speed: speed || [],
         aging: aging || [],
         trend: trend || [],
@@ -170,10 +184,12 @@ export default function CrmOverview() {
     const rows = deriveRows(data.rollup);
     const totals = rollupTotals(rows);
     const channels = leadsByChannel(rows);
-    // Calls are sourced from the PIPELINE, not CallRail duration: a call is
-    // "missed" when it sits in the Missed Calls stage (most such calls actually
-    // connected, so duration>0 wrongly counts them as answered). See callOutcome.
-    const calls = callOutcome(data.leads, data.stages, data.leadPositions);
+    // Calls are sourced from CallRail's OWN answered/missed disposition
+    // (get_call_volume, backed by raw_payload.answered) — not the CRM pipeline.
+    // The pipeline's "Missed Calls" stage is a curated business judgment, not a
+    // telephony fact; CallRail is the source of truth for what happened on the
+    // call itself.
+    const calls = callVolumeSplit(data.callVolume);
     const sla = speedToLeadSummary(data.speed);
     const aging = agingOverThreshold(data.aging, 31);
     const trend = deriveConversionTrend(data.trend);
@@ -208,7 +224,7 @@ export default function CrmOverview() {
     return [
       { label: 'Lead win rate', value: fmtPct(outcome.win_rate), sub: `${outcome.won} won of ${outcome.decided} decided` },
       { label: 'Speed to lead', value: fmtPct(sla.sla_rate), sub: `${sla.within_sla} of ${sla.total} within 5 min` },
-      { label: 'Calls handled', value: fmtPct(calls.handle_rate), sub: `${calls.missed} missed of ${calls.total}` },
+      { label: 'Calls answered', value: fmtPct(calls.answer_rate), sub: `${calls.missed} missed of ${calls.total}` },
       { label: 'New leads', value: String(newLeads), sub: 'last 7 days' },
       { label: 'Open leads', value: String(outcome.open), sub: 'in pipeline' },
       { label: 'Aging estimates', value: fmtMoney(aging.total_amount), sub: `${aging.count} · 31+ days` },
@@ -251,7 +267,7 @@ export default function CrmOverview() {
           />
 
           <OverviewCharts
-            calls={{ handled: derived.calls.handled, missed: derived.calls.missed, total: derived.calls.total }}
+            calls={{ answered: derived.calls.answered, missed: derived.calls.missed, total: derived.calls.total }}
             channels={derived.channels}
             divisions={derived.divisions}
             campaigns={derived.campaigns}
