@@ -1110,8 +1110,10 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
    ═══════════════════════════════════════════════════ */
 function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, onLeadPatched, db }) {
   const [promoting, setPromoting] = useState(false);
-  const [promoteName, setPromoteName] = useState('');
-  const [promoteEmail, setPromoteEmail] = useState('');
+  // Pre-filled from what the AI already pulled off the call, so promoting a
+  // known caller to a customer doesn't mean re-typing what we already have.
+  const [promoteName, setPromoteName] = useState(() => lead.caller_name || lead.contact?.name || '');
+  const [promoteEmail, setPromoteEmail] = useState(() => lead.transcript_analysis?.customer_email || '');
   const [saving, setSaving] = useState(false);
 
   const [formSchema, setFormSchema] = useState(null);
@@ -1270,6 +1272,17 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
               >
                 📞 {lead.caller_number}
               </a>
+            )}
+            {/* AI-captured from the call transcript — never overwrites the contact's own
+                record once one exists (that's the contact section below); this is purely
+                surfacing what the lead already has, since it's otherwise invisible until
+                a contact link exists to hold it (set_lead_contact_details only fills a
+                blank field on an ALREADY-linked contact). */}
+            {lead.transcript_analysis?.customer_email && (
+              <div className="crm-panel-subtitle">✉️ {lead.transcript_analysis.customer_email}</div>
+            )}
+            {lead.transcript_analysis?.customer_address && (
+              <div className="crm-panel-subtitle">📍 {lead.transcript_analysis.customer_address}</div>
             )}
           </div>
           <button className="crm-btn crm-btn-ghost crm-panel-close" onClick={onClose}>Close</button>
