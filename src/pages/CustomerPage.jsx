@@ -69,6 +69,7 @@ export default function CustomerPage(){
   const[showNewInvoice,setShowNewInvoice]=useState(false);
   const[showMerge,setShowMerge]=useState(false);
   const[showMore,setShowMore]=useState(false);
+  const[activity,setActivity]=useState([]);
 
   useEffect(()=>{loadData();},[contactId]);
   const loadData=async()=>{
@@ -79,6 +80,9 @@ export default function CustomerPage(){
       setData(result);
       db.select('insurance_carriers','order=name.asc&select=id,name,short_name').then(setCarriers).catch(()=>{});
       db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(setEmployees).catch(()=>{});
+      // Same feed the CRM contact drawer uses — richer than get_customer_detail's
+      // job_notes/phase_history-only activity (adds claims, SMS, tasks, invoices, etc).
+      db.rpc('get_contact_activity',{p_contact_id:contactId}).then(setActivity).catch(()=>setActivity([]));
     }catch(err){console.error('Customer load:',err);}finally{setLoading(false);}
   };
 
@@ -90,7 +94,7 @@ export default function CustomerPage(){
   if(!data)return null;
 
   const c=data.contact;const claims=data.claims||[];const fin=data.financials||{};const files=data.files||[];
-  const activity=data.activity||[];const addresses=data.addresses||[];
+  const addresses=data.addresses||[];
   const initials=c.name?c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2):'?';
   const totalJobs=claims.reduce((s,cl)=>s+(cl.jobs?.length||0),0);
   const TABS=[{key:'overview',label:'Overview'},{key:'claims',label:'Claims & Jobs',count:totalJobs},{key:'financial',label:'Financial'},{key:'files',label:'Files',count:files.length},{key:'activity',label:'Activity',count:activity.length}];
@@ -468,15 +472,18 @@ function FilesTab({files}){
     </div>)}</div></div>)}</div>);
 }
 
-/* ═══ ACTIVITY TAB ═══ */
+/* ═══ ACTIVITY TAB ═══
+   Rows come from get_contact_activity — the same feed the CRM contact drawer
+   uses (activity_type/occurred_at/title/body/meta), not the old
+   get_customer_detail-scoped {type,date,content,author} shape. */
 function ActivityTab({activity}){
   if(!activity.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📝</div><div className="empty-state-text">No activity yet</div></div>);
   const fmt=v=>{if(!v)return'—';return new Date(v).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});};
-  return(<div className="job-page-timeline">{activity.map(item=><div key={`${item.type}-${item.id}`} className={`job-page-timeline-item timeline-${item.type}`}>
+  const author=item=>item.meta?.created_by_name||item.meta?.author_name||item.meta?.sent_by_name||item.meta?.changed_by_name||item.meta?.moved_by_name||item.meta?.assignee_name;
+  return(<div className="job-page-timeline">{activity.map((item,i)=><div key={`${item.activity_type}-${i}`} className={`job-page-timeline-item timeline-${item.activity_type}`}>
     <div className="job-page-timeline-dot"/><div className="job-page-timeline-content">
-      <div className="job-page-timeline-header"><span className="job-page-timeline-author">{item.author}</span><span className="job-page-timeline-time">{fmt(item.date)}</span></div>
-      <div className="job-page-timeline-text">{item.content}</div>
-      {item.job_number&&<span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',marginTop:2,display:'inline-block'}}>Job: {item.job_number}</span>}
+      <div className="job-page-timeline-header"><span className="job-page-timeline-author">{item.title}{author(item)?` — ${author(item)}`:''}</span><span className="job-page-timeline-time">{fmt(item.occurred_at)}</span></div>
+      {item.body&&<div className="job-page-timeline-text">{item.body}</div>}
     </div></div>)}</div>);
 }
 
