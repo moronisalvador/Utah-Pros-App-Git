@@ -7349,3 +7349,46 @@ the existing `OverdueTasksWidget`.
 - **Follow-up (not done here):** document the CRM chart primitives / `--crm-*` token layer as a "CRM Kit"
   section in `UPR-Design-System.md` (design-consistency-checker finding; that doc is design-system-owned,
   left for its owner to avoid a cross-initiative edit).
+- **Pipeline card showed the same breakdown twice (looked like a bug, owner-caught).** `Donut` always
+  renders its own legend (name/value/%) below the ring; `PipelineStageCard` ALSO rendered a separate
+  name/bar/count list beside it — same stage names and counts, printed twice. Fixed by giving `Donut` a
+  `showLegend={false}` opt-out (it still shows its "No data" empty state — that's feedback, not a
+  duplicate); the row list is now the ONE place the breakdown lives, with %-of-open-pipeline added back
+  (a real number the legend used to carry, distinct from the bar's relative-to-largest width). The
+  other three `OverviewCharts` donuts keep their legend — no side list duplicates them.
+
+**Integrating with the AI call-qualification system (owner-directed, 2026-07-21 — same day, earlier
+session).** The owner had already built an AI transcript classifier (`functions/api/transcribe-call.js`
++ `functions/lib/zeroTurnClassifier.js`) that writes `inbound_leads.transcript_analysis.is_customer_
+inquiry` (+ `caller_never_responded`, `service_match`, `inspection_scheduled`) and, on a spam verdict,
+calls `set_lead_spam_flag()` — which the pipeline-stage-clearing migration
+(`20260721_crm_spam_flag_clears_pipeline_stage.sql`) already wires to drop the lead's Kanban card. The
+owner asked whether the Overview should reuse this screening rather than re-deriving spam itself — and
+whether anything from that earlier session had been overwritten. **Confirmed: nothing was touched** —
+this initiative's prior 3 commits only added new Overview-scoped files + one narrow, signature-frozen
+`get_call_volume` body-replace.
+
+Investigation found the dashboard ALREADY correctly uses that system: every count that filters
+`spam_flag=eq.false` (headline Leads/Estimates/Won-jobs, `get_call_volume`, the pipeline) automatically
+excludes every call the classifier has actually caught, because `spam_flag` IS the classifier's own
+output signal. Two real gaps surfaced and were fixed:
+
+1. **AI screening COVERAGE, not correctness, was the real risk.** Classification only runs when a human
+   clicks "Transcribe" or a backfill job runs — it is not automatic on ingest. Live check: **41 of 67
+   call-leads (61%) counted in "Leads" had never been screened at all** — an unknown-risk population,
+   not a wrong number. Added `src/lib/crmCharts.js`'s `callScreeningCoverage(leads)` (+ tests) — a pure,
+   read-only function that reports whether `transcript_analysis` carries the `is_customer_inquiry` key
+   (i.e., has the classifier run yet), and makes NO spam judgment of its own. `CrmOverview.jsx` renders
+   an honest caption under the headline KPIs: *"26 of 67 calls AI-screened for spam · 41 pending
+   (confirmed spam is already excluded from the counts above)."* Requires only widening the existing
+   `inbound_leads` select to include `source_type` + `transcript_analysis` (no migration, no new RPC).
+2. **`get_attribution_rollup`'s leads count didn't exclude merged repeat-call duplicates** (found while
+   auditing the same code path) — the merge system built earlier today
+   (`20260721_crm_merge_repeat_call_leads.sql`) keeps a repeat call as its own `inbound_leads` row
+   (`merged_into_lead_id` set) so it never gets a second Kanban card, but the RPC's `leads_agg` CTE never
+   filtered that column. Fixed via `20260721_crm_attribution_excludes_merged_leads.sql` — a body-only
+   `CREATE OR REPLACE` (signature/return shape unchanged, every caller incl. `CrmReports.jsx` and
+   `CrmAttribution.jsx` keeps working), adding one `AND il.merged_into_lead_id IS NULL` line. Verified
+   live: leads dropped from 71 to 70 (exactly the one known duplicate). Committed before/after-delta
+   test: `supabase/tests/crm_attribution_excludes_merged_leads.test.js`.
+   `migration-safety-checker` + `upr-pattern-checker`: both **pass**.
