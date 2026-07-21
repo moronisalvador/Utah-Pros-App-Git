@@ -42,9 +42,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
-const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 // ─── SECTION: Vocabulary (triggers, operators, actions) ──────────────
 // Only event types the RPC layer actually emits (system_events is RPC-fed).

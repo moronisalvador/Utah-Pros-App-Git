@@ -40,9 +40,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconTasks } from '@/lib/crmIcons';
 import { isTaskOverdue } from '@/components/crm/OverdueTasksWidget';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
-const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 const STATUS_TABS = [{ key: 'open', label: 'Open' }, { key: 'done', label: 'Done' }];
 

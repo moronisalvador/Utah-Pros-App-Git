@@ -38,9 +38,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
-const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 const STATUS_LABELS = { draft: 'Draft', active: 'Active', paused: 'Paused', archived: 'Archived' };
 const newStep = (channel = 'email') => ({ channel, delay_hours: 24, subject: '', body: '' });

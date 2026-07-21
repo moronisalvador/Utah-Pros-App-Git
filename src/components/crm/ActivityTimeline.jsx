@@ -43,8 +43,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { turnsFromAnalysis, parseTranscript } from '@/lib/transcript';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { err } from '@/lib/toast';
 
 const BODY_PREVIEW_CHARS = 220;
 const TRANSCRIPT_PREVIEW_TURNS = 2;

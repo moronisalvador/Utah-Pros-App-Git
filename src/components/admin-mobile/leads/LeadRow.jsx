@@ -37,8 +37,7 @@ import TranscriptView from './TranscriptView';
 import {
   STATUS_OPTIONS, statusLabel, formatDuration, formatValue, isAwaitingRecording, contactLabelFor,
 } from './leadFormat';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { err } from '@/lib/toast';
 
 export default function LeadRow({ lead, onStatusChange }) {
   const [audioUrl, setAudioUrl] = useState(null);

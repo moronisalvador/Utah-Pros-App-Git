@@ -32,8 +32,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconTasks } from '@/lib/crmIcons';
 import { isStale } from '../../../functions/lib/date-mt.js';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { err } from '@/lib/toast';
 
 // True when a task's due DATE is a prior Mountain-Time day relative to `now`.
 // A task with no due date is never overdue. Mirrors get_overdue_tasks in SQL.

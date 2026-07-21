@@ -46,9 +46,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { sortStages } from '@/lib/crmPipeline';
 import { formatPhone } from '@/lib/phone';
-
-const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { ok, err } from '@/lib/toast';
 
 const EMPTY_FORM = { name: '', color: '#6366f1', is_won: false, is_lost: false };
 
