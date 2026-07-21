@@ -57,7 +57,31 @@ describe('parseCleanupResponse', () => {
       customerEmail: null,
       customerAddress: null,
       customerFullName: null,
+      isCustomerInquiry: true,
+      serviceMatch: null,
     });
+  });
+
+  it('reads is_customer_inquiry leniently — only a literal false counts, anything else (or missing) defaults to true', () => {
+    const noField = '{"turns":["Hi there."],"summary":"x"}';
+    expect(parseCleanupResponse(noField, 1)?.isCustomerInquiry).toBe(true);
+    const explicitFalse = '{"turns":["Hi there."],"summary":"x","is_customer_inquiry":false}';
+    expect(parseCleanupResponse(explicitFalse, 1)?.isCustomerInquiry).toBe(false);
+    const truthyString = '{"turns":["Hi there."],"summary":"x","is_customer_inquiry":"false"}';
+    expect(parseCleanupResponse(truthyString, 1)?.isCustomerInquiry).toBe(true);
+  });
+
+  it('only accepts the literal service_match values, case-insensitively, else null', () => {
+    const inScope = '{"turns":["Hi there."],"summary":"x","service_match":"in_scope"}';
+    expect(parseCleanupResponse(inScope, 1)?.serviceMatch).toBe('in_scope');
+    const outOfScope = '{"turns":["Hi there."],"summary":"x","service_match":"OUT_OF_SCOPE"}';
+    expect(parseCleanupResponse(outOfScope, 1)?.serviceMatch).toBe('out_of_scope');
+    const garbage = '{"turns":["Hi there."],"summary":"x","service_match":"maybe"}';
+    expect(parseCleanupResponse(garbage, 1)?.serviceMatch).toBeNull();
+    const missing = '{"turns":["Hi there."],"summary":"x"}';
+    expect(parseCleanupResponse(missing, 1)?.serviceMatch).toBeNull();
+    const nullField = '{"turns":["Hi there."],"summary":"x","service_match":null}';
+    expect(parseCleanupResponse(nullField, 1)?.serviceMatch).toBeNull();
   });
 
   it('passes through a stated full name, trimmed, and null when blank/missing', () => {
@@ -124,6 +148,8 @@ describe('parseCleanupResponse', () => {
       customerEmail: null,
       customerAddress: null,
       customerFullName: null,
+      isCustomerInquiry: true,
+      serviceMatch: null,
     });
   });
 
@@ -204,6 +230,19 @@ describe('applyCleanup', () => {
     const out = applyCleanup(analysis, { turns: cleaned.turns, summary: 'x', customerFullName: 'Silvina Wright' });
     expect(out.customer_full_name).toBe('Silvina Wright');
     expect(applyCleanup(analysis, { turns: cleaned.turns, summary: 'x' }).customer_full_name).toBeNull();
+  });
+
+  it('sets is_customer_inquiry/service_match from the cleaned result, defaulting to true/null', () => {
+    const out = applyCleanup(analysis, { turns: cleaned.turns, summary: 'x', isCustomerInquiry: false, serviceMatch: 'out_of_scope' });
+    expect(out.is_customer_inquiry).toBe(false);
+    expect(out.service_match).toBe('out_of_scope');
+
+    const bare = applyCleanup(analysis, { turns: cleaned.turns, summary: 'x' });
+    expect(bare.is_customer_inquiry).toBe(true);
+    expect(bare.service_match).toBeNull();
+
+    const bogusServiceMatch = applyCleanup(analysis, { turns: cleaned.turns, summary: 'x', serviceMatch: 'maybe' });
+    expect(bogusServiceMatch.service_match).toBeNull();
   });
 
   it('leaves a turn unchanged (no rawText) when cleaned has no counterpart for it', () => {

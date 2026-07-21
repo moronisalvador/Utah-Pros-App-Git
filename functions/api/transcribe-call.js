@@ -46,14 +46,19 @@
  *                           crm_advance_lead_if_forward, when the AI detects an
  *                           inspection was scheduled); inbound_leads.spam_flag (via
  *                           set_lead_spam_flag, when the AI detects the caller never
- *                           responded); a linked contact's blank email/billing_address
- *                           (via set_lead_contact_details, when the AI pulls a clearly-
- *                           stated one off the call); system_events, worker_runs
+ *                           responded OR the call isn't a real customer inquiry at
+ *                           all — vendor/solicitor/compliance calls); a linked
+ *                           contact's blank email/billing_address (via
+ *                           set_lead_contact_details, when the AI pulls a clearly-
+ *                           stated one off the call); lead_pipeline_stage +
+ *                           lead_stage_history (via crm_disqualify_lead_if_open, when
+ *                           the AI detects a real inquiry for a service Utah Pros
+ *                           doesn't offer); system_events, worker_runs
  *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
  *                  (Claude Haiku — names the Agent/Customer speakers, then cleans up
  *                  wording + writes the summary + flags inspection_scheduled/
- *                  caller_never_responded + extracts customer_email/customer_address;
- *                  all best-effort)
+ *                  caller_never_responded/is_customer_inquiry/service_match +
+ *                  extracts customer_email/customer_address; all best-effort)
  *
  * NOTES / GOTCHAS:
  *   - cleanAndSummarize() also asks Claude: whether a real inspection/appointment was
@@ -65,8 +70,16 @@
  *     reliably auto-remove it from the pipeline); and the customer's email/address
  *     when clearly stated (customer_email/customer_address — best-effort calls
  *     set_lead_contact_details, which only fills a BLANK field on an ALREADY-linked
- *     contact and never creates one). Any of these failing never blocks the
- *     transcription write.
+ *     contact and never creates one); whether the call is a real customer inquiry
+ *     at all (is_customer_inquiry — false catches a vendor/solicitor/compliance
+ *     caller who DID speak, unlike caller_never_responded which only catches dead
+ *     air; best-effort calls set_lead_spam_flag the same as caller_never_responded);
+ *     and, when it is a real inquiry, whether it's for a service Utah Pros offers
+ *     (service_match — "out_of_scope" best-effort calls
+ *     crm_disqualify_lead_if_open(lead_id, reason), a SECURITY DEFINER RPC that
+ *     moves an OPEN lead straight to the org's "Lost" stage, never touching a
+ *     spam-flagged or already-terminal Won/Lost lead). Any of these failing never
+ *     blocks the transcription write.
  *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
  *     entities) in one call. CallRail gives us a MONO recording, so `multichannel`
  *     is intentionally NOT requested (on a 1-channel file it suppresses diarization);
@@ -150,8 +163,12 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 6) Extract the customer's full name (first AND last, if both were stated anywhere in the call — including if they spelled it out letter by letter) into customer_full_name. Read the actual turn content for this, not just the speaker label the turns already carry — a speaker turn may already be labeled with just a first name from an earlier pass, but the full conversation may state the last name separately later on (e.g. the agent asks "what's your last name?" and the customer answers). Only include what was actually stated — never guess a last name. Use null if no name was stated at all.
 
+7) Decide whether this call is a real customer service inquiry at all. Set is_customer_inquiry to false when the caller is a vendor, solicitor, recruiter, or is calling about something with NO real service request — e.g. a compliance/OSHA callback request, a sales pitch TO Utah Pros, a wrong number, or an automated/robocall. Set it to true whenever the caller is asking about (or clearly needs) restoration-type work, even if the fit is unclear — err toward true when in doubt; false positives here wrongly hide a real customer.
+
+8) ONLY when is_customer_inquiry is true, decide whether the requested service is one Utah Pros Restoration actually offers — water damage, fire damage, mold remediation, storm/roofing damage, and related restoration/reconstruction/rebuild work — or clearly a DIFFERENT service, e.g. HVAC/dryer-vent cleaning, general plumbing unrelated to water damage, pest control, landscaping, or junk removal. Set service_match to "in_scope" when it's a fit or the fit is unclear, "out_of_scope" ONLY when the caller clearly and specifically wants a real but different service, or null when is_customer_inquiry is false or the call gives no basis to judge.
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>","is_customer_inquiry":true|false,"service_match":"in_scope"|"out_of_scope"|null}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
@@ -356,6 +373,28 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     } catch { /* spam auto-flagging is a bonus, not a reason to fail the transcription */ }
   }
 
+  // The AI detected the caller DID speak but this isn't a real customer service
+  // inquiry at all (vendor/solicitor/compliance callback, etc.) — the case
+  // caller_never_responded can't catch since it only fires on dead air.
+  // Best-effort, same auto-flag as above.
+  if (analysis?.is_customer_inquiry === false) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_not_a_customer_inquiry' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI detected a real inquiry for a service Utah Pros doesn't offer —
+  // disqualify it (move to Lost) rather than leaving it sitting in the pipeline
+  // as a live lead. Best-effort; no-ops on a spam-flagged or already-terminal lead.
+  if (analysis?.service_match === 'out_of_scope') {
+    try {
+      await db.rpc('crm_disqualify_lead_if_open', {
+        p_lead_id: lead.id,
+        p_reason: 'AI detected: wanted a service Utah Pros does not offer',
+      });
+    } catch { /* pipeline auto-disqualify is a bonus, not a reason to fail the transcription */ }
+  }
+
   // The AI pulled a clearly-stated email/address off the call — backfill a
   // blank field on an already-linked contact (RPC no-ops if the lead has no
   // contact_id yet; never creates one). Best-effort.
@@ -428,6 +467,19 @@ export async function reclassifyLead(db, env, lead) {
     try {
       await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_caller_never_responded' });
     } catch { /* spam auto-flagging is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.is_customer_inquiry === false) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_not_a_customer_inquiry' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.service_match === 'out_of_scope') {
+    try {
+      await db.rpc('crm_disqualify_lead_if_open', {
+        p_lead_id: lead.id,
+        p_reason: 'AI detected: wanted a service Utah Pros does not offer',
+      });
+    } catch { /* pipeline auto-disqualify is a bonus, not a reason to fail reclassification */ }
   }
   if (analysis?.customer_email || analysis?.customer_address) {
     try {
