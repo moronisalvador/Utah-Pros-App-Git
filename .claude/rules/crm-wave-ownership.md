@@ -228,3 +228,30 @@ as amended here.
   (see the roadmap spec).
 - **index.css:** only inside a new `/* ─── CRM WAVE RESERVED — Phase 5-Ops (Session L) ─── */`
   marker at the bottom.
+
+---
+
+## 9. Overview-enrichment addendum (2026-07-21) — CrmOverview skeleton unfreeze (owner-approved)
+
+Recorded so §1's frozen list stays truthful. §1 froze `src/pages/crm/CrmOverview.jsx` as a slot
+**skeleton** ("Fill the slot components they render, never the skeletons") to protect the Wave-1
+*parallel* sessions from colliding on it. Wave 1 is complete (Phase 6b merged 2026-07-02; no parallel
+CRM session is in flight), and standalone post-wave CRM edits are already precedented (the §1 AMENDED
+note's 2026-07-21 standalone production-fix migrations). The **owner directed and approved** a standalone
+"dashboard gap" initiative that enriches the CRM Overview front page into a sales & marketing command
+center (KPIs + donut/trend charts), which requires editing the skeleton itself (data load + layout), not
+just the slot components.
+
+- **Authorized edit (this initiative only):** `src/pages/crm/CrmOverview.jsx` (rewrite to own a single
+  `Promise.all` read + memoized derivations + the new layout) and a new
+  `/* ─── CRM OVERVIEW ENRICHMENT (dashboard gap) ─── */` marker at the bottom of `src/index.css`.
+- **New presentational components (own files, no collision):** `src/lib/crmCharts.js` (+ test),
+  `src/components/crm/charts/{Donut,MiniTrend}.jsx`,
+  `src/components/crm/{OverviewKpiStrip,PipelineStageCard,OverviewCharts,ConversionTrendCard}.jsx`.
+- **Zero schema / zero migrations** — reads only through existing RPCs
+  (`get_attribution_rollup`, `get_call_volume`, `get_speed_to_lead`, `get_estimate_aging`,
+  `get_conversion_trend`, `get_crm_revenue_by_division`, `get_pipeline_stages`) +
+  `lead_pipeline_stage`/`inbound_leads` selects. No frozen RPC signature touched; `ForecastWidget` /
+  `OverdueTasksWidget` kept as-is.
+- **Everything else in §§1–8 stays frozen.** This is a one-file skeleton unfreeze for a disclosed,
+  owner-approved standalone initiative — not a reopening of the wave.

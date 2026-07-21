@@ -4354,7 +4354,7 @@ hand-computed) committed failing before the module existed, then green.
 **Frontend** (fill the three CRM-shell stub pages, `.crm-*` design system):
 - **CrmOverview.jsx** (`/crm/overview`) — KPI cards (spend/leads/estimates/won/revenue/ROAS) + the
   Leads→Estimates→Won funnel (bars scale to the largest stage so they stay readable before CallRail
-  leads accumulate).
+  leads accumulate). **Enriched 2026-07-21 (dashboard-gap initiative — see the dated entry below).**
 - **CrmAttribution.jsx** (`/crm/attribution`) — per-channel table (Spend, Leads, Cost/lead,
   Estimates, Won, Cost/job, Revenue, ROAS; zero-spend rows show `—`) + Google Ads by campaign/agency.
 - **CrmReports.jsx** (`/crm/reports`) — Source ROI, Won revenue by division, funnel conversion.
@@ -7280,3 +7280,36 @@ category, age rating, nutrition-label table, export-compliance answer, review no
 into App Store Connect. Still genuinely owner-only: the distribution-model decision, Apple Developer
 Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/Simulator
 build), merging the four open PRs, and the actual App Store Connect data entry.
+
+---
+
+### CRM Overview dashboard-gap enrichment (2026-07-21)
+
+Standalone, owner-approved initiative (disclosed manifest amendment: `.claude/rules/crm-wave-ownership.md`
+§9) that turns the thin `/crm/overview` front page into a sales & marketing command center. **Zero DB
+migration** — reads only through existing RPCs. New layout: the 6 headline KPI cards → an actionable KPI
+strip (closing rate · speed-to-lead SLA · call answer rate · new leads (7d) · weighted open pipeline $ ·
+aging estimates 31+ $) → a Sales-pipeline card (leads-by-stage donut + per-stage count·weighted-$ rows) →
+a 4-donut charts grid (calls answered vs missed · leads by source · won jobs by division · leads by
+campaign) → a leads-vs-won conversion-trend mini bar chart → the existing funnel → the existing
+`OverdueTasksWidget` + `ForecastWidget`.
+
+- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 25 tests) — `toDonutSegments`,
+  `callVolumeSplit`, `agingOverThreshold`, `leadsByCampaign`, `leadsByChannel`, `newLeadsSince`, plus
+  `CHART_PALETTE` / `CHANNEL_COLOR` / `CHANNEL_LABELS` / `DIVISION_LABELS` / `paletteColor`. All `var(--crm-*)`
+  token colors; charts are CSS `conic-gradient` + inline SVG (no chart lib — perf-budget).
+- **New charting primitives:** `src/components/crm/charts/Donut.jsx` (conic-gradient donut + legend, empty
+  state, no animation) and `src/components/crm/charts/MiniTrend.jsx` (inline-SVG grouped bars).
+- **New Overview widgets (presentational, props-only, no `db`):** `OverviewKpiStrip.jsx`,
+  `PipelineStageCard.jsx`, `OverviewCharts.jsx`, `ConversionTrendCard.jsx` (all `src/components/crm/`).
+- **`CrmOverview.jsx`** now owns a single `Promise.all` load (`get_attribution_rollup`, `get_call_volume`,
+  `get_speed_to_lead`, `get_estimate_aging`, `get_conversion_trend`, `get_crm_revenue_by_division`,
+  `get_pipeline_stages`, `lead_pipeline_stage` + `inbound_leads` selects) + memoized derivations. A failed
+  load renders the shared `<ErrorState onRetry>` (not the funnel/empty state); loading uses a static
+  skeleton; toast via `err()` (fixed the old raw `upr:toast` dispatch).
+- **"Service type" honesty:** leads carry no division/service-type field (division is a post-conversion
+  `jobs` attribute), so the "service type" donut is **won jobs by division** (`get_crm_revenue_by_division`),
+  captioned accordingly.
+- **Follow-up (not done here):** document the CRM chart primitives / `--crm-*` token layer as a "CRM Kit"
+  section in `UPR-Design-System.md` (design-consistency-checker finding; that doc is design-system-owned,
+  left for its owner to avoid a cross-initiative edit).

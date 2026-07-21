@@ -9673,6 +9673,100 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 
+/* ─── CRM OVERVIEW ENRICHMENT (dashboard gap) ───
+   Owner: CRM Overview enrichment. Styles the enriched /crm/overview surface:
+   the four-donut charts grid, the pipeline card, the mini-trend, the load
+   skeleton and the failed-load error card. Tokens only; static (no @keyframes,
+   no motion that lacks a reduced-motion fallback); 390px-safe (grids collapse
+   to one column, nothing overflows horizontally). */
+
+/* Four-panel donut charts grid — collapses to 1 column on narrow screens. */
+.crm-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+/* ── Donut chart ── */
+.crm-donut { display: flex; flex-direction: column; align-items: center; gap: var(--space-4); }
+.crm-donut-ring {
+  position: relative; border-radius: var(--radius-full); flex-shrink: 0;
+  max-width: 100%;
+}
+.crm-donut-hole {
+  position: absolute; inset: 22%; border-radius: var(--radius-full);
+  background: var(--crm-bg-card);
+  display: flex; align-items: center; justify-content: center;
+}
+.crm-donut-center { display: flex; flex-direction: column; align-items: center; line-height: 1.1; text-align: center; }
+.crm-donut-total { font-size: 24px; font-weight: 700; color: var(--crm-text-primary); }
+.crm-donut-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--crm-text-tertiary); margin-top: 2px;
+}
+.crm-donut-sub { font-size: 11px; color: var(--crm-text-secondary); margin-top: 2px; }
+
+.crm-donut-legend { display: flex; flex-direction: column; gap: 6px; width: 100%; min-width: 0; }
+.crm-donut-legend-row { display: flex; align-items: center; gap: var(--space-2); font-size: 12px; min-width: 0; }
+.crm-donut-swatch { flex-shrink: 0; width: 10px; height: 10px; border-radius: 3px; }
+.crm-donut-legend-label {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--crm-text-secondary);
+}
+.crm-donut-legend-val { flex-shrink: 0; font-weight: 600; color: var(--crm-text-primary); }
+.crm-donut-legend-pct { flex-shrink: 0; width: 46px; text-align: right; color: var(--crm-text-tertiary); }
+.crm-donut-empty { font-size: 12px; color: var(--crm-text-tertiary); text-align: center; }
+
+/* ── Pipeline card ── */
+.crm-pipeline-card { min-width: 0; }
+.crm-pipeline-header {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3);
+  flex-wrap: wrap; margin-bottom: var(--space-4);
+}
+.crm-pipeline-header .crm-section-title { margin: 0; }
+.crm-pipeline-total { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.crm-pipeline-total .crm-note { margin: 0; }
+.crm-pipeline-total-val { font-size: 20px; font-weight: 700; color: var(--crm-text-primary); }
+
+.crm-pipeline-layout {
+  display: grid; grid-template-columns: auto 1fr; gap: var(--space-5); align-items: center;
+}
+.crm-pipeline-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.crm-pipeline-row { display: grid; grid-template-columns: 1fr auto minmax(64px, 96px) auto; align-items: center; gap: var(--space-3); min-width: 0; }
+.crm-pipeline-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--crm-text-primary);
+}
+.crm-pipeline-count { font-size: 13px; color: var(--crm-text-secondary); font-variant-numeric: tabular-nums; }
+.crm-pipeline-bar-track { height: 8px; border-radius: var(--radius-full); background: var(--crm-bg-content); overflow: hidden; }
+.crm-pipeline-bar-fill { display: block; height: 100%; border-radius: var(--radius-full); background: var(--crm-accent); }
+.crm-pipeline-val { font-size: 13px; font-weight: 600; color: var(--crm-text-primary); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Mini trend (grouped bars) ── */
+.crm-minitrend { display: flex; flex-direction: column; gap: var(--space-3); }
+.crm-minitrend-svg { display: block; width: 100%; max-width: 100%; overflow: visible; }
+.crm-minitrend-legend { display: flex; gap: var(--space-4); font-size: 12px; color: var(--crm-text-secondary); }
+.crm-minitrend-legend-row { display: inline-flex; align-items: center; gap: 6px; }
+.crm-minitrend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+.crm-minitrend-empty { font-size: 12px; color: var(--crm-text-tertiary); padding: var(--space-4) 0; }
+
+/* Failed-load state uses the shared <ErrorState> primitive (@/components/ui,
+   .ui-error-state) — it carries role="alert" for screen readers. No CRM-local
+   error-card styles here on purpose. */
+
+/* ── Load skeleton (static muted blocks — no shimmer) ── */
+.crm-skeleton { display: flex; flex-direction: column; gap: var(--space-5); }
+.crm-skeleton-card { background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); }
+.crm-skeleton-line { height: 12px; border-radius: 6px; background: var(--crm-bg-content); }
+
+@media (max-width: 768px) {
+  .crm-charts-grid { grid-template-columns: 1fr; gap: var(--space-4); }
+  .crm-pipeline-layout { grid-template-columns: 1fr; gap: var(--space-4); }
+  .crm-pipeline-total { align-items: flex-start; text-align: left; }
+}
+
+
 /* ─── FEEDBACK MEDIA — Phase F (Session F): /feedback page + shared FeedbackAttachments composer ───
    Owner: Phase F. Sessions B/C style THEIR surfaces in the reserved blocks below, not here. */
 
