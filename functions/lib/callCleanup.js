@@ -13,9 +13,14 @@
  *   an actual inspection/appointment agreed to (used to auto-advance the lead
  *   to the "Inspection Scheduled" pipeline stage), (4) flag whether the agent
  *   spoke but the caller never actually responded (used to auto-flag the lead
- *   as spam), and (5) pull out the customer's email/address when they clearly
+ *   as spam), (5) pull out the customer's email/address when they clearly
  *   stated it themselves (used to backfill a blank field on an already-linked
- *   contact). This file: formats the transcript for that ask
+ *   contact), and (6) pull out the customer's full name from the ACTUAL
+ *   conversation content — not from the speaker labels the turns already carry
+ *   — since a re-run can see a turn already labeled with just a first name
+ *   from an earlier pass, and the full name (including a last name stated
+ *   later in the call) needs to be re-derived from the real content, not
+ *   assumed from the existing label. This file: formats the transcript for that ask
  *   (buildCleanupPrompt), safely reads Claude's JSON answer back
  *   (parseCleanupResponse), and applies it to the transcript (applyCleanup).
  *   The Claude API call itself lives in the worker; everything here is pure
@@ -30,7 +35,7 @@
  *   Exports:   buildCleanupPrompt(turns) → string
  *              parseCleanupResponse(text, expectedCount) → { turns, summary,
  *                inspectionScheduled, callerNeverResponded, customerEmail,
- *                customerAddress } | null
+ *                customerAddress, customerFullName } | null
  *              applyCleanup(analysis, cleaned) → analysis
  *
  * NOTES / GOTCHAS:
@@ -107,7 +112,10 @@ export function parseCleanupResponse(text, expectedCount) {
   const rawAddress = typeof obj.customer_address === 'string' ? obj.customer_address.trim() : '';
   const customerAddress = rawAddress || null;
 
-  return { turns, summary, inspectionScheduled, callerNeverResponded, customerEmail, customerAddress };
+  const rawFullName = typeof obj.customer_full_name === 'string' ? obj.customer_full_name.trim() : '';
+  const customerFullName = rawFullName || null;
+
+  return { turns, summary, inspectionScheduled, callerNeverResponded, customerEmail, customerAddress, customerFullName };
 }
 
 /**
@@ -138,5 +146,6 @@ export function applyCleanup(analysis, cleaned) {
     caller_never_responded: cleaned.callerNeverResponded === true,
     customer_email: cleaned.customerEmail || null,
     customer_address: cleaned.customerAddress || null,
+    customer_full_name: cleaned.customerFullName || null,
   };
 }

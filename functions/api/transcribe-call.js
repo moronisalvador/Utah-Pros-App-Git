@@ -16,12 +16,14 @@
  *        body: { lead_id }                   — transcribe one call, OR
  *              { backfill: true, days?: 30 }   — transcribe every recent call that
  *                                                has a recording but no transcript, OR
- *              { reclassify: true, days?: 90, force?: false } — re-run the AI naming
- *                                                + clean-up passes against already-
+ *              { reclassify: true, lead_id?, days?: 90, force?: false } — re-run the AI
+ *                                                naming + clean-up passes against already-
  *                                                transcribed leads (no Deepgram/CallRail
  *                                                creds needed, no re-transcription cost).
- *                                                Default targets only leads whose stored
- *                                                analysis predates inspection_scheduled;
+ *                                                lead_id targets exactly one lead
+ *                                                (bypasses days/force). Otherwise, default
+ *                                                targets only leads whose stored analysis
+ *                                                predates inspection_scheduled;
  *                                                force:true re-processes every matching
  *                                                call regardless (e.g. to pick up a
  *                                                naming-prompt improvement on leads
@@ -146,8 +148,10 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 5) Extract the customer's email address and mailing/service address ONLY if the customer clearly stated it themselves during the call — never guess, infer, or use the business's own address. customer_email must be a literal email address spoken or spelled out; customer_address must be a real street address (not just a city/neighborhood name). Use null for either when not clearly stated.
 
+6) Extract the customer's full name (first AND last, if both were stated anywhere in the call — including if they spelled it out letter by letter) into customer_full_name. Read the actual turn content for this, not just the speaker label the turns already carry — a speaker turn may already be labeled with just a first name from an earlier pass, but the full conversation may state the last name separately later on (e.g. the agent asks "what's your last name?" and the customer answers). Only include what was actually stated — never guess a last name. Use null if no name was stated at all.
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>"}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
@@ -314,11 +318,16 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     p_analysis: analysis,
   });
 
-  // Auto-name the lead from the caller's detected name (fills caller_name; backfills
-  // a linked contact's name only if blank; never creates a contact). Best-effort.
-  if (callerName) {
+  // Auto-name the lead. Prefer cleanAndSummarize's customer_full_name — it reads
+  // the ACTUAL conversation content (not just the current speaker label), so it
+  // reliably finds a last name even when nameSpeakers() only got a first name.
+  // Falls back to nameSpeakers()'s result when the cleanup pass found nothing.
+  // p_allow_upgrade:true is safe here too: it only ever extends an existing
+  // name, never replaces it with something unrelated (see set_lead_caller_name).
+  const bestCallerName = analysis?.customer_full_name || callerName;
+  if (bestCallerName) {
     try {
-      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName });
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: bestCallerName, p_allow_upgrade: true });
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
@@ -394,9 +403,13 @@ export async function reclassifyLead(db, env, lead) {
     p_analysis: analysis,
   });
 
-  if (callerName) {
+  // Prefer customer_full_name (reads actual content, reliably finds a last name
+  // even on a turn already labeled with just a first name) over the naming
+  // re-run's result — same reasoning as transcribeLead().
+  const bestCallerName = analysis?.customer_full_name || callerName;
+  if (bestCallerName) {
     try {
-      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName, p_allow_upgrade: true });
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: bestCallerName, p_allow_upgrade: true });
     } catch { /* naming the lead is a bonus, not a reason to fail reclassification */ }
   }
 
@@ -438,22 +451,35 @@ export async function onRequestPost(context) {
   // Reclassify mode — re-run the AI naming + clean-up/classification passes
   // against already-transcribed leads (no Deepgram/CallRail creds needed, no
   // re-transcription cost). Default targets leads whose stored analysis
-  // predates inspection_scheduled (the sentinel: `->>` on a genuinely-missing
-  // key reads as SQL NULL, so this never re-touches an already-reclassified
-  // row on routine catch-up runs). `force:true` re-processes EVERY matching
-  // call regardless — e.g. to pick up a naming-prompt improvement (fuller
-  // names) on leads that already have inspection_scheduled set.
+  // predates customer_full_name — the NEWEST signal this pass writes, so it's
+  // the correct "still needs the current pass" sentinel (a lead that already
+  // has it was fully reprocessed under the current code and is skipped on the
+  // next round, so `force:true` sweeps make real forward progress instead of
+  // reprocessing the same head-of-list leads every timed-out round; `->>` on a
+  // genuinely-missing key reads as SQL NULL). `force:true` widens the target
+  // set to every matching call within the day window regardless of
+  // inspection_scheduled/other older signals (still skips ones with
+  // customer_full_name already set) — e.g. after a NEW prompt/signal ships
+  // that even an inspection_scheduled-having lead should pick up.
   if (body.reclassify) {
     let leads;
     try {
-      const days = Number(body.days) > 0 ? Number(body.days) : 90;
-      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
-      leads = await db.select(
-        'inbound_leads',
-        `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
-          `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
-      );
+      if (body.lead_id) {
+        // Targeted single-lead reclassify — bypasses the days/force filters
+        // entirely, for testing a prompt change against one known call.
+        leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,transcription,transcript_analysis`);
+      } else {
+        const days = Number(body.days) > 0 ? Number(body.days) : 90;
+        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const freshOnly = body.force
+          ? '&transcript_analysis->>customer_full_name=is.null'
+          : '&transcript_analysis->>inspection_scheduled=is.null&transcript_analysis->>customer_full_name=is.null';
+        leads = await db.select(
+          'inbound_leads',
+          `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
+            `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
+        );
+      }
     } catch {
       return jsonResponse({ error: 'Failed to load leads' }, 500, request, env);
     }

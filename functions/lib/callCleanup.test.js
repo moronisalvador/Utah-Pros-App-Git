@@ -56,7 +56,17 @@ describe('parseCleanupResponse', () => {
       callerNeverResponded: false,
       customerEmail: null,
       customerAddress: null,
+      customerFullName: null,
     });
+  });
+
+  it('passes through a stated full name, trimmed, and null when blank/missing', () => {
+    const withName = '{"turns":["Hi there."],"summary":"x","customer_full_name":"  Silvina Wright  "}';
+    expect(parseCleanupResponse(withName, 1)?.customerFullName).toBe('Silvina Wright');
+    const blank = '{"turns":["Hi there."],"summary":"x","customer_full_name":""}';
+    expect(parseCleanupResponse(blank, 1)?.customerFullName).toBeNull();
+    const missing = '{"turns":["Hi there."],"summary":"x"}';
+    expect(parseCleanupResponse(missing, 1)?.customerFullName).toBeNull();
   });
 
   it('reads inspection_scheduled/caller_never_responded leniently — only a literal true counts, anything else (or missing) is false', () => {
@@ -113,6 +123,7 @@ describe('parseCleanupResponse', () => {
       callerNeverResponded: false,
       customerEmail: null,
       customerAddress: null,
+      customerFullName: null,
     });
   });
 
@@ -187,6 +198,12 @@ describe('applyCleanup', () => {
     expect(bare.caller_never_responded).toBe(false);
     expect(bare.customer_email).toBeNull();
     expect(bare.customer_address).toBeNull();
+  });
+
+  it('sets customer_full_name from the cleaned result, defaulting to null', () => {
+    const out = applyCleanup(analysis, { turns: cleaned.turns, summary: 'x', customerFullName: 'Silvina Wright' });
+    expect(out.customer_full_name).toBe('Silvina Wright');
+    expect(applyCleanup(analysis, { turns: cleaned.turns, summary: 'x' }).customer_full_name).toBeNull();
   });
 
   it('leaves a turn unchanged (no rawText) when cleaned has no counterpart for it', () => {
