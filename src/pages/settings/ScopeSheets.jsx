@@ -42,6 +42,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/lib/toast';
+import PdfGapsPanel from './PdfGapsPanel';
 import { RoomCard, JobSections, makeDefaultRoom, makeDefaultJobData, C as RC } from '@/components/demo-sheet/DemoSheetRenderer';
 // Pure schema helpers live in demoSchemaUtils (unit-tested in isolation — P6).
 // The tech-facing renderer keeps its own copies; do NOT re-point it here.
@@ -360,6 +361,8 @@ export default function AdminDemoSheetBuilder() {
         The Scope Sheet Builder is best used on a desktop or tablet — the
         two-column editor is built for a wide screen.
       </div>
+
+      <PdfGapsPanel db={db} navigate={navigate} />
 
       {loading ? (
         <div className="loading-page" style={{ padding: 60 }}><div className="spinner" /></div>

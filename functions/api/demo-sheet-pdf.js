@@ -17,6 +17,8 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
+import { supabase } from '../lib/supabase.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 export async function onRequestOptions(context) {
@@ -25,42 +27,35 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const startedAt = new Date().toISOString();
 
   const auth = await requireUser(request, env);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
-  const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
+  // Shared service-role client (functions/lib/supabase.js) replaces the old
+  // hand-rolled fetch that fell back to the anon key when the service-role
+  // key was missing. That silent downgrade is exactly how one submitted
+  // scope sheet's PDF went missing without anyone noticing: storage upload /
+  // insert_job_document would fail under RLS with nothing surfaced beyond
+  // this request's own response. uploadStorage() below throws loudly instead
+  // if the key isn't configured, and every outcome is now logged to
+  // worker_runs (see recordWorkerRun calls) so a failure is queryable even
+  // when nobody's watching the tech's screen at submit time.
+  const db = supabase(env);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400, request, env);
+  }
+  const { p_job_id, job_number, sheet_id, requested_by, model } = body || {};
+
+  if (!model || typeof model !== 'object') {
+    return jsonResponse({ error: 'model is required' }, 400, request, env);
   }
 
-  const sbHeaders = {
-    'apikey':        SUPABASE_KEY,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type':  'application/json',
-  };
-  const rpc = async (fn, params) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-      method: 'POST', headers: sbHeaders, body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error(`RPC ${fn}: ${await res.text()}`);
-    return res.json();
-  };
-  const select = async (table, query) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: sbHeaders });
-    if (!res.ok) throw new Error(`SELECT ${table}: ${await res.text()}`);
-    return res.json();
-  };
-
   try {
-    const body = await request.json();
-    const { p_job_id, job_number, sheet_id, requested_by, model } = body || {};
-
-    if (!model || typeof model !== 'object') {
-      return jsonResponse({ error: 'model is required' }, 400, request, env);
-    }
-
     // ── 1. Resolve the job ──
     //   Prefer the explicit p_job_id; otherwise try to match a job by its
     //   job_number. A demo sheet started from an Encircle search may not be
@@ -69,11 +64,15 @@ export async function onRequestPost(context) {
     let jobId = p_job_id || null;
     if (!jobId && job_number) {
       try {
-        const rows = await select('jobs', `job_number=eq.${encodeURIComponent(job_number)}&select=id&limit=1`);
+        const rows = await db.select('jobs', `job_number=eq.${encodeURIComponent(job_number)}&select=id&limit=1`);
         if (Array.isArray(rows) && rows[0]?.id) jobId = rows[0].id;
       } catch { /* fall through — handled below */ }
     }
     if (!jobId) {
+      await recordWorkerRun(db, {
+        workerName: 'demo-sheet-pdf', status: 'completed', recordsProcessed: 0,
+        startedAt, meta: { skipped: true, reason: 'no_matching_job', sheet_id: sheet_id || null },
+      });
       return jsonResponse({ success: true, attached: false, reason: 'no_matching_job' }, 200, request, env);
     }
 
@@ -82,25 +81,12 @@ export async function onRequestPost(context) {
 
     // ── 3. Upload to Supabase Storage ──
     const storagePath = `${jobId}/demo-sheets/demo-sheet-${Date.now()}.pdf`;
-    const uploadRes = await fetch(
-      `${SUPABASE_URL}/storage/v1/object/job-files/${storagePath}`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${SUPABASE_KEY}`,
-          'apikey':        SUPABASE_KEY,
-          'Content-Type':  'application/pdf',
-          'x-upsert':      'true',
-        },
-        body: pdfBytes,
-      }
-    );
-    if (!uploadRes.ok) throw new Error(`Storage upload failed: ${await uploadRes.text()}`);
+    await db.uploadStorage('job-files', storagePath, pdfBytes, 'application/pdf');
 
     // ── 4. Record in job_documents ──
     const dateLabel = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
     const docName = `Demo Sheet — ${model?.jobInfo?.jobNumber ? `${model.jobInfo.jobNumber} · ` : ''}${dateLabel}`;
-    const docResult = await rpc('insert_job_document', {
+    const docResult = await db.rpc('insert_job_document', {
       p_job_id:      jobId,
       p_name:        docName,
       p_file_path:   storagePath,
@@ -109,6 +95,11 @@ export async function onRequestPost(context) {
       p_uploaded_by: requested_by || null,
     });
     const jobDocumentId = Array.isArray(docResult) ? docResult[0]?.id : (docResult?.id || docResult);
+
+    await recordWorkerRun(db, {
+      workerName: 'demo-sheet-pdf', status: 'completed', recordsProcessed: 1,
+      startedAt, meta: { job_id: jobId, sheet_id: sheet_id || null, job_document_id: jobDocumentId },
+    });
 
     return jsonResponse({
       success:         true,
@@ -121,6 +112,11 @@ export async function onRequestPost(context) {
 
   } catch (err) {
     console.error('demo-sheet-pdf error:', err);
+    await recordWorkerRun(db, {
+      workerName: 'demo-sheet-pdf', status: 'error',
+      errorMessage: err?.message || String(err), startedAt,
+      meta: { sheet_id: sheet_id || null, p_job_id: p_job_id || null, job_number: job_number || null },
+    });
     return jsonResponse({ error: err.message || 'Internal server error' }, 500, request, env);
   }
 }
