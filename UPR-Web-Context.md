@@ -4417,6 +4417,23 @@ shared dev/main Supabase project):
   frontend (`src/lib/crmPipeline.js`'s `groupLeadsByStage()`) and nothing server-side enforce this;
   it's a read-time fallback, not a DB default. RLS enabled + explicit policy at creation.
 
+**Milestone auto-advance (2026-07-21, `20260721_crm_pipeline_auto_advance.sql`, owner-directed):** four
+`AFTER` triggers push a contact's open (non-Won) leads forward without staff dragging a card — a signed
+`work_auth` `sign_requests` row, a real `invoices` row created with `total > 0`, an invoice's
+`amount_paid` going from 0 to positive (payment received), and an `estimates.status` transition to
+`'submitted'` (this schema's closest equivalent of "sent" — there is no literal `sent` value in its
+CHECK constraint). The first three move every open lead for that contact to **Won**; the fourth to
+**Estimate Sent**. Shared helper `crm_auto_advance_leads(p_contact_id, p_stage_name)` — SECURITY DEFINER,
+calls the frozen `move_lead_to_stage` RPC, never passes a reason into its `p_lost_reason` (these triggers
+only move leads forward, never to Lost) — guards against ever pulling an already-`is_won` lead backward
+(checked via `pipeline_stages.is_won`, not a hardcoded stage name) and against redundant same-stage
+moves. Each of the 4 trigger functions (`crm_trg_sign_request_signed`/`crm_trg_invoice_created`/
+`crm_trg_invoice_paid`/`crm_trg_estimate_submitted`) wraps its call in `BEGIN...EXCEPTION WHEN OTHERS`
+and logs a `crm_auto_advance_failed` `system_events` row on failure instead of propagating — pipeline
+bookkeeping must never roll back the real invoice/payment/signature write it's piggybacking on
+(migration-safety-checker caught the unguarded version pre-ship). Verified live with real fixtures for
+all four triggers + the no-downgrade guard; test: `supabase/tests/crm_pipeline_auto_advance.test.js`.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
