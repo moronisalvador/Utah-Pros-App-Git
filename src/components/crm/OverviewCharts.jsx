@@ -24,8 +24,11 @@
  *
  * NOTES / GOTCHAS:
  *   - Purely presentational: no useAuth/db/RPC calls. The parent page loads and
- *     shapes the data (calls → get_call_volume split, channels → leadsByChannel,
- *     divisions → get_crm_revenue_by_division, campaigns → leadsByCampaign).
+ *     shapes the data (calls → callOutcome pipeline split, channels →
+ *     leadsByChannel, divisions → get_crm_revenue_by_division, campaigns →
+ *     leadsByCampaign).
+ *   - "Missed" here is a PIPELINE judgment (the Missed Calls stage), not CallRail
+ *     duration = 0 — see callOutcome. Most missed calls actually connected.
  *   - Empty datasets are handled by Donut's own muted empty ring — this file
  *     never fabricates slices.
  *   - Owned by Phase 9 (.claude/rules/crm-wave-ownership.md).
@@ -40,9 +43,9 @@ function sumBy(arr, fn) {
 }
 
 export default function OverviewCharts({ calls, channels, divisions, campaigns }) {
-  // ─── Calls: answered vs missed ──────────────
+  // ─── Calls: handled vs missed (pipeline-sourced) ──────────────
   const callSegments = [
-    { label: 'Answered', value: Number(calls?.answered) || 0, color: 'var(--crm-success)' },
+    { label: 'Handled', value: Number(calls?.handled) || 0, color: 'var(--crm-success)' },
     { label: 'Missed', value: Number(calls?.missed) || 0, color: 'var(--crm-danger-text)' },
   ];
   const callsTotal = Number(calls?.total) || 0;
@@ -77,6 +80,7 @@ export default function OverviewCharts({ calls, channels, divisions, campaigns }
       <div className="crm-card">
         <h2 className="crm-section-title">Calls</h2>
         <Donut segments={callSegments} total={callsTotal} label="CALLS" />
+        <p className="crm-note">Missed = calls in the Missed Calls pipeline stage, not just unanswered rings.</p>
       </div>
 
       <div className="crm-card">

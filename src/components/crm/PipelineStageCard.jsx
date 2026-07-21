@@ -4,47 +4,51 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   An Overview card that shows the sales pipeline at a glance. On one side a
- *   donut splits the open leads by which stage they are sitting in; on the other
- *   a short list names each stage, how many leads are in it, a little bar showing
- *   the dollars in that stage relative to the biggest one, and the stage's dollar
- *   total. The header shows the "weighted open pipeline" — the expected dollar
- *   value of everything still open. If there are no open leads, it just says so.
+ *   An Overview card that shows the sales pipeline at a glance. A donut splits
+ *   the open leads by which stage they are sitting in, and a short list names
+ *   each stage with how many leads are in it and a bar showing that stage's
+ *   share of the open pipeline. The header shows the honest win rate — of the
+ *   leads that reached a decision (won or lost), how many were won — plus the
+ *   won / lost / open tallies. If there are no leads at all, it just says so.
  *
  * WHERE IT LIVES:
  *   Route:        n/a — a presentational slot component
- *   Rendered by:  src/pages/crm/CrmOverview.jsx (built in a later phase)
+ *   Rendered by:  src/pages/crm/CrmOverview.jsx
  *
  * DEPENDS ON:
  *   Packages:  react (none directly — pure props render)
  *   Internal:  @/components/crm/charts/Donut (the donut chart),
  *              @/lib/crmCharts (paletteColor),
- *              @/lib/attribution (fmtMoney)
+ *              @/lib/attribution (fmtPct)
  *   Data:      reads → none · writes → none
  *              (purely presentational — all data arrives via props; the page
  *               loads it, this component never calls useAuth/db or any RPC)
  *
  * NOTES / GOTCHAS:
- *   - `rows` is one entry per OPEN pipeline stage: {id, name, color, count,
- *     value}. `color` is the stage's DB hex or null — when null we fall back to
+ *   - This card is COUNT-based, deliberately: inbound leads carry no dollar
+ *     `value` in this business (they are valued only once they become a job),
+ *     so a weighted-$ pipeline is structurally $0 and was removed. Counts are
+ *     the meaningful read here.
+ *   - `rows` is one entry per OPEN pipeline stage: {id, name, color, count}.
+ *     `color` is the stage's DB hex or null — when null we fall back to
  *     paletteColor(i) so the donut and the list agree on the same color.
- *   - The horizontal bar width is value/maxValue, so it is a relative-to-largest
- *     read, not an absolute one. maxValue guards against divide-by-zero.
+ *   - The bar width is count/maxCount, a relative-to-largest read (guarded
+ *     against divide-by-zero). `winRate` may be null (nothing decided yet) → "—".
  *   - Static only — no animation, no @keyframes (motion-review gate).
  * ════════════════════════════════════════════════
  */
 import Donut from '@/components/crm/charts/Donut';
 import { paletteColor } from '@/lib/crmCharts';
-import { fmtMoney } from '@/lib/attribution';
+import { fmtPct } from '@/lib/attribution';
 
-export default function PipelineStageCard({ rows, openTotalValue }) {
+export default function PipelineStageCard({ rows, won = 0, lost = 0, winRate = null }) {
   const stages = Array.isArray(rows) ? rows : [];
   const hasStages = stages.length > 0;
 
   // ─── SECTION: Helpers ──────────────
   const stageColor = (row, i) => row?.color || paletteColor(i);
-  const totalCount = stages.reduce((sum, r) => sum + (Number(r?.count) || 0), 0);
-  const maxValue = stages.reduce((max, r) => Math.max(max, Number(r?.value) || 0), 0);
+  const openCount = stages.reduce((sum, r) => sum + (Number(r?.count) || 0), 0);
+  const maxCount = stages.reduce((max, r) => Math.max(max, Number(r?.count) || 0), 0);
 
   const donutSegments = stages.map((r, i) => ({
     label: r.name,
@@ -57,38 +61,34 @@ export default function PipelineStageCard({ rows, openTotalValue }) {
     <section className="crm-card crm-pipeline-card">
       <div className="crm-pipeline-header">
         <h2 className="crm-section-title">Sales pipeline</h2>
-        <div className="crm-pipeline-total">
-          <span className="crm-pipeline-total-val">{fmtMoney(openTotalValue)}</span>
-          <span className="crm-note">weighted open pipeline</span>
+        <div className="crm-pipeline-summary">
+          <span className="crm-pipeline-winrate">{fmtPct(winRate)}</span>
+          <span className="crm-note">
+            win rate · {won} won · {lost} lost · {openCount} open
+          </span>
         </div>
       </div>
 
       {!hasStages ? (
-        <p className="crm-note">No open pipeline yet.</p>
+        <p className="crm-note">No open leads in the pipeline right now.</p>
       ) : (
         <div className="crm-pipeline-layout">
-          <Donut
-            segments={donutSegments}
-            total={totalCount}
-            label="LEADS"
-            size={128}
-          />
+          <Donut segments={donutSegments} total={openCount} label="OPEN" size={128} />
 
           <ul className="crm-pipeline-rows">
             {stages.map((r, i) => {
-              const value = Number(r.value) || 0;
-              const pct = maxValue > 0 ? (value / maxValue) * 100 : 0;
+              const count = Number(r.count) || 0;
+              const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
               return (
                 <li key={r.id ?? i} className="crm-pipeline-row">
                   <span className="crm-pipeline-name">{r.name}</span>
-                  <span className="crm-pipeline-count">{Number(r.count) || 0}</span>
                   <span className="crm-pipeline-bar-track">
                     <span
                       className="crm-pipeline-bar-fill"
                       style={{ width: `${pct}%`, background: stageColor(r, i) }}
                     />
                   </span>
-                  <span className="crm-pipeline-val">{fmtMoney(value)}</span>
+                  <span className="crm-pipeline-count">{count}</span>
                 </li>
               );
             })}

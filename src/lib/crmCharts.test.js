@@ -1,3 +1,27 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: crmCharts.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Unit tests for the pure chart-math helpers in crmCharts.js — the functions
+ *   that turn raw database rows into the shapes the CRM Overview donut/bar
+ *   charts and KPI strip need. Because a wrong number here would mislead a real
+ *   business decision, every helper is checked against empty, all-zero, and
+ *   boundary inputs so it can never render a NaN, an Infinity, or a rate above
+ *   100%.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./crmCharts (the module under test)
+ *   Data:      none — pure functions, fixed fixtures.
+ *
+ * NOTES / GOTCHAS:
+ *   - pipelineOutcome / callOutcome tests encode the two data-honesty rules that
+ *     drove this feature: a win rate never exceeds 100% (won ÷ decided), and a
+ *     "missed call" is a pipeline-stage judgment, NOT CallRail duration = 0.
+ * ════════════════════════════════════════════════
+ */
 import { describe, it, expect } from 'vitest';
 import {
   CHART_PALETTE,
@@ -11,6 +35,8 @@ import {
   leadsByCampaign,
   leadsByChannel,
   newLeadsSince,
+  pipelineOutcome,
+  callOutcome,
 } from './crmCharts.js';
 
 describe('constant maps', () => {
@@ -217,5 +243,101 @@ describe('newLeadsSince', () => {
 
   it('handles empty input', () => {
     expect(newLeadsSince([], since)).toBe(0);
+  });
+});
+
+describe('pipelineOutcome', () => {
+  const stages = [
+    { id: 'new', is_won: false, is_lost: false },
+    { id: 'qualified', is_won: false, is_lost: false },
+    { id: 'won', is_won: true, is_lost: false },
+    { id: 'lost', is_won: false, is_lost: true },
+  ];
+
+  it('splits won / lost / open and computes a bounded win rate', () => {
+    const grouped = {
+      new: [{}, {}, {}], // 3 open
+      qualified: [{}, {}], // 2 open
+      won: [{}, {}, {}, {}], // 4 won
+      lost: [{}, {}, {}, {}, {}, {}], // 6 lost
+    };
+    const o = pipelineOutcome(stages, grouped);
+    expect(o.won).toBe(4);
+    expect(o.lost).toBe(6);
+    expect(o.open).toBe(5);
+    expect(o.decided).toBe(10);
+    expect(o.total).toBe(15);
+    expect(o.win_rate).toBeCloseTo(0.4, 10); // 4 / (4+6) — never exceeds 1
+  });
+
+  it('win_rate is null when nothing is decided (guards 0/0)', () => {
+    const grouped = { new: [{}, {}] };
+    const o = pipelineOutcome(stages, grouped);
+    expect(o.open).toBe(2);
+    expect(o.decided).toBe(0);
+    expect(o.win_rate).toBeNull();
+  });
+
+  it('a lost-before-estimate lead still counts in the denominator', () => {
+    // one won, one lost (that never reached an estimate) → 50%, not >100%
+    const grouped = { won: [{}], lost: [{}] };
+    const o = pipelineOutcome(stages, grouped);
+    expect(o.win_rate).toBeCloseTo(0.5, 10);
+    expect(o.win_rate).toBeLessThanOrEqual(1);
+  });
+
+  it('handles empty / missing input', () => {
+    expect(pipelineOutcome([], {}).win_rate).toBeNull();
+    expect(pipelineOutcome(undefined, undefined).total).toBe(0);
+  });
+});
+
+describe('callOutcome', () => {
+  const stages = [
+    { id: 'missed', name: 'Missed Calls', is_lost: true },
+    { id: 'lost', name: 'Lost', is_lost: true },
+    { id: 'qualified', name: 'Qualified', is_lost: false },
+    { id: 'won', name: 'Won', is_won: true },
+  ];
+
+  it('counts a call as missed only when its stage is a missed-call stage (not by duration)', () => {
+    // The key case: a call with talk time (duration>0) still counts as missed
+    // when it sits in the Missed Calls stage.
+    const leads = [
+      { id: 'a', source_type: 'call', duration_sec: 90 }, // connected but Missed Calls → missed
+      { id: 'b', source_type: 'call', duration_sec: 0 }, // Missed Calls → missed
+      { id: 'c', source_type: 'call', duration_sec: 120 }, // Qualified → handled
+      { id: 'd', source_type: 'call' }, // no stage → handled
+      { id: 'e', source_type: 'form' }, // not a call → ignored
+    ];
+    const positions = {
+      a: { stage_id: 'missed' },
+      b: { stage_id: 'missed' },
+      c: { stage_id: 'qualified' },
+    };
+    const o = callOutcome(leads, stages, positions);
+    expect(o.total).toBe(4); // only the 4 calls
+    expect(o.missed).toBe(2);
+    expect(o.handled).toBe(2);
+    expect(o.handle_rate).toBeCloseTo(0.5, 10);
+  });
+
+  it('a plain "Lost" stage (not a missed-call stage) does not count as missed', () => {
+    const leads = [{ id: 'a', source_type: 'call' }];
+    const positions = { a: { stage_id: 'lost' } };
+    const o = callOutcome(leads, stages, positions);
+    expect(o.missed).toBe(0);
+    expect(o.handled).toBe(1);
+  });
+
+  it('handle_rate is null when there are no calls (guards 0/0)', () => {
+    const o = callOutcome([{ id: 'x', source_type: 'form' }], stages, {});
+    expect(o.total).toBe(0);
+    expect(o.handle_rate).toBeNull();
+  });
+
+  it('handles empty / missing input', () => {
+    expect(callOutcome([], [], {}).total).toBe(0);
+    expect(callOutcome(undefined, undefined, undefined).handle_rate).toBeNull();
   });
 });

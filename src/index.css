@@ -9725,23 +9725,26 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   flex-wrap: wrap; margin-bottom: var(--space-4);
 }
 .crm-pipeline-header .crm-section-title { margin: 0; }
-.crm-pipeline-total { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
-.crm-pipeline-total .crm-note { margin: 0; }
-.crm-pipeline-total-val { font-size: 20px; font-weight: 700; color: var(--crm-text-primary); }
+.crm-pipeline-summary { display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.crm-pipeline-summary .crm-note { margin: 0; }
+.crm-pipeline-winrate { font-size: 20px; font-weight: 700; color: var(--crm-text-primary); font-variant-numeric: tabular-nums; }
 
+/* Bound the donut/legend column so the stage bars fill the rest — no dead gap. */
 .crm-pipeline-layout {
-  display: grid; grid-template-columns: auto 1fr; gap: var(--space-5); align-items: center;
+  display: grid; grid-template-columns: minmax(160px, 220px) 1fr; gap: var(--space-5); align-items: center;
 }
 .crm-pipeline-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
-.crm-pipeline-row { display: grid; grid-template-columns: 1fr auto minmax(64px, 96px) auto; align-items: center; gap: var(--space-3); min-width: 0; }
+.crm-pipeline-row { display: grid; grid-template-columns: minmax(70px, 130px) 1fr auto; align-items: center; gap: var(--space-3); min-width: 0; }
 .crm-pipeline-name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-size: 13px; font-weight: 600; color: var(--crm-text-primary);
 }
-.crm-pipeline-count { font-size: 13px; color: var(--crm-text-secondary); font-variant-numeric: tabular-nums; }
-.crm-pipeline-bar-track { height: 8px; border-radius: var(--radius-full); background: var(--crm-bg-content); overflow: hidden; }
+.crm-pipeline-count {
+  font-size: 13px; font-weight: 600; color: var(--crm-text-primary);
+  font-variant-numeric: tabular-nums; text-align: right; min-width: var(--space-5);
+}
+.crm-pipeline-bar-track { height: var(--space-2); border-radius: var(--radius-full); background: var(--crm-bg-content); overflow: hidden; }
 .crm-pipeline-bar-fill { display: block; height: 100%; border-radius: var(--radius-full); background: var(--crm-accent); }
-.crm-pipeline-val { font-size: 13px; font-weight: 600; color: var(--crm-text-primary); text-align: right; font-variant-numeric: tabular-nums; }
 
 /* ── Mini trend (grouped bars) ── */
 .crm-minitrend { display: flex; flex-direction: column; gap: var(--space-3); }
@@ -9763,7 +9766,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 @media (max-width: 768px) {
   .crm-charts-grid { grid-template-columns: 1fr; gap: var(--space-4); }
   .crm-pipeline-layout { grid-template-columns: 1fr; gap: var(--space-4); }
-  .crm-pipeline-total { align-items: flex-start; text-align: left; }
+  .crm-pipeline-summary { align-items: flex-start; text-align: left; }
 }
 
 
