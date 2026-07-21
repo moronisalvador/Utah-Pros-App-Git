@@ -11,6 +11,7 @@ import { sendEmail } from '../lib/email.js';
 import { supabase } from '../lib/supabase.js';
 import { dispatchEvent } from './notify.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { pdfSafe } from '../lib/pdfText.js';
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -365,9 +366,14 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   };
 
   // ── Draw helpers (all use curPage / curY) ──
+  // pdfSafe() here is the single choke point for this file — see
+  // ../lib/pdfText.js for why (a real production PDF crash, 2026-07-21, on
+  // the sibling demo-sheet-pdf.js worker). This file signs real customer
+  // consent/authorization documents — signer_name is customer-typed and
+  // was previously drawn with zero sanitization at all.
   const drawText = (str, x, y, { font = fReg, size = 10, color = black } = {}) => {
     if (!str) return;
-    curPage.drawText(String(str), { x, y, font, size, color });
+    curPage.drawText(pdfSafe(str), { x, y, font, size, color });
   };
 
   const drawLine = (x1, y, x2, opts = {}) => {
@@ -384,7 +390,9 @@ async function buildPdf({ job, signer_name, signature_png, signed_at, doc_type, 
   const drawWrapped = (str, x, maxW, { font = fReg, size = 9.5, color = black, lh = 14 } = {}) => {
     if (!str?.trim()) return curY;
 
-    const words = str.trim().split(/\s+/);
+    // Sanitize before the word-split so the widthOfTextAtSize measurement
+    // below (not just the final drawText) never sees an unencodable char.
+    const words = pdfSafe(str).split(' ').filter(Boolean);
     let current = '';
 
     for (const word of words) {
