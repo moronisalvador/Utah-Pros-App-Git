@@ -4458,6 +4458,44 @@ spam-flagged never moves) — the local anon-role test environment can't run
 from a separate initiative removed anon read access to `crm_orgs`), so this was verified via direct
 SQL fixtures instead, same as the milestone triggers were originally.
 
+**Two more AI call-cleanup signals (2026-07-21, `20260721_crm_call_ai_enrichment.sql`,
+owner-directed):** the same `cleanAndSummarize` Claude Haiku call was extended with two more JSON
+fields. **`caller_never_responded: true|false`** — true only when the agent/company turn(s) have real
+content and the customer turn(s) are empty/pure silence (never for a customer who spoke but the call was
+just short/unhelpful/wrong-number). When true, `transcribeLead()` best-effort calls the new
+**`set_lead_spam_flag(p_lead_id, p_spam, p_reason)`** RPC — reliably, automatically removes a
+answered-but-silent call from the pipeline instead of relying on a human to notice it (a no-op write,
+i.e. the value already matches, skips the `system_events` insert so a re-run never double-logs).
+**`customer_email`/`customer_address: <value or null>`** — extracted ONLY when the customer clearly
+stated it themselves (never inferred); `callCleanup.js`'s `parseCleanupResponse` additionally rejects
+anything that doesn't look like a real email (basic shape check) before it can reach a contact record.
+When present, best-effort calls the new **`set_lead_contact_details(p_lead_id, p_email, p_address)`**
+RPC, which mirrors `set_lead_caller_name`'s exact "fill only if blank" contract — **and only ever acts
+on an already-linked contact** (`inbound_leads` has no email/address column of its own; an unlinked
+lead silently no-ops rather than ever auto-creating a contact from unverified AI-extracted data).
+`customer_address` maps to `contacts.billing_address` (the only free-text street-address field on that
+table). All three new signals are wrapped in the same best-effort try/catch as `inspection_scheduled` —
+none of them can ever block the transcription write. Verified live against the TEST org (spam-flag set +
+no duplicate audit row on a repeat no-op call + throws on an unknown lead; contact-details fill on a
+blank field + never overwrites an existing value + never creates a contact for an unlinked lead) — same
+local anon-role limitation as above, verified via direct SQL fixtures;
+test: `supabase/tests/crm_call_ai_enrichment.test.js`.
+
+**Reclassify-only backfill mode** (`POST /api/transcribe-call` with `{ reclassify: true, days?: 90 }`):
+re-runs ONLY the AI clean-up/classification pass (`reclassifyLead()`) against leads that already have a
+transcript + `transcript_analysis` but predate these new signals (selected via
+`transcript_analysis->>inspection_scheduled=is.null` — reads as SQL NULL for a genuinely-missing key,
+never re-touching an already-reclassified row) — no Deepgram/CallRail re-transcription, no added
+Deepgram cost, just a fresh Claude Haiku call against the already-stored turns.
+
+**Leads board display fix (2026-07-21):** `CrmLeads.jsx`'s `leadLabel()` only ever checked
+`lead.contact?.name`, falling straight through to the phone number — it never checked
+`inbound_leads.caller_name` (set directly on the lead by the AI naming step the moment a call states the
+caller's name, even before any contact link exists). Fixed to fall back to `lead.caller_name` before the
+phone number, in both the board card title and the two equivalent checks in the lead detail panel
+header. This was a pure frontend display bug — `caller_name` itself was already being captured
+correctly by the existing `nameSpeakers()` step.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

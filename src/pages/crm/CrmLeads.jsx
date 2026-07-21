@@ -135,8 +135,12 @@ function formatMoney(n) {
   return `$${Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
+// A lead's best-known display name — an already-linked contact's name first,
+// then the AI-extracted caller_name (set on inbound_leads directly the moment
+// the call transcript states it, even before any contact link exists), then
+// the phone number, then a generic fallback.
 function leadLabel(lead) {
-  return lead.contact?.name || lead.caller_number || (lead.source_type === 'form' ? 'Web form lead' : 'Unknown caller');
+  return lead.contact?.name || lead.caller_name || lead.caller_number || (lead.source_type === 'form' ? 'Web form lead' : 'Unknown caller');
 }
 
 // "Call · Google My Business · Google My Business" reads like a bug when a
@@ -1244,7 +1248,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         <div className="crm-panel-header">
           <div>
             <div className="crm-panel-title">
-              {lead.contact?.name || !lead.caller_number ? leadLabel(lead) : (
+              {(lead.contact?.name || lead.caller_name) || !lead.caller_number ? leadLabel(lead) : (
                 <a
                   href={`tel:${lead.caller_number}`}
                   className="crm-call-link"
@@ -1254,7 +1258,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                 </a>
               )}
             </div>
-            {lead.contact?.name && lead.caller_number && (
+            {(lead.contact?.name || lead.caller_name) && lead.caller_number && (
               <a
                 href={`tel:${lead.caller_number}`}
                 className="crm-call-link crm-panel-subtitle"
