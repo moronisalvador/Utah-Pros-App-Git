@@ -4517,6 +4517,57 @@ phone number, in both the board card title and the two equivalent checks in the 
 header. This was a pure frontend display bug — `caller_name` itself was already being captured
 correctly by the existing `nameSpeakers()` step.
 
+**Full-name capture — the real fix (2026-07-21):** the `p_allow_upgrade` change above didn't actually
+fix full names on a reclassify pass — root cause: `nameSpeakers()` re-labels turns by asking Claude to
+identify speakers, but when a turn is ALREADY labeled with a real name (not a generic "Speaker 1/2"),
+the model doesn't reliably re-derive a fuller name from the conversation content; it treats the label as
+already-resolved. Confirmed live: a caller who spelled her last name letter-by-letter ("Wright,
+W-R-I-G-H-T") still only produced "Silvina" on reclassify. Fix: moved full-name extraction onto the AI
+**cleanup** pass instead (`customer_full_name`, a 6th field alongside `customer_email`/
+`customer_address`) — the same mechanism that already reliably reads full turn CONTENT rather than
+trusting the existing speaker label. `transcribeLead()`/`reclassifyLead()` now prefer
+`analysis.customer_full_name` over `nameSpeakers()`'s result, always with `p_allow_upgrade: true`.
+Verified live end-to-end against the real production lead that surfaced the bug.
+
+**Reclassify batch convergence fix (2026-07-21):** the bulk reclassify sweep's `force:true` had no
+forward-progress guard — every call re-selected ALL matching leads regardless of prior work, and since
+Cloudflare's gateway caps a request around ~100s, repeated rounds kept reprocessing the same
+`occurred_at DESC` head-of-list leads without ever reaching the rest. Fixed by switching the sentinel to
+`customer_full_name` (the newest field this pass writes) — a lead already reprocessed under current code
+is skipped on the next round, so a sweep now genuinely converges instead of looping on the same subset.
+Also added `{ reclassify: true, lead_id }` single-lead targeting for verifying a prompt change against
+one known call without a bulk sweep. **Known permanent-error leads:** ~37 of the 86 transcribed leads
+have zero usable turns (missed/silent calls with nothing said) — these correctly throw `'no usable turns
+to reclassify'` every round; not a bug, nothing to reclassify.
+
+**Quick-add-task text wrapping fix (2026-07-21):** the Leads card's quick-add-task popover used a
+single-line `<input type="text">` (the sibling Add-note popover already correctly used a wrapping
+`<textarea>`) — a long task title typed past the visible width was invisible/clipped. Swapped to a
+`<textarea rows={2}>`, `onKeyDown` still submits on Enter (`preventDefault`s the newline) but allows
+Shift+Enter for a literal line break.
+
+**Lead value sync from invoices (2026-07-21, `20260721_crm_lead_value_sync.sql`, owner-directed):** so
+the Leads pipeline's weighted-value math and future ROI/total-sales reporting reflect real deal size
+instead of staying blank, a real invoice being created (a brand-new invoice OR one converted from an
+estimate — `invoices.estimate_id` — both are just "an invoices row with a real total," so one trigger
+point covers both cases per the owner's ask) now fills in the closing CRM lead's `inbound_leads.value`.
+New helper **`crm_sync_lead_value(p_contact_id, p_amount)`** (`SECURITY DEFINER`, `authenticated,
+service_role` only) — deliberately **fill-blank-only** (never overwrites) and scoped to **exactly ONE
+lead** (the contact's most-recently-Won, non-spam lead still missing a value, `ORDER BY
+lead_pipeline_stage.updated_at DESC LIMIT 1`) rather than every open/Won lead for the contact — a
+contact can have multiple `inbound_leads` rows (repeat caller, separate inquiries), and blasting the
+same invoice amount onto more than one would double-count it in any future `SUM(value)` sales report.
+Wired into the existing `crm_trg_invoice_created` trigger (function-body-only replace, runs AFTER the
+existing auto-advance-to-Won call so the lead is already Won by the time the value lookup runs), using
+`COALESCE(NEW.adjusted_total, NEW.total)` — a manual invoice correction is the real final number when
+present. Own exception-safety wrap (never blocks the real invoice write on failure, logs
+`crm_lead_value_sync_failed` to `system_events`). Verified live against the TEST org: fills a blank
+value; never overwrites an existing one; never sets a value on two Won leads for the same contact (only
+the most-recent gets it); composes correctly with the pre-existing auto-advance-to-Won trigger (a
+not-yet-Won lead gets advanced AND valued in the same invoice-create event); uses `adjusted_total` over
+`total`; a zero/negative total never sets a value. Test: `supabase/tests/crm_lead_value_sync.test.js`.
+No frontend change needed — `crmPipeline.js`'s `weightedPipelineValue()` already reads `lead.value`.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
