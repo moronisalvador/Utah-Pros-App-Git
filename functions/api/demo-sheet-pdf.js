@@ -143,6 +143,13 @@ export async function onRequestPost(context) {
 function pdfSafe(s) {
   return String(s == null ? '' : s)
     .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
+    // drawText renders one line at a time — an embedded newline/tab/CR (e.g. a
+    // tech pressing Enter inside a Notes textarea) throws a WinAnsi encode
+    // error deep in font.widthOfTextAtSize, not a display glitch. Confirmed
+    // root cause of a real production failure (2026-07-21): flatten to a
+    // single space rather than attempt mid-value wrapping/pagination.
+    .replace(/[\t\n\r\v\f]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .replace(/^\s+|\s+$/g, '');
 }
 function deepPdfSafe(v) {
