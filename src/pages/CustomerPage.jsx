@@ -142,7 +142,7 @@ export default function CustomerPage(){
       ))}</div>
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
-        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
+        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
         {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
@@ -349,7 +349,7 @@ function AddrForm({form,setForm,saving,onSave,onCancel}){
 }
 
 /* ═══ CLAIMS TAB ═══ */
-function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin}){
+function ClaimsTab({claims,fmtDate,fmtC,onNav,onNavClaim,onAddRelated,db,onReload,isAdmin}){
   const[menuOpen,setMenuOpen]=useState(null);
   const[deleteTarget,setDeleteTarget]=useState(null); // claim object being deleted
   const[deleteInput,setDeleteInput]=useState('');
@@ -371,13 +371,13 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
   return(<div style={{display:'flex',flexDirection:'column',gap:'var(--space-5)'}}>
     {visible.map(cl=>{const jobs=cl.jobs||[];return(
     <div key={cl.id} className="job-page-section" style={{padding:0,overflow:'hidden'}}>
-      <div style={{padding:'var(--space-3) var(--space-4)',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-light)',display:'flex',alignItems:'center',gap:'var(--space-3)',flexWrap:'wrap'}}>
-        <span style={{fontWeight:700,fontSize:13}}>{cl.claim_number}</span>
+      <div onClick={()=>onNavClaim(cl.id)} style={{padding:'var(--space-3) var(--space-4)',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-light)',display:'flex',alignItems:'center',gap:'var(--space-3)',flexWrap:'wrap',cursor:'pointer'}}>
+        <span style={{fontWeight:700,fontSize:13,color:'var(--brand-primary)'}}>{cl.claim_number}</span>
         {cl.insurance_carrier&&<span style={{fontSize:12,color:'var(--text-secondary)'}}>{cl.insurance_carrier}</span>}
         {cl.date_of_loss&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Loss: {fmtDate(cl.date_of_loss)}</span>}
         {cl.insurance_claim_number&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Ins#: {cl.insurance_claim_number}</span>}
         <span style={{marginLeft:'auto',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:99,background:cl.status==='open'?'#eff6ff':'#f1f3f5',color:cl.status==='open'?'#2563eb':'#6b7280'}}>{cl.status}</span>
-        {isAdmin&&jobs.length===0&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setMenuOpen(null);}}>
+        {isAdmin&&jobs.length===0&&<div onClick={e=>e.stopPropagation()} style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setMenuOpen(null);}}>
           <button onClick={()=>setMenuOpen(menuOpen===cl.id?null:cl.id)} style={{background:'none',border:'none',cursor:'pointer',padding:'2px 6px',color:'var(--text-tertiary)',fontSize:16,lineHeight:1}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </button>
