@@ -89,6 +89,8 @@ function IconPhone(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="cur
 function IconMsg(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>); }
 function IconCalendar(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>); }
 function IconFilter(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>); }
+function IconMail(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22 6 12 13 2 6" /></svg>); }
+function IconMapPin(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" /></svg>); }
 
 // Card quick-action icons render deliberately small and thin-stroked — a
 // minimal glyph row (GoHighLevel-style), not full-size 24px icons filling a
@@ -1257,20 +1259,20 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
               {(lead.contact?.name || lead.caller_name) || !lead.caller_number ? leadLabel(lead) : (
                 <a
                   href={`tel:${lead.caller_number}`}
-                  className="crm-call-link"
+                  className="crm-call-link crm-panel-icon-row"
                   onClick={() => logClickToCall(lead.caller_number)}
                 >
-                  📞 {lead.caller_number}
+                  <IconPhone style={CARD_ACTION_ICON_STYLE} /> {lead.caller_number}
                 </a>
               )}
             </div>
             {(lead.contact?.name || lead.caller_name) && lead.caller_number && (
               <a
                 href={`tel:${lead.caller_number}`}
-                className="crm-call-link crm-panel-subtitle"
+                className="crm-call-link crm-panel-subtitle crm-panel-icon-row"
                 onClick={() => logClickToCall(lead.caller_number)}
               >
-                📞 {lead.caller_number}
+                <IconPhone style={CARD_ACTION_ICON_STYLE} /> {lead.caller_number}
               </a>
             )}
             {/* AI-captured from the call transcript — never overwrites the contact's own
@@ -1279,10 +1281,14 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                 a contact link exists to hold it (set_lead_contact_details only fills a
                 blank field on an ALREADY-linked contact). */}
             {lead.transcript_analysis?.customer_email && (
-              <div className="crm-panel-subtitle">✉️ {lead.transcript_analysis.customer_email}</div>
+              <div className="crm-panel-subtitle crm-panel-icon-row">
+                <IconMail style={CARD_ACTION_ICON_STYLE} /> {lead.transcript_analysis.customer_email}
+              </div>
             )}
             {lead.transcript_analysis?.customer_address && (
-              <div className="crm-panel-subtitle">📍 {lead.transcript_analysis.customer_address}</div>
+              <div className="crm-panel-subtitle crm-panel-icon-row">
+                <IconMapPin style={CARD_ACTION_ICON_STYLE} /> {lead.transcript_analysis.customer_address}
+              </div>
             )}
           </div>
           <button className="crm-btn crm-btn-ghost crm-panel-close" onClick={onClose}>Close</button>
