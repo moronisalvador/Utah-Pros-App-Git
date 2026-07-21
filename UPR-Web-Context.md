@@ -4540,6 +4540,43 @@ one known call without a bulk sweep. **Known permanent-error leads:** ~37 of the
 have zero usable turns (missed/silent calls with nothing said) — these correctly throw `'no usable turns
 to reclassify'` every round; not a bug, nothing to reclassify.
 
+**Agent/customer role-confusion fix + auto-qualify contact linking (2026-07-21):** two bugs found
+reviewing real production data — two leads ~1.5hrs apart from the same caller
+(`+16267717702`, 2026-06-26). (1) On the callback, the caller (Jake Nelson) asked "Is this Ben?"
+(Ben was the AGENT from the earlier call) and the cleanup pass extracted "Ben" as
+`customer_full_name`, flipping agent/customer in the AI summary — `caller_name` itself stayed
+correct only because `set_lead_caller_name`'s extend-only upgrade guard happened to refuse the
+conflicting overwrite. Fixed at the source: `NAMING_SYSTEM`/`RESEGMENT_SYSTEM`
+(`transcribe-call.js`) and `buildResegmentPrompt` (`speakerNaming.js`) now explicitly warn that a
+name mentioned while ASKING FOR someone ("Is this X?", "Can I speak to X?") belongs to that other
+person, never the asking speaker; `CLEANUP_SYSTEM`'s `customer_full_name` field gets the same
+warning. As defense-in-depth, new pure helper **`nameExtendsOrMatches(newName, establishedName)`**
+(`functions/lib/callCleanup.js`, mirrors the SQL upgrade-guard's word-boundary-extend check) is
+now applied in both `transcribeLead()`/`reclassifyLead()`: a `customer_full_name` that conflicts
+with the lead's already-established `caller_name` is nulled out before it's stored, so the panel
+never displays (or upgrades the name to) a role-confused guess. (2) A fully-qualified lead (real
+first+last name, real phone, `is_customer_inquiry:true`, `service_match:'in_scope'`, not spam) had
+no way to get a contact — the existing name/detail-backfill RPCs deliberately never auto-create
+one — so a legitimate repeat caller's follow-up call always showed up as a disconnected duplicate
+lead instead of linking to the same person. New RPC **`crm_auto_qualify_contact(p_lead_id)`**
+(`20260721_crm_auto_qualify_contact.sql`, `SECURITY DEFINER`, `authenticated, service_role` only)
+auto-creates/links a contact ONLY when every signal clears at once; phone-matches first using the
+exact normalized/ambiguous-skip logic `upsert_lead_from_callrail` already uses (never creates a
+duplicate; an ambiguous multi-contact match is skipped, not guessed), prefers the already-vetted
+`caller_name` over the freshly-extracted `customer_full_name` for the name, and no-ops on an
+already-linked lead. Called best-effort (try/catch, never blocks the transcription) right after
+`set_lead_caller_name` in both `transcribeLead()` and `reclassifyLead()` — so the existing
+`{reclassify: true}` backfill sweep also auto-qualifies already-transcribed historical leads with
+no new backfill mode needed. Verified live against the TEST org: new-contact creation, link-to-
+existing-by-differently-formatted-phone (no duplicate), already-linked idempotency, first-name-only
+rejection (no space), spam-flagged/`is_customer_inquiry:false`/`service_match:'out_of_scope'`
+rejection, and ambiguous-phone-match skip (two contacts sharing digits) — all fixture rows cleaned
+up after. Tests: `functions/lib/callCleanup.test.js` (`nameExtendsOrMatches`),
+`functions/lib/speakerNaming.test.js` (prompt-guard text), `functions/api/transcribe-call.test.js`
+(prompt-guard text + `reclassifyLead()` cross-validation behavior with a stubbed Anthropic fetch),
+`supabase/tests/crm_auto_qualify_contact.test.js` (self-skips locally, same as other `crm_*`
+integration suites).
+
 **Quick-add-task text wrapping fix (2026-07-21):** the Leads card's quick-add-task popover used a
 single-line `<input type="text">` (the sibling Add-note popover already correctly used a wrapping
 `<textarea>`) — a long task title typed past the visible width was invisible/clipped. Swapped to a
