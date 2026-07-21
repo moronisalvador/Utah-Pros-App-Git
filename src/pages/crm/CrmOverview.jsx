@@ -89,6 +89,11 @@
  *   - get_attribution_rollup's leads count now excludes merged repeat-call
  *     duplicates (merged_into_lead_id), matching the Kanban board's own
  *     definition of a lead — fixed 2026-07-21 (see UPR-Web-Context.md).
+ *   - RangePicker also supports a custom From/To range (same popover pattern
+ *     as CrmLeads.jsx's date filter); `range==='custom'` reads `customRange`
+ *     via rangeToDates('custom', customRange) — both are in load()'s dep
+ *     array so picking new custom dates refetches even though `range` itself
+ *     doesn't change string value.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -133,6 +138,7 @@ export default function CrmOverview() {
 
   // ─── SECTION: State & hooks ──────────────
   const [range, setRange] = useState('all');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -142,7 +148,7 @@ export default function CrmOverview() {
     setLoading(true);
     setError(false);
     try {
-      const { start, end } = rangeToDates(range);
+      const { start, end } = rangeToDates(range, customRange);
       const callStart = start ?? ALL_TIME_FLOOR;
       const callEnd = end ?? new Date().toISOString().slice(0, 10);
       const [
@@ -191,7 +197,7 @@ export default function CrmOverview() {
     } finally {
       setLoading(false);
     }
-  }, [db, range]);
+  }, [db, range, customRange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -262,7 +268,11 @@ export default function CrmOverview() {
           <h1 className="crm-page-title">Overview</h1>
           <p className="crm-page-subtitle">Spend → leads → estimates → won jobs → revenue, all in one place.</p>
         </div>
-        <RangePicker value={range} onChange={setRange} />
+        <RangePicker
+          value={range}
+          onChange={setRange}
+          onCustomRange={(start, end) => setCustomRange({ start, end })}
+        />
       </div>
 
       {loading ? (

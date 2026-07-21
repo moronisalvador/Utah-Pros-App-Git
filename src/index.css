@@ -8755,14 +8755,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 /* ── CRM Phase 3 — Attribution + funnel dashboard (docs/crm-roadmap.md) ── */
 .crm-page-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap; }
 
-/* Date-range picker */
-.crm-range { display: inline-flex; gap: 2px; background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: 3px; }
-.crm-range-btn {
-  font-family: inherit; font-size: 12px; font-weight: 600; color: var(--crm-text-secondary);
-  background: transparent; border: none; border-radius: 7px; padding: 6px 12px; cursor: pointer; white-space: nowrap;
-}
-.crm-range-btn:hover { color: var(--crm-text-primary); }
-.crm-range-btn.active { background: var(--crm-bg-card); color: var(--crm-text-primary); box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+/* Date-range picker — the preset tabs now reuse the Leads board's own
+   .crm-board-period* classes (src/index.css ~8608) so RangePicker's custom
+   date-range popover matches CrmLeads.jsx's date filter pixel-for-pixel;
+   see attributionParts.jsx's RangePicker. */
 
 /* KPI metric cards */
 .crm-metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-3); margin-bottom: var(--space-5); }
