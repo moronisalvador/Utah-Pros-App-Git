@@ -4632,6 +4632,40 @@ not-yet-Won lead gets advanced AND valued in the same invoice-create event); use
 `total`; a zero/negative total never sets a value. Test: `supabase/tests/crm_lead_value_sync.test.js`.
 No frontend change needed — `crmPipeline.js`'s `weightedPipelineValue()` already reads `lead.value`.
 
+**Duplicate-lead merge on repeat calls (2026-07-21, `20260721_crm_merge_repeat_call_leads.sql`,
+owner-directed):** confirmed live — phone `+16267717702` ("Jake Nelson" / "Jake") produced two
+`inbound_leads` rows 62ms apart, both landing as separate cards in the same "Estimate Sent" column
+(the duplicate's `contact_id` was NULL — the two cards were moved into that column independently,
+most likely by hand, unaware they were the same conversation; not an auto-advance chain reaction).
+Root cause: `upsert_lead_from_callrail` had no concept of "does this phone already have an open lead" — every call became its own Kanban card via `groupLeadsByStage()`'s
+first-stage fallback (a lead needs no `lead_pipeline_stage` row at all to render as "New"). Fix is
+**stage-based, not a time window** (owner decision): a genuinely NEW call (never a redelivered
+webhook — checked via the existing `v_existed` flag) whose normalized phone matches another
+non-spam, not-already-merged lead sitting on a stage that's neither `is_won` nor `is_lost` (or no
+stage row at all, i.e. still "New") gets `inbound_leads.merged_into_lead_id` set to that lead's id
+(new nullable FK column + partial index) — picks the OLDEST matching open lead so a chain of repeat
+calls always converges on one true original. The merged row still gets a full `inbound_leads` insert
+(the call/transcript stays for history/compliance) but never a `lead_pipeline_stage` row of its own.
+A repeat call from a phone whose prior lead already reached Won/Lost is NOT merged — a past
+customer's new problem correctly gets a fresh, independent lead. `CrmLeads.jsx`'s board query gained
+`merged_into_lead_id=is.null` (same filter position as the existing `spam_flag=eq.false`) — the
+actual mechanism keeping a merged duplicate off the board, since the fallback-to-first-stage
+behavior means "just don't create a stage row" alone would NOT have hidden it. `crm_auto_advance_leads`
+(body-only replace) gained the same `merged_into_lead_id IS NULL` guard so a merged duplicate can
+never be independently pulled through Won/Estimate Sent again; `crm_disqualify_lead_if_open` gained
+the same guard as defense-in-depth. `get_lead_activity`/`get_contact_activity` (both body-only
+replaces, same signatures/return shapes) gained a `'follow_up_call'` UNION ALL arm surfacing every
+lead merged into the one being viewed (summary, occurred_at, `meta.merged_lead_id` linking back to
+the merged call's own transcript/recording); `get_contact_activity`'s `'lead'` arm now excludes
+`merged_into_lead_id IS NOT NULL` rows so a merged duplicate doesn't ALSO render as its own plain
+"Call" entry. `ActivityTimeline.jsx` needed no changes — already generic over `activity_type`, so the
+new type renders with the same default (unstyled) badge as `stage_change`/`task`/etc. One-time
+backfill merges the single known live pair ("Jake" → "Jake Nelson", the first-created of the two) and
+deletes the duplicate's now-orphaned `lead_pipeline_stage` row. Test:
+`supabase/tests/crm_merge_repeat_call_leads.test.js` (self-skips locally, same as other `crm_*`
+integration suites) — covers merge-while-open, no-merge-after-Won, no-merge-after-Lost, fresh-number
+new-lead, and redelivered-webhook-doesn't-re-merge.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

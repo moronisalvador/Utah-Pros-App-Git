@@ -52,6 +52,12 @@
  *   - A lead with no lead_pipeline_stage row yet reads as sitting in the
  *     first stage (lowest sort_order) — see src/lib/crmPipeline.js's
  *     groupLeadsByStage(), which the DB-side RPCs mirror.
+ *   - The board query excludes `merged_into_lead_id=is.null` — a repeat call
+ *     from a phone number that already has an OPEN lead gets merged into it
+ *     server-side (upsert_lead_from_callrail, 2026-07-21) instead of getting
+ *     its own card; it still shows up as a "Follow-up call" entry on the
+ *     original lead's activity timeline (get_contact_activity/
+ *     get_lead_activity's 'follow_up_call' arm).
  *   - Drag-and-drop works on both desktop (native HTML5 DnD) and touch
  *     (Pointer Events — a separate, parallel code path, gated by the same
  *     isTouchDevice() check Production.jsx's JobCard uses to pick a
@@ -361,7 +367,7 @@ export default function CrmLeads() {
     try {
       const [stageRows, leadRows, positionRows] = await Promise.all([
         db.rpc('get_pipeline_stages', {}),
-        db.select('inbound_leads', 'spam_flag=eq.false&select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=200'),
+        db.select('inbound_leads', 'spam_flag=eq.false&merged_into_lead_id=is.null&select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=200'),
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id,updated_at'),
       ]);
       setStages(stageRows || []);
