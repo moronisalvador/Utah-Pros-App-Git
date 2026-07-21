@@ -36,6 +36,7 @@ import {
   leadsByChannel,
   newLeadsSince,
   pipelineOutcome,
+  callScreeningCoverage,
 } from './crmCharts.js';
 
 describe('constant maps', () => {
@@ -288,5 +289,40 @@ describe('pipelineOutcome', () => {
   it('handles empty / missing input', () => {
     expect(pipelineOutcome([], {}).win_rate).toBeNull();
     expect(pipelineOutcome(undefined, undefined).total).toBe(0);
+  });
+});
+
+describe('callScreeningCoverage', () => {
+  it('counts a call-lead as screened only when transcript_analysis carries the is_customer_inquiry key', () => {
+    const leads = [
+      { source_type: 'call', transcript_analysis: { is_customer_inquiry: true } }, // screened
+      { source_type: 'call', transcript_analysis: { is_customer_inquiry: false } }, // screened (still counts as screened even though it's a spam verdict)
+      { source_type: 'call', transcript_analysis: { sentiment: { label: 'positive' } } }, // no key → unscreened
+      { source_type: 'call', transcript_analysis: null }, // never transcribed → unscreened
+      { source_type: 'call' }, // no transcript_analysis at all → unscreened
+      { source_type: 'form', transcript_analysis: null }, // not a call → excluded entirely
+    ];
+    const c = callScreeningCoverage(leads);
+    expect(c.call_leads).toBe(5); // the form lead is excluded from the denominator
+    expect(c.screened).toBe(2);
+    expect(c.unscreened).toBe(3);
+    expect(c.screened_rate).toBeCloseTo(0.4, 10);
+  });
+
+  it('screened_rate is null when there are no call-leads at all (guards 0/0)', () => {
+    const c = callScreeningCoverage([{ source_type: 'form' }]);
+    expect(c.call_leads).toBe(0);
+    expect(c.screened_rate).toBeNull();
+  });
+
+  it('a non-object transcript_analysis (e.g. a stray string) never counts as screened', () => {
+    const c = callScreeningCoverage([{ source_type: 'call', transcript_analysis: 'not an object' }]);
+    expect(c.screened).toBe(0);
+    expect(c.unscreened).toBe(1);
+  });
+
+  it('handles empty / missing input', () => {
+    expect(callScreeningCoverage([]).screened_rate).toBeNull();
+    expect(callScreeningCoverage(undefined).call_leads).toBe(0);
   });
 });

@@ -21,7 +21,8 @@
  *   channel/division maps, paletteColor, toDonutSegments, callVolumeSplit
  *   (CallRail-sourced answered/missed), agingOverThreshold, leadsByCampaign,
  *   leadsByChannel, newLeadsSince, pipelineOutcome (won/lost/open + bounded
- *   lead win rate).
+ *   lead win rate), callScreeningCoverage (AI spam-classifier coverage, a
+ *   transparency read — not a spam judgment of its own).
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -272,5 +273,49 @@ export function pipelineOutcome(sortedStages, grouped) {
     decided,
     total: won + lost + open,
     win_rate: decided > 0 ? won / decided : null,
+  };
+}
+
+// ─── SECTION: AI spam-screening coverage (transparency, not a judgment) ────────
+
+/**
+ * How much of the counted call-leads have actually been through the AI spam
+ * classifier (transcribe-call.js's cleanup/zero-turn analysis), vs. how many
+ * are still unscreened. This does NOT re-judge spam itself — the classifier
+ * already does that, and every count on this page already excludes a
+ * CONFIRMED spam lead via spam_flag (which the classifier sets via
+ * set_lead_spam_flag once it decides). This only reports on classifier
+ * COVERAGE, so a leads count isn't read as more certain than it is: a lead
+ * that hasn't been transcribed yet could still turn out to be spam once
+ * screened, and the headline numbers can't know that in advance.
+ *
+ * A call-lead counts as "screened" once its transcript_analysis carries the
+ * 'is_customer_inquiry' key (the classifier writes this key on every real
+ * analysis path — the ordinary cleanup path and the zero-turn fallback both
+ * set it; see functions/api/transcribe-call.js). Non-call leads (forms) are
+ * excluded from the denominator — they were never candidates for phone-call
+ * transcription in the first place.
+ *
+ * `leads` are inbound_leads rows carrying {source_type, transcript_analysis}.
+ * Returns { call_leads, screened, unscreened, screened_rate } — screened_rate
+ * is null when there are no call-leads at all (guards 0/0).
+ */
+export function callScreeningCoverage(leads) {
+  const list = Array.isArray(leads) ? leads : [];
+  let callLeads = 0;
+  let screened = 0;
+  for (const l of list) {
+    if (l?.source_type !== 'call') continue;
+    callLeads += 1;
+    if (l?.transcript_analysis && typeof l.transcript_analysis === 'object'
+      && 'is_customer_inquiry' in l.transcript_analysis) {
+      screened += 1;
+    }
+  }
+  return {
+    call_leads: callLeads,
+    screened,
+    unscreened: callLeads - screened,
+    screened_rate: callLeads > 0 ? screened / callLeads : null,
   };
 }

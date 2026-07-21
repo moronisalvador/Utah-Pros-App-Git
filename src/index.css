@@ -9606,6 +9606,11 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    no motion that lacks a reduced-motion fallback); 390px-safe (grids collapse
    to one column, nothing overflows horizontally). */
 
+/* AI spam-screening coverage caption (transparency, not a chart) — a little
+   breathing room below it before the next card, without touching the shared
+   .crm-note margin used elsewhere. */
+.crm-screening-note { margin-bottom: var(--space-5); }
+
 /* Four-panel donut charts grid — collapses to 1 column on narrow screens. */
 .crm-charts-grid {
   display: grid;
