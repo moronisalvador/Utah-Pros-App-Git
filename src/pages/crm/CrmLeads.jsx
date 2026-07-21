@@ -84,6 +84,7 @@ import { IconNote } from '@/components/Icons';
 import { IconTasks } from '@/lib/crmIcons';
 import { IconButton, StatusPill, ErrorState } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
+import CrmDatePicker from '@/components/crm/CrmDatePicker';
 import TabLoading from '@/components/TabLoading';
 import { ok, err } from '@/lib/toast';
 
@@ -753,14 +754,14 @@ export default function CrmLeads() {
                 <>
                 <div className="crm-leads-popover-backdrop" onClick={() => setShowDatePicker(false)} />
                 <div className="crm-leads-popover crm-leads-datepicker">
-                  <label className="crm-leads-popover-field">
+                  <div className="crm-leads-popover-field">
                     <span>From</span>
-                    <input type="date" className="crm-input" value={customRange.start} onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))} />
-                  </label>
-                  <label className="crm-leads-popover-field">
+                    <CrmDatePicker value={customRange.start} onChange={v => setCustomRange(r => ({ ...r, start: v }))} aria-label="From date" />
+                  </div>
+                  <div className="crm-leads-popover-field">
                     <span>To</span>
-                    <input type="date" className="crm-input" value={customRange.end} onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))} />
-                  </label>
+                    <CrmDatePicker value={customRange.end} onChange={v => setCustomRange(r => ({ ...r, end: v }))} min={customRange.start || undefined} aria-label="To date" />
+                  </div>
                   <button
                     className="crm-btn crm-btn-primary crm-btn-sm"
                     disabled={!customRange.start && !customRange.end}
@@ -1156,7 +1157,6 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [tasksError, setTasksError] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDueAt, setNewTaskDueAt] = useState('');
-  const [showTaskDatePicker, setShowTaskDatePicker] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState(null); // task id awaiting 2nd click
 
@@ -1260,7 +1260,6 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
       setTasks(prev => [{ ...row, assignee_name: null, contact_name: null }, ...prev]);
       setNewTaskTitle('');
       setNewTaskDueAt('');
-      setShowTaskDatePicker(false);
       ok('Task added');
     } catch {
       err('Failed to add the task');
@@ -1490,33 +1489,12 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   aria-label="New task title"
                   style={{ flex: '1 1 auto' }}
                 />
-                <span className="crm-task-date-wrap">
-                  <IconButton
-                    label={newTaskDueAt ? `Due ${new Date(newTaskDueAt).toLocaleDateString()} — click to change` : 'Add due date (optional)'}
-                    size="sm"
-                    className={`crm-task-date-toggle${newTaskDueAt ? ' active' : ''}`}
-                    onClick={() => setShowTaskDatePicker(v => !v)}
-                  >
-                    <IconCalendar style={CARD_ACTION_ICON_STYLE} />
-                  </IconButton>
-                  {showTaskDatePicker && (
-                    <>
-                      <div className="crm-leads-popover-backdrop" onClick={() => setShowTaskDatePicker(false)} />
-                      <div className="crm-leads-popover crm-task-datepicker">
-                        <label className="crm-leads-popover-field">
-                          <span>Due date</span>
-                          <input type="date" className="crm-input" value={newTaskDueAt} onChange={e => setNewTaskDueAt(e.target.value)} autoFocus />
-                        </label>
-                        <div className="crm-panel-actions" style={{ padding: 0 }}>
-                          {newTaskDueAt && (
-                            <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setNewTaskDueAt('')}>Clear</button>
-                          )}
-                          <button className="crm-btn crm-btn-primary crm-btn-sm" onClick={() => setShowTaskDatePicker(false)}>Done</button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </span>
+                <CrmDatePicker
+                  compact
+                  value={newTaskDueAt}
+                  onChange={setNewTaskDueAt}
+                  placeholder="Add due date (optional)"
+                />
                 <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={addTask} disabled={addingTask || !newTaskTitle.trim()}>
                   {addingTask ? 'Adding…' : '+ Add'}
                 </button>

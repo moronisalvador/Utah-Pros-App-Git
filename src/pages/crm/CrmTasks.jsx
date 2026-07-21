@@ -41,6 +41,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconTasks } from '@/lib/crmIcons';
 import { isTaskOverdue } from '@/components/crm/OverdueTasksWidget';
 import { ok, err } from '@/lib/toast';
+import CrmDatePicker from '@/components/crm/CrmDatePicker';
+import CrmTimePicker from '@/components/crm/CrmTimePicker';
 
 const STATUS_TABS = [{ key: 'open', label: 'Open' }, { key: 'done', label: 'Done' }];
 
@@ -53,6 +55,15 @@ function toLocalInput(iso) {
 }
 function fromLocalInput(v) {
   return v ? new Date(v).toISOString() : null;
+}
+// CrmDatePicker/CrmTimePicker each own one half of the datetime-local value.
+function splitLocal(v) {
+  if (!v) return { date: '', time: '' };
+  const [date, time] = v.split('T');
+  return { date: date || '', time: time || '' };
+}
+function joinLocal(date, time) {
+  return date ? `${date}T${time || '00:00'}` : '';
 }
 function formatDue(iso) {
   if (!iso) return '';
@@ -311,12 +322,38 @@ function TaskEditor({ db, employees, createdBy, task, onClose, onSaved }) {
 
         <div className="crm-task-field-row">
           <div className="crm-panel-section crm-task-field">
-            <label className="crm-panel-label" htmlFor="task-due">Due</label>
-            <input id="task-due" type="datetime-local" className="crm-input" value={dueAt} onChange={e => setDueAt(e.target.value)} />
+            <label className="crm-panel-label">Due</label>
+            <div className="crm-datetime-row">
+              <CrmDatePicker
+                value={splitLocal(dueAt).date}
+                onChange={d => setDueAt(joinLocal(d, splitLocal(dueAt).time))}
+                placeholder="Due date"
+                aria-label="Due date"
+              />
+              <CrmTimePicker
+                value={splitLocal(dueAt).time}
+                onChange={t => setDueAt(joinLocal(splitLocal(dueAt).date, t))}
+                placeholder="Time"
+                aria-label="Due time"
+              />
+            </div>
           </div>
           <div className="crm-panel-section crm-task-field">
-            <label className="crm-panel-label" htmlFor="task-remind">Reminder</label>
-            <input id="task-remind" type="datetime-local" className="crm-input" value={remindAt} onChange={e => setRemindAt(e.target.value)} />
+            <label className="crm-panel-label">Reminder</label>
+            <div className="crm-datetime-row">
+              <CrmDatePicker
+                value={splitLocal(remindAt).date}
+                onChange={d => setRemindAt(joinLocal(d, splitLocal(remindAt).time))}
+                placeholder="Reminder date"
+                aria-label="Reminder date"
+              />
+              <CrmTimePicker
+                value={splitLocal(remindAt).time}
+                onChange={t => setRemindAt(joinLocal(splitLocal(remindAt).date, t))}
+                placeholder="Time"
+                aria-label="Reminder time"
+              />
+            </div>
           </div>
         </div>
 
