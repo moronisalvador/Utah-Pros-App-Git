@@ -4536,9 +4536,36 @@ Cloudflare's gateway caps a request around ~100s, repeated rounds kept reprocess
 `customer_full_name` (the newest field this pass writes) — a lead already reprocessed under current code
 is skipped on the next round, so a sweep now genuinely converges instead of looping on the same subset.
 Also added `{ reclassify: true, lead_id }` single-lead targeting for verifying a prompt change against
-one known call without a bulk sweep. **Known permanent-error leads:** ~37 of the 86 transcribed leads
-have zero usable turns (missed/silent calls with nothing said) — these correctly throw `'no usable turns
-to reclassify'` every round; not a bug, nothing to reclassify.
+one known call without a bulk sweep. **~~Known permanent-error leads: ~37 of the 86 transcribed leads
+have zero usable turns... not a bug, nothing to reclassify.~~ — superseded below (2026-07-21): this WAS
+a bug, not a dead end — see "Zero-turn call classification gap".**
+
+**Zero-turn call classification gap (2026-07-21):** the ~37 leads noted above as a permanent dead end
+were in fact never being classified at all. Root cause: `buildCleanupPrompt(turns)`
+(`functions/lib/callCleanup.js`) returns `''` when a call has ZERO usable speaker turns (genuine dead
+air, a voicemail hang-up with no message, or a call that cut off before anyone spoke — Deepgram still
+returns a raw flat transcript + its own one-line summary for these, just no diarized turns) —
+`cleanAndSummarize()` in `transcribe-call.js` then skipped the Claude call entirely on an empty prompt,
+so `caller_never_responded`/`is_customer_inquiry`/etc. never got computed and the lead sat in the
+pipeline (usually stage "New") looking like a live lead forever with `spam_flag:false`. Live count at
+discovery: 37 zero-turn leads, 28 still unflagged. **Deliberately NOT a duration/keyword heuristic** —
+verified live that length/keywords don't reliably separate the two cases: a 68-second "voicemail" from
+a real customer ("this is Brynn, requesting a mold inspection... left her callback number") is a
+genuine lead, while several 20-30 second calls really are dead air with no message. Fixed with a new
+pure helper module **`functions/lib/zeroTurnClassifier.js`** (`buildZeroTurnPrompt`/
+`parseZeroTurnResponse`, same degrade-safely/lenient-boolean split as `callCleanup.js`) plus
+`classifyZeroTurnCall()`/`ZERO_TURN_SYSTEM` in `transcribe-call.js`: when `buildCleanupPrompt` returns
+`''`, `cleanAndSummarize()` now falls back to asking Claude Haiku a small separate question against
+Deepgram's raw flat transcript + one-line summary (which do exist even with zero diarized turns) —
+judging ONLY the actual words present, never call length — and sets ONLY `caller_never_responded`
+(everything else about the lead is left alone, same "leave as whatever it already was" contract as
+every other best-effort signal here). A garbled/missing AI answer is a safe no-op (never a false
+spam-flag), matching every other pass in this file. Also relaxed `reclassifyLead()`'s guard — it used
+to `throw` on any lead with `analysis.turns.length === 0` (the exact leads this fix targets); it now
+only throws when there is NEITHER a usable turn NOR any raw transcript/summary text to judge at all.
+The existing `{reclassify: true}` sweep already selects these leads without any query change (its
+`inspection_scheduled IS NULL` sentinel was never set for them either, same as any never-processed
+lead). Test: `functions/lib/zeroTurnClassifier.test.js`.
 
 **Agent/customer role-confusion fix + auto-qualify contact linking (2026-07-21):** two bugs found
 reviewing real production data — two leads ~1.5hrs apart from the same caller
