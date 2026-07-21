@@ -84,6 +84,7 @@ import { IconNote } from '@/components/Icons';
 import { IconTasks } from '@/lib/crmIcons';
 import { IconButton, StatusPill, ErrorState } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
+import CrmDatePicker from '@/components/crm/CrmDatePicker';
 import TabLoading from '@/components/TabLoading';
 import { ok, err } from '@/lib/toast';
 
@@ -241,14 +242,20 @@ function daysInStage(updatedAt) {
 }
 
 // ─── SECTION: Filter bar (date range + criteria) ──────────────
-// Calendar-based, not rolling windows — "Week"/"Month" mean this-week/
-// this-month-to-date, the same convention src/lib/reportPeriods.js already
-// uses for MTD elsewhere in the app (never UTC — local/business time).
+// Rolling windows, not calendar-aligned — "Last 7"/"Last 30" mean the
+// trailing N days from right now (matches the Dashboard's own "Last 30" tab
+// convention), not this-calendar-week/this-calendar-month-to-date. Switched
+// from calendar periods 2026-07-21: this board has no prior-period view to
+// compare against, so calendar alignment bought nothing, and a rolling window
+// avoids the "board looks empty first thing Monday morning" cliff while
+// doubling as a stable answer to "how many leads are we getting lately."
 const DATE_PERIODS = [
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
+  { value: 'week', label: 'Last 7' },
+  { value: 'month', label: 'Last 30' },
   { value: 'all', label: 'All time' },
 ];
+const WEEK_MS = 7 * 86400000;
+const MONTH_MS = 30 * 86400000;
 
 function dateRangeFor(period, customRange) {
   if (period === 'custom') {
@@ -257,13 +264,9 @@ function dateRangeFor(period, customRange) {
     return { start, end };
   }
   if (period === 'all') return { start: null, end: null };
-  const now = new Date();
-  if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), end: null };
-  // "week" — since the most recent Monday.
-  const day = now.getDay(); // 0=Sun..6=Sat
-  const diffToMonday = day === 0 ? 6 : day - 1;
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
-  return { start: monday.getTime(), end: null };
+  const now = Date.now();
+  if (period === 'month') return { start: now - MONTH_MS, end: null };
+  return { start: now - WEEK_MS, end: null }; // "week" — trailing 7 days
 }
 
 // Service categories, derived from the AI-detected transcript topics — the
@@ -457,6 +460,22 @@ export default function CrmLeads() {
 
   const grouped = useMemo(() => groupLeadsByStage(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
   const pipelineValue = useMemo(() => weightedPipelineValue(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
+
+  // Intake trend — independent of whichever date tab is selected, so the
+  // rate context is always visible regardless of what the board is filtered
+  // to. Counts against the full (criteria-unfiltered) `leads` array, same
+  // ground truth as the page subtitle's total.
+  const trend = useMemo(() => {
+    const now = Date.now();
+    let in7 = 0, in30 = 0;
+    for (const lead of leads) {
+      if (!lead.occurred_at) continue;
+      const age = now - new Date(lead.occurred_at).getTime();
+      if (age <= WEEK_MS) in7++;
+      if (age <= MONTH_MS) in30++;
+    }
+    return { in7, weeklyAvg30: in30 / 30 * 7 };
+  }, [leads]);
 
   const toggleFilter = useCallback((group, key) => {
     setFilters(prev => {
@@ -698,6 +717,11 @@ export default function CrmLeads() {
               {hasActiveFilters ? `${filteredLeads.length} of ${leads.length} leads` : `${leads.length} lead${leads.length === 1 ? '' : 's'} in pipeline`}
               {pipelineValue.total > 0 ? ` · ${formatMoney(pipelineValue.total)} weighted` : ''}
             </p>
+            {leads.length > 0 && (
+              <p className="crm-page-subtitle crm-leads-trend">
+                {trend.in7} new in the last 7 days · {trend.weeklyAvg30.toFixed(1)}/week avg (last 30 days)
+              </p>
+            )}
           </div>
           <button className="crm-btn crm-btn-primary" onClick={() => setShowNew(true)}>+ New lead</button>
         </div>
@@ -730,14 +754,14 @@ export default function CrmLeads() {
                 <>
                 <div className="crm-leads-popover-backdrop" onClick={() => setShowDatePicker(false)} />
                 <div className="crm-leads-popover crm-leads-datepicker">
-                  <label className="crm-leads-popover-field">
+                  <div className="crm-leads-popover-field">
                     <span>From</span>
-                    <input type="date" className="crm-input" value={customRange.start} onChange={e => setCustomRange(r => ({ ...r, start: e.target.value }))} />
-                  </label>
-                  <label className="crm-leads-popover-field">
+                    <CrmDatePicker value={customRange.start} onChange={v => setCustomRange(r => ({ ...r, start: v }))} aria-label="From date" />
+                  </div>
+                  <div className="crm-leads-popover-field">
                     <span>To</span>
-                    <input type="date" className="crm-input" value={customRange.end} onChange={e => setCustomRange(r => ({ ...r, end: e.target.value }))} />
-                  </label>
+                    <CrmDatePicker value={customRange.end} onChange={v => setCustomRange(r => ({ ...r, end: v }))} min={customRange.start || undefined} aria-label="To date" />
+                  </div>
                   <button
                     className="crm-btn crm-btn-primary crm-btn-sm"
                     disabled={!customRange.start && !customRange.end}
@@ -1132,8 +1156,9 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDueAt, setNewTaskDueAt] = useState('');
   const [addingTask, setAddingTask] = useState(false);
-  const [stageHistory, setStageHistory] = useState([]);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState(null); // task id awaiting 2nd click
 
   const submittedRows = useMemo(() => formDataRows(formSchema, lead.form_data), [formSchema, lead.form_data]);
 
@@ -1155,21 +1180,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, lead.id]);
 
-  // This lead's tasks (any status, mirrors CrmTasks.jsx) + its pipeline-stage
-  // move history, so "progress on this lead" is visible without leaving the panel.
+  // This lead's tasks (any status, mirrors CrmTasks.jsx) — stage-move history
+  // lives in the Activity timeline below (its own stage_change rows), so it's
+  // not duplicated here.
   const loadTasks = useCallback(async (signal) => {
     setTasksLoading(true);
     try {
-      const [taskRows, historyRows] = await Promise.all([
-        db.rpc('get_crm_tasks', { p_lead_id: lead.id }),
-        db.select('lead_stage_history', `lead_id=eq.${lead.id}&select=id,stage_id,from_stage_id,lost_reason,moved_at&order=moved_at.desc&limit=20`),
-      ]);
+      const taskRows = await db.rpc('get_crm_tasks', { p_lead_id: lead.id });
       if (signal?.cancelled) return;
       setTasks(taskRows || []);
-      setStageHistory(historyRows || []);
       setTasksError(false);
     } catch {
-      if (!signal?.cancelled) { setTasks([]); setStageHistory([]); setTasksError(true); err('Failed to load tasks and stage history'); }
+      if (!signal?.cancelled) { setTasks([]); setTasksError(true); err('Failed to load tasks'); }
     } finally {
       if (!signal?.cancelled) setTasksLoading(false);
     }
@@ -1233,16 +1255,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         p_contact_id: lead.contact_id || null,
         p_lead_id: lead.id,
         p_created_by: createdBy,
+        p_due_at: newTaskDueAt ? new Date(newTaskDueAt).toISOString() : null,
       });
       setTasks(prev => [{ ...row, assignee_name: null, contact_name: null }, ...prev]);
       setNewTaskTitle('');
+      setNewTaskDueAt('');
       ok('Task added');
     } catch {
       err('Failed to add the task');
     } finally {
       setAddingTask(false);
     }
-  }, [db, newTaskTitle, lead.contact_id, lead.id, createdBy]);
+  }, [db, newTaskTitle, newTaskDueAt, lead.contact_id, lead.id, createdBy]);
 
   const toggleTaskStatus = useCallback(async (task) => {
     const next = task.status === 'done' ? 'open' : 'done';
@@ -1255,7 +1279,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     }
   }, [db, actorId]);
 
-  const stageNameFor = useCallback((stageId) => stages.find(s => s.id === stageId)?.name || 'Unknown stage', [stages]);
+  const removeTask = useCallback(async (task) => {
+    setConfirmDeleteTask(null);
+    const prior = tasks;
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+    try {
+      await db.rpc('delete_crm_task', { p_task_id: task.id });
+      ok('Task deleted');
+    } catch {
+      setTasks(prior);
+      err('Failed to delete task');
+    }
+  }, [db, tasks]);
 
   return (
     <div className="crm-panel-overlay" onClick={onClose}>
@@ -1427,6 +1462,19 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                         <span className="crm-task-title">{task.title}</span>
                         {task.due_at && <span className="crm-task-tags"><span className="crm-task-due">Due {new Date(task.due_at).toLocaleDateString()}</span></span>}
                       </span>
+                      {confirmDeleteTask === task.id ? (
+                        <span
+                          className="crm-task-confirm"
+                          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setConfirmDeleteTask(null); }}
+                        >
+                          <button className="crm-btn crm-btn-danger crm-btn-sm" onClick={() => removeTask(task)} autoFocus>Delete</button>
+                          <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setConfirmDeleteTask(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button className="crm-task-delete" onClick={() => setConfirmDeleteTask(task.id)} aria-label="Delete task">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -1439,6 +1487,13 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   onKeyDown={e => { if (e.key === 'Enter') addTask(); }}
                   placeholder="Follow up call, send estimate…"
                   aria-label="New task title"
+                  style={{ flex: '1 1 auto' }}
+                />
+                <CrmDatePicker
+                  compact
+                  value={newTaskDueAt}
+                  onChange={setNewTaskDueAt}
+                  placeholder="Add due date (optional)"
                 />
                 <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={addTask} disabled={addingTask || !newTaskTitle.trim()}>
                   {addingTask ? 'Adding…' : '+ Add'}
@@ -1447,21 +1502,6 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
             </>
           )}
         </div>
-
-        {stageHistory.length > 0 && (
-          <div className="crm-panel-section">
-            <div className="crm-panel-section-title">Stage history</div>
-            {stageHistory.map(h => (
-              <div className="crm-panel-row" key={h.id}>
-                <span>
-                  {h.from_stage_id ? `${stageNameFor(h.from_stage_id)} → ${stageNameFor(h.stage_id)}` : `Entered ${stageNameFor(h.stage_id)}`}
-                  {h.lost_reason ? ` — ${h.lost_reason}` : ''}
-                </span>
-                <span>{h.moved_at ? new Date(h.moved_at).toLocaleDateString() : '—'}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         <div className="crm-panel-section">
           <div className="crm-panel-section-title">Activity</div>
