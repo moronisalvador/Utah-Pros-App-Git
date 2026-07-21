@@ -27,7 +27,8 @@
  *   Packages:  none
  *   Internal:  none
  *   Exports:   buildZeroTurnPrompt(rawText, summary) → string
- *              parseZeroTurnResponse(text) → { callerNeverResponded: boolean } | null
+ *              parseZeroTurnResponse(text) → { callerNeverResponded: boolean,
+ *                isCustomerInquiry: boolean } | null
  *
  * NOTES / GOTCHAS:
  *   - Deliberately NOT a duration/keyword heuristic. Verified live against
@@ -41,6 +42,14 @@
  *     unparseable AI answer makes parseZeroTurnResponse return null, and the
  *     caller (transcribe-call.js) treats null as a no-op — the lead is left
  *     exactly as it was, never a false spam-flag.
+ *   - isCustomerInquiry reads the OPPOSITE lenient direction, same as
+ *     callCleanup.js's is_customer_inquiry: only a literal `false` flips it —
+ *     a missing/garbled field defaults to true, so an ambiguous answer never
+ *     mis-flags a real caller. This is a deliberately conservative catch —
+ *     a zero-turn call's raw text is thinner evidence than a full per-turn
+ *     transcript, so the prompt only asks for a clear-cut wrong-number/
+ *     personal-call case, not the harder vendor/solicitor judgment the full
+ *     cleanup pass makes on calls with real turns.
  * ════════════════════════════════════════════════
  */
 
@@ -60,10 +69,13 @@ export function buildZeroTurnPrompt(rawText, summary) {
 /**
  * Parse Claude's JSON answer defensively (raw JSON, fenced, or in prose), same
  * contract as callCleanup.js/speakerNaming.js. Returns
- * { callerNeverResponded: boolean } or null when there's no usable JSON
- * object at all. Reads the boolean leniently — only a literal `true` sets
- * callerNeverResponded; anything else (false, missing, a non-boolean value)
- * yields false, never a parse failure.
+ * { callerNeverResponded: boolean, isCustomerInquiry: boolean } or null when
+ * there's no usable JSON object at all. callerNeverResponded reads leniently —
+ * only a literal `true` sets it, anything else (false, missing, a non-boolean
+ * value) yields false. isCustomerInquiry reads the OPPOSITE lenient
+ * direction — only a literal `false` flips it, anything else (missing,
+ * garbled) defaults to true — so a missing/garbled field never mis-flags a
+ * real caller as not a customer inquiry.
  */
 export function parseZeroTurnResponse(text) {
   if (typeof text !== 'string' || !text.trim()) return null;
@@ -78,5 +90,8 @@ export function parseZeroTurnResponse(text) {
   }
   if (!obj || typeof obj !== 'object') return null;
 
-  return { callerNeverResponded: obj.caller_never_responded === true };
+  return {
+    callerNeverResponded: obj.caller_never_responded === true,
+    isCustomerInquiry: obj.is_customer_inquiry === false ? false : true,
+  };
 }

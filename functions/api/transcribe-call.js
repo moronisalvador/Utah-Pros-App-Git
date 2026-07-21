@@ -136,12 +136,18 @@
  *     classifyZeroTurnCall()/ZERO_TURN_SYSTEM (zeroTurnClassifier.js) whenever
  *     buildCleanupPrompt is empty: it judges Deepgram's raw flat transcript +
  *     its own one-line summary (both of which still exist even with zero
- *     diarized turns) and sets ONLY caller_never_responded — never a duration
+ *     diarized turns) and sets caller_never_responded — never a duration
  *     or keyword heuristic, since those don't reliably separate a real short
  *     voicemail from genuine dead air (verified live: a 68-second real-customer
- *     voicemail vs. several 20-30 second true no-message hangups). A garbled/
- *     missing AI answer is a safe no-op, same as every other pass here.
- *     reclassifyLead() no longer throws on a zero-turn lead (it used to
+ *     voicemail vs. several 20-30 second true no-message hangups). It also sets
+ *     is_customer_inquiry (2026-07-21 follow-up), but only for a CLEAR-CUT
+ *     wrong-number/personal-call case — this thinner raw text isn't enough
+ *     evidence for the harder vendor/solicitor judgment the full cleanup pass
+ *     makes on calls with real turns, so that distinction is deliberately left
+ *     to the normal pass. A garbled/missing AI answer is a safe no-op, same as
+ *     every other pass here — is_customer_inquiry defaults true, same lenient
+ *     direction as the full cleanup pass. reclassifyLead() no longer throws on
+ *     a zero-turn lead (it used to
  *     require analysis.turns.length > 0) as long as there's a raw transcript
  *     or summary to judge, so the existing `{reclassify:true}` backfill mode
  *     also sweeps these leads — the same `inspection_scheduled IS NULL`
@@ -224,12 +230,14 @@ The "turns" array MUST have EXACTLY the same number of entries, in the same orde
 // raw flat transcript + its own one-line summary instead of numbered turns.
 export const ZERO_TURN_SYSTEM = `You are given Deepgram's raw transcript text (and/or its own automated one-line summary) for an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that could NOT be split into separate speaker turns — there is no per-speaker breakdown, only the flat raw words Deepgram heard (if any).
 
-Decide whether the caller left ANY real content at all — a request, a name, a callback number, a description of damage, anything a person actually said or asked for (including a short voicemail message) — OR whether this is genuinely dead air: silence, hold music, a call that cut off before anyone spoke, or a voicemail hang-up where only the outgoing greeting/beep was captured and no message was left.
+1) Decide whether the caller left ANY real content at all — a request, a name, a callback number, a description of damage, anything a person actually said or asked for (including a short voicemail message) — OR whether this is genuinely dead air: silence, hold music, a call that cut off before anyone spoke, or a voicemail hang-up where only the outgoing greeting/beep was captured and no message was left.
 
 IMPORTANT: do not use call length as a signal. A short voicemail can still contain a full real request (e.g. "this is Brynn, requesting a mold inspection, my callback number is..."), and a longer recording can still be pure silence, hold music, or a hang-up with nothing said. Judge ONLY the actual words present in the raw transcript/summary. If there is ANY real spoken content from a person, set caller_never_responded to false — err toward false (a real lead) whenever the transcript is ambiguous, garbled, or too sparse to be sure. Set it to true ONLY when the evidence clearly shows no message was left at all.
 
+2) Whenever the caller DID leave real content (caller_never_responded is false), ALSO decide whether this is a real customer service inquiry at all. Set is_customer_inquiry to false ONLY in a CLEAR-CUT case — the caller explicitly says they have the wrong number/company, or is clearly asking for a specific person by name for a personal (non-business) reason unrelated to Utah Pros' services. This raw text is thinner evidence than a full conversation, so do NOT guess at a vendor/solicitor/compliance call here (that judgment needs more context than a short fragment gives you) — only flag the obvious wrong-number/personal-call case. Err toward true (a real inquiry) whenever it's ambiguous, garbled, or there just isn't enough said to be sure. Leave is_customer_inquiry as true when caller_never_responded is true (nothing to judge).
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"caller_never_responded":true|false}`;
+{"caller_never_responded":true|false,"is_customer_inquiry":true|false}`;
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -331,7 +339,13 @@ async function cleanAndSummarize(env, analysis, rawText) {
   const prompt = buildCleanupPrompt(turns);
   if (!prompt) {
     const zeroTurn = await classifyZeroTurnCall(env, rawText, analysis?.summary);
-    return zeroTurn ? { ...analysis, caller_never_responded: zeroTurn.callerNeverResponded === true } : analysis;
+    return zeroTurn
+      ? {
+          ...analysis,
+          caller_never_responded: zeroTurn.callerNeverResponded === true,
+          is_customer_inquiry: zeroTurn.isCustomerInquiry === false ? false : true,
+        }
+      : analysis;
   }
   if (!env.ANTHROPIC_API_KEY) return analysis;
   try {
