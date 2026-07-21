@@ -76,9 +76,7 @@ import { getAuthHeader } from '@/lib/realtime';
 import { IconCampaigns } from '@/lib/crmIcons';
 import RichEmailEditor from '@/components/RichEmailEditor';
 import { wrapEmailBody, renderVariables, SAMPLE_VARIABLES } from '@/lib/emailTemplate';
-
-const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { ok, err } from '@/lib/toast';
 
 const ROLE_OPTIONS = [
   { value: '', label: 'Any role' },

@@ -43,9 +43,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { IconCallLog } from '@/lib/crmIcons';
 import { formatPhone } from '@/lib/phone';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
-const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 // Format a numeric lead value as "$1,500" (whole dollars); '' when unset.
 function formatValue(v) {
@@ -407,7 +405,7 @@ export default function CrmCallLog() {
       const rows = await db.rpc('get_inbound_leads', { p_limit: 100 });
       setLeads(rows || []);
     } catch {
-      if (!silent) window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load call log', type: 'error' } }));
+      if (!silent) err('Failed to load call log');
     } finally {
       if (silent) setRefreshing(false); else setLoading(false);
     }
@@ -436,7 +434,7 @@ export default function CrmCallLog() {
     try {
       await db.rpc('update_lead_status', { p_lead_id: leadId, p_status: status });
     } catch {
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to update lead status', type: 'error' } }));
+      err('Failed to update lead status');
       load();
     }
   };
