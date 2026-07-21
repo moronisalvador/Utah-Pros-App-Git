@@ -1156,6 +1156,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [tasksError, setTasksError] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDueAt, setNewTaskDueAt] = useState('');
+  const [showTaskDatePicker, setShowTaskDatePicker] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [confirmDeleteTask, setConfirmDeleteTask] = useState(null); // task id awaiting 2nd click
 
@@ -1259,6 +1260,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
       setTasks(prev => [{ ...row, assignee_name: null, contact_name: null }, ...prev]);
       setNewTaskTitle('');
       setNewTaskDueAt('');
+      setShowTaskDatePicker(false);
       ok('Task added');
     } catch {
       err('Failed to add the task');
@@ -1478,7 +1480,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   ))}
                 </ul>
               )}
-              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
                 <input
                   className="crm-input"
                   value={newTaskTitle}
@@ -1486,16 +1488,35 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   onKeyDown={e => { if (e.key === 'Enter') addTask(); }}
                   placeholder="Follow up call, send estimate…"
                   aria-label="New task title"
-                  style={{ flex: '1 1 160px' }}
+                  style={{ flex: '1 1 auto' }}
                 />
-                <input
-                  className="crm-input"
-                  type="date"
-                  value={newTaskDueAt}
-                  onChange={e => setNewTaskDueAt(e.target.value)}
-                  aria-label="Due date (optional)"
-                  style={{ flex: '0 1 140px' }}
-                />
+                <span className="crm-task-date-wrap">
+                  <IconButton
+                    label={newTaskDueAt ? `Due ${new Date(newTaskDueAt).toLocaleDateString()} — click to change` : 'Add due date (optional)'}
+                    size="sm"
+                    className={`crm-task-date-toggle${newTaskDueAt ? ' active' : ''}`}
+                    onClick={() => setShowTaskDatePicker(v => !v)}
+                  >
+                    <IconCalendar style={CARD_ACTION_ICON_STYLE} />
+                  </IconButton>
+                  {showTaskDatePicker && (
+                    <>
+                      <div className="crm-leads-popover-backdrop" onClick={() => setShowTaskDatePicker(false)} />
+                      <div className="crm-leads-popover crm-task-datepicker">
+                        <label className="crm-leads-popover-field">
+                          <span>Due date</span>
+                          <input type="date" className="crm-input" value={newTaskDueAt} onChange={e => setNewTaskDueAt(e.target.value)} autoFocus />
+                        </label>
+                        <div className="crm-panel-actions" style={{ padding: 0 }}>
+                          {newTaskDueAt && (
+                            <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setNewTaskDueAt('')}>Clear</button>
+                          )}
+                          <button className="crm-btn crm-btn-primary crm-btn-sm" onClick={() => setShowTaskDatePicker(false)}>Done</button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </span>
                 <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={addTask} disabled={addingTask || !newTaskTitle.trim()}>
                   {addingTask ? 'Adding…' : '+ Add'}
                 </button>

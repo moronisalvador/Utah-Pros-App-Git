@@ -9186,6 +9186,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-task-delete:hover { color: var(--crm-danger-text); }
 .crm-task-delete svg { width: 16px; height: 16px; }
 .crm-task-confirm { flex-shrink: 0; display: flex; gap: 4px; }
+.crm-task-date-wrap { position: relative; display: inline-flex; }
+.crm-task-date-toggle.active { color: var(--crm-accent); background: var(--crm-bg-page); }
+.crm-task-datepicker { min-width: 180px; }
 
 /* Tasks — editor */
 .crm-task-textarea { resize: vertical; min-height: 68px; font-family: inherit; }
