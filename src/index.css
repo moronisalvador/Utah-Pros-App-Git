@@ -939,7 +939,7 @@ tr:hover td { background: var(--bg-secondary); }
 .pipeline::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 5px; border: 2px solid var(--bg-tertiary); }
 
 .pipeline-column {
-  width: 260px; min-width: 260px; flex-shrink: 0;
+  width: 299px; min-width: 299px; flex-shrink: 0;
   background: var(--bg-secondary); border-radius: var(--radius-lg);
   display: flex; flex-direction: column;
   transition: box-shadow 200ms ease, border-color 200ms ease;

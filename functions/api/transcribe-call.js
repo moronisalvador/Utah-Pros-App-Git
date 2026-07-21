@@ -13,9 +13,15 @@
  *
  * ENDPOINT:
  *   POST /api/transcribe-call   (authenticated — Supabase Bearer)
- *        body: { lead_id }                 — transcribe one call, OR
- *              { backfill: true, days?: 30 } — transcribe every recent call that
- *                                              has a recording but no transcript.
+ *        body: { lead_id }                   — transcribe one call, OR
+ *              { backfill: true, days?: 30 }   — transcribe every recent call that
+ *                                                has a recording but no transcript, OR
+ *              { reclassify: true, days?: 90 } — re-run ONLY the AI clean-up pass
+ *                                                against already-transcribed leads
+ *                                                whose stored analysis predates the
+ *                                                inspection_scheduled/spam/contact-
+ *                                                detail signals (no Deepgram/CallRail
+ *                                                creds needed, no re-transcription cost).
  *
  * DEPENDS ON:
  *   Packages:      none (platform fetch)
@@ -30,12 +36,31 @@
  *                  writes → inbound_leads.transcription + transcript_analysis (via
  *                           set_lead_transcription RPC); inbound_leads.caller_name +
  *                           a blank linked contact's name (via set_lead_caller_name);
- *                           system_events, worker_runs
+ *                           lead_pipeline_stage + lead_stage_history (via
+ *                           crm_advance_lead_if_forward, when the AI detects an
+ *                           inspection was scheduled); inbound_leads.spam_flag (via
+ *                           set_lead_spam_flag, when the AI detects the caller never
+ *                           responded); a linked contact's blank email/billing_address
+ *                           (via set_lead_contact_details, when the AI pulls a clearly-
+ *                           stated one off the call); system_events, worker_runs
  *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
- *                  (Claude Haiku — names the Agent/Customer speakers, then cleans
- *                  up wording + writes the summary; both best-effort)
+ *                  (Claude Haiku — names the Agent/Customer speakers, then cleans up
+ *                  wording + writes the summary + flags inspection_scheduled/
+ *                  caller_never_responded + extracts customer_email/customer_address;
+ *                  all best-effort)
  *
  * NOTES / GOTCHAS:
+ *   - cleanAndSummarize() also asks Claude: whether a real inspection/appointment was
+ *     agreed to (inspection_scheduled — best-effort calls
+ *     crm_advance_lead_if_forward(lead_id, 'Inspection Scheduled'), a SECURITY DEFINER
+ *     RPC that never moves a lead backward, off a terminal Won/Lost stage, or a
+ *     spam-flagged lead); whether the agent spoke but the caller never actually
+ *     responded (caller_never_responded — best-effort calls set_lead_spam_flag to
+ *     reliably auto-remove it from the pipeline); and the customer's email/address
+ *     when clearly stated (customer_email/customer_address — best-effort calls
+ *     set_lead_contact_details, which only fills a BLANK field on an ALREADY-linked
+ *     contact and never creates one). Any of these failing never blocks the
+ *     transcription write.
  *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
  *     entities) in one call. CallRail gives us a MONO recording, so `multichannel`
  *     is intentionally NOT requested (on a 1-channel file it suppresses diarization);
@@ -111,8 +136,14 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 2) Write a 2-4 sentence summary a busy office manager can scan in five seconds: the type of damage/service (water, fire, mold, roofing, remodel, etc.), urgency, any key details mentioned (location, timing), and how the call ended (e.g. appointment scheduled, quote requested, caller will call back, not a fit, voicemail).
 
+3) Decide whether an in-person inspection/appointment was actually agreed to during THIS call — a specific day/time or a clear mutual "let's get someone out there" agreement. A vague "we'll follow up" or "someone will call you back" does NOT count. Set inspection_scheduled to true only when a real inspection visit was scheduled in this call.
+
+4) Decide whether the caller never actually responded — the agent/company spoke (e.g. a greeting like "Thank you for calling, how can I help?") but the customer side has NO real speech at all (silence, dead air, or the recording just cuts off after the greeting). Set caller_never_responded to true ONLY when the agent turn(s) have real content and the customer turn(s) are empty/missing/pure silence — NOT when the customer spoke but the call was simply short, unhelpful, or a wrong number.
+
+5) Extract the customer's email address and mailing/service address ONLY if the customer clearly stated it themselves during the call — never guess, infer, or use the business's own address. customer_email must be a literal email address spoken or spelled out; customer_address must be a real street address (not just a city/neighborhood name). Use null for either when not clearly stated.
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>"}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
@@ -287,7 +318,84 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
+  // The AI detected a real inspection agreed to in this call — nudge the lead
+  // forward to "Inspection Scheduled" (RPC is sort-order-aware: no-op if the
+  // lead is already further along, spam-flagged, or the stage doesn't exist
+  // for this org). Best-effort, like caller-name — pipeline bookkeeping never
+  // blocks a transcription from saving.
+  if (analysis?.inspection_scheduled) {
+    try {
+      await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Inspection Scheduled' });
+    } catch { /* pipeline auto-advance is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI detected the agent spoke but the caller never actually responded —
+  // reliably auto-flag as spam so it never has to be caught by hand. Best-effort.
+  if (analysis?.caller_never_responded) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_caller_never_responded' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI pulled a clearly-stated email/address off the call — backfill a
+  // blank field on an already-linked contact (RPC no-ops if the lead has no
+  // contact_id yet; never creates one). Best-effort.
+  if (analysis?.customer_email || analysis?.customer_address) {
+    try {
+      await db.rpc('set_lead_contact_details', {
+        p_lead_id: lead.id,
+        p_email: analysis.customer_email || null,
+        p_address: analysis.customer_address || null,
+      });
+    } catch { /* contact-detail backfill is a bonus, not a reason to fail the transcription */ }
+  }
+
   return { id: lead.id, chars: flatText.length, transcription: flatText, analysis, callerName: callerName || null };
+}
+
+// Re-run ONLY the AI clean-up/classification pass against an ALREADY-transcribed
+// lead's stored turns — no Deepgram call, no re-transcription cost. Exists so a
+// lead transcribed before inspection_scheduled/caller_never_responded/
+// customer_email/customer_address existed can pick them up without re-paying for
+// transcription. Applies the exact same best-effort side effects as
+// transcribeLead(). Throws if the lead has no usable stored turns to reclassify.
+export async function reclassifyLead(db, env, lead) {
+  let analysis = lead.transcript_analysis;
+  if (!analysis || !Array.isArray(analysis.turns) || !analysis.turns.length) {
+    throw new Error('no usable turns to reclassify');
+  }
+
+  analysis = await cleanAndSummarize(env, analysis);
+  const flatText = turnsToFlatText(analysis.turns) || lead.transcription;
+
+  await db.rpc('set_lead_transcription', {
+    p_lead_id: lead.id,
+    p_transcription: flatText,
+    p_source: 'deepgram',
+    p_analysis: analysis,
+  });
+
+  if (analysis?.inspection_scheduled) {
+    try {
+      await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Inspection Scheduled' });
+    } catch { /* pipeline auto-advance is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.caller_never_responded) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_caller_never_responded' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.customer_email || analysis?.customer_address) {
+    try {
+      await db.rpc('set_lead_contact_details', {
+        p_lead_id: lead.id,
+        p_email: analysis.customer_email || null,
+        p_address: analysis.customer_address || null,
+      });
+    } catch { /* contact-detail backfill is a bonus, not a reason to fail reclassification */ }
+  }
+
+  return { id: lead.id, analysis };
 }
 
 // ─── SECTION: Handler ──────────────
@@ -301,6 +409,51 @@ export async function onRequestPost(context) {
   if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
 
   const body = await request.json().catch(() => ({}));
+
+  // Reclassify mode — re-run ONLY the AI clean-up/classification pass against
+  // already-transcribed leads (no Deepgram/CallRail creds needed, no re-
+  // transcription cost). Targets leads whose stored analysis predates
+  // inspection_scheduled (the sentinel: `->>` on a genuinely-missing key reads
+  // as SQL NULL, so this never re-touches an already-reclassified row).
+  if (body.reclassify) {
+    let leads;
+    try {
+      const days = Number(body.days) > 0 ? Number(body.days) : 90;
+      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      leads = await db.select(
+        'inbound_leads',
+        `source_type=eq.call&transcript_analysis=not.is.null&transcript_analysis->>inspection_scheduled=is.null` +
+          `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
+      );
+    } catch {
+      return jsonResponse({ error: 'Failed to load leads' }, 500, request, env);
+    }
+    leads = leads || [];
+    let processed = 0;
+    const errors = [];
+    for (const lead of leads) {
+      try {
+        await reclassifyLead(db, env, lead);
+        processed++;
+      } catch (e) {
+        errors.push({ id: lead.id, error: String(e.message || e).slice(0, 200) });
+      }
+    }
+    await db.insert('worker_runs', {
+      worker_name: 'transcribe-call-reclassify',
+      status: errors.length && !processed ? 'error' : 'completed',
+      records_processed: processed,
+      error_message: errors.length ? JSON.stringify(errors).slice(0, 500) : null,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+    });
+    return jsonResponse(
+      { ok: true, processed, total: leads.length, errored: errors.length, errors: errors.slice(0, 10) },
+      200,
+      request,
+      env
+    );
+  }
 
   const [dgCred] = await db.select('integration_credentials', `provider=eq.deepgram&select=access_token`);
   const deepgramKey = dgCred?.access_token;
@@ -336,7 +489,7 @@ export async function onRequestPost(context) {
       // processed lead server-side (idempotency guard — see the loop below).
       leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url,transcription,transcript_analysis`);
     } else {
-      return jsonResponse({ error: 'Provide lead_id or backfill:true' }, 400, request, env);
+      return jsonResponse({ error: 'Provide lead_id, backfill:true, or reclassify:true' }, 400, request, env);
     }
   } catch {
     return jsonResponse({ error: 'Failed to load leads' }, 500, request, env);
