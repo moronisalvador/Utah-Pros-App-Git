@@ -79,6 +79,27 @@ export default function Login() {
     }
   };
 
+  // Dev Mode's employee picker (handleDevLogin above) binds the anon role —
+  // fine for UI/layout work, but every RPC scoped `TO authenticated` 401s, so
+  // dashboards show "Couldn't load" (see CLAUDE.md "Local Dev & UI
+  // Verification"). This runs a REAL signInWithPassword against a dedicated
+  // local-only test account (never a real employee's credentials) when one is
+  // configured in .env.local, giving a genuine authenticated session for
+  // verifying real data loads locally.
+  const devTestEmail = import.meta.env.VITE_DEV_TEST_EMAIL;
+  const devTestPassword = import.meta.env.VITE_DEV_TEST_PASSWORD;
+  const handleDevRealLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await login(devTestEmail, devTestPassword);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="login-page">
       <div className="login-card">
@@ -232,6 +253,16 @@ export default function Login() {
                 style={{ width: '100%', marginTop: 'var(--space-2)' }}
                 onClick={() => setDevMode(true)}>
                 Dev Mode: Select Employee
+              </button>
+            )}
+
+            {/* Only appears once VITE_DEV_TEST_EMAIL/PASSWORD are set in a local
+                .env.local — see CLAUDE.md "Local Dev & UI Verification". */}
+            {isDev && devTestEmail && devTestPassword && (
+              <button type="button" className="btn btn-ghost"
+                style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                onClick={handleDevRealLogin} disabled={loading}>
+                Dev Mode: Real Data (test admin)
               </button>
             )}
           </form>
