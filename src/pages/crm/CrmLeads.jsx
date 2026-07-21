@@ -1003,6 +1003,7 @@ export default function CrmLeads() {
 
       {selectedLead && (
         <LeadDetailPanel
+          key={selectedLead.id}
           lead={selectedLead}
           stages={sortedStages}
           currentStageId={stagePositions[selectedLead.id]?.stage_id ?? sortedStages[0]?.id}
@@ -1458,10 +1459,10 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
 
         <div className="crm-panel-section">
           <div className="crm-panel-section-title">Activity</div>
-          {!lead.contact_id ? (
-            <p className="crm-panel-empty">No linked contact yet — the activity timeline starts once this lead is matched to a contact.</p>
-          ) : (
+          {lead.contact_id ? (
             <ActivityTimeline contactId={lead.contact_id} />
+          ) : (
+            <ActivityTimeline leadId={lead.id} />
           )}
         </div>
       </div>
