@@ -1132,8 +1132,9 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskDueAt, setNewTaskDueAt] = useState('');
   const [addingTask, setAddingTask] = useState(false);
-  const [stageHistory, setStageHistory] = useState([]);
+  const [confirmDeleteTask, setConfirmDeleteTask] = useState(null); // task id awaiting 2nd click
 
   const submittedRows = useMemo(() => formDataRows(formSchema, lead.form_data), [formSchema, lead.form_data]);
 
@@ -1155,21 +1156,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, lead.id]);
 
-  // This lead's tasks (any status, mirrors CrmTasks.jsx) + its pipeline-stage
-  // move history, so "progress on this lead" is visible without leaving the panel.
+  // This lead's tasks (any status, mirrors CrmTasks.jsx) — stage-move history
+  // lives in the Activity timeline below (its own stage_change rows), so it's
+  // not duplicated here.
   const loadTasks = useCallback(async (signal) => {
     setTasksLoading(true);
     try {
-      const [taskRows, historyRows] = await Promise.all([
-        db.rpc('get_crm_tasks', { p_lead_id: lead.id }),
-        db.select('lead_stage_history', `lead_id=eq.${lead.id}&select=id,stage_id,from_stage_id,lost_reason,moved_at&order=moved_at.desc&limit=20`),
-      ]);
+      const taskRows = await db.rpc('get_crm_tasks', { p_lead_id: lead.id });
       if (signal?.cancelled) return;
       setTasks(taskRows || []);
-      setStageHistory(historyRows || []);
       setTasksError(false);
     } catch {
-      if (!signal?.cancelled) { setTasks([]); setStageHistory([]); setTasksError(true); err('Failed to load tasks and stage history'); }
+      if (!signal?.cancelled) { setTasks([]); setTasksError(true); err('Failed to load tasks'); }
     } finally {
       if (!signal?.cancelled) setTasksLoading(false);
     }
@@ -1233,16 +1231,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
         p_contact_id: lead.contact_id || null,
         p_lead_id: lead.id,
         p_created_by: createdBy,
+        p_due_at: newTaskDueAt ? new Date(newTaskDueAt).toISOString() : null,
       });
       setTasks(prev => [{ ...row, assignee_name: null, contact_name: null }, ...prev]);
       setNewTaskTitle('');
+      setNewTaskDueAt('');
       ok('Task added');
     } catch {
       err('Failed to add the task');
     } finally {
       setAddingTask(false);
     }
-  }, [db, newTaskTitle, lead.contact_id, lead.id, createdBy]);
+  }, [db, newTaskTitle, newTaskDueAt, lead.contact_id, lead.id, createdBy]);
 
   const toggleTaskStatus = useCallback(async (task) => {
     const next = task.status === 'done' ? 'open' : 'done';
@@ -1255,7 +1255,18 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     }
   }, [db, actorId]);
 
-  const stageNameFor = useCallback((stageId) => stages.find(s => s.id === stageId)?.name || 'Unknown stage', [stages]);
+  const removeTask = useCallback(async (task) => {
+    setConfirmDeleteTask(null);
+    const prior = tasks;
+    setTasks(prev => prev.filter(t => t.id !== task.id));
+    try {
+      await db.rpc('delete_crm_task', { p_task_id: task.id });
+      ok('Task deleted');
+    } catch {
+      setTasks(prior);
+      err('Failed to delete task');
+    }
+  }, [db, tasks]);
 
   return (
     <div className="crm-panel-overlay" onClick={onClose}>
@@ -1427,11 +1438,24 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                         <span className="crm-task-title">{task.title}</span>
                         {task.due_at && <span className="crm-task-tags"><span className="crm-task-due">Due {new Date(task.due_at).toLocaleDateString()}</span></span>}
                       </span>
+                      {confirmDeleteTask === task.id ? (
+                        <span
+                          className="crm-task-confirm"
+                          onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setConfirmDeleteTask(null); }}
+                        >
+                          <button className="crm-btn crm-btn-danger crm-btn-sm" onClick={() => removeTask(task)} autoFocus>Delete</button>
+                          <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setConfirmDeleteTask(null)}>Cancel</button>
+                        </span>
+                      ) : (
+                        <button className="crm-task-delete" onClick={() => setConfirmDeleteTask(task.id)} aria-label="Delete task">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
-              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
+              <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)', flexWrap: 'wrap' }}>
                 <input
                   className="crm-input"
                   value={newTaskTitle}
@@ -1439,6 +1463,15 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   onKeyDown={e => { if (e.key === 'Enter') addTask(); }}
                   placeholder="Follow up call, send estimate…"
                   aria-label="New task title"
+                  style={{ flex: '1 1 160px' }}
+                />
+                <input
+                  className="crm-input"
+                  type="date"
+                  value={newTaskDueAt}
+                  onChange={e => setNewTaskDueAt(e.target.value)}
+                  aria-label="Due date (optional)"
+                  style={{ flex: '0 1 140px' }}
                 />
                 <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={addTask} disabled={addingTask || !newTaskTitle.trim()}>
                   {addingTask ? 'Adding…' : '+ Add'}
@@ -1447,21 +1480,6 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
             </>
           )}
         </div>
-
-        {stageHistory.length > 0 && (
-          <div className="crm-panel-section">
-            <div className="crm-panel-section-title">Stage history</div>
-            {stageHistory.map(h => (
-              <div className="crm-panel-row" key={h.id}>
-                <span>
-                  {h.from_stage_id ? `${stageNameFor(h.from_stage_id)} → ${stageNameFor(h.stage_id)}` : `Entered ${stageNameFor(h.stage_id)}`}
-                  {h.lost_reason ? ` — ${h.lost_reason}` : ''}
-                </span>
-                <span>{h.moved_at ? new Date(h.moved_at).toLocaleDateString() : '—'}</span>
-              </div>
-            ))}
-          </div>
-        )}
 
         <div className="crm-panel-section">
           <div className="crm-panel-section-title">Activity</div>
