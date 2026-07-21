@@ -241,14 +241,20 @@ function daysInStage(updatedAt) {
 }
 
 // ─── SECTION: Filter bar (date range + criteria) ──────────────
-// Calendar-based, not rolling windows — "Week"/"Month" mean this-week/
-// this-month-to-date, the same convention src/lib/reportPeriods.js already
-// uses for MTD elsewhere in the app (never UTC — local/business time).
+// Rolling windows, not calendar-aligned — "Last 7"/"Last 30" mean the
+// trailing N days from right now (matches the Dashboard's own "Last 30" tab
+// convention), not this-calendar-week/this-calendar-month-to-date. Switched
+// from calendar periods 2026-07-21: this board has no prior-period view to
+// compare against, so calendar alignment bought nothing, and a rolling window
+// avoids the "board looks empty first thing Monday morning" cliff while
+// doubling as a stable answer to "how many leads are we getting lately."
 const DATE_PERIODS = [
-  { value: 'week', label: 'Week' },
-  { value: 'month', label: 'Month' },
+  { value: 'week', label: 'Last 7' },
+  { value: 'month', label: 'Last 30' },
   { value: 'all', label: 'All time' },
 ];
+const WEEK_MS = 7 * 86400000;
+const MONTH_MS = 30 * 86400000;
 
 function dateRangeFor(period, customRange) {
   if (period === 'custom') {
@@ -257,13 +263,9 @@ function dateRangeFor(period, customRange) {
     return { start, end };
   }
   if (period === 'all') return { start: null, end: null };
-  const now = new Date();
-  if (period === 'month') return { start: new Date(now.getFullYear(), now.getMonth(), 1).getTime(), end: null };
-  // "week" — since the most recent Monday.
-  const day = now.getDay(); // 0=Sun..6=Sat
-  const diffToMonday = day === 0 ? 6 : day - 1;
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
-  return { start: monday.getTime(), end: null };
+  const now = Date.now();
+  if (period === 'month') return { start: now - MONTH_MS, end: null };
+  return { start: now - WEEK_MS, end: null }; // "week" — trailing 7 days
 }
 
 // Service categories, derived from the AI-detected transcript topics — the
@@ -457,6 +459,22 @@ export default function CrmLeads() {
 
   const grouped = useMemo(() => groupLeadsByStage(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
   const pipelineValue = useMemo(() => weightedPipelineValue(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
+
+  // Intake trend — independent of whichever date tab is selected, so the
+  // rate context is always visible regardless of what the board is filtered
+  // to. Counts against the full (criteria-unfiltered) `leads` array, same
+  // ground truth as the page subtitle's total.
+  const trend = useMemo(() => {
+    const now = Date.now();
+    let in7 = 0, in30 = 0;
+    for (const lead of leads) {
+      if (!lead.occurred_at) continue;
+      const age = now - new Date(lead.occurred_at).getTime();
+      if (age <= WEEK_MS) in7++;
+      if (age <= MONTH_MS) in30++;
+    }
+    return { in7, weeklyAvg30: in30 / 30 * 7 };
+  }, [leads]);
 
   const toggleFilter = useCallback((group, key) => {
     setFilters(prev => {
@@ -698,6 +716,11 @@ export default function CrmLeads() {
               {hasActiveFilters ? `${filteredLeads.length} of ${leads.length} leads` : `${leads.length} lead${leads.length === 1 ? '' : 's'} in pipeline`}
               {pipelineValue.total > 0 ? ` · ${formatMoney(pipelineValue.total)} weighted` : ''}
             </p>
+            {leads.length > 0 && (
+              <p className="crm-page-subtitle crm-leads-trend">
+                {trend.in7} new in the last 7 days · {trend.weeklyAvg30.toFixed(1)}/week avg (last 30 days)
+              </p>
+            )}
           </div>
           <button className="crm-btn crm-btn-primary" onClick={() => setShowNew(true)}>+ New lead</button>
         </div>

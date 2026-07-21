@@ -8379,6 +8379,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-page-header { margin-bottom: var(--space-5); }
 .crm-page-title { font-size: 22px; font-weight: 700; color: var(--crm-text-primary); margin: 0; }
 .crm-page-subtitle { font-size: 13px; color: var(--crm-text-secondary); margin: 4px 0 0; }
+.crm-leads-trend { font-size: 12px; color: var(--crm-text-tertiary); }
 .crm-loading { padding: var(--space-6); text-align: center; color: var(--crm-text-secondary); font-size: 13px; }
 
 .crm-stub {
