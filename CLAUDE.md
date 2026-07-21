@@ -62,6 +62,12 @@ const {
 } = useAuth();
 ```
 
+## Local Dev & UI Verification
+
+A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the **anon** key (safe — it's already shipped in every browser bundle) unlocks real local dev + UI verification: `preview_start({name: "Vite Dev Server"})` (config in `.claude/launch.json`) → Login screen's **"Dev Mode: Select Employee"** button → click any employee, no password, ever. Good for screenshots, click-throughs, layout/navigation/component work. If `.env.local` doesn't exist yet, get the URL + anon key via the Supabase MCP (`get_project_url` / `get_publishable_keys`) rather than asking the user to paste secrets in chat — but never create the file directly (`.claude/hooks/block-secrets.sh` blocks any `Write`/`Edit` to `.env*` by filename, on purpose); hand the two lines to a human to paste in.
+
+**Limitation (expected, not a bug — don't waste time re-diagnosing it):** Dev Mode authenticates the *employee* row but the client still runs as Supabase's `anon` role, not a real JWT. Any RPC scoped `TO authenticated` (most of them, per `database-standard.md` §1) returns `42501 permission denied for function ...`, so dashboard/list data shows "Couldn't load" even though the UI itself is fine. For verifying real data loads: have a human log into `dev.utahpros.app` in the Browser pane, then drive that already-authenticated tab — never enter credentials directly, even ones handed over in chat.
+
 ## File Structure (key files)
 
 Not exhaustive — `src/pages/` has 41 files, `src/pages/tech/` has 22. `Glob src/pages/**/*.jsx` before assuming a page doesn't exist.
