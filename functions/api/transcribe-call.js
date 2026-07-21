@@ -16,12 +16,16 @@
  *        body: { lead_id }                   — transcribe one call, OR
  *              { backfill: true, days?: 30 }   — transcribe every recent call that
  *                                                has a recording but no transcript, OR
- *              { reclassify: true, days?: 90 } — re-run ONLY the AI clean-up pass
- *                                                against already-transcribed leads
- *                                                whose stored analysis predates the
- *                                                inspection_scheduled/spam/contact-
- *                                                detail signals (no Deepgram/CallRail
+ *              { reclassify: true, days?: 90, force?: false } — re-run the AI naming
+ *                                                + clean-up passes against already-
+ *                                                transcribed leads (no Deepgram/CallRail
  *                                                creds needed, no re-transcription cost).
+ *                                                Default targets only leads whose stored
+ *                                                analysis predates inspection_scheduled;
+ *                                                force:true re-processes every matching
+ *                                                call regardless (e.g. to pick up a
+ *                                                naming-prompt improvement on leads
+ *                                                already fully classified).
  *
  * DEPENDS ON:
  *   Packages:      none (platform fetch)
@@ -105,9 +109,9 @@ const NAMING_MODEL = 'claude-haiku-4-5-20251001'; // cheap/fast — a simple ext
 const NAMING_SYSTEM = `You label the speakers in a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting.
 
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"speakers":{"<label>":{"role":"agent"|"customer","name":<first name or null>}, ...},"caller_name":<the CUSTOMER's first name or null>}
+{"speakers":{"<label>":{"role":"agent"|"customer","name":<full name or null>}, ...},"caller_name":<the CUSTOMER's full name or null>}
 
-Use the EXACT speaker labels from the transcript as the keys. Only set a name if the person actually states their name in the call — otherwise null. A name is a person's name, never a company name.`;
+Use the EXACT speaker labels from the transcript as the keys. Only set a name if the person actually states their name in the call — otherwise null. Include the LAST NAME too whenever the caller states it (not just the first name) — never truncate a stated full name down to a first name. A name is a person's name, never a company name.`;
 // nova-3 (best accuracy) + diarize (speaker separation) + utterances (per-turn
 // segments) + Audio Intelligence (summary/sentiment/topics/entities), one request.
 // NOTE: `multichannel` was DROPPED — CallRail hands us a MONO recording (both
@@ -353,16 +357,31 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
   return { id: lead.id, chars: flatText.length, transcription: flatText, analysis, callerName: callerName || null };
 }
 
-// Re-run ONLY the AI clean-up/classification pass against an ALREADY-transcribed
-// lead's stored turns — no Deepgram call, no re-transcription cost. Exists so a
-// lead transcribed before inspection_scheduled/caller_never_responded/
-// customer_email/customer_address existed can pick them up without re-paying for
-// transcription. Applies the exact same best-effort side effects as
-// transcribeLead(). Throws if the lead has no usable stored turns to reclassify.
+// Re-run the AI naming + clean-up/classification passes against an ALREADY-
+// transcribed lead's stored turns — no Deepgram call, no re-transcription cost.
+// Exists so a lead transcribed before inspection_scheduled/caller_never_responded/
+// customer_email/customer_address existed (or before naming captured last names,
+// not just first) can pick all of that up without re-paying for transcription.
+// Applies the exact same best-effort side effects as transcribeLead(), PLUS a
+// caller-name "upgrade" (p_allow_upgrade:true — replaces an existing first-name-
+// only caller_name with a fuller one ONLY when the new name genuinely extends the
+// old one; see set_lead_caller_name's own guard for the exact rule). Throws if
+// the lead has no usable stored turns to reclassify.
 export async function reclassifyLead(db, env, lead) {
   let analysis = lead.transcript_analysis;
   if (!analysis || !Array.isArray(analysis.turns) || !analysis.turns.length) {
     throw new Error('no usable turns to reclassify');
+  }
+
+  let callerName = null;
+  if (needsResegment(analysis)) {
+    const r = await resegmentSpeakers(env, analysis, turnsToFlatText(analysis.turns) || lead.transcription || '');
+    analysis = r.analysis;
+    callerName = r.callerName;
+  } else {
+    const named = await nameSpeakers(env, analysis);
+    analysis = named.analysis;
+    callerName = named.callerName;
   }
 
   analysis = await cleanAndSummarize(env, analysis);
@@ -374,6 +393,12 @@ export async function reclassifyLead(db, env, lead) {
     p_source: 'deepgram',
     p_analysis: analysis,
   });
+
+  if (callerName) {
+    try {
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName, p_allow_upgrade: true });
+    } catch { /* naming the lead is a bonus, not a reason to fail reclassification */ }
+  }
 
   if (analysis?.inspection_scheduled) {
     try {
@@ -410,19 +435,23 @@ export async function onRequestPost(context) {
 
   const body = await request.json().catch(() => ({}));
 
-  // Reclassify mode — re-run ONLY the AI clean-up/classification pass against
-  // already-transcribed leads (no Deepgram/CallRail creds needed, no re-
-  // transcription cost). Targets leads whose stored analysis predates
-  // inspection_scheduled (the sentinel: `->>` on a genuinely-missing key reads
-  // as SQL NULL, so this never re-touches an already-reclassified row).
+  // Reclassify mode — re-run the AI naming + clean-up/classification passes
+  // against already-transcribed leads (no Deepgram/CallRail creds needed, no
+  // re-transcription cost). Default targets leads whose stored analysis
+  // predates inspection_scheduled (the sentinel: `->>` on a genuinely-missing
+  // key reads as SQL NULL, so this never re-touches an already-reclassified
+  // row on routine catch-up runs). `force:true` re-processes EVERY matching
+  // call regardless — e.g. to pick up a naming-prompt improvement (fuller
+  // names) on leads that already have inspection_scheduled set.
   if (body.reclassify) {
     let leads;
     try {
       const days = Number(body.days) > 0 ? Number(body.days) : 90;
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
       leads = await db.select(
         'inbound_leads',
-        `source_type=eq.call&transcript_analysis=not.is.null&transcript_analysis->>inspection_scheduled=is.null` +
+        `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
           `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
       );
     } catch {

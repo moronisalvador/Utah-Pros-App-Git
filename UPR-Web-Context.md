@@ -4481,12 +4481,33 @@ blank field + never overwrites an existing value + never creates a contact for a
 local anon-role limitation as above, verified via direct SQL fixtures;
 test: `supabase/tests/crm_call_ai_enrichment.test.js`.
 
-**Reclassify-only backfill mode** (`POST /api/transcribe-call` with `{ reclassify: true, days?: 90 }`):
-re-runs ONLY the AI clean-up/classification pass (`reclassifyLead()`) against leads that already have a
-transcript + `transcript_analysis` but predate these new signals (selected via
-`transcript_analysis->>inspection_scheduled=is.null` — reads as SQL NULL for a genuinely-missing key,
-never re-touching an already-reclassified row) — no Deepgram/CallRail re-transcription, no added
-Deepgram cost, just a fresh Claude Haiku call against the already-stored turns.
+**Reclassify-only backfill mode** (`POST /api/transcribe-call` with
+`{ reclassify: true, days?: 90, force?: false }`): re-runs the AI naming + clean-up/classification passes
+(`reclassifyLead()`) against leads that already have a transcript + `transcript_analysis`, with no
+Deepgram/CallRail re-transcription and no added Deepgram cost — just fresh Claude Haiku calls against the
+already-stored turns. Default selects only leads predating these new signals (`transcript_analysis->>
+inspection_scheduled=is.null` reads as SQL NULL for a genuinely-missing key); `force:true` re-processes
+every matching call regardless, for a naming-prompt improvement that benefits already-classified leads too.
+
+**Full-name capture (2026-07-21) + a safe caller-name "upgrade" path:** the naming prompts
+(`NAMING_SYSTEM` in `transcribe-call.js`, `buildResegmentPrompt` in `speakerNaming.js`) previously asked
+for the caller's FIRST name only — owner-reported bug: cards showed only "Silvina"/"Jason" instead of
+full names the transcript clearly stated. Both prompts now ask for the full name (first + last) when
+stated. But `set_lead_caller_name`'s original contract only ever fills a BLANK name (by design, so an
+AI mistake can never clobber a correct name) — meaning a lead already named "Silvina" from before this
+fix would stay stuck there. `20260721_crm_caller_name_upgrade.sql` adds an opt-in third parameter,
+`p_allow_upgrade boolean DEFAULT false` (old 2-arg callers unaffected — the migration `DROP`s the old
+2-arg overload first so PostgREST/Postgres can't resolve a 2-arg call ambiguously against both): when
+`true`, it replaces an existing name ONLY when the new name strictly extends the old one with a word
+boundary ("Silvina" → "Silvina Wright" — yes; "Silvina" → "Robert" — never), checked via plain
+`left()`/`btrim()` string comparison rather than `LIKE`, so a caller_name containing a literal `%`/`_`
+from a garbled transcript can never turn into an unintended wildcard match (a `migration-safety-checker`
+finding, fixed before shipping). `reclassifyLead()` now re-runs naming (`nameSpeakers`/
+`resegmentSpeakers`, same logic `transcribeLead()` uses) before clean-up, and calls
+`set_lead_caller_name(..., p_allow_upgrade: true)` — the only caller allowed to request the upgrade path.
+Verified live against the TEST org (2-arg shape still fill-only-never-overwrite; upgrade rejects an
+unrelated name; upgrade accepts a genuine extension on both the lead and its linked contact; a literal
+`%`/`_` in a name is treated as plain text) — test: `supabase/tests/crm_caller_name_upgrade.test.js`.
 
 **Leads board display fix (2026-07-21):** `CrmLeads.jsx`'s `leadLabel()` only ever checked
 `lead.contact?.name`, falling straight through to the phone number — it never checked

@@ -113,10 +113,10 @@ export function needsResegment(analysis) {
 // turns. The model decides who speaks each line from context.
 export function buildResegmentPrompt(transcriptText) {
   if (typeof transcriptText !== 'string' || !transcriptText.trim()) return '';
-  return `This is a transcript of a two-person phone call that was NOT split by speaker — the words run together and any "Speaker" labels are wrong. Rebuild the conversation as an ordered list of turns, deciding from context who speaks each line: the AGENT works for the company (answers the phone, greets the caller, discusses the business); the CUSTOMER is the person who called in. Use a name only if that person states their own name in the call.
+  return `This is a transcript of a two-person phone call that was NOT split by speaker — the words run together and any "Speaker" labels are wrong. Rebuild the conversation as an ordered list of turns, deciding from context who speaks each line: the AGENT works for the company (answers the phone, greets the caller, discusses the business); the CUSTOMER is the person who called in. Use a name only if that person states their own name in the call — include the LAST NAME too whenever they state it, not just the first name.
 
 Return ONLY JSON (no prose, no markdown) of exactly this shape:
-{"turns":[{"role":"agent"|"customer","name":<first name or null>,"text":"..."}],"caller_name":<the customer's first name or null>}
+{"turns":[{"role":"agent"|"customer","name":<full name or null>,"text":"..."}],"caller_name":<the customer's full name or null>}
 
 Transcript:
 ${transcriptText.trim()}`;

@@ -20,6 +20,7 @@ import { requireUser } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { Encodings } from '@pdf-lib/standard-fonts';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -140,17 +141,34 @@ export async function onRequestPost(context) {
 // / pictographs (e.g. the section icons 💧🛡️, or an emoji a tech types into a
 // note). Strip those ranges from every string before drawing/measuring, while
 // keeping WinAnsi-safe typography (em/en dashes, curly quotes, ×, ·, …).
+// Definitive per-character backstop: ask pdf-lib's own WinAnsi table whether
+// a code point is encodable, rather than guessing at Unicode ranges (that
+// guesswork is exactly how one real submission crashed PDF generation —
+// 2026-07-21, WinAnsi cannot encode an embedded newline). Anything the font
+// genuinely can't render is swapped for '?' so a future unknown character
+// (an unusual symbol, a script outside Latin-1) degrades one glyph instead
+// of taking down the whole document. Iterates by code point, not UTF-16
+// unit, so surrogate-pair characters (most emoji) are checked correctly.
+function winAnsiSafe(s) {
+  let out = '';
+  for (const ch of String(s)) {
+    out += Encodings.WinAnsi.canEncodeUnicodeCodePoint(ch.codePointAt(0)) ? ch : '?';
+  }
+  return out;
+}
 function pdfSafe(s) {
-  return String(s == null ? '' : s)
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
-    // drawText renders one line at a time — an embedded newline/tab/CR (e.g. a
-    // tech pressing Enter inside a Notes textarea) throws a WinAnsi encode
-    // error deep in font.widthOfTextAtSize, not a display glitch. Confirmed
-    // root cause of a real production failure (2026-07-21): flatten to a
-    // single space rather than attempt mid-value wrapping/pagination.
-    .replace(/[\t\n\r\v\f]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .replace(/^\s+|\s+$/g, '');
+  return winAnsiSafe(
+    String(s == null ? '' : s)
+      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
+      // drawText renders one line at a time — an embedded newline/tab/CR (e.g. a
+      // tech pressing Enter inside a Notes textarea) throws a WinAnsi encode
+      // error deep in font.widthOfTextAtSize, not a display glitch. Confirmed
+      // root cause of a real production failure (2026-07-21): flatten to a
+      // single space rather than attempt mid-value wrapping/pagination.
+      .replace(/[\t\n\r\v\f]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^\s+|\s+$/g, '')
+  );
 }
 function deepPdfSafe(v) {
   if (typeof v === 'string') return pdfSafe(v);
