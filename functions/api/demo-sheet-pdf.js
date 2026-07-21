@@ -20,7 +20,7 @@ import { requireUser } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { Encodings } from '@pdf-lib/standard-fonts';
+import { deepPdfSafe } from '../lib/pdfText.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -137,49 +137,10 @@ export async function onRequestPost(context) {
 //    totals: [ { label, value } ],
 //  }
 // ─────────────────────────────────────────────────────────────────────────────
-// pdf-lib's StandardFonts use WinAnsi (CP1252) encoding, which throws on emoji
-// / pictographs (e.g. the section icons 💧🛡️, or an emoji a tech types into a
-// note). Strip those ranges from every string before drawing/measuring, while
-// keeping WinAnsi-safe typography (em/en dashes, curly quotes, ×, ·, …).
-// Definitive per-character backstop: ask pdf-lib's own WinAnsi table whether
-// a code point is encodable, rather than guessing at Unicode ranges (that
-// guesswork is exactly how one real submission crashed PDF generation —
-// 2026-07-21, WinAnsi cannot encode an embedded newline). Anything the font
-// genuinely can't render is swapped for '?' so a future unknown character
-// (an unusual symbol, a script outside Latin-1) degrades one glyph instead
-// of taking down the whole document. Iterates by code point, not UTF-16
-// unit, so surrogate-pair characters (most emoji) are checked correctly.
-function winAnsiSafe(s) {
-  let out = '';
-  for (const ch of String(s)) {
-    out += Encodings.WinAnsi.canEncodeUnicodeCodePoint(ch.codePointAt(0)) ? ch : '?';
-  }
-  return out;
-}
-function pdfSafe(s) {
-  return winAnsiSafe(
-    String(s == null ? '' : s)
-      .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{1F1E6}-\u{1F1FF}]/gu, '')
-      // drawText renders one line at a time — an embedded newline/tab/CR (e.g. a
-      // tech pressing Enter inside a Notes textarea) throws a WinAnsi encode
-      // error deep in font.widthOfTextAtSize, not a display glitch. Confirmed
-      // root cause of a real production failure (2026-07-21): flatten to a
-      // single space rather than attempt mid-value wrapping/pagination.
-      .replace(/[\t\n\r\v\f]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/^\s+|\s+$/g, '')
-  );
-}
-function deepPdfSafe(v) {
-  if (typeof v === 'string') return pdfSafe(v);
-  if (Array.isArray(v)) return v.map(deepPdfSafe);
-  if (v && typeof v === 'object') {
-    const out = {};
-    for (const k of Object.keys(v)) out[k] = deepPdfSafe(v[k]);
-    return out;
-  }
-  return v;
-}
+// pdfSafe/deepPdfSafe now live in ../lib/pdfText.js — shared with
+// generate-water-loss-report.js and submit-esign.js, which had the same
+// unprotected-drawText risk and no sanitizer of their own (found 2026-07-21
+// while checking for other instances of this bug class).
 
 async function buildDemoPdf(rawModel) {
   // Sanitize all strings up front so neither drawText nor widthOfTextAtSize

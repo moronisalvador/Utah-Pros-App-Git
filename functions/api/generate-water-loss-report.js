@@ -13,6 +13,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { pdfSafe } from '../lib/pdfText.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ROUTE HANDLERS
@@ -262,9 +263,15 @@ async function buildReportPdf({ data, photoBlobs }) {
   };
 
   // ── Draw primitives ──
+  // pdfSafe() here is the single choke point for this file — see
+  // ../lib/pdfText.js for why (a real production PDF crash, 2026-07-21).
+  // Callers that measure width BEFORE calling drawText on the same raw
+  // string (job.insured_name, table cell values, etc.) still sanitize at
+  // the point they extract that value, so the measurement and the draw
+  // agree on the same safe string.
   const drawText = (str, x, y, { font = fReg, size = 10, color = black } = {}) => {
     if (str == null || str === '') return;
-    curPage.drawText(String(str), { x, y, font, size, color });
+    curPage.drawText(pdfSafe(str), { x, y, font, size, color });
   };
   const drawLine = (x1, y, x2, opts = {}) => {
     curPage.drawLine({
@@ -275,7 +282,9 @@ async function buildReportPdf({ data, photoBlobs }) {
   };
   const drawWrapped = (str, x, maxW, { font = fReg, size = 9.5, color = black, lh = 14 } = {}) => {
     if (!str || !String(str).trim()) return curY;
-    const words = String(str).trim().split(/\s+/);
+    // Sanitize before the word-split so the widthOfTextAtSize measurement
+    // below (not just the final drawText) never sees an unencodable char.
+    const words = pdfSafe(str).split(' ').filter(Boolean);
     let current = '';
     for (const word of words) {
       const test = current ? `${current} ${word}` : word;
@@ -314,7 +323,7 @@ async function buildReportPdf({ data, photoBlobs }) {
     const rightLabel = 'WATER LOSS REPORT';
     const rlW = fBold.widthOfTextAtSize(rightLabel, 10);
     drawText(rightLabel, PW - M - rlW, PH - 22, { font: fBold, size: 10, color: white });
-    const jobLabel = data.job?.job_number ? `Job ${data.job.job_number}` : '';
+    const jobLabel = data.job?.job_number ? pdfSafe(`Job ${data.job.job_number}`) : '';
     if (jobLabel) {
       const jlW = fReg.widthOfTextAtSize(jobLabel, 8);
       drawText(jobLabel, PW - M - jlW, PH - 36, { font: fReg, size: 8, color: rgb(0.62, 0.68, 0.76) });
@@ -354,20 +363,23 @@ async function buildReportPdf({ data, photoBlobs }) {
   curY -= 40;
 
   const job = data.job || {};
-  const jobNumStr = job.job_number || '—';
+  // Sanitized once at extraction — the widthOfTextAtSize measurement below
+  // and the later drawText call both need to agree on the same safe string.
+  const jobNumStr = pdfSafe(job.job_number || '—');
   const jobNumW   = fMono.widthOfTextAtSize(jobNumStr, 14);
   drawText(jobNumStr, (PW - jobNumW) / 2, curY, { font: fMono, size: 14, color: gray });
   curY -= 32;
 
   // Insured name (big)
-  if (job.insured_name) {
-    const nameW = fBold.widthOfTextAtSize(job.insured_name, 18);
-    drawText(job.insured_name, (PW - nameW) / 2, curY, { font: fBold, size: 18, color: black });
+  const insuredName = pdfSafe(job.insured_name || '');
+  if (insuredName) {
+    const nameW = fBold.widthOfTextAtSize(insuredName, 18);
+    drawText(insuredName, (PW - nameW) / 2, curY, { font: fBold, size: 18, color: black });
     curY -= 22;
   }
   // Address
-  const addrLine1 = job.address || '';
-  const addrLine2 = [job.city, job.state, job.zip].filter(Boolean).join(', ');
+  const addrLine1 = pdfSafe(job.address || '');
+  const addrLine2 = pdfSafe([job.city, job.state, job.zip].filter(Boolean).join(', '));
   if (addrLine1) {
     const w = fReg.widthOfTextAtSize(addrLine1, 11);
     drawText(addrLine1, (PW - w) / 2, curY, { font: fReg, size: 11, color: gray });
@@ -406,7 +418,7 @@ async function buildReportPdf({ data, photoBlobs }) {
     const bits = [];
     if (job.client_phone) bits.push(job.client_phone);
     if (job.client_email) bits.push(job.client_email);
-    const line = bits.join('  ·  ');
+    const line = pdfSafe(bits.join('  ·  '));
     const lw = fReg.widthOfTextAtSize(line, 9.5);
     drawText(line, (PW - lw) / 2, curY, { font: fReg, size: 9.5, color: gray });
     curY -= 20;
@@ -953,8 +965,9 @@ async function embedPhotoCell({
     const mw = fReg.widthOfTextAtSize(msg, 8);
     curPage.drawText(msg, { x: x + (w - mw) / 2, y: y + h / 2, font: fReg, size: 8, color: gray });
   }
-  // Caption
-  const caption = photo.description || fmt.dateOnly(photo.created_at);
+  // Caption — a tech-written free-text field; raw curPage.drawText call
+  // below bypasses the drawText() helper, so sanitize explicitly here.
+  const caption = pdfSafe(photo.description || fmt.dateOnly(photo.created_at));
   const captionTruncated = caption.length > 70 ? caption.slice(0, 67) + '…' : caption;
   curPage.drawText(captionTruncated, {
     x, y: y - 14, font: fReg, size: 8, color: gray,
@@ -1016,7 +1029,9 @@ function drawTableCustom({
     let cx = startX;
     for (const col of columns) {
       const raw = row[col.key];
-      const val = col.format ? col.format(raw) : (raw == null ? '—' : String(raw));
+      // Sanitize before truncation/measurement — table rows come straight
+      // from job data (moisture readings, equipment, etc.).
+      const val = pdfSafe(col.format ? col.format(raw) : (raw == null ? '—' : String(raw)));
       const maxChars = Math.floor(col.width / 5);
       const disp = val.length > maxChars ? val.slice(0, maxChars - 1) + '…' : val;
       const tx = col.align === 'right'
@@ -1104,6 +1119,9 @@ function drawReadingsTable({
         disp = row[col.key] == null ? '—' : String(row[col.key]);
       }
 
+      // Most branches above are formatted numbers/dates (inherently safe);
+      // the raw String(row[col.key]) fallback isn't, so sanitize uniformly.
+      disp = pdfSafe(disp);
       const font = isLatest ? fBold : fReg;
       const color = isLatest ? black : black;
       const size = 9;
