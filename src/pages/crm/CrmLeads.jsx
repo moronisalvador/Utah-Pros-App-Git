@@ -286,7 +286,7 @@ function sentimentKeyFor(lead) {
   return label === 'positive' || label === 'negative' ? label : 'none';
 }
 
-const emptyFilters = () => ({ sources: new Set(), sentiments: new Set(), services: new Set(), stageAges: new Set() });
+const emptyFilters = () => ({ sources: new Set(), campaigns: new Set(), sentiments: new Set(), services: new Set(), stageAges: new Set() });
 
 export default function CrmLeads() {
   const { db, employee } = useAuth();
@@ -384,16 +384,22 @@ export default function CrmLeads() {
 
   const sortedStages = useMemo(() => sortStages(stages), [stages]);
 
-  // Distinct sources present in the currently-loaded leads — the filter
-  // panel only ever offers options that actually exist, never a static
-  // hardcoded list that could drift from the real campaign/source names.
+  // Distinct sources/campaigns present in the currently-loaded leads — the
+  // filter panel only ever offers options that actually exist, never a
+  // static hardcoded list that could drift from the real source/campaign
+  // names three different ad agencies are naming however they like.
   const availableSources = useMemo(
     () => Array.from(new Set(leads.map(l => l.source).filter(Boolean))).sort(),
     [leads]
   );
+  const availableCampaigns = useMemo(
+    () => Array.from(new Set(leads.map(l => l.campaign).filter(Boolean))).sort(),
+    [leads]
+  );
 
   const hasActiveFilters = datePeriod !== 'all'
-    || filters.sources.size > 0 || filters.sentiments.size > 0 || filters.services.size > 0 || filters.stageAges.size > 0;
+    || filters.sources.size > 0 || filters.campaigns.size > 0 || filters.sentiments.size > 0
+    || filters.services.size > 0 || filters.stageAges.size > 0;
 
   const filteredLeads = useMemo(() => {
     const { start, end } = dateRangeFor(datePeriod, customRange);
@@ -405,6 +411,7 @@ export default function CrmLeads() {
         if (end != null && ts > end) return false;
       }
       if (filters.sources.size > 0 && !filters.sources.has(lead.source)) return false;
+      if (filters.campaigns.size > 0 && !filters.campaigns.has(lead.campaign)) return false;
       if (filters.sentiments.size > 0 && !filters.sentiments.has(sentimentKeyFor(lead))) return false;
       if (filters.services.size > 0 && !serviceKeysFor(lead).some(k => filters.services.has(k))) return false;
       if (filters.stageAges.size > 0) {
@@ -714,9 +721,9 @@ export default function CrmLeads() {
             <div className="crm-leads-filter-wrap">
               <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm" onClick={() => setShowFilterPanel(v => !v)}>
                 <IconFilter style={CARD_ACTION_ICON_STYLE} /> Filters
-                {(filters.sources.size + filters.sentiments.size + filters.services.size + filters.stageAges.size) > 0 && (
+                {(filters.sources.size + filters.campaigns.size + filters.sentiments.size + filters.services.size + filters.stageAges.size) > 0 && (
                   <span className="crm-leads-filter-count">
-                    {filters.sources.size + filters.sentiments.size + filters.services.size + filters.stageAges.size}
+                    {filters.sources.size + filters.campaigns.size + filters.sentiments.size + filters.services.size + filters.stageAges.size}
                   </span>
                 )}
               </button>
@@ -731,6 +738,17 @@ export default function CrmLeads() {
                         <label key={source} className="crm-leads-filter-option">
                           <input type="checkbox" checked={filters.sources.has(source)} onChange={() => toggleFilter('sources', source)} />
                           {source}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {availableCampaigns.length > 0 && (
+                    <div className="crm-leads-filter-group">
+                      <div className="crm-leads-filter-group-title">Campaign</div>
+                      {availableCampaigns.map(campaign => (
+                        <label key={campaign} className="crm-leads-filter-option">
+                          <input type="checkbox" checked={filters.campaigns.has(campaign)} onChange={() => toggleFilter('campaigns', campaign)} />
+                          {campaign}
                         </label>
                       ))}
                     </div>
