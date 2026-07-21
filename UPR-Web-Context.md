@@ -4434,6 +4434,30 @@ bookkeeping must never roll back the real invoice/payment/signature write it's p
 (migration-safety-checker caught the unguarded version pre-ship). Verified live with real fixtures for
 all four triggers + the no-downgrade guard; test: `supabase/tests/crm_pipeline_auto_advance.test.js`.
 
+**New stage + AI-driven auto-advance (2026-07-21, `20260721_crm_inspection_scheduled_stage.sql`,
+owner-directed):** added an **"Inspection Scheduled"** `pipeline_stages` row for both orgs, sitting
+between Qualified and Estimate Sent (real org sort_order 4; test org 3 — Estimate Sent/Won/Lost each
+renumbered +1 in both; no lead's stage *assignment* changed, only the column's display position). The
+AI call-cleanup pass (`functions/api/transcribe-call.js`'s `cleanAndSummarize`, same Claude Haiku call
+that already rewrites the summary) now also asks whether a real inspection/appointment was agreed to on
+the call, returning `inspection_scheduled: true|false` in its JSON (parsed leniently — anything but a
+literal `true` is `false`, never a parse failure; stored on `transcript_analysis.inspection_scheduled`
+via `callCleanup.js`'s `parseCleanupResponse`/`applyCleanup`). When `true`, `transcribeLead()`
+best-effort calls the new **`crm_advance_lead_if_forward(p_lead_id, p_stage_name)`** RPC (`SECURITY
+DEFINER`, `authenticated, service_role` only). Unlike `crm_auto_advance_leads` (contact-wide, for real
+business-document events), this one is **lead-scoped** — the AI signal is about ONE call, so it only
+ever acts on that call's own `inbound_leads` row, never sibling leads for the same contact — and
+**sort_order-aware**: it looks up the lead's current stage's `sort_order` and the target stage's
+`sort_order` and no-ops if the target isn't strictly forward, plus the usual guards (unknown lead,
+spam-flagged, terminal Won/Lost, stage doesn't exist for the org, already there). Any RPC failure is
+caught and logged, never blocking the transcription write (same "bookkeeping never blocks the real
+write" contract as the milestone triggers). Verified live against the TEST org across all 5 scenarios
+(new lead advances; already-Estimate-Sent/Won/Lost never move backward or off a terminal stage;
+spam-flagged never moves) — the local anon-role test environment can't run
+`supabase/tests/crm_inspection_scheduled.test.js`'s live assertions (an unrelated anon-closure hardening
+from a separate initiative removed anon read access to `crm_orgs`), so this was verified via direct
+SQL fixtures instead, same as the milestone triggers were originally.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

@@ -30,12 +30,22 @@
  *                  writes → inbound_leads.transcription + transcript_analysis (via
  *                           set_lead_transcription RPC); inbound_leads.caller_name +
  *                           a blank linked contact's name (via set_lead_caller_name);
- *                           system_events, worker_runs
+ *                           lead_pipeline_stage + lead_stage_history (via
+ *                           crm_advance_lead_if_forward, when the AI detects an
+ *                           inspection was scheduled on the call); system_events,
+ *                           worker_runs
  *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
  *                  (Claude Haiku — names the Agent/Customer speakers, then cleans
- *                  up wording + writes the summary; both best-effort)
+ *                  up wording + writes the summary + flags inspection_scheduled;
+ *                  all best-effort)
  *
  * NOTES / GOTCHAS:
+ *   - cleanAndSummarize() also asks Claude whether a real inspection/appointment
+ *     was agreed to on the call (inspection_scheduled). When true, best-effort
+ *     calls crm_advance_lead_if_forward(lead_id, 'Inspection Scheduled') — a
+ *     SECURITY DEFINER RPC that never moves a lead backward, off a terminal
+ *     Won/Lost stage, or a spam-flagged lead; any failure never blocks the
+ *     transcription write.
  *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
  *     entities) in one call. CallRail gives us a MONO recording, so `multichannel`
  *     is intentionally NOT requested (on a 1-channel file it suppresses diarization);
@@ -111,8 +121,10 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 2) Write a 2-4 sentence summary a busy office manager can scan in five seconds: the type of damage/service (water, fire, mold, roofing, remodel, etc.), urgency, any key details mentioned (location, timing), and how the call ended (e.g. appointment scheduled, quote requested, caller will call back, not a fit, voicemail).
 
+3) Decide whether an in-person inspection/appointment was actually agreed to during THIS call — a specific day/time or a clear mutual "let's get someone out there" agreement. A vague "we'll follow up" or "someone will call you back" does NOT count. Set inspection_scheduled to true only when a real inspection visit was scheduled in this call.
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
@@ -285,6 +297,17 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     try {
       await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName });
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI detected a real inspection agreed to in this call — nudge the lead
+  // forward to "Inspection Scheduled" (RPC is sort-order-aware: no-op if the
+  // lead is already further along, spam-flagged, or the stage doesn't exist
+  // for this org). Best-effort, like caller-name — pipeline bookkeeping never
+  // blocks a transcription from saving.
+  if (analysis?.inspection_scheduled) {
+    try {
+      await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Inspection Scheduled' });
+    } catch { /* pipeline auto-advance is a bonus, not a reason to fail the transcription */ }
   }
 
   return { id: lead.id, chars: flatText.length, transcription: flatText, analysis, callerName: callerName || null };

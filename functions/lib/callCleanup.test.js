@@ -46,13 +46,23 @@ describe('buildCleanupPrompt', () => {
 });
 
 describe('parseCleanupResponse', () => {
-  const good = '{"turns":["Thank you for calling Utah Pros.","Hi, I have a flood in my basement."],"summary":"Caller reports a basement flood; agent scheduled an inspection for tomorrow."}';
+  const good = '{"turns":["Thank you for calling Utah Pros.","Hi, I have a flood in my basement."],"summary":"Caller reports a basement flood; agent scheduled an inspection for tomorrow.","inspection_scheduled":true}';
 
   it('parses a clean JSON object when the turn count matches', () => {
     expect(parseCleanupResponse(good, 2)).toEqual({
       turns: ['Thank you for calling Utah Pros.', 'Hi, I have a flood in my basement.'],
       summary: 'Caller reports a basement flood; agent scheduled an inspection for tomorrow.',
+      inspectionScheduled: true,
     });
+  });
+
+  it('reads inspection_scheduled leniently — only a literal true counts, anything else (or missing) is false', () => {
+    const noField = '{"turns":["Hi there."],"summary":"x"}';
+    expect(parseCleanupResponse(noField, 1)?.inspectionScheduled).toBe(false);
+    const falseField = '{"turns":["Hi there."],"summary":"x","inspection_scheduled":false}';
+    expect(parseCleanupResponse(falseField, 1)?.inspectionScheduled).toBe(false);
+    const truthyString = '{"turns":["Hi there."],"summary":"x","inspection_scheduled":"true"}';
+    expect(parseCleanupResponse(truthyString, 1)?.inspectionScheduled).toBe(false);
   });
 
   it('extracts JSON out of markdown fences or surrounding prose', () => {
@@ -73,7 +83,7 @@ describe('parseCleanupResponse', () => {
 
   it('treats a missing/blank summary as null but still returns the cleaned turns', () => {
     const noSummary = '{"turns":["Hi there."]}';
-    expect(parseCleanupResponse(noSummary, 1)).toEqual({ turns: ['Hi there.'], summary: null });
+    expect(parseCleanupResponse(noSummary, 1)).toEqual({ turns: ['Hi there.'], summary: null, inspectionScheduled: false });
   });
 
   it('returns null on garbage / no JSON / missing or empty turns', () => {
@@ -99,6 +109,7 @@ describe('applyCleanup', () => {
   const cleaned = {
     turns: ['Thank you for calling the Pros.', 'Hi, I have a mold question in my basement.'],
     summary: 'Caller has a mold issue in their basement and wants an inspection.',
+    inspectionScheduled: true,
   };
 
   it('replaces each turn\'s text, keeps the original as rawText, and swaps in the new summary', () => {
@@ -114,6 +125,7 @@ describe('applyCleanup', () => {
     ]);
     expect(out.summary).toBe('Caller has a mold issue in their basement and wants an inspection.');
     expect(out.topics).toEqual(['mold']);
+    expect(out.inspection_scheduled).toBe(true);
     // original not mutated
     expect(analysis.turns[1].text).toBe('Hi, mold question, um, in my, uh, basement.');
     expect(analysis.summary).toBe('A roofing contractor introduces himself.');
@@ -122,6 +134,11 @@ describe('applyCleanup', () => {
   it('falls back to the original Deepgram summary when the cleaned summary is null', () => {
     const out = applyCleanup(analysis, { turns: cleaned.turns, summary: null });
     expect(out.summary).toBe('A roofing contractor introduces himself.');
+  });
+
+  it('sets inspection_scheduled to false when the cleaned result says false or omits it', () => {
+    expect(applyCleanup(analysis, { turns: cleaned.turns, summary: 'x', inspectionScheduled: false }).inspection_scheduled).toBe(false);
+    expect(applyCleanup(analysis, { turns: cleaned.turns, summary: 'x' }).inspection_scheduled).toBe(false);
   });
 
   it('leaves a turn unchanged (no rawText) when cleaned has no counterpart for it', () => {
