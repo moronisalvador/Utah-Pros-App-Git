@@ -78,5 +78,24 @@ export function supabase(env) {
       if (!res.ok) throw new Error(`Supabase RPC ${fn}: ${res.status} ${await res.text()}`);
       return res.json();
     },
+
+    // Raw bytes upload to Storage (e.g. a generated PDF) — the REST helpers
+    // above only cover JSON bodies. Throws with a clear message if the
+    // service-role key isn't configured, rather than silently no-oping.
+    async uploadStorage(bucket, path, bytes, contentType) {
+      if (!key) throw new Error('Supabase service-role key not configured');
+      const res = await fetch(`${url}/storage/v1/object/${bucket}/${path}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'apikey':        key,
+          'Content-Type':  contentType,
+          'x-upsert':      'true',
+        },
+        body: bytes,
+      });
+      if (!res.ok) throw new Error(`Supabase STORAGE upload ${bucket}/${path}: ${res.status} ${await res.text()}`);
+      return true;
+    },
   };
 }

@@ -4,7 +4,7 @@ This document is the **dispatch model of record** for the Database Foundation in
 the shared Supabase into a secure, organized, professional foundation ready for advanced reporting and
 future features — while breaking nothing. It was produced by a masterplan planning session (gap audit
 vs the owner-supplied "Supabase Database Foundation Master Playbook" as capability taxonomy, seeded
-from `AUDIT-REPORT.md`, adversarially reviewed by a multi-agent challenge pass that refuted two of its
+from `docs/archive/AUDIT-REPORT.md`, adversarially reviewed by a multi-agent challenge pass that refuted two of its
 own draft claims). **All statuses below were verified against the live Supabase project
 `glsmljpabrwonfiltiqm` on 2026-07-08 and against real file reads — not assumed from any doc.**
 
@@ -14,7 +14,7 @@ binding file/RPC ownership split lives in
 the standing rules this initiative installs live in
 [`.claude/rules/database-standard.md`](../.claude/rules/database-standard.md).
 
-**Supersedes:** the remaining open items of `AUDIT-REPORT.md` (2026-06-24) Batches B/D/E, and its
+**Supersedes:** the remaining open items of `docs/archive/AUDIT-REPORT.md` (2026-06-24) Batches B/D/E, and its
 "Multi-tenant SaaS track" — carried forward here with supersede-transparency. This initiative does NOT
 touch in-flight work (see Status reconciliation).
 
@@ -36,7 +36,7 @@ touch in-flight work (see Status reconciliation).
 | Docs | **No plain-English data-model guide** | `UPR-Web-Context.md` is the expert source of truth (Rule 9); README stale. |
 
 **Stale-doc disclosures (honest reconciliation, not silently flipped):** `CLAUDE.md` said "66+
-migrations" — the dir has 133 files and the live DB has 290 applied. `AUDIT-REPORT.md`'s
+migrations" — the dir has 133 files and the live DB has 290 applied. `docs/archive/AUDIT-REPORT.md`'s
 `security_definer_view` ERRORs (5) are **gone** — those views were dropped, not converted; a related
 drift is that `20260630_job_sales_canonical.sql` defines `public.job_sales` but no such view exists
 live. These are captured in Phase F's drift reconciliation.

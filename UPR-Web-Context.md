@@ -48,6 +48,18 @@ Owner-approved token/usage optimizations for Claude Code sessions; no schema, no
   route inventory fan-outs to it (subagents with no `model:` inherit the expensive session model).
 - **CLAUDE.md compact instructions** — what auto-compaction must preserve (incl. applied
   migrations on the shared Supabase) vs discard.
+- **`upr_code_context` MCP tool** (2026-07-14, `upr-mcp/`) — a read-only "where does this feature
+  live?" map for the UPR MCP server. Given a plain-English feature (e.g. "invoice payment
+  reconciliation") it returns the relevant pages/components/workers/RPCs/tables/tests, the applicable
+  `.claude/rules/` standards, and any gold-standard implementation named in those rules — in one
+  compact (<2k-token) response. Backed by a **curated keyword index** (`upr-mcp/src/codeIndex.js`,
+  no embeddings) with UPR business-vocabulary synonym expansion (claim/job/estimate/invoice/
+  collections/tech/CRM/scope-sheet/QBO/Encircle/Twilio…); regenerated from the repo docs by
+  `npm run build-index` (`upr-mcp/scripts/build-index.js`, scans `src/`, `functions/api/`,
+  `supabase/migrations/`, `.claude/rules/`, `UPR-Web-Context.md`, `CLAUDE.md`). Purely offline — no
+  DB or repo reads at runtime. Search logic in `upr-mcp/src/codeContext.js` (pure, unit-tested in
+  `codeContext.test.js`); registered alongside `upr_schema`/`upr_search` and allow-listed in
+  `.claude/settings.json`. Worker deploy is dashboard-side (`cd upr-mcp && npx wrangler deploy`).
 - **TypeScript LSP wiring** — `typescript-lsp@claude-plugins-official` enabled in
   `.claude/settings.json` (`enabledPlugins`); `typescript-language-server` + `typescript`
   installed by `scripts/install_pkgs.sh` in cloud sessions (before the warm-cache skip); new root
@@ -55,7 +67,7 @@ Owner-approved token/usage optimizations for Claude Code sessions; no schema, no
   untyped-code diagnostics. Local machines: run
   `npm install -g typescript-language-server typescript` once.
 
-## UX Quality initiative — plan of record + Phase 0 + F-S1 (2026-07-13)
+## UX Quality initiative — plan of record + Phase 0 + F-S1 + F-S2 (2026-07-13)
 
 A masterplan-standard session (11-auditor read-only sweep → synthesis → adversarial verification)
 produced the **UX Quality** plan of record: `docs/ux-quality-roadmap.md` + `docs/ux-quality-dispatch.md`
@@ -76,12 +88,66 @@ Owner decisions: prep-for-redesign consolidation + foundation-first sequencing.
   toast/db-import drift at warn), `ci.yml` (build+test now gates `dev`), and amendments to `CLAUDE.md`,
   `tech-mobile-ux.md`, `documentation-standard.md`, and the `masterplan` skill (5 changes incl. a
   frontend-excellence guardrail + the minimize/resume test in close-out).
+- **F-B backend foundation (branch `claude/ux-fb-backend`, PR into `dev`, 2026-07-13)** — three shared
+  worker libs + three transactional RPCs + offline-queue extension. ⚠️ **The 3 RPC migrations are staged
+  on disk but NOT yet applied to the shared prod DB** — the orchestrator applies + verifies them via MCP
+  in a low-traffic window before merge.
+  - **New RPCs** (all `SECURITY DEFINER`, `REVOKE EXECUTE FROM PUBLIC, anon` + `GRANT TO authenticated,
+    service_role`; migrations `supabase/migrations/20260713_uxq_fb_*.sql`):
+    - `sync_appointment_crew(p_appointment_id uuid, p_crew jsonb) → SETOF appointment_crew` — atomic
+      delete-then-insert replace of an appointment's crew (kills the non-atomic loop in
+      `TechEditAppointment`/`EditAppointmentModal`/`EventModal`).
+    - `save_estimate_lines(p_id uuid, p_lines jsonb, p_kind text DEFAULT 'estimate') → jsonb` — atomic
+      line replace for estimates (default) or invoices (`p_kind='invoice'`); never writes the GENERATED
+      `line_total`; the recompute trigger rolls up the subtotal.
+    - `get_jobs_list(p_search text, p_limit int, p_offset int) → SETOF json` — trimmed ~31-col set +
+      server-side search (name/job#/address/claim#/insurer) + pagination (`total_count` window),
+      replacing the ~52-col unbounded Jobs/Production query. Tests: `supabase/tests/uxq_fb_rpcs.test.js`
+      (anon-denied least-privilege) + `supabase/tests/uxq_fb_rpcs.sql` (live atomicity/shape gate).
+  - **New libs** (`functions/lib/`): `auth.js` (`requireUser`/`requireEmployee`/`requireRole`/
+    `checkCronSecret` + `getActorEmployee` moved here from `google-drive.js`, which now re-exports it;
+    token verify uses the anon key on `/auth/v1/user`), `http.js` (`fetchWithTimeout`, 15s
+    `AbortSignal.timeout`, adopted in `twilio/quickbooks/email/callrail-api`), `worker-runs.js`
+    (`recordWorkerRun`/`withRunRecording`).
+  - **Consolidation:** 11 uncontested workers swapped from a local `requireAuth` copy to `requireUser`;
+    8 uncontested workers' hand-rolled `worker_runs` inserts migrated to `recordWorkerRun`. Files owned by
+    active initiatives were left for their owners (see the F-B PR body for the exact skip list).
+  - **Offline queue:** `note.insert` + `task.toggle` mutation types added (`src/lib/dispatchers/
+    {noteDispatcher,taskDispatcher}.js` + `syncRunner.js` switch) so offline notes/checkbox taps sync
+    like online. Money-worker safety tests added (`functions/api/{qbo-payment,stripe-webhook}.test.js`).
 
 **Key audit findings (grounded in file:line, not memory):** two-speed codebase (new surfaces already
 correct, legacy half hand-rolls); 1,644 hardcoded hex (836 distinct); 11 surfaces blank a rendered page
 on PTR/mutation; 6 loading primitives; 125 raw toast dispatches; failed loads render success empty-states
 on top screens (Schedule/JobPage). Foundation-then-wave remediation (F-S2 primitives/tokens, F-B backend,
-W1–W5 page alignment, W6 fold-ins) is dispatched but not yet built — runs alongside next week's features.
+W1–W5 page alignment, W6 fold-ins) — F-S2 shipped (below); F-B + W1–W5 run alongside next week's features.
+
+### F-S2 — Shared primitives, tokens & motion foundation (2026-07-13, branch → dev)
+The contract every W-session imports. **Ships primitives + tokens + docs only; zero call-site migration
+(that's W1–W3 by design).**
+- **`src/index.css` `:root`** — new semantic status token family `--success/--danger/--warning/--info/--neutral`
+  (+ `-bg`/`-border`), minted from the grep-verified dominant in-code triplets, with dark-theme re-tones in
+  the `[data-theme="dark"] .tech-layout` block; new motion catalog tokens `--motion-duration-{fast,base,slow}`
+  + `--motion-ease-{standard,decelerate,accelerate}`. Plus a base CSS block for the primitives, the promoted
+  `.btn` press feedback, the animated `.ui-seg` segmented control, the reusable `.ui-chat-bubble-*` classes,
+  and the `@view-transition { navigation: auto }` page-transition mechanism — all transform/opacity-only and
+  `prefers-reduced-motion`-wrapped.
+- **`src/components/ui/**`** — `Modal` (role=dialog + focus trap + ESC/overlay close + mobile bottom-sheet),
+  `StatusPill` (+ `statusTone.js` classifier), `EmptyState`, `ErrorState` (shape from TechJobDetail:330),
+  `PageHeader`, `SearchInput`, `IconButton` (label-required); barrel `index.js`.
+- **`src/hooks/**`** — `useResumeRefetch` (the one silent resume/focus/poll refetch hook — replaces 8
+  hand-rolled visibility handlers), `useTwoClickConfirm`, `useLookup` (react-query roster cache:
+  employees/job_phases/carriers), `usePhotoUpload` + `thumbUrl`/`publicUrl` (mediaCompress on upload; the
+  single media-URL construction point = db-foundation P8's signed-URL swap seam).
+- **`UPR-Design-System.md`** — deleted the inline-hex Status Color Palette recipe; converted the
+  Modal/StatusPill/empty-error-loading/two-click/toast pattern sections to component/hook imports; added the
+  Kit Registry, the Dark-theme contract, and the Motion Catalog; regenerated the division table from
+  `DivisionIcons.DIVISION_CONFIG`; per-section Last-verified 2026-07-13 stamps.
+- Tests: `src/components/ui/uiPrimitives.render.test.jsx` + `src/hooks/hooks.test.jsx` (renderToStaticMarkup
+  + pure-logic). Build clean, full suite green (1119 passed), 0 new eslint findings, CSS bundle 392.82 KB raw
+  (< 400 KB budget). **Deferred (by design):** the router `viewTransition`-prop wiring + shell
+  `view-transition-name` marking (App.jsx/Layout are frozen — a shell-owner follow-up); call-site adoption of
+  every primitive/hook is W1–W3/W5.
 
 ## DB Foundation initiative — plan of record (planning session, 2026-07-08)
 
@@ -707,11 +773,12 @@ functions/
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded (status `failed`, `error_code`/`error_message`) instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted (omni §7). Response is additive to F's frozen `/api/send-message` contract: direct blocked → 403 `{error, code:DND_ACTIVE|NO_CONSENT|CONTACT_NOT_FOUND, contact_id}` (unchanged); all-blocked group → 403 `ALL_RECIPIENTS_BLOCKED`; success → 201 `{success, message:<row0>, twilio:[per-recipient…]}` (+ top-level `error_code`/`error_message` when the direct send failed). `num_segments`/`price` left NULL for Phase A to fill from the status callback. SMS-only — omni-O's `channel`/email branch deferred (roadmap §8a).
-    send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only)
+    send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
     submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-claim-to-encircle.js     — Push UPR-native claim UP to Encircle. POST { claim_id }. Idempotent (skips if claims.encircle_claim_id set). Writes encircle_claim_id back on claims AND all child jobs. On failure stores error on claims.encircle_sync_error for retry. Called automatically from CreateJobModal + TechNewJob post-RPC; manual retry via DevTools → Backfill tab → Unsynced Claims panel.
+    sync-houzz.js                 — Push a reconstruction-division job to Houzz Pro. POST { job_id, force? }. Houzz Pro has no public API, so this POSTs the job (customer name/email/phone/address + job_number/claim_number/insurance_company/type_of_loss) to a Zapier webhook (Catch Hook trigger → Houzz Pro "Create Project" action, built in Zapier's UI — not buildable via API). Webhook URL lives in integration_config (key houzz_zapier_webhook_url, service-role-only — RLS enabled, zero policies, invisible to anon/authenticated), NOT a Cloudflare env var — settable live via Supabase without a dashboard step, same pattern as auth.js's checkCronSecret. Idempotent (skips if jobs.houzz_synced_at already set, unless force:true). Writes jobs.houzz_sync_status/houzz_synced_at/houzz_sync_error. No houzz_project_id — Zapier's Zap runs asynchronously so there's no way to read a created project's ID back; "sent" means "handed off successfully," not "confirmed created." Called automatically from CreateJobModal + TechNewJob + AddRelatedJobModal (all three client-side job-creation entry points — confirmed via grep, no others exist) post-RPC when division==='reconstruction'; no backfill/retry UI yet.
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
@@ -1046,7 +1113,7 @@ employees               — 15 rows as of Jul 1 2026 (8 auth-linked, 7 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
-device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker
+device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table.
 automation_rules        — Workflow automation rules
 insurance_carriers      — 29 rows — Carrier lookup table
 referral_sources        — 49 rows — Referral source lookup table
@@ -3025,6 +3092,14 @@ reverted rather than shipped on a self-granted exception the manifest doesn't ac
 **Follow-up needed (F-owner or a future session with F's authority):** either add an
 `onReset`-confirm prop to `TemplateEditor.jsx` that P4 can wire up, or bless the copy-in
 explicitly. Filed here instead of quietly re-adding it.
+**→ CLOSED 2026-07-14** by an owner-directed F-owner follow-up: the confirm now lives directly
+in `TemplateEditor.jsx` via the shared `useTwoClickConfirm` hook (arm → "Confirm reset?" with the
+`--danger`/`--danger-bg`/`--danger-border` triplet, disarm on blur or 3.5s timeout). Same commit
+also migrated the file's local `errToast` copy to the shared `toast(msg,'error')` entry point
+(clearing its one eslint baseline warning). Gauntlet: upr-pattern-checker pass ·
+page-behavior-checker pass · design-consistency-checker pass after two fixes it requested
+(shared hook + `--danger` tokens instead of hand-rolled state + `--status-needs-response`).
+P4 is now fully complete; the initiative's only remaining tail is the P9 owner cutover.
 
 `google-drive-callback.js` now 302s to `/settings/my-account?gdrive=…` instead of
 `/settings?gdrive=…`; F's SettingsHome forwarder stays as a permanent shim for any old
@@ -3712,6 +3787,16 @@ upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_cal
   contact when one already matches `caller_number` (so a known customer's call lands on their
   timeline), but an unknown number stays a contact-free lead — most inbound calls are
   spam/wrong-numbers/price-shoppers, and auto-creating a contact per call floods the contacts table
+  **(2026-07-21 fix, `20260721_crm_contact_link_and_activity.sql`, function-body-only
+  `CREATE OR REPLACE`, signature unchanged):** the phone match was a bare `phone = p_caller_number`
+  string comparison, so a contact whose phone wasn't stored in the exact same format as CallRail's
+  E.164 `caller_number` never matched — verified live, several real customers' repeat calls stayed
+  unlinked despite an exact-matching contact existing the whole time. Now normalizes both sides
+  (strip non-digits, compare last 10) and skips (never guesses) an ambiguous multi-contact match. A
+  one-time backfill in the same migration linked every previously-orphaned lead it could resolve
+  unambiguously (`REVOKE...FROM PUBLIC,anon` re-affirmed; grants stay `authenticated, service_role`
+  only — the header line above listing `anon` predates the P3 anon-grant closure and is stale for
+  this RPC specifically).
   (and, via `trg_qbo_customer_sync`, QuickBooks). A contact is created only when the lead is
   qualified: it books (the app's find-or-create-by-phone flows) or staff run `promote_lead_to_contact`.
   (This retired the old `shouldCreateContact` spam-gate predicate + `functions/lib/callrail.js`, now
@@ -4332,6 +4417,23 @@ shared dev/main Supabase project):
   frontend (`src/lib/crmPipeline.js`'s `groupLeadsByStage()`) and nothing server-side enforce this;
   it's a read-time fallback, not a DB default. RLS enabled + explicit policy at creation.
 
+**Milestone auto-advance (2026-07-21, `20260721_crm_pipeline_auto_advance.sql`, owner-directed):** four
+`AFTER` triggers push a contact's open (non-Won) leads forward without staff dragging a card — a signed
+`work_auth` `sign_requests` row, a real `invoices` row created with `total > 0`, an invoice's
+`amount_paid` going from 0 to positive (payment received), and an `estimates.status` transition to
+`'submitted'` (this schema's closest equivalent of "sent" — there is no literal `sent` value in its
+CHECK constraint). The first three move every open lead for that contact to **Won**; the fourth to
+**Estimate Sent**. Shared helper `crm_auto_advance_leads(p_contact_id, p_stage_name)` — SECURITY DEFINER,
+calls the frozen `move_lead_to_stage` RPC, never passes a reason into its `p_lost_reason` (these triggers
+only move leads forward, never to Lost) — guards against ever pulling an already-`is_won` lead backward
+(checked via `pipeline_stages.is_won`, not a hardcoded stage name) and against redundant same-stage
+moves. Each of the 4 trigger functions (`crm_trg_sign_request_signed`/`crm_trg_invoice_created`/
+`crm_trg_invoice_paid`/`crm_trg_estimate_submitted`) wraps its call in `BEGIN...EXCEPTION WHEN OTHERS`
+and logs a `crm_auto_advance_failed` `system_events` row on failure instead of propagating — pipeline
+bookkeeping must never roll back the real invoice/payment/signature write it's piggybacking on
+(migration-safety-checker caught the unguarded version pre-ship). Verified live with real fixtures for
+all four triggers + the no-downgrade guard; test: `supabase/tests/crm_pipeline_auto_advance.test.js`.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
@@ -4347,7 +4449,18 @@ shared dev/main Supabase project):
   SMS branch reads `messages.type`, e.g. `sms_outbound`/`sms_inbound`, which
   `functions/api/send-message.js` / `twilio-webhook.js` actually populate), `job_notes` joined
   through `contact_jobs` (notes are job-scoped, not contact-scoped, hence the join), and `estimates`
-  (`contact_id` is direct). Ordered newest-first across all four sources.
+  (`contact_id` is direct). Ordered newest-first across all four sources. **(2026-07-21 addition,
+  `20260721_crm_contact_link_and_activity.sql`, function-body-only `CREATE OR REPLACE`, signature
+  unchanged):** three more `UNION ALL` arms — `appointment` (joined through `contact_jobs` same as
+  `job`/`note`, since `appointments` has no direct `contact_id`), `invoice` (direct `contact_id`), and
+  `work_authorization` (from `sign_requests`, direct `contact_id` — the e-sign work-authorization
+  mechanism). This is the UPR job-management/invoicing-side history the CRM lead/contact panel was
+  missing; `ActivityTimeline.jsx` is fully generic (renders whatever `activity_type` rows come back),
+  so no frontend change was needed. `REVOKE...FROM PUBLIC,anon` re-affirmed; grants stay
+  `authenticated, service_role` only, verified live before/after
+  (`.claude/rules/crm-wave-ownership.md` §1 lists this RPC as a Foundation-owned frozen REPLACE —
+  this was an owner-directed production fix, not an in-wave session, and stays backward-compatible
+  per that manifest's own REPLACE rule).
 
 **Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
 the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
@@ -6816,3 +6929,74 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   `page:tech_msgs_v2` in DevTools → Flags. Coordination seams: Job Hub H3 (`src/i18n/index.js` only),
   db-foundation P8 (`messages/mediaUpload.js` `publicMediaUrl` is the swap target), sms deep-link
   follow-up (sms-owned).
+
+## App Store Readiness & iOS Native Capabilities (2026-07-17 — masterplan committed, Wave 1 dispatched)
+
+Plan of record: `docs/app-store-readiness-roadmap.md` + `.claude/rules/app-store-readiness-wave-ownership.md`.
+Live-verified gap audit + adversarial challenge pass found: no `.entitlements` file exists (Push
+capability not enabled at the Xcode level); native APNs fully dormant (`AppDelegate.swift` has zero
+push-delegate code, `functions/api/send-push.js` has zero callers); `device_tokens` RLS policy named
+"Own tokens or admin read" is actually `USING (true)` — every employee can read every device token
+(security finding, fix owned by Phase A); no app-target `PrivacyInfo.xcprivacy` (Capacitor's bundled
+one is an empty declaration, confirmed by direct read — doesn't cover the app); Capgo OTA's
+`markBundleReady()` is defined but never called anywhere (docs previously claimed it was wired on
+`App.jsx` mount — that was false); stock Capacitor placeholder icon/splash still in place; **the
+single biggest finding**: Apple Guideline 3.2 ("Business") is a real-but-inconsistently-enforced risk
+for a single-company internal app on the **public** App Store (Walmart's "Me@Walmart" app is a
+documented live counter-example) — recommendation is **Apple Business Manager → Custom Apps**
+distribution instead, an owner decision not yet made. In-app account deletion (Guideline 5.1.1(v))
+is required regardless of which distribution path is chosen — no ABM/enterprise exemption exists
+(confirmed by direct re-verification, unlike Sign-in-with-Apple's 4.8 which correctly does not apply
+here). Four build phases dispatched in parallel via git-worktree-isolated subagents in one session
+(not separate cold sessions): **F1** (signing/entitlements/push-delegate/privacy-manifest — Opus, can't
+be compile-verified in this Linux environment, needs a real Xcode build-check before it reaches any
+device), **A** (device_tokens RLS fix + send-push.js auth/pruning fix + markBundleReady() wire-up —
+Opus, ships a migration on the shared prod Supabase), **B** (in-app account-deletion RPC + UI in
+`MyAccount.jsx` — Opus, compliance-sensitive), **D** (fastlane + CI scaffold, no signing creds yet —
+Sonnet, mechanical). Owner action items: kick off Apple Developer Program + ABM enrollment (longest
+lead time, EIN now accepted for ABM itself per an April 2026 Apple Business platform change — but the
+separate paid Developer Program still shows D-U-N-S as of this writing, verify live at signup); make
+the distribution-model call; Xcode-side build-verify of F1 before any real device sees it.
+
+### App Store Readiness Phase B — in-app account deletion (Guideline 5.1.1(v), shipped 2026-07-17)
+
+Migration `20260717_account_deletion_requests.sql` (applied live to the shared Supabase). New table
+**`account_deletion_requests`** (`id`, `employee_id` FK→employees ON DELETE CASCADE, `requested_at`,
+`status` CHECK `pending|actioned|denied` default `pending`, `notes`, `actioned_by` FK→employees,
+`actioned_at`). RLS on: an employee SELECTs/INSERTs only their own row; an active `admin` SELECTs all
+and is the only role that can UPDATE (action/deny). A **partial unique index** (`employee_id` WHERE
+`status='pending'`) enforces one open request per person. `REVOKE ALL … FROM anon` (belt-and-suspenders
+over the default-privileges revoke).
+
+New SECURITY DEFINER RPCs (`GRANT EXECUTE TO authenticated, service_role` — never anon):
+- **`request_account_deletion(p_notes text DEFAULT NULL) → account_deletion_requests`** — resolves the
+  caller via `auth.uid()`→employees, idempotently files a pending request (an existing open request is
+  returned as-is, no dup, no re-notify; unique-violation race caught). On a NEW request it inserts one
+  **admin-targeted** bell notification per active admin (`notifications.recipient_id` = each admin,
+  `type='account_deletion_requested'`) — NOT an org-wide broadcast.
+- **`get_my_account_deletion_request() → account_deletion_requests`** — the caller's open pending
+  request (or null); SECURITY DEFINER so a fresh-table PostgREST cache lag can't 404 the read.
+
+UI: **request-and-confirm** flow (accounts are admin-provisioned; job/claim/time records are a shared
+business record, so no silent self-service hard-delete). `src/pages/settings/MyAccount.jsx` gains a
+"Delete my account" section — inline two-click confirm (`useTwoClickConfirm`, no modal/`confirm()`),
+shows the pending state instead of the button when a request already exists, `ErrorState` on a failed
+status read (never falls through to the button). Same edit migrated the file's local `errToast/okToast`
+copies to the sanctioned `@/lib/toast` and the disconnect button's hardcoded red to `--danger*` tokens.
+An admin actions the actual access deactivation + data retention (no admin-action UI built this phase —
+the bell notification is the surfacing hook; a future admin queue can read `account_deletion_requests`).
+
+**2026-07-18 update — Wave 1 all four PRs open (#451–#454), CI green, no review comments** (F1
+signing/push, A backend hardening incl. the live `device_tokens` RLS fix, B account deletion, D CI
+scaffold). **Phase F2's non-Xcode-gated slice also shipped** this session (branch
+`app-store-f2-polish-metadata`), per owner direction to get everything not blocked on Xcode done
+now: real UPR-branded `AppIcon-512@2x.png` (1024×1024) + `splash-2732x2732*.png`, rendered from the
+actual brand mark in `public/favicon.svg` via headless Chromium (Playwright, already installed) with
+the alpha channel stripped via `pngjs` (Apple's icon format forbids transparency) — replacing the
+stock Capacitor placeholder; a new public `/support` page (`src/pages/Legal.jsx` `Support` export +
+`src/App.jsx` route) since App Store Connect requires a Support URL and none existed; and
+`docs/app-store-connect-metadata.md`, a full submission-packet draft (description, keywords,
+category, age rating, nutrition-label table, export-compliance answer, review notes) ready to paste
+into App Store Connect. Still genuinely owner-only: the distribution-model decision, Apple Developer
+Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/Simulator
+build), merging the four open PRs, and the actual App Store Connect data entry.

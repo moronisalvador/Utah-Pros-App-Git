@@ -41,7 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import PullToRefresh from '@/components/PullToRefresh';
 import { toast } from '@/lib/toast';
-import { impact } from '@/lib/nativeHaptics';
+import { impact, selection } from '@/lib/nativeHaptics';
 
 // ─── SECTION: Constants ──────────────
 // Tab labels are translated at render via t(`tab.${key}`); `key` is the stable id.
@@ -241,7 +241,8 @@ export default function TechTasks() {
           {TABS.map(key => (
             <button
               key={key}
-              onClick={() => setTab(key)}
+              className="tech-pill"
+              onClick={() => { selection(); setTab(key); }}
               style={{
                 padding: '8px 18px', borderRadius: 'var(--radius-full)', border: '1px solid',
                 fontSize: 14, fontWeight: tab === key ? 600 : 400, cursor: 'pointer',

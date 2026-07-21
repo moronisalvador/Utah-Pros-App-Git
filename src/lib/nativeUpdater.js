@@ -20,8 +20,10 @@ export async function markBundleReady() {
   if (!isNative()) return;
   try {
     await CapacitorUpdater.notifyAppReady();
-  } catch {
-    // Non-native build or plugin missing — safe to ignore
+  } catch (err) {
+    // Per the CRITICAL note above, a failure here means Capgo will roll back
+    // to the previous bundle on next launch — log it so that's diagnosable.
+    console.warn('CapacitorUpdater.notifyAppReady failed (markBundleReady):', err?.message || err);
   }
 }
 

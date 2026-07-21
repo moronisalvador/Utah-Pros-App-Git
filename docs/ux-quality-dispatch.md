@@ -32,7 +32,7 @@ every alignment session will import. No page behavior changes, no feature code. 
 (docs/ux-quality-dispatch.md) first.
 
 Read: CLAUDE.md; docs/ux-quality-roadmap.md (F-S2 block); .claude/rules/ux-alignment-wave-ownership.md;
-.claude/rules/{loading-error-states,page-lifecycle,perf-budget}.md; UPR-Design-System.md.
+.claude/rules/{loading-error-states,page-lifecycle,perf-budget,motion-standard}.md; UPR-Design-System.md.
 
 Build (riskiest/most-depended-on first):
 1. src/index.css :root — add the semantic token family, values MINTED FROM the dominant in-code hex
@@ -47,11 +47,25 @@ Build (riskiest/most-depended-on first):
    Conversations.jsx:475-489 edge-detection + usePolledRpc.js:58-84 hidden-pause; silent + cancel-guarded],
    useTwoClickConfirm, useLookup (react-query wrapper for employees/job_phases/carriers), usePhotoUpload
    + thumbUrl (storage render transform URLs + mediaCompress on the upload path).
-4. Rewrite UPR-Design-System.md: DELETE the inline-hex Status Color Palette recipe; every pattern
+4. Motion, interactions & haptics (.claude/rules/motion-standard.md): add the motion tokens to :root
+   (durations + easings; migrate the raw --transition-* and hardcoded 0.1s/200ms sites; de-dup the
+   fadeIn/sheetSlideUp keyframes). Wire the native View Transitions API for page enter/back
+   (@view-transition{navigation:auto} + the RRv7 viewTransition prop; app shell = persistent transition
+   name so only content animates; retire the 4 ad-hoc `entering` patterns). Standardize the interaction
+   idioms: button press feedback (scale(0.97)+touch-action, promote from .tech-layout .btn to the shared
+   button); animated selection indicators for tabs/segments/chips/toggles (kill the snaps incl.
+   TechDemoSheet's inline tech-select); chat sent/received bubble motion (author now; the shared
+   Conversations/MessageBubble is sms-experience-owned → implement at the W6 fold-in). Pair native
+   haptics via src/lib/nativeHaptics.js (impact('light') press/send, selection() selection changes) —
+   import-only, no dep. Wrap EVERYTHING in a prefers-reduced-motion fallback (nothing auto-skips) +
+   suppress haptics under it. transform/opacity only, refresh-rate-agnostic (no >60fps dependency),
+   never gate a spinner, never refetch on transition.
+5. Rewrite UPR-Design-System.md: DELETE the inline-hex Status Color Palette recipe; every pattern
    section shows a component IMPORT not a style object; add the Kit Registry, the dark-theme contract
-   (components consume color ONLY via var()), the typography floor (11px absolute / 12px actionable on
-   tech), and regenerate the division/status tables FROM code (DivisionIcons.jsx = division source,
-   index.css = status source). Per-section Last-verified stamps.
+   (components consume color ONLY via var()), the **Motion section = the one tunable catalog** (page
+   transition + per-primitive motion, each naming its tokens), the typography floor (11px absolute / 12px
+   actionable on tech), and regenerate the division/status tables FROM code (DivisionIcons.jsx = division
+   source, index.css = status source). Per-section Last-verified stamps.
 
 Test-first: a render+interaction test per primitive (Modal focus-trap/ESC; StatusPill token class;
 ErrorState onRetry; useResumeRefetch fires silently on hidden→visible only). Do NOT migrate call sites

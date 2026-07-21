@@ -139,7 +139,7 @@ export default function JobPage(){
   return(
     <div className="job-page">
       <div className="job-page-topbar">
-        <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1);else navigate(isTech?'/tech/claims':'/jobs');}} style={isTech?{gap:6,minWidth:48,minHeight:48,padding:'8px 12px',fontSize:15}:{gap:4}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Back</button>
+        <button className="btn btn-ghost btn-sm" onClick={()=>{if(window.history.length>1)navigate(-1,{viewTransition:true});else navigate(isTech?'/tech/claims':'/jobs',{viewTransition:true});}} style={isTech?{gap:6,minWidth:48,minHeight:48,padding:'8px 12px',fontSize:15}:{gap:4}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> Back</button>
         <div className="job-page-topbar-actions">
           {job.client_phone&&(
             <a href={`tel:${job.client_phone}`}
@@ -174,7 +174,7 @@ export default function JobPage(){
           <div className="job-page-division-icon"><DivisionIcon type={job.division} size={28} /></div>
           <div>
             <div className="job-page-jobnumber">{job.job_number||'No Job #'}</div>
-            <div className="job-page-client" style={{cursor:job.primary_contact_id?'pointer':undefined}} onClick={()=>{if(job.primary_contact_id)navigate(`/customers/${job.primary_contact_id}`);}}>{job.insured_name||'Unknown Client'}{job.primary_contact_id&&<span style={{fontSize:11,color:'var(--brand-primary)',marginLeft:6}}>{'\u2192'}</span>}</div>
+            <div className="job-page-client" style={{cursor:job.primary_contact_id?'pointer':undefined}} onClick={()=>{if(job.primary_contact_id)navigate(`/customers/${job.primary_contact_id}`,{viewTransition:true});}}>{job.insured_name||'Unknown Client'}{job.primary_contact_id&&<span style={{fontSize:11,color:'var(--brand-primary)',marginLeft:6}}>{'\u2192'}</span>}</div>
             {job.address&&<div className="job-page-address">{job.address}{job.city?`, ${job.city}`:''}{job.state?` ${job.state}`:''}</div>}
           </div>
         </div>
@@ -204,7 +204,7 @@ export default function JobPage(){
 
       <PullToRefresh onRefresh={loadJob} className="job-page-content">
         {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
-        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`)} onNavigateCustomer={id=>navigate(`/customers/${id}`)} onNavigateClaim={id=>navigate(`/claims/${id}`)}/>}
+        {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavigateCustomer={id=>navigate(`/customers/${id}`,{viewTransition:true})} onNavigateClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
         {activeTab==='files'&&<FilesTab job={job} documents={documents} setDocuments={setDocuments} db={db} currentUser={currentUser} onSignRequest={()=>setShowEsign(true)} refreshKey={filesRefreshKey}/>}
         {activeTab==='financial'&&<FinancialTab job={job} fmt={fmt} saveBatch={saveBatch} employee={currentUser} db={db}/>}
@@ -213,7 +213,7 @@ export default function JobPage(){
 
       {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
       {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
-      {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
+      {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});}}/>}
       {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob();}}/>}
       {deleteTarget&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',justifyContent:'center',alignItems:'center'}} onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>
@@ -961,7 +961,7 @@ function ScheduleTab({jobId,taskSummary,onGenerateClick,navigate}){
       })}
     </div>
     <div style={{padding:'16px',borderTop:'1px solid var(--border-light)',marginTop:8,display:'flex',gap:8}}>
-      <button className="btn btn-sm btn-secondary" onClick={()=>navigate('/schedule')}>Open dispatch board</button>
+      <button className="btn btn-sm btn-secondary" onClick={()=>navigate('/schedule',{viewTransition:true})}>Open dispatch board</button>
       {taskSummary.unassigned>0&&<span style={{fontSize:12,color:'var(--text-tertiary)',alignSelf:'center'}}>{taskSummary.unassigned} tasks still need to be scheduled</span>}
     </div>
   </div>);}

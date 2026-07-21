@@ -35,6 +35,28 @@ Checks (report each with `file:line`, the rule, a minimal fix):
 7. **Mobile drift.** `vh` instead of `dvh`; a mobile rule outside `@media (max-width: 768px)`; a mobile
    input `font-size < 16px` (iOS zoom); a tap target `< 48px` on a tech surface.
 8. **Icon-only button without an aria-label** (also a `page-behavior`/a11y concern — flag it here too).
+9. **Motion & interaction drift** (`.claude/rules/motion-standard.md` **v2**). Report each at the tier noted:
+   - a raw duration/easing literal or `@keyframes` where a motion token exists
+     (`--motion-duration-*`/`--motion-ease-*`/`--motion-spring-in`/`--transition-*`); a duplicated keyframe;
+     a new page-level `entering`/`requestAnimationFrame(setEntering)` transition instead of the shared View
+     Transitions mechanism; animating layout-triggering properties (width/height/top/left) instead of
+     transform/opacity; an interactive control (button) with no press feedback; a native
+     selection/press/send that omits the paired `nativeHaptics` tick (§3–§4).
+   - **Frequency-tier reversal — do NOT over-flag.** A **low-frequency** selection/tab/segment/chip that
+     **snaps** instead of animating its active indicator is a finding — **but a high-frequency in-place
+     control (clock in/out, task-check, day/segment/filter flip) that is instant / ≤120ms is CORRECT** and
+     must **not** be failed (motion-standard §3 frequency tier). When a control's frequency is unclear,
+     ask/note it rather than fail it.
+   - **Missing exit animation** — a component that unmounts on close with `if (!open) return null` and no
+     exit (the panel/sheet vanishes instead of playing a ~75%-of-enter exit on `--motion-ease-accelerate`)
+     (motion-standard §3).
+   - **React animation-restart footgun** — an animated component **defined inline inside another** component
+     (remounts every render → restarts motion, drops focus/scroll; hoist to module scope), or a
+     **high-frequency motion value held in `useState`** instead of a `ref` written to
+     `node.style.transform` (motion-standard §7).
+   - **HARD failures (blocker/major, not advisory):** a transition/keyframe **missing its
+     `@media (prefers-reduced-motion: reduce)` fallback**; a shared-component **`:hover` transform not gated
+     behind `@media (hover: hover) and (pointer: fine)`** (motion-standard §6).
 
 Output in the standard format: a one-line verdict (`pass` / `changes-requested` / `blocker`), then a
 numbered list — each `severity` · `file:line` · rule · minimal fix. If a file is clean, say so in one line.

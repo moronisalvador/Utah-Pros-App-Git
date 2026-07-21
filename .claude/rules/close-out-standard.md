@@ -14,6 +14,16 @@ bugs that reached techs.
 2. **Reviewer gauntlet** (run the ones relevant to the diff; a manifest may add more):
    - `upr-pattern-checker` — CLAUDE.md non-negotiables (always, on any `src` change).
    - `design-consistency-checker` — tokens/kits/components (any `src/pages`|`src/components` change).
+   - `review-animations` — the **motion feel-gate** · **MANDATORY** for any PR touching
+     motion / transitions / animation (a new or changed `@keyframes` / `transition`, View-Transition
+     wiring, a `--motion-*` token, gesture/spring code, or a `.claude/rules/motion-standard.md` change).
+     This is a **craft** gate — *keep-or-delete*, one justified purpose per animation, easing / duration /
+     origin / interruptibility, and frequency-appropriateness — and is **distinct from** the uniformity
+     checkers beside it: `design-consistency-checker` proves the token is *right*; `review-animations`
+     proves the motion *feels* right and should exist at all. It is a **skill invoked by name** (it does
+     not auto-fire), and per its posture **approval is earned, not assumed** — a motion that merely runs
+     is not a pass. Companion for authoring a wave's motion work list: `improve-animations` (read-only,
+     produces the recon → frequency-map → per-fix plans).
    - `page-behavior-checker` — lifecycle/loading/error (any `src/pages`|`src/components` change).
    - `migration-safety-checker` + `anon-grant-auditor` — any `supabase/migrations/` or worker-auth change.
    - `consent-path-auditor` — any send-path change.
@@ -28,13 +38,24 @@ bugs that reached techs.
    empty-state on failure — `loading-error-states.md`).
 6. **Perf delta (NEW).** Compare `npm run build` output against `perf-budget.md`; record the top-5 chunk
    deltas in the PR; flag any new render-blocking asset.
-7. **Docs.** Update `UPR-Web-Context.md` (Rule 9). Bump the `Last-verified` stamp on any standard/design
+7. **Motion verification (NEW — motion PRs only).** For any PR touching motion / transitions / animation,
+   run the Playwright motion harness (`playwright-core`) as a close-out expectation, on three CI-runnable
+   axes: an **rAF FPS-under-throttle** probe (≥ 55fps under 4× CPU throttle) on the **route push + one
+   sheet**; a **reduced-motion end-state** spec (`emulateMedia({ reducedMotion: 'reduce' })` — motion
+   collapses to instant, the end-state still lands, focus-trap / `aria-live` intact); and **visual / token
+   regression** (`toHaveScreenshot({ animations: 'disabled' })` + `toHaveCSS` pinning
+   `transition-duration` / easing / color). Mock the Supabase RPCs (`page.route`) and freeze `page.clock`
+   for determinism. **Honest caveat — state it in the PR:** Playwright runs **Chromium**, so it verifies
+   *behavior and regressions*, **NOT true iOS-Safari / WKWebView feel** — the gesture fling, real Taptic
+   haptics, and the 60fps-scroll-under-`backdrop-filter` question stay an **owner on-device iPhone check**
+   (note it in the PR like the minimize test).
+8. **Docs.** Update `UPR-Web-Context.md` (Rule 9). Bump the `Last-verified` stamp on any standard/design
    section the session relied on or changed. Refresh any hand-counted number you touched.
-8. **Re-measure your slice** of the initiative's baseline metrics table (if the initiative has one) and
+9. **Re-measure your slice** of the initiative's baseline metrics table (if the initiative has one) and
    reconcile the roadmap checkboxes **both directions** (nothing marked done-to-look-finished; nothing
    finished left as todo; owner-blocked stays open with the reason disclosed).
-9. **Delete TEST rows** created during verification.
-10. **Push `-u`, open a PR into `dev` as a handoff, and STOP.** The owner/orchestrator merges; sessions
+10. **Delete TEST rows** created during verification.
+11. **Push `-u`, open a PR into `dev` as a handoff, and STOP.** The owner/orchestrator merges; sessions
     never subscribe to / babysit / click-merge their own PR. Flag flips are the owner's.
 
 ## Standard agent output format (all reviewer agents)

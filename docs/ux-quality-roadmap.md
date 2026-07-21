@@ -139,11 +139,19 @@ and in `ux-quality-dispatch.md`.
 > **Prereq** F-S1 merged · **Model·effort** Opus·high · **Owns** `src/components/ui/**`, `src/hooks/**`
 > new primitives, `src/index.css` `:root` token block, `UPR-Design-System.md`
 Mint the `:root` semantic token family (`--success/--danger/--warning/--info/--neutral` + `-bg`/`-border`
-from the dominant in-code values); build `Modal` (role=dialog, focus trap, mobile bottom-sheet),
+from the dominant in-code values) **+ the motion tokens** (`--motion-duration-*`, `--motion-ease-*`,
+extending the existing `--transition-*`); build `Modal` (role=dialog, focus trap, mobile bottom-sheet),
 `StatusPill`, `EmptyState`, `ErrorState`, `PageHeader`, `SearchInput`, `IconButton`, `useResumeRefetch`,
-`useTwoClickConfirm`, `useLookup`, `usePhotoUpload`+`thumbUrl`. Rewrite `UPR-Design-System.md` from
-inline-hex recipes to component imports (Kit Registry, dark-theme contract, color tables regenerated
-from code). Ships primitives **with** the doc sections — the enforcement demands it.
+`useTwoClickConfirm`, `useLookup`, `usePhotoUpload`+`thumbUrl`. **Motion & transitions
+(`.claude/rules/motion-standard.md`):** wire the native **View Transitions API** for page
+enter/back transitions (`@view-transition{navigation:auto}` + the router's `viewTransition`; retire the 4
+ad-hoc `entering` patterns), give every primitive AND interaction its standard motion (buttons/press,
+selections/toggles, dropdowns, modals/sheets, toasts, chat sent-received) + paired native haptics
+(`src/lib/nativeHaptics.js`, import-only), refresh-rate-agnostic (no >60fps dependency), and honor
+`prefers-reduced-motion` universally — all driven by the motion tokens so it's tunable in one place. Rewrite
+`UPR-Design-System.md` from inline-hex recipes to component imports (Kit Registry, dark-theme contract, a
+**Motion section = the tunable catalog**, color tables regenerated from code). Ships primitives **with**
+the doc sections — the enforcement demands it.
 
 ### F-B — Backend foundation · dispatched (L, parallel with F-S2, disjoint files)
 > **Prereq** Phase 0 merged · **Owns** `functions/lib/{auth,http,worker-runs}.js`, the new RPCs, worker tests

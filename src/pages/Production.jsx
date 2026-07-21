@@ -323,7 +323,7 @@ export default function Production() {
                         onDragEnd={handleDragEnd}
                         onClick={() => setSelectedJob(job)}
                         onLongPress={() => setPhasePickerJob(job)}
-                        onOpenPage={() => navigate(`/jobs/${job.id}`)}
+                        onOpenPage={() => navigate(`/jobs/${job.id}`, { viewTransition: true })}
                       />
                     ))}
                     {phaseJobs.length === 0 && !dragJob && (

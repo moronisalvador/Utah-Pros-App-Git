@@ -36,6 +36,8 @@
  * ════════════════════════════════════════════════
  */
 
+import { fetchWithTimeout } from './http.js';
+
 const authHeader = (apiKey) => ({ Authorization: `Token token="${apiKey}"` });
 
 /**
@@ -50,7 +52,7 @@ export async function resolveCallRailAccountId(db, apiKey, env) {
 
   if (!apiKey) return null;
 
-  const res = await fetch('https://api.callrail.com/v3/a.json', { headers: authHeader(apiKey) });
+  const res = await fetchWithTimeout('https://api.callrail.com/v3/a.json', { headers: authHeader(apiKey) });
   if (!res.ok) return null;
 
   const data = await res.json().catch(() => ({}));
@@ -86,7 +88,7 @@ export async function resolveCallRecording(apiKey, recordingUrl) {
   // (text/html). Catch it so callers always get a clean error shape instead.
   let upstream;
   try {
-    upstream = await fetch(recordingUrl, { headers: authHeader(apiKey) });
+    upstream = await fetchWithTimeout(recordingUrl, { headers: authHeader(apiKey) });
   } catch (e) {
     return { kind: 'error', status: 0, reason: 'fetch-failed', detail: String(e?.message || e) };
   }

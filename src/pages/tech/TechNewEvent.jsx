@@ -311,6 +311,7 @@ export default function TechNewEvent() {
         background: 'var(--bg-primary)',
       }}>
         <button
+          className="btn"
           onClick={handleSubmit}
           disabled={!canSubmit || saving}
           style={{

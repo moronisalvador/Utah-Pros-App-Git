@@ -1359,7 +1359,9 @@ export default function TechDemoSheet() {
       <style>{`
         .demo-sheet input, .demo-sheet select, .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
         .demo-sheet input:focus, .demo-sheet select:focus, .demo-sheet textarea:focus { border-color: ${C.accent} !important; outline: none; }
-        .demo-sheet button:active { opacity: 0.7; transform: scale(0.97); }
+        .demo-sheet button { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; }
+        .demo-sheet button:active:not(:disabled) { transform: scale(0.97); }
+        @media (prefers-reduced-motion: reduce) { .demo-sheet button:active:not(:disabled) { transform: none; } }
       `}</style>
 
       <div className="demo-sheet">

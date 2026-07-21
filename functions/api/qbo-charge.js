@@ -14,6 +14,7 @@
 //   The update_invoice_paid trigger rolls the payment into the invoice/job balance.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, createCharge, createPayment } from '../lib/quickbooks.js';
 import { notifyPaymentReceived } from '../lib/qbo-payment-sync.js';
@@ -31,12 +32,10 @@ async function isAuthorized(request, env) {
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: 'qbo-charge', status, records_processed: processed,
-      error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort */ }
+  await recordWorkerRun(db, {
+    workerName: 'qbo-charge', status, recordsProcessed: processed,
+    errorMessage, startedAt,
+  })
 }
 
 export async function onRequestOptions(context) {

@@ -87,3 +87,20 @@ export function TermsOfService() {
     </LegalLayout>
   );
 }
+
+export function Support() {
+  return (
+    <LegalLayout title="Support">
+      <p>{COMPANY} operates an internal business management app (UPR) used by our own employees and contractors to run field-service and restoration work — job scheduling, claims, time tracking, and billing.</p>
+
+      <h2 style={h2}>Getting help</h2>
+      <p>If you're an authorized {COMPANY} employee or contractor and need help with the app — a login issue, a bug, or a question about a feature — contact us at <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: 'var(--accent, #2563eb)' }}>{CONTACT_EMAIL}</a> and we'll get back to you as soon as possible.</p>
+
+      <h2 style={h2}>Account access</h2>
+      <p>Accounts are provisioned by {COMPANY} for its own staff — the app is not available for public sign-up. If you need an account, or need an existing account deactivated, contact us at the email above.</p>
+
+      <h2 style={h2}>Related pages</h2>
+      <p>See our <Link to="/privacy" style={{ color: 'var(--accent, #2563eb)' }}>Privacy Policy</Link> and <Link to="/terms" style={{ color: 'var(--accent, #2563eb)' }}>Terms of Service</Link> for more on how the app handles data and its terms of use.</p>
+    </LegalLayout>
+  );
+}

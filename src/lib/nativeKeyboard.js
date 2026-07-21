@@ -20,8 +20,10 @@ const isNative = () => Capacitor.isNativePlatform();
 export function configureNativeKeyboard() {
   if (!isNative()) return;
   // iPhone-only: a one-time WKWebView instruction applied to every later keyboard.
-  Keyboard.setAccessoryBarVisible({ isVisible: false }).catch(() => {});
+  Keyboard.setAccessoryBarVisible({ isVisible: false })
+    .catch((err) => console.warn('Keyboard.setAccessoryBarVisible failed:', err?.message || err));
   // Belt-and-suspenders alongside the capacitor.config "resize":"none" — pins it even
   // if an older native shell missed the config key. Behavior-preserving (no resize).
-  Keyboard.setResizeMode({ mode: KeyboardResize.None }).catch(() => {});
+  Keyboard.setResizeMode({ mode: KeyboardResize.None })
+    .catch((err) => console.warn('Keyboard.setResizeMode failed:', err?.message || err));
 }

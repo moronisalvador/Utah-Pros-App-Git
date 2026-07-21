@@ -61,8 +61,55 @@
   --text-xs: 11px; --text-sm: 13px; --text-base: 14px;
   --text-lg: 16px; --text-xl: 18px; --text-2xl: 22px;
 
+  /* ─── Semantic status tokens (UX-Quality F-S2) ───────────────────────────
+     Minted from the dominant in-code status triplets (grep-verified 2026-07-13:
+     danger #dc2626/#fef2f2/#fecaca ×55/19/33 · success #16a34a/#f0fdf4/#bbf7d0 ·
+     warning #d97706/#fffbeb/#fde68a · info #2563eb/#eff6ff/#bfdbfe ·
+     neutral #6b7280/#f1f3f5/#e5e7eb). These replace the inline-hex "Status Color
+     Palette" recipe in UPR-Design-System.md — components consume var() only, so a
+     dark theme (or a future re-tone) is a one-place change. Full triplet = fg + bg
+     + border; StatusPill/StatusBadge read them. */
+  --success: #16a34a;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --warning: #d97706;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+  --info: #2563eb;
+  --info-bg: #eff6ff;
+  --info-border: #bfdbfe;
+  --neutral: #6b7280;
+  --neutral-bg: #f1f3f5;
+  --neutral-border: #e5e7eb;
+
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
+  /* ─── Motion catalog tokens (UX-Quality F-S2 · law: .claude/rules/motion-standard.md) ──
+     ONE tunable place for durations + easings — change a token, the whole app retunes.
+     Use these (or the two --transition-* above), never a bespoke ms/cubic-bezier literal
+     where a token exists (design-consistency-checker fails those). The human-readable
+     catalog mapping each primitive to its tokens lives in UPR-Design-System.md → Motion. */
+  --motion-duration-fast: 120ms;   /* hovers, toggles, press, selection */
+  --motion-duration-base: 220ms;   /* page + modal/sheet transitions, chat bubbles */
+  --motion-duration-slow: 320ms;   /* large surfaces */
+  --motion-ease-standard: cubic-bezier(.2, 0, 0, 1);      /* the default */
+  --motion-ease-decelerate: cubic-bezier(0, 0, 0, 1);     /* enter */
+  --motion-ease-accelerate: cubic-bezier(.3, 0, 1, 1);    /* exit */
+  /* Gentle spring easing for one-shot ENTERS only (modal pop, menu Pop-in, toast-in).
+     linear() samples a damped-harmonic step response (ζ≈0.6, ~12% overshoot, single
+     bounce, settles to exactly 1) — a "springy" enter with ZERO JS. Keep it OFF exits,
+     off the mobile sheet slide, and off money/claims surfaces (subtle only; a bouncing
+     invoice erodes trust — motion-standard.md §3). Reduced-motion wraps its consumers.
+     NAMING (intentional, not a typo): the `-in` suffix (vs the `--motion-ease-*` beziers)
+     marks this as a linear() SPRING, not a cubic-bezier, and as direction-specific — it
+     encodes overshoot so it belongs on enters only, never as a general ease. */
+  --motion-spring-in: linear(
+    0, 0.038, 0.132, 0.260, 0.401, 0.545, 0.678, 0.794, 0.891, 0.967,
+    1.030, 1.079, 1.109, 1.122, 1.122, 1.114, 1.100, 1.083, 1.065, 1.026, 1
+  );
 
   /* Safe area for notched iPhones */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -198,7 +245,14 @@ button, a, [role="button"] {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
   padding: var(--space-2) var(--space-4); border-radius: var(--radius-md);
   font-size: var(--text-sm); font-weight: 500; font-family: inherit;
-  cursor: pointer; border: 1px solid transparent; transition: all var(--transition-fast);
+  cursor: pointer; border: 1px solid transparent;
+  /* Named props (never `transition: all`) so the press-scale animates on the motion
+     token; the :active scale + reduced-motion fallback ship in the motion block below.
+     touch-action removes the 300ms tap delay / double-tap-zoom on the button. */
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--transition-fast), border-color var(--transition-fast),
+              color var(--transition-fast);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   white-space: nowrap; height: 36px; /* Slightly taller for touch */
   min-width: 44px; /* iOS min touch target */
 }
@@ -615,6 +669,21 @@ tr:hover td { background: var(--bg-secondary); }
 }
 @keyframes toastIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 @keyframes toastOut { from { opacity: 1; } to { opacity: 0; transform: translateX(-50%) translateY(-10px); } }
+/* Toast-in on the spring token (enter only — the toastOut auto-dismiss stays plain ease
+   because it also drives the toast's removal). Overrides ONLY the per-animation easing
+   longhand (toastIn→spring, toastOut→ease), leaving the base durations/delay/fill intact.
+   Gated to no-preference so reduced motion keeps the un-sprung enter (no overshoot) and the
+   dismissal path is untouched either way.
+   NOTE: the app's primary toast (lib/toast.js) is inline-styled in Layout.jsx — out of this
+   PR's Modal.jsx+index.css scope — so this wires the in-CSS toast-in that is reachable. */
+@media (prefers-reduced-motion: no-preference) {
+  .conv-toast { animation-timing-function: var(--motion-spring-in), ease; }
+}
+/* Reduced motion: no slide in/out at all (closes the pre-existing §6 gap — toastIn/toastOut
+   both translateY). The toast still appears/removes, just without the vertical motion. */
+@media (prefers-reduced-motion: reduce) {
+  .conv-toast { animation: none; }
+}
 
 /* Slide-in animation for mobile thread */
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
@@ -1101,13 +1170,29 @@ tr:hover td { background: var(--bg-secondary); }
 .timeline-phase_change .job-page-timeline-text { font-style: italic; color: var(--text-tertiary); }
 /* ═══ Create Menu (FAB + Popup) ═══ */
 .create-menu-container { position: fixed; top: 20px; right: 24px; z-index: 95; display: flex; flex-direction: column; align-items: flex-end; }
-.create-menu-fab { width: 40px; height: 40px; border-radius: var(--radius-lg); background: var(--accent); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); transition: all 200ms ease; }
-.create-menu-fab:hover { background: var(--accent-hover); transform: scale(1.05); box-shadow: var(--shadow-lg); }
+.create-menu-fab { width: 40px; height: 40px; border-radius: var(--radius-lg); background: var(--accent); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); touch-action: manipulation; transition: transform var(--motion-duration-fast) var(--motion-ease-standard), background var(--transition-base), box-shadow var(--transition-base); }
+.create-menu-fab:hover { background: var(--accent-hover); box-shadow: var(--shadow-lg); }
 .create-menu-fab.active { background: var(--text-primary); transform: rotate(45deg); box-shadow: var(--shadow-md); }
+/* Hover-lift + press-scale gated to fine pointers (motion-standard §6). On the touch PWA the
+   FAB's feedback is its open-state rotate; Foundation neutralizes transient FAB transforms on
+   coarse pointers to avoid iOS sticky-hover, so scoping here keeps touch behavior identical and
+   self-documenting (no cross-block specificity fight). Press after hover so it wins when both
+   match (desktop press = hover + active). Never when open (.active is the rotate state). */
+@media (hover: hover) and (pointer: fine) {
+  .create-menu-fab:not(.active):hover { transform: scale(1.05); }
+  .create-menu-fab:active:not(.active) { transform: scale(0.97); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .create-menu-fab { transition: background var(--transition-base), box-shadow var(--transition-base); }
+  .create-menu-fab:not(.active):hover, .create-menu-fab:active:not(.active) { transform: none; }
+}
 .create-menu-fab-icon { width: 20px; height: 20px; }
 .create-menu-backdrop { position: fixed; inset: 0; z-index: -1; }
-.create-menu-popup { position: absolute; top: 52px; right: 0; width: 240px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); overflow: hidden; animation: createMenuIn 150ms cubic-bezier(0.32, 0.72, 0, 1); transform-origin: top right; }
-@keyframes createMenuIn { from { opacity: 0; transform: scale(0.9) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+.create-menu-popup { position: absolute; top: 52px; right: 0; width: 240px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); overflow: hidden; animation: createMenuIn 150ms var(--motion-spring-in); transform-origin: top right; }
+/* Pop-in from the trigger corner. Spring easing + a tightened 0.96 start (was 0.9 — a
+   9:10 origin scale reads more like a menu opening than a zoom). motion-standard.md §3. */
+@keyframes createMenuIn { from { opacity: 0; transform: scale(0.96) translateY(-8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .create-menu-popup { animation: none; } }
 .create-menu-header { padding: var(--space-3) var(--space-4); font-size: var(--text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-tertiary); border-bottom: 1px solid var(--border-light); }
 .create-menu-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4); background: none; border: none; cursor: pointer; font-family: inherit; text-align: left; transition: background var(--transition-fast); min-height: 48px; }
 .create-menu-item:hover { background: var(--bg-secondary); }
@@ -1163,12 +1248,11 @@ tr:hover td { background: var(--bg-secondary); }
 }
 
 .ptr-spinner.spinning {
-  animation: ptrSpin 0.8s linear infinite;
+  animation: spin 0.7s linear infinite;
 }
-
-@keyframes ptrSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+/* Reduced motion: freeze the rotation — the spinner shape still reads as "loading" (motion-standard §6). */
+@media (prefers-reduced-motion: reduce) {
+  .ptr-spinner.spinning { animation: none; }
 }
 
 .ptr-text {
@@ -2975,12 +3059,20 @@ tr:hover td { background: var(--bg-secondary); }
 
 /* Details section slide-in */
 .create-job-details-section {
-  animation: fadeIn 0.2s ease;
+  animation: fadeInUp var(--motion-duration-base) var(--motion-ease-standard);
 }
 
-@keyframes fadeIn {
+/* fade + rise (distinct from the opacity-only `fadeIn` above) — renamed so it stops
+   colliding with the two opacity-only `@keyframes fadeIn` definitions (last-defined
+   won globally, silently flattening this section's slide). */
+@keyframes fadeInUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* keep the fade (comprehension), drop the rise */
+  .create-job-details-section { animation: fadeIn var(--motion-duration-base) var(--motion-ease-standard); }
 }
 
 /* btn-link for inline links */
@@ -3138,12 +3230,7 @@ tr:hover td { background: var(--bg-secondary); }
   z-index: 100;
   display: flex;
   flex-direction: column;
-  animation: slideInRight 0.2s ease;
-}
-
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  animation: slideIn 0.2s ease;
 }
 
 .customer-detail-backdrop {
@@ -4314,7 +4401,6 @@ tr:hover td { background: var(--bg-secondary); }
   z-index: 200; display: flex; align-items: flex-end; justify-content: center;
   animation: fadeIn 150ms ease;
 }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .ar-sheet {
   width: 100%; max-width: 500px; max-height: 85vh;
@@ -4324,7 +4410,6 @@ tr:hover td { background: var(--bg-secondary); }
   animation: sheetSlideUp 250ms cubic-bezier(0.32, 0.72, 0, 1);
   padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
 }
-@keyframes sheetSlideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 
 .ar-sheet-handle {
   width: 36px; height: 4px; background: var(--border-color);
@@ -4457,6 +4542,20 @@ tr:hover td { background: var(--bg-secondary); }
   --status-working-bg: #0f2b22;
   --status-paused-bg: #2c1618;
   --status-completed-bg: #1c1f26;
+  /* Semantic status tokens re-toned for dark (UX-Quality F-S2) — the fg/border
+     keep their hue for contrast; only the tinted backgrounds darken. This is why
+     the StatusPill primitive reads var() instead of the inline-hex recipe: dark is
+     a token swap, not a per-component fix. */
+  --success-bg: #0f2b22;
+  --success-border: #14532d;
+  --danger-bg: #2c1618;
+  --danger-border: #7f1d1d;
+  --warning-bg: #2e2410;
+  --warning-border: #78350f;
+  --info-bg: #14233d;
+  --info-border: #1e3a5f;
+  --neutral-bg: #1c1f26;
+  --neutral-border: #2c303a;
 }
 
 /* ─── TECH SETTINGS (/tech/settings hub) ─── */
@@ -7933,10 +8032,17 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .coll-tabrow { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
 
 /* Buttons */
-.coll-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 8px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background .12s; white-space: nowrap; }
+.coll-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: inherit; font-size: 12.5px; font-weight: 600; color: #475467; background: #fff; border: 1px solid #e7e9ee; border-radius: 9px; padding: 8px 13px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); transition: background var(--motion-duration-fast) var(--motion-ease-standard), transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; white-space: nowrap; }
 .coll-ghost:hover, .coll-ghost-open { background: #fafbfc; }
-.coll-primary { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; background: #2f6bf2; border: none; border-radius: 9px; padding: 9px 15px; cursor: pointer; box-shadow: 0 1px 2px rgba(47,107,242,.25); transition: background .12s; white-space: nowrap; }
+.coll-primary { display: inline-flex; align-items: center; gap: 6px; font-family: inherit; font-size: 12.5px; font-weight: 700; color: #fff; background: #2f6bf2; border: none; border-radius: 9px; padding: 9px 15px; cursor: pointer; box-shadow: 0 1px 2px rgba(47,107,242,.25); transition: background var(--motion-duration-fast) var(--motion-ease-standard), transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; white-space: nowrap; }
 .coll-primary:hover { background: #2a60d8; }
+/* Money-button press — crisp scale-down, NO spring/bounce (motion-standard §1: spring-in
+   stays OFF billing surfaces). */
+.coll-ghost:active:not(:disabled), .coll-primary:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .coll-ghost, .coll-primary { transition: background var(--motion-duration-fast) var(--motion-ease-standard); }
+  .coll-ghost:active:not(:disabled), .coll-primary:active:not(:disabled) { transform: none; }
+}
 
 /* Segmented control (section tabs / period / status filter) */
 .coll-seg { display: inline-flex; background: #fff; border: 1px solid #e7e9ee; border-radius: 10px; padding: 3px; gap: 2px; box-shadow: 0 1px 2px rgba(16,24,40,.04); flex-wrap: wrap; }
@@ -11026,10 +11132,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   padding: 0 6px;
   border-bottom: 1px solid transparent;
   pointer-events: none;
-  transition: max-height 220ms ease, opacity 150ms ease, padding 220ms ease, border-bottom-color 220ms ease;
+  /* Collapse that pushes the composer up — layout-bound (max-height), so 60fps; max-height
+     is set CLOSE to the real content height so the ease-out tail isn't wasted. Uses the
+     existing --transition tokens (motion-standard.md — no bespoke duration literals). */
+  transition: max-height var(--transition-base), opacity var(--transition-fast),
+              padding var(--transition-base), border-bottom-color var(--transition-base);
 }
 .tv2-msgs-actions-sheet.open {
-  max-height: 180px;
+  max-height: 160px;
   opacity: 1;
   padding: 6px;
   border-bottom-color: var(--border);
@@ -11460,3 +11570,376 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   .tv2-msgs-thread__caret { transition: none; }
   .tv2-msgs-attach__spin { animation: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UX-QUALITY F-S2 — SHARED PRIMITIVES + MOTION FOUNDATION
+   Owned by F-S2 (ownership manifest: .claude/rules/ux-alignment-wave-ownership.md).
+   Base styles for src/components/ui/** + the tunable motion mechanism.
+   Law: .claude/rules/motion-standard.md · catalog: UPR-Design-System.md → Motion.
+   Everything here is transform/opacity-only (GPU, refresh-rate-agnostic), token-
+   driven, and wrapped in a prefers-reduced-motion fallback. Call-site migration of
+   the 158 inline pills / 45 modals / etc. is W1–W3's job — F-S2 ships the contract.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Page transitions — the native View Transitions API (progressive enhancement) ──
+   Degrades gracefully: browsers without support just navigate instantly. SPA opt-in
+   also needs React-Router's `viewTransition` prop on links (shell-owner follow-up —
+   F-S2 does not edit App.jsx/Layout). The sticky chrome is named so it stays put and
+   only the content region transitions (reinforces page-lifecycle.md: shell stays). */
+@view-transition { navigation: auto; }
+/* Persistent shell chrome: UNIQUE named snapshots so each stays static (identical
+   old/new snapshot → no visible animation) and ONLY the content region (root)
+   transitions. Each name must be unique among on-screen elements. */
+.sidebar     { view-transition-name: vt-sidebar; }
+.bottom-bar  { view-transition-name: vt-bottombar; }
+.tech-nav    { view-transition-name: vt-technav; }
+.topnav      { view-transition-name: vt-topnav; }
+.tech-header { view-transition-name: vt-techheader; }
+.tv2-topbar  { view-transition-name: vt-tv2topbar; }
+/* Directional page push (iOS-style). Shell chrome is named → stays static; only
+   the content region (root) moves. Direction is driven by html[data-nav], set per
+   navigation by useNavDirection (src/lib/useNavDirection.js). Default (attribute
+   absent → unsupported/first paint) is forward. transform/opacity only (GPU). */
+/* Gated behind the `feature:page_transitions` flag — UiFlagClasses (src/App.jsx)
+   toggles html.ui-vt from isFeatureEnabled(). Owner-only + instantly reversible in
+   DevTools → Flags. Flag OFF → the kill-switch below zeroes every view-transition
+   animation, so navigation is an instant swap (no push, no default cross-fade). */
+html.ui-vt::view-transition-old(root) { animation: vtPushOutLeft  var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html.ui-vt::view-transition-new(root) { animation: vtPushInRight  var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+html.ui-vt[data-nav="back"]::view-transition-old(root) { animation: vtPushOutRight var(--motion-duration-base) var(--motion-ease-standard)   both; }
+html.ui-vt[data-nav="back"]::view-transition-new(root) { animation: vtPushInLeft   var(--motion-duration-base) var(--motion-ease-decelerate) both; }
+/* Flag OFF (or an unsupported browser): suppress ALL page-transition animation so
+   the swap is instant — no push and no UA default cross-fade. */
+html:not(.ui-vt)::view-transition-group(*),
+html:not(.ui-vt)::view-transition-old(*),
+html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
+@keyframes vtPushInRight  { from { transform: translateX(100%); }             to { transform: translateX(0); } }
+@keyframes vtPushOutLeft  { from { transform: translateX(0); opacity: 1; }    to { transform: translateX(-24%); opacity: .5; } }
+@keyframes vtPushInLeft   { from { transform: translateX(-100%); }            to { transform: translateX(0); } }
+@keyframes vtPushOutRight { from { transform: translateX(0); opacity: 1; }    to { transform: translateX(24%); opacity: .5; } }
+/* Reduced motion: collapse the push to instant (no slide, no parallax dim). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) { animation-duration: 1ms !important; }
+}
+
+/* ─── Button press feedback (promoted from .tech-layout .btn:active to the base btn) ──
+   The house idiom — a quick scale-down on press that springs back on release. */
+.btn { transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+                    background var(--transition-fast), border-color var(--transition-fast),
+                    color var(--transition-fast); }
+.btn:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .btn { transition: background var(--transition-fast), border-color var(--transition-fast); }
+  .btn:active:not(:disabled) { transform: none; }
+}
+
+/* ─── Motion polish — legacy reduced-motion + hover-gate sweep (motion-standard.md §6/§3) ──
+   ADDITIVE guards for legacy presses/hovers that predate the tokened F-S2 idioms — no
+   restyle, just (a) collapse the unwrapped scale presses under reduced motion, and (b) stop
+   the hover-lift transforms from firing on the touch PWA (iOS fires :hover on tap and it
+   sticks until the next tap). Real hover-capable pointers keep the lift unchanged. Placed
+   after the legacy rules so source order wins on equal specificity.
+   (.tech-layout .btn:active is already covered by the F-S2 .btn reduced-motion rule above.) */
+@media (prefers-reduced-motion: reduce) {
+  .tech-tracker-btn:active,
+  .tech-tracker-btn-secondary:active,
+  .doc-cl-view-btn:active,
+  .doc-cl-item:active { transform: none; }
+}
+@media (hover: none), (pointer: coarse) {
+  /* create-menu-fab excludes .active so its open-state rotate is never neutralized. */
+  .macro-card:hover,
+  .ar-claim-card:hover,
+  .coll-chat-fab:hover,
+  .create-menu-fab:not(.active):hover { transform: none; }
+}
+
+/* ─── Modal (role=dialog) — centered on desktop, bottom-sheet on mobile ─── */
+.ui-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--space-4);
+  animation: uiFadeIn var(--motion-duration-base) var(--motion-ease-standard);
+}
+.ui-modal {
+  background: var(--bg-primary); border-radius: var(--radius-xl);
+  width: 100%; max-width: 560px; max-height: 90dvh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: var(--shadow-lg);
+  /* Desktop panel pops in on the spring token (subtle overshoot). Mobile overrides to
+     the sheet slide below; --closing swaps to the exit keyframe (Modal.jsx). */
+  animation: uiModalIn var(--motion-duration-base) var(--motion-spring-in);
+}
+.ui-modal--sm { max-width: 420px; }
+.ui-modal--lg { max-width: 760px; }
+/* Exit (close) — Modal.jsx adds --closing when `open` flips false, plays ~75% of the
+   enter on the accelerate curve (consumes the previously-DEAD --motion-ease-accelerate
+   token), then unmounts on animationend. `forwards` holds the faded/scaled-out end
+   state so there is no flash back to visible before unmount. Desktop = fade + scale-down;
+   the mobile media query overrides .ui-modal--closing to slide DOWN off-screen. */
+.ui-modal-overlay--closing { animation: uiFadeOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+.ui-modal--closing { animation: uiModalOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+.ui-modal-header {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-3);
+  padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.ui-modal-title { font-size: var(--text-lg); font-weight: 600; color: var(--text-primary); }
+.ui-modal-body { padding: var(--space-5); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.ui-modal-footer {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2);
+  padding: var(--space-4) var(--space-5); border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+.ui-modal-close {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; min-width: 32px; border-radius: var(--radius-md);
+  border: none; background: none; color: var(--text-tertiary); cursor: pointer;
+  font-size: 18px; line-height: 1; transition: background var(--transition-fast);
+}
+.ui-modal-close:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+@media (max-width: 768px) {
+  .ui-modal-overlay { align-items: flex-end; padding: 0; }
+  .ui-modal {
+    border-radius: 16px 16px 0 0; max-width: 100%; max-height: 92dvh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: uiSheetUp var(--motion-duration-base) var(--motion-ease-decelerate);
+  }
+  /* Bottom-sheet exit: reverse the slide-up (down off-screen). Overrides the desktop
+     scale-down --closing rule above (later source order, equal specificity). */
+  .ui-modal--closing { animation: uiSheetDown calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+}
+@keyframes uiFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes uiModalIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+@keyframes uiSheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+/* Exit keyframes (paired with the .ui-modal*--closing rules above). transform/opacity only. */
+@keyframes uiFadeOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes uiModalOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
+@keyframes uiSheetDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  /* Instant close is enforced in Modal.jsx (it skips the --closing class under reduced
+     motion); these are belt-and-suspenders so no enter OR exit keyframe ever plays. */
+  .ui-modal-overlay, .ui-modal,
+  .ui-modal-overlay--closing, .ui-modal--closing { animation: none; }
+  .ui-modal-close { transition: none; }
+}
+
+/* ─── StatusPill — reads the semantic tokens, never inline hex ─── */
+.ui-status-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: var(--text-xs); font-weight: 700; line-height: 1.4;
+  padding: 2px 8px; border-radius: var(--radius-full);
+  border: 1px solid transparent; white-space: nowrap;
+}
+.ui-status-pill[data-tone="success"] { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.ui-status-pill[data-tone="danger"]  { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
+.ui-status-pill[data-tone="warning"] { background: var(--warning-bg); color: var(--warning); border-color: var(--warning-border); }
+.ui-status-pill[data-tone="info"]    { background: var(--info-bg);    color: var(--info);    border-color: var(--info-border); }
+.ui-status-pill[data-tone="neutral"] { background: var(--neutral-bg); color: var(--neutral); border-color: var(--neutral-border); }
+.ui-status-pill-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+
+/* ─── EmptyState / ErrorState — the two success/failure primitives ─── */
+.ui-empty-state, .ui-error-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 48px 24px; gap: var(--space-2);
+}
+.ui-empty-state-icon { font-size: 32px; line-height: 1; margin-bottom: var(--space-1); opacity: 0.85; }
+.ui-empty-state-title, .ui-error-state-title { font-size: var(--text-base); font-weight: 600; color: var(--text-primary); }
+.ui-empty-state-sub, .ui-error-state-msg { font-size: var(--text-sm); color: var(--text-tertiary); max-width: 340px; }
+.ui-empty-state-action, .ui-error-state-actions { margin-top: var(--space-3); display: flex; gap: var(--space-2); }
+.ui-error-state-icon { font-size: 28px; line-height: 1; }
+
+/* ─── PageHeader — the shared title/subtitle/actions row ─── */
+.ui-page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--space-3); margin-bottom: var(--space-4);
+}
+.ui-page-header-titles { min-width: 0; }
+.ui-page-header-title { font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); }
+.ui-page-header-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
+.ui-page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+
+/* ─── SearchInput — icon + input + optional clear ─── */
+.ui-search { position: relative; display: inline-flex; align-items: center; width: 100%; }
+.ui-search-icon { position: absolute; left: 10px; display: flex; color: var(--text-tertiary); pointer-events: none; }
+.ui-search-input { width: 100%; padding-left: 32px; padding-right: 30px; }
+.ui-search-clear {
+  position: absolute; right: 6px; display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border: none; background: none; cursor: pointer;
+  color: var(--text-tertiary); border-radius: var(--radius-sm); font-size: 15px; line-height: 1;
+  transition: background var(--transition-fast);
+}
+.ui-search-clear:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .ui-search-clear { transition: none; } }
+
+/* ─── IconButton — accessible icon-only control (label required in JSX) ─── */
+.ui-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; min-width: 36px; border-radius: var(--radius-md);
+  border: 1px solid transparent; background: none; color: var(--text-secondary);
+  cursor: pointer; padding: 0;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--transition-fast), color var(--transition-fast);
+}
+.ui-icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.ui-icon-btn:active:not(:disabled) { transform: scale(0.92); }
+.ui-icon-btn:disabled { opacity: 0.45; cursor: default; }
+.ui-icon-btn--sm { width: 30px; height: 30px; min-width: 30px; }
+/* Tech/field floor — ≥44px hit area (tech-mobile-ux.md); use on any tech-surface icon button. */
+.ui-icon-btn--lg { width: 48px; height: 48px; min-width: 48px; }
+.ui-icon-btn--danger:hover { background: var(--danger-bg); color: var(--danger); }
+@media (prefers-reduced-motion: reduce) { .ui-icon-btn:active:not(:disabled) { transform: none; } }
+
+/* ─── Animated selection indicator — segmented control that slides, never snaps ──
+   The shared correct primitive (TechDemoSheet's inline tech-select etc. migrate to
+   it in their own wave). The active fill cross-fades on the motion-fast token. */
+.ui-seg { position: relative; display: inline-flex; background: var(--bg-tertiary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 3px; gap: 2px; }
+.ui-seg-btn {
+  position: relative; z-index: 1; border: none; background: none; cursor: pointer;
+  font-family: inherit; font-size: var(--text-xs); font-weight: 500; padding: 5px 14px;
+  color: var(--text-secondary); border-radius: calc(var(--radius-md) - 2px);
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.ui-seg-btn[data-active="true"] { color: var(--accent); font-weight: 600; }
+.ui-seg-indicator {
+  /* Position + size via transform ONLY (translateX + scaleX) so selection animates on
+     the GPU with no layout/reflow — the wiring component sets the transform, never width
+     (motion-standard.md §5: animate transform/opacity only). */
+  position: absolute; z-index: 0; top: 3px; left: 0; height: calc(100% - 6px);
+  transform-origin: left center; border-radius: calc(var(--radius-md) - 2px);
+  background: var(--bg-primary); box-shadow: var(--shadow-xs);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-seg-btn, .ui-seg-indicator { transition: none; }
+}
+
+/* ─── Chat bubble motion — reusable enter classes (wired by the sms-experience
+   surface at the W6 fold-in; F-S2 authors the tokened classes now per motion §3). ── */
+.ui-chat-bubble-sent { animation: uiChatSent var(--motion-duration-base) var(--motion-ease-decelerate); }
+.ui-chat-bubble-received { animation: uiChatReceived var(--motion-duration-base) var(--motion-ease-decelerate); }
+@keyframes uiChatSent { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes uiChatReceived { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .ui-chat-bubble-sent, .ui-chat-bubble-received { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LIQUID GLASS — FROSTED CHROME PROTOTYPE (shell chrome ONLY)
+   ───────────────────────────────────────────────────────────────────────────
+   PROTOTYPE for on-device owner judgment. Layered OVERRIDES only — this block
+   does NOT edit the F-S2 base rules above or the chrome base rules elsewhere;
+   it re-declares only background / backdrop-filter / box-shadow on the three
+   app-shell chrome surfaces so the change is fully reversible (delete this block).
+
+   HONEST platform ceiling (state in the PR): real Apple "Liquid Glass" refraction
+   (SVG feDisplacementMap via `backdrop-filter: url()`) is Chromium-only. Safari /
+   WKWebView (the iPhone target) silently drops the SVG part, so on iPhone this is
+   frosted blur + saturation + a specular edge — NOT literal lensing. Built to that
+   ceiling deliberately. Blur is GPU-heavy → chrome surfaces ONLY (perf-budget.md),
+   never content.
+
+   Token-driven (color-mix off the surface's own bg token) so it adapts to light
+   AND dark with no per-theme fork. Applied to the three real chrome surfaces:
+   .sidebar (desktop rail), .topnav (desktop top bar), .tech-nav (tech bottom nav).
+   .tech-header / .tv2-topbar are intentionally skipped — they have no base rule
+   or JSX usage in this build (only the view-transition line references them).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* GATING: every rule below is scoped to html.ui-glass, toggled by UiFlagClasses
+   (src/App.jsx) from the `feature:liquid_glass` flag — owner-only, instantly
+   reversible in DevTools → Flags. Flag OFF → the class is absent → none of this
+   matches → chrome renders with its normal base styles. */
+
+/* Desktop left rail — stays dark (its --sidebar-bg does not flip with theme), so
+   the translucency is mixed off its OWN token to keep contrast/legibility. */
+html.ui-glass .sidebar {
+  background: color-mix(in srgb, var(--sidebar-bg) 78%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* hairline specular top edge — the "light from above" glass cue (border-right kept) */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
+}
+
+/* Desktop top bar — mixed off --bg-primary so it reads as frosted white glass. */
+html.ui-glass .topnav {
+  background: color-mix(in srgb, var(--bg-primary) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  /* border-bottom (base rule) kept; add a specular top highlight for the glass lip */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 60%, transparent);
+}
+
+/* Tech bottom nav — already frosted (blur 12px); bump to the glass recipe. Mixed
+   off --tech-nav-bg, which the tech dark-theme block re-points, so it adapts. The
+   original dark top-separator hairline is preserved and paired with a light inset
+   highlight (the edge facing the content above it) for a subtle beveled lip. */
+html.ui-glass .tech-nav {
+  background: color-mix(in srgb, var(--tech-nav-bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05),
+              inset 0 1px 0 color-mix(in srgb, white 22%, transparent);
+}
+
+/* ── Fallback 1: accessibility — user asked for less transparency → go solid. ── */
+@media (prefers-reduced-transparency: reduce) {
+  html.ui-glass .sidebar {
+    background: var(--sidebar-bg);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  html.ui-glass .topnav {
+    background: var(--bg-primary);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  html.ui-glass .tech-nav {
+    background: var(--tech-nav-bg);
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+    box-shadow: 0 -1px 0 0 rgba(0,0,0,0.05); /* original separator restored */
+  }
+}
+
+/* ── Fallback 2: no backdrop-filter support → solid, so chrome is never a bare,
+   unblurred see-through surface. ── */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.ui-glass .sidebar  { background: var(--sidebar-bg); }
+  html.ui-glass .topnav   { background: var(--bg-primary); }
+  html.ui-glass .tech-nav { background: var(--tech-nav-bg); }
+}
+
+/* ─── MOTION ROLLOUT RESERVED — W1 (toast enter/exit) ───────────────────────────
+   Global app toast (Layout.jsx). Enter pops in on the spring token (an occasional,
+   non-interruptible one-shot — motion-standard §1/§3). Exit accelerates up+out, driven
+   by a `leaving` flag + onAnimationEnd in Layout.jsx (mirrors ui/Modal.jsx's --closing
+   lifecycle) with a ~220ms safety-timeout fallback. transform/opacity only; both wrapped
+   in reduced-motion (collapses to instant, end-state still lands). Replaces Layout.jsx's
+   former inline `@keyframes slideUp` (TechLayout.jsx keeps its own parallel copy — out of
+   W1 scope, flagged for a future wave). */
+.upr-toast { animation: uprToastIn var(--motion-duration-base) var(--motion-spring-in); }
+.upr-toast--leaving { animation: uprToastOut calc(var(--motion-duration-base) * 0.75) var(--motion-ease-accelerate) forwards; }
+@keyframes uprToastIn  { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes uprToastOut { from { opacity: 1; transform: translateY(0); }    to { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .upr-toast, .upr-toast--leaving { animation: none; }
+}
+
+/* Estimates list row — background-swap on hover/press (the ROW idiom, not a scale;
+   motion-standard §3 "list rows use the background/opacity swap"). Token colors only. */
+.est-row { background: var(--bg-primary); transition: background var(--motion-duration-fast) var(--motion-ease-standard); }
+.est-row:hover { background: var(--bg-secondary); }
+.est-row:active { background: var(--bg-tertiary); }
+@media (prefers-reduced-motion: reduce) { .est-row { transition: none; } }
+
+/* Field-tech scope/tab pill (TechClaims/TechTasks) — a HIGH-FREQUENCY in-place switch:
+   press-scale ONLY. The selection-change (background/color) stays INSTANT — no transition
+   on the fill (motion-standard §3 frequency tier; animating the indicator is deferred to
+   Wave 3). transform-only transition so the switch never waits on a slide. */
+.tech-pill { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
+.tech-pill:active:not(:disabled) { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) { .tech-pill:active:not(:disabled) { transform: none; } }

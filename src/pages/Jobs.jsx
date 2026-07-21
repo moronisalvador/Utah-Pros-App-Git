@@ -215,7 +215,7 @@ export default function Jobs() {
         ) : (
           filteredJobs.map(job => (
             <JobListCard key={job.id} job={job} formatDate={formatDate} formatCurrency={formatCurrency}
-              onClick={() => navigate(`/jobs/${job.id}`)}
+              onClick={() => navigate(`/jobs/${job.id}`, { viewTransition: true })}
               onQuickView={() => setSelectedJob(job)} />
           ))
         )}

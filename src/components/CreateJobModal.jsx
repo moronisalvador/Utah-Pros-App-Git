@@ -8,7 +8,8 @@
  *   customer, choose whether the job starts a brand-new claim or files under
  *   one of the customer's existing claims, pick the division and loss details,
  *   and hit Create. One trip through it creates the customer, the claim (when
- *   new), and the job together, then pushes new claims up to Encircle.
+ *   new), and the job together, then pushes new claims up to Encircle (and,
+ *   for reconstruction jobs, the customer + project up to Houzz Pro).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (modal)
@@ -18,7 +19,7 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  AddContactModal, AddressAutocomplete, DatePicker, CarrierSelect,
- *              HelpLink, @/lib/realtime (getAuthHeader)
+ *              HelpLink, @/lib/realtime (getAuthHeader), @/lib/toast
  *   Data:      reads  → contacts (search_contacts_for_job, duplicate-phone
  *                        lookup), insurance_carriers (get_insurance_carriers),
  *                        claims + jobs (get_customer_detail — existing-claim picker)
@@ -36,6 +37,11 @@
  *     date of loss from that claim; the fields stay editable.
  *   - Inline quick-add: a duplicate phone (contacts_phone_key / 23505) is
  *     caught and the existing contact is auto-selected instead of erroring.
+ *   - For a reconstruction-division job, syncJobToHouzz() POSTs to
+ *     /api/sync-houzz (awaited, 8s internal timeout, same discipline as
+ *     syncClaimToEncircle) which forwards the job to a Zapier webhook that
+ *     creates the matching customer + project in Houzz Pro (no public
+ *     Houzz Pro API exists).
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -45,6 +51,7 @@ import DatePicker from '@/components/DatePicker';
 import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
 import HelpLink from '@/components/HelpLink';
+import { toast } from '@/lib/toast';
 
 // Awaited by the caller (with an internal timeout) before the modal closes, so
 // the request isn't abandoned mid-flight. Always resolves.
@@ -68,6 +75,33 @@ async function syncClaimToEncircle(claimId) {
     }
   } catch (e) {
     if (e.name !== 'AbortError') window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Encircle sync failed: ' + e.message, type: 'error' } }));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Push a new reconstruction job to Houzz Pro (via Zapier — Houzz Pro has no
+// public API). Awaited by the caller (with an internal timeout) BEFORE the
+// modal closes, same discipline as syncClaimToEncircle above.
+async function syncJobToHouzz(jobId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const auth = await getAuthHeader();
+    const res = await fetch('/api/sync-houzz', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ job_id: jobId }),
+      signal: controller.signal,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok) {
+      if (!data.skipped) toast('Synced to Houzz Pro', 'success');
+    } else {
+      toast('Job created, but Houzz Pro sync failed', 'error');
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Houzz Pro sync failed: ' + e.message, 'error');
   } finally {
     clearTimeout(timer);
   }
@@ -274,6 +308,9 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
       // when we minted a NEW claim: a job filed under an existing claim is
       // already synced, and re-pushing would risk a duplicate.
       if (claimMode === 'new' && result?.claim_id) await syncClaimToEncircle(result.claim_id);
+      // Reconstruction jobs also get pushed to Houzz Pro — awaited for the same
+      // reason as the Encircle push above (no fire-and-forget before closing).
+      if (division === 'reconstruction' && result?.job?.id) await syncJobToHouzz(result.job.id);
       onCreated?.(result);
     } catch (err) {
       console.error(err); setError('Failed: ' + err.message);

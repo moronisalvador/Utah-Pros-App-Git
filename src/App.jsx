@@ -9,7 +9,10 @@ import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import RouteRestorer from '@/components/RouteRestorer';
+import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
+import { markBundleReady } from '@/lib/nativeUpdater';
+import { Capacitor } from '@capacitor/core';
 import {
   checkBiometricAvailable,
   isBiometricEnabled,
@@ -99,6 +102,7 @@ const Status = lazyRetry(() => import('@/pages/Status'));
 const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
+const Support = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.Support })));
 const AdminFeedback = lazyRetry(() => import('@/pages/settings/FeedbackInbox'));
 const Feedback = lazyRetry(() => import('@/pages/Feedback'));
 const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
@@ -323,6 +327,7 @@ function WebRoutes() {
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
+      <Route path="/support" element={<Support />} />
       {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
           visitor via the anon-granted get_crm_build_progress RPC. The ONLY
           public CRM surface; every other /crm/* route stays behind page:crm. */}
@@ -585,27 +590,62 @@ function BiometricGate({ children }) {
   return children;
 }
 
+// Null-render tracker: keeps html[data-nav] in sync with the router so the
+// directional page-push View Transition (index.css) knows forward vs Back.
+function NavDirectionTracker() {
+  useNavDirection();
+  return null;
+}
+
+// Toggles root-level classes for owner-gated UI previews so their CSS (index.css)
+// activates ONLY when the feature flag is on — instantly reversible in
+// DevTools → Flags, no deploy. Renders nothing. Must live inside <AuthProvider>.
+function UiFlagClasses() {
+  const { isFeatureEnabled } = useAuth();
+  const pageTransitions = isFeatureEnabled('feature:page_transitions');
+  const liquidGlass = isFeatureEnabled('feature:liquid_glass');
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-vt', !!pageTransitions);
+  }, [pageTransitions]);
+  useEffect(() => {
+    document.documentElement.classList.toggle('ui-glass', !!liquidGlass);
+  }, [liquidGlass]);
+  return null;
+}
+
 export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
     // gradient-hero screens still override it on mount/unmount.
-    // Blur the app snapshot in the app-switcher / on background
+    // App-switcher snapshot blur is NOT yet live — enablePrivacyScreen() is an
+    // intentional no-op stub (see nativeBiometric.js) pending a Capacitor
+    // 8-compatible privacy-screen plugin. Kept as a call site so wiring the
+    // real plugin later is a one-file change.
     enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();
-    // notifyAppReady() is already called in src/main.jsx before React mounts —
-    // that's the Capgo-recommended placement and earlier = safer rollback behavior
+    // Confirm the OTA (Capgo) bundle booted OK now that React has actually
+    // mounted — a stronger "this bundle works" signal than the module-load
+    // notifyAppReady() in src/main.jsx. Guarded so it's a true no-op on
+    // web/PWA; markBundleReady() is idempotent, so the two calls don't conflict.
+    if (Capacitor.isNativePlatform()) markBundleReady();
   }, []);
   return (
     <ThemeProvider>
       <LanguageProvider>
         <BrowserRouter>
+          {/* Sets html[data-nav]=forward|back each navigation so the directional
+              View-Transition page push (index.css) reverses on Back. Renders nothing. */}
+          <NavDirectionTracker />
           {/* Home-screen-PWA eviction recovery: iOS relaunches an evicted PWA at
               the manifest start_url — this sends the tech back to the screen
               they were working on. Renders nothing; standalone-mode only. */}
           <RouteRestorer />
           <BiometricGate>
             <AuthProvider>
+              {/* Owner-gated preview classes (page transitions / liquid glass) —
+                  reads feature flags, so must be inside AuthProvider. */}
+              <UiFlagClasses />
               {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
             </AuthProvider>
           </BiometricGate>

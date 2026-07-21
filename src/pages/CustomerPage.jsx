@@ -99,7 +99,7 @@ export default function CustomerPage(){
 
   return(
     <div className="job-page">
-      <div className="job-page-topbar"><button className="btn btn-ghost btn-sm" onClick={()=>navigate('/customers')} style={{gap:4}}>{'\u2190'} Customers</button></div>
+      <div className="job-page-topbar"><button className="btn btn-ghost btn-sm" onClick={()=>navigate('/customers',{viewTransition:true})} style={{gap:4}}>{'\u2190'} Customers</button></div>
       <div className="job-page-header">
         <div className="job-page-header-left">
           <div className="customer-card-avatar" style={{width:48,height:48,fontSize:16}}>{initials}</div>
@@ -114,7 +114,7 @@ export default function CustomerPage(){
         </div>
         <div style={{display:'flex',gap:'var(--space-2)'}}>
           {c.phone&&<a href={`tel:${c.phone}`} className="customer-action-btn"><IconPhone style={{width:16,height:16}}/>Call</a>}
-          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations',{state:{contactId:c.id}})}><IconMsg style={{width:16,height:16}}/>Text</button>}
+          {c.phone&&<button className="customer-action-btn" onClick={()=>navigate('/conversations',{state:{contactId:c.id},viewTransition:true})}><IconMsg style={{width:16,height:16}}/>Text</button>}
           {c.email&&<a href={`mailto:${c.email}`} className="customer-action-btn"><IconMail style={{width:16,height:16}}/>Email</a>}
           <button className="customer-action-btn" onClick={()=>setShowCreateJob(true)}><IconJob style={{width:16,height:16}}/>New Job</button>
           {billingOn&&canEditBill&&<button className="customer-action-btn" onClick={()=>setShowNewInvoice(true)}><IconInvoice style={{width:16,height:16}}/>New Invoice</button>}
@@ -138,13 +138,13 @@ export default function CustomerPage(){
       ))}</div>
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
-        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`)} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
-        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`)} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
+        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
+        {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
       </PullToRefresh>
-      {addRelatedSource&&<AddRelatedJobModal sourceJob={addRelatedSource.job} claimData={addRelatedSource.claimData} siblingJobs={addRelatedSource.siblings} employees={employees} db={db} onClose={()=>setAddRelatedSource(null)} onCreated={r=>{setAddRelatedSource(null);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);}}/>}
-      {showCreateJob&&<CreateJobModal db={db} onClose={()=>setShowCreateJob(false)} prefillContact={c} onCreated={r=>{setShowCreateJob(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`);else loadData();}}/>}
+      {addRelatedSource&&<AddRelatedJobModal sourceJob={addRelatedSource.job} claimData={addRelatedSource.claimData} siblingJobs={addRelatedSource.siblings} employees={employees} db={db} onClose={()=>setAddRelatedSource(null)} onCreated={r=>{setAddRelatedSource(null);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});}}/>}
+      {showCreateJob&&<CreateJobModal db={db} onClose={()=>setShowCreateJob(false)} prefillContact={c} onCreated={r=>{setShowCreateJob(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});else loadData();}}/>}
       {showNewInvoice&&<NewInvoiceModal db={db} contact={c} claims={claims} onClose={()=>setShowNewInvoice(false)}/>}
       {showMerge&&<MergeModal type="contact" keepRecord={c} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadData();}}/>}
     </div>

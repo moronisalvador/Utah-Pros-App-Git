@@ -64,6 +64,25 @@ const EXPLICIT_FLAGS = [
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',
   },
+  // ── UX polish previews (owner-gated, instantly reversible) ───────────────────
+  // enabled:false is LOAD-BEARING — the DevTools auto-seed creates any missing
+  // registry key ENABLED. The live rows are seeded enabled:false + dev_only_user_id
+  // (owner), so each preview is owner-only until the owner flips it on (or force-off)
+  // in DevTools → Flags. UiFlagClasses (src/App.jsx) reads these and toggles the
+  // html.ui-vt / html.ui-glass classes the CSS (index.css) keys off — so merging to
+  // dev never changes anything for other users, and reverting is one click, no deploy.
+  {
+    key: 'feature:page_transitions',
+    label: 'iOS Page Transitions',
+    description: 'Directional page-push animation between screens (forward slides in from the right, Back reverses). Owner-only preview; degrades gracefully to instant nav.',
+    enabled: false,
+  },
+  {
+    key: 'feature:liquid_glass',
+    label: 'Liquid Glass Chrome',
+    description: 'Frosted translucent chrome (backdrop-filter blur/saturate + specular edge) on the sidebar/top-nav/tech-nav. Owner-only preview; solid fallback under reduced-transparency. Safari renders frosted blur, not true refraction.',
+    enabled: false,
+  },
   // ── Notification Center — Web Push (Phase F1) ────────────────────────────────
   // enabled:false is LOAD-BEARING. DevTools auto-seeds any missing registry key
   // ENABLED; without the explicit false this would seed ON and register the push

@@ -62,6 +62,19 @@ const {
 } = useAuth();
 ```
 
+## Local Dev & UI Verification
+
+A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the **anon** key (safe — it's already shipped in every browser bundle) unlocks real local dev + UI verification: `preview_start({name: "Vite Dev Server"})` (config in `.claude/launch.json`) → Login screen's **"Dev Mode: Select Employee"** button → click any employee, no password, ever. Good for screenshots, click-throughs, layout/navigation/component work. If `.env.local` doesn't exist yet, get the URL + anon key via the Supabase MCP (`get_project_url` / `get_publishable_keys`) rather than asking the user to paste secrets in chat — but never create the file directly (`.claude/hooks/block-secrets.sh` blocks any `Write`/`Edit` to `.env*` by filename, on purpose); hand the two lines to a human to paste in.
+
+**Limitation (expected, not a bug — don't waste time re-diagnosing it):** Dev Mode authenticates the *employee* row but the client still runs as Supabase's `anon` role, not a real JWT. Any RPC scoped `TO authenticated` (most of them, per `database-standard.md` §1) returns `42501 permission denied for function ...`, so dashboard/list data shows "Couldn't load" even though the UI itself is fine.
+
+**Three ways to get UI access locally — pick whichever fits what you're actually verifying, none of these is "the" way:**
+- **Anon-role Dev Mode** (employee picker, above) — any employee, instant, no data.
+- **Real-data Dev Mode** — Login screen's **"Dev Mode: Real Data (test admin)"** button (`src/pages/Login.jsx`), shown only when `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` are set in `.env.local`. Runs a real `signInWithPassword()` against a dedicated `[Local Dev Test Account]` employee (`admin` role, `is_external: true`, its own Supabase Auth user — never a real employee's credentials), so it's a genuine `authenticated` session with real RLS-scoped data.
+- **Human-authenticated tab** — a human logs into `dev.utahpros.app` themselves in the Browser pane, then hand off that already-authenticated tab — the only option that reflects a specific real employee's actual account/permissions rather than the test account's.
+
+Use judgment on which one answers the question at hand (pure UI/layout vs. real data vs. a specific employee's actual view) — this list is scope, not a decision tree to follow in order. Whichever is used, never enter credentials directly yourself, even ones handed over in chat, even for the throwaway test account — if `.env.local` needs updating, hand the lines to a human to paste in.
+
 ## File Structure (key files)
 
 Not exhaustive — `src/pages/` has 41 files, `src/pages/tech/` has 22. `Glob src/pages/**/*.jsx` before assuming a page doesn't exist.
@@ -89,7 +102,7 @@ supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count d
 .claude/rules/       tech-mobile-ux.md, documentation-standard.md, scope-sheet-rollback.md,
                      database-standard.md, and the UX-Quality laws: page-lifecycle.md,
                      loading-error-states.md, perf-budget.md, workers-standard.md,
-                     close-out-standard.md. Wave-ownership manifests live here while their
+                     close-out-standard.md, motion-standard.md. Wave-ownership manifests live here while their
                      initiative is active; when its LAST phase merges, `git mv` the manifest to
                      `docs/archive/rules/` with a one-line tombstone (keeps the active set honest).
 .claude/commands/    custom slash commands (e.g. /invoice)
@@ -128,6 +141,17 @@ const load = useCallback(async () => {
 }, [db]);
 useEffect(() => { load(); }, [load]);
 ```
+
+## Specialist skills & precedence
+
+Installed skills auto-load by description when a task matches; you rarely invoke them by hand (name one explicitly — `/impeccable audit …` — only when you need to force it). **Jurisdiction (one authority per concern):**
+- **Design/UX:** `impeccable` decides *where* design & motion belong (`/impeccable audit|critique|polish|animate`); the **Emil pack** (`emil-design-eng`, `apple-design`, `improve-animations`, `review-animations`, `animation-vocabulary`) decides *how motion feels* + reviews it.
+- **React:** `vercel-react-best-practices`, `vercel-composition-patterns` — framework-neutral (we're Vite; **reject Next.js-only advice**).
+- **Data/SQL:** `supabase`, `supabase-postgres-best-practices` — patterns only, **subordinate to `.claude/rules/database-standard.md`** (least-privilege, anon-allowlist, one shared prod DB).
+- **Tests:** `playwright-core`. **UPR-native workflows** (`new-feature`, `db-migration`, `new-crm-module`, `masterplan`) orchestrate the actual work and outrank vendor skills.
+- **Content & marketing / SEO — website surface, NOT the internal app:** SEO via the **claude-seo** suite (`seo` orchestrator + `seo-*` specialists + `seo-*` subagents); content/marketing via `product-marketing`, `copywriting`, `cro`, `content-strategy`, `email-sequence`, `campaign-plan`, `competitive-brief`, `performance-report`, `brand-review`. These serve the **public marketing site & content** and auto-fire only on SEO/content tasks, never internal-app dev. `impeccable` still owns *product-UI* design; these own *SEO, copy & brand voice* — a separate lane. **Design authority stays with `impeccable` + the Emil pack — do NOT add a second broad UI/UX design skill: it fragments the design lane and tends to inject wrong-stack advice (Tailwind/shadcn — we are CSS custom properties, no Tailwind).**
+
+**Precedence when guidance conflicts:** (1) CLAUDE.md non-negotiables + `.claude/rules/` standards are **law** — always win; (2) UPR-native skills drive the flow; (3) vendor skills advise within their lane only. A vendor skill **never** overrides a standard: no `framer-motion`/`gsap` (`perf-budget.md` — motion is CSS tokens + View Transitions, see `motion-standard.md §8`), no Next.js APIs, no loosening `database-standard.md`. The **impeccable PostToolUse hook** is the one *deterministic* layer — it runs on every UI edit; fix its findings or consciously waive them (never silence a real one).
 
 ## What NOT to Touch
 

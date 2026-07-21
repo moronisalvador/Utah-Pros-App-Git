@@ -51,7 +51,7 @@ export default function Leads() {
               </thead>
               <tbody>
                 {leads.map(lead => (
-                  <tr key={lead.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/jobs/${lead.id}`)}>
+                  <tr key={lead.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/jobs/${lead.id}`, { viewTransition: true })}>
                     <td style={{ fontWeight: 600 }}>{lead.job_number || '—'}</td>
                     <td>{lead.insured_name || '—'}</td>
                     <td style={{ color: 'var(--text-secondary)' }}>

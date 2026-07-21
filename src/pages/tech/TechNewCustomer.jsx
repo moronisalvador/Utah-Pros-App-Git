@@ -321,6 +321,7 @@ export default function TechNewCustomer() {
         zIndex: 10,
       }}>
         <button
+          className="btn"
           onClick={handleSave}
           disabled={!canSave || saving}
           style={{

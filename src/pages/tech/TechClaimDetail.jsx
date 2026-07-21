@@ -235,11 +235,9 @@ export default function TechClaimDetail() {
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  // Entry animation flag
-  const [entering, setEntering] = useState(false);
-
+  // Page entry animation is now the shared View Transitions mechanism (motion-standard §2),
+  // not a per-page entering flag — this effect only owns the status-bar tint.
   useEffect(() => {
-    requestAnimationFrame(() => setEntering(true));
     statusBarLight();
     return () => statusBarDark();
   }, []);
@@ -542,7 +540,7 @@ export default function TechClaimDetail() {
   if (jobs.length > 0) metaPieces.push(t('jobsMetaCount', { count: jobs.length }));
 
   return (
-    <div className={`tech-page${entering ? ' tech-page-enter' : ''}`} style={{ padding: 0 }}>
+    <div className="tech-page" style={{ padding: 0 }}>
       <Hero
         division={division}
         eyebrow={t('eyebrow')}

@@ -32,6 +32,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import App from './App.jsx';
+import { Capacitor } from '@capacitor/core';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 import { buildResetUrl } from './lib/staleChunkReload.js';
 import { techQueryClient } from './lib/techQuery.js';
@@ -53,13 +54,15 @@ const BUILD_ID = '2026-07-03-web-push-f1';
 // let React mount anyway. The promise is fire-and-forget (no await) and
 // unhandled rejections won't stop rendering, but we guard the synchronous
 // call site defensively.
-try {
-  const p = CapacitorUpdater.notifyAppReady();
-  if (p && typeof p.catch === 'function') {
-    p.catch((err) => console.warn('CapacitorUpdater.notifyAppReady failed:', err?.message || err));
+if (Capacitor.isNativePlatform()) {
+  try {
+    const p = CapacitorUpdater.notifyAppReady();
+    if (p && typeof p.catch === 'function') {
+      p.catch((err) => console.warn('CapacitorUpdater.notifyAppReady failed:', err?.message || err));
+    }
+  } catch (err) {
+    console.warn('CapacitorUpdater.notifyAppReady threw:', err?.message || err);
   }
-} catch (err) {
-  console.warn('CapacitorUpdater.notifyAppReady threw:', err?.message || err);
 }
 
 // One-time native keyboard config (no-op on web): hides the iOS accessory bar so

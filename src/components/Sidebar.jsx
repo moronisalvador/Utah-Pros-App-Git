@@ -61,6 +61,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
             <NavLink
               key={item.key}
               to={item.path}
+              viewTransition
               end={item.path === '/'}
               className={({ isActive }) =>
                 `sidebar-link${isActive ? ' active' : ''}`
@@ -77,6 +78,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {/* Help & Guides — always visible to every logged-in user (not role-gated) */}
         <NavLink
           to="/help"
+          viewTransition
           className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
           onClick={onNavClick}
         >
@@ -91,6 +93,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {employee?.role !== 'crm_partner' && (
           <NavLink
             to="/roadmap"
+            viewTransition
             className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
             onClick={onNavClick}
           >
@@ -106,6 +109,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {employee?.role !== 'crm_partner' && (
           <NavLink
             to="/feedback"
+            viewTransition
             className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
             onClick={onNavClick}
           >
@@ -118,6 +122,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {isMoroni && (
           <NavLink
             to="/homebuilding"
+            viewTransition
             className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
             onClick={onNavClick}
           >
@@ -130,6 +135,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {isMoroni && (
           <NavLink
             to="/dev-tools"
+            viewTransition
             className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
             onClick={onNavClick}
           >
@@ -150,6 +156,7 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
         {employee?.role === 'admin' && (
           <NavLink
             to="/tech"
+            viewTransition
             onClick={onNavClick}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,

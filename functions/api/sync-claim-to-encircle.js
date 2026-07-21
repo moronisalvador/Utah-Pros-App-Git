@@ -7,19 +7,7 @@
 // On failure, records the error on claims.encircle_sync_error for retry.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-
-async function requireAuth(request, env) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true };
-}
+import { requireUser } from '../lib/auth.js';
 
 // Internal trigger auth — lets server-side callers (e.g. a pg_net backfill from
 // the database) invoke this worker without a user session. The caller sends an
@@ -315,7 +303,7 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   // Accept either a logged-in user (UI) or a valid internal trigger secret (server-side backfill).
   if (!(await isValidInternalSecret(context.request, context.env))) {
-    const auth = await requireAuth(context.request, context.env);
+    const auth = await requireUser(context.request, context.env);
     if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   }
   try {
