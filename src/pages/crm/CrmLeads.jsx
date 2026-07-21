@@ -86,6 +86,12 @@ const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints
 function IconPhone(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" /></svg>); }
 function IconMsg(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>); }
 
+// Card quick-action icons render deliberately small and thin-stroked — a
+// minimal glyph row (GoHighLevel-style), not full-size 24px icons filling a
+// 30px button. Shared object (not recreated per render) so it's a stable
+// prop reference.
+const CARD_ACTION_ICON_STYLE = { width: 14, height: 14, strokeWidth: 1.75 };
+
 // Sentiment → a small at-a-glance dot on the card. Neutral/missing gets no dot
 // at all (no signal is not the same as neutral tone — don't imply one).
 function sentimentDotClass(lead) {
@@ -623,27 +629,28 @@ export default function CrmLeads() {
                         {lead.caller_number && (
                           <a
                             href={`tel:${lead.caller_number}`}
-                            className="ui-icon-btn ui-icon-btn--sm"
+                            className="ui-icon-btn ui-icon-btn--sm crm-board-card-action-link"
                             aria-label="Call"
                             title="Call"
                             onClick={e => { e.stopPropagation(); quickLogCall(lead); }}
                           >
-                            <IconPhone />
+                            <IconPhone style={CARD_ACTION_ICON_STYLE} />
                           </a>
                         )}
                         <IconButton
                           label={lead.contact_id ? 'Text' : 'Text (link a contact first)'}
                           size="sm"
+                          className="crm-board-card-action-btn"
                           disabled={!lead.contact_id}
                           onClick={e => quickText(e, lead)}
                         >
-                          <IconMsg />
+                          <IconMsg style={CARD_ACTION_ICON_STYLE} />
                         </IconButton>
-                        <IconButton label="Add note" size="sm" onClick={e => openQuickPopover(e, lead, 'note')}>
-                          <IconNote />
+                        <IconButton label="Add note" size="sm" className="crm-board-card-action-btn" onClick={e => openQuickPopover(e, lead, 'note')}>
+                          <IconNote style={CARD_ACTION_ICON_STYLE} />
                         </IconButton>
-                        <IconButton label="Add task" size="sm" onClick={e => openQuickPopover(e, lead, 'task')}>
-                          <IconTasks />
+                        <IconButton label="Add task" size="sm" className="crm-board-card-action-btn" onClick={e => openQuickPopover(e, lead, 'task')}>
+                          <IconTasks style={CARD_ACTION_ICON_STYLE} />
                         </IconButton>
                       </div>
 
