@@ -6,10 +6,12 @@
  * WHAT THIS DOES (plain language):
  *   A small ring-shaped chart (a "donut"). You hand it a list of things with a
  *   label and a number, and it draws a colored ring where each slice's size
- *   matches its share of the total, plus a big number in the middle and a little
- *   legend underneath that spells out each slice, its value, and its percentage.
- *   When there is nothing to show, it draws a plain gray ring instead of faking
- *   any slices.
+ *   matches its share of the total, plus a big number in the middle and — by
+ *   default — a little legend underneath that spells out each slice, its
+ *   value, and its percentage. Pass `showLegend={false}` when the caller
+ *   already shows that same breakdown another way (e.g. a bar list next to the
+ *   ring) so the same numbers aren't printed twice. When there is nothing to
+ *   show, it draws a plain gray ring instead of faking any slices.
  *
  * WHERE IT LIVES:
  *   Route:        n/a — a presentational chart component
@@ -33,7 +35,7 @@
  */
 import { toDonutSegments } from '@/lib/crmCharts';
 
-export default function Donut({ segments, total, label, sublabel, size = 128 }) {
+export default function Donut({ segments, total, label, sublabel, size = 128, showLegend = true }) {
   const computed = toDonutSegments(segments || []);
   const hasData = computed.length > 0;
 
@@ -59,24 +61,29 @@ export default function Donut({ segments, total, label, sublabel, size = 128 }) 
         </div>
       </div>
 
-      <div className="crm-donut-legend">
-        {hasData ? (
-          computed.map((s) => (
-            <div className="crm-donut-legend-row" key={s.label}>
-              <span
-                className="crm-donut-swatch"
-                style={{ background: s.color }}
-                aria-hidden="true"
-              />
-              <span className="crm-donut-legend-label">{s.label}</span>
-              <span className="crm-donut-legend-val">{s.value}</span>
-              <span className="crm-donut-legend-pct">{s.pct}%</span>
-            </div>
-          ))
-        ) : (
-          <div className="crm-donut-empty">No data</div>
-        )}
-      </div>
+      {/* Suppressed when the caller already shows this same breakdown another
+          way (e.g. PipelineStageCard's bar list) — the "no data" note still
+          shows either way, since that's feedback, not a duplicate. */}
+      {showLegend || !hasData ? (
+        <div className="crm-donut-legend">
+          {hasData ? (
+            computed.map((s) => (
+              <div className="crm-donut-legend-row" key={s.label}>
+                <span
+                  className="crm-donut-swatch"
+                  style={{ background: s.color }}
+                  aria-hidden="true"
+                />
+                <span className="crm-donut-legend-label">{s.label}</span>
+                <span className="crm-donut-legend-val">{s.value}</span>
+                <span className="crm-donut-legend-pct">{s.pct}%</span>
+              </div>
+            ))
+          ) : (
+            <div className="crm-donut-empty">No data</div>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
