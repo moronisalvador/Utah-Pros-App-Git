@@ -16,12 +16,14 @@
  *        body: { lead_id }                   — transcribe one call, OR
  *              { backfill: true, days?: 30 }   — transcribe every recent call that
  *                                                has a recording but no transcript, OR
- *              { reclassify: true, days?: 90, force?: false } — re-run the AI naming
- *                                                + clean-up passes against already-
+ *              { reclassify: true, lead_id?, days?: 90, force?: false } — re-run the AI
+ *                                                naming + clean-up passes against already-
  *                                                transcribed leads (no Deepgram/CallRail
  *                                                creds needed, no re-transcription cost).
- *                                                Default targets only leads whose stored
- *                                                analysis predates inspection_scheduled;
+ *                                                lead_id targets exactly one lead
+ *                                                (bypasses days/force). Otherwise, default
+ *                                                targets only leads whose stored analysis
+ *                                                predates inspection_scheduled;
  *                                                force:true re-processes every matching
  *                                                call regardless (e.g. to pick up a
  *                                                naming-prompt improvement on leads
@@ -457,14 +459,20 @@ export async function onRequestPost(context) {
   if (body.reclassify) {
     let leads;
     try {
-      const days = Number(body.days) > 0 ? Number(body.days) : 90;
-      const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
-      leads = await db.select(
-        'inbound_leads',
-        `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
-          `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
-      );
+      if (body.lead_id) {
+        // Targeted single-lead reclassify — bypasses the days/force filters
+        // entirely, for testing a prompt change against one known call.
+        leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,transcription,transcript_analysis`);
+      } else {
+        const days = Number(body.days) > 0 ? Number(body.days) : 90;
+        const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
+        leads = await db.select(
+          'inbound_leads',
+          `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
+            `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
+        );
+      }
     } catch {
       return jsonResponse({ error: 'Failed to load leads' }, 500, request, env);
     }
