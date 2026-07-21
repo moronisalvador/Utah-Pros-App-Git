@@ -4557,15 +4557,39 @@ pure helper module **`functions/lib/zeroTurnClassifier.js`** (`buildZeroTurnProm
 `classifyZeroTurnCall()`/`ZERO_TURN_SYSTEM` in `transcribe-call.js`: when `buildCleanupPrompt` returns
 `''`, `cleanAndSummarize()` now falls back to asking Claude Haiku a small separate question against
 Deepgram's raw flat transcript + one-line summary (which do exist even with zero diarized turns) —
-judging ONLY the actual words present, never call length — and sets ONLY `caller_never_responded`
-(everything else about the lead is left alone, same "leave as whatever it already was" contract as
-every other best-effort signal here). A garbled/missing AI answer is a safe no-op (never a false
-spam-flag), matching every other pass in this file. Also relaxed `reclassifyLead()`'s guard — it used
-to `throw` on any lead with `analysis.turns.length === 0` (the exact leads this fix targets); it now
-only throws when there is NEITHER a usable turn NOR any raw transcript/summary text to judge at all.
-The existing `{reclassify: true}` sweep already selects these leads without any query change (its
+judging ONLY the actual words present, never call length — and sets `caller_never_responded`
+(everything else about the lead was originally left alone, same "leave as whatever it already was"
+contract as every other best-effort signal here). A garbled/missing AI answer is a safe no-op (never a
+false spam-flag), matching every other pass in this file. Also relaxed `reclassifyLead()`'s guard — it
+used to `throw` on any lead with `analysis.turns.length === 0` (the exact leads this fix targets); it
+now only throws when there is NEITHER a usable turn NOR any raw transcript/summary text to judge at
+all. The existing `{reclassify: true}` sweep already selects these leads without any query change (its
 `inspection_scheduled IS NULL` sentinel was never set for them either, same as any never-processed
-lead). Test: `functions/lib/zeroTurnClassifier.test.js`.
+lead).
+
+**Live backfill (2026-07-21):** discovered live that all 37 zero-turn leads actually carry
+`transcript_analysis.model:'claude-agent-inline'`/`speakerMode:'diarized-flat'` — a tag
+`transcribe-call.js` never writes — meaning these came from some prior backfill/import process that
+already wrote a real flat `transcription` + a rich Deepgram-style summary but left `turns` empty; NOT
+literally all Deepgram dead-air (several have full real conversations in the raw text). Ran the
+judgment call by hand against the 28 unflagged leads (same read-the-raw-text criteria the classifier
+uses) since the deployed worker needs an authenticated employee session token this environment
+doesn't have: 8 were genuine dead air/no-message hang-ups (spam-flagged via `set_lead_spam_flag`,
+reason `ai_detected_caller_never_responded`), 20 were real content (including the Brynn mold-inspection
+voicemail — verified still `spam_flag:false`) and left untouched. Final split: 17 flagged / 20
+unflagged of the 37.
+
+**`is_customer_inquiry` follow-up (2026-07-21):** the initial fix left 2 of the 20 remaining
+unflagged leads uncaught — a clear wrong-number call and a personal call asking for "Mister Moroni" —
+since `caller_never_responded` doesn't fire when the other party spoke. Extended `ZERO_TURN_SYSTEM` +
+`parseZeroTurnResponse` to also read `is_customer_inquiry`, same opposite-lenient-direction default
+(`true`) as the full cleanup pass's field of the same name — but deliberately conservative: the prompt
+only asks for a CLEAR-CUT wrong-number/personal-call case, not the harder vendor/solicitor judgment,
+since a zero-turn call's raw text is thinner evidence than a full per-turn transcript. No new call-site
+wiring needed — `transcribeLead()`/`reclassifyLead()` already call `set_lead_spam_flag` when
+`analysis.is_customer_inquiry === false` (shared with the full cleanup pass), so setting the field on
+the zero-turn branch is enough to route through the same existing spam-flagging path.
+Test: `functions/lib/zeroTurnClassifier.test.js`.
 
 **Agent/customer role-confusion fix + auto-qualify contact linking (2026-07-21):** two bugs found
 reviewing real production data — two leads ~1.5hrs apart from the same caller
