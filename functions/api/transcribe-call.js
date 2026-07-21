@@ -146,8 +146,10 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 5) Extract the customer's email address and mailing/service address ONLY if the customer clearly stated it themselves during the call — never guess, infer, or use the business's own address. customer_email must be a literal email address spoken or spelled out; customer_address must be a real street address (not just a city/neighborhood name). Use null for either when not clearly stated.
 
+6) Extract the customer's full name (first AND last, if both were stated anywhere in the call — including if they spelled it out letter by letter) into customer_full_name. Read the actual turn content for this, not just the speaker label the turns already carry — a speaker turn may already be labeled with just a first name from an earlier pass, but the full conversation may state the last name separately later on (e.g. the agent asks "what's your last name?" and the customer answers). Only include what was actually stated — never guess a last name. Use null if no name was stated at all.
+
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>"}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
@@ -314,11 +316,16 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     p_analysis: analysis,
   });
 
-  // Auto-name the lead from the caller's detected name (fills caller_name; backfills
-  // a linked contact's name only if blank; never creates a contact). Best-effort.
-  if (callerName) {
+  // Auto-name the lead. Prefer cleanAndSummarize's customer_full_name — it reads
+  // the ACTUAL conversation content (not just the current speaker label), so it
+  // reliably finds a last name even when nameSpeakers() only got a first name.
+  // Falls back to nameSpeakers()'s result when the cleanup pass found nothing.
+  // p_allow_upgrade:true is safe here too: it only ever extends an existing
+  // name, never replaces it with something unrelated (see set_lead_caller_name).
+  const bestCallerName = analysis?.customer_full_name || callerName;
+  if (bestCallerName) {
     try {
-      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName });
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: bestCallerName, p_allow_upgrade: true });
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
@@ -394,9 +401,13 @@ export async function reclassifyLead(db, env, lead) {
     p_analysis: analysis,
   });
 
-  if (callerName) {
+  // Prefer customer_full_name (reads actual content, reliably finds a last name
+  // even on a turn already labeled with just a first name) over the naming
+  // re-run's result — same reasoning as transcribeLead().
+  const bestCallerName = analysis?.customer_full_name || callerName;
+  if (bestCallerName) {
     try {
-      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: callerName, p_allow_upgrade: true });
+      await db.rpc('set_lead_caller_name', { p_lead_id: lead.id, p_name: bestCallerName, p_allow_upgrade: true });
     } catch { /* naming the lead is a bonus, not a reason to fail reclassification */ }
   }
 

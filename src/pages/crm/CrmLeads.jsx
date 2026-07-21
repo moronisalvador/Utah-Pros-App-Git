@@ -963,13 +963,13 @@ export default function CrmLeads() {
                             </>
                           ) : (
                             <>
-                              <input
-                                type="text"
+                              <textarea
                                 className="crm-input crm-board-card-popover-input"
+                                rows={2}
                                 autoFocus
                                 value={quickDraft}
                                 onChange={e => setQuickDraft(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') submitQuickTask(e, lead); }}
+                                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitQuickTask(e, lead); } }}
                                 placeholder="Follow up call, send estimate…"
                               />
                               <div className="crm-board-card-popover-actions">
