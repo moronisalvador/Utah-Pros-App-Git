@@ -34,6 +34,16 @@ split. Stay inside your files and your frozen stubs and no two sessions can coll
   never `skip_compliance`); do not edit it.
 - The two Foundation RPC **REPLACEs** — `move_lead_to_stage`, `get_contact_activity`.
   Do NOT re-REPLACE them; Foundation owns their signature and body.
+  > **AMENDED (2026-07-21, standalone-production-fix precedent):** this freeze governs
+  > Wave-1 parallel sessions. Two standalone production-fix migrations outside the wave —
+  > `20260721_crm_contact_link_and_activity.sql` (added the appointment/invoice/
+  > work_authorization arms) and `20260721_crm_unlinked_lead_activity.sql` (added the
+  > lead_stage_history arm + widened the task arm, alongside the new `get_lead_activity`
+  > function for pre-link leads) — each did a function-**body**-only `CREATE OR REPLACE` of
+  > `get_contact_activity`, signature and return shape unchanged, with a committed
+  > backward-compat test proving existing callers still succeed. Treat this line as a
+  > signature freeze, not an absolute body freeze, for that class of change; a genuine
+  > Wave-1 parallel session still must not touch it.
 
 **Shared append-only log tables** (`system_events`, `worker_runs`, `sms_consent_log`) are
 DATA writes only — insert rows, never change their schema. **Zero schema migrations outside

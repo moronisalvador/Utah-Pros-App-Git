@@ -24,9 +24,12 @@
  *              2026-07-17 additive replace) · writes → none
  *
  * NOTES / GOTCHAS:
- *   - Self-loading: pass a contactId and it fetches its own data. Caller is
- *     responsible for the "no linked contact yet" case (render nothing / its own
- *     message when contactId is falsy) — this component assumes it has an id.
+ *   - Self-loading: pass a contactId (get_contact_activity) or, for a lead
+ *     that isn't linked to a contact yet, a leadId instead (get_lead_activity
+ *     — same return shape, scoped to the lead's own call/task/stage-history
+ *     rows with no contact required). contactId wins if both are passed.
+ *     Caller is responsible for the "nothing to show yet" case when neither
+ *     id is available — this component assumes it has at least one.
  *   - Behavior-identical to the original inline Leads timeline: same RPC, same
  *     error toast, same .crm-timeline markup and empty/loading copy.
  *   - A call's body (transcription) renders as labeled speaker turns,
@@ -40,10 +43,12 @@
  *     bodies) just clamps at BODY_PREVIEW_CHARS with a "Show more" toggle.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { turnsFromAnalysis, parseTranscript } from '@/lib/transcript';
 import { err } from '@/lib/toast';
+import TabLoading from '@/components/TabLoading';
+import ErrorState from '@/components/ui/ErrorState';
 
 const BODY_PREVIEW_CHARS = 220;
 const TRANSCRIPT_PREVIEW_TURNS = 2;
@@ -95,29 +100,47 @@ function ActivityBody({ text, analysis }) {
   return <div className="crm-timeline-text">{text}</div>;
 }
 
-export default function ActivityTimeline({ contactId }) {
+export default function ActivityTimeline({ contactId, leadId }) {
   const { db } = useAuth();
   const [activity, setActivity] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  // Guards against a stale response winning a race — e.g. a lead links to a
+  // contact (or the panel switches to a different lead) while the prior
+  // contactId/leadId request is still in flight (page-lifecycle.md §2).
+  const requestIdRef = useRef(0);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
-    if (!contactId) return;
-    setLoading(true);
+    if (!contactId && !leadId) { setLoading(false); return; }
+    const requestId = ++requestIdRef.current;
+    setLoadError(false);
     try {
-      const rows = await db.rpc('get_contact_activity', { p_contact_id: contactId });
+      const rows = contactId
+        ? await db.rpc('get_contact_activity', { p_contact_id: contactId })
+        : await db.rpc('get_lead_activity', { p_lead_id: leadId });
+      if (requestId !== requestIdRef.current) return; // superseded by a newer request
       setActivity(rows || []);
     } catch {
+      if (requestId !== requestIdRef.current) return;
+      setLoadError(true);
       err('Failed to load contact activity');
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [contactId, db]);
+  }, [contactId, leadId, db]);
 
+  // `loading` is only ever set true by its initial state (cold start) — a
+  // contactId/leadId change (e.g. the lead this panel is showing just linked
+  // to a contact) is a mutation-driven prop swap, not a fresh mount, so it
+  // must refetch silently rather than re-blank an already-rendered timeline
+  // (page-lifecycle.md §1). A genuinely different lead gets a real cold
+  // start because the caller keys this component by lead id.
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Render ──────────────
-  if (loading) return <p className="crm-panel-empty">Loading…</p>;
+  if (loading) return <TabLoading />;
+  if (loadError) return <ErrorState message="Couldn't load activity." onRetry={load} />;
   if (activity.length === 0) return <p className="crm-panel-empty">No activity recorded yet.</p>;
 
   return (

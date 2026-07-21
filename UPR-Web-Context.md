@@ -5726,6 +5726,30 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
       included the selected options — and is now the reference example both code paths match. Tests
       updated in both files to prove only-checked-shown with zero `true`/`false`/`Yes`/`No` anywhere in
       either output.
+  - **Unlinked-lead activity + stage history (2026-07-21, follow-up)** — an unlinked lead (no
+    `contact_id` yet — the common pre-qualification state) showed a totally empty Activity timeline
+    because `get_contact_activity` requires a `contact_id` on every branch. New
+    `get_lead_activity(p_lead_id)` RPC (same return shape) covers that case: the lead's own call/form
+    event, its own `crm_tasks` (`lead_id`-scoped), and its own `lead_stage_history` moves — no contact
+    link required. `ActivityTimeline.jsx` now accepts a `leadId` prop as an alternative to `contactId`
+    (`contactId` wins if both are passed); `CrmLeads.jsx`'s `LeadDetailPanel` calls it with `leadId`
+    instead of showing a static "no linked contact yet" message. Also fixed two gaps that affected
+    *linked* contacts: `lead_stage_history` was missing from `get_contact_activity` entirely (stage
+    moves never appeared for anyone), and a task added while a lead was still unlinked (`lead_id` set,
+    `contact_id` NULL) never surfaced even after that lead later linked to a contact — the `task` arm
+    now also matches via `lead_id IN (SELECT id FROM inbound_leads WHERE contact_id = p_contact_id)`.
+    Migration `20260721_crm_unlinked_lead_activity.sql` — function-body-only `CREATE OR REPLACE` of
+    `get_contact_activity` (signature/return shape unchanged) + the new `get_lead_activity`, both
+    granted `authenticated, service_role` only (no `anon`). Proof: `supabase/tests/crm_lead_activity.test.js`
+    (integration, self-skips without creds). While extending `ActivityTimeline.jsx`, also fixed three
+    `page-lifecycle.md` bugs the review caught: a failed load rendered the same empty-state as "no
+    activity" instead of `<ErrorState>` (`loading-error-states.md` §1); the loading gate re-blanked an
+    already-rendered timeline on every mutation-driven `contactId`/`leadId` prop swap instead of staying
+    silent; and a stale response could win a race when switching leads quickly (now guarded by a
+    request-id ref, plus `LeadDetailPanel` is keyed by `lead.id` in `CrmLeads.jsx` so a genuine lead
+    switch remounts cleanly). `.claude/rules/crm-wave-ownership.md` §1 gained a disclosed amendment
+    note — this is the second standalone-production-fix body-replace of the nominally Foundation-frozen
+    `get_contact_activity`, same precedent as the 2026-07-21 contact-link-and-activity migration.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
