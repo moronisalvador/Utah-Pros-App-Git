@@ -103,7 +103,9 @@ export const LEAD_SCORE_MAX = 100;
 const SOURCE_POINTS = { referral: 20, insurance: 18, google_ads: 15, organic: 10, meta_ads: 8, other: 5 };
 
 // Restoration-urgency keywords in transcript topics → a real job, not a tire-kick.
-const URGENT_TOPIC_RX = /\b(water|flood|fire|smoke|mold|sewage|storm|leak|burst|emergenc|damage|restorat|asbestos|hail|wind)\b/i;
+// Exported so the Leads board card can flag urgency at a glance without
+// re-deriving the score — same signal, one definition.
+export const URGENT_TOPIC_RX = /\b(water|flood|fire|smoke|mold|sewage|storm|leak|burst|emergenc|damage|restorat|asbestos|hail|wind)\b/i;
 
 /**
  * Normalize a raw source string to one of the six attribution channels. Mirrors

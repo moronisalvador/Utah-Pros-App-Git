@@ -64,11 +64,15 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconLeads } from '@/lib/crmIcons';
 import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
-import { normalizePhone } from '@/lib/phone';
+import { normalizePhone, formatPhone } from '@/lib/phone';
+import { URGENT_TOPIC_RX } from '@/lib/crmPipeline';
+import { IconNote } from '@/components/Icons';
+import { IconTasks } from '@/lib/crmIcons';
+import { IconButton, StatusPill } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
 import TabLoading from '@/components/TabLoading';
 
@@ -76,6 +80,45 @@ const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { det
 const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
 
 const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// Small local icons matching the pattern already used on Customer/ClaimCollection
+// pages (an inline SVG per page rather than a new shared export for a one-off).
+function IconPhone(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" /></svg>); }
+function IconMsg(p) { return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>); }
+
+// Sentiment → a small at-a-glance dot on the card. Neutral/missing gets no dot
+// at all (no signal is not the same as neutral tone — don't imply one).
+function sentimentDotClass(lead) {
+  const label = lead.transcript_analysis?.sentiment?.label;
+  if (label === 'positive') return 'positive';
+  if (label === 'negative') return 'negative';
+  return null;
+}
+
+// First sentence (or ~90 chars) of the AI call summary — enough to scan the
+// board without opening every card, never the full paragraph.
+function summarySnippet(lead) {
+  const summary = lead.transcript_analysis?.summary;
+  if (!summary) return null;
+  const firstSentence = summary.split(/(?<=[.!?])\s/)[0] || summary;
+  return firstSentence.length > 90 ? `${firstSentence.slice(0, 90).trimEnd()}…` : firstSentence;
+}
+
+// "1:23" for a call's duration — skipped for forms and 0/missing durations.
+function formatDuration(sec) {
+  if (!sec || sec <= 0) return null;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Same urgency signal score_lead already uses (water/flood/mold/emergency/...
+// keywords in the transcript's AI-detected topics) — reused here as a glance
+// badge, not re-derived with different rules.
+function isUrgent(lead) {
+  const topics = Array.isArray(lead.transcript_analysis?.topics) ? lead.transcript_analysis.topics : [];
+  return topics.some(t => URGENT_TOPIC_RX.test(String(t)));
+}
 
 function formatMoney(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return null;
@@ -189,6 +232,13 @@ export default function CrmLeads() {
   const [dragOverStage, setDragOverStage] = useState(null);
   const [lostPrompt, setLostPrompt] = useState(null); // { lead, stageId } awaiting a lost reason
 
+  // Card quick actions (note/task) — one inline popover open at a time,
+  // keyed by lead id + which kind. Call/Text have no popover, they act
+  // immediately (tel: link / navigate to Conversations).
+  const [quickPopover, setQuickPopover] = useState(null); // { leadId, type: 'note'|'task' }
+  const [quickDraft, setQuickDraft] = useState('');
+  const [quickBusy, setQuickBusy] = useState(false);
+
   // Touch drag-and-drop — a parallel path to the HTML5 DnD above, only ever
   // wired up when isTouchDevice() (see NOTES). Position/ghost tracking uses
   // refs + imperative style updates, not state, so a fast finger drag on a
@@ -285,6 +335,79 @@ export default function CrmLeads() {
     if (targetStage?.is_lost) { setLostPrompt({ lead, stageId }); return; }
     commitMove(lead, stageId, null);
   }, [commitMove, stagePositions, sortedStages]);
+
+  // Card quick actions — every handler stops propagation so a click never
+  // also fires the card's onClick (open panel) or starts a drag.
+  const navigate = useNavigate();
+
+  const quickLogCall = useCallback((lead) => {
+    db.insert('system_events', {
+      event_type: 'crm_click_to_call',
+      entity_type: 'inbound_lead',
+      entity_id: lead.id,
+      actor_id: employee?.id || null,
+      payload: { phone: lead.caller_number, contact_id: lead.contact_id || null },
+    }).catch(() => {});
+  }, [db, employee]);
+
+  const quickText = useCallback((e, lead) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!lead.contact_id) return;
+    navigate('/crm/conversations', { state: { contactId: lead.contact_id } });
+  }, [navigate]);
+
+  const openQuickPopover = useCallback((e, lead, type) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setQuickPopover({ leadId: lead.id, type });
+    setQuickDraft(type === 'note' ? (lead.notes || '') : '');
+  }, []);
+
+  const closeQuickPopover = useCallback((e) => {
+    e?.stopPropagation();
+    setQuickPopover(null);
+    setQuickDraft('');
+  }, []);
+
+  const saveQuickNote = useCallback(async (e, lead) => {
+    e.stopPropagation();
+    setQuickBusy(true);
+    try {
+      const trimmed = quickDraft.trim() || null;
+      await db.update('inbound_leads', `id=eq.${lead.id}`, { notes: trimmed, updated_at: new Date().toISOString() });
+      setLeads(prev => prev.map(l => (l.id === lead.id ? { ...l, notes: trimmed } : l)));
+      ok('Note saved');
+      setQuickPopover(null);
+      setQuickDraft('');
+    } catch {
+      err('Failed to save the note');
+    } finally {
+      setQuickBusy(false);
+    }
+  }, [db, quickDraft]);
+
+  const submitQuickTask = useCallback(async (e, lead) => {
+    e.stopPropagation();
+    const title = quickDraft.trim();
+    if (!title) return;
+    setQuickBusy(true);
+    try {
+      await db.rpc('upsert_crm_task', {
+        p_title: title,
+        p_contact_id: lead.contact_id || null,
+        p_lead_id: lead.id,
+        p_created_by: employee?.id || null,
+      });
+      ok('Task added');
+      setQuickPopover(null);
+      setQuickDraft('');
+    } catch {
+      err('Failed to add the task');
+    } finally {
+      setQuickBusy(false);
+    }
+  }, [db, quickDraft, employee]);
 
   const handleDragStart = (e, lead) => { setDragLead(lead); e.dataTransfer.effectAllowed = 'move'; };
   const handleDragEnd = () => { setDragLead(null); setDragOverStage(null); };
@@ -466,13 +589,22 @@ export default function CrmLeads() {
                         setSelectedLead(lead);
                       }}
                     >
-                      <div className="crm-board-card-title">{leadLabel(lead)}</div>
+                      <div className="crm-board-card-top">
+                        <div className="crm-board-card-title">{leadLabel(lead)}</div>
+                        {sentimentDotClass(lead) && (
+                          <span className={`crm-sentiment-dot ${sentimentDotClass(lead)}`} title={`Sentiment: ${lead.transcript_analysis.sentiment.label}`} />
+                        )}
+                      </div>
                       <div className="crm-board-card-meta">
                         {lead.source_type === 'call' ? 'Call' : 'Form'}
                         {lead.source ? ` · ${lead.source}` : ''}
                       </div>
+                      {lead.caller_number && <div className="crm-board-card-phone">{formatPhone(lead.caller_number)}</div>}
+                      {summarySnippet(lead) && <div className="crm-board-card-summary">{summarySnippet(lead)}</div>}
                       <div className="crm-board-card-footer">
                         {lead.value != null && <span className="crm-board-card-value">{formatMoney(lead.value)}</span>}
+                        {isUrgent(lead) && <StatusPill tone="danger" label="Urgent" title="Urgent — restoration keywords detected" />}
+                        {formatDuration(lead.duration_sec) && <span className="crm-board-card-duration">{formatDuration(lead.duration_sec)}</span>}
                         {(() => {
                           const age = daysInStage(stagePositions[lead.id]?.updated_at);
                           return age != null && age > 0
@@ -480,6 +612,88 @@ export default function CrmLeads() {
                             : null;
                         })()}
                       </div>
+
+                      <div
+                        className="crm-board-card-actions"
+                        draggable={false}
+                        onMouseDown={e => e.stopPropagation()}
+                        onPointerDown={e => e.stopPropagation()}
+                        onPointerMove={e => e.stopPropagation()}
+                      >
+                        {lead.caller_number && (
+                          <a
+                            href={`tel:${lead.caller_number}`}
+                            className="ui-icon-btn ui-icon-btn--sm"
+                            aria-label="Call"
+                            title="Call"
+                            onClick={e => { e.stopPropagation(); quickLogCall(lead); }}
+                          >
+                            <IconPhone />
+                          </a>
+                        )}
+                        <IconButton
+                          label={lead.contact_id ? 'Text' : 'Text (link a contact first)'}
+                          size="sm"
+                          disabled={!lead.contact_id}
+                          onClick={e => quickText(e, lead)}
+                        >
+                          <IconMsg />
+                        </IconButton>
+                        <IconButton label="Add note" size="sm" onClick={e => openQuickPopover(e, lead, 'note')}>
+                          <IconNote />
+                        </IconButton>
+                        <IconButton label="Add task" size="sm" onClick={e => openQuickPopover(e, lead, 'task')}>
+                          <IconTasks />
+                        </IconButton>
+                      </div>
+
+                      {quickPopover?.leadId === lead.id && (
+                        <div
+                          className="crm-board-card-popover"
+                          draggable={false}
+                          onClick={e => e.stopPropagation()}
+                          onMouseDown={e => e.stopPropagation()}
+                          onPointerDown={e => e.stopPropagation()}
+                          onPointerMove={e => e.stopPropagation()}
+                        >
+                          {quickPopover.type === 'note' ? (
+                            <>
+                              <textarea
+                                className="crm-input crm-board-card-popover-input"
+                                rows={3}
+                                autoFocus
+                                value={quickDraft}
+                                onChange={e => setQuickDraft(e.target.value)}
+                                placeholder="Anything worth remembering…"
+                              />
+                              <div className="crm-board-card-popover-actions">
+                                <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={closeQuickPopover}>Cancel</button>
+                                <button className="crm-btn crm-btn-primary crm-btn-sm" disabled={quickBusy} onClick={e => saveQuickNote(e, lead)}>
+                                  {quickBusy ? 'Saving…' : 'Save'}
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <input
+                                type="text"
+                                className="crm-input crm-board-card-popover-input"
+                                autoFocus
+                                value={quickDraft}
+                                onChange={e => setQuickDraft(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') submitQuickTask(e, lead); }}
+                                placeholder="Follow up call, send estimate…"
+                              />
+                              <div className="crm-board-card-popover-actions">
+                                <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={closeQuickPopover}>Cancel</button>
+                                <button className="crm-btn crm-btn-primary crm-btn-sm" disabled={quickBusy || !quickDraft.trim()} onClick={e => submitQuickTask(e, lead)}>
+                                  {quickBusy ? 'Adding…' : 'Add'}
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                   {stageLeads.length === 0 && !dragLead && !touchDragLead && <div className="crm-board-empty">No leads</div>}
