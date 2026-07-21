@@ -39,9 +39,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { sanitizeLinkMarkup, validateSubmission } from '../../../functions/lib/forms.js';
-
-const ok  = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { ok, err } from '@/lib/toast';
 
 const FIELD_TYPES = [
   { type: 'text',     label: 'Text' },
