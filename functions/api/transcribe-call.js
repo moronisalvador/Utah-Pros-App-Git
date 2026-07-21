@@ -34,28 +34,54 @@
  *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/google-drive.js
  *                  (getActorEmployee), ../lib/callrail-api.js (resolveCallRecording),
  *                  ../lib/deepgram.js (formatDeepgramTranscript, turnsToFlatText),
- *                  ../lib/callCleanup.js (the clean-up + summarize pass)
+ *                  ../lib/callCleanup.js (the clean-up + summarize pass),
+ *                  ../lib/zeroTurnClassifier.js (the zero-turn fallback pass)
  *   External API:  CallRail (the call's recording), Deepgram (api.deepgram.com)
- *   Data:          reads  → inbound_leads (recording_url, transcription,
+ *   Data:          reads  → inbound_leads (caller_name, recording_url, transcription,
  *                           transcript_analysis), integration_credentials
  *                           (provider='deepgram' + provider='callrail' keys)
  *                  writes → inbound_leads.transcription + transcript_analysis (via
  *                           set_lead_transcription RPC); inbound_leads.caller_name +
  *                           a blank linked contact's name (via set_lead_caller_name);
+ *                           inbound_leads.contact_id + a new contacts row (via
+ *                           crm_auto_qualify_contact, when the AI signals clear a
+ *                           narrow qualified-lead threshold — see below);
  *                           lead_pipeline_stage + lead_stage_history (via
  *                           crm_advance_lead_if_forward, when the AI detects an
  *                           inspection was scheduled); inbound_leads.spam_flag (via
  *                           set_lead_spam_flag, when the AI detects the caller never
- *                           responded); a linked contact's blank email/billing_address
- *                           (via set_lead_contact_details, when the AI pulls a clearly-
- *                           stated one off the call); system_events, worker_runs
+ *                           responded OR the call isn't a real customer inquiry at
+ *                           all — vendor/solicitor/compliance calls); a linked
+ *                           contact's blank email/billing_address (via
+ *                           set_lead_contact_details, when the AI pulls a clearly-
+ *                           stated one off the call); lead_pipeline_stage +
+ *                           lead_stage_history (via crm_disqualify_lead_if_open, when
+ *                           the AI detects a real inquiry for a service Utah Pros
+ *                           doesn't offer); system_events, worker_runs
  *   External API:  CallRail (recording), Deepgram (transcription), Anthropic
  *                  (Claude Haiku — names the Agent/Customer speakers, then cleans up
  *                  wording + writes the summary + flags inspection_scheduled/
- *                  caller_never_responded + extracts customer_email/customer_address;
- *                  all best-effort)
+ *                  caller_never_responded/is_customer_inquiry/service_match +
+ *                  extracts customer_email/customer_address; all best-effort)
  *
  * NOTES / GOTCHAS:
+ *   - A short/ambiguous call can still confuse the naming/cleanup passes into
+ *     borrowing a name the caller merely asked FOR ("Is this Ben?") as their own
+ *     identity (verified live 2026-06-26). The prompts now explicitly guard
+ *     against that, and as defense-in-depth a fresh customer_full_name that
+ *     conflicts with (doesn't extend) the lead's ALREADY-established caller_name
+ *     is downgraded to null via nameExtendsOrMatches() before it's stored or used
+ *     to name the lead — set_lead_caller_name's own upgrade guard already refuses
+ *     to let a conflicting name overwrite caller_name, but this also keeps the
+ *     misleading raw value out of transcript_analysis and the summary read by a
+ *     human in the panel.
+ *   - crm_auto_qualify_contact(lead_id) is called best-effort right after
+ *     set_lead_caller_name in both transcribeLead() and reclassifyLead(): when a
+ *     still-unlinked lead has a captured first+last name, a real phone number,
+ *     is_customer_inquiry:true, service_match:'in_scope', and isn't spam-flagged,
+ *     it auto-creates (matching by phone first, never duplicating) and links a
+ *     contact — so a qualified caller's follow-up call links to the same person
+ *     instead of showing up as an unrelated duplicate lead.
  *   - cleanAndSummarize() also asks Claude: whether a real inspection/appointment was
  *     agreed to (inspection_scheduled — best-effort calls
  *     crm_advance_lead_if_forward(lead_id, 'Inspection Scheduled'), a SECURITY DEFINER
@@ -65,8 +91,16 @@
  *     reliably auto-remove it from the pipeline); and the customer's email/address
  *     when clearly stated (customer_email/customer_address — best-effort calls
  *     set_lead_contact_details, which only fills a BLANK field on an ALREADY-linked
- *     contact and never creates one). Any of these failing never blocks the
- *     transcription write.
+ *     contact and never creates one); whether the call is a real customer inquiry
+ *     at all (is_customer_inquiry — false catches a vendor/solicitor/compliance
+ *     caller who DID speak, unlike caller_never_responded which only catches dead
+ *     air; best-effort calls set_lead_spam_flag the same as caller_never_responded);
+ *     and, when it is a real inquiry, whether it's for a service Utah Pros offers
+ *     (service_match — "out_of_scope" best-effort calls
+ *     crm_disqualify_lead_if_open(lead_id, reason), a SECURITY DEFINER RPC that
+ *     moves an OPEN lead straight to the org's "Lost" stage, never touching a
+ *     spam-flagged or already-terminal Won/Lost lead). Any of these failing never
+ *     blocks the transcription write.
  *   - Requests nova-3 + diarize + Audio Intelligence (summary/sentiment/topics/
  *     entities) in one call. CallRail gives us a MONO recording, so `multichannel`
  *     is intentionally NOT requested (on a 1-channel file it suppresses diarization);
@@ -91,6 +125,34 @@
  *     callrail-recording.js.
  *   - Backfill is hard-capped (MAX_BACKFILL) so a bad filter can't fan out into
  *     thousands of paid Deepgram calls. Logs one worker_runs row per invocation.
+ *   - A call Deepgram could NOT split into any speaker turns at all (dead air,
+ *     a voicemail hang-up with no message, a recording cut off before speech)
+ *     used to fall through every AI pass silently: buildCleanupPrompt(turns)
+ *     returns "" for zero turns, so cleanAndSummarize() used to just return the
+ *     analysis unchanged — caller_never_responded (and every other signal)
+ *     never got set, and the lead sat in the pipeline forever with
+ *     spam_flag:false (verified live 2026-07-21: 37 zero-turn leads, 28 still
+ *     unflagged). cleanAndSummarize() now falls back to
+ *     classifyZeroTurnCall()/ZERO_TURN_SYSTEM (zeroTurnClassifier.js) whenever
+ *     buildCleanupPrompt is empty: it judges Deepgram's raw flat transcript +
+ *     its own one-line summary (both of which still exist even with zero
+ *     diarized turns) and sets caller_never_responded — never a duration
+ *     or keyword heuristic, since those don't reliably separate a real short
+ *     voicemail from genuine dead air (verified live: a 68-second real-customer
+ *     voicemail vs. several 20-30 second true no-message hangups). It also sets
+ *     is_customer_inquiry (2026-07-21 follow-up), but only for a CLEAR-CUT
+ *     wrong-number/personal-call case — this thinner raw text isn't enough
+ *     evidence for the harder vendor/solicitor judgment the full cleanup pass
+ *     makes on calls with real turns, so that distinction is deliberately left
+ *     to the normal pass. A garbled/missing AI answer is a safe no-op, same as
+ *     every other pass here — is_customer_inquiry defaults true, same lenient
+ *     direction as the full cleanup pass. reclassifyLead() no longer throws on
+ *     a zero-turn lead (it used to
+ *     require analysis.turns.length > 0) as long as there's a raw transcript
+ *     or summary to judge, so the existing `{reclassify:true}` backfill mode
+ *     also sweeps these leads — the same `inspection_scheduled IS NULL`
+ *     sentinel that gates normal reclassification already selects them, since
+ *     it was never set for them either.
  * ════════════════════════════════════════════════
  */
 
@@ -103,12 +165,15 @@ import {
   buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities,
   needsResegment, buildResegmentPrompt, parseResegmentedTurns,
 } from '../lib/speakerNaming.js';
-import { buildCleanupPrompt, parseCleanupResponse, applyCleanup } from '../lib/callCleanup.js';
+import { buildCleanupPrompt, parseCleanupResponse, applyCleanup, nameExtendsOrMatches } from '../lib/callCleanup.js';
+import { buildZeroTurnPrompt, parseZeroTurnResponse } from '../lib/zeroTurnClassifier.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const NAMING_MODEL = 'claude-haiku-4-5-20251001'; // cheap/fast — a simple extraction
-const NAMING_SYSTEM = `You label the speakers in a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting.
+export const NAMING_SYSTEM = `You label the speakers in a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). The AGENT represents Utah Pros Restoration and is the one answering the phone (role "agent"); the CUSTOMER is the person who called in (role "customer"). On an inbound call the agent almost always speaks first with a company greeting — that greeting speaker is the agent even if a name is mentioned elsewhere in the call.
+
+IMPORTANT: a name mentioned WHILE ASKING FOR someone ("Is this <name>?", "Can I speak to <name>?", "Can I talk to <name>?") belongs to the person being asked for, NOT to the speaker who said it — never attribute that name to the asking speaker's own identity. Only assign a name to a speaker when THEY state it as their own ("This is <name>", "My name is <name>", "This is <name> speaking"). When you cannot confidently tell whose name it is, or the call is too short/ambiguous to be sure, leave that speaker's name null rather than guessing — a missing name is safe, a wrong one is not.
 
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
 {"speakers":{"<label>":{"role":"agent"|"customer","name":<full name or null>}, ...},"caller_name":<the CUSTOMER's full name or null>}
@@ -128,7 +193,7 @@ const DEEPGRAM_URL =
 
 // System prompt for the re-segmentation pass (mono-recording rescue). Shares the
 // Agent/Customer framing with NAMING_SYSTEM but asks Claude to REBUILD the turns.
-const RESEGMENT_SYSTEM = `You are given a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that was NOT split by speaker. One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting. Split the words into an ordered list of speaker turns and label each. Return ONLY the requested JSON — no prose, no markdown.`;
+export const RESEGMENT_SYSTEM = `You are given a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that was NOT split by speaker. One speaker is the company representative (role "agent"); the other is the caller (role "customer"). On an inbound call the agent almost always speaks first with a company greeting. A name mentioned while asking FOR someone ("Is this <name>?", "Can I speak to <name>?") belongs to the person being asked for, not to the speaker saying it — never attribute it as that speaker's own name. Split the words into an ordered list of speaker turns and label each. Return ONLY the requested JSON — no prose, no markdown.`;
 
 // System prompt for the clean-up + summarize pass (runs AFTER speaker naming/
 // resegmentation, so speaker labels here are already correct — this pass only
@@ -136,7 +201,7 @@ const RESEGMENT_SYSTEM = `You are given a transcript of an INBOUND phone call to
 // summarize=v2 output with a business-aware one; fixes obvious speech-to-text
 // errors in each turn without changing what was actually said.
 const CLEANUP_MODEL = NAMING_MODEL; // same cheap/fast model as naming
-const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). The transcript came from automatic speech-to-text and may contain mis-heard words, dropped words, or garbled phrases — but the speaker labels are already correct, so do not change who said what.
+export const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company). The transcript came from automatic speech-to-text and may contain mis-heard words, dropped words, or garbled phrases — but the speaker labels are already correct, so do not change who said what. The AGENT speaker represents Utah Pros Restoration and answered the phone; the CUSTOMER speaker is who called in — that assignment holds even if another name is mentioned elsewhere in the call.
 
 1) For each numbered turn, fix obvious transcription errors using context (a mis-heard word that makes no sense in context, a garbled but otherwise-clear detail). Keep the speaker's actual wording, tone, and meaning intact — do NOT paraphrase, do NOT invent content, do NOT remove real information. Trim filler ("um", "uh") only when it doesn't change the meaning. If a turn is already clean, return it unchanged.
 
@@ -148,12 +213,31 @@ const CLEANUP_SYSTEM = `You clean up and summarize a transcript of an INBOUND ph
 
 5) Extract the customer's email address and mailing/service address ONLY if the customer clearly stated it themselves during the call — never guess, infer, or use the business's own address. customer_email must be a literal email address spoken or spelled out; customer_address must be a real street address (not just a city/neighborhood name). Use null for either when not clearly stated.
 
-6) Extract the customer's full name (first AND last, if both were stated anywhere in the call — including if they spelled it out letter by letter) into customer_full_name. Read the actual turn content for this, not just the speaker label the turns already carry — a speaker turn may already be labeled with just a first name from an earlier pass, but the full conversation may state the last name separately later on (e.g. the agent asks "what's your last name?" and the customer answers). Only include what was actually stated — never guess a last name. Use null if no name was stated at all.
+6) Extract the customer's full name (first AND last, if both were stated anywhere in the call — including if they spelled it out letter by letter) into customer_full_name. Read the actual turn content for this, not just the speaker label the turns already carry — a speaker turn may already be labeled with just a first name from an earlier pass, but the full conversation may state the last name separately later on (e.g. the agent asks "what's your last name?" and the customer answers). Only include what was actually stated — never guess a last name. IMPORTANT: a name mentioned while the CUSTOMER is asking FOR someone else ("Is this <name>?", "Can I speak to <name>?", "Can I talk to <name>?") is that OTHER person's name, not the customer's own — never extract it into customer_full_name. Only extract a name the customer states as their own ("This is <name>", "My name is <name>", or a direct answer to "what's your name?"/"what's your last name?"). Use null if the customer's own name was not clearly stated at all — a null here is always safer than a guessed or borrowed name.
+
+7) Decide whether this call is a real customer service inquiry at all. Set is_customer_inquiry to false ONLY when the caller has NO real service request whatsoever — a vendor/solicitor/recruiter sales-pitching TO Utah Pros, a compliance/OSHA callback request, a wrong number, an internal test call, dead air, or an automated/robocall. IMPORTANT: a caller who DOES ask for a specific real service — even a service Utah Pros doesn't happen to offer, like HVAC or dryer-vent cleaning — still counts as is_customer_inquiry:true. That is NOT a "not a customer inquiry" case; it's an out-of-scope SERVICE, handled by service_match in point 8, not by this field. Only set is_customer_inquiry to false when there is no actual service request in the call at all. Err toward true when in doubt; false positives here wrongly hide a real customer.
+
+8) Whenever is_customer_inquiry is true, ALSO decide whether the requested service is one Utah Pros Restoration actually offers — water damage, fire damage, mold remediation, storm/roofing damage, and related restoration/reconstruction/rebuild work — or clearly a DIFFERENT service, e.g. HVAC/dryer-vent cleaning, general plumbing unrelated to water damage, pest control, landscaping, or junk removal. Set service_match to "in_scope" when it's a fit or the fit is unclear, "out_of_scope" when the caller clearly and specifically wants a real but different service (this is the correct field for a caller who realizes they called the wrong kind of company — do NOT use is_customer_inquiry:false for that), or null only when is_customer_inquiry is false or the call gives no basis to judge.
 
 Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
-{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>"}
+{"turns":["<cleaned turn 1 text>","<cleaned turn 2 text>", ...],"summary":"<the summary>","inspection_scheduled":true|false,"caller_never_responded":true|false,"customer_email":"<email or null>","customer_address":"<address or null>","customer_full_name":"<full name or null>","is_customer_inquiry":true|false,"service_match":"in_scope"|"out_of_scope"|null}
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
+
+// System prompt for the zero-turn fallback classifier — runs ONLY when
+// Deepgram found no speaker turns at all (buildCleanupPrompt returns "" and
+// the normal cleanup/classification pass above never fires). Reads Deepgram's
+// raw flat transcript + its own one-line summary instead of numbered turns.
+export const ZERO_TURN_SYSTEM = `You are given Deepgram's raw transcript text (and/or its own automated one-line summary) for an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that could NOT be split into separate speaker turns — there is no per-speaker breakdown, only the flat raw words Deepgram heard (if any).
+
+1) Decide whether the caller left ANY real content at all — a request, a name, a callback number, a description of damage, anything a person actually said or asked for (including a short voicemail message) — OR whether this is genuinely dead air: silence, hold music, a call that cut off before anyone spoke, or a voicemail hang-up where only the outgoing greeting/beep was captured and no message was left.
+
+IMPORTANT: do not use call length as a signal. A short voicemail can still contain a full real request (e.g. "this is Brynn, requesting a mold inspection, my callback number is..."), and a longer recording can still be pure silence, hold music, or a hang-up with nothing said. Judge ONLY the actual words present in the raw transcript/summary. If there is ANY real spoken content from a person, set caller_never_responded to false — err toward false (a real lead) whenever the transcript is ambiguous, garbled, or too sparse to be sure. Set it to true ONLY when the evidence clearly shows no message was left at all.
+
+2) Whenever the caller DID leave real content (caller_never_responded is false), ALSO decide whether this is a real customer service inquiry at all. Set is_customer_inquiry to false ONLY in a CLEAR-CUT case — the caller explicitly says they have the wrong number/company, or is clearly asking for a specific person by name for a personal (non-business) reason unrelated to Utah Pros' services. This raw text is thinner evidence than a full conversation, so do NOT guess at a vendor/solicitor/compliance call here (that judgment needs more context than a short fragment gives you) — only flag the obvious wrong-number/personal-call case. Err toward true (a real inquiry) whenever it's ambiguous, garbled, or there just isn't enough said to be sure. Leave is_customer_inquiry as true when caller_never_responded is true (nothing to judge).
+
+Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
+{"caller_never_responded":true|false,"is_customer_inquiry":true|false}`;
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -211,22 +295,70 @@ async function resegmentSpeakers(env, analysis, transcriptText) {
   }
 }
 
+// Fallback for a call Deepgram could not split into ANY speaker turns at all
+// (dead air, a voicemail hang-up with no message, a call cut off before
+// speech) — buildCleanupPrompt has nothing to number, so the normal cleanup
+// pass above never runs and caller_never_responded never gets set. Deepgram
+// still hands back a flat raw transcript + its own one-line summary even with
+// zero diarized turns, so ask a small separate question against THAT raw
+// text instead. Same best-effort contract as the other passes: any failure
+// (no key, empty prompt, API error, unparseable answer) leaves the analysis
+// untouched — never a false spam-flag.
+async function classifyZeroTurnCall(env, rawText, summary) {
+  const prompt = buildZeroTurnPrompt(rawText, summary);
+  if (!env.ANTHROPIC_API_KEY || !prompt) return null;
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 200, system: ZERO_TURN_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const out = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    return parseZeroTurnResponse(out);
+  } catch {
+    return null;
+  }
+}
+
 // Best-effort: ask Claude to fix obvious speech-to-text mistakes in each turn's
 // wording and write a restoration-business-aware summary (replacing Deepgram's
 // generic one-liner). Runs AFTER speaker naming/resegmentation so the prompt's
 // speaker labels are already correct. Any failure (no key, API error, unparseable
 // answer, turn-count mismatch) leaves the analysis exactly as-is — this is an
 // enrichment, never a hard dependency of transcription.
-async function cleanAndSummarize(env, analysis) {
+//
+// `rawText` is Deepgram's flat transcript string (formatDeepgramTranscript's
+// output in transcribeLead, or the stored inbound_leads.transcription in
+// reclassifyLead) — used ONLY by the zero-turn fallback below, since a call
+// with zero usable turns still often has real raw text/summary to judge.
+async function cleanAndSummarize(env, analysis, rawText) {
   const turns = analysis?.turns || [];
   const usableCount = turns.filter((t) => t && typeof t.text === 'string' && t.text.trim()).length;
   const prompt = buildCleanupPrompt(turns);
-  if (!env.ANTHROPIC_API_KEY || !prompt) return analysis;
+  if (!prompt) {
+    const zeroTurn = await classifyZeroTurnCall(env, rawText, analysis?.summary);
+    return zeroTurn
+      ? {
+          ...analysis,
+          caller_never_responded: zeroTurn.callerNeverResponded === true,
+          is_customer_inquiry: zeroTurn.isCustomerInquiry === false ? false : true,
+        }
+      : analysis;
+  }
+  if (!env.ANTHROPIC_API_KEY) return analysis;
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 4096, system: CLEANUP_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+      // 8192 (not 4096): a long call (60+ turns) needs every cleaned turn echoed
+      // back in the JSON response on top of the summary/signals — 4096 silently
+      // truncated the output on the longest real calls, breaking the strict
+      // turn-count-match check in parseCleanupResponse and leaving the whole
+      // pass a permanent no-op for that lead (confirmed live: a 68-turn/11k-char
+      // call never got inspection_scheduled/etc. set on any retry).
+      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 8192, system: CLEANUP_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
     });
     if (!res.ok) return analysis;
     const data = await res.json().catch(() => null);
@@ -304,8 +436,22 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
 
   // Fix obvious speech-to-text errors turn-by-turn and replace Deepgram's generic
   // summary with a restoration-business-aware one — best-effort, runs last so it
-  // sees the final (named/resegmented) speaker labels.
-  analysis = await cleanAndSummarize(env, analysis);
+  // sees the final (named/resegmented) speaker labels. `text` (Deepgram's raw flat
+  // transcript, pre-naming) feeds the zero-turn fallback when there are no turns.
+  analysis = await cleanAndSummarize(env, analysis, text);
+
+  // Cross-validate the cleanup pass's customer_full_name against any name
+  // ALREADY established on this lead. A short/ambiguous call can still
+  // confuse the model into borrowing a name the caller merely asked FOR
+  // (e.g. "Is this Ben?") — set_lead_caller_name's upgrade guard already
+  // refuses to let a conflicting name overwrite caller_name, but the raw
+  // customer_full_name value itself is what the panel displays and what the
+  // summary above was written from, so a conflicting value is downgraded to
+  // null here rather than left to mislead a human reading the lead (verified
+  // live 2026-06-26: lead 6587d3de-b581-4d0b-b5bc-df100cac35f6).
+  if (analysis?.customer_full_name && !nameExtendsOrMatches(analysis.customer_full_name, lead.caller_name)) {
+    analysis = { ...analysis, customer_full_name: null };
+  }
 
   // Keep the flat display transcript in sync with the named + cleaned turns
   // (falls back to Deepgram's raw output when there are no usable turns at all).
@@ -331,6 +477,16 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     } catch { /* naming the lead is a bonus, not a reason to fail the transcription */ }
   }
 
+  // The AI signals clear a real, narrow threshold (full name + real phone +
+  // a genuine in-scope inquiry that isn't spam) — auto-create/link a contact
+  // so a follow-up call from the same person doesn't show up as an unrelated
+  // duplicate lead. Best-effort; the RPC itself never creates a duplicate
+  // (phone-match first, skips an ambiguous match) and never overwrites an
+  // already-linked lead.
+  try {
+    await db.rpc('crm_auto_qualify_contact', { p_lead_id: lead.id });
+  } catch { /* auto-qualify is a bonus, not a reason to fail the transcription */ }
+
   // The AI detected a real inspection agreed to in this call — nudge the lead
   // forward to "Inspection Scheduled" (RPC is sort-order-aware: no-op if the
   // lead is already further along, spam-flagged, or the stage doesn't exist
@@ -348,6 +504,28 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     try {
       await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_caller_never_responded' });
     } catch { /* spam auto-flagging is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI detected the caller DID speak but this isn't a real customer service
+  // inquiry at all (vendor/solicitor/compliance callback, etc.) — the case
+  // caller_never_responded can't catch since it only fires on dead air.
+  // Best-effort, same auto-flag as above.
+  if (analysis?.is_customer_inquiry === false) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_not_a_customer_inquiry' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail the transcription */ }
+  }
+
+  // The AI detected a real inquiry for a service Utah Pros doesn't offer —
+  // disqualify it (move to Lost) rather than leaving it sitting in the pipeline
+  // as a live lead. Best-effort; no-ops on a spam-flagged or already-terminal lead.
+  if (analysis?.service_match === 'out_of_scope') {
+    try {
+      await db.rpc('crm_disqualify_lead_if_open', {
+        p_lead_id: lead.id,
+        p_reason: 'AI detected: wanted a service Utah Pros does not offer',
+      });
+    } catch { /* pipeline auto-disqualify is a bonus, not a reason to fail the transcription */ }
   }
 
   // The AI pulled a clearly-stated email/address off the call — backfill a
@@ -375,25 +553,41 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
 // caller-name "upgrade" (p_allow_upgrade:true — replaces an existing first-name-
 // only caller_name with a fuller one ONLY when the new name genuinely extends the
 // old one; see set_lead_caller_name's own guard for the exact rule). Throws if
-// the lead has no usable stored turns to reclassify.
+// the lead has neither usable stored turns NOR any raw transcript/summary text to
+// reclassify (a zero-turn call with real raw text still qualifies — see below).
 export async function reclassifyLead(db, env, lead) {
   let analysis = lead.transcript_analysis;
-  if (!analysis || !Array.isArray(analysis.turns) || !analysis.turns.length) {
+  const hasTurns = Boolean(analysis && Array.isArray(analysis.turns) && analysis.turns.length);
+  const hasRawText = typeof lead.transcription === 'string' && lead.transcription.trim();
+  const hasSummary = Boolean(analysis && typeof analysis.summary === 'string' && analysis.summary.trim());
+  if (!analysis || (!hasTurns && !hasRawText && !hasSummary)) {
     throw new Error('no usable turns to reclassify');
   }
 
+  // Zero-turn calls (dead air / voicemail hang-up / cut off before speech) have
+  // nothing to name or resegment — skip straight to the zero-turn fallback
+  // inside cleanAndSummarize below, which reads the raw transcript/summary.
   let callerName = null;
-  if (needsResegment(analysis)) {
-    const r = await resegmentSpeakers(env, analysis, turnsToFlatText(analysis.turns) || lead.transcription || '');
-    analysis = r.analysis;
-    callerName = r.callerName;
-  } else {
-    const named = await nameSpeakers(env, analysis);
-    analysis = named.analysis;
-    callerName = named.callerName;
+  if (hasTurns) {
+    if (needsResegment(analysis)) {
+      const r = await resegmentSpeakers(env, analysis, turnsToFlatText(analysis.turns) || lead.transcription || '');
+      analysis = r.analysis;
+      callerName = r.callerName;
+    } else {
+      const named = await nameSpeakers(env, analysis);
+      analysis = named.analysis;
+      callerName = named.callerName;
+    }
   }
 
-  analysis = await cleanAndSummarize(env, analysis);
+  analysis = await cleanAndSummarize(env, analysis, lead.transcription);
+
+  // Cross-validate against the ALREADY-established caller_name — same guard
+  // as transcribeLead() (see its comment for the incident this catches).
+  if (analysis?.customer_full_name && !nameExtendsOrMatches(analysis.customer_full_name, lead.caller_name)) {
+    analysis = { ...analysis, customer_full_name: null };
+  }
+
   const flatText = turnsToFlatText(analysis.turns) || lead.transcription;
 
   await db.rpc('set_lead_transcription', {
@@ -413,6 +607,11 @@ export async function reclassifyLead(db, env, lead) {
     } catch { /* naming the lead is a bonus, not a reason to fail reclassification */ }
   }
 
+  // Same auto-qualify best-effort call as transcribeLead() — see its comment.
+  try {
+    await db.rpc('crm_auto_qualify_contact', { p_lead_id: lead.id });
+  } catch { /* auto-qualify is a bonus, not a reason to fail reclassification */ }
+
   if (analysis?.inspection_scheduled) {
     try {
       await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Inspection Scheduled' });
@@ -422,6 +621,19 @@ export async function reclassifyLead(db, env, lead) {
     try {
       await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_caller_never_responded' });
     } catch { /* spam auto-flagging is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.is_customer_inquiry === false) {
+    try {
+      await db.rpc('set_lead_spam_flag', { p_lead_id: lead.id, p_spam: true, p_reason: 'ai_detected_not_a_customer_inquiry' });
+    } catch { /* spam auto-flagging is a bonus, not a reason to fail reclassification */ }
+  }
+  if (analysis?.service_match === 'out_of_scope') {
+    try {
+      await db.rpc('crm_disqualify_lead_if_open', {
+        p_lead_id: lead.id,
+        p_reason: 'AI detected: wanted a service Utah Pros does not offer',
+      });
+    } catch { /* pipeline auto-disqualify is a bonus, not a reason to fail reclassification */ }
   }
   if (analysis?.customer_email || analysis?.customer_address) {
     try {
@@ -450,34 +662,34 @@ export async function onRequestPost(context) {
 
   // Reclassify mode — re-run the AI naming + clean-up/classification passes
   // against already-transcribed leads (no Deepgram/CallRail creds needed, no
-  // re-transcription cost). Default targets leads whose stored analysis
-  // predates customer_full_name — the NEWEST signal this pass writes, so it's
-  // the correct "still needs the current pass" sentinel (a lead that already
-  // has it was fully reprocessed under the current code and is skipped on the
-  // next round, so `force:true` sweeps make real forward progress instead of
-  // reprocessing the same head-of-list leads every timed-out round; `->>` on a
-  // genuinely-missing key reads as SQL NULL). `force:true` widens the target
-  // set to every matching call within the day window regardless of
-  // inspection_scheduled/other older signals (still skips ones with
-  // customer_full_name already set) — e.g. after a NEW prompt/signal ships
-  // that even an inspection_scheduled-having lead should pick up.
+  // re-transcription cost). The sentinel for "already reprocessed by the
+  // current cleanup pass" is inspection_scheduled, NOT customer_full_name —
+  // inspection_scheduled is a plain boolean that ALWAYS gets set to a real
+  // true/false whenever cleanAndSummarize succeeds, so `->>` reading SQL NULL
+  // reliably means "never touched." customer_full_name is nullable BY DESIGN
+  // (a call where the caller never states their name at all is a legitimate,
+  // permanent null) — using it as the convergence gate made every "no name
+  // stated" lead get silently re-selected and re-billed forever, since it can
+  // never satisfy "IS NOT NULL" (confirmed live: a batch of leads stuck
+  // reprocessing every round with zero forward progress). `force:true` drops
+  // the gate entirely and reprocesses every matching call in the day window
+  // regardless of prior state — for a genuinely NEW prompt/signal ship where
+  // the whole history should be revisited once.
   if (body.reclassify) {
     let leads;
     try {
       if (body.lead_id) {
         // Targeted single-lead reclassify — bypasses the days/force filters
         // entirely, for testing a prompt change against one known call.
-        leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,transcription,transcript_analysis`);
+        leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,caller_name,transcription,transcript_analysis`);
       } else {
         const days = Number(body.days) > 0 ? Number(body.days) : 90;
         const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        const freshOnly = body.force
-          ? '&transcript_analysis->>customer_full_name=is.null'
-          : '&transcript_analysis->>inspection_scheduled=is.null&transcript_analysis->>customer_full_name=is.null';
+        const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
         leads = await db.select(
           'inbound_leads',
           `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
-            `&occurred_at=gte.${startDate}&select=id,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
+            `&occurred_at=gte.${startDate}&select=id,caller_name,transcription,transcript_analysis&order=occurred_at.desc&limit=${MAX_BACKFILL}`
         );
       }
     } catch {
@@ -542,7 +754,7 @@ export async function onRequestPost(context) {
     } else if (body.lead_id) {
       // Select transcription + analysis too so we can short-circuit an already-fully-
       // processed lead server-side (idempotency guard — see the loop below).
-      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,recording_url,transcription,transcript_analysis`);
+      leads = await db.select('inbound_leads', `id=eq.${body.lead_id}&select=id,caller_name,recording_url,transcription,transcript_analysis`);
     } else {
       return jsonResponse({ error: 'Provide lead_id, backfill:true, or reclassify:true' }, 400, request, env);
     }

@@ -4517,6 +4517,179 @@ phone number, in both the board card title and the two equivalent checks in the 
 header. This was a pure frontend display bug — `caller_name` itself was already being captured
 correctly by the existing `nameSpeakers()` step.
 
+**Full-name capture — the real fix (2026-07-21):** the `p_allow_upgrade` change above didn't actually
+fix full names on a reclassify pass — root cause: `nameSpeakers()` re-labels turns by asking Claude to
+identify speakers, but when a turn is ALREADY labeled with a real name (not a generic "Speaker 1/2"),
+the model doesn't reliably re-derive a fuller name from the conversation content; it treats the label as
+already-resolved. Confirmed live: a caller who spelled her last name letter-by-letter ("Wright,
+W-R-I-G-H-T") still only produced "Silvina" on reclassify. Fix: moved full-name extraction onto the AI
+**cleanup** pass instead (`customer_full_name`, a 6th field alongside `customer_email`/
+`customer_address`) — the same mechanism that already reliably reads full turn CONTENT rather than
+trusting the existing speaker label. `transcribeLead()`/`reclassifyLead()` now prefer
+`analysis.customer_full_name` over `nameSpeakers()`'s result, always with `p_allow_upgrade: true`.
+Verified live end-to-end against the real production lead that surfaced the bug.
+
+**Reclassify batch convergence fix (2026-07-21):** the bulk reclassify sweep's `force:true` had no
+forward-progress guard — every call re-selected ALL matching leads regardless of prior work, and since
+Cloudflare's gateway caps a request around ~100s, repeated rounds kept reprocessing the same
+`occurred_at DESC` head-of-list leads without ever reaching the rest. Fixed by switching the sentinel to
+`customer_full_name` (the newest field this pass writes) — a lead already reprocessed under current code
+is skipped on the next round, so a sweep now genuinely converges instead of looping on the same subset.
+Also added `{ reclassify: true, lead_id }` single-lead targeting for verifying a prompt change against
+one known call without a bulk sweep. **~~Known permanent-error leads: ~37 of the 86 transcribed leads
+have zero usable turns... not a bug, nothing to reclassify.~~ — superseded below (2026-07-21): this WAS
+a bug, not a dead end — see "Zero-turn call classification gap".**
+
+**Zero-turn call classification gap (2026-07-21):** the ~37 leads noted above as a permanent dead end
+were in fact never being classified at all. Root cause: `buildCleanupPrompt(turns)`
+(`functions/lib/callCleanup.js`) returns `''` when a call has ZERO usable speaker turns (genuine dead
+air, a voicemail hang-up with no message, or a call that cut off before anyone spoke — Deepgram still
+returns a raw flat transcript + its own one-line summary for these, just no diarized turns) —
+`cleanAndSummarize()` in `transcribe-call.js` then skipped the Claude call entirely on an empty prompt,
+so `caller_never_responded`/`is_customer_inquiry`/etc. never got computed and the lead sat in the
+pipeline (usually stage "New") looking like a live lead forever with `spam_flag:false`. Live count at
+discovery: 37 zero-turn leads, 28 still unflagged. **Deliberately NOT a duration/keyword heuristic** —
+verified live that length/keywords don't reliably separate the two cases: a 68-second "voicemail" from
+a real customer ("this is Brynn, requesting a mold inspection... left her callback number") is a
+genuine lead, while several 20-30 second calls really are dead air with no message. Fixed with a new
+pure helper module **`functions/lib/zeroTurnClassifier.js`** (`buildZeroTurnPrompt`/
+`parseZeroTurnResponse`, same degrade-safely/lenient-boolean split as `callCleanup.js`) plus
+`classifyZeroTurnCall()`/`ZERO_TURN_SYSTEM` in `transcribe-call.js`: when `buildCleanupPrompt` returns
+`''`, `cleanAndSummarize()` now falls back to asking Claude Haiku a small separate question against
+Deepgram's raw flat transcript + one-line summary (which do exist even with zero diarized turns) —
+judging ONLY the actual words present, never call length — and sets `caller_never_responded`
+(everything else about the lead was originally left alone, same "leave as whatever it already was"
+contract as every other best-effort signal here). A garbled/missing AI answer is a safe no-op (never a
+false spam-flag), matching every other pass in this file. Also relaxed `reclassifyLead()`'s guard — it
+used to `throw` on any lead with `analysis.turns.length === 0` (the exact leads this fix targets); it
+now only throws when there is NEITHER a usable turn NOR any raw transcript/summary text to judge at
+all. The existing `{reclassify: true}` sweep already selects these leads without any query change (its
+`inspection_scheduled IS NULL` sentinel was never set for them either, same as any never-processed
+lead).
+
+**Live backfill (2026-07-21):** discovered live that all 37 zero-turn leads actually carry
+`transcript_analysis.model:'claude-agent-inline'`/`speakerMode:'diarized-flat'` — a tag
+`transcribe-call.js` never writes — meaning these came from some prior backfill/import process that
+already wrote a real flat `transcription` + a rich Deepgram-style summary but left `turns` empty; NOT
+literally all Deepgram dead-air (several have full real conversations in the raw text). Ran the
+judgment call by hand against the 28 unflagged leads (same read-the-raw-text criteria the classifier
+uses) since the deployed worker needs an authenticated employee session token this environment
+doesn't have: 8 were genuine dead air/no-message hang-ups (spam-flagged via `set_lead_spam_flag`,
+reason `ai_detected_caller_never_responded`), 20 were real content (including the Brynn mold-inspection
+voicemail — verified still `spam_flag:false`) and left untouched. Final split: 17 flagged / 20
+unflagged of the 37.
+
+**`is_customer_inquiry` follow-up (2026-07-21):** the initial fix left 2 of the 20 remaining
+unflagged leads uncaught — a clear wrong-number call and a personal call asking for "Mister Moroni" —
+since `caller_never_responded` doesn't fire when the other party spoke. Extended `ZERO_TURN_SYSTEM` +
+`parseZeroTurnResponse` to also read `is_customer_inquiry`, same opposite-lenient-direction default
+(`true`) as the full cleanup pass's field of the same name — but deliberately conservative: the prompt
+only asks for a CLEAR-CUT wrong-number/personal-call case, not the harder vendor/solicitor judgment,
+since a zero-turn call's raw text is thinner evidence than a full per-turn transcript. No new call-site
+wiring needed — `transcribeLead()`/`reclassifyLead()` already call `set_lead_spam_flag` when
+`analysis.is_customer_inquiry === false` (shared with the full cleanup pass), so setting the field on
+the zero-turn branch is enough to route through the same existing spam-flagging path.
+Test: `functions/lib/zeroTurnClassifier.test.js`.
+
+**Agent/customer role-confusion fix + auto-qualify contact linking (2026-07-21):** two bugs found
+reviewing real production data — two leads ~1.5hrs apart from the same caller
+(`+16267717702`, 2026-06-26). (1) On the callback, the caller (Jake Nelson) asked "Is this Ben?"
+(Ben was the AGENT from the earlier call) and the cleanup pass extracted "Ben" as
+`customer_full_name`, flipping agent/customer in the AI summary — `caller_name` itself stayed
+correct only because `set_lead_caller_name`'s extend-only upgrade guard happened to refuse the
+conflicting overwrite. Fixed at the source: `NAMING_SYSTEM`/`RESEGMENT_SYSTEM`
+(`transcribe-call.js`) and `buildResegmentPrompt` (`speakerNaming.js`) now explicitly warn that a
+name mentioned while ASKING FOR someone ("Is this X?", "Can I speak to X?") belongs to that other
+person, never the asking speaker; `CLEANUP_SYSTEM`'s `customer_full_name` field gets the same
+warning. As defense-in-depth, new pure helper **`nameExtendsOrMatches(newName, establishedName)`**
+(`functions/lib/callCleanup.js`, mirrors the SQL upgrade-guard's word-boundary-extend check) is
+now applied in both `transcribeLead()`/`reclassifyLead()`: a `customer_full_name` that conflicts
+with the lead's already-established `caller_name` is nulled out before it's stored, so the panel
+never displays (or upgrades the name to) a role-confused guess. (2) A fully-qualified lead (real
+first+last name, real phone, `is_customer_inquiry:true`, `service_match:'in_scope'`, not spam) had
+no way to get a contact — the existing name/detail-backfill RPCs deliberately never auto-create
+one — so a legitimate repeat caller's follow-up call always showed up as a disconnected duplicate
+lead instead of linking to the same person. New RPC **`crm_auto_qualify_contact(p_lead_id)`**
+(`20260721_crm_auto_qualify_contact.sql`, `SECURITY DEFINER`, `authenticated, service_role` only)
+auto-creates/links a contact ONLY when every signal clears at once; phone-matches first using the
+exact normalized/ambiguous-skip logic `upsert_lead_from_callrail` already uses (never creates a
+duplicate; an ambiguous multi-contact match is skipped, not guessed), prefers the already-vetted
+`caller_name` over the freshly-extracted `customer_full_name` for the name, and no-ops on an
+already-linked lead. Called best-effort (try/catch, never blocks the transcription) right after
+`set_lead_caller_name` in both `transcribeLead()` and `reclassifyLead()` — so the existing
+`{reclassify: true}` backfill sweep also auto-qualifies already-transcribed historical leads with
+no new backfill mode needed. Verified live against the TEST org: new-contact creation, link-to-
+existing-by-differently-formatted-phone (no duplicate), already-linked idempotency, first-name-only
+rejection (no space), spam-flagged/`is_customer_inquiry:false`/`service_match:'out_of_scope'`
+rejection, and ambiguous-phone-match skip (two contacts sharing digits) — all fixture rows cleaned
+up after. Tests: `functions/lib/callCleanup.test.js` (`nameExtendsOrMatches`),
+`functions/lib/speakerNaming.test.js` (prompt-guard text), `functions/api/transcribe-call.test.js`
+(prompt-guard text + `reclassifyLead()` cross-validation behavior with a stubbed Anthropic fetch),
+`supabase/tests/crm_auto_qualify_contact.test.js` (self-skips locally, same as other `crm_*`
+integration suites).
+
+**Quick-add-task text wrapping fix (2026-07-21):** the Leads card's quick-add-task popover used a
+single-line `<input type="text">` (the sibling Add-note popover already correctly used a wrapping
+`<textarea>`) — a long task title typed past the visible width was invisible/clipped. Swapped to a
+`<textarea rows={2}>`, `onKeyDown` still submits on Enter (`preventDefault`s the newline) but allows
+Shift+Enter for a literal line break.
+
+**Lead value sync from invoices (2026-07-21, `20260721_crm_lead_value_sync.sql`, owner-directed):** so
+the Leads pipeline's weighted-value math and future ROI/total-sales reporting reflect real deal size
+instead of staying blank, a real invoice being created (a brand-new invoice OR one converted from an
+estimate — `invoices.estimate_id` — both are just "an invoices row with a real total," so one trigger
+point covers both cases per the owner's ask) now fills in the closing CRM lead's `inbound_leads.value`.
+New helper **`crm_sync_lead_value(p_contact_id, p_amount)`** (`SECURITY DEFINER`, `authenticated,
+service_role` only) — deliberately **fill-blank-only** (never overwrites) and scoped to **exactly ONE
+lead** (the contact's most-recently-Won, non-spam lead still missing a value, `ORDER BY
+lead_pipeline_stage.updated_at DESC LIMIT 1`) rather than every open/Won lead for the contact — a
+contact can have multiple `inbound_leads` rows (repeat caller, separate inquiries), and blasting the
+same invoice amount onto more than one would double-count it in any future `SUM(value)` sales report.
+Wired into the existing `crm_trg_invoice_created` trigger (function-body-only replace, runs AFTER the
+existing auto-advance-to-Won call so the lead is already Won by the time the value lookup runs), using
+`COALESCE(NEW.adjusted_total, NEW.total)` — a manual invoice correction is the real final number when
+present. Own exception-safety wrap (never blocks the real invoice write on failure, logs
+`crm_lead_value_sync_failed` to `system_events`). Verified live against the TEST org: fills a blank
+value; never overwrites an existing one; never sets a value on two Won leads for the same contact (only
+the most-recent gets it); composes correctly with the pre-existing auto-advance-to-Won trigger (a
+not-yet-Won lead gets advanced AND valued in the same invoice-create event); uses `adjusted_total` over
+`total`; a zero/negative total never sets a value. Test: `supabase/tests/crm_lead_value_sync.test.js`.
+No frontend change needed — `crmPipeline.js`'s `weightedPipelineValue()` already reads `lead.value`.
+
+**Duplicate-lead merge on repeat calls (2026-07-21, `20260721_crm_merge_repeat_call_leads.sql`,
+owner-directed):** confirmed live — phone `+16267717702` ("Jake Nelson" / "Jake") produced two
+`inbound_leads` rows 62ms apart, both landing as separate cards in the same "Estimate Sent" column
+(the duplicate's `contact_id` was NULL — the two cards were moved into that column independently,
+most likely by hand, unaware they were the same conversation; not an auto-advance chain reaction).
+Root cause: `upsert_lead_from_callrail` had no concept of "does this phone already have an open lead" — every call became its own Kanban card via `groupLeadsByStage()`'s
+first-stage fallback (a lead needs no `lead_pipeline_stage` row at all to render as "New"). Fix is
+**stage-based, not a time window** (owner decision): a genuinely NEW call (never a redelivered
+webhook — checked via the existing `v_existed` flag) whose normalized phone matches another
+non-spam, not-already-merged lead sitting on a stage that's neither `is_won` nor `is_lost` (or no
+stage row at all, i.e. still "New") gets `inbound_leads.merged_into_lead_id` set to that lead's id
+(new nullable FK column + partial index) — picks the OLDEST matching open lead so a chain of repeat
+calls always converges on one true original. The merged row still gets a full `inbound_leads` insert
+(the call/transcript stays for history/compliance) but never a `lead_pipeline_stage` row of its own.
+A repeat call from a phone whose prior lead already reached Won/Lost is NOT merged — a past
+customer's new problem correctly gets a fresh, independent lead. `CrmLeads.jsx`'s board query gained
+`merged_into_lead_id=is.null` (same filter position as the existing `spam_flag=eq.false`) — the
+actual mechanism keeping a merged duplicate off the board, since the fallback-to-first-stage
+behavior means "just don't create a stage row" alone would NOT have hidden it. `crm_auto_advance_leads`
+(body-only replace) gained the same `merged_into_lead_id IS NULL` guard so a merged duplicate can
+never be independently pulled through Won/Estimate Sent again; `crm_disqualify_lead_if_open` gained
+the same guard as defense-in-depth. `get_lead_activity`/`get_contact_activity` (both body-only
+replaces, same signatures/return shapes) gained a `'follow_up_call'` UNION ALL arm surfacing every
+lead merged into the one being viewed (summary, occurred_at, `meta.merged_lead_id` linking back to
+the merged call's own transcript/recording); `get_contact_activity`'s `'lead'` arm now excludes
+`merged_into_lead_id IS NOT NULL` rows so a merged duplicate doesn't ALSO render as its own plain
+"Call" entry. `ActivityTimeline.jsx` needed no changes — already generic over `activity_type`, so the
+new type renders with the same default (unstyled) badge as `stage_change`/`task`/etc. One-time
+backfill merges the single known live pair ("Jake" → "Jake Nelson", the first-created of the two) and
+deletes the duplicate's now-orphaned `lead_pipeline_stage` row. Test:
+`supabase/tests/crm_merge_repeat_call_leads.test.js` (self-skips locally, same as other `crm_*`
+integration suites) — covers merge-while-open, no-merge-after-Won, no-merge-after-Lost, fresh-number
+new-lead, and redelivered-webhook-doesn't-re-merge.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
@@ -5675,6 +5848,30 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
       included the selected options — and is now the reference example both code paths match. Tests
       updated in both files to prove only-checked-shown with zero `true`/`false`/`Yes`/`No` anywhere in
       either output.
+  - **Unlinked-lead activity + stage history (2026-07-21, follow-up)** — an unlinked lead (no
+    `contact_id` yet — the common pre-qualification state) showed a totally empty Activity timeline
+    because `get_contact_activity` requires a `contact_id` on every branch. New
+    `get_lead_activity(p_lead_id)` RPC (same return shape) covers that case: the lead's own call/form
+    event, its own `crm_tasks` (`lead_id`-scoped), and its own `lead_stage_history` moves — no contact
+    link required. `ActivityTimeline.jsx` now accepts a `leadId` prop as an alternative to `contactId`
+    (`contactId` wins if both are passed); `CrmLeads.jsx`'s `LeadDetailPanel` calls it with `leadId`
+    instead of showing a static "no linked contact yet" message. Also fixed two gaps that affected
+    *linked* contacts: `lead_stage_history` was missing from `get_contact_activity` entirely (stage
+    moves never appeared for anyone), and a task added while a lead was still unlinked (`lead_id` set,
+    `contact_id` NULL) never surfaced even after that lead later linked to a contact — the `task` arm
+    now also matches via `lead_id IN (SELECT id FROM inbound_leads WHERE contact_id = p_contact_id)`.
+    Migration `20260721_crm_unlinked_lead_activity.sql` — function-body-only `CREATE OR REPLACE` of
+    `get_contact_activity` (signature/return shape unchanged) + the new `get_lead_activity`, both
+    granted `authenticated, service_role` only (no `anon`). Proof: `supabase/tests/crm_lead_activity.test.js`
+    (integration, self-skips without creds). While extending `ActivityTimeline.jsx`, also fixed three
+    `page-lifecycle.md` bugs the review caught: a failed load rendered the same empty-state as "no
+    activity" instead of `<ErrorState>` (`loading-error-states.md` §1); the loading gate re-blanked an
+    already-rendered timeline on every mutation-driven `contactId`/`leadId` prop swap instead of staying
+    silent; and a stale response could win a race when switching leads quickly (now guarded by a
+    request-id ref, plus `LeadDetailPanel` is keyed by `lead.id` in `CrmLeads.jsx` so a genuine lead
+    switch remounts cleanly). `.claude/rules/crm-wave-ownership.md` §1 gained a disclosed amendment
+    note — this is the second standalone-production-fix body-replace of the nominally Foundation-frozen
+    `get_contact_activity`, same precedent as the 2026-07-21 contact-link-and-activity migration.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /

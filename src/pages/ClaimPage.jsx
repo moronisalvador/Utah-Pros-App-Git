@@ -761,7 +761,12 @@ function DocumentsSection({ jobs, documents, loaded, db, navigate }) {
     return g;
   }, [documents]);
 
-  const getFileUrl = (doc) => `${db.baseUrl}/storage/v1/object/public/job-files/${doc.file_path}`;
+  // file_path has two historical formats: some rows include the `job-files/` bucket prefix
+  // (tech uploads via insert_job_document) and some do not (older desktop uploads). Normalize.
+  const getFileUrl = (doc) => {
+    const path = (doc.file_path || '').replace(/^job-files\//, '');
+    return `${db.baseUrl}/storage/v1/object/public/job-files/${path}`;
+  };
   const fmtSize = (b) => { if (!b) return ''; if (b < 1048576) return `${(b / 1024).toFixed(0)} KB`; return `${(b / 1048576).toFixed(1)} MB`; };
   const isImage = (doc) => doc.mime_type?.startsWith('image/');
 

@@ -15,12 +15,19 @@
  *   spoke but the caller never actually responded (used to auto-flag the lead
  *   as spam), (5) pull out the customer's email/address when they clearly
  *   stated it themselves (used to backfill a blank field on an already-linked
- *   contact), and (6) pull out the customer's full name from the ACTUAL
+ *   contact), (6) pull out the customer's full name from the ACTUAL
  *   conversation content — not from the speaker labels the turns already carry
  *   — since a re-run can see a turn already labeled with just a first name
  *   from an earlier pass, and the full name (including a last name stated
  *   later in the call) needs to be re-derived from the real content, not
- *   assumed from the existing label. This file: formats the transcript for that ask
+ *   assumed from the existing label, (7) decide whether the call is a real
+ *   customer inquiry at all — vs. a vendor/solicitor/compliance call where the
+ *   caller spoke but never actually asked for a service (used to auto-flag the
+ *   lead as spam the same way caller_never_responded does, just catching the
+ *   case where the caller DID say something), and (8) when it is a real
+ *   inquiry, whether the requested service is one Utah Pros actually offers
+ *   (used to auto-move a wrong-service lead to "Lost" so it doesn't sit in the
+ *   pipeline as a live lead). This file: formats the transcript for that ask
  *   (buildCleanupPrompt), safely reads Claude's JSON answer back
  *   (parseCleanupResponse), and applies it to the transcript (applyCleanup).
  *   The Claude API call itself lives in the worker; everything here is pure
@@ -35,8 +42,10 @@
  *   Exports:   buildCleanupPrompt(turns) → string
  *              parseCleanupResponse(text, expectedCount) → { turns, summary,
  *                inspectionScheduled, callerNeverResponded, customerEmail,
- *                customerAddress, customerFullName } | null
+ *                customerAddress, customerFullName, isCustomerInquiry,
+ *                serviceMatch } | null
  *              applyCleanup(analysis, cleaned) → analysis
+ *              nameExtendsOrMatches(newName, establishedName) → boolean
  *
  * NOTES / GOTCHAS:
  *   - Degrades safely like speakerNaming.js: a garbage/missing AI answer, or one
@@ -57,6 +66,14 @@
  *     failure), and `parseCleanupResponse` additionally drops an email that
  *     doesn't look like one (basic shape check) so a hallucinated non-email
  *     string can never reach a contact record.
+ *   - is_customer_inquiry defaults to true (only a literal `false` flips it) —
+ *     the opposite lenient direction from the other booleans, on purpose: a
+ *     missing/garbled field must never cause a real customer to get
+ *     mis-flagged as spam. service_match only accepts the exact strings
+ *     "in_scope"/"out_of_scope" (case-insensitively); anything else — missing,
+ *     garbled, or a call that isn't a customer inquiry at all — reads as null,
+ *     which is a no-op downstream (never auto-disqualifies a lead on a shaky
+ *     signal).
  * ════════════════════════════════════════════════
  */
 
@@ -115,7 +132,38 @@ export function parseCleanupResponse(text, expectedCount) {
   const rawFullName = typeof obj.customer_full_name === 'string' ? obj.customer_full_name.trim() : '';
   const customerFullName = rawFullName || null;
 
-  return { turns, summary, inspectionScheduled, callerNeverResponded, customerEmail, customerAddress, customerFullName };
+  // Opposite lenient direction from the other booleans on purpose — see file header.
+  const isCustomerInquiry = obj.is_customer_inquiry === false ? false : true;
+
+  const rawServiceMatch = typeof obj.service_match === 'string' ? obj.service_match.trim().toLowerCase() : '';
+  const serviceMatch = rawServiceMatch === 'in_scope' || rawServiceMatch === 'out_of_scope' ? rawServiceMatch : null;
+
+  return {
+    turns, summary, inspectionScheduled, callerNeverResponded, customerEmail, customerAddress, customerFullName,
+    isCustomerInquiry, serviceMatch,
+  };
+}
+
+// Mirrors set_lead_caller_name's SQL "extends" check (word-boundary prefix,
+// case-insensitive — see 20260721_crm_caller_name_upgrade.sql) so the JS side
+// can judge the SAME way the DB write-guard already does whether a freshly-
+// extracted name is trustworthy against a name already established on the
+// lead, rather than blindly treating every fresh AI guess as authoritative.
+// Returns true when there's nothing to conflict with (either name blank/
+// missing), when the names match, or when one is a superset-extension of the
+// other (e.g. "Jake" / "Jake Nelson"). Returns false only on a genuine
+// mismatch (e.g. established "Jake Nelson", new "Ben") — the caller should
+// then treat the new name as low-confidence rather than preferring it,
+// exactly the scenario a short/ambiguous call can trigger (a caller asking
+// "Is this Ben?" got misread as the caller's own name — see speakerNaming.js).
+export function nameExtendsOrMatches(newName, establishedName) {
+  const a = typeof newName === 'string' ? newName.trim() : '';
+  const b = typeof establishedName === 'string' ? establishedName.trim() : '';
+  if (!a || !b) return true;
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la === lb) return true;
+  return la.startsWith(`${lb} `) || lb.startsWith(`${la} `);
 }
 
 /**
@@ -147,5 +195,7 @@ export function applyCleanup(analysis, cleaned) {
     customer_email: cleaned.customerEmail || null,
     customer_address: cleaned.customerAddress || null,
     customer_full_name: cleaned.customerFullName || null,
+    is_customer_inquiry: cleaned.isCustomerInquiry === false ? false : true,
+    service_match: cleaned.serviceMatch === 'in_scope' || cleaned.serviceMatch === 'out_of_scope' ? cleaned.serviceMatch : null,
   };
 }
