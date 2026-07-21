@@ -76,7 +76,7 @@ import { normalizePhone, formatPhone } from '@/lib/phone';
 import { URGENT_TOPIC_RX } from '@/lib/crmPipeline';
 import { IconNote } from '@/components/Icons';
 import { IconTasks } from '@/lib/crmIcons';
-import { IconButton, StatusPill } from '@/components/ui';
+import { IconButton, StatusPill, ErrorState } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
 import TabLoading from '@/components/TabLoading';
 import { ok, err } from '@/lib/toast';
@@ -293,6 +293,7 @@ export default function CrmLeads() {
   const [leads, setLeads] = useState([]);
   const [stagePositions, setStagePositions] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showNew, setShowNew] = useState(false);
 
@@ -345,8 +346,12 @@ export default function CrmLeads() {
   const boardRef = useRef(null);
   const autoScrollFrameRef = useRef(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `silent` = a background/refresh reload (e.g. after adding/promoting a lead
+  // from an already-open panel): don't flip the full-page loading gate (which
+  // would blank the whole board, including an open filter panel/date picker
+  // and scroll position — page-lifecycle.md §1/§3), just swap in fresh rows.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [stageRows, leadRows, positionRows] = await Promise.all([
         db.rpc('get_pipeline_stages', {}),
@@ -358,10 +363,12 @@ export default function CrmLeads() {
       const positions = {};
       for (const row of positionRows || []) positions[row.lead_id] = { stage_id: row.stage_id, updated_at: row.updated_at };
       setStagePositions(positions);
+      setLoadError(false);
     } catch {
+      if (!silent) setLoadError(true);
       err('Failed to load the Leads pipeline');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [db]);
 
@@ -667,7 +674,7 @@ export default function CrmLeads() {
   // Cleanup on unmount (e.g. navigation mid-drag)
   useEffect(() => () => { if (autoScrollFrameRef.current) cancelAnimationFrame(autoScrollFrameRef.current); }, []);
 
-  if (loading) return <div className="crm-page"><div className="crm-loading">Loading…</div></div>;
+  if (loading) return <TabLoading />;
 
   return (
     <div className="crm-page crm-page-wide">
@@ -799,7 +806,9 @@ export default function CrmLeads() {
         )}
       </div>
 
-      {leads.length === 0 ? (
+      {loadError ? (
+        <ErrorState message="Failed to load the Leads pipeline." onRetry={load} />
+      ) : leads.length === 0 ? (
         <div className="crm-empty-state">
           <IconLeads className="crm-empty-icon" />
           <p>No leads yet. Calls and web-form leads from Call Log land here automatically — or add one by hand with <strong>+ New lead</strong>.</p>
@@ -995,7 +1004,7 @@ export default function CrmLeads() {
           onMoveStage={(stageId) => moveLead(selectedLead, stageId)}
           createdBy={employee?.id || null}
           actorId={employee?.id || null}
-          onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load(); }}
+          onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load({ silent: true }); }}
           onLeadPatched={(patch) => {
             setSelectedLead(prev => (prev ? { ...prev, ...patch } : prev));
             setLeads(prev => prev.map(l => (l.id === selectedLead.id ? { ...l, ...patch } : l)));
@@ -1017,7 +1026,7 @@ export default function CrmLeads() {
           db={db}
           createdBy={employee?.id || null}
           onClose={() => setShowNew(false)}
-          onCreated={() => { setShowNew(false); ok('Lead added'); load(); }}
+          onCreated={() => { setShowNew(false); ok('Lead added'); load({ silent: true }); }}
         />
       )}
     </div>
