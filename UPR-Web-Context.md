@@ -7287,15 +7287,38 @@ build), merging the four open PRs, and the actual App Store Connect data entry.
 
 Standalone, owner-approved initiative (disclosed manifest amendment: `.claude/rules/crm-wave-ownership.md`
 §9) that turns the thin `/crm/overview` front page into a sales & marketing command center. **Zero DB
-migration** — reads only through existing RPCs. New layout: the 6 headline KPI cards → an actionable KPI
-strip (closing rate · speed-to-lead SLA · call answer rate · new leads (7d) · weighted open pipeline $ ·
-aging estimates 31+ $) → a Sales-pipeline card (leads-by-stage donut + per-stage count·weighted-$ rows) →
-a 4-donut charts grid (calls answered vs missed · leads by source · won jobs by division · leads by
-campaign) → a leads-vs-won conversion-trend mini bar chart → the existing funnel → the existing
-`OverdueTasksWidget` + `ForecastWidget`.
+migration** — reads only through existing RPCs. Layout: the 6 headline KPI cards → an actionable KPI
+strip (**lead win rate** · speed-to-lead SLA · **calls handled** · new leads (7d) · open leads · aging
+estimates 31+ $) → a Sales-pipeline card (open-leads-by-stage donut + per-stage count bars, with the
+win-rate/won/lost/open summary in the header) → a 4-donut charts grid (calls handled vs missed · leads
+by source · won jobs by division · leads by campaign) → a leads-vs-won conversion-trend mini bar chart →
+the existing `OverdueTasksWidget`.
 
-- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 25 tests) — `toDonutSegments`,
-  `callVolumeSplit`, `agingOverThreshold`, `leadsByCampaign`, `leadsByChannel`, `newLeadsSince`, plus
+**Data-honesty decisions (v2, 2026-07-21 — from owner review of the live numbers):**
+- **Closing rate was impossible (293%)** because `won_jobs` (from the `jobs` table, all booked jobs) is
+  NOT a subset of tracked leads/estimates — most restoration/insurance revenue never flows through the
+  CRM lead→estimate funnel. Replaced with **lead win rate = won ÷ (won + lost)** computed from the CRM
+  lead pipeline (`crmCharts.pipelineOutcome`), a nested population that's always ≤100% and correctly
+  counts leads lost *before* an estimate ever existed (e.g. missed calls). The inverted spend→won
+  "Sales funnel" card was removed for the same reason (headline count cards still tell that story).
+- **Weighted-$ pipeline was structurally $0** — inbound leads carry no `value` (0/70 live). Dropped the
+  whole $ dimension: the pipeline card is now count-based, and the `ForecastWidget` (also $0) is no
+  longer rendered on the Overview.
+- **Missed-call count was wrong (root-cause fix)** — the Calls chart defined "missed" as CallRail
+  `duration_sec = 0` (1 call all-time), but the curated pipeline's **Missed Calls stage has 19** — and
+  **18 of those 19 connected** (`duration > 0`: voicemail, quick hangup, ring-then-drop). `duration > 0`
+  ≠ "handled". Root cause: the Overview mixed the **curated pipeline** (source of truth) with
+  **mechanical CallRail/QBO feeds** that define the same words differently. Fix: source calls from the
+  pipeline via `crmCharts.callOutcome` (missed = call-lead in the Missed Calls stage; handled = any other
+  stage) → drops `get_call_volume` entirely (and with it the 30-day-window bug). The Missed Calls stage
+  is matched by `is_lost` + a `/miss/i` name. **Follow-up (flagged, not done):** an explicit
+  `pipeline_stages` attribute (e.g. `stage_kind`) so metrics stop string-matching stage names — a small
+  additive migration. Same "two populations" note applies to headline "Won jobs" (all QBO booked jobs)
+  vs the CRM "lead win rate" — different populations by design.
+
+- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 33 tests) — `toDonutSegments`,
+  `callOutcome` (pipeline-sourced calls), `pipelineOutcome` (won/lost/open + bounded win rate),
+  `agingOverThreshold`, `leadsByCampaign`, `leadsByChannel`, `newLeadsSince`, `callVolumeSplit`, plus
   `CHART_PALETTE` / `CHANNEL_COLOR` / `CHANNEL_LABELS` / `DIVISION_LABELS` / `paletteColor`. All `var(--crm-*)`
   token colors; charts are CSS `conic-gradient` + inline SVG (no chart lib — perf-budget).
 - **New charting primitives:** `src/components/crm/charts/Donut.jsx` (conic-gradient donut + legend, empty

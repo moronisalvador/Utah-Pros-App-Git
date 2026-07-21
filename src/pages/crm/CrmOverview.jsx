@@ -6,12 +6,12 @@
  * WHAT THIS DOES (plain language):
  *   The CRM's front page — the one-glance business picture. Across the chosen
  *   time window it shows the headline numbers (ad spend, leads, estimates, won
- *   jobs, real revenue, return on ad spend), a strip of sales-and-response KPIs,
- *   the open sales pipeline (a donut plus a per-stage list with weighted dollar
- *   value), four donut charts (calls answered vs missed, leads by source, won
- *   jobs by division, leads by campaign), a lead-vs-won trend over time, and the
- *   spend → lead → estimate → won funnel. This is the screen that replaces
- *   flipping between five different tools to see the whole story.
+ *   jobs, real revenue, return on ad spend), a strip of sales-and-response KPIs
+ *   (incl. an honest lead win rate — won ÷ decided, always ≤ 100%), the open
+ *   sales pipeline (a donut plus a per-stage count list), four donut charts
+ *   (calls answered vs missed, leads by source, won jobs by division, leads by
+ *   campaign), and a lead-vs-won trend over time. This is the screen that
+ *   replaces flipping between five different tools to see the whole story.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/overview
@@ -22,37 +22,46 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db),
  *              @/lib/toast (err),
- *              @/lib/attribution (rollupTotals, funnelStages, speedToLeadSummary,
+ *              @/lib/attribution (rollupTotals, speedToLeadSummary,
  *                deriveConversionTrend, fmtMoney, fmtPct, fmtRatio),
- *              ./attributionParts (RangePicker, MetricCard, Funnel),
+ *              ./attributionParts (RangePicker, MetricCard),
  *              ./attributionData (deriveRows, rangeToDates),
- *              @/lib/crmPipeline (sortStages, groupLeadsByStage,
- *                weightedPipelineValue),
- *              @/lib/crmCharts (callVolumeSplit, agingOverThreshold,
- *                leadsByCampaign, leadsByChannel, newLeadsSince),
+ *              @/lib/crmPipeline (sortStages, groupLeadsByStage),
+ *              @/lib/crmCharts (callOutcome, agingOverThreshold,
+ *                leadsByCampaign, leadsByChannel, newLeadsSince, pipelineOutcome),
+ *              @/components/ui (ErrorState),
  *              @/components/crm/OverviewKpiStrip,
  *              @/components/crm/PipelineStageCard,
  *              @/components/crm/OverviewCharts,
  *              @/components/crm/ConversionTrendCard,
- *              @/components/crm/OverdueTasksWidget (Phase 7 slot),
- *              @/components/crm/ForecastWidget (Phase 9 slot)
+ *              @/components/crm/OverdueTasksWidget (Phase 7 slot)
  *   Data:      reads  →
  *                get_attribution_rollup RPC (ad_spend + inbound_leads + estimates
  *                  + jobs, per channel),
- *                get_call_volume RPC (answered/missed calls),
  *                get_speed_to_lead RPC (response-time buckets),
  *                get_estimate_aging RPC (open-estimate aging buckets),
  *                get_conversion_trend RPC (leads → won over time),
  *                get_crm_revenue_by_division RPC (won jobs by division),
- *                get_pipeline_stages RPC (open pipeline stages),
+ *                get_pipeline_stages RPC (all pipeline stages + won/lost flags),
  *                lead_pipeline_stage table (which stage each lead sits in),
- *                inbound_leads table (open leads: value, campaign, source, time)
+ *                inbound_leads table (leads: source_type, value, campaign,
+ *                  source, time — drives calls, pipeline, campaign, new-leads)
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - ROAS/cost metrics are computed on PAID channels only and can be "—"
  *     (no ad spend in the window) — that is correct, not a bug: a zero-spend
  *     window has no return-on-ad-spend to report.
+ *   - "Lead win rate" (won ÷ decided, from the CRM lead pipeline) is a DIFFERENT
+ *     population from the "Won jobs" headline (all booked jobs from QBO, most of
+ *     which arrive through non-CRM channels). We do NOT show won_jobs ÷ estimates
+ *     as a closing rate — those populations don't nest, so it can exceed 100%.
+ *   - Calls are sourced from the PIPELINE (callOutcome), not CallRail duration: a
+ *     call is "missed" when it sits in the Missed Calls stage. Most missed calls
+ *     actually connected (duration > 0), so the old duration = 0 definition
+ *     wildly undercounted them (1 vs the pipeline's real 19). The Missed Calls
+ *     stage is matched by is_lost + a /miss/i name — a stage rename would need a
+ *     more robust stage attribute (flagged as a follow-up).
  *   - A failed load renders a DISTINCT error card with a Retry button — never the
  *     funnel/empty success state, never a blank page (loading-error-states.md §1).
  *   - The loading gate fires on cold load AND on range change (range is a param
@@ -66,29 +75,28 @@ import { useAuth } from '@/contexts/AuthContext';
 import { err } from '@/lib/toast';
 import {
   rollupTotals,
-  funnelStages,
   speedToLeadSummary,
   deriveConversionTrend,
   fmtMoney,
   fmtPct,
   fmtRatio,
 } from '@/lib/attribution';
-import { RangePicker, MetricCard, Funnel } from './attributionParts';
+import { RangePicker, MetricCard } from './attributionParts';
 import { deriveRows, rangeToDates } from './attributionData';
-import { sortStages, groupLeadsByStage, weightedPipelineValue } from '@/lib/crmPipeline';
+import { sortStages, groupLeadsByStage } from '@/lib/crmPipeline';
 import {
-  callVolumeSplit,
+  callOutcome,
   agingOverThreshold,
   leadsByCampaign,
   leadsByChannel,
   newLeadsSince,
+  pipelineOutcome,
 } from '@/lib/crmCharts';
 import OverviewKpiStrip from '@/components/crm/OverviewKpiStrip';
 import PipelineStageCard from '@/components/crm/PipelineStageCard';
 import OverviewCharts from '@/components/crm/OverviewCharts';
 import ConversionTrendCard from '@/components/crm/ConversionTrendCard';
 import OverdueTasksWidget from '@/components/crm/OverdueTasksWidget';
-import ForecastWidget from '@/components/crm/ForecastWidget';
 import { ErrorState } from '@/components/ui';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -110,7 +118,6 @@ export default function CrmOverview() {
       const { start, end } = rangeToDates(range);
       const [
         rollup,
-        callVolume,
         speed,
         aging,
         trend,
@@ -120,7 +127,6 @@ export default function CrmOverview() {
         leads,
       ] = await Promise.all([
         db.rpc('get_attribution_rollup', { p_start_date: start, p_end_date: end }),
-        db.rpc('get_call_volume', { p_start: start, p_end: end }),
         db.rpc('get_speed_to_lead', { p_start: start, p_end: end }),
         db.rpc('get_estimate_aging', {}),
         db.rpc('get_conversion_trend', { p_start: start, p_end: end }),
@@ -129,7 +135,7 @@ export default function CrmOverview() {
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id'),
         db.select(
           'inbound_leads',
-          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
+          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,source_type,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
         ),
       ]);
 
@@ -138,7 +144,6 @@ export default function CrmOverview() {
 
       setData({
         rollup: rollup || [],
-        callVolume: callVolume || [],
         speed: speed || [],
         aging: aging || [],
         trend: trend || [],
@@ -164,44 +169,48 @@ export default function CrmOverview() {
 
     const rows = deriveRows(data.rollup);
     const totals = rollupTotals(rows);
-    const funnel = funnelStages(totals);
     const channels = leadsByChannel(rows);
-    const callSplit = callVolumeSplit(data.callVolume);
+    // Calls are sourced from the PIPELINE, not CallRail duration: a call is
+    // "missed" when it sits in the Missed Calls stage (most such calls actually
+    // connected, so duration>0 wrongly counts them as answered). See callOutcome.
+    const calls = callOutcome(data.leads, data.stages, data.leadPositions);
     const sla = speedToLeadSummary(data.speed);
     const aging = agingOverThreshold(data.aging, 31);
     const trend = deriveConversionTrend(data.trend);
 
     const sorted = sortStages(data.stages);
     const grouped = groupLeadsByStage(data.leads, sorted, data.leadPositions);
-    const { byStage } = weightedPipelineValue(data.leads, sorted, data.leadPositions);
+    // Honest, bounded lead outcome (won / lost / open + win rate) from the CRM
+    // lead pipeline — the one population where every count nests. Won here is a
+    // won LEAD (pipeline stage), distinct from the headline "Won jobs" (all
+    // booked jobs from QBO, which come through many non-CRM channels).
+    const outcome = pipelineOutcome(sorted, grouped);
     const openStages = sorted.filter((s) => !s.is_won && !s.is_lost);
     const pipelineRows = openStages.map((s) => ({
       id: s.id,
       name: s.name,
       color: s.color,
       count: (grouped[s.id] || []).length,
-      value: byStage[s.id] || 0,
     }));
-    const openTotalValue = pipelineRows.reduce((sum, r) => sum + (r.value || 0), 0);
 
     const campaigns = leadsByCampaign(data.leads, 6);
     const newLeads = newLeadsSince(data.leads, data.sinceISO);
 
     return {
-      totals, funnel, channels, callSplit, sla, aging, trend,
-      pipelineRows, openTotalValue, campaigns, newLeads, divisions: data.divisions,
+      totals, channels, calls, sla, aging, trend,
+      pipelineRows, outcome, campaigns, newLeads, divisions: data.divisions,
     };
   }, [data]);
 
   const kpiStats = useMemo(() => {
     if (!derived) return [];
-    const { totals, sla, callSplit, newLeads, openTotalValue, aging } = derived;
+    const { sla, calls, newLeads, aging, outcome } = derived;
     return [
-      { label: 'Closing rate', value: fmtPct(totals.estimate_to_won_rate), sub: 'estimate → won' },
-      { label: 'Speed to lead', value: fmtPct(sla.sla_rate), sub: 'worked within 5 min' },
-      { label: 'Call answer rate', value: fmtPct(callSplit.answer_rate), sub: `${callSplit.answered} of ${callSplit.total}` },
+      { label: 'Lead win rate', value: fmtPct(outcome.win_rate), sub: `${outcome.won} won of ${outcome.decided} decided` },
+      { label: 'Speed to lead', value: fmtPct(sla.sla_rate), sub: `${sla.within_sla} of ${sla.total} within 5 min` },
+      { label: 'Calls handled', value: fmtPct(calls.handle_rate), sub: `${calls.missed} missed of ${calls.total}` },
       { label: 'New leads', value: String(newLeads), sub: 'last 7 days' },
-      { label: 'Open pipeline', value: fmtMoney(openTotalValue), sub: 'weighted' },
+      { label: 'Open leads', value: String(outcome.open), sub: 'in pipeline' },
       { label: 'Aging estimates', value: fmtMoney(aging.total_amount), sub: `${aging.count} · 31+ days` },
     ];
   }, [derived]);
@@ -234,10 +243,15 @@ export default function CrmOverview() {
 
           <OverviewKpiStrip stats={kpiStats} />
 
-          <PipelineStageCard rows={derived.pipelineRows} openTotalValue={derived.openTotalValue} />
+          <PipelineStageCard
+            rows={derived.pipelineRows}
+            won={derived.outcome.won}
+            lost={derived.outcome.lost}
+            winRate={derived.outcome.win_rate}
+          />
 
           <OverviewCharts
-            calls={{ answered: derived.callSplit.answered, missed: derived.callSplit.missed, total: derived.callSplit.total }}
+            calls={{ handled: derived.calls.handled, missed: derived.calls.missed, total: derived.calls.total }}
             channels={derived.channels}
             divisions={derived.divisions}
             campaigns={derived.campaigns}
@@ -245,15 +259,11 @@ export default function CrmOverview() {
 
           <ConversionTrendCard trend={derived.trend} />
 
-          <div className="crm-card">
-            <h2 className="crm-section-title">Sales funnel</h2>
-            <Funnel stages={derived.funnel} />
-          </div>
-
-          {/* Slot components filled by later wave phases (Phase F stubs render
-              nothing): overdue tasks (Phase 7) + weighted forecast (Phase 9). */}
+          {/* Overdue tasks (Phase 7 slot). The weighted-forecast widget is
+              intentionally not rendered here: inbound leads carry no dollar
+              value in this business, so it is structurally $0 — the honest
+              lead win rate + open-lead count above replace it. */}
           <OverdueTasksWidget />
-          <ForecastWidget />
         </>
       )}
     </div>
