@@ -34,7 +34,8 @@
  *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/google-drive.js
  *                  (getActorEmployee), ../lib/callrail-api.js (resolveCallRecording),
  *                  ../lib/deepgram.js (formatDeepgramTranscript, turnsToFlatText),
- *                  ../lib/callCleanup.js (the clean-up + summarize pass)
+ *                  ../lib/callCleanup.js (the clean-up + summarize pass),
+ *                  ../lib/zeroTurnClassifier.js (the zero-turn fallback pass)
  *   External API:  CallRail (the call's recording), Deepgram (api.deepgram.com)
  *   Data:          reads  → inbound_leads (caller_name, recording_url, transcription,
  *                           transcript_analysis), integration_credentials
@@ -124,6 +125,28 @@
  *     callrail-recording.js.
  *   - Backfill is hard-capped (MAX_BACKFILL) so a bad filter can't fan out into
  *     thousands of paid Deepgram calls. Logs one worker_runs row per invocation.
+ *   - A call Deepgram could NOT split into any speaker turns at all (dead air,
+ *     a voicemail hang-up with no message, a recording cut off before speech)
+ *     used to fall through every AI pass silently: buildCleanupPrompt(turns)
+ *     returns "" for zero turns, so cleanAndSummarize() used to just return the
+ *     analysis unchanged — caller_never_responded (and every other signal)
+ *     never got set, and the lead sat in the pipeline forever with
+ *     spam_flag:false (verified live 2026-07-21: 37 zero-turn leads, 28 still
+ *     unflagged). cleanAndSummarize() now falls back to
+ *     classifyZeroTurnCall()/ZERO_TURN_SYSTEM (zeroTurnClassifier.js) whenever
+ *     buildCleanupPrompt is empty: it judges Deepgram's raw flat transcript +
+ *     its own one-line summary (both of which still exist even with zero
+ *     diarized turns) and sets ONLY caller_never_responded — never a duration
+ *     or keyword heuristic, since those don't reliably separate a real short
+ *     voicemail from genuine dead air (verified live: a 68-second real-customer
+ *     voicemail vs. several 20-30 second true no-message hangups). A garbled/
+ *     missing AI answer is a safe no-op, same as every other pass here.
+ *     reclassifyLead() no longer throws on a zero-turn lead (it used to
+ *     require analysis.turns.length > 0) as long as there's a raw transcript
+ *     or summary to judge, so the existing `{reclassify:true}` backfill mode
+ *     also sweeps these leads — the same `inspection_scheduled IS NULL`
+ *     sentinel that gates normal reclassification already selects them, since
+ *     it was never set for them either.
  * ════════════════════════════════════════════════
  */
 
@@ -137,6 +160,7 @@ import {
   needsResegment, buildResegmentPrompt, parseResegmentedTurns,
 } from '../lib/speakerNaming.js';
 import { buildCleanupPrompt, parseCleanupResponse, applyCleanup, nameExtendsOrMatches } from '../lib/callCleanup.js';
+import { buildZeroTurnPrompt, parseZeroTurnResponse } from '../lib/zeroTurnClassifier.js';
 
 const MAX_BACKFILL = 200; // hard cap — guards against a runaway paid-API fan-out
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -194,6 +218,19 @@ Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
 
 The "turns" array MUST have EXACTLY the same number of entries, in the same order, as the numbered list you were given — one cleaned string per turn, nothing merged or split.`;
 
+// System prompt for the zero-turn fallback classifier — runs ONLY when
+// Deepgram found no speaker turns at all (buildCleanupPrompt returns "" and
+// the normal cleanup/classification pass above never fires). Reads Deepgram's
+// raw flat transcript + its own one-line summary instead of numbered turns.
+export const ZERO_TURN_SYSTEM = `You are given Deepgram's raw transcript text (and/or its own automated one-line summary) for an INBOUND phone call to Utah Pros Restoration (a water/fire/mold restoration company) that could NOT be split into separate speaker turns — there is no per-speaker breakdown, only the flat raw words Deepgram heard (if any).
+
+Decide whether the caller left ANY real content at all — a request, a name, a callback number, a description of damage, anything a person actually said or asked for (including a short voicemail message) — OR whether this is genuinely dead air: silence, hold music, a call that cut off before anyone spoke, or a voicemail hang-up where only the outgoing greeting/beep was captured and no message was left.
+
+IMPORTANT: do not use call length as a signal. A short voicemail can still contain a full real request (e.g. "this is Brynn, requesting a mold inspection, my callback number is..."), and a longer recording can still be pure silence, hold music, or a hang-up with nothing said. Judge ONLY the actual words present in the raw transcript/summary. If there is ANY real spoken content from a person, set caller_never_responded to false — err toward false (a real lead) whenever the transcript is ambiguous, garbled, or too sparse to be sure. Set it to true ONLY when the evidence clearly shows no message was left at all.
+
+Return ONLY a JSON object (no prose, no markdown) of exactly this shape:
+{"caller_never_responded":true|false}`;
+
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -250,17 +287,53 @@ async function resegmentSpeakers(env, analysis, transcriptText) {
   }
 }
 
+// Fallback for a call Deepgram could not split into ANY speaker turns at all
+// (dead air, a voicemail hang-up with no message, a call cut off before
+// speech) — buildCleanupPrompt has nothing to number, so the normal cleanup
+// pass above never runs and caller_never_responded never gets set. Deepgram
+// still hands back a flat raw transcript + its own one-line summary even with
+// zero diarized turns, so ask a small separate question against THAT raw
+// text instead. Same best-effort contract as the other passes: any failure
+// (no key, empty prompt, API error, unparseable answer) leaves the analysis
+// untouched — never a false spam-flag.
+async function classifyZeroTurnCall(env, rawText, summary) {
+  const prompt = buildZeroTurnPrompt(rawText, summary);
+  if (!env.ANTHROPIC_API_KEY || !prompt) return null;
+  try {
+    const res = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 200, system: ZERO_TURN_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    const out = (data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    return parseZeroTurnResponse(out);
+  } catch {
+    return null;
+  }
+}
+
 // Best-effort: ask Claude to fix obvious speech-to-text mistakes in each turn's
 // wording and write a restoration-business-aware summary (replacing Deepgram's
 // generic one-liner). Runs AFTER speaker naming/resegmentation so the prompt's
 // speaker labels are already correct. Any failure (no key, API error, unparseable
 // answer, turn-count mismatch) leaves the analysis exactly as-is — this is an
 // enrichment, never a hard dependency of transcription.
-async function cleanAndSummarize(env, analysis) {
+//
+// `rawText` is Deepgram's flat transcript string (formatDeepgramTranscript's
+// output in transcribeLead, or the stored inbound_leads.transcription in
+// reclassifyLead) — used ONLY by the zero-turn fallback below, since a call
+// with zero usable turns still often has real raw text/summary to judge.
+async function cleanAndSummarize(env, analysis, rawText) {
   const turns = analysis?.turns || [];
   const usableCount = turns.filter((t) => t && typeof t.text === 'string' && t.text.trim()).length;
   const prompt = buildCleanupPrompt(turns);
-  if (!env.ANTHROPIC_API_KEY || !prompt) return analysis;
+  if (!prompt) {
+    const zeroTurn = await classifyZeroTurnCall(env, rawText, analysis?.summary);
+    return zeroTurn ? { ...analysis, caller_never_responded: zeroTurn.callerNeverResponded === true } : analysis;
+  }
+  if (!env.ANTHROPIC_API_KEY) return analysis;
   try {
     const res = await fetch(ANTHROPIC_URL, {
       method: 'POST',
@@ -349,8 +422,9 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
 
   // Fix obvious speech-to-text errors turn-by-turn and replace Deepgram's generic
   // summary with a restoration-business-aware one — best-effort, runs last so it
-  // sees the final (named/resegmented) speaker labels.
-  analysis = await cleanAndSummarize(env, analysis);
+  // sees the final (named/resegmented) speaker labels. `text` (Deepgram's raw flat
+  // transcript, pre-naming) feeds the zero-turn fallback when there are no turns.
+  analysis = await cleanAndSummarize(env, analysis, text);
 
   // Cross-validate the cleanup pass's customer_full_name against any name
   // ALREADY established on this lead. A short/ambiguous call can still
@@ -465,25 +539,34 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
 // caller-name "upgrade" (p_allow_upgrade:true — replaces an existing first-name-
 // only caller_name with a fuller one ONLY when the new name genuinely extends the
 // old one; see set_lead_caller_name's own guard for the exact rule). Throws if
-// the lead has no usable stored turns to reclassify.
+// the lead has neither usable stored turns NOR any raw transcript/summary text to
+// reclassify (a zero-turn call with real raw text still qualifies — see below).
 export async function reclassifyLead(db, env, lead) {
   let analysis = lead.transcript_analysis;
-  if (!analysis || !Array.isArray(analysis.turns) || !analysis.turns.length) {
+  const hasTurns = Boolean(analysis && Array.isArray(analysis.turns) && analysis.turns.length);
+  const hasRawText = typeof lead.transcription === 'string' && lead.transcription.trim();
+  const hasSummary = Boolean(analysis && typeof analysis.summary === 'string' && analysis.summary.trim());
+  if (!analysis || (!hasTurns && !hasRawText && !hasSummary)) {
     throw new Error('no usable turns to reclassify');
   }
 
+  // Zero-turn calls (dead air / voicemail hang-up / cut off before speech) have
+  // nothing to name or resegment — skip straight to the zero-turn fallback
+  // inside cleanAndSummarize below, which reads the raw transcript/summary.
   let callerName = null;
-  if (needsResegment(analysis)) {
-    const r = await resegmentSpeakers(env, analysis, turnsToFlatText(analysis.turns) || lead.transcription || '');
-    analysis = r.analysis;
-    callerName = r.callerName;
-  } else {
-    const named = await nameSpeakers(env, analysis);
-    analysis = named.analysis;
-    callerName = named.callerName;
+  if (hasTurns) {
+    if (needsResegment(analysis)) {
+      const r = await resegmentSpeakers(env, analysis, turnsToFlatText(analysis.turns) || lead.transcription || '');
+      analysis = r.analysis;
+      callerName = r.callerName;
+    } else {
+      const named = await nameSpeakers(env, analysis);
+      analysis = named.analysis;
+      callerName = named.callerName;
+    }
   }
 
-  analysis = await cleanAndSummarize(env, analysis);
+  analysis = await cleanAndSummarize(env, analysis, lead.transcription);
 
   // Cross-validate against the ALREADY-established caller_name — same guard
   // as transcribeLead() (see its comment for the incident this catches).
