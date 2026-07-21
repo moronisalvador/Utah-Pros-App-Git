@@ -118,6 +118,45 @@ describe.skipIf(!hasCreds)('CRM Phase 1 — upsert_lead_from_callrail (integrati
     expect(contacts).toHaveLength(1);
   });
 
+  it('LINKS to an existing contact even when its phone is stored in a different format', async () => {
+    // Regression test — upsert_lead_from_callrail used a bare `phone = p_caller_number`
+    // string match. A contact whose phone was saved without the leading "+1" (or with
+    // punctuation) never matched CallRail's E.164 caller_number, so the lead's
+    // contact_id silently stayed null forever (verified live on 2026-07-21: several
+    // real customers' calls never linked despite an exact-matching contact existing).
+    const rawDigits = `801${String(runId).slice(-7)}`; // no +1, no punctuation
+    const e164 = `+1${rawDigits}`;
+    const formatCallId = `test-format-${runId}`;
+
+    const [seeded] = await db.insert('contacts', { phone: rawDigits, name: 'Differently Formatted Person' });
+
+    const row = await db.rpc('upsert_lead_from_callrail', {
+      p_callrail_id: formatCallId,
+      p_source_type: 'call',
+      p_org_id: testOrgId,
+      p_tracking_number: '+18015550100',
+      p_caller_number: e164,
+      p_duration_sec: 60,
+      p_spam_flag: false,
+      p_source: 'google',
+      p_medium: 'cpc',
+      p_campaign: 'test-campaign',
+      p_recording_url: null,
+      p_transcription: null,
+      p_form_data: null,
+      p_lead_status: 'new',
+      p_value: null,
+      p_direction: 'inbound',
+      p_occurred_at: new Date().toISOString(),
+      p_raw_payload: { test: true },
+    });
+
+    expect(row.contact_id).toBe(seeded.id);
+
+    await db.delete('inbound_leads', `callrail_id=eq.${formatCallId}`);
+    await db.delete('contacts', `id=eq.${seeded.id}`);
+  });
+
   it('a redelivered webhook (recording ready) updates the same row instead of duplicating it', async () => {
     const updated = await db.rpc('upsert_lead_from_callrail', {
       p_callrail_id: callId,

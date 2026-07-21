@@ -3787,6 +3787,16 @@ upsert_lead_from_callrail(p_callrail_id, p_source_type, p_tracking_number, p_cal
   contact when one already matches `caller_number` (so a known customer's call lands on their
   timeline), but an unknown number stays a contact-free lead — most inbound calls are
   spam/wrong-numbers/price-shoppers, and auto-creating a contact per call floods the contacts table
+  **(2026-07-21 fix, `20260721_crm_contact_link_and_activity.sql`, function-body-only
+  `CREATE OR REPLACE`, signature unchanged):** the phone match was a bare `phone = p_caller_number`
+  string comparison, so a contact whose phone wasn't stored in the exact same format as CallRail's
+  E.164 `caller_number` never matched — verified live, several real customers' repeat calls stayed
+  unlinked despite an exact-matching contact existing the whole time. Now normalizes both sides
+  (strip non-digits, compare last 10) and skips (never guesses) an ambiguous multi-contact match. A
+  one-time backfill in the same migration linked every previously-orphaned lead it could resolve
+  unambiguously (`REVOKE...FROM PUBLIC,anon` re-affirmed; grants stay `authenticated, service_role`
+  only — the header line above listing `anon` predates the P3 anon-grant closure and is stale for
+  this RPC specifically).
   (and, via `trg_qbo_customer_sync`, QuickBooks). A contact is created only when the lead is
   qualified: it books (the app's find-or-create-by-phone flows) or staff run `promote_lead_to_contact`.
   (This retired the old `shouldCreateContact` spam-gate predicate + `functions/lib/callrail.js`, now
@@ -4422,7 +4432,18 @@ shared dev/main Supabase project):
   SMS branch reads `messages.type`, e.g. `sms_outbound`/`sms_inbound`, which
   `functions/api/send-message.js` / `twilio-webhook.js` actually populate), `job_notes` joined
   through `contact_jobs` (notes are job-scoped, not contact-scoped, hence the join), and `estimates`
-  (`contact_id` is direct). Ordered newest-first across all four sources.
+  (`contact_id` is direct). Ordered newest-first across all four sources. **(2026-07-21 addition,
+  `20260721_crm_contact_link_and_activity.sql`, function-body-only `CREATE OR REPLACE`, signature
+  unchanged):** three more `UNION ALL` arms — `appointment` (joined through `contact_jobs` same as
+  `job`/`note`, since `appointments` has no direct `contact_id`), `invoice` (direct `contact_id`), and
+  `work_authorization` (from `sign_requests`, direct `contact_id` — the e-sign work-authorization
+  mechanism). This is the UPR job-management/invoicing-side history the CRM lead/contact panel was
+  missing; `ActivityTimeline.jsx` is fully generic (renders whatever `activity_type` rows come back),
+  so no frontend change was needed. `REVOKE...FROM PUBLIC,anon` re-affirmed; grants stay
+  `authenticated, service_role` only, verified live before/after
+  (`.claude/rules/crm-wave-ownership.md` §1 lists this RPC as a Foundation-owned frozen REPLACE —
+  this was an owner-directed production fix, not an in-wave session, and stays backward-compatible
+  per that manifest's own REPLACE rule).
 
 **Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
 the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
