@@ -45,6 +45,7 @@
  *                customerAddress, customerFullName, isCustomerInquiry,
  *                serviceMatch } | null
  *              applyCleanup(analysis, cleaned) → analysis
+ *              nameExtendsOrMatches(newName, establishedName) → boolean
  *
  * NOTES / GOTCHAS:
  *   - Degrades safely like speakerNaming.js: a garbage/missing AI answer, or one
@@ -141,6 +142,28 @@ export function parseCleanupResponse(text, expectedCount) {
     turns, summary, inspectionScheduled, callerNeverResponded, customerEmail, customerAddress, customerFullName,
     isCustomerInquiry, serviceMatch,
   };
+}
+
+// Mirrors set_lead_caller_name's SQL "extends" check (word-boundary prefix,
+// case-insensitive — see 20260721_crm_caller_name_upgrade.sql) so the JS side
+// can judge the SAME way the DB write-guard already does whether a freshly-
+// extracted name is trustworthy against a name already established on the
+// lead, rather than blindly treating every fresh AI guess as authoritative.
+// Returns true when there's nothing to conflict with (either name blank/
+// missing), when the names match, or when one is a superset-extension of the
+// other (e.g. "Jake" / "Jake Nelson"). Returns false only on a genuine
+// mismatch (e.g. established "Jake Nelson", new "Ben") — the caller should
+// then treat the new name as low-confidence rather than preferring it,
+// exactly the scenario a short/ambiguous call can trigger (a caller asking
+// "Is this Ben?" got misread as the caller's own name — see speakerNaming.js).
+export function nameExtendsOrMatches(newName, establishedName) {
+  const a = typeof newName === 'string' ? newName.trim() : '';
+  const b = typeof establishedName === 'string' ? establishedName.trim() : '';
+  if (!a || !b) return true;
+  const la = a.toLowerCase();
+  const lb = b.toLowerCase();
+  if (la === lb) return true;
+  return la.startsWith(`${lb} `) || lb.startsWith(`${la} `);
 }
 
 /**

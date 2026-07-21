@@ -21,7 +21,7 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { buildCleanupPrompt, parseCleanupResponse, applyCleanup } from './callCleanup.js';
+import { buildCleanupPrompt, parseCleanupResponse, applyCleanup, nameExtendsOrMatches } from './callCleanup.js';
 
 describe('buildCleanupPrompt', () => {
   it('formats turns as a numbered "<n>. <speaker>: <text>" list', () => {
@@ -255,5 +255,50 @@ describe('applyCleanup', () => {
     expect(applyCleanup(analysis, null)).toBe(analysis);
     expect(applyCleanup(null, cleaned)).toBeNull();
     expect(applyCleanup({ turns: null }, cleaned)).toEqual({ turns: null });
+  });
+});
+
+describe('nameExtendsOrMatches', () => {
+  it('is true when nothing is established yet (nothing to conflict with)', () => {
+    expect(nameExtendsOrMatches('Ben', null)).toBe(true);
+    expect(nameExtendsOrMatches('Ben', '')).toBe(true);
+    expect(nameExtendsOrMatches('Ben', '   ')).toBe(true);
+  });
+
+  it('is true when there is no new name to check', () => {
+    expect(nameExtendsOrMatches(null, 'Jake Nelson')).toBe(true);
+    expect(nameExtendsOrMatches('', 'Jake Nelson')).toBe(true);
+  });
+
+  it('is true for an exact match, case-insensitively', () => {
+    expect(nameExtendsOrMatches('Jake Nelson', 'jake nelson')).toBe(true);
+  });
+
+  it('is true when the new name genuinely extends the established one (first -> first+last)', () => {
+    expect(nameExtendsOrMatches('Silvina Wright', 'Silvina')).toBe(true);
+    expect(nameExtendsOrMatches('Jake Nelson', 'Jake')).toBe(true);
+  });
+
+  it('is true when the established name extends the new one (the reverse direction)', () => {
+    expect(nameExtendsOrMatches('Jake', 'Jake Nelson')).toBe(true);
+  });
+
+  it('is false on a genuine mismatch — the role-confusion case from the 2026-06-26 incident', () => {
+    // Lead 6587d3de-b581-4d0b-b5bc-df100cac35f6: the caller (Jake Nelson) asked
+    // "Is this Ben?" (Ben is the AGENT from an earlier call) and the AI
+    // extracted "Ben" as the customer's own name. "Ben" neither matches nor
+    // extends the already-established "Jake Nelson" — a genuine conflict.
+    expect(nameExtendsOrMatches('Ben', 'Jake Nelson')).toBe(false);
+  });
+
+  it('is false for two different unrelated names, and for a same-first-name-different-last case', () => {
+    expect(nameExtendsOrMatches('Colton Smith', 'Jake Nelson')).toBe(false);
+    expect(nameExtendsOrMatches('Jake Anderson', 'Jake Nelson')).toBe(false);
+  });
+
+  it('does not false-positive on a shared prefix that is not a word boundary', () => {
+    // "Jaketh" starts with the characters "Jake" but is not "Jake " + more —
+    // must not be treated as an extension.
+    expect(nameExtendsOrMatches('Jaketh Combs', 'Jake')).toBe(false);
   });
 });

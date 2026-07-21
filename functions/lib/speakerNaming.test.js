@@ -156,6 +156,18 @@ describe('buildResegmentPrompt', () => {
     expect(buildResegmentPrompt('')).toBe('');
     expect(buildResegmentPrompt(null)).toBe('');
   });
+
+  it('warns that a name mentioned while asking FOR someone is not the speaker\'s own name', () => {
+    // Regression guard for the 2026-06-26 incident (lead 6587d3de-b581-4d0b-
+    // b5bc-df100cac35f6): a caller asking "Is this Ben?" (trying to reach the
+    // agent from an earlier call) got misread as the caller stating their own
+    // name. The prompt must explicitly warn against that before it ever
+    // reaches the model.
+    const p = buildResegmentPrompt('Speaker 1: Hi. This is Utah. Speaker 2: Is this Ben?');
+    expect(p).toMatch(/Is this <name>/);
+    expect(p).toMatch(/belongs to the person being asked for/);
+    expect(p).toMatch(/AS THEIR OWN/);
+  });
 });
 
 describe('parseResegmentedTurns', () => {
