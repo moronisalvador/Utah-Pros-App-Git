@@ -79,9 +79,7 @@ import { IconTasks } from '@/lib/crmIcons';
 import { IconButton, StatusPill } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
 import TabLoading from '@/components/TabLoading';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
-const ok = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } }));
+import { ok, err } from '@/lib/toast';
 
 const isTouchDevice = () => 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
