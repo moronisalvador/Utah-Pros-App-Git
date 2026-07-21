@@ -32,8 +32,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
-
-const err = (message) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } }));
+import { err } from '@/lib/toast';
 
 const asTags = (tags) => {
   if (Array.isArray(tags)) return tags;
