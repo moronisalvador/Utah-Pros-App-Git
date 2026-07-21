@@ -226,7 +226,13 @@ async function cleanAndSummarize(env, analysis) {
     const res = await fetch(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 4096, system: CLEANUP_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
+      // 8192 (not 4096): a long call (60+ turns) needs every cleaned turn echoed
+      // back in the JSON response on top of the summary/signals — 4096 silently
+      // truncated the output on the longest real calls, breaking the strict
+      // turn-count-match check in parseCleanupResponse and leaving the whole
+      // pass a permanent no-op for that lead (confirmed live: a 68-turn/11k-char
+      // call never got inspection_scheduled/etc. set on any retry).
+      body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 8192, system: CLEANUP_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
     });
     if (!res.ok) return analysis;
     const data = await res.json().catch(() => null);
@@ -450,17 +456,19 @@ export async function onRequestPost(context) {
 
   // Reclassify mode — re-run the AI naming + clean-up/classification passes
   // against already-transcribed leads (no Deepgram/CallRail creds needed, no
-  // re-transcription cost). Default targets leads whose stored analysis
-  // predates customer_full_name — the NEWEST signal this pass writes, so it's
-  // the correct "still needs the current pass" sentinel (a lead that already
-  // has it was fully reprocessed under the current code and is skipped on the
-  // next round, so `force:true` sweeps make real forward progress instead of
-  // reprocessing the same head-of-list leads every timed-out round; `->>` on a
-  // genuinely-missing key reads as SQL NULL). `force:true` widens the target
-  // set to every matching call within the day window regardless of
-  // inspection_scheduled/other older signals (still skips ones with
-  // customer_full_name already set) — e.g. after a NEW prompt/signal ships
-  // that even an inspection_scheduled-having lead should pick up.
+  // re-transcription cost). The sentinel for "already reprocessed by the
+  // current cleanup pass" is inspection_scheduled, NOT customer_full_name —
+  // inspection_scheduled is a plain boolean that ALWAYS gets set to a real
+  // true/false whenever cleanAndSummarize succeeds, so `->>` reading SQL NULL
+  // reliably means "never touched." customer_full_name is nullable BY DESIGN
+  // (a call where the caller never states their name at all is a legitimate,
+  // permanent null) — using it as the convergence gate made every "no name
+  // stated" lead get silently re-selected and re-billed forever, since it can
+  // never satisfy "IS NOT NULL" (confirmed live: a batch of leads stuck
+  // reprocessing every round with zero forward progress). `force:true` drops
+  // the gate entirely and reprocesses every matching call in the day window
+  // regardless of prior state — for a genuinely NEW prompt/signal ship where
+  // the whole history should be revisited once.
   if (body.reclassify) {
     let leads;
     try {
@@ -471,9 +479,7 @@ export async function onRequestPost(context) {
       } else {
         const days = Number(body.days) > 0 ? Number(body.days) : 90;
         const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-        const freshOnly = body.force
-          ? '&transcript_analysis->>customer_full_name=is.null'
-          : '&transcript_analysis->>inspection_scheduled=is.null&transcript_analysis->>customer_full_name=is.null';
+        const freshOnly = body.force ? '' : '&transcript_analysis->>inspection_scheduled=is.null';
         leads = await db.select(
           'inbound_leads',
           `source_type=eq.call&transcript_analysis=not.is.null${freshOnly}` +
