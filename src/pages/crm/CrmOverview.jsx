@@ -8,10 +8,11 @@
  *   time window it shows the headline numbers (ad spend, leads, estimates, won
  *   jobs, real revenue, return on ad spend), a strip of sales-and-response KPIs
  *   (incl. an honest lead win rate — won ÷ decided, always ≤ 100%), the open
- *   sales pipeline (a donut plus a per-stage count list), four donut charts
+ *   sales pipeline and the lead-vs-won trend side by side (each about half
+ *   width — the pipeline board doesn't need a full row), four donut charts
  *   (calls answered vs missed — from CallRail, leads by source, won jobs by
- *   division, leads by campaign), and a lead-vs-won trend over time. A small
- *   caption reports how much of the counted calls have actually been through
+ *   division, leads by campaign). A small caption reports how much of the
+ *   counted calls have actually been through
  *   the AI spam classifier (not a judgment of its own — see NOTES). This is
  *   the screen that replaces flipping between five different tools to see the
  *   whole story.
@@ -69,8 +70,11 @@
  *     NOT a duration_sec proxy: a call can have real talk time (voicemail,
  *     brief greeting) and still be a miss by CallRail's own judgment — the old
  *     duration=0 proxy wildly undercounted misses (1 vs CallRail's real 20).
- *     get_call_volume defaults to a 30-day window when a bound is null, so
- *     under "All time" we pass ALL_TIME_FLOOR to keep the window aligned.
+ *     get_call_volume's own null-p_start default derives a real floor from the
+ *     org's earliest call (fixed 2026-07-22 — a hardcoded distant frontend
+ *     floor here previously blew past PostgREST's 1000-row cap and silently
+ *     showed 0 calls under "All time"; see UPR-Web-Context.md). This page
+ *     just passes start/end straight through, same as every other RPC here.
  *   - A failed load renders a DISTINCT error card with a Retry button — never the
  *     funnel/empty success state, never a blank page (loading-error-states.md §1).
  *   - The loading gate fires on cold load AND on range change (range is a param
@@ -128,11 +132,6 @@ import { ErrorState } from '@/components/ui';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// get_call_volume defaults to the last 30 days when a bound is null — which would
-// silently show a 30-day answer rate under an "All time" range. Pass an explicit
-// floor so the call window matches the rest of the page.
-const ALL_TIME_FLOOR = '2000-01-01';
-
 export default function CrmOverview() {
   const { db } = useAuth();
 
@@ -149,8 +148,6 @@ export default function CrmOverview() {
     setError(false);
     try {
       const { start, end } = rangeToDates(range, customRange);
-      const callStart = start ?? ALL_TIME_FLOOR;
-      const callEnd = end ?? new Date().toISOString().slice(0, 10);
       const [
         rollup,
         callVolume,
@@ -163,7 +160,7 @@ export default function CrmOverview() {
         leads,
       ] = await Promise.all([
         db.rpc('get_attribution_rollup', { p_start_date: start, p_end_date: end }),
-        db.rpc('get_call_volume', { p_start: callStart, p_end: callEnd }),
+        db.rpc('get_call_volume', { p_start: start, p_end: end }),
         db.rpc('get_speed_to_lead', { p_start: start, p_end: end }),
         db.rpc('get_estimate_aging', {}),
         db.rpc('get_conversion_trend', { p_start: start, p_end: end }),
@@ -300,12 +297,19 @@ export default function CrmOverview() {
 
           <OverviewKpiStrip stats={kpiStats} />
 
-          <PipelineStageCard
-            rows={derived.pipelineRows}
-            won={derived.outcome.won}
-            lost={derived.outcome.lost}
-            winRate={derived.outcome.win_rate}
-          />
+          {/* Pipeline + trend share a row (each ~half width) rather than each
+              claiming a full-width card — the pipeline board doesn't need the
+              whole row, and pairing it with the trend keeps "where things
+              stand right now" next to "how that's moved over time". */}
+          <div className="crm-pipeline-trend-row">
+            <PipelineStageCard
+              rows={derived.pipelineRows}
+              won={derived.outcome.won}
+              lost={derived.outcome.lost}
+              winRate={derived.outcome.win_rate}
+            />
+            <ConversionTrendCard trend={derived.trend} />
+          </div>
 
           <OverviewCharts
             calls={{ answered: derived.calls.answered, missed: derived.calls.missed, total: derived.calls.total }}
@@ -313,8 +317,6 @@ export default function CrmOverview() {
             divisions={derived.divisions}
             campaigns={derived.campaigns}
           />
-
-          <ConversionTrendCard trend={derived.trend} />
 
           {/* Overdue tasks (Phase 7 slot). The weighted-forecast widget is
               intentionally not rendered here: inbound leads carry no dollar

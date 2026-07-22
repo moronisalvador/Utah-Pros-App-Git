@@ -42,6 +42,7 @@ export const CHANNEL_LABELS = {
 };
 
 export const RANGES = [
+  { key: '7d', label: '7 days', days: 7 },
   { key: '30d', label: '30 days', days: 30 },
   { key: '90d', label: '90 days', days: 90 },
   { key: '12mo', label: '12 months', days: 365 },
