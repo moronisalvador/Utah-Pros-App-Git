@@ -56,7 +56,7 @@ function IconCalendar(p) {
 const CALENDAR_ICON_STYLE = { width: 14, height: 14, strokeWidth: 1.75 };
 
 /**
- * The preset range tabs (30 days / 90 days / 12 months / All time) plus a
+ * The preset range tabs (7 days / 30 days / 90 days / 12 months / All time) plus a
  * calendar icon that opens a From/To custom-range popover — the same pattern
  * as the Leads board's own date filter (CrmLeads.jsx's DATE_PERIODS +
  * crm-leads-datepicker popover), reused here via the same shared CSS classes
