@@ -4897,6 +4897,19 @@ adjudication → owner reviewed the 17-row worklist and ruled "payment or signed
 all 17 restored via `set_job_real_job` (audited; all-time sales 87 → 104 / $628K, dated into their
 historical months so current-week numbers unchanged; reconciler evidence_unflagged now 0).
 
+**Repeat-caller dedup (2026-07-22, owner-directed — "one person, one card"):** the owner spotted the
+same caller twice in the Won column; investigation found **7 duplicated numbers** and a live gap —
+"Missed Calls" is `is_lost`, so the redial-merge's 3-hour lost-window meant every redial-after-3h
+created a duplicate once missed calls started auto-staging. `20260722_crm_dedup_repeat_caller_leads.sql`
+(a) body-replaces `upsert_lead_from_callrail` with a four-tier merge — open/stage-less (always),
+recoverable-terminal/Missed Calls (always, **no window**), **Won ≤30 days** (post-win call = job
+logistics; REVERSES the 2026-07-20 "call after Won = new lead" rule, owner decision; >30d → new card),
+Lost proper ≤3h — most-alive candidate wins; and (b) backfilled all 7 groups (11 merges, oldest lead =
+canonical, latest HUMAN-moved stage survives on it, every merge logged to `system_events` with the
+deleted stage row's identity for undo). Missed Calls column 23 → 16; Kalsey/Christine/Russell each one
+card. Live-proven both ways (10-hour redial merges; post-win call merges; won stage survives). Test:
+`crm_merge_repeat_call_leads.test.js` (rewritten (b), new (b2)).
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

@@ -30,8 +30,15 @@ CallRail fires the webhook **several times per call** (started / completed / rec
 upsert is idempotent on `callrail_id`, so re-deliveries update one row. At ingest:
 - **Contact match**: `contact_id` links iff EXACTLY ONE contact shares the caller's last-10-digit
   phone suffix (ambiguous/no match → NULL — the backlink trigger closes this later, see §4).
-- **Redial merge**: same phone with an open prior lead — or a Lost-stage lead ≤3h old (the
-  Missed-Calls callback window) — sets `merged_into_lead_id`; the redial gets no card of its own.
+- **Repeat-caller merge** (four tiers, `20260722_crm_dedup_repeat_caller_leads` — one person, one
+  card): same phone merges into the existing lead when it is **open/stage-less** (always), in a
+  **recoverable terminal stage** (Missed Calls — always, no time window: a redial of an un-handled
+  caller is the same pending inquiry), **Won ≤30 days ago** (a post-win call is job logistics;
+  after 30 days it's genuinely new business → new card), or **Lost proper ≤3h** (later → fresh
+  card, fresh chance). Most-alive candidate wins (open > recoverable > won > lost). Sets
+  `merged_into_lead_id`; the redial gets no card of its own. *(Supersedes the 2026-07-20/21 rule
+  where Won never merged and Missed Calls only merged ≤3h — once missed calls auto-staged, every
+  redial-after-3h duplicated, and the Won column double-counted a repeat caller — owner-caught.)*
   A WON prior lead never absorbs a redial (a past customer's new problem is a new lead).
 - **Missed-call auto-stage**: the delivery carrying CallRail's EXPLICIT `answered='false'` stages the
   lead into the org's "Missed Calls" stage (string-compared, never a throwing cast; the call-started
