@@ -19,10 +19,12 @@
  *   Imported by the CRM Overview chart components (Donut, PipelineStageCard,
  *   OverviewCharts, ConversionTrendCard) and the CrmOverview page. Palette +
  *   channel/division maps, paletteColor, toDonutSegments, callVolumeSplit
- *   (CallRail-sourced answered/missed), agingOverThreshold, leadsByCampaign,
- *   leadsByChannel, newLeadsSince, pipelineOutcome (won/lost/open + bounded
- *   lead win rate), callScreeningCoverage (AI spam-classifier coverage, a
- *   transparency read — not a spam judgment of its own).
+ *   (CallRail-sourced answered/missed), agingOverThreshold, isCountableLead
+ *   (excludes unanswered-call noise from a marketing lead count — the
+ *   client-side twin of the SQL crm_call_is_answered predicate),
+ *   leadsByCampaign, leadsByChannel, newLeadsSince, pipelineOutcome (won/lost/
+ *   open + bounded lead win rate), callScreeningCoverage (AI spam-classifier
+ *   coverage, a transparency read — not a spam judgment of its own).
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -185,6 +187,43 @@ export function agingOverThreshold(rows, days = 31) {
 }
 
 // ─── SECTION: Leads groupings ──────────────
+
+/**
+ * Was this call actually answered? Matches the canonical SQL definition,
+ * `crm_call_is_answered(raw_payload, duration_sec)` (migration
+ * 20260722_crm_leads_exclude_unanswered_calls.sql), for every value
+ * CallRail's live webhook can actually produce: trust CallRail's own
+ * 'answered' flag when present (its payload is always form-urlencoded, so
+ * this always arrives as the literal string "true"/"false", never a JSON
+ * boolean or null), else fall back to duration_sec > 0 (only relevant for
+ * legacy rows ingested before CallRail started sending 'answered'). Keep
+ * these two definitions in sync if either ever changes — this is the
+ * client-side twin of the same rule for the ONE lead-counting consumer that
+ * doesn't go through an RPC (CrmOverview.jsx's campaign donut and New-leads
+ * KPI, which need per-row lead data, not just an aggregate).
+ */
+function isCallAnswered(answered, durationSec) {
+  if (answered === 'true' || answered === true) return true;
+  if (answered === 'false' || answered === false) return false;
+  return num(durationSec) > 0;
+}
+
+/**
+ * Is this inbound_leads row a genuine countable lead — not an unanswered
+ * call with zero content? A call that rang and was never picked up has no
+ * recording and no transcript, so it can NEVER be run through the AI
+ * classifier that would otherwise catch a non-lead and flag it as spam
+ * (verified live 2026-07-22: 13 of 29 "leads" in a 7-day window were
+ * unanswered calls, 45%). Forms are always countable (no 'answered' concept
+ * applies to them). This does NOT affect the Kanban board or sales
+ * pipeline — those intentionally keep showing unanswered calls, since staff
+ * still need to see a missed call to actually call the person back; this
+ * predicate is for MARKETING-METRIC lead counts only.
+ */
+export function isCountableLead(lead) {
+  if (lead?.source_type !== 'call') return true;
+  return isCallAnswered(lead?.answered, lead?.duration_sec);
+}
 
 /**
  * Group leads by campaign, keep the top N, fold the rest into a single

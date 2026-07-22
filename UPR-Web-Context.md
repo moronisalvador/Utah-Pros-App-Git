@@ -4754,6 +4754,35 @@ went to the RPCs); and the 1000-row cap on the leads fetch can under-count `wind
 windows (12mo/All time) with >1000 total leads — neither is new, both are candidates for a future
 follow-up.
 
+**"Leads" excludes unanswered calls everywhere (2026-07-22, `20260722_crm_leads_exclude_unanswered_
+calls.sql`, owner-caught live):** every "Leads" number on Overview/Attribution/Reports (headline card,
+"Leads by source", "Leads by campaign", "New leads" KPI, Conversion Trend's leads bar) counted ANY
+non-spam-flagged `inbound_leads` row — but a call that rang and was never picked up has no recording and
+no transcript, so it can NEVER be run through the AI classifier that would otherwise catch it as spam.
+Verified live: **13 of 29 "leads" in a 7-day window (45%) were unanswered calls with zero content** —
+after this fix the same window correctly shows **16** (manually audited: 15 confirmed real water/mold
+inquiries + 1 confirmed real inquiry for an out-of-scope service). Fix introduces ONE canonical
+`crm_call_is_answered(raw_payload, duration_sec) → boolean` SQL helper — mirrors `get_call_volume`'s
+own existing inline CASE expression exactly (trust CallRail's `raw_payload->>'answered'` flag when
+present, else fall back to `duration_sec > 0` for legacy rows) — and adopts it in `get_call_volume`
+(DRY, behavior-identical), `get_attribution_rollup`'s `leads_agg` CTE, and `get_conversion_trend`'s
+`lead_c` CTE (both gain `AND (source_type <> 'call' OR crm_call_is_answered(...))`). All three
+signatures byte-for-byte unchanged. `crmCharts.js` gained the client-side twin `isCountableLead(lead)`
+(+ 4 tests) for the ONE lead-counting consumer that doesn't go through an RPC — `CrmOverview.jsx`'s raw
+`inbound_leads` select, which now also selects `source_type`, `duration_sec`, and
+`answered:raw_payload->>answered` (verified this PostgREST jsonb-path aliasing works against the live
+REST endpoint before using it) and filters `windowLeads` down to `countableWindowLeads` before feeding
+the campaign donut/New-leads count. **Deliberately UNCHANGED:** the Kanban board (`CrmLeads.jsx`), task
+picker (`CrmTasks.jsx`), and the sales pipeline's stage grouping all still show/count unanswered calls —
+staff still need to see a missed call in order to actually call the person back, so this is a
+MARKETING-METRIC fix only, never an ops/triage visibility change. Verified live end-to-end: an
+unanswered-call fixture did NOT increase `get_attribution_rollup`'s leads count; an answered-call
+fixture with the same shape did (0→1); both cleaned up. Grants confirmed `authenticated`/
+`service_role`-only on all 4 functions post-apply. Test:
+`supabase/tests/crm_leads_exclude_unanswered_calls.test.js` (self-skips locally like sibling CRM
+suites) — covers `get_attribution_rollup`/`get_conversion_trend` answered-vs-unanswered deltas and the
+no-`answered`-key legacy-row duration_sec fallback.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
