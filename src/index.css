@@ -9677,12 +9677,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    to one column, nothing overflows horizontally). */
 
 /* The CRM-traced-scope disclosure (reused on CrmOverview/CrmAttribution/
-   CrmReports — not Overview-only despite this marker's name) + the AI
-   spam-screening coverage caption (Overview only) — a little breathing room
-   below each before the next card, without touching the shared .crm-note
-   margin used elsewhere. */
+   CrmReports — not Overview-only despite this marker's name) — a little
+   breathing room below it before the next card, without touching the shared
+   .crm-note margin used elsewhere. (The AI spam-screening coverage caption
+   that used to sit alongside this was removed 2026-07-22 — owner call, not
+   worth the space — so .crm-screening-note is gone too.) */
 .crm-scope-note { margin-bottom: var(--space-3); }
-.crm-screening-note { margin-bottom: var(--space-5); }
 
 /* Four-panel donut charts grid — collapses to 1 column on narrow screens. */
 .crm-charts-grid {
