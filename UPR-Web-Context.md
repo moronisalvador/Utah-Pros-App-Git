@@ -4910,6 +4910,20 @@ deleted stage row's identity for undo). Missed Calls column 23 → 16; Kalsey/Ch
 card. Live-proven both ways (10-hour redial merges; post-win call merges; won stage survives). Test:
 `crm_merge_repeat_call_leads.test.js` (rewritten (b), new (b2)).
 
+**Caller name follows the merge (2026-07-22, owner-caught immediately after the dedup):** the dedup
+left a Won card showing a bare phone number — the caller looked gone. Cause: `caller_name` is written
+by OUR AI pass (Deepgram → Claude in `transcribe-call.js` → `set_lead_caller_name`), **not** CallRail,
+and it usually lands on a LATER call (the first call often goes unanswered or nobody says a name).
+That later call now merges and owns no card, so the name was written to a row that renders nowhere.
+`20260722_crm_caller_name_follows_merge.sql` body-replaces `set_lead_caller_name` (signature + return
+contract frozen — still returns the row for `p_lead_id`) to resolve the **canonical root** (same
+bounded walk as `crm_advance_lead_if_forward`) and apply the name to BOTH rows, **each judged against
+its OWN current name under the unchanged fill-blank/extend-only guard** — so propagation can only ADD
+a name to a nameless card or extend it, never overwrite an established one. Backfill promoted 1 card
+(Kelsey Bledgy); every Won card is now named. Live-proven all three ways: FILL, EXTEND, and PROTECT
+(an unrelated "Bob Smith" on a merged call left the canonical's "Alice Anderson" untouched while the
+call row kept its own name). Test: `crm_caller_name_follows_merge.test.js`.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

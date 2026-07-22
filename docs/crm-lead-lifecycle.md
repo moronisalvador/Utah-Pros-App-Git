@@ -115,25 +115,32 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
    the canonical card ("Follow-up call" in the activity timeline).
    *(merge design + `crm_advance_lead_if_forward`'s pointer resolution; tests:
    `crm_merge_repeat_call_leads.test.js`, `crm_advance_revives_recoverable_stages.test.js`)*
-2. **Any pipeline-advance signal fired on a merged row acts on its canonical root.** The AI pass runs
+2. **Enrichment learned on a merged row must reach the canonical — it owns the only card.** The
+   caller's NAME comes from our own AI pass, usually on a LATER call, which is exactly the row that
+   merges. `set_lead_caller_name` therefore resolves the canonical root and names both rows, each
+   under its own fill-blank/extend-only guard (never overwriting an established name).
+   *(`20260722_crm_caller_name_follows_merge.sql`; test `crm_caller_name_follows_merge.test.js`.
+   **Generalize this:** any future per-lead enrichment — score, intent, value — must ask "does the
+   canonical need this too?", or it will be written somewhere nothing renders.)*
+3. **Any pipeline-advance signal fired on a merged row acts on its canonical root.** The AI pass runs
    on the redial row (where the transcript lives) — the function resolves the pointer first.
-3. **Won and Lost are human-sticky.** No automation ever moves a lead off them. The ONLY exception is
+4. **Won and Lost are human-sticky.** No automation ever moves a lead off them. The ONLY exception is
    a stage marked `pipeline_stages.is_recoverable = true` (today: Missed Calls — a callback
    work-queue, not a judgment), which forward evidence may revive.
-4. **A human's placement always beats the machine's.** Auto-stage/auto-advance never overwrite an
+5. **A human's placement always beats the machine's.** Auto-stage/auto-advance never overwrite an
    existing stage row backward, and auto-stage never fires at all when any stage row exists.
-5. **Every change to `jobs.is_real_job` / source / marked_at lands in `job_real_flag_history`** — RPC,
+6. **Every change to `jobs.is_real_job` / source / marked_at lands in `job_real_flag_history`** — RPC,
    trigger, or raw write alike — and **demotion preserves the original evidence**
    (`is_real_job=false` + `real_job_marked_at NOT NULL` = the recognizable "was sold, then demoted"
    signature). *(`20260722_real_job_flag_audit_trail.sql`)*
-6. **Every automated identity link is audited and reversible.** Backlinks write
+7. **Every automated identity link is audited and reversible.** Backlinks write
    `system_events('crm_lead_backlinked')`; a contact phone CHANGE releases that trigger's own prior
    links for the old number (`'crm_lead_backlink_reverted'`) — so a mistyped/recycled number can
    never permanently poach a stranger's lead history. Human-made links are never auto-touched.
    *(`20260722_crm_lead_contact_backlink.sql`)*
-7. **The webhook write path never throws on payload garbage.** String comparisons over casts,
+8. **The webhook write path never throws on payload garbage.** String comparisons over casts,
    best-effort side effects, 200-on-error (CallRail retry-storm guard).
-8. **Identity linking uses ONE phone rule everywhere**: digits-only, `right(digits,10)`, both sides
+9. **Identity linking uses ONE phone rule everywhere**: digits-only, `right(digits,10)`, both sides
    ≥10 digits, and link only when exactly ONE contact holds the suffix.
 
 ---
