@@ -33,8 +33,7 @@
  *              ./attributionData (deriveRows, rangeToDates),
  *              @/lib/crmPipeline (sortStages, groupLeadsByStage),
  *              @/lib/crmCharts (callVolumeSplit, agingOverThreshold,
- *                leadsByCampaign, leadsByChannel, newLeadsSince,
- *                pipelineOutcome),
+ *                leadsByCampaign, leadsByChannel, pipelineOutcome),
  *              @/components/ui (ErrorState),
  *              @/components/crm/OverviewKpiStrip,
  *              @/components/crm/PipelineStageCard,
@@ -112,6 +111,18 @@
  *     via rangeToDates('custom', customRange) — both are in load()'s dep
  *     array so picking new custom dates refetches even though `range` itself
  *     doesn't change string value.
+ *   - `data.leads` (the single inbound_leads select) is intentionally UNBOUNDED
+ *     by date — the sales pipeline needs every currently-open lead regardless
+ *     of when it was created, not just ones from the selected window. The
+ *     "Leads by campaign" donut and "New leads" KPI, though, must match the
+ *     window every OTHER number on this page uses — `derived` filters
+ *     `data.leads` down to `windowLeads` (by `rangeStart`/`rangeEnd`, captured
+ *     from the SAME rangeToDates() call the RPCs above use) before handing it
+ *     to leadsByCampaign/the newLeads count. Fixed 2026-07-22 (owner-caught
+ *     live): a "7 days" pick showed 27 leads-by-source but 67 leads-by-
+ *     campaign, and "New leads" was hardcoded to a fixed "last 7 days" cutoff
+ *     regardless of the picker — both silently counted against the full
+ *     unscoped up-to-1000-row fetch instead of the chosen window.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -133,7 +144,6 @@ import {
   agingOverThreshold,
   leadsByCampaign,
   leadsByChannel,
-  newLeadsSince,
   pipelineOutcome,
 } from '@/lib/crmCharts';
 import OverviewKpiStrip from '@/components/crm/OverviewKpiStrip';
@@ -199,7 +209,8 @@ export default function CrmOverview() {
         stages: stages || [],
         leads: leads || [],
         leadPositions,
-        sinceISO: new Date(Date.now() - 7 * DAY_MS).toISOString(),
+        rangeStart: start,
+        rangeEnd: end,
       });
     } catch {
       err('Failed to load overview');
@@ -244,8 +255,29 @@ export default function CrmOverview() {
       count: (grouped[s.id] || []).length,
     }));
 
-    const campaigns = leadsByCampaign(data.leads, 6);
-    const newLeads = newLeadsSince(data.leads, data.sinceISO);
+    // `data.leads` is ALL open non-spam/non-merged leads (unbounded by date —
+    // the pipeline above correctly needs every currently-open lead, not just
+    // ones created inside the selected window). The campaign donut and the
+    // "New leads" KPI, though, sit right next to numbers that ARE scoped to
+    // the picker's window (the headline "Leads" card, "Leads by source") — so
+    // they need the same [rangeStart, rangeEnd] filter, or they silently show
+    // a much larger, unrelated population (verified live: a "7 days" pick
+    // showed 27 leads by source but 67 by campaign, because campaign counted
+    // up to the full unscoped 1000-row fetch). rangeEnd is a bare YYYY-MM-DD
+    // date (matches what the RPCs above receive) — treated as inclusive
+    // through the END of that calendar day.
+    const startTs = data.rangeStart ? Date.parse(data.rangeStart) : null;
+    const endTs = data.rangeEnd ? Date.parse(data.rangeEnd) + DAY_MS : null;
+    const windowLeads = (data.leads || []).filter((l) => {
+      const t = Date.parse(l?.occurred_at);
+      if (!Number.isFinite(t)) return false;
+      if (startTs != null && t < startTs) return false;
+      if (endTs != null && t >= endTs) return false;
+      return true;
+    });
+
+    const campaigns = leadsByCampaign(windowLeads, 6);
+    const newLeads = windowLeads.length;
 
     return {
       totals, channels, calls, sla, aging, trend,
@@ -260,7 +292,7 @@ export default function CrmOverview() {
       { label: 'Lead win rate', value: fmtPct(outcome.win_rate), sub: `${outcome.won} won of ${outcome.decided} decided` },
       { label: 'Speed to lead', value: fmtPct(sla.sla_rate), sub: `${sla.within_sla} of ${sla.total} within 5 min` },
       { label: 'Calls answered', value: fmtPct(calls.answer_rate), sub: `${calls.missed} missed of ${calls.total}` },
-      { label: 'New leads', value: String(newLeads), sub: 'last 7 days' },
+      { label: 'New leads', value: String(newLeads), sub: 'in this window' },
       { label: 'Open leads', value: String(outcome.open), sub: 'in pipeline' },
       { label: 'Aging estimates', value: fmtMoney(aging.total_amount), sub: `${aging.count} · 31+ days` },
     ];
