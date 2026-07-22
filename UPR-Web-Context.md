@@ -893,9 +893,26 @@ maps. This dashboard keeps its own scoped palette (above).
   **Single source of truth = `jobs.is_real_job`** (migration `20260627_real_job_classification.sql`). A job is
   auto-flagged real when a **work-auth/recon agreement is signed**, a **QBO invoice** is created, or its
   **estimate is approved** (`real_job_source`/`real_job_marked_at` record which & when); the office can force
-  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), and commissions all
-  read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch first shipped a parallel
-  `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's exactly one definition.)*
+  it via `set_job_real_job`. **Billing, the "New Jobs Closed" card (`get_jobs_closed`), commissions, AND the
+  whole CRM analytics layer all read `is_real_job` — never reinvent it.** *(Reconciliation note: this branch
+  first shipped a parallel `job_sales` view; it was **retired** in `_commission_on_real_jobs.sql` so there's
+  exactly one definition.)*
+  - **⚠️ The CRM violated this rule for its entire life and was fixed 2026-07-22**
+    (`20260722_crm_won_jobs_use_canonical_real_job_rule.sql`, owner-caught live). All five CRM reporting
+    RPCs — `get_attribution_rollup`, `get_conversion_trend`, `get_crm_revenue_by_division`,
+    `get_estimator_leaderboard`, `get_contact_ltv` — counted a won job as **`jobs.phase <> 'lead'`**, i.e.
+    "a job row exists that isn't a lead anymore". But `job_received` — the phase a job enters the moment work
+    is booked, **including a free inspection** — satisfies that, so booked inspections were reported as sales.
+    Live evidence: the CRM Overview showed **12 "won jobs"** in a 7-day window, every one `phase='job_received'`
+    with null/$0 `invoiced_value` — which is also why **"Revenue $0" sat directly beside "12 won jobs"**, the two
+    numbers silently contradicting each other. Under the canonical rule that window is **1** (a signed
+    `work_auth`); all-time CRM-traced **31 → 8**. The same migration also fixed the *dating*: these RPCs dated a
+    sale by `jobs.created_at` (when the ROW was created), so the date picker never meant "won in this window" —
+    they now use **`COALESCE(claims.created_at, jobs.created_at)`**, byte-identical to `get_jobs_closed`, so the
+    CRM and the Home dashboard finally count the same thing the same way. `get_commissions` intentionally keeps
+    `jobs.created_at` (see the dating note below) and was NOT touched. Test:
+    `supabase/tests/crm_won_jobs_canonical_real_job_rule.test.js` pins the rule — a `job_received` job with
+    `is_real_job=false` must not count, and flipping ONLY `is_real_job` to true must make it count.
   - **Sale DATING (which month a sold job counts in) differs by consumer — intentional:**
     - **Card `get_jobs_closed`** dates a sale by **`COALESCE(claims.created_at, jobs.created_at)`** — the
       **claim-created date** (migration `20260704_get_jobs_closed_claim_date_basis.sql`, owner decision
