@@ -39,6 +39,20 @@
  *     honest "Since <date>" caption rather than implying older history.
  *   - Revenue = QBO-synced jobs.invoiced_value on won (booked) jobs, not cash
  *     collected to date — same definition as everywhere else in Phase 3.
+ *   - **CRM-traced scope (fixed 2026-07-22, owner-directed):** Source ROI,
+ *     Conversion trend, Estimator leaderboard, Won revenue by division, and
+ *     Funnel conversion all now count a won job/estimate ONLY when its
+ *     contact traces to a real CRM lead (crm_contact_is_traced) — the same
+ *     rescoping as CrmOverview.jsx/CrmAttribution.jsx. Only 24% of won jobs /
+ *     6% of revenue traced to a CRM lead at all before this fix.
+ *     **Deliberately NOT rescoped:** Estimate aging (get_estimate_aging) and
+ *     Top customers by lifetime value (get_contact_ltv) stay company-wide —
+ *     aging is an operational follow-up tool that needs every open estimate
+ *     regardless of channel, and LTV is about a customer we already know,
+ *     not attribution (narrowing it would understate a loyal repeat customer
+ *     whose later jobs were booked directly). Call volume (CallRail-sourced)
+ *     and Speed-to-lead/Pipeline-movement (inbound_leads-native) were never
+ *     in scope for this change either way.
  *   - RangePicker's calendar icon opens a custom From/To range (same popover
  *     as CrmLeads.jsx's date filter); `customRange` is in load()'s dep array
  *     so a new custom pick refetches even when `range` stays 'custom'.
@@ -149,6 +163,12 @@ export default function CrmReports() {
           onCustomRange={(start, end) => setCustomRange({ start, end })}
         />
       </div>
+
+      <p className="crm-note crm-scope-note">
+        Won jobs, estimates, and revenue below only count business traced to a CRM lead — except
+        Estimate aging and Top customers by lifetime value, which are called out below as staying
+        company-wide on purpose.
+      </p>
 
       {/* ─── Source ROI ─── */}
       <div className="crm-card">
@@ -279,6 +299,7 @@ export default function CrmReports() {
       <div className="crm-card">
         <h2 className="crm-section-title">Estimate aging</h2>
         <p className="crm-note">Open estimates (submitted, not yet converted) by age.</p>
+        <p className="crm-note">Company-wide on purpose — every open estimate needs follow-up regardless of how the customer originally came in.</p>
         <div className="crm-table-wrap">
           <table className="crm-table">
             <thead>
@@ -335,6 +356,7 @@ export default function CrmReports() {
           accordingly so the average isn't misread as a portfolio-wide figure. */}
       <div className="crm-card">
         <h2 className="crm-section-title">Top customers by lifetime value</h2>
+        <p className="crm-note">Company-wide on purpose — a customer&apos;s full value counts even when a later job was booked directly, not through the CRM.</p>
         <div className="crm-metric-grid">
           <div className="crm-metric">
             <div className="crm-metric-label">Avg. value (top customers)</div>
