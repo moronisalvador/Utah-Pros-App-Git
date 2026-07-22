@@ -30,6 +30,9 @@
  *     the ad platforms supply only spend dollars (see
  *     docs/crm-phase3-attribution-model.md). Do not add platform "conversions"
  *     to these efficiency numbers.
+ *   - RangePicker's calendar icon opens a custom From/To range (same popover
+ *     as CrmLeads.jsx's date filter); `customRange` is in load()'s dep array
+ *     so a new custom pick refetches even when `range` stays 'custom'.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -41,6 +44,7 @@ import { deriveRows, rangeToDates, toNumberRow } from './attributionData';
 export default function CrmAttribution() {
   const { db } = useAuth();
   const [range, setRange] = useState('all');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [raw, setRaw] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +52,7 @@ export default function CrmAttribution() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { start, end } = rangeToDates(range);
+      const { start, end } = rangeToDates(range, customRange);
       const params = { p_start_date: start, p_end_date: end };
       const [rows, camps] = await Promise.all([
         db.rpc('get_attribution_rollup', params),
@@ -63,7 +67,7 @@ export default function CrmAttribution() {
     } finally {
       setLoading(false);
     }
-  }, [db, range]);
+  }, [db, range, customRange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -81,7 +85,11 @@ export default function CrmAttribution() {
           <h1 className="crm-page-title">Attribution</h1>
           <p className="crm-page-subtitle">What each source cost and what it returned. CallRail + won jobs are the truth; ad platforms supply spend only.</p>
         </div>
-        <RangePicker value={range} onChange={setRange} />
+        <RangePicker
+          value={range}
+          onChange={setRange}
+          onCustomRange={(start, end) => setCustomRange({ start, end })}
+        />
       </div>
 
       {loading ? (
