@@ -235,6 +235,7 @@ export default function TechEditAppointment() {
         p_type: type || null,
         p_status: appt.status || 'scheduled',
         p_notes: notes.trim() || null,
+        p_actor_id: employee?.id || null,
       });
 
       // is_private is a separate column, not on update_appointment. Only push
@@ -281,7 +282,7 @@ export default function TechEditAppointment() {
     if (deleteTimer.current) clearTimeout(deleteTimer.current);
     setDeleting(true);
     try {
-      await db.rpc('delete_appointment', { p_appointment_id: id });
+      await db.rpc('delete_appointment', { p_appointment_id: id, p_actor_id: employee?.id || null });
       toast(t('toastDeleted'));
       navigate('/tech/schedule', { replace: true });
     } catch (err) {

@@ -395,6 +395,7 @@ export default function TechNewJob() {
         p_internal_notes: f.internal_notes || null,
         // When filing under an existing claim, reuse it instead of minting a new CLM.
         p_existing_claim_id: claimMode === 'existing' ? selectedClaimId : null,
+        p_created_by: employee?.id || null,
       });
       const jobNum = result?.job?.job_number || '';
       toast(jobNum ? t('toastJobCreated', { num: jobNum }) : t('toastJobCreatedNoNum'));

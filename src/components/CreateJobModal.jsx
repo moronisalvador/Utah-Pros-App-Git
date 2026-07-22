@@ -52,6 +52,7 @@ import CarrierSelect, { OOP_VALUE as OOP } from '@/components/CarrierSelect';
 import { getAuthHeader } from '@/lib/realtime';
 import HelpLink from '@/components/HelpLink';
 import { toast } from '@/lib/toast';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Awaited by the caller (with an internal timeout) before the modal closes, so
 // the request isn't abandoned mid-flight. Always resolves.
@@ -129,6 +130,7 @@ const LOSS_TYPES=['Pipe Burst','Sewer Backup','Storm / Wind','Appliance Failure'
 const DIV_EMOJI = DIVISIONS.reduce((m, d) => { m[d.value] = d.emoji; return m; }, {});
 
 export default function CreateJobModal({ db, onClose, onCreated, prefillContact }) {
+  const { employee } = useAuth();
   const [contact,        setContact]        = useState(prefillContact || null);
   const [search,         setSearch]         = useState('');
   const [results,        setResults]        = useState([]);
@@ -301,6 +303,7 @@ export default function CreateJobModal({ db, onClose, onCreated, prefillContact 
         p_internal_notes:  internalNotes || null,
         // When filing under an existing claim, reuse it instead of minting a new CLM.
         p_existing_claim_id: claimMode === 'existing' ? selectedClaimId : null,
+        p_created_by: employee?.id || null,
       });
       // Await the Encircle push (bounded by an internal timeout) BEFORE onCreated
       // closes/navigates away — a fire-and-forget call here was being abandoned

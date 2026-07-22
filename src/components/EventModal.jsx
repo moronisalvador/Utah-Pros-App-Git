@@ -86,6 +86,7 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
           p_type: null,
           p_status: null,
           p_notes: notes.trim() || null,
+          p_actor_id: employee?.id || null,
         });
         eventId = event.id;
 
@@ -139,7 +140,7 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
     if (!deleteConfirm) { setDeleteConfirm(true); return; }
     setSaving(true);
     try {
-      await db.rpc('delete_appointment', { p_appointment_id: event.id });
+      await db.rpc('delete_appointment', { p_appointment_id: event.id, p_actor_id: employee?.id || null });
       okToast('Event deleted');
       onDeleted?.();
     } catch (e) {
