@@ -14,9 +14,7 @@
  *   comes before the KPI strip/pipeline/trend detail; a strip of sales-and-
  *   response KPIs (incl. an honest lead win rate — won ÷ decided, always ≤ 100%);
  *   and the open sales pipeline + the lead-vs-won trend side by side (each
- *   about half width — the pipeline board doesn't need a full row). A small
- *   caption reports how much of the counted calls have actually been through
- *   the AI spam classifier (not a judgment of its own — see NOTES). This is
+ *   about half width — the pipeline board doesn't need a full row). This is
  *   the screen that replaces flipping between five different tools to see the
  *   whole story.
  *
@@ -36,7 +34,7 @@
  *              @/lib/crmPipeline (sortStages, groupLeadsByStage),
  *              @/lib/crmCharts (callVolumeSplit, agingOverThreshold,
  *                leadsByCampaign, leadsByChannel, newLeadsSince,
- *                pipelineOutcome, callScreeningCoverage),
+ *                pipelineOutcome),
  *              @/components/ui (ErrorState),
  *              @/components/crm/OverviewKpiStrip,
  *              @/components/crm/PipelineStageCard,
@@ -54,10 +52,8 @@
  *                get_crm_revenue_by_division RPC (won jobs by division),
  *                get_pipeline_stages RPC (all pipeline stages + won/lost flags),
  *                lead_pipeline_stage table (which stage each lead sits in),
- *                inbound_leads table (leads: value, campaign, source,
- *                  source_type, time, transcript_analysis — drives the
- *                  pipeline, campaign donut, new-leads KPI, and the AI
- *                  spam-screening coverage caption)
+ *                inbound_leads table (leads: value, campaign, source, time —
+ *                  drives the pipeline, campaign donut, and new-leads KPI)
  *              writes → none
  *
  * NOTES / GOTCHAS:
@@ -101,15 +97,13 @@
  *     change, so a gate is allowed there — it never fires on a resume/mutation).
  *   - All chart/pipeline math lives in the tested pure libs (attribution.js,
  *     crmPipeline.js, crmCharts.js); this page only wires + memoizes them.
- *   - The spam-screening caption does NOT re-judge spam — the AI classifier
- *     (functions/api/transcribe-call.js) already does that and, once it
- *     decides, calls set_lead_spam_flag(), which every count on this page
- *     already excludes via spam_flag=eq.false. This caption only reports
- *     COVERAGE (has the classifier even run on this call yet?) via
- *     callScreeningCoverage, so the leads count is never read as more
- *     certain than it is — an unscreened call could still turn out to be
- *     spam once the classifier catches up (see UPR-Web-Context.md for the
- *     classifier's own docs).
+ *   - Every count on this page already excludes confirmed spam via
+ *     spam_flag=eq.false — set by the AI classifier (functions/api/
+ *     transcribe-call.js) once it decides. An AI-screening-coverage caption
+ *     (had the classifier even run on this call yet?) was tried and removed
+ *     2026-07-22 — owner call, not worth the space — but the underlying
+ *     transparency helper (crmCharts.callScreeningCoverage) is kept, tested,
+ *     and available if this is ever needed again (see UPR-Web-Context.md).
  *   - get_attribution_rollup's leads count now excludes merged repeat-call
  *     duplicates (merged_into_lead_id), matching the Kanban board's own
  *     definition of a lead — fixed 2026-07-21 (see UPR-Web-Context.md).
@@ -141,7 +135,6 @@ import {
   leadsByChannel,
   newLeadsSince,
   pipelineOutcome,
-  callScreeningCoverage,
 } from '@/lib/crmCharts';
 import OverviewKpiStrip from '@/components/crm/OverviewKpiStrip';
 import PipelineStageCard from '@/components/crm/PipelineStageCard';
@@ -189,7 +182,7 @@ export default function CrmOverview() {
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id'),
         db.select(
           'inbound_leads',
-          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,value,campaign,source,source_type,occurred_at,transcript_analysis&order=occurred_at.desc&limit=1000',
+          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
         ),
       ]);
 
@@ -253,15 +246,10 @@ export default function CrmOverview() {
 
     const campaigns = leadsByCampaign(data.leads, 6);
     const newLeads = newLeadsSince(data.leads, data.sinceISO);
-    // How much of the counted call-leads have actually been through the AI
-    // spam classifier vs. still unscreened — a transparency read, not a new
-    // spam judgment (that stays entirely the classifier's job; see
-    // crmCharts.callScreeningCoverage).
-    const screening = callScreeningCoverage(data.leads);
 
     return {
       totals, channels, calls, sla, aging, trend,
-      pipelineRows, outcome, campaigns, newLeads, screening, divisions: data.divisions,
+      pipelineRows, outcome, campaigns, newLeads, divisions: data.divisions,
     };
   }, [data]);
 
@@ -313,14 +301,6 @@ export default function CrmOverview() {
             conversion-trend charts below) only count business traced to a CRM lead — company-wide
             totals live on the main Home dashboard, not here.
           </p>
-
-          {derived.screening.call_leads > 0 && (
-            <p className="crm-note crm-screening-note">
-              {derived.screening.unscreened === 0
-                ? `All ${derived.screening.call_leads} calls have been AI-screened for spam.`
-                : `${derived.screening.screened} of ${derived.screening.call_leads} calls AI-screened for spam · ${derived.screening.unscreened} pending (confirmed spam is already excluded from the counts above).`}
-            </p>
-          )}
 
           {/* The 4-donut charts grid sits right under the headline KPIs — the
               owner wants the at-a-glance breakdown (calls, source, division,
