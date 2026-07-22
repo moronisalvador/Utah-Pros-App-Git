@@ -173,10 +173,25 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
 
 ## 7. Known limits & open items (flagged, deliberately not built — do not silently "fix")
 
-- **Owner rulings pending:** UTC-vs-Denver bucketing in the five CRM RPCs *and* `get_jobs_closed`
-  (24% of sales sit on the wrong Denver day); traced-gate display (8 of 87 real jobs / $18.7K of
-  $577K shown — mostly structural: the CRM postdates most jobs); adjudication of the 2026-07-03 bulk
-  demotion (the reconciler lists all 17+15 candidates with evidence and dollars).
+- **Owner rulings received 2026-07-22 (two of three executed):**
+  - *Denver bucketing* — RULED "fix everywhere" and SHIPPED: all seven date-windowed CRM RPCs +
+    `get_jobs_closed` now window/bucket via `mt_date()` (`20260722_crm_denver_day_bucketing.sql`;
+    proof: an 11:30 PM Denver call counts on its Denver day, test
+    `crm_denver_day_bucketing.test.js`). The 24%-wrong-day defect is closed; `get_commissions`
+    deliberately untouched.
+  - *Traced-gate display* — RULED "show both, labeled" and SHIPPED: `get_crm_sales_summary`
+    (`20260722_crm_sales_summary_total_vs_traced.sql`) returns company-wide + traced won/revenue in
+    one canonical query; CrmOverview's Won jobs / Revenue cards keep the traced headline with an
+    "of N company-wide" sublabel.
+  - *2026-07-03 demotion adjudication* — RULED AND EXECUTED (2026-07-22): the owner reviewed the
+    17-row evidence-unflagged worklist and ruled "every job with a payment is a real job; same for
+    a signed work auth" → all 17 restored via `set_job_real_job` (actor = owner; 17
+    `job_real_flag_history` rows written — note `changed_by` is null there because the history
+    trigger reads `auth.uid()`, absent in a SQL-run; `jobs.updated_by` carries the owner id).
+    All-time sales 87 → **104** / $577K → **$628K**; the restored jobs date into their historical
+    months (Mar–Jun), so current-week numbers were untouched. The reconciler's evidence_unflagged
+    bucket is now **0**; the 14 flagged-no-evidence rows stay as-is (reconciliation-era manual
+    verdicts, documented-legitimate).
 - **Missed-call textback is dead-on-arrival** when A2P flips: `isMissedCall` in
   `run-automations.js` uses the duration proxy (ring time counts as "answered") AND requires
   `contact_id` (unanswered calls rarely have one). Consent-sensitive redesign — do not hot-fix.

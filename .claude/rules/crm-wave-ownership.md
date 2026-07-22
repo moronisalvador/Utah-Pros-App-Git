@@ -255,3 +255,24 @@ just the slot components.
   `OverdueTasksWidget` kept as-is.
 - **Everything else in §§1–8 stays frozen.** This is a one-file skeleton unfreeze for a disclosed,
   owner-approved standalone initiative — not a reopening of the wave.
+
+---
+
+## 10. Sales-summary addendum (2026-07-22) — one additive RPC beyond §9's zero-migrations line (owner-ruled)
+
+Recorded so §9 stays truthful. §9's "zero schema / zero migrations" bound the *original* dashboard-gap
+build. On 2026-07-22 the **owner explicitly ruled** the traced-gate display question as **"show both,
+labeled"** (traced headline + company-wide total beside it), which requires a company-wide-vs-traced
+sales query no existing RPC provides. The sanctioned implementation:
+
+- **One additive migration:** `20260722_crm_sales_summary_total_vs_traced.sql` — a single NEW read-only
+  `SECURITY DEFINER` function `get_crm_sales_summary(p_start_date date, p_end_date date) → json`
+  (`{ total_won, total_revenue, traced_won, traced_revenue }`), canonical `is_real_job` rule +
+  `get_jobs_closed` dating + Denver windowing + `crm_contact_is_traced` — both halves in ONE query so
+  they can never drift. No table/column/policy change; explicit PUBLIC/anon revoke;
+  `authenticated, service_role` grants. Audited by `migration-safety-checker` + `anon-grant-auditor`
+  (both pass, 2026-07-22). Test: `supabase/tests/crm_denver_day_bucketing.test.js`.
+- **§9's enumerated read list extends** by exactly this one RPC for `CrmOverview.jsx`.
+- Everything else in §§1–9 stays frozen. (The same-day `20260722_crm_denver_day_bucketing.sql` is a
+  separate standalone production fix under the §1 AMENDED body-only-replace precedent, not part of
+  this addendum.)

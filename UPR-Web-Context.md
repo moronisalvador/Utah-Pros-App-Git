@@ -913,6 +913,26 @@ maps. This dashboard keeps its own scoped palette (above).
     `jobs.created_at` (see the dating note below) and was NOT touched. Test:
     `supabase/tests/crm_won_jobs_canonical_real_job_rule.test.js` pins the rule — a `job_received` job with
     `is_real_job=false` must not count, and flipping ONLY `is_real_job` to true must make it count.
+  - **⭐ Denver-day windowing everywhere (owner ruling 2026-07-22, applied live)**
+    (`20260722_crm_denver_day_bucketing.sql`): every date window/bucket in the CRM reporting layer AND
+    `get_jobs_closed` was **UTC-midnight** (`p_date::timestamptz`), so ~24% of sales (21/87) and every
+    evening call reported on the wrong local day, and "last 7 days" actually ran 6 PM-to-6 PM. All eight
+    functions — `get_attribution_rollup`, `get_conversion_trend`, `get_crm_revenue_by_division`,
+    `get_estimator_leaderboard`, `get_pipeline_movement`, `get_speed_to_lead`, `get_call_volume`
+    (its buckets were still UTC despite using `mt_today()` for the default end), `get_jobs_closed`
+    (`p_floor`) — now window/bucket via **`mt_date()`** (America/Denver, `database-standard.md` §7),
+    body-only replaces, signatures/shapes unchanged (frozen-contract disclosure in the migration header;
+    P6 precedent). `get_estimate_aging`/`get_contact_ltv` are windowless — untouched; `get_commissions`
+    deliberately untouched (money-period stability). Proven live: an 11:30 PM Denver fixture call counted
+    on its Denver day, not its UTC day. Test: `supabase/tests/crm_denver_day_bucketing.test.js`.
+  - **`get_crm_sales_summary(p_start_date date, p_end_date date) → json`** (NEW,
+    `20260722_crm_sales_summary_total_vs_traced.sql`, owner ruling 2026-07-22 "show both, labeled"):
+    `{ total_won, total_revenue, traced_won, traced_revenue }` — company-wide vs CRM-traced sales for the
+    same window, ONE query so the halves can never drift (canonical `is_real_job` + get_jobs_closed dating
+    + Denver window + `crm_contact_is_traced`). Consumed by `CrmOverview.jsx`: the Won jobs / Revenue cards
+    keep the TRACED headline and now show "of N sold company-wide" in the sublabel (only ~9% of historical
+    jobs trace to a CRM lead — structural, the CRM postdates them; the gap closes via the backlink trigger).
+    Grants: authenticated + service_role only (explicit PUBLIC/anon revoke).
   - **Sale DATING (which month a sold job counts in) differs by consumer — intentional:**
     - **Card `get_jobs_closed`** dates a sale by **`COALESCE(claims.created_at, jobs.created_at)`** — the
       **claim-created date** (migration `20260704_get_jobs_closed_claim_date_basis.sql`, owner decision
@@ -4869,8 +4889,13 @@ needed); the three mark_job_real triggers don't watch `job_id` (an invoice/estim
 to its job AFTER the signal column was set never fires — the suspected mechanism for job 26-20); Won
 auto-advance depends on lead↔contact linkage (0 system Won moves ever recorded); forms are never
 AI-screened for spam; "Contacted" stage has no auto-mover (outbound calls are invisible — properly
-fixed by the future Twilio phone platform); UTC-vs-Denver bucketing + traced-gate display + 2026-07-03
-demotion adjudication all await owner rulings.
+fixed by the future Twilio phone platform). **Owner rulings received 2026-07-22 and executed:**
+UTC-vs-Denver bucketing → FIXED everywhere incl. `get_jobs_closed` (`20260722_crm_denver_day_bucketing.sql`);
+traced-gate display → "show both, labeled" via `get_crm_sales_summary`
+(`20260722_crm_sales_summary_total_vs_traced.sql` + CrmOverview sublabels); 2026-07-03 demotion
+adjudication → owner reviewed the 17-row worklist and ruled "payment or signed work auth = real job" —
+all 17 restored via `set_job_real_job` (audited; all-time sales 87 → 104 / $628K, dated into their
+historical months so current-week numbers unchanged; reconciler evidence_unflagged now 0).
 
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.

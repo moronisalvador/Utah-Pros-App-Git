@@ -43,6 +43,9 @@
  *   Data:      reads  →
  *                get_attribution_rollup RPC (ad_spend + inbound_leads + estimates
  *                  + jobs, per channel),
+ *                get_crm_sales_summary RPC (company-wide vs CRM-traced won/
+ *                  revenue for the same window — the "of N company-wide"
+ *                  labels),
  *                get_call_volume RPC (CallRail's own answered/missed
  *                  disposition — raw_payload.answered, NOT a duration proxy),
  *                get_speed_to_lead RPC (response-time buckets),
@@ -74,6 +77,20 @@
  *     deliberately the sales & marketing command center, not the P&L. Two
  *     related RPCs on the Reports page (get_contact_ltv, get_estimate_aging)
  *     are DELIBERATELY NOT scoped this way — see CrmReports.jsx's own NOTES.
+ *     **Amended 2026-07-22 (owner ruling "show both, labeled"):** the Won jobs
+ *     and Revenue cards keep the TRACED number as the headline but now show
+ *     the company-wide total in their sublabel ("of N sold company-wide"),
+ *     via get_crm_sales_summary — one RPC computing both halves with the same
+ *     canonical rule/date/window so they can never drift. Reason: only ~9% of
+ *     historical jobs trace to a CRM lead (structural — the CRM postdates
+ *     them), so the traced-only card read 30× smaller than its label implied.
+ *   - **All date windows are Denver calendar days** (database-standard.md §7):
+ *     every RPC this page calls buckets/windows via mt_date()/mt_today()
+ *     (America/Denver) as of 20260722_crm_denver_day_bucketing.sql — before
+ *     that, boundaries were UTC midnights and ~24% of sales reported on the
+ *     wrong day. rangeToDates() computes its YYYY-MM-DD strings from the
+ *     browser's local clock, which for UPR staff IS Denver — the two now
+ *     agree end-to-end.
  *   - ⭐ **"Won jobs" uses THE canonical company-wide sale rule — `jobs.
  *     is_real_job` — never a local proxy.** See UPR-Web-Context.md "What counts
  *     as a SALE / REAL JOB (THE canonical rule)": a job is a real sale when a
@@ -203,6 +220,7 @@ export default function CrmOverview() {
       const { start, end } = rangeToDates(range, customRange);
       const [
         rollup,
+        salesSummary,
         callVolume,
         speed,
         aging,
@@ -213,6 +231,7 @@ export default function CrmOverview() {
         leads,
       ] = await Promise.all([
         db.rpc('get_attribution_rollup', { p_start_date: start, p_end_date: end }),
+        db.rpc('get_crm_sales_summary', { p_start_date: start, p_end_date: end }),
         db.rpc('get_call_volume', { p_start: start, p_end: end }),
         db.rpc('get_speed_to_lead', { p_start: start, p_end: end }),
         db.rpc('get_estimate_aging', {}),
@@ -233,6 +252,7 @@ export default function CrmOverview() {
 
       setData({
         rollup: rollup || [],
+        salesSummary: salesSummary || null,
         callVolume: callVolume || [],
         speed: speed || [],
         aging: aging || [],
@@ -320,8 +340,16 @@ export default function CrmOverview() {
     const campaigns = leadsByCampaign(countableWindowLeads, 6);
     const newLeads = countableWindowLeads.length;
 
+    // Owner ruling 2026-07-22 ("show both, labeled"): the company-wide sale
+    // totals shown beside the CRM-traced headline numbers. Same canonical rule
+    // (is_real_job), same sale date, same Denver window — one RPC, so the two
+    // halves can never drift apart.
+    const sales = data.salesSummary || {
+      total_won: 0, total_revenue: 0, traced_won: 0, traced_revenue: 0,
+    };
+
     return {
-      totals, channels, calls, sla, aging, trend,
+      totals, channels, calls, sla, aging, trend, sales,
       pipelineRows, outcome, campaigns, newLeads, divisions: data.divisions,
     };
   }, [data]);
@@ -364,15 +392,30 @@ export default function CrmOverview() {
             <MetricCard label="Ad spend" value={fmtMoney(derived.totals.spend)} sub="Google + Meta" />
             <MetricCard label="Leads" value={derived.totals.leads.toLocaleString('en-US')} sub="CallRail calls + forms" />
             <MetricCard label="Estimates" value={derived.totals.estimates.toLocaleString('en-US')} sub="sent · CRM-traced" />
-            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="sold · CRM-traced" />
-            <MetricCard label="Revenue" value={fmtMoney(derived.totals.revenue)} sub="QBO invoiced · CRM-traced" />
+            {/* Owner ruling 2026-07-22: traced number is the headline (the
+                attribution story), company-wide total labeled right beside it.
+                Only ~9% of historical jobs trace to a CRM lead (the CRM
+                postdates them) — traced-only read 30× smaller than its label
+                implied; the gap closes naturally via the backlink trigger. */}
+            <MetricCard
+              label="Won jobs"
+              value={derived.totals.won_jobs.toLocaleString('en-US')}
+              sub={`CRM-traced · of ${derived.sales.total_won.toLocaleString('en-US')} sold company-wide`}
+            />
+            <MetricCard
+              label="Revenue"
+              value={fmtMoney(derived.totals.revenue)}
+              sub={`CRM-traced · of ${fmtMoney(derived.sales.total_revenue)} company-wide`}
+            />
             <MetricCard label="ROAS" value={fmtRatio(derived.totals.roas)} sub="paid channels" />
           </div>
 
           <p className="crm-note crm-scope-note">
             Estimates, won jobs, and revenue on this page (including the won-jobs-by-division and
-            conversion-trend charts below) only count business traced to a CRM lead — company-wide
-            totals live on the main Home dashboard, not here.
+            conversion-trend charts below) only count business traced to a CRM lead — the
+            &ldquo;of N company-wide&rdquo; beside Won jobs and Revenue is the full company total
+            for the same window (the Home dashboard&rsquo;s number). Most older jobs predate the
+            CRM and can never be traced; the gap closes as new business flows through the CRM.
           </p>
 
           {/* The 4-donut charts grid sits right under the headline KPIs — the
