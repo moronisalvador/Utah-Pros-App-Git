@@ -214,6 +214,14 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
   unlinked until the survivor's phone is touched).
 - **`jobs.estimator` is NULL on all rows** — the Estimator Leaderboard card has always rendered
   empty. Populate it or remove the card.
+- **⚠️ The integration test suite verifies NOTHING right now** (found 2026-07-22). All 65 files in
+  `supabase/tests/` connect with the **anon key**, but 360 of 366 functions and 107 of 127 tables are
+  `authenticated`-only since the P3 anon closure — so they self-skip in CI and would hit `42501`
+  locally. Worse, an RLS-blocked `db.select`/`db.insert` returns `[]` **silently**, so delta-based
+  assertions can pass vacuously even once auth is restored. **Every invariant listed in §5 of this
+  doc is currently pinned by a test that cannot run** — the 2026-07-22 work was verified by hand
+  against the live DB instead. Plan of record: **`docs/test-auth-repair-plan.md`** (owner-approved
+  2026-07-22, scheduled next session). Do not trust "tests pass" on any CRM change until it lands.
 
 ---
 
