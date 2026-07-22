@@ -9676,9 +9676,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    no motion that lacks a reduced-motion fallback); 390px-safe (grids collapse
    to one column, nothing overflows horizontally). */
 
-/* AI spam-screening coverage caption (transparency, not a chart) — a little
-   breathing room below it before the next card, without touching the shared
-   .crm-note margin used elsewhere. */
+/* The CRM-traced-scope disclosure (reused on CrmOverview/CrmAttribution/
+   CrmReports — not Overview-only despite this marker's name) + the AI
+   spam-screening coverage caption (Overview only) — a little breathing room
+   below each before the next card, without touching the shared .crm-note
+   margin used elsewhere. */
+.crm-scope-note { margin-bottom: var(--space-3); }
 .crm-screening-note { margin-bottom: var(--space-5); }
 
 /* Four-panel donut charts grid — collapses to 1 column on narrow screens. */

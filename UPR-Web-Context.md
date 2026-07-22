@@ -7455,3 +7455,63 @@ request: `arrayLength: 1000`, `lastRow.period: "2002-09-26"`, `sumTotal: 0`.
   is a landmine — PostgREST's row cap will silently and invisibly truncate a too-wide by-day range to
   whatever slice happens to sort first, with no error thrown. Prefer deriving "all time" floors from real
   data, never a guessed constant.
+
+**CRM-only attribution scoping (owner-directed, 2026-07-22) — the big one.** The owner asked, looking at
+the Overview: "shouldn't these numbers only count what originated from a lead existing in the CRM?"
+Investigation confirmed a real, large gap: only **24% of won jobs (30 of 127), 6% of revenue ($18,752 of
+$314,983), and 23% of estimates (10 of 43)** could be traced to an actual CRM lead touch at all — the
+rest was real business (direct insurance assignment, phone referrals a staffer handled without logging
+the call, jobs entered straight into Jobs/Estimates) that never touches the CRM lead pipeline. Counting
+it anyway made "won jobs" exceed "leads," which read as a broken, unreliable funnel — exactly the owner's
+complaint. **Owner's explicit decision: full CRM-only scoping everywhere**, after being shown the real
+before/after magnitude (not guessed).
+
+- **New shared helper — `crm_contact_is_traced(p_contact_id uuid) → boolean`** (migration
+  `20260722_crm_scope_attribution_to_traced_contacts.sql`): true only when a contact has a real,
+  legitimate CRM touch — a `lead_attribution` row, or a **non-spam** `inbound_leads.contact_id` link (a
+  spam-flagged-only touch does NOT count as legitimate attribution — verified this doesn't change today's
+  numbers but is the more correct long-term definition). `SECURITY DEFINER`, `STABLE`, granted
+  `authenticated, service_role` only (never `anon`) — confirmed live via
+  `information_schema.routine_privileges`.
+- **Rescoped (body-only `CREATE OR REPLACE`, signatures/return-shapes frozen, zero frontend code
+  changes needed):**
+  - `get_attribution_rollup` — `est_agg`/`job_agg` CTEs (headline Estimates/Won-jobs/Revenue on
+    Overview/Attribution/Reports). `leads_agg` untouched — leads are already inherently CRM-native.
+  - `get_crm_revenue_by_division` — its `jobs` query ("Won jobs by division" donut + Reports table).
+  - `get_conversion_trend` — `est_c`/`job_c` CTEs (the trend chart). `lead_c` untouched, same reason.
+  - `get_estimator_leaderboard` — the **whole** `WHERE` clause (both `total_jobs` AND `won_jobs` share
+    the same population deliberately — a mismatched denominator would distort win-rate math).
+  - `get_attribution_by_campaign` is **unchanged** — it only reports spend/leads, never won-jobs/revenue,
+    so it needed no rescoping.
+- **Deliberately NOT rescoped — a disclosed decision, not an oversight (owner-recommended defaults,
+  accepted):**
+  - `get_contact_ltv` — lifetime value is about a customer already *known*, not attribution. A repeat
+    customer who found us via a tracked ad but booked job #2/#3 directly is still the same valuable
+    customer; narrowing LTV to only the traced job would defeat the metric's purpose.
+  - `get_estimate_aging` — an operational "these are going stale, follow up" tool. Staff need to see
+    *every* open estimate at risk, regardless of channel — narrowing it would hide 77% of the real
+    follow-up work from the people who act on it.
+  - `get_call_volume` (CallRail-sourced) and `get_speed_to_lead`/`get_pipeline_movement`
+    (`inbound_leads`-native) were never in scope either way — they don't touch jobs/estimates.
+- **Live verification (exact before/after match on the real numbers quoted above):**
+  `get_attribution_rollup` → Won jobs 30, Revenue $18,752.35, Estimates 10, Leads unchanged at 70.
+  `get_crm_revenue_by_division` → water 19/$10,271.87 + reconstruction 6/$8,480.48 + mold 5/$0 = 30/
+  $18,752.35, matching exactly. `get_estimator_leaderboard` → correctly empty (0 of the 30 traced jobs
+  happen to have an `estimator` set — a genuine data fact, not a bug; `CrmReports.jsx` already handles an
+  empty leaderboard gracefully).
+- **Frontend disclosure (no logic changes, purely captions/docs — all 3 pages)**: `CrmOverview.jsx`'s
+  3 headline MetricCards (Estimates/Won jobs/Revenue) get a "· CRM-traced" sub, plus a page-level
+  `.crm-scope-note` explicitly naming that the won-jobs-by-division and conversion-trend charts share the
+  same scope, and pointing to the main Home dashboard for company-wide totals. `CrmAttribution.jsx` gets
+  the same treatment on its Revenue/Won-jobs cards. `CrmReports.jsx` gets a page-level scope note PLUS two
+  explicit "company-wide on purpose" callouts on the Estimate-aging and Top-customers-LTV cards specifically
+  (the two sections that are the exception, sitting right next to sections that ARE scoped — the contrast
+  is exactly where confusion would happen without an explicit callout).
+- Committed test: `supabase/tests/crm_attribution_scoped_to_traced_contacts.test.js` — before/after
+  deltas (never absolute counts) on all 4 rescoped RPCs, a genuine traced-vs-untraced contact pair, and a
+  dedicated spam-only-touch edge case proving a spam-flagged-only lead does NOT count as traced.
+- Reviewer gauntlet: `migration-safety-checker` **pass** (after two real fixes — a wrong rollback
+  citation that would have silently reintroduced a UTC-bucketing bug via `get_conversion_trend`, and two
+  test cases that were initially vacuous/shape-only and got rewritten as real before/after deltas),
+  `anon-grant-auditor` **pass** (grants confirmed live), `upr-pattern-checker` **pass** (after widening
+  the Overview scope-note to cover the trend/division charts it had initially omitted).

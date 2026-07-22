@@ -10,7 +10,10 @@
  *   efficiency numbers — cost per lead, cost per job, and return on ad spend.
  *   Paid Google Ads is also broken out by campaign (i.e. by agency). Sources
  *   we don't buy ads for (Referral, Organic, Insurance) show "—" for the cost
- *   columns, never a misleading $0.
+ *   columns, never a misleading $0. Won-jobs/revenue here count ONLY business
+ *   traceable to a CRM lead (see NOTES) — this page is specifically about
+ *   attributing revenue to a marketing channel, so a job that never touched
+ *   the CRM can't fairly be credited to any channel at all.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/attribution
@@ -30,6 +33,14 @@
  *     the ad platforms supply only spend dollars (see
  *     docs/crm-phase3-attribution-model.md). Do not add platform "conversions"
  *     to these efficiency numbers.
+ *   - **"Won jobs" / "Revenue" are CRM-TRACED ONLY** (fixed 2026-07-22,
+ *     owner-directed) — get_attribution_rollup's est_agg/job_agg CTEs now
+ *     require crm_contact_is_traced(contact_id): a real lead_attribution row
+ *     or a non-spam inbound_leads link. Only 24% of won jobs / 6% of revenue
+ *     traced to a CRM lead at all before this fix; counting the rest made
+ *     "won jobs" exceed "leads" and undermined the whole page's credibility.
+ *     get_attribution_by_campaign is UNCHANGED (it only reports spend/leads,
+ *     never won jobs/revenue, so it needed no rescoping).
  *   - RangePicker's calendar icon opens a custom From/To range (same popover
  *     as CrmLeads.jsx's date filter); `customRange` is in load()'s dep array
  *     so a new custom pick refetches even when `range` stays 'custom'.
@@ -100,9 +111,14 @@ export default function CrmAttribution() {
             <MetricCard label="Paid spend" value={fmtMoney(totals.paid_spend)} sub="Google + Meta" />
             <MetricCard label="Paid ROAS" value={fmtRatio(totals.roas)} sub="revenue ÷ spend" />
             <MetricCard label="Cost / lead" value={fmtMoney(totals.cost_per_lead)} sub="paid channels" />
-            <MetricCard label="Revenue" value={fmtMoney(totals.revenue)} sub="all channels" />
-            <MetricCard label="Won jobs" value={totals.won_jobs.toLocaleString('en-US')} sub="all channels" />
+            <MetricCard label="Revenue" value={fmtMoney(totals.revenue)} sub="all channels · CRM-traced" />
+            <MetricCard label="Won jobs" value={totals.won_jobs.toLocaleString('en-US')} sub="all channels · CRM-traced" />
           </div>
+
+          <p className="crm-note crm-scope-note">
+            Won jobs and revenue only count business traced to a CRM lead — a job that never
+            touched the CRM can&apos;t fairly be credited to a marketing channel.
+          </p>
 
           <div className="crm-card">
             <h2 className="crm-section-title">By channel</h2>
