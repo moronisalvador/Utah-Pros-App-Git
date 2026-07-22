@@ -4690,6 +4690,45 @@ deletes the duplicate's now-orphaned `lead_pipeline_stage` row. Test:
 integration suites) — covers merge-while-open, no-merge-after-Won, no-merge-after-Lost, fresh-number
 new-lead, and redelivered-webhook-doesn't-re-merge.
 
+**Redial-after-Lost time-window amendment (2026-07-22, `20260721_crm_merge_repeat_call_leads_time_window.sql`,
+adversarial-challenge follow-up):** the 2026-07-21 fix above still left a real gap — a caller whose
+first call landed in a *terminal LOST* stage (most commonly "Missed Calls," nobody picked up) never
+merged on redial, since the merge check only considered still-open leads. Every rapid callback after a
+missed call became its own brand-new lead. `upsert_lead_from_callrail` (body-only replace, signature
+unchanged) now ALSO merges into a LOST-stage lead, but only when the redial happens within a 3-hour
+window of the original call's `occurred_at` — a same-day callback is almost certainly the same
+inquiry; a call from the same number weeks later is very likely a genuinely new, unrelated job and
+correctly stays its own lead. A WON lead is still never merged into, at any recency (unchanged from
+2026-07-21). Verified live against the TEST org (not just the test suite): a redial 30 minutes after
+landing in Lost merges; a redial 5 hours after does not; a redial 30 minutes after Won still does not.
+Re-asserts the `REVOKE ... FROM PUBLIC, anon` / `GRANT ... TO authenticated, service_role` pair after
+the replace (belt-and-suspenders per `database-standard.md` §1's managed-Supabase function trap — this
+platform re-applies `EXECUTE TO PUBLIC` to a function at `ddl_command_end` even on a same-signature
+replace; confirmed live grants stayed `authenticated`/`service_role`-only throughout). Test: extended
+`supabase/tests/crm_merge_repeat_call_leads.test.js` with the within-window-merges /
+beyond-window-does-not-merge split (the Lost case now needs an explicit `occurred_at` to control the
+gap, since two calls fired back-to-back in a test are always well inside 3 hours).
+
+**Automated call-classification safety net (2026-07-22, `20260722_crm_calls_classification_cron.sql`,
+adversarial-challenge follow-up):** `callrail-webhook.js` already auto-transcribes a call in real time
+the moment its recording lands, but that path is best-effort — a Deepgram hiccup, a not-yet-ready
+recording, or a transient Anthropic error silently gives up with no retry. Verified live 2026-07-22: a
+batch of 21 calls sat never-transcribed for weeks with nobody noticing (the only prior remedy was a
+human manually POSTing `{backfill:true}`/`{reclassify:true}` to `/api/transcribe-call` from devtools
+with their own login). `functions/api/transcribe-call.js` now ALSO accepts the shared
+`cron_worker_secret` (via `functions/lib/auth.js`'s `checkCronSecret`, same OR'd pattern as
+`process-scheduled.js`/`run-automations.js` — a human's session-based trigger still works unchanged),
+and two new `pg_cron` jobs call it every 6 hours: `upr_calls_backfill_safety_net`
+(`{backfill:true, days:3}`, catches anything still missing a transcript) and
+`upr_calls_reclassify_safety_net` (`{reclassify:true}`, 20 minutes later, catches anything transcribed
+but not yet classified — Claude-only, no Deepgram cost). Reuses the existing `cron_worker_secret`
+`integration_config` row (no new secret) and adds one new `transcribe_call_worker_url` row (a public
+HTTPS URL, not a secret). Confirmed both jobs registered `active=true` in `cron.job` post-apply. A
+one-time manual `{backfill:true, days:90}` pass (owner-run from devtools, same auth snippet pattern as
+the existing reclassify one) is still needed to clear the pre-existing 21-call backlog once — the cron
+only prevents new backlog from forming going forward, it wasn't run retroactively wider than its
+3-day window.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add

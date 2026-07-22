@@ -8,9 +8,16 @@
  *   number while the first call's lead is still open in the pipeline gets
  *   merged into that original lead (no second Kanban card, visible instead as
  *   a "Follow-up call" entry on the original's activity timeline) — but a
- *   second call AFTER the original reached Won or Lost creates a genuinely
- *   new, independent lead, and a call from a phone with no prior lead at all
- *   always creates a normal new lead.
+ *   second call AFTER the original reached Won creates a genuinely new,
+ *   independent lead (at any recency), and a call from a phone with no prior
+ *   lead at all always creates a normal new lead. Also proves the 2026-07-22
+ *   time-window fix: a redial shortly after the original landed in a LOST
+ *   stage (most commonly "Missed Calls" — nobody picked up) now DOES merge —
+ *   that was the actual bug this migration fixes, verified live: rapid
+ *   callbacks after a missed call were each creating a brand-new lead — but a
+ *   redial hours later, once the original is Lost, still creates a new one
+ *   (a same-number call weeks later is very likely a separate job, not the
+ *   same inquiry).
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file, not a screen)
@@ -56,7 +63,7 @@ describe.skipIf(!hasCreds)('crm merge repeat-call leads (integration)', () => {
     if (leadIds.length) await db.delete('inbound_leads', `id=in.(${leadIds.join(',')})`);
   });
 
-  async function callFrom(phone, label) {
+  async function callFrom(phone, label, occurredAt) {
     const lead = await db.rpc('upsert_lead_from_callrail', {
       p_callrail_id: `test-merge-${label}-${runId}`,
       p_source_type: 'call',
@@ -64,7 +71,7 @@ describe.skipIf(!hasCreds)('crm merge repeat-call leads (integration)', () => {
       p_caller_number: phone,
       p_duration_sec: 45,
       p_spam_flag: false,
-      p_occurred_at: new Date().toISOString(),
+      p_occurred_at: (occurredAt || new Date()).toISOString(),
       p_raw_payload: { test: true },
     });
     leadIds.push(lead.id);
@@ -99,12 +106,24 @@ describe.skipIf(!hasCreds)('crm merge repeat-call leads (integration)', () => {
     expect(second.merged_into_lead_id).toBeNull();
   });
 
-  it('(b) a repeat call after the original reached Lost creates a genuinely new lead', async () => {
+  it('(d) a repeat call SHORTLY after the original reached Lost (e.g. Missed Calls) merges into it', async () => {
     const phone = `+1801${String(runId).slice(-6)}8`;
     const first = await callFrom(phone, 'c-first');
     await db.rpc('move_lead_to_stage', { p_lead_id: first.id, p_stage_id: stagesByName['Lost'].id, p_moved_by: null, p_lost_reason: 'test' });
 
+    // Both calls occur "now" in wall-clock terms — well inside the 3-hour window.
     const second = await callFrom(phone, 'c-second');
+    expect(second.merged_into_lead_id).toBe(first.id);
+  });
+
+  it('(e) a repeat call LONG after the original reached Lost creates a genuinely new lead', async () => {
+    const phone = `+1801${String(runId).slice(-6)}5`;
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
+    const first = await callFrom(phone, 'f-first', fiveHoursAgo);
+    await db.rpc('move_lead_to_stage', { p_lead_id: first.id, p_stage_id: stagesByName['Lost'].id, p_moved_by: null, p_lost_reason: 'test' });
+
+    // Second call "now" — 5 hours after the first, outside the 3-hour window.
+    const second = await callFrom(phone, 'f-second');
     expect(second.merged_into_lead_id).toBeNull();
   });
 
