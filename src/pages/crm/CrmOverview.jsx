@@ -74,12 +74,28 @@
  *     deliberately the sales & marketing command center, not the P&L. Two
  *     related RPCs on the Reports page (get_contact_ltv, get_estimate_aging)
  *     are DELIBERATELY NOT scoped this way — see CrmReports.jsx's own NOTES.
+ *   - ⭐ **"Won jobs" uses THE canonical company-wide sale rule — `jobs.
+ *     is_real_job` — never a local proxy.** See UPR-Web-Context.md "What counts
+ *     as a SALE / REAL JOB (THE canonical rule)": a job is a real sale when a
+ *     work-auth/recon agreement is SIGNED, a QBO invoice is created, or an
+ *     estimate is APPROVED. Sale DATE = `COALESCE(claims.created_at,
+ *     jobs.created_at)`, identical to `get_jobs_closed` (the Home dashboard's
+ *     "New Jobs Closed" card), so the CRM and the main dashboard finally count
+ *     the same thing the same way. Fixed 2026-07-22 (owner-caught live):
+ *     all five CRM reporting RPCs had reinvented the rule as `phase <> 'lead'`,
+ *     which counts `job_received` — the phase a job enters the moment work is
+ *     booked, INCLUDING a free inspection. A 7-day window showed 12 "won jobs",
+ *     every one `job_received` with null/$0 invoiced value (which is why
+ *     Revenue read $0 beside it); the honest number was 1. All-time
+ *     CRM-traced: 31 → 8. See 20260722_crm_won_jobs_use_canonical_real_job_
+ *     rule.sql. **If you need "did we sell this", read `is_real_job`.**
  *   - "Lead win rate" (won ÷ decided, from the CRM lead pipeline stage) and the
- *     "Won jobs" headline (CRM-traced contacts, from QBO) are now much closer
- *     populations than before this fix, but still not identical — "traced"
- *     only requires ANY CRM touch ever existed, not that the lead specifically
- *     reached a "Won" pipeline stage. We still do NOT show won_jobs ÷ estimates
- *     as a naive closing rate.
+ *     "Won jobs" headline are DIFFERENT OBJECTS and will legitimately differ:
+ *     the former counts LEADS that reached a "Won" pipeline stage (a sales-board
+ *     position a human sets), the latter counts real SOLD JOBS per the canonical
+ *     rule above. Both are now window-scoped, so neither is a lifetime number,
+ *     but they are not expected to be equal. We still do NOT show
+ *     won_jobs ÷ estimates as a naive closing rate.
  *   - Calls are sourced from CallRail's OWN answered/missed disposition
  *     (get_call_volume → raw_payload.answered), NOT the CRM pipeline stage and
  *     NOT a duration_sec proxy: a call can have real talk time (voicemail,
@@ -255,33 +271,11 @@ export default function CrmOverview() {
     const aging = agingOverThreshold(data.aging, 31);
     const trend = deriveConversionTrend(data.trend);
 
-    const sorted = sortStages(data.stages);
-    const grouped = groupLeadsByStage(data.leads, sorted, data.leadPositions);
-    // Honest, bounded lead outcome (won / lost / open + win rate) from the CRM
-    // lead pipeline — the one population where every count nests. Won here is
-    // a won LEAD (reached the "Won" pipeline stage) — a narrower population
-    // than the headline "Won jobs" (any CRM-traced contact's booked job), so
-    // the two numbers can still differ even though both are CRM-scoped now.
-    const outcome = pipelineOutcome(sorted, grouped);
-    const openStages = sorted.filter((s) => !s.is_won && !s.is_lost);
-    const pipelineRows = openStages.map((s) => ({
-      id: s.id,
-      name: s.name,
-      color: s.color,
-      count: (grouped[s.id] || []).length,
-    }));
-
-    // `data.leads` is ALL open non-spam/non-merged leads (unbounded by date —
-    // the pipeline above correctly needs every currently-open lead, not just
-    // ones created inside the selected window). The campaign donut and the
-    // "New leads" KPI, though, sit right next to numbers that ARE scoped to
-    // the picker's window (the headline "Leads" card, "Leads by source") — so
-    // they need the same [rangeStart, rangeEnd] filter, or they silently show
-    // a much larger, unrelated population (verified live: a "7 days" pick
-    // showed 27 leads by source but 67 by campaign, because campaign counted
-    // up to the full unscoped 1000-row fetch). rangeEnd is a bare YYYY-MM-DD
-    // date (matches what the RPCs above receive) — treated as inclusive
-    // through the END of that calendar day.
+    // `data.leads` is fetched unbounded by date (one select, up to 1000 rows);
+    // EVERY consumer below scopes it to the picker's window first, so no card
+    // on this page silently reports a different population than its neighbours.
+    // rangeEnd is a bare YYYY-MM-DD (same value the RPCs receive) — treated as
+    // inclusive through the END of that calendar day.
     const startTs = data.rangeStart ? Date.parse(data.rangeStart) : null;
     const endTs = data.rangeEnd ? Date.parse(data.rangeEnd) + DAY_MS : null;
     const windowLeads = (data.leads || []).filter((l) => {
@@ -291,6 +285,27 @@ export default function CrmOverview() {
       if (endTs != null && t >= endTs) return false;
       return true;
     });
+
+    const sorted = sortStages(data.stages);
+    // Scoped to the picker (owner decision 2026-07-22): the pipeline card used
+    // to group ALL leads ever, so it sat on a windowed page showing a lifetime
+    // snapshot with no label saying so — a "7 days" pick showed 13 won here
+    // next to a 7-day headline, and neither matched the Leads board's own 6.
+    // It now filters on `occurred_at` exactly like CrmLeads.jsx's board does,
+    // so this card and the Leads board report the identical population for the
+    // same window. NOTE: this is leads-by-CURRENT-stage (a sales-board view),
+    // deliberately NOT the same question as the headline "Won jobs" (real
+    // SOLD jobs per `jobs.is_real_job`) — a won LEAD and a won JOB are
+    // different objects and will legitimately differ.
+    const grouped = groupLeadsByStage(windowLeads, sorted, data.leadPositions);
+    const outcome = pipelineOutcome(sorted, grouped);
+    const openStages = sorted.filter((s) => !s.is_won && !s.is_lost);
+    const pipelineRows = openStages.map((s) => ({
+      id: s.id,
+      name: s.name,
+      color: s.color,
+      count: (grouped[s.id] || []).length,
+    }));
     // A call that rang and was never picked up has no recording/transcript,
     // so the AI classifier can never flag it as spam — it would otherwise
     // silently inflate the campaign donut and New-leads KPI with pure noise
@@ -349,7 +364,7 @@ export default function CrmOverview() {
             <MetricCard label="Ad spend" value={fmtMoney(derived.totals.spend)} sub="Google + Meta" />
             <MetricCard label="Leads" value={derived.totals.leads.toLocaleString('en-US')} sub="CallRail calls + forms" />
             <MetricCard label="Estimates" value={derived.totals.estimates.toLocaleString('en-US')} sub="sent · CRM-traced" />
-            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="booked · CRM-traced" />
+            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="sold · CRM-traced" />
             <MetricCard label="Revenue" value={fmtMoney(derived.totals.revenue)} sub="QBO invoiced · CRM-traced" />
             <MetricCard label="ROAS" value={fmtRatio(derived.totals.roas)} sub="paid channels" />
           </div>
