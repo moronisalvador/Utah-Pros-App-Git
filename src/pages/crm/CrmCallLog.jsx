@@ -17,7 +17,9 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
- *              (getAuthHeader for the recording proxy fetch)
+ *              (getAuthHeader for the recording proxy fetch),
+ *              @/lib/crmCharts (isCountableLead — unanswered-call detection
+ *              for the "Missed call — no recording" label)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
  *                       incl. transcript_analysis for the conversation view);
  *                       crm_tracking_numbers titles via get_tracking_numbers RPC
@@ -36,6 +38,9 @@
  *   - "Play recording" streams through /api/callrail-recording (which adds
  *     CallRail's API key server-side); we fetch it as a blob and play it in an
  *     inline <audio>, since an <audio src> can't carry the Supabase auth header.
+ *   - An UNANSWERED call (raw_payload.answered 'false' — CallRail never records
+ *     one) shows "Missed call — no recording" instead of the misleading
+ *     "Waiting for recording & transcript…" state, via crmCharts.isCountableLead.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -43,6 +48,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { IconCallLog } from '@/lib/crmIcons';
 import { formatPhone } from '@/lib/phone';
+import { isCountableLead } from '@/lib/crmCharts';
 import { ok, err } from '@/lib/toast';
 
 // Format a numeric lead value as "$1,500" (whole dollars); '' when unset.
@@ -319,7 +325,13 @@ function LeadRow({ lead, labelMap, onStatusChange }) {
         </select>
       </div>
       <div className="crm-call-row-detail">
-        {isAwaitingRecording(lead) && (
+        {/* An unanswered call (rang, nobody picked up) NEVER gets a recording
+            from CallRail, so the "waiting" state would be a lie — say what
+            actually happened instead. isCountableLead is the shared
+            answered-call predicate (crmCharts.js). */}
+        {lead.source_type === 'call' && !lead.recording_url && !isCountableLead(lead) ? (
+          <span className="crm-call-awaiting">Missed call — no recording</span>
+        ) : isAwaitingRecording(lead) && (
           <span className="crm-call-awaiting">
             <span className="crm-awaiting-dot" aria-hidden="true" />
             Waiting for recording &amp; transcript…

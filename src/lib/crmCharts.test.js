@@ -191,6 +191,22 @@ describe('isCountableLead', () => {
     expect(isCountableLead({ source_type: 'call', answered: null, duration_sec: 0 })).toBe(false);
     expect(isCountableLead({ source_type: 'call', answered: undefined, duration_sec: null })).toBe(false);
   });
+
+  it('reads raw_payload.answered (CallRail form-encoded string) when the top-level field is missing', () => {
+    // select=*-shaped rows (Leads board, get_inbound_leads) carry only raw_payload.
+    expect(isCountableLead({ source_type: 'call', raw_payload: { answered: 'true' }, duration_sec: 0 })).toBe(true);
+    expect(isCountableLead({ source_type: 'call', raw_payload: { answered: 'false' }, duration_sec: 30 })).toBe(false);
+  });
+
+  it('a top-level answered field wins over raw_payload.answered when both exist', () => {
+    expect(isCountableLead({ source_type: 'call', answered: 'true', raw_payload: { answered: 'false' } })).toBe(true);
+    expect(isCountableLead({ source_type: 'call', answered: 'false', raw_payload: { answered: 'true' } })).toBe(false);
+  });
+
+  it('raw_payload without an answered key still falls back to duration_sec > 0', () => {
+    expect(isCountableLead({ source_type: 'call', raw_payload: {}, duration_sec: 12 })).toBe(true);
+    expect(isCountableLead({ source_type: 'call', raw_payload: {}, duration_sec: 0 })).toBe(false);
+  });
 });
 
 describe('leadsByCampaign', () => {

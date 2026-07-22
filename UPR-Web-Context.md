@@ -4800,6 +4800,78 @@ fixture with the same shape did (0→1); both cleaned up. Grants confirmed `auth
 suites) — covers `get_attribution_rollup`/`get_conversion_trend` answered-vs-unanswered deltas and the
 no-`answered`-key legacy-row duration_sec fallback.
 
+**Missed calls auto-stage (2026-07-22, `20260722_crm_auto_stage_missed_calls.sql`, owner-reported live):**
+NOTHING had ever moved a lead into the "Missed Calls" pipeline stage automatically — all 19 historical
+placements were ONE manual drag session (2026-07-21 15:49, human moved_by); every unanswered call since
+sat stage-less in "New" and the column's count froze. `upsert_lead_from_callrail` (body-only replace)
+now stages a call lead into the org's "Missed Calls" stage on the delivery carrying CallRail's EXPLICIT
+`answered='false'` (string-compared, never a throwing `::boolean` cast; the call-started delivery has no
+`answered` key so a ringing call never stages prematurely) via `move_lead_to_stage` (history/events
+bookkeeping identical to a human move, `moved_by NULL` = system). Guards: existing human/AI placement
+always wins; merged redials + spam never stage; missing stage for the org → graceful no-op. One-time
+backfill staged the 4 stranded calls (19 → 23, verified live + full delivery-sequence smoke on the TEST
+org, which now carries its own "Missed Calls" stage). Known accepted behavior: an answered redial that
+merges into a Missed-Calls lead leaves the card there until a human moves it (auto-advance correctly
+refuses to leave a terminal stage). Test: `supabase/tests/crm_missed_calls_auto_stage.test.js`.
+
+**Speed-to-lead counts HUMAN moves only (2026-07-22, `20260722_crm_speed_to_lead_human_moves_only.sql`,
+same-day self-caught regression):** the auto-stage above (and the AI auto-advance) write `moved_by NULL`
+stage moves within seconds of a call — `get_speed_to_lead` counted those as "responses", so every missed
+call would have registered a fake near-instant SLA hit (verified live pre-fix: 7 of 88 samples' FIRST
+move was a system move, 4 added by the auto-stage backfill that same day). Body-only replace adds
+`AND lsh.moved_by IS NOT NULL` to the first_move CTE: only a PERSON's first touch counts as a response;
+a machine-only-moved lead contributes no sample until someone actually touches it.
+
+**CRM reliability wave (2026-07-22, ultracode multi-agent build + adversarial verify, all applied live):**
+five artifacts authored in parallel, each reviewed by `migration-safety-checker`/`upr-pattern-checker`,
+plus a cross-cutting `anon-grant-auditor` pass and a dedicated adversary attacking the backlink logic
+against live data (verdicts: all pass except one adversary MAJOR, fixed before apply — see backlink):
+- **Lead→contact backlink** (`20260722_crm_lead_contact_backlink.sql`): trigger
+  `trg_backlink_leads_to_contact` on contacts (AFTER INSERT OR UPDATE OF phone) — when a contact is
+  created/re-phoned and is the ONLY contact with that last-10-digit suffix (ingest-side exactly-one rule,
+  identical normalization), all still-unlinked, non-merged leads from that number link to them; every
+  link audited in `system_events` ('crm_lead_backlinked', via trigger|backfill). **Self-healing (the
+  adversary's major, fixed):** a REAL phone change first RELEASES this trigger's own prior links for the
+  OLD number (system_events-trail-scoped — human links untouched; audited as
+  'crm_lead_backlink_reverted'), so a mistyped/recycled number can no longer permanently poach a
+  stranger's lead history. Disclosed limits: household shared-number ordering (first contact created
+  wins until the second exists), and `merge_contacts` never re-fires the trigger (known follow-up).
+  Verified live end-to-end via the real `import_contacts` path: contact import → lead auto-linked →
+  phone change → link released + revert audited. One-time backfill linked 2 (3 at authoring; drift).
+  This closes the forward linkage gap; the 79/87 HISTORIC untraced real jobs are unrecoverable by
+  linkage (82 unlinked leads have NO matching contact — the CRM postdates most of those jobs).
+- **is_real_job audit trail** (`20260722_real_job_flag_audit_trail.sql`): new `job_real_flag_history`
+  table (RLS, SELECT floor TO authenticated — conscious call documented in the migration) + jobs
+  triggers capturing EVERY change to is_real_job/real_job_source/real_job_marked_at (incl. INSERTs born
+  true — the raw-write pattern behind the 8 true/NULL/NULL rows) with `changed_by = auth.uid()` when
+  available; `set_job_real_job` (body-only, signature frozen) now PRESERVES source/marked_at on DEMOTE
+  (the old body's overwrite is how the 2026-07-03 bulk demotion destroyed 13 sold jobs' provenance).
+  Silent demotions are now structurally impossible. Test: `supabase/tests/real_job_flag_audit_trail.test.js`.
+- **Evidence reconciler** (`20260722_real_job_evidence_reconciler.sql`): `get_real_job_evidence_
+  mismatches()` — one row per job whose flag disagrees with its own canonical evidence (predicates
+  verbatim from the mark_job_real triggers), two categories: 'evidence_unflagged' (live: **17 jobs,
+  incl. $50.9K invoiced/paid demotion victims**, each with evidence kinds, $ totals, was_demoted
+  signature) and 'flagged_no_evidence' (live: **15 jobs**, real_job_source included — manual marks are
+  legitimate, surfaced not judged). Daily pg_cron `upr_real_job_evidence_reconciler` (13:15 UTC) logs
+  ONE system_events row ('real_job_evidence_mismatch', whole-table sentinel entity_id) only on drift
+  days. **Changes no data** — the owner adjudicates the 17+15 from this worklist.
+- **Trend merged-filter** (`20260722_crm_trend_excludes_merged_leads.sql`): `get_conversion_trend`'s
+  lead_c now excludes `merged_into_lead_id IS NOT NULL` like the rollup already did (was 26 vs 28 on
+  one screen).
+- **Missed-call label** (frontend): `CrmCallLog.jsx` now shows "Missed call — no recording" instead of
+  the forever-"Waiting for recording & transcript…" for unanswered calls; `crmCharts.isCountableLead`
+  gained a `raw_payload.answered` fallback (+tests) for select=*-shaped rows.
+
+**Open gaps flagged, deliberately NOT built (owner rulings / follow-ups):** missed-call textback
+automation is dead-on-arrival when A2P flips (isMissedCall uses the duration proxy — ring time counts
+as "answered" — AND requires contact_id, which unanswered calls never have; consent-sensitive redesign
+needed); the three mark_job_real triggers don't watch `job_id` (an invoice/estimate/sign_request linked
+to its job AFTER the signal column was set never fires — the suspected mechanism for job 26-20); Won
+auto-advance depends on lead↔contact linkage (0 system Won moves ever recorded); forms are never
+AI-screened for spam; "Contacted" stage has no auto-mover (outbound calls are invisible — properly
+fixed by the future Twilio phone platform); UTC-vs-Denver bucketing + traced-gate display + 2026-07-03
+demotion adjudication all await owner rulings.
+
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
 - `upsert_pipeline_stage(p_id, p_name, p_color, p_sort_order, p_is_won, p_is_lost, p_org_id)` — add
