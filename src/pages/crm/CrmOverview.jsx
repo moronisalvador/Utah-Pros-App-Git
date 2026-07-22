@@ -123,6 +123,19 @@
  *     campaign, and "New leads" was hardcoded to a fixed "last 7 days" cutoff
  *     regardless of the picker — both silently counted against the full
  *     unscoped up-to-1000-row fetch instead of the chosen window.
+ *   - `windowLeads` is further filtered to `countableWindowLeads` via
+ *     `isCountableLead` (crmCharts.js) before feeding the campaign donut/
+ *     New-leads KPI — a call that rang and was never answered has no
+ *     recording/transcript, so the AI classifier can never flag it as spam,
+ *     and it would otherwise inflate every marketing "Leads" number forever
+ *     (fixed 2026-07-22, owner-caught live: 13 of 29 leads in a 7-day window
+ *     were unanswered calls with zero content — see migration
+ *     20260722_crm_leads_exclude_unanswered_calls.sql, which applies the
+ *     identical rule server-side in get_attribution_rollup/
+ *     get_conversion_trend). The sales pipeline stays on the UNFILTERED
+ *     windowLeads/data.leads — staff still need to see a missed call in
+ *     order to actually call the person back; this is a marketing-metric
+ *     fix, not a change to ops/triage visibility.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -142,6 +155,7 @@ import { sortStages, groupLeadsByStage } from '@/lib/crmPipeline';
 import {
   callVolumeSplit,
   agingOverThreshold,
+  isCountableLead,
   leadsByCampaign,
   leadsByChannel,
   pipelineOutcome,
@@ -192,7 +206,9 @@ export default function CrmOverview() {
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id'),
         db.select(
           'inbound_leads',
-          'spam_flag=eq.false&merged_into_lead_id=is.null&select=id,value,campaign,source,occurred_at&order=occurred_at.desc&limit=1000',
+          'spam_flag=eq.false&merged_into_lead_id=is.null' +
+            '&select=id,value,campaign,source,occurred_at,source_type,duration_sec,answered:raw_payload->>answered' +
+            '&order=occurred_at.desc&limit=1000',
         ),
       ]);
 
@@ -275,9 +291,19 @@ export default function CrmOverview() {
       if (endTs != null && t >= endTs) return false;
       return true;
     });
+    // A call that rang and was never picked up has no recording/transcript,
+    // so the AI classifier can never flag it as spam — it would otherwise
+    // silently inflate the campaign donut and New-leads KPI with pure noise
+    // (verified live: 13 of 29 "leads" in a 7-day window were unanswered
+    // calls with zero content). Same predicate the RPCs feeding "Leads" and
+    // "Leads by source" already apply server-side (crm_call_is_answered) —
+    // isCountableLead is its client-side twin. The PIPELINE above stays on
+    // the unfiltered windowLeads/data.leads — staff still need to see a
+    // missed call to actually call the person back.
+    const countableWindowLeads = windowLeads.filter(isCountableLead);
 
-    const campaigns = leadsByCampaign(windowLeads, 6);
-    const newLeads = windowLeads.length;
+    const campaigns = leadsByCampaign(countableWindowLeads, 6);
+    const newLeads = countableWindowLeads.length;
 
     return {
       totals, channels, calls, sla, aging, trend,

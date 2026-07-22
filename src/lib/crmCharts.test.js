@@ -32,6 +32,7 @@ import {
   toDonutSegments,
   callVolumeSplit,
   agingOverThreshold,
+  isCountableLead,
   leadsByCampaign,
   leadsByChannel,
   newLeadsSince,
@@ -168,6 +169,27 @@ describe('agingOverThreshold', () => {
 
   it('handles empty input', () => {
     expect(agingOverThreshold([], 31)).toEqual({ count: 0, total_amount: 0 });
+  });
+});
+
+describe('isCountableLead', () => {
+  it('a form lead is always countable regardless of answered/duration', () => {
+    expect(isCountableLead({ source_type: 'form' })).toBe(true);
+    expect(isCountableLead({ source_type: 'form', answered: 'false', duration_sec: 0 })).toBe(true);
+  });
+
+  it('a call with answered:"true" is countable', () => {
+    expect(isCountableLead({ source_type: 'call', answered: 'true', duration_sec: 5 })).toBe(true);
+  });
+
+  it('a call with answered:"false" is NOT countable, even with real duration', () => {
+    expect(isCountableLead({ source_type: 'call', answered: 'false', duration_sec: 19 })).toBe(false);
+  });
+
+  it('falls back to duration_sec > 0 when the answered field is absent (legacy rows)', () => {
+    expect(isCountableLead({ source_type: 'call', answered: null, duration_sec: 45 })).toBe(true);
+    expect(isCountableLead({ source_type: 'call', answered: null, duration_sec: 0 })).toBe(false);
+    expect(isCountableLead({ source_type: 'call', answered: undefined, duration_sec: null })).toBe(false);
   });
 });
 
