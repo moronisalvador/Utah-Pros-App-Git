@@ -69,6 +69,7 @@ export default function CustomerPage(){
   const[showNewInvoice,setShowNewInvoice]=useState(false);
   const[showMerge,setShowMerge]=useState(false);
   const[showMore,setShowMore]=useState(false);
+  const[activity,setActivity]=useState([]);
 
   useEffect(()=>{loadData();},[contactId]);
   const loadData=async()=>{
@@ -79,6 +80,9 @@ export default function CustomerPage(){
       setData(result);
       db.select('insurance_carriers','order=name.asc&select=id,name,short_name').then(setCarriers).catch(()=>{});
       db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(setEmployees).catch(()=>{});
+      // Same feed the CRM contact drawer uses — richer than get_customer_detail's
+      // job_notes/phase_history-only activity (adds claims, SMS, tasks, invoices, etc).
+      db.rpc('get_contact_activity',{p_contact_id:contactId}).then(setActivity).catch(()=>setActivity([]));
     }catch(err){console.error('Customer load:',err);}finally{setLoading(false);}
   };
 
@@ -90,7 +94,7 @@ export default function CustomerPage(){
   if(!data)return null;
 
   const c=data.contact;const claims=data.claims||[];const fin=data.financials||{};const files=data.files||[];
-  const activity=data.activity||[];const addresses=data.addresses||[];
+  const addresses=data.addresses||[];
   const initials=c.name?c.name.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2):'?';
   const totalJobs=claims.reduce((s,cl)=>s+(cl.jobs?.length||0),0);
   const TABS=[{key:'overview',label:'Overview'},{key:'claims',label:'Claims & Jobs',count:totalJobs},{key:'financial',label:'Financial'},{key:'files',label:'Files',count:files.length},{key:'activity',label:'Activity',count:activity.length}];
@@ -138,7 +142,7 @@ export default function CustomerPage(){
       ))}</div>
       <PullToRefresh onRefresh={loadData} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
-        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
+        {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
         {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
         {activeTab==='files'&&<FilesTab files={files}/>}
         {activeTab==='activity'&&<ActivityTab activity={activity}/>}
@@ -345,7 +349,7 @@ function AddrForm({form,setForm,saving,onSave,onCancel}){
 }
 
 /* ═══ CLAIMS TAB ═══ */
-function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin}){
+function ClaimsTab({claims,fmtDate,fmtC,onNav,onNavClaim,onAddRelated,db,onReload,isAdmin}){
   const[menuOpen,setMenuOpen]=useState(null);
   const[deleteTarget,setDeleteTarget]=useState(null); // claim object being deleted
   const[deleteInput,setDeleteInput]=useState('');
@@ -367,13 +371,13 @@ function ClaimsTab({claims,fmtDate,fmtC,onNav,onAddRelated,db,onReload,isAdmin})
   return(<div style={{display:'flex',flexDirection:'column',gap:'var(--space-5)'}}>
     {visible.map(cl=>{const jobs=cl.jobs||[];return(
     <div key={cl.id} className="job-page-section" style={{padding:0,overflow:'hidden'}}>
-      <div style={{padding:'var(--space-3) var(--space-4)',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-light)',display:'flex',alignItems:'center',gap:'var(--space-3)',flexWrap:'wrap'}}>
-        <span style={{fontWeight:700,fontSize:13}}>{cl.claim_number}</span>
+      <div onClick={()=>onNavClaim(cl.id)} style={{padding:'var(--space-3) var(--space-4)',background:'var(--bg-secondary)',borderBottom:'1px solid var(--border-light)',display:'flex',alignItems:'center',gap:'var(--space-3)',flexWrap:'wrap',cursor:'pointer'}}>
+        <span style={{fontWeight:700,fontSize:13,color:'var(--brand-primary)'}}>{cl.claim_number}</span>
         {cl.insurance_carrier&&<span style={{fontSize:12,color:'var(--text-secondary)'}}>{cl.insurance_carrier}</span>}
         {cl.date_of_loss&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Loss: {fmtDate(cl.date_of_loss)}</span>}
         {cl.insurance_claim_number&&<span style={{fontSize:11,color:'var(--text-tertiary)'}}>Ins#: {cl.insurance_claim_number}</span>}
         <span style={{marginLeft:'auto',fontSize:10,fontWeight:600,padding:'2px 8px',borderRadius:99,background:cl.status==='open'?'#eff6ff':'#f1f3f5',color:cl.status==='open'?'#2563eb':'#6b7280'}}>{cl.status}</span>
-        {isAdmin&&jobs.length===0&&<div style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setMenuOpen(null);}}>
+        {isAdmin&&jobs.length===0&&<div onClick={e=>e.stopPropagation()} style={{position:'relative'}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setMenuOpen(null);}}>
           <button onClick={()=>setMenuOpen(menuOpen===cl.id?null:cl.id)} style={{background:'none',border:'none',cursor:'pointer',padding:'2px 6px',color:'var(--text-tertiary)',fontSize:16,lineHeight:1}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
           </button>
@@ -468,15 +472,18 @@ function FilesTab({files}){
     </div>)}</div></div>)}</div>);
 }
 
-/* ═══ ACTIVITY TAB ═══ */
+/* ═══ ACTIVITY TAB ═══
+   Rows come from get_contact_activity — the same feed the CRM contact drawer
+   uses (activity_type/occurred_at/title/body/meta), not the old
+   get_customer_detail-scoped {type,date,content,author} shape. */
 function ActivityTab({activity}){
   if(!activity.length)return(<div className="empty-state" style={{paddingTop:40}}><div className="empty-state-icon">📝</div><div className="empty-state-text">No activity yet</div></div>);
   const fmt=v=>{if(!v)return'—';return new Date(v).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});};
-  return(<div className="job-page-timeline">{activity.map(item=><div key={`${item.type}-${item.id}`} className={`job-page-timeline-item timeline-${item.type}`}>
+  const author=item=>item.meta?.created_by_name||item.meta?.author_name||item.meta?.sent_by_name||item.meta?.changed_by_name||item.meta?.moved_by_name||item.meta?.assignee_name;
+  return(<div className="job-page-timeline">{activity.map((item,i)=><div key={`${item.activity_type}-${i}`} className={`job-page-timeline-item timeline-${item.activity_type}`}>
     <div className="job-page-timeline-dot"/><div className="job-page-timeline-content">
-      <div className="job-page-timeline-header"><span className="job-page-timeline-author">{item.author}</span><span className="job-page-timeline-time">{fmt(item.date)}</span></div>
-      <div className="job-page-timeline-text">{item.content}</div>
-      {item.job_number&&<span style={{fontSize:10,fontWeight:600,color:'var(--text-tertiary)',marginTop:2,display:'inline-block'}}>Job: {item.job_number}</span>}
+      <div className="job-page-timeline-header"><span className="job-page-timeline-author">{item.title}{author(item)?` — ${author(item)}`:''}</span><span className="job-page-timeline-time">{fmt(item.occurred_at)}</span></div>
+      {item.body&&<div className="job-page-timeline-text">{item.body}</div>}
     </div></div>)}</div>);
 }
 

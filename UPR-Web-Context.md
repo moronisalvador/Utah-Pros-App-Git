@@ -4354,7 +4354,7 @@ hand-computed) committed failing before the module existed, then green.
 **Frontend** (fill the three CRM-shell stub pages, `.crm-*` design system):
 - **CrmOverview.jsx** (`/crm/overview`) — KPI cards (spend/leads/estimates/won/revenue/ROAS) + the
   Leads→Estimates→Won funnel (bars scale to the largest stage so they stay readable before CallRail
-  leads accumulate).
+  leads accumulate). **Enriched 2026-07-21 (dashboard-gap initiative — see the dated entry below).**
 - **CrmAttribution.jsx** (`/crm/attribution`) — per-channel table (Spend, Leads, Cost/lead,
   Estimates, Won, Cost/job, Revenue, ROAS; zero-spend rows show `—`) + Google Ads by campaign/agency.
 - **CrmReports.jsx** (`/crm/reports`) — Source ROI, Won revenue by division, funnel conversion.
@@ -7280,3 +7280,178 @@ category, age rating, nutrition-label table, export-compliance answer, review no
 into App Store Connect. Still genuinely owner-only: the distribution-model decision, Apple Developer
 Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/Simulator
 build), merging the four open PRs, and the actual App Store Connect data entry.
+
+---
+
+### CRM Overview dashboard-gap enrichment (2026-07-21)
+
+Standalone, owner-approved initiative (disclosed manifest amendment: `.claude/rules/crm-wave-ownership.md`
+§9) that turns the thin `/crm/overview` front page into a sales & marketing command center. **Zero DB
+migration** — reads only through existing RPCs. Layout: the 6 headline KPI cards → an actionable KPI
+strip (**lead win rate** · speed-to-lead SLA · **calls handled** · new leads (7d) · open leads · aging
+estimates 31+ $) → a Sales-pipeline card (open-leads-by-stage donut + per-stage count bars, with the
+win-rate/won/lost/open summary in the header) → a 4-donut charts grid (calls handled vs missed · leads
+by source · won jobs by division · leads by campaign) → a leads-vs-won conversion-trend mini bar chart →
+the existing `OverdueTasksWidget`.
+
+**Data-honesty decisions (v2, 2026-07-21 — from owner review of the live numbers):**
+- **Closing rate was impossible (293%)** because `won_jobs` (from the `jobs` table, all booked jobs) is
+  NOT a subset of tracked leads/estimates — most restoration/insurance revenue never flows through the
+  CRM lead→estimate funnel. Replaced with **lead win rate = won ÷ (won + lost)** computed from the CRM
+  lead pipeline (`crmCharts.pipelineOutcome`), a nested population that's always ≤100% and correctly
+  counts leads lost *before* an estimate ever existed (e.g. missed calls). The inverted spend→won
+  "Sales funnel" card was removed for the same reason (headline count cards still tell that story).
+- **Weighted-$ pipeline was structurally $0** — inbound leads carry no `value` (0/70 live). Dropped the
+  whole $ dimension: the pipeline card is now count-based, and the `ForecastWidget` (also $0) is no
+  longer rendered on the Overview.
+- **Pipeline card showed the same breakdown twice (looked like a bug).** `Donut` always renders its own
+  legend (name/value/%) below the ring; `PipelineStageCard` also rendered a separate name/bar/count list
+  beside it — same stage names and counts, printed twice. Fixed by giving `Donut` an opt-out
+  (`showLegend={false}`, still shows its "No data" empty state) and making the row list the SINGLE place
+  the breakdown lives — it also now shows each stage's %-of-open-pipeline (a number the legend used to
+  carry that the bar-only version had dropped), distinct from the bar's relative-to-largest width. The
+  other three `OverviewCharts` donuts (calls/source/division/campaign) keep their legend — they have no
+  side list duplicating it.
+- **Missed-call count was wrong — root cause was the RPC's math, not its source.** `get_call_volume`
+  defined "missed" as CallRail `duration_sec = 0` → **1 call all-time**. But CallRail's OWN disposition
+  (`raw_payload.answered`, present on every call row) says **20 missed of 68** — a call can ring, drop to
+  voicemail with a few seconds of greeting, and still be a miss by CallRail's judgment; `duration > 0`
+  ≠ answered. **v2 (reverted, wrong instinct):** briefly sourced calls from the CRM lead pipeline's
+  "Missed Calls" stage instead — the owner correctly rejected this: calls are a CallRail/telephony fact,
+  not a business/pipeline judgment, and matching on a stage NAME (`is_lost` + `/miss/i`) is fragile (a
+  rename silently breaks it). **v3 (shipped) — fix the RPC, not the frontend:** standalone migration
+  `20260721_crm_call_volume_uses_answered_field.sql` body-replaces `get_call_volume` (signature/return
+  shape unchanged — every caller, incl. `CrmReports.jsx`, keeps working) to split on
+  `raw_payload->>'answered'` with a `duration_sec > 0` fallback for any older row missing the field.
+  Verified live: 20 missed / 48 answered / 68 total, matching CallRail directly. The frontend still
+  passes an explicit `ALL_TIME_FLOOR` start under "All time" (the RPC defaults to a 30-day window on a
+  null bound). The pipeline's own "Missed Calls" stage stays a **separate**, human-curated signal (it
+  still drives the lead win rate) — the two are related but not forced to agree, since one is a
+  telephony fact and the other is a business judgment about what happened after.
+
+- **New pure lib:** `src/lib/crmCharts.js` (+ `crmCharts.test.js`, 29 tests) — `toDonutSegments`,
+  `pipelineOutcome` (won/lost/open + bounded win rate), `agingOverThreshold`, `leadsByCampaign`,
+  `leadsByChannel`, `newLeadsSince`, `callVolumeSplit` (now driven by the CallRail-corrected RPC), plus
+  `CHART_PALETTE` / `CHANNEL_COLOR` / `CHANNEL_LABELS` / `DIVISION_LABELS` / `paletteColor`. All `var(--crm-*)`
+  token colors; charts are CSS `conic-gradient` + inline SVG (no chart lib — perf-budget).
+- **New charting primitives:** `src/components/crm/charts/Donut.jsx` (conic-gradient donut + legend, empty
+  state, no animation) and `src/components/crm/charts/MiniTrend.jsx` (inline-SVG grouped bars).
+- **New Overview widgets (presentational, props-only, no `db`):** `OverviewKpiStrip.jsx`,
+  `PipelineStageCard.jsx`, `OverviewCharts.jsx`, `ConversionTrendCard.jsx` (all `src/components/crm/`).
+- **`CrmOverview.jsx`** now owns a single `Promise.all` load (`get_attribution_rollup`, `get_call_volume`,
+  `get_speed_to_lead`, `get_estimate_aging`, `get_conversion_trend`, `get_crm_revenue_by_division`,
+  `get_pipeline_stages`, `lead_pipeline_stage` + `inbound_leads` selects) + memoized derivations. A failed
+  load renders the shared `<ErrorState onRetry>` (not the funnel/empty state); loading uses a static
+  skeleton; toast via `err()` (fixed the old raw `upr:toast` dispatch).
+- **"Service type" honesty:** leads carry no division/service-type field (division is a post-conversion
+  `jobs` attribute), so the "service type" donut is **won jobs by division** (`get_crm_revenue_by_division`),
+  captioned accordingly.
+- **Follow-up (not done here):** document the CRM chart primitives / `--crm-*` token layer as a "CRM Kit"
+  section in `UPR-Design-System.md` (design-consistency-checker finding; that doc is design-system-owned,
+  left for its owner to avoid a cross-initiative edit).
+- **Pipeline card showed the same breakdown twice (looked like a bug, owner-caught).** `Donut` always
+  renders its own legend (name/value/%) below the ring; `PipelineStageCard` ALSO rendered a separate
+  name/bar/count list beside it — same stage names and counts, printed twice. Fixed by giving `Donut` a
+  `showLegend={false}` opt-out (it still shows its "No data" empty state — that's feedback, not a
+  duplicate); the row list is now the ONE place the breakdown lives, with %-of-open-pipeline added back
+  (a real number the legend used to carry, distinct from the bar's relative-to-largest width). The
+  other three `OverviewCharts` donuts keep their legend — no side list duplicates them.
+
+**Integrating with the AI call-qualification system (owner-directed, 2026-07-21 — same day, earlier
+session).** The owner had already built an AI transcript classifier (`functions/api/transcribe-call.js`
++ `functions/lib/zeroTurnClassifier.js`) that writes `inbound_leads.transcript_analysis.is_customer_
+inquiry` (+ `caller_never_responded`, `service_match`, `inspection_scheduled`) and, on a spam verdict,
+calls `set_lead_spam_flag()` — which the pipeline-stage-clearing migration
+(`20260721_crm_spam_flag_clears_pipeline_stage.sql`) already wires to drop the lead's Kanban card. The
+owner asked whether the Overview should reuse this screening rather than re-deriving spam itself — and
+whether anything from that earlier session had been overwritten. **Confirmed: nothing was touched** —
+this initiative's prior 3 commits only added new Overview-scoped files + one narrow, signature-frozen
+`get_call_volume` body-replace.
+
+Investigation found the dashboard ALREADY correctly uses that system: every count that filters
+`spam_flag=eq.false` (headline Leads/Estimates/Won-jobs, `get_call_volume`, the pipeline) automatically
+excludes every call the classifier has actually caught, because `spam_flag` IS the classifier's own
+output signal. Two real gaps surfaced and were fixed:
+
+1. **AI screening COVERAGE, not correctness, was the real risk.** Classification only runs when a human
+   clicks "Transcribe" or a backfill job runs — it is not automatic on ingest. Live check: **41 of 67
+   call-leads (61%) counted in "Leads" had never been screened at all** — an unknown-risk population,
+   not a wrong number. Added `src/lib/crmCharts.js`'s `callScreeningCoverage(leads)` (+ tests) — a pure,
+   read-only function that reports whether `transcript_analysis` carries the `is_customer_inquiry` key
+   (i.e., has the classifier run yet), and makes NO spam judgment of its own. `CrmOverview.jsx` renders
+   an honest caption under the headline KPIs: *"26 of 67 calls AI-screened for spam · 41 pending
+   (confirmed spam is already excluded from the counts above)."* Requires only widening the existing
+   `inbound_leads` select to include `source_type` + `transcript_analysis` (no migration, no new RPC).
+2. **`get_attribution_rollup`'s leads count didn't exclude merged repeat-call duplicates** (found while
+   auditing the same code path) — the merge system built earlier today
+   (`20260721_crm_merge_repeat_call_leads.sql`) keeps a repeat call as its own `inbound_leads` row
+   (`merged_into_lead_id` set) so it never gets a second Kanban card, but the RPC's `leads_agg` CTE never
+   filtered that column. Fixed via `20260721_crm_attribution_excludes_merged_leads.sql` — a body-only
+   `CREATE OR REPLACE` (signature/return shape unchanged, every caller incl. `CrmReports.jsx` and
+   `CrmAttribution.jsx` keeps working), adding one `AND il.merged_into_lead_id IS NULL` line. Verified
+   live: leads dropped from 71 to 70 (exactly the one known duplicate). Committed before/after-delta
+   test: `supabase/tests/crm_attribution_excludes_merged_leads.test.js`.
+   `migration-safety-checker` + `upr-pattern-checker`: both **pass**.
+
+**Custom date-range picker (owner-requested, 2026-07-21) — "just like the Leads page."** The shared
+`RangePicker` (`src/pages/crm/attributionParts.jsx`, used by `CrmOverview.jsx` / `CrmAttribution.jsx` /
+`CrmReports.jsx`) gains a calendar icon beside its preset tabs (30 days / 90 days / 12 months / All
+time) that opens a From/To custom-range popover — **reusing `CrmLeads.jsx`'s own date-filter classes
+verbatim** (`crm-board-period*`, `crm-leads-popover*`, `crm-leads-datepicker`, `crm-leads-popover-field`,
+plus a pixel-identical local `IconCalendar`), not just a visually-similar rebuild. No new CSS was
+needed; the old `.crm-range`/`.crm-range-btn` rules (RangePicker's only consumer) were removed as dead
+code once the tabs switched to the reused classes.
+- **`attributionData.js`**: `rangeToDates(key, customRange)` — `key==='custom'` reads the picked
+  From/To strings verbatim (an empty side stays unbounded/`null`, mirroring `CrmLeads.jsx`'s
+  `dateRangeFor`); every other key's behavior (day-math, `null`/`null` for `'all'`) is unchanged.
+  New test file `attributionData.test.js` (6 tests).
+- **`RangePicker({value, onChange, onCustomRange})`**: `onCustomRange` is optional — a caller that omits
+  it gets the preset-tabs-only fallback (no calendar icon, no popover), so this is backward compatible
+  by construction (not just by convention).
+- All three consuming pages: added `customRange` state, wired `onCustomRange={(start,end) =>
+  setCustomRange({start,end})}`, and added `customRange` to `load()`'s dep array — required because
+  re-applying a *different* custom range while already in `'custom'` mode doesn't change the `range`
+  string itself, so the fetch wouldn't otherwise re-run (loading gate firing here is an intentional
+  param change, sanctioned by `page-lifecycle.md` §1).
+- `upr-pattern-checker`: **pass** (no blockers; confirmed genuine class reuse, zero orphaned CSS, safe
+  dep-array wiring, verified backward-compat fallback). One PRE-EXISTING, untouched-by-this-diff finding
+  flagged as a follow-up: `CrmAttribution.jsx`/`CrmReports.jsx` still raise their load-failure toast via
+  a raw `upr:toast` dispatch instead of `err()` from `@/lib/toast` — `CrmOverview.jsx` already does this
+  correctly; the other two are due for the same fix in a future pass.
+
+**"7 days" preset + Pipeline/Trend half-width row (owner-requested, 2026-07-21).** `RANGES` in
+`attributionData.js` gained a `'7d'` entry (before `'30d'`) — shared automatically by all three
+`RangePicker` consumers, plus `attributionData.test.js`'s day-math loop. On `CrmOverview.jsx`, the Sales
+pipeline card and the Conversion trend card now share one row (`.crm-pipeline-trend-row`, a 2-col grid
+collapsing to 1 column below 768px) instead of the pipeline card claiming a full-width row on its own —
+freeing that space per the owner's screenshot feedback.
+
+**Live production bug found + fixed the same session — "All time" showed 0 calls (root cause: my own
+earlier fix).** The owner's live screenshot showed the Calls donut reading "0 CALLS / No data" and
+"Calls answered —" even though 68 real calls exist. Reproduced live via the deployed `dev.utahpros.app`
+(the local Vite pane render-hangs in this sandbox, so verification used the real site + a `fetch`
+monkey-patch in the page's own JS console to capture the exact request/response `get_call_volume` made
+in a real authenticated session). **Root cause:** the 2026-07-21 `ALL_TIME_FLOOR='2000-01-01'` frontend
+fix (meant to stop "All time" silently narrowing to 30 days) made `get_call_volume`'s internal
+`generate_series(v_start, v_end, '1 day')` produce **~9,670 daily rows** — and PostgREST's default
+**1000-row response cap** silently truncated the result to Jan 2000 – Sept 2002, which is entirely zero.
+None of the real 2026 calls ever made it into the truncated response. Confirmed via a captured live
+request: `arrayLength: 1000`, `lastRow.period: "2002-09-26"`, `sumTotal: 0`.
+- **Fix — at the RPC, not another frontend patch** (consistent with the earlier "fix the RPC, not the
+  frontend" principle): `20260722_crm_call_volume_all_time_floor_fix.sql` — body-only `CREATE OR
+  REPLACE` (signature/shape unchanged). When `p_start` is null, derive the floor from the org's REAL
+  earliest call (`MIN(occurred_at)`) instead of a guessed distant date, falling back to the old 30-day
+  window only if the org has literally never had a call. Verified live: an omitted `p_start` now returns
+  a small (52-row, for this ~3-week-old org) array reaching all the way to today with correct non-zero
+  days. `CrmOverview.jsx`'s `ALL_TIME_FLOOR`/`callStart`/`callEnd` frontend hack was removed entirely —
+  `get_call_volume` now receives the same `start`/`end` as every other RPC on the page.
+- Committed test: `supabase/tests/crm_call_volume_no_null_start_truncation.test.js` (asserts the
+  omitted-`p_start` response stays under 1000 rows and reaches "today").
+- `migration-safety-checker`: **pass** (no blockers — signature/shape confirmed unchanged, GRANT/REVOKE
+  correct, the new earliest-call lookup is injection-safe with a proper 3-way COALESCE fallback so
+  `v_start` can never end up null, and the rollback note correctly warns that reverting the migration
+  alone reintroduces the bug unless `CrmOverview.jsx`'s `ALL_TIME_FLOOR` frontend hack is also restored).
+- **Lesson for future date-range work:** a `generate_series` CTE spanning a hardcoded/guessed floor date
+  is a landmine — PostgREST's row cap will silently and invisibly truncate a too-wide by-day range to
+  whatever slice happens to sort first, with no error thrown. Prefer deriving "all time" floors from real
+  data, never a guessed constant.
