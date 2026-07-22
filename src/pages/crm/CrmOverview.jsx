@@ -6,7 +6,9 @@
  * WHAT THIS DOES (plain language):
  *   The CRM's front page — the one-glance business picture. Across the chosen
  *   time window it shows the headline numbers (ad spend, leads, estimates, won
- *   jobs, real revenue, return on ad spend), a strip of sales-and-response KPIs
+ *   jobs, real revenue, return on ad spend) — estimates/won-jobs/revenue count
+ *   ONLY business traceable to a CRM lead (see NOTES; company-wide totals live
+ *   on the main Home dashboard, not here), a strip of sales-and-response KPIs
  *   (incl. an honest lead win rate — won ÷ decided, always ≤ 100%), the open
  *   sales pipeline and the lead-vs-won trend side by side (each about half
  *   width — the pipeline board doesn't need a full row), four donut charts
@@ -61,10 +63,27 @@
  *   - ROAS/cost metrics are computed on PAID channels only and can be "—"
  *     (no ad spend in the window) — that is correct, not a bug: a zero-spend
  *     window has no return-on-ad-spend to report.
- *   - "Lead win rate" (won ÷ decided, from the CRM lead pipeline) is a DIFFERENT
- *     population from the "Won jobs" headline (all booked jobs from QBO, most of
- *     which arrive through non-CRM channels). We do NOT show won_jobs ÷ estimates
- *     as a closing rate — those populations don't nest, so it can exceed 100%.
+ *   - **"Won jobs" / "Estimates" / "Revenue" are CRM-TRACED ONLY, EVERYWHERE ON
+ *     THIS PAGE** (fixed 2026-07-22, owner-directed) — a job/estimate counts
+ *     only when its contact has a real CRM touch (crm_contact_is_traced: a
+ *     lead_attribution row, or a non-spam inbound_leads link). This applies
+ *     to the 3 headline MetricCards AND to get_conversion_trend (the trend
+ *     chart) AND get_crm_revenue_by_division (the "Won jobs by division"
+ *     donut) — every RPC on this page that touches won jobs/estimates/revenue
+ *     shares the identical scope. Live check found only 24% of won jobs / 6%
+ *     of revenue / 23% of estimates traced to a CRM lead at all — counting
+ *     the rest made "won jobs" exceed "leads," which read as a broken/
+ *     unreliable funnel. Company-WIDE totals (all business, not just
+ *     CRM-traced) live on the main Home dashboard, not here — this page is
+ *     deliberately the sales & marketing command center, not the P&L. Two
+ *     related RPCs on the Reports page (get_contact_ltv, get_estimate_aging)
+ *     are DELIBERATELY NOT scoped this way — see CrmReports.jsx's own NOTES.
+ *   - "Lead win rate" (won ÷ decided, from the CRM lead pipeline stage) and the
+ *     "Won jobs" headline (CRM-traced contacts, from QBO) are now much closer
+ *     populations than before this fix, but still not identical — "traced"
+ *     only requires ANY CRM touch ever existed, not that the lead specifically
+ *     reached a "Won" pipeline stage. We still do NOT show won_jobs ÷ estimates
+ *     as a naive closing rate.
  *   - Calls are sourced from CallRail's OWN answered/missed disposition
  *     (get_call_volume → raw_payload.answered), NOT the CRM pipeline stage and
  *     NOT a duration_sec proxy: a call can have real talk time (voicemail,
@@ -218,9 +237,10 @@ export default function CrmOverview() {
     const sorted = sortStages(data.stages);
     const grouped = groupLeadsByStage(data.leads, sorted, data.leadPositions);
     // Honest, bounded lead outcome (won / lost / open + win rate) from the CRM
-    // lead pipeline — the one population where every count nests. Won here is a
-    // won LEAD (pipeline stage), distinct from the headline "Won jobs" (all
-    // booked jobs from QBO, which come through many non-CRM channels).
+    // lead pipeline — the one population where every count nests. Won here is
+    // a won LEAD (reached the "Won" pipeline stage) — a narrower population
+    // than the headline "Won jobs" (any CRM-traced contact's booked job), so
+    // the two numbers can still differ even though both are CRM-scoped now.
     const outcome = pipelineOutcome(sorted, grouped);
     const openStages = sorted.filter((s) => !s.is_won && !s.is_lost);
     const pipelineRows = openStages.map((s) => ({
@@ -281,11 +301,17 @@ export default function CrmOverview() {
           <div className="crm-metric-grid">
             <MetricCard label="Ad spend" value={fmtMoney(derived.totals.spend)} sub="Google + Meta" />
             <MetricCard label="Leads" value={derived.totals.leads.toLocaleString('en-US')} sub="CallRail calls + forms" />
-            <MetricCard label="Estimates" value={derived.totals.estimates.toLocaleString('en-US')} sub="sent" />
-            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="booked" />
-            <MetricCard label="Revenue" value={fmtMoney(derived.totals.revenue)} sub="QBO invoiced" />
+            <MetricCard label="Estimates" value={derived.totals.estimates.toLocaleString('en-US')} sub="sent · CRM-traced" />
+            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="booked · CRM-traced" />
+            <MetricCard label="Revenue" value={fmtMoney(derived.totals.revenue)} sub="QBO invoiced · CRM-traced" />
             <MetricCard label="ROAS" value={fmtRatio(derived.totals.roas)} sub="paid channels" />
           </div>
+
+          <p className="crm-note crm-scope-note">
+            Estimates, won jobs, and revenue on this page (including the won-jobs-by-division and
+            conversion-trend charts below) only count business traced to a CRM lead — company-wide
+            totals live on the main Home dashboard, not here.
+          </p>
 
           {derived.screening.call_leads > 0 && (
             <p className="crm-note crm-screening-note">
