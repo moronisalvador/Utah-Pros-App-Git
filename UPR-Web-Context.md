@@ -7418,3 +7418,40 @@ code once the tabs switched to the reused classes.
   flagged as a follow-up: `CrmAttribution.jsx`/`CrmReports.jsx` still raise their load-failure toast via
   a raw `upr:toast` dispatch instead of `err()` from `@/lib/toast` — `CrmOverview.jsx` already does this
   correctly; the other two are due for the same fix in a future pass.
+
+**"7 days" preset + Pipeline/Trend half-width row (owner-requested, 2026-07-21).** `RANGES` in
+`attributionData.js` gained a `'7d'` entry (before `'30d'`) — shared automatically by all three
+`RangePicker` consumers, plus `attributionData.test.js`'s day-math loop. On `CrmOverview.jsx`, the Sales
+pipeline card and the Conversion trend card now share one row (`.crm-pipeline-trend-row`, a 2-col grid
+collapsing to 1 column below 768px) instead of the pipeline card claiming a full-width row on its own —
+freeing that space per the owner's screenshot feedback.
+
+**Live production bug found + fixed the same session — "All time" showed 0 calls (root cause: my own
+earlier fix).** The owner's live screenshot showed the Calls donut reading "0 CALLS / No data" and
+"Calls answered —" even though 68 real calls exist. Reproduced live via the deployed `dev.utahpros.app`
+(the local Vite pane render-hangs in this sandbox, so verification used the real site + a `fetch`
+monkey-patch in the page's own JS console to capture the exact request/response `get_call_volume` made
+in a real authenticated session). **Root cause:** the 2026-07-21 `ALL_TIME_FLOOR='2000-01-01'` frontend
+fix (meant to stop "All time" silently narrowing to 30 days) made `get_call_volume`'s internal
+`generate_series(v_start, v_end, '1 day')` produce **~9,670 daily rows** — and PostgREST's default
+**1000-row response cap** silently truncated the result to Jan 2000 – Sept 2002, which is entirely zero.
+None of the real 2026 calls ever made it into the truncated response. Confirmed via a captured live
+request: `arrayLength: 1000`, `lastRow.period: "2002-09-26"`, `sumTotal: 0`.
+- **Fix — at the RPC, not another frontend patch** (consistent with the earlier "fix the RPC, not the
+  frontend" principle): `20260722_crm_call_volume_all_time_floor_fix.sql` — body-only `CREATE OR
+  REPLACE` (signature/shape unchanged). When `p_start` is null, derive the floor from the org's REAL
+  earliest call (`MIN(occurred_at)`) instead of a guessed distant date, falling back to the old 30-day
+  window only if the org has literally never had a call. Verified live: an omitted `p_start` now returns
+  a small (52-row, for this ~3-week-old org) array reaching all the way to today with correct non-zero
+  days. `CrmOverview.jsx`'s `ALL_TIME_FLOOR`/`callStart`/`callEnd` frontend hack was removed entirely —
+  `get_call_volume` now receives the same `start`/`end` as every other RPC on the page.
+- Committed test: `supabase/tests/crm_call_volume_no_null_start_truncation.test.js` (asserts the
+  omitted-`p_start` response stays under 1000 rows and reaches "today").
+- `migration-safety-checker`: **pass** (no blockers — signature/shape confirmed unchanged, GRANT/REVOKE
+  correct, the new earliest-call lookup is injection-safe with a proper 3-way COALESCE fallback so
+  `v_start` can never end up null, and the rollback note correctly warns that reverting the migration
+  alone reintroduces the bug unless `CrmOverview.jsx`'s `ALL_TIME_FLOOR` frontend hack is also restored).
+- **Lesson for future date-range work:** a `generate_series` CTE spanning a hardcoded/guessed floor date
+  is a landmine — PostgREST's row cap will silently and invisibly truncate a too-wide by-day range to
+  whatever slice happens to sort first, with no error thrown. Prefer deriving "all time" floors from real
+  data, never a guessed constant.

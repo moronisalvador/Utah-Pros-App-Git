@@ -9719,6 +9719,17 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-donut-legend-pct { flex-shrink: 0; width: 46px; text-align: right; color: var(--crm-text-tertiary); }
 .crm-donut-empty { font-size: 12px; color: var(--crm-text-tertiary); text-align: center; }
 
+/* Pipeline + conversion-trend share a row instead of each claiming the full
+   width — collapses to stacked full-width cards below 768px. */
+.crm-pipeline-trend-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-5);
+  align-items: start;
+  margin-bottom: var(--space-5);
+}
+.crm-pipeline-trend-row .crm-card { margin-bottom: 0; }
+
 /* ── Pipeline card ── */
 .crm-pipeline-card { min-width: 0; }
 .crm-pipeline-header {
@@ -9775,6 +9786,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 @media (max-width: 768px) {
   .crm-charts-grid { grid-template-columns: 1fr; gap: var(--space-4); }
+  .crm-pipeline-trend-row { grid-template-columns: 1fr; gap: var(--space-4); }
   .crm-pipeline-layout { grid-template-columns: 1fr; gap: var(--space-4); }
   .crm-pipeline-summary { align-items: flex-start; text-align: left; }
 }

@@ -15,7 +15,7 @@
  *   Internal:  ./attributionData.js (the pure function under test)
  *
  * NOTES / GOTCHAS:
- *   - The day-math branches (30d/90d/12mo/all) are exercised only for shape
+ *   - The day-math branches (7d/30d/90d/12mo/all) are exercised only for shape
  *     (a real Date() call inside would make an exact-date assertion flaky);
  *     'custom' is fully deterministic and asserted exactly.
  * ════════════════════════════════════════════════
@@ -49,8 +49,8 @@ describe('rangeToDates', () => {
       .toEqual({ start: null, end: null });
   });
 
-  it('30d/90d/12mo: both sides are real YYYY-MM-DD strings, end >= start', () => {
-    for (const key of ['30d', '90d', '12mo']) {
+  it('7d/30d/90d/12mo: both sides are real YYYY-MM-DD strings, end >= start', () => {
+    for (const key of ['7d', '30d', '90d', '12mo']) {
       const { start, end } = rangeToDates(key);
       expect(start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(end).toMatch(/^\d{4}-\d{2}-\d{2}$/);
