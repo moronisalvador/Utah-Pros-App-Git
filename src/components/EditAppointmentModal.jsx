@@ -211,6 +211,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
         p_type: type || null,
         p_status: status || null,
         p_notes: notes.trim() || null,
+        p_actor_id: employee?.id || null,
       });
 
       // is_private isn't on update_appointment — push it via direct PATCH
@@ -288,7 +289,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
   const handleDelete = async () => {
     setSaving(true);
     try {
-      await db.rpc('delete_appointment', { p_appointment_id: appointment.id });
+      await db.rpc('delete_appointment', { p_appointment_id: appointment.id, p_actor_id: employee?.id || null });
       onDeleted?.();
     } catch (e) { console.error('Delete:', e); errToast('Failed: ' + e.message); }
     finally { setSaving(false); }

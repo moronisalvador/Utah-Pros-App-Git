@@ -601,13 +601,13 @@ export default function Schedule() {
     const prevBoard = boardData, prevEvents = events;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : a) })));
     setEvents(evs => evs.map(e => e.id === apptId ? { ...e, date: newDate, time_start: newTimeStart, time_end: newTimeEnd } : e));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
+    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: newDate, p_time_start: newTimeStart, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null, p_actor_id: employee?.id || null }); silentReloadBoard(); } catch (e) { console.error('Drop failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
   };
   const handleApptResize = async (apptId, newTimeEnd) => {
     const prevBoard = boardData, prevEvents = events;
     setBoardData(data => data.map(job => ({ ...job, appointments: (job.appointments || []).map(a => a.id === apptId ? { ...a, time_end: newTimeEnd } : a) })));
     setEvents(evs => evs.map(e => e.id === apptId ? { ...e, time_end: newTimeEnd } : e));
-    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
+    try { await db.rpc('update_appointment', { p_appointment_id: apptId, p_title: null, p_date: null, p_time_start: null, p_time_end: newTimeEnd, p_type: null, p_status: null, p_notes: null, p_actor_id: employee?.id || null }); silentReloadBoard(); } catch (e) { console.error('Resize failed:', e); setBoardData(prevBoard); setEvents(prevEvents); }
   };
 
   // ── Grid cell drop handler (Jobs/Crew views — date change only) ──
