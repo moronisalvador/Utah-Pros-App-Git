@@ -51,8 +51,13 @@
  *                           crm_auto_qualify_contact, when the AI signals clear a
  *                           narrow qualified-lead threshold — see below);
  *                           lead_pipeline_stage + lead_stage_history (via
- *                           crm_advance_lead_if_forward, when the AI detects an
- *                           inspection was scheduled); inbound_leads.spam_flag (via
+ *                           crm_advance_lead_if_forward — to 'Qualified' on an
+ *                           in-scope real inquiry, to 'Inspection Scheduled'
+ *                           when the AI detects an appointment; the RPC
+ *                           resolves merged redials to their canonical lead
+ *                           and revives a recoverable "Missed Calls"
+ *                           placement — see 20260722_crm_advance_revives_
+ *                           recoverable_stages.sql); inbound_leads.spam_flag (via
  *                           set_lead_spam_flag, when the AI detects the caller never
  *                           responded OR the call isn't a real customer inquiry at
  *                           all — vendor/solicitor/compliance calls); a linked
@@ -500,6 +505,18 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
     await db.rpc('crm_auto_qualify_contact', { p_lead_id: lead.id });
   } catch { /* auto-qualify is a bonus, not a reason to fail the transcription */ }
 
+  // An in-scope REAL inquiry qualifies the lead (owner rule 2026-07-22) —
+  // advance to 'Qualified'. Runs BEFORE the inspection advance so a call
+  // that both qualifies and books lands on the higher stage (the RPC is
+  // sort-order-aware and resolves merged redials to their canonical lead,
+  // reviving a recoverable "Missed Calls" placement when the callback
+  // connects — see 20260722_crm_advance_revives_recoverable_stages.sql).
+  if (analysis?.is_customer_inquiry === true && analysis?.service_match === 'in_scope') {
+    try {
+      await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Qualified' });
+    } catch { /* pipeline auto-advance is a bonus, not a reason to fail the transcription */ }
+  }
+
   // The AI detected a real inspection agreed to in this call — nudge the lead
   // forward to "Inspection Scheduled" (RPC is sort-order-aware: no-op if the
   // lead is already further along, spam-flagged, or the stage doesn't exist
@@ -624,6 +641,13 @@ export async function reclassifyLead(db, env, lead) {
   try {
     await db.rpc('crm_auto_qualify_contact', { p_lead_id: lead.id });
   } catch { /* auto-qualify is a bonus, not a reason to fail reclassification */ }
+
+  // Same Qualified advance as transcribeLead() — see its comment there.
+  if (analysis?.is_customer_inquiry === true && analysis?.service_match === 'in_scope') {
+    try {
+      await db.rpc('crm_advance_lead_if_forward', { p_lead_id: lead.id, p_stage_name: 'Qualified' });
+    } catch { /* pipeline auto-advance is a bonus, not a reason to fail reclassification */ }
+  }
 
   if (analysis?.inspection_scheduled) {
     try {

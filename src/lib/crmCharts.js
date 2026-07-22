@@ -21,7 +21,8 @@
  *   channel/division maps, paletteColor, toDonutSegments, callVolumeSplit
  *   (CallRail-sourced answered/missed), agingOverThreshold, isCountableLead
  *   (excludes unanswered-call noise from a marketing lead count — the
- *   client-side twin of the SQL crm_call_is_answered predicate),
+ *   client-side twin of the SQL crm_call_is_answered predicate; reads the
+ *   top-level `answered` alias when present, else raw_payload.answered),
  *   leadsByCampaign, leadsByChannel, newLeadsSince, pipelineOutcome (won/lost/
  *   open + bounded lead win rate), callScreeningCoverage (AI spam-classifier
  *   coverage, a transparency read — not a spam judgment of its own).
@@ -198,9 +199,9 @@ export function agingOverThreshold(rows, days = 31) {
  * boolean or null), else fall back to duration_sec > 0 (only relevant for
  * legacy rows ingested before CallRail started sending 'answered'). Keep
  * these two definitions in sync if either ever changes — this is the
- * client-side twin of the same rule for the ONE lead-counting consumer that
- * doesn't go through an RPC (CrmOverview.jsx's campaign donut and New-leads
- * KPI, which need per-row lead data, not just an aggregate).
+ * client-side twin of the same rule for the lead-row consumers that don't go
+ * through an aggregate RPC (CrmOverview.jsx's campaign donut and New-leads
+ * KPI, and CrmCallLog.jsx's missed-call label, which need per-row lead data).
  */
 function isCallAnswered(answered, durationSec) {
   if (answered === 'true' || answered === true) return true;
@@ -222,7 +223,13 @@ function isCallAnswered(answered, durationSec) {
  */
 export function isCountableLead(lead) {
   if (lead?.source_type !== 'call') return true;
-  return isCallAnswered(lead?.answered, lead?.duration_sec);
+  // Not every read aliases raw_payload->>'answered' up to a top-level field the
+  // way CrmOverview's select does — a `select=*`-shaped row (the Leads board,
+  // get_inbound_leads) carries only raw_payload.answered (CallRail's
+  // form-encoded STRING 'true'/'false'). Fall back to it when the top-level
+  // field is missing; semantics are identical either way.
+  const answered = lead?.answered ?? lead?.raw_payload?.answered;
+  return isCallAnswered(answered, lead?.duration_sec);
 }
 
 /**
