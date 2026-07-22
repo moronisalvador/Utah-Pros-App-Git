@@ -4727,7 +4727,32 @@ HTTPS URL, not a secret). Confirmed both jobs registered `active=true` in `cron.
 one-time manual `{backfill:true, days:90}` pass (owner-run from devtools, same auth snippet pattern as
 the existing reclassify one) is still needed to clear the pre-existing 21-call backlog once — the cron
 only prevents new backlog from forming going forward, it wasn't run retroactively wider than its
-3-day window.
+3-day window. **Owner ran the backfill 2026-07-22 and it correctly touched 0 leads**: all 21 have
+`answered:false` (no recording exists for an unanswered call — nothing for Deepgram to transcribe), and
+19/21 are already correctly sitting in the "Missed Calls" stage (the other 2 are within 24h, awaiting
+whatever periodic process assigns a missed call to that stage — unrelated to transcription).
+
+**CrmOverview.jsx: campaign donut + New-leads KPI window-scoping fix (2026-07-22, owner-caught live):**
+`CrmOverview.jsx`'s single `data.leads` fetch (`spam_flag=eq.false&merged_into_lead_id=is.null`, no date
+filter, `limit=1000`) is intentionally UNBOUNDED by date for the sales pipeline (`groupLeadsByStage`
+needs every currently-open lead regardless of creation date) — but it was ALSO being reused unscoped for
+the "Leads by campaign" donut and the "New leads" KPI, which sit right next to numbers that ARE scoped to
+the range picker. Live: a "7 days" pick showed 27 leads-by-source (correct) but 67 leads-by-campaign
+(wrong — counted against the full unscoped fetch), and "New leads" was hardcoded to a fixed
+`now - 7 days` cutoff regardless of the picker (only looked right by coincidence when the picker
+happened to also be "7 days"). Fix: `load()` now stores `rangeStart`/`rangeEnd` (the same `start`/`end`
+already passed to the RPCs) instead of the old hardcoded `sinceISO`; `derived` filters `data.leads` down
+to a `windowLeads` array by `[rangeStart, rangeEnd]` (end-inclusive through the full calendar day) before
+handing it to `leadsByCampaign` and the New-leads count — the pipeline keeps using the unscoped
+`data.leads`, unchanged. KPI sub-label changed from "last 7 days" to "in this window". Verified live
+against the shared Supabase: the new `windowLeads` count (27) matches the RPC-derived "Leads by source"
+total exactly for the current 7-day window. `newLeadsSince` (crmCharts.js) is no longer imported by this
+page (still exported/tested, just unused here now — `windowLeads.length` replaced it directly). Two
+pre-existing, non-regressing notes surfaced during review: `rangeToDates` builds dates UTC-anchored, not
+`America/Denver` per `database-standard.md` §7 (was already true before this fix, same strings already
+went to the RPCs); and the 1000-row cap on the leads fetch can under-count `windowLeads` for very wide
+windows (12mo/All time) with >1000 total leads — neither is new, both are candidates for a future
+follow-up.
 
 **RPCs** (all `SECURITY DEFINER`, granted `anon, authenticated`):
 - `get_pipeline_stages(p_org_id)` — read helper, defaults to the real org.
