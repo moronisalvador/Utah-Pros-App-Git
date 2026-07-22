@@ -12,7 +12,10 @@
  *   or catch up the last N days of calls in one run.
  *
  * ENDPOINT:
- *   POST /api/transcribe-call   (authenticated — Supabase Bearer)
+ *   POST /api/transcribe-call   (authenticated — Supabase Bearer OR the shared
+ *        cron secret, checkCronSecret in ../lib/auth.js — same pattern as
+ *        process-scheduled.js/run-automations.js, so a pg_cron + pg_net
+ *        scheduled sweep can call this without a human session)
  *        body: { lead_id }                   — transcribe one call, OR
  *              { backfill: true, days?: 30 }   — transcribe every recent call that
  *                                                has a recording but no transcript, OR
@@ -31,8 +34,9 @@
  *
  * DEPENDS ON:
  *   Packages:      none (platform fetch)
- *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/google-drive.js
- *                  (getActorEmployee), ../lib/callrail-api.js (resolveCallRecording),
+ *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/auth.js
+ *                  (getActorEmployee, checkCronSecret), ../lib/callrail-api.js
+ *                  (resolveCallRecording),
  *                  ../lib/deepgram.js (formatDeepgramTranscript, turnsToFlatText),
  *                  ../lib/callCleanup.js (the clean-up + summarize pass),
  *                  ../lib/zeroTurnClassifier.js (the zero-turn fallback pass)
@@ -125,6 +129,15 @@
  *     callrail-recording.js.
  *   - Backfill is hard-capped (MAX_BACKFILL) so a bad filter can't fan out into
  *     thousands of paid Deepgram calls. Logs one worker_runs row per invocation.
+ *   - callrail-webhook.js already auto-transcribes a call in real time the
+ *     moment its recording lands, but that call is best-effort (a Deepgram
+ *     hiccup, a not-yet-ready recording, or a transient Anthropic error just
+ *     silently gives up — verified live 2026-07-22: 20 calls sat never-
+ *     transcribed for weeks with no retry). `20260722_crm_calls_classification_
+ *     cron.sql` schedules a pg_cron safety net (backfill + reclassify, every 6
+ *     hours, via the shared cron_worker_secret) so a missed real-time attempt
+ *     gets retried automatically instead of needing a human to notice and
+ *     trigger a manual backfill from devtools.
  *   - A call Deepgram could NOT split into any speaker turns at all (dead air,
  *     a voicemail hang-up with no message, a recording cut off before speech)
  *     used to fall through every AI pass silently: buildCleanupPrompt(turns)
@@ -158,7 +171,7 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getActorEmployee } from '../lib/google-drive.js';
+import { getActorEmployee, checkCronSecret } from '../lib/auth.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
 import { formatDeepgramTranscript, buildTranscriptAnalysis, turnsToFlatText } from '../lib/deepgram.js';
 import {
@@ -656,7 +669,8 @@ export async function onRequestPost(context) {
   const startedAt = new Date().toISOString();
 
   const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const authorized = employee || (await checkCronSecret(request, db));
+  if (!authorized) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
 
   const body = await request.json().catch(() => ({}));
 
