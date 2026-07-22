@@ -24,6 +24,10 @@
  *   - Numeric columns can arrive from PostgREST as strings; toNumberRow()
  *     coerces them before any math, or attribution.js's num() guard would read
  *     a "1000" string as 0.
+ *   - rangeToDates('custom', customRange) reads the picked From/To dates
+ *     instead of doing day-math off `RANGES` — mirrors CrmLeads.jsx's
+ *     dateRangeFor(period, customRange) so the two custom-range pickers in
+ *     the CRM behave identically.
  * ════════════════════════════════════════════════
  */
 import { deriveChannelMetrics } from '@/lib/attribution';
@@ -48,8 +52,19 @@ const NUMERIC_FIELDS = ['spend', 'leads', 'estimates', 'won_jobs', 'revenue'];
 
 const pad = (d) => d.toISOString().slice(0, 10);
 
-/** Turn a range key into { start, end } YYYY-MM-DD (or nulls for "all time"). */
-export function rangeToDates(key) {
+/**
+ * Turn a range key into { start, end } YYYY-MM-DD (or nulls for "all time").
+ * `key === 'custom'` reads the picked dates from `customRange` ({start, end},
+ * each an "" or a YYYY-MM-DD string from a native <input type="date">) — an
+ * empty side stays unbounded (null), matching CrmLeads.jsx's dateRangeFor.
+ */
+export function rangeToDates(key, customRange) {
+  if (key === 'custom') {
+    return {
+      start: customRange?.start || null,
+      end: customRange?.end || null,
+    };
+  }
   const spec = RANGES.find((r) => r.key === key);
   if (!spec || spec.days == null) return { start: null, end: null };
   const end = new Date();

@@ -39,6 +39,9 @@
  *     honest "Since <date>" caption rather than implying older history.
  *   - Revenue = QBO-synced jobs.invoiced_value on won (booked) jobs, not cash
  *     collected to date — same definition as everywhere else in Phase 3.
+ *   - RangePicker's calendar icon opens a custom From/To range (same popover
+ *     as CrmLeads.jsx's date filter); `customRange` is in load()'s dep array
+ *     so a new custom pick refetches even when `range` stays 'custom'.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -68,6 +71,7 @@ function sinceCaption(rows) {
 export default function CrmReports() {
   const { db } = useAuth();
   const [range, setRange] = useState('all');
+  const [customRange, setCustomRange] = useState({ start: '', end: '' });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -75,7 +79,7 @@ export default function CrmReports() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { start, end } = rangeToDates(range);
+      const { start, end } = rangeToDates(range, customRange);
       const dateParams = { p_start: start, p_end: end };
       const legacyParams = { p_start_date: start, p_end_date: end };
       const [
@@ -102,7 +106,7 @@ export default function CrmReports() {
     } finally {
       setLoading(false);
     }
-  }, [db, range]);
+  }, [db, range, customRange]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -139,7 +143,11 @@ export default function CrmReports() {
           <h1 className="crm-page-title">Reports</h1>
           <p className="crm-page-subtitle">A fixed set of reports on the same source-of-truth numbers.</p>
         </div>
-        <RangePicker value={range} onChange={setRange} />
+        <RangePicker
+          value={range}
+          onChange={setRange}
+          onCustomRange={(start, end) => setCustomRange({ start, end })}
+        />
       </div>
 
       {/* ─── Source ROI ─── */}

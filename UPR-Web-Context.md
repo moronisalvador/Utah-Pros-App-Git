@@ -7392,3 +7392,29 @@ output signal. Two real gaps surfaced and were fixed:
    live: leads dropped from 71 to 70 (exactly the one known duplicate). Committed before/after-delta
    test: `supabase/tests/crm_attribution_excludes_merged_leads.test.js`.
    `migration-safety-checker` + `upr-pattern-checker`: both **pass**.
+
+**Custom date-range picker (owner-requested, 2026-07-21) — "just like the Leads page."** The shared
+`RangePicker` (`src/pages/crm/attributionParts.jsx`, used by `CrmOverview.jsx` / `CrmAttribution.jsx` /
+`CrmReports.jsx`) gains a calendar icon beside its preset tabs (30 days / 90 days / 12 months / All
+time) that opens a From/To custom-range popover — **reusing `CrmLeads.jsx`'s own date-filter classes
+verbatim** (`crm-board-period*`, `crm-leads-popover*`, `crm-leads-datepicker`, `crm-leads-popover-field`,
+plus a pixel-identical local `IconCalendar`), not just a visually-similar rebuild. No new CSS was
+needed; the old `.crm-range`/`.crm-range-btn` rules (RangePicker's only consumer) were removed as dead
+code once the tabs switched to the reused classes.
+- **`attributionData.js`**: `rangeToDates(key, customRange)` — `key==='custom'` reads the picked
+  From/To strings verbatim (an empty side stays unbounded/`null`, mirroring `CrmLeads.jsx`'s
+  `dateRangeFor`); every other key's behavior (day-math, `null`/`null` for `'all'`) is unchanged.
+  New test file `attributionData.test.js` (6 tests).
+- **`RangePicker({value, onChange, onCustomRange})`**: `onCustomRange` is optional — a caller that omits
+  it gets the preset-tabs-only fallback (no calendar icon, no popover), so this is backward compatible
+  by construction (not just by convention).
+- All three consuming pages: added `customRange` state, wired `onCustomRange={(start,end) =>
+  setCustomRange({start,end})}`, and added `customRange` to `load()`'s dep array — required because
+  re-applying a *different* custom range while already in `'custom'` mode doesn't change the `range`
+  string itself, so the fetch wouldn't otherwise re-run (loading gate firing here is an intentional
+  param change, sanctioned by `page-lifecycle.md` §1).
+- `upr-pattern-checker`: **pass** (no blockers; confirmed genuine class reuse, zero orphaned CSS, safe
+  dep-array wiring, verified backward-compat fallback). One PRE-EXISTING, untouched-by-this-diff finding
+  flagged as a follow-up: `CrmAttribution.jsx`/`CrmReports.jsx` still raise their load-failure toast via
+  a raw `upr:toast` dispatch instead of `err()` from `@/lib/toast` — `CrmOverview.jsx` already does this
+  correctly; the other two are due for the same fix in a future pass.
