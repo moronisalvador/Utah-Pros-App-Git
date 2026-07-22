@@ -5,16 +5,17 @@
  *
  * WHAT THIS DOES (plain language):
  *   The CRM's front page — the one-glance business picture. Across the chosen
- *   time window it shows the headline numbers (ad spend, leads, estimates, won
- *   jobs, real revenue, return on ad spend) — estimates/won-jobs/revenue count
- *   ONLY business traceable to a CRM lead (see NOTES; company-wide totals live
- *   on the main Home dashboard, not here), a strip of sales-and-response KPIs
- *   (incl. an honest lead win rate — won ÷ decided, always ≤ 100%), the open
- *   sales pipeline and the lead-vs-won trend side by side (each about half
- *   width — the pipeline board doesn't need a full row), four donut charts
- *   (calls answered vs missed — from CallRail, leads by source, won jobs by
- *   division, leads by campaign). A small caption reports how much of the
- *   counted calls have actually been through
+ *   time window it shows, top to bottom: the headline numbers (ad spend, leads,
+ *   estimates, won jobs, real revenue, return on ad spend) — estimates/won-jobs/
+ *   revenue count ONLY business traceable to a CRM lead (see NOTES; company-wide
+ *   totals live on the main Home dashboard, not here); four donut charts (calls
+ *   answered vs missed — from CallRail, leads by source, won jobs by division,
+ *   leads by campaign) right under the headline, so the at-a-glance breakdown
+ *   comes before the KPI strip/pipeline/trend detail; a strip of sales-and-
+ *   response KPIs (incl. an honest lead win rate — won ÷ decided, always ≤ 100%);
+ *   and the open sales pipeline + the lead-vs-won trend side by side (each
+ *   about half width — the pipeline board doesn't need a full row). A small
+ *   caption reports how much of the counted calls have actually been through
  *   the AI spam classifier (not a judgment of its own — see NOTES). This is
  *   the screen that replaces flipping between five different tools to see the
  *   whole story.
@@ -321,6 +322,16 @@ export default function CrmOverview() {
             </p>
           )}
 
+          {/* The 4-donut charts grid sits right under the headline KPIs — the
+              owner wants the at-a-glance breakdown (calls, source, division,
+              campaign) as the top row, before the KPI strip/pipeline/trend. */}
+          <OverviewCharts
+            calls={{ answered: derived.calls.answered, missed: derived.calls.missed, total: derived.calls.total }}
+            channels={derived.channels}
+            divisions={derived.divisions}
+            campaigns={derived.campaigns}
+          />
+
           <OverviewKpiStrip stats={kpiStats} />
 
           {/* Pipeline + trend share a row (each ~half width) rather than each
@@ -336,13 +347,6 @@ export default function CrmOverview() {
             />
             <ConversionTrendCard trend={derived.trend} />
           </div>
-
-          <OverviewCharts
-            calls={{ answered: derived.calls.answered, missed: derived.calls.missed, total: derived.calls.total }}
-            channels={derived.channels}
-            divisions={derived.divisions}
-            campaigns={derived.campaigns}
-          />
 
           {/* Overdue tasks (Phase 7 slot). The weighted-forecast widget is
               intentionally not rendered here: inbound leads carry no dollar
