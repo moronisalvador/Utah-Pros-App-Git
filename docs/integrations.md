@@ -165,6 +165,11 @@ fail-closed. Value-free validation telemetry may record only the invalid field n
 controlled event can identify provider schema drift without retaining raw payloads, message
 content, phone numbers, IDs, or secret material.
 
+That controlled event identified `id` as the drifted field: the valid signed CallRail webhook
+omitted the documented secondary numeric event ID while retaining `resource_id`. UPR accepts a
+missing/null secondary ID but still requires `resource_id`, which remains the durable provider
+message identity and dedupe key. A malformed non-null `id` still fails closed.
+
 The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
 active transport or provider configuration. RCS remains blocked until requested-versus-actual
 channel persistence, sender/content identity, signed inbound/status normalization, consent review,

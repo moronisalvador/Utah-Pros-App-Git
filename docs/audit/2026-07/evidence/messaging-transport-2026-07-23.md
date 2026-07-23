@@ -117,6 +117,12 @@ field-name-only webhook validation telemetry. Existing outbound and inbound prov
 be recovered through exact CallRail conversation reconciliation; it must not be recreated by
 resending.
 
+After the fix reached dev, a second single controlled send succeeded in UPR and CallRail. The
+signed sent webhook then reported the safe diagnostic `invalid_field=id`: CallRail omitted the
+documented numeric event ID while retaining its stable `resource_id`. The follow-up compatibility
+change makes only that secondary ID optional; `resource_id` remains required and continues to
+drive durable dedupe.
+
 ## Apply-window recapture
 
 Immediately before any owner-approved apply, recapture:

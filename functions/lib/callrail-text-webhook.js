@@ -176,6 +176,11 @@ function requireIdentifier(value, field) {
   return String(value);
 }
 
+function optionalIdentifier(value, field) {
+  if (value === null || value === undefined) return null;
+  return requireIdentifier(value, field);
+}
+
 function normalizeTimestamp(value) {
   const parts = typeof value === 'string'
     ? ISO_TIMESTAMP_WITH_ZONE.exec(value)
@@ -366,7 +371,9 @@ export function normalizeCallrailTextWebhook(payload) {
     provider: 'callrail',
     eventType,
     direction,
-    providerEventId: requireIdentifier(payload.id, 'id'),
+    // CallRail's live 2026-07-23 text webhook omitted the documented numeric
+    // id. resource_id remains the stable message identity and dedupe key.
+    providerEventId: optionalIdentifier(payload.id, 'id'),
     providerMessageId: requireIdentifier(payload.resource_id, 'resource_id'),
     providerConversationId: requireIdentifier(payload.conversation_id, 'conversation_id'),
     companyResourceId: requireIdentifier(payload.company_resource_id, 'company_resource_id'),
