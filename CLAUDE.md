@@ -43,9 +43,10 @@ Do not infer production database behavior solely from TypeScript/generated types
 Inspect migrations, SQL functions, triggers, policies, grants, callers, and live catalog state when
 access is available.
 
-For database/auth/public-form/signing/Storage work, read the last live evidence at
-`docs/audit/2026-07/evidence/live-supabase.md`. It confirms urgent exceptions—including broad anon
-policies and authenticated `exec_read_sql`—that are findings to remove, never patterns to copy.
+For database/auth/public-form/signing/Storage work, read the last broad live evidence at
+`docs/audit/2026-07/evidence/live-supabase.md` plus later object-specific evidence addenda. The
+authenticated `exec_read_sql` exposure in that snapshot was contained on 2026-07-23; broad anon
+policies and other urgent exceptions remain findings to remove, never patterns to copy.
 
 Do not duplicate business rules across UI, API, Cloudflare Pages Functions, and SQL without
 documenting the enforcement boundary in `docs/business-rules.md`.
@@ -97,7 +98,7 @@ await db.delete(table, filter)        // DELETE — null on 204
 await db.rpc(fn, params)              // POST /rpc/{fn} — null on 204; default for anything complex or tables added after initial deploy
 ```
 
-**PostgREST/RLS (least privilege):** new exposed tables require `ENABLE ROW LEVEL SECURITY`, but RLS-enabled alone proves nothing about which rows a caller may use. Prefer operation-specific policies using active employee, role, assignment, owner or organization predicates. An always-true authenticated policy is only for explicitly documented company-wide data; it is not a default floor. Prefer `SECURITY INVOKER`; a necessary `SECURITY DEFINER` RPC pins `search_path`, validates the caller/capability inside SQL, revokes `PUBLIC`/`anon`, and is granted only to callers that need that operation. **Never expose free-form SQL to browser roles**; the live authenticated `exec_read_sql` grant is a Critical finding. **`anon` enters a GRANT or policy only for a deliberately public, minimal boundary** in [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md) §2, with a `-- public: <reason>` comment and abuse/capability tests. After adding an exposed contract, refresh/redeploy the PostgREST schema cache as prescribed by the standard.
+**PostgREST/RLS (least privilege):** new exposed tables require `ENABLE ROW LEVEL SECURITY`, but RLS-enabled alone proves nothing about which rows a caller may use. Prefer operation-specific policies using active employee, role, assignment, owner or organization predicates. An always-true authenticated policy is only for explicitly documented company-wide data; it is not a default floor. Prefer `SECURITY INVOKER`; a necessary `SECURITY DEFINER` RPC pins `search_path`, validates the caller/capability inside SQL, revokes `PUBLIC`/`anon`, and is granted only to callers that need that operation. **Never expose free-form SQL to browser roles**; `exec_read_sql` was contained to `service_role` on 2026-07-23 and must remain service-only. **`anon` enters a GRANT or policy only for a deliberately public, minimal boundary** in [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md) §2, with a `-- public: <reason>` comment and abuse/capability tests. After adding an exposed contract, refresh/redeploy the PostgREST schema cache as prescribed by the standard.
 
 ## AuthContext — What's Exposed
 
