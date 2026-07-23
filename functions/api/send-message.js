@@ -672,10 +672,22 @@ export async function onRequestPost(context) {
           });
           continue;
         }
-        await completeMessageAttempt(db, childClaim.attempt.id, {
-          state: 'submitting',
-          started_at: new Date().toISOString(),
+        const claimedRows = await db.rpc('claim_message_recipient_attempt', {
+          p_attempt_id: childClaim.attempt.id,
         });
+        const wonRecipientClaim = Array.isArray(claimedRows)
+          ? claimedRows[0] === true
+          : claimedRows === true;
+        if (!wonRecipientClaim) {
+          results.push({
+            error: 'Recipient send is already being processed or reconciled',
+            error_code: 'CLIENT_REQUEST_PENDING',
+            error_message: 'Recipient send is already being processed or reconciled',
+            to: participant.phone,
+            contact_id: participant.contact_id,
+          });
+          continue;
+        }
       }
       const { result, row } = await sendToRecipient(db, env, {
         conversationId: conversation_id,

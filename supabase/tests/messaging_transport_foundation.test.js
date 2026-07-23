@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const migrationPath = fileURLToPath(new URL(
-  '../migrations/20260723183330_messaging_transport_foundation.sql',
+  '../migrations/20260723213000_messaging_transport_foundation.sql',
   import.meta.url,
 ));
 const migration = readFileSync(migrationPath, 'utf8');
@@ -41,6 +41,11 @@ describe('messaging transport foundation migration contract', () => {
     expect(activeSql).toContain('canonical_body text');
     expect(activeSql).toContain("media_urls jsonb NOT NULL DEFAULT '[]'::jsonb");
     expect(activeSql).toContain('message_send_attempts_parent_recipient_key');
+    expect(activeSql).toContain(
+      'CREATE OR REPLACE FUNCTION public.claim_message_recipient_attempt(',
+    );
+    expect(activeSql).toContain("AND state = 'prepared'");
+    expect(activeSql).toContain('RETURN FOUND');
     expect(activeSql).toContain('processing_attempts integer NOT NULL DEFAULT 0');
     expect(activeSql).toContain('next_attempt_at timestamptz');
     expect(activeSql).toContain('submitted_body text');
@@ -199,6 +204,13 @@ describe('messaging transport foundation migration contract', () => {
     );
     expect(activeSql).toMatch(
       /INSERT INTO public\.message_provider_events \([\s\S]+provider_status,[\s\S]+v_provider_status,/,
+    );
+  });
+
+  it('allows a terminal failed reconciliation without fabricating a canonical row', () => {
+    expect(activeSql).toContain('IF v_message_id IS NOT NULL THEN');
+    expect(activeSql).toMatch(
+      /IF v_message_id IS NOT NULL THEN[\s\S]+UPDATE public\.messages[\s\S]+IF NOT FOUND THEN/,
     );
   });
 

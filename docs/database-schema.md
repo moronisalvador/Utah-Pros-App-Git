@@ -119,7 +119,7 @@ code.
 
 The 2026-07-23 read-only recapture confirmed that `messages` still has legacy `twilio_sid`, broad
 anonymous/authenticated table access, and no generic provider identity. Repository migration
-`20260723183330_messaging_transport_foundation.sql` proposes:
+`20260723213000_messaging_transport_foundation.sql` proposes:
 
 - additive provider/message/conversation identity, actual sender/recipient, and
   `client_request_id` columns on `messages`;

@@ -138,7 +138,14 @@ function makeDb({ conversation, participants, contact, contactsById } = {}) {
       }
       return null;
     },
-    rpc: async () => null,
+    rpc: async (name, args) => {
+      if (name !== 'claim_message_recipient_attempt') return null;
+      const attempt = attempts.find((item) => item.id === args.p_attempt_id);
+      if (!attempt || attempt.state !== 'prepared') return false;
+      attempt.state = 'submitting';
+      attempt.started_at = new Date().toISOString();
+      return true;
+    },
   };
 }
 
@@ -628,6 +635,40 @@ describe('send-message per-participant consent loop', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
     expect(h.twilio.mock.calls[0][1].to).toBe('+15551110002');
     expect(outboundRows(h.db).filter((row) => row.payload.recipient_address === '+15551110001')).toHaveLength(1);
+  });
+
+  it('group: a caller that loses the atomic child claim never submits that recipient', async () => {
+    h.db = makeDb({
+      conversation: { id: DIRECT.id, type: 'group', status: 'open' },
+      participants: [{ contact_id: 'c-1', phone: '+15551110001' }],
+      contactsById: {
+        'c-1': { id: 'c-1', dnd: false, opt_in_status: true, phone: '+15551110001' },
+      },
+    });
+    const body = {
+      conversation_id: DIRECT.id,
+      body: 'claim once',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    await onRequestPost({ request: req(body), env: ENV });
+    const child = h.db.attempts.find((attempt) => attempt.parent_attempt_id);
+    child.state = 'prepared';
+    child.message_id = null;
+    h.db.inserts.splice(
+      h.db.inserts.findIndex((item) => item.table === 'messages' && item.payload.recipient_address === '+15551110001'),
+      1,
+    );
+    h.db.rpc = vi.fn(async (name) => (
+      name === 'claim_message_recipient_attempt' ? false : null
+    ));
+    h.twilio = vi.fn();
+
+    const replay = await onRequestPost({ request: req(body), env: ENV });
+
+    expect(replay.status).toBe(201);
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect((await replay.json()).twilio[0].error_code).toBe('CLIENT_REQUEST_PENDING');
   });
 
   it('group: an opted-out participant beyond index 0 is skipped and audited', async () => {
