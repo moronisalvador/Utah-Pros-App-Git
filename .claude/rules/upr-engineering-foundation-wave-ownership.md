@@ -27,6 +27,9 @@ No application/database writer lease is active. Encircle implementation landed o
 `0a06a21`; the owner reports CI and Cloudflare staging passed, and its writer lease is released.
 Its migration remains unapplied, flag OFF, and credentials unchanged.
 
+Foundation F1 containment and F2 provenance reconciliation are complete. F2 performed no live write;
+its source-restoration and release-gate lease is released.
+
 The landed Encircle seam set is in `docs/upr-unfinished-work-registry.md`. It requires rebase and
 contract preservation, not a global file freeze. Encircle’s later migration apply, flag change,
 candidate entry, runtime smoke, credential rotation/fallback removal, and obsolete Netlify
@@ -58,7 +61,7 @@ dependent phases launch.
 | E — Encircle rollout | Landed `0a06a21` contract; pending rollout evidence | migration/flag/credential/provider changes only in separately authorized windows | Holding an app-writer lease while owner/external gated |
 | R — Registry | These four new Foundation planning artifacts | none | Existing canonical docs/manifests |
 | S1 — SQL containment | one new `exec_read_sql` revoke migration, its DB test, rollback evidence | `exec_read_sql` ACL/boundary only | Encircle tables/functions; broad policy cleanup |
-| S2 — Provenance | read-only ledger/Git/fingerprint tool + exact four restored source records if approved | no live write except separately authorized reconciliation | Replacing live bodies from guesses |
+| S2 — Provenance | completed: read-only ledger/Git/fingerprint gate + four exact restored source records | none; no F2 live write occurred | archived regression boundary; never replace live bodies from guesses |
 | Q — QA isolation | F3a environment/refusal; F3b identities/seeds; F3c reset/subsystems; then assigned QA config/fixtures/scripts/CI paths | isolated project/local stack only | shared production data/tests; G-owned checker fixtures |
 | G — Governance | F5a secret/permissions; F5b adapters/paths; F5c triggers/plugins; exact `.claude` paths and evaluation tests | none | application/database/provider actions; Q-owned CI/config |
 | D — Design/Figma | design operating docs; later approved tokens/primitives/visual baselines | none | page rewrites before QA/ownership proof |

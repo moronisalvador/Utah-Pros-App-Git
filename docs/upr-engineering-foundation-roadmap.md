@@ -37,8 +37,8 @@ program. The program starts with evidence and containment, not a broad rewrite:
 1. Treat Encircle implementation commit `0a06a21` as landed and its writer lease as released.
    Preserve its pending rollout gates: migration unapplied, flag OFF, credentials unchanged.
 2. Reconcile work and ownership truth into one registry with explicit states and retirement rules.
-3. `exec_read_sql` containment completed and verified on 2026-07-23; next reconcile live migration
-   provenance before any broad RLS or product wave.
+3. `exec_read_sql` containment and F2 migration provenance reconciliation completed and verified on
+   2026-07-23; preserve both as release-control regression boundaries.
 4. Create isolated QA data and representative roles before making database/browser tests blocking.
 5. Repair skills/agents/plugin permissions and trigger governance before adding Figma or more
    automation.
@@ -73,8 +73,8 @@ Any authorized Encircle database apply still serializes with every other shared-
   - no public table name contains `test`, `qa`, or `sandbox`.
 - The four July migration-ledger entries previously identified as branch-ahead-of-`dev`
   (`crm_denver_day_bucketing`, `crm_sales_summary_total_vs_traced`,
-  `crm_dedup_repeat_caller_leads`, `crm_caller_name_follows_merge`) still have no matching migration
-  file in this checkout.
+  `crm_dedup_repeat_caller_leads`, `crm_caller_name_follows_merge`) now map to byte-verified restored
+  source on `dev`; the live `set_lead_caller_name` body differs only by comments and is not rewritten.
 - Current source confirms `qbo-charge.js` authenticates any valid Supabase user before moving money
   and uses UTC date slicing (`functions/api/qbo-charge.js:22-31,77-90`); `stripe-pay-link.js`
   likewise accepts any valid user and always creates a new Checkout session
@@ -111,8 +111,9 @@ text and raw results in a newly dated evidence addendum and add direct intended/
    browser consumers or cite the function as a supported client contract.
 2. **Critical — broad database authorization:** aggregate unrestricted grants/policies remain large.
    Freeze new anonymous grants and new `SECURITY DEFINER` browser contracts pending classification.
-3. **High — live/source provenance drift:** four live ledger entries are absent from this checkout.
-   Do not replay or replace them from filenames; fingerprint and restore only reviewed equivalents.
+3. **Contained High regression boundary — live/source provenance drift:** F2 restored only the four
+   reviewed source records and added a fresh-evidence release gate. Do not replay live rows or replace
+   live bodies merely to align filenames or comments.
 4. **High — money authorization/idempotency:** current QBO/Stripe Workers authenticate without the
    required billing-role boundary. Do not expand callers or add adjacent money flows before M.
 5. **High — public form/signing/file coupling:** signing writes into the `job-files`/document path.
@@ -149,8 +150,8 @@ dependencies, exact files/schema/external systems, and retirement condition.
 
 - **Now:** no application/database writer lease is active. Encircle code is landed; its pending
   rollout gates do not retain a lease.
-- **Next:** one owner-authorized database/migration writer at a time. F1 is complete; F2 provenance
-  reconciliation or the separately authorized Encircle rollout uses the next serialized window.
+- **Next:** one owner-authorized database/migration writer at a time. F1 and F2 are complete; the
+  separately authorized Encircle rollout or the next selected finish-first phase uses the window.
 - Two application writers is an initial
   cap, not a target; use fewer unless pairwise disjointness is proven. Each implementation gets an
   independent review lane.
@@ -172,7 +173,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Encircle managed integration | PARTIAL; landed with owner/external verification tails | `0a06a21` on `origin/dev`; owner reports CI/staging passed; migration unapplied, flag OFF, credentials unchanged | High | Apply-window tests; owner-only flag; candidate activation; multi-runtime smoke; rotation/fallback cleanup |
 | `exec_read_sql` containment | HAVE; Critical boundary contained | Applied/verified 2026-07-23; browser-role denials, service-role smoke, catalog fingerprint, ledger, and advisor evidence recorded | High | Keep service-only regression test and ACL invariant |
 | Anonymous/authenticated least privilege | PARTIAL + Critical | Current policy/function counts; July evidence enumerates affected objects | High aggregate; object behavior needs role tests | Classified role matrix and staged closures |
-| Migration provenance | PARTIAL + High | Four live ledger names remain absent from current checkout | High | Every live entry maps to reachable reviewed source and fingerprint |
+| Migration provenance | HAVE; High boundary reconciled | F2 maps the seven-entry live tail to reviewed release source and checks 11 function plus one policy fingerprint | High | Refresh read-only evidence within six hours of release validation |
 | Worker auth/shared libraries | PARTIAL | Shared helpers exist; inventory found 17 local auth helpers and limited timeout/telemetry adoption | High | Sensitive Workers use canonical auth/role/timeout/telemetry contracts |
 | Money-path safety | PARTIAL + High/Critical | `qbo-charge.js` and `stripe-pay-link.js` current-source gaps | High | Role denial, stable idempotency, recovery/reuse, Denver date tests |
 | Public form/signing/file boundaries | PARTIAL + High | July evidence plus current migration/Worker source | High design evidence; live behavior needs refresh | Direct bypass denied; minimal capability DTOs; signed/private files |
@@ -262,7 +263,8 @@ All acceptance checks passed. Evidence:
 
 ### Phase F2 — Migration provenance reconciliation
 
-> **Implementation:** `not_started` · **Gate:** `internal` · **Disposition:** `active`
+> **Implementation:** `verified` · **Gate:** complete · **Disposition:** `archived`
+> **Completed:** 2026-07-23; release evidence and reviewer results linked below
 > **Prerequisite:** F1 complete; applies serialized
 > **Model · effort:** high; shared-production reproducibility
 > **Scope:** reconcile four known live-only ledger entries and add a read-only provenance gate
@@ -274,6 +276,12 @@ All acceptance checks passed. Evidence:
 - Restore only the four selected reviewed migration/source files, never an entire historical commit.
 - Each new live ledger entry maps to reviewed source reachable from the release ref.
 - CI/release evidence reports ledger/source and selected function/policy fingerprint drift.
+
+All acceptance checks passed without a live write. The gate maps the seven-entry ledger tail,
+enforces reviewed-origin blob equality, bounds evidence freshness to six hours, verifies capture-base
+ancestry, and checks 11 function plus one policy fingerprint. The one raw body difference is
+comment-only and remains a warning. Evidence:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
 
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation
 
@@ -363,13 +371,13 @@ blocks and re-proven against the current release head and any later Encircle rol
 - No application/database writer lease is active.
 - Registry review, read-only security/provenance refresh, QA architecture, governance design, and
   owner-gate preparation may run together.
-- F1 is complete; F2 provenance reconciliation is the next internal database/release-control phase.
+- F1 and F2 are complete; provenance validation remains a CI/release regression boundary.
 - The unapplied Encircle migration remains a separate owner-gated rollout window and cannot overlap
   another database apply.
 
 ### Foundation and later waves
 
-- F2 now starts from the completed F1/release baseline and applies serially.
+- Any later database phase starts from the completed F1/F2 release-control baseline and applies serially.
 - F3 and F5 are parallel only after exact paths are assigned. F5 trigger/checker tests may execute
   F3/CI tools, so shared fixtures and CI configuration have one owner and both lanes rebase/retest.
 - F4 follows F3 because it consumes the isolated environment.
