@@ -1,5 +1,5 @@
 -- ============================================================================
--- FILE: 20260723183330_messaging_transport_foundation.sql
+-- FILE: 20260723213000_messaging_transport_foundation.sql
 -- ============================================================================
 --
 -- WHAT THIS DOES (plain language):
@@ -398,6 +398,43 @@ GRANT EXECUTE ON FUNCTION public.messaging_can_access_conversations() TO authent
 
 COMMENT ON FUNCTION public.messaging_can_access_conversations() IS
   'Trusted boolean caller contract for company-wide conversation visibility: active non-external employee plus force-disable/override/admin/role permission precedence.';
+
+CREATE OR REPLACE FUNCTION public.claim_message_recipient_attempt(
+  p_attempt_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+  IF current_user <> 'service_role' THEN
+    RAISE EXCEPTION 'claim_message_recipient_attempt is service-role only'
+      USING ERRCODE = '42501';
+  END IF;
+
+  UPDATE public.message_send_attempts
+  SET
+    state = 'submitting',
+    started_at = now(),
+    updated_at = now()
+  WHERE id = p_attempt_id
+    AND parent_attempt_id IS NOT NULL
+    AND state = 'prepared'
+    AND message_id IS NULL
+    AND provider_message_id IS NULL;
+
+  RETURN FOUND;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.claim_message_recipient_attempt(uuid)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_message_recipient_attempt(uuid)
+  TO service_role;
+
+COMMENT ON FUNCTION public.claim_message_recipient_attempt(uuid) IS
+  'Service-role-only atomic prepared-to-submitting claim; only the winning worker may perform the recipient provider side effect.';
 
 CREATE POLICY messages_authenticated_select
   ON public.messages
@@ -1405,22 +1442,24 @@ BEGIN
     updated_at = v_now
   WHERE id = p_attempt_id;
 
-  UPDATE public.messages
-  SET
-    status = CASE WHEN p_confirmed THEN 'sent' ELSE 'failed' END,
-    provider_message_id = p_provider_message_id,
-    provider_conversation_id = p_provider_conversation_id,
-    error_code = CASE WHEN p_confirmed THEN NULL ELSE 'CALLRAIL_PROVIDER_FAILED' END,
-    error_message = CASE
-      WHEN p_confirmed THEN NULL
-      ELSE 'CallRail reports provider status ' || v_provider_status
-    END
-  WHERE id = v_message_id
-    AND provider = 'callrail';
+  IF v_message_id IS NOT NULL THEN
+    UPDATE public.messages
+    SET
+      status = CASE WHEN p_confirmed THEN 'sent' ELSE 'failed' END,
+      provider_message_id = p_provider_message_id,
+      provider_conversation_id = p_provider_conversation_id,
+      error_code = CASE WHEN p_confirmed THEN NULL ELSE 'CALLRAIL_PROVIDER_FAILED' END,
+      error_message = CASE
+        WHEN p_confirmed THEN NULL
+        ELSE 'CallRail reports provider status ' || v_provider_status
+      END
+    WHERE id = v_message_id
+      AND provider = 'callrail';
 
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Canonical CallRail message was not found for reconciliation'
-      USING ERRCODE = 'P0002';
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Canonical CallRail message was not found for reconciliation'
+        USING ERRCODE = 'P0002';
+    END IF;
   END IF;
 
   RETURN true;
