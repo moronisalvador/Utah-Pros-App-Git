@@ -19,9 +19,10 @@
 -- ROLLBACK:
 --   Run the complete guarded script at:
 --   supabase/rollbacks/20260723_encircle_managed_credentials.rollback.sql
---   It restores the prior function body and grants, removes the inert seeds,
---   and drops the additive constraints/columns. It refuses to run if a managed
---   Encircle token or another provider's lifecycle metadata would be lost.
+--   It restores the prior response shape while retaining the admin assertion
+--   and least-privilege table ACL, removes the inert seeds, and drops the
+--   additive constraints/columns. It refuses to run if a managed Encircle token
+--   or another provider's lifecycle metadata would be lost.
 -- ════════════════════════════════════════════════
 
 ALTER TABLE public.integration_credentials

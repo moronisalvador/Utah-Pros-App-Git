@@ -41,11 +41,15 @@ $$;
 
 CREATE OR REPLACE FUNCTION public.get_managed_credentials_status()
 RETURNS SETOF json
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
+BEGIN
+  PERFORM public.p9_assert_admin();
+
+  RETURN QUERY
   SELECT json_build_object(
            'provider', p.provider,
            'connected', (c.access_token IS NOT NULL),
@@ -65,6 +69,7 @@ AS $$
          )
   FROM (VALUES ('stripe'), ('twilio'), ('resend')) AS p(provider)
   LEFT JOIN public.integration_credentials c ON c.provider = p.provider;
+END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.get_managed_credentials_status() FROM PUBLIC, anon;
@@ -87,10 +92,9 @@ ALTER TABLE public.integration_credentials
   DROP COLUMN IF EXISTS last_verified_at,
   DROP COLUMN IF EXISTS last_verification_status;
 
--- Restores the live ACL captured before the forward migration. This is an
--- intentional rollback of the defense-in-depth revoke, not a recommended
--- steady-state permission model.
-GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
-  ON TABLE public.integration_credentials TO anon, authenticated;
+-- Do not restore the historical browser-role table grants. A rollback must
+-- preserve least privilege on this secret-bearing table even though zero-policy
+-- RLS currently blocks ordinary rows.
+REVOKE ALL ON TABLE public.integration_credentials FROM anon, authenticated;
 
 COMMIT;
