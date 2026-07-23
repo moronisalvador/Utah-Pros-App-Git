@@ -222,6 +222,20 @@ describe('CallRail text webhook normalization', () => {
     });
   });
 
+  it.each([
+    ['missing', { id: undefined }],
+    ['null', { id: null }],
+  ])('accepts a %s secondary event id when resource_id is present', async (_label, override) => {
+    await expect(parseSigned({
+      ...receivedPayload,
+      ...override,
+    })).resolves.toMatchObject({
+      providerEventId: null,
+      providerMessageId: 'SCI-received-001',
+      dedupeKey: 'callrail:message.received:SCI-received-001',
+    });
+  });
+
   it('retains MMS URLs only under the explicit ephemeral input field', async () => {
     const event = await parseSigned({
       ...receivedPayload,
@@ -284,7 +298,7 @@ describe('CallRail text webhook normalization', () => {
   });
 
   it.each([
-    ['id', { id: null }],
+    ['id', { id: { invalid: true } }],
     ['resource_id', { resource_id: null }],
     ['conversation_id', { conversation_id: null }],
     ['company_resource_id', { company_resource_id: null }],
