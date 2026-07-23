@@ -7728,13 +7728,15 @@ before/after magnitude (not guessed).
   `anon-grant-auditor` **pass** (grants confirmed live), `upr-pattern-checker` **pass** (after widening
   the Overview scope-note to cover the trend/division charts it had initially omitted).
 
-## `exec_read_sql` containment package (2026-07-23; authored, not applied)
+## `exec_read_sql` containment (2026-07-23; applied and verified)
 
 The dedicated evidence and apply record is
 `docs/audit/2026-07/exec-read-sql-containment.md`. Migration
-`20260723205127_exec_read_sql_containment.sql` is a grant-only Critical DB-003 containment: it revokes
-free-form SQL execution from `PUBLIC`, `anon`, and `authenticated` while preserving the verified
-owner-MCP `service_role` caller. It does not replace/drop the function, change its signature/body, read
-or mutate data, deploy code, or apply live SQL. The package includes exact rollback, read-only
-preflight/post-apply queries, negative-role and owner-caller contract tests, and merge-time canonical
-doc reconciliation pointers. Encircle files and its unapplied/dark-gated migration are untouched.
+`20260723205127_exec_read_sql_containment.sql` is the grant-only Critical DB-003 containment. It
+applied to shared Supabase on 2026-07-23 as live ledger entry
+`20260723221707 exec_read_sql_containment`. Catalog fingerprint checks passed; `anon` and
+`authenticated` harmless calls returned `42501`; the verified `service_role` owner-MCP contract
+returned `[{"ok":1}]`; and the security advisor no longer references `exec_read_sql`. The function
+signature/body/owner remain unchanged and no business data was read or mutated. Exact evidence:
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Encircle files and its
+unapplied/dark-gated migration remain untouched.
