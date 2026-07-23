@@ -6,16 +6,18 @@ This manifest is binding for the proposed UPR Agent QA Access and Test Foundatio
 is `docs/upr-agent-qa-access-roadmap.md`; cold-session prompts are in
 `docs/upr-agent-qa-access-dispatch.md`.
 
-## 1. Current state: planning only
+## 1. Current state: P0 documentation complete
 
 The initiative currently owns only:
 
 - `docs/upr-agent-qa-access-roadmap.md`
 - `docs/upr-agent-qa-access-dispatch.md`
 - `.claude/rules/upr-agent-qa-access-ownership.md`
+- `docs/audit/2026-07/evidence/qa-foundation-decision-addendum-2026-07-23.md`
 
 No application, test configuration, dependency, CI, migration, canonical knowledge file, external
-resource, or live state is owned or authorized yet.
+resource, or live state is owned or authorized yet. P1 and P2a are ready only for an exact ownership
+checkpoint; they are not opened by the P0 decision addendum.
 
 ## 2. Encircle landed baseline and freeze
 

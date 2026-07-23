@@ -285,7 +285,8 @@ comment-only and remains a warning. Evidence:
 
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation
 
-> **Implementation:** `not_started` · **Gate:** `external + owner` · **Disposition:** `active`
+> **Implementation:** P0 decision package complete; F3a internal ownership checkpoint ready ·
+> **Gate:** `external + owner` · **Disposition:** `active`
 > **Prerequisite:** owner chooses Supabase ownership/budget/reset policy
 > **Model · effort:** high; auth/data-isolation architecture
 > **Scope:** separate Supabase target or approved local stack, representative roles, TEST organization,
@@ -299,6 +300,11 @@ comment-only and remains a warning. Evidence:
   unknown-employee, TEST organization, deterministic seeds, and no real employee credentials.
 - **F3c — reset/subsystems:** idempotent cleanup plus Storage/Auth/Realtime coverage. Provider
   sandboxes are separate external verification tails, not blockers for the core isolated target.
+
+The 2026-07-23 P0 addendum records the safe environment, identity, provider, telemetry, GitHub,
+accessibility, and Encircle boundaries. It supersedes—not merges—the `3841056` plan because that plan
+would keep mutation-heavy integration tests on the shared production database. P1/P2a may begin only
+after exact file ownership is opened; hosted project/account creation remains an owner/external gate.
 
 ### Phase F4a/F4b/F4c — Test, CI, deployment, and observability gates
 
@@ -431,9 +437,10 @@ blocks and re-proven against the current release head and any later Encircle rol
 2. Schedule the Encircle migration/flag/candidate/rotation rollout as separate owner-gated windows;
    keep the migration unapplied, flag OFF, and credentials unchanged until authorized.
 3. **Completed 2026-07-23:** authorized and verified the F1 production containment apply window.
-4. Choose isolated Supabase ownership, budget, seed/reset policy, and representative roles.
-5. Decide whether unmerged test-auth plan commit `3841056` is superseded, adopted only as an interim,
-   or split into isolated-environment work.
+4. **Partially completed 2026-07-23:** dedicated/local isolation, reset safety, and representative
+   role design are recorded; hosted ownership, budget, retention, and project creation remain gates.
+5. **Completed 2026-07-23:** `3841056` is superseded, not merged; retain its diagnosis while moving
+   all mutation-heavy database tests to the isolated-environment contract.
 6. Decide which logged-out workflows and `job-files` objects must remain public.
 7. Confirm canonical billing roles and provider sandbox availability.
 8. Approve credential rotation/history treatment, obsolete Netlify retirement, canonical skill

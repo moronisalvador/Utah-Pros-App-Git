@@ -21,13 +21,13 @@ NOTES / GOTCHAS:
 
 # UPR Agent QA Access and Test Foundation Roadmap
 
-Status: proposed for owner review
+Status: active; P0 repository decision package recorded, external gates remain
 
 Planning capture: 2026-07-23
 
-Implementation status: not started
+Implementation status: P0 documentation complete; P1/P2a ownership checkpoint pending
 
-Repository base: `origin/dev` at `0a06a21` (`feat: add managed Encircle credentials`)
+Repository base: refreshed on `dev` at `69076d1`
 
 Companions:
 [`upr-agent-qa-access-dispatch.md`](upr-agent-qa-access-dispatch.md) and
@@ -48,9 +48,11 @@ Until gates 2–4 pass, authenticated write-capable automation is blocked. The e
 deployment is not a safe write target because `dev` and production share Supabase. Production remains
 read-only smoke only in every phase.
 
-This initiative is planning-only today. It creates no users, data, schema, credentials, deployment,
-browser session, outbound message, or money action. Its delivery is limited to a local documentation
-commit unless the owner later authorizes publishing.
+This initiative remains documentation-only through P0. The repository-safe decisions and unresolved
+owner/external gates are recorded in
+`docs/audit/2026-07/evidence/qa-foundation-decision-addendum-2026-07-23.md`. No P1/P2 runtime
+ownership, user, data, schema, credential, deployment, browser session, outbound message, or money
+action is opened by that addendum.
 
 ## Encircle handoff snapshot
 
@@ -492,12 +494,16 @@ location, haptics, push, safe areas, and installed-app lifecycle remain explicit
 Scope: review these artifacts; choose isolation, domains, provider posture, telemetry, retention, and
 ownership. No runtime changes.
 
+**Repository outcome (2026-07-23):** complete as a decision package. The addendum fixes the safe
+architecture, supersedes the shared-production test-auth proposal in `3841056`, and names every
+remaining owner/external choice. It does not claim those external choices are approved or configured.
+
 Acceptance:
 
-- owner accepts exact environment model and production read-only rule;
-- owner assigns paid/external accounts;
-- Encircle owner confirms the freeze/handoff boundary;
-- unresolved decisions are recorded, not assumed.
+- [x] exact environment model and production read-only rule recorded;
+- [ ] owner assigns paid/external accounts and resource owners;
+- [x] Encircle dark-rollout freeze/handoff boundary preserved;
+- [x] unresolved decisions recorded rather than assumed.
 
 ### P1 — Credential-free local test foundation
 
