@@ -1,5 +1,5 @@
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 2, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** July 22, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
 
 ## ⚠️ NON-NEGOTIABLE RULES
@@ -10,7 +10,7 @@
 4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exception:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)) — concurrent sessions genuinely need the isolation + reviewer gauntlet. See [Deployment](#deployment--release-workflow).
 5. **Mobile CSS: `@media (max-width: 768px)` only.** Never touch desktop layout/colors/spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 6. **Commit after every 2–3 files.** Small commits, clear messages.
-7. **New tables/columns → write a migration in `supabase/migrations/` first** (66+ tracked, real schema-as-code), apply via Supabase MCP `apply_migration`, then query via `db.rpc()` (PostgREST schema cache lags on new tables; `SECURITY DEFINER` RPCs don't). **Check real column names** via `information_schema.columns` first — tables routinely have 20-60+ columns, never assume from a short doc list. **Grant/policy posture is least-privilege by default** — `GRANT EXECUTE TO authenticated, service_role` + policies scoped `TO authenticated`; `anon` only via the named public allowlist. Full standard: [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md) (supersedes the pre-2026-07-08 blanket-`anon` template).
+7. **New tables/columns → write a migration in `supabase/migrations/` first** (derive the current count; real schema-as-code), apply via Supabase MCP `apply_migration` only when explicitly authorized, then query through the narrowest appropriate table/RPC contract. **Check real column names** via `information_schema.columns` first — tables routinely have 20-60+ columns, never assume from a short doc list. **Grant/policy posture is least-privilege by default** — `authenticated` proves identity, not permission; use role/assignment/owner/org predicates and grant each RPC only to intended callers. `anon` only via the named temporary public allowlist. Full standard: [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md).
 8. **Don't break existing pages.** Every page is live and in use. Read the file first if unsure.
 9. **Update `UPR-Web-Context.md`** after any session touching tables/RPCs/components/pages/workers, `*-TASK.md` or not. It's the source of truth this file deliberately does not duplicate (hand-copied schema lists are exactly how this file went stale before).
 10. **`viewport-fit=cover` required in `index.html`** — without it, `env(safe-area-inset-bottom)` evaluates to `0px` everywhere. Never remove.
@@ -24,6 +24,57 @@
 3. **Ship the sanctioned way (Rule 4).** Routine work: commit direct to `dev`, it auto-deploys to staging — no branch, no PR. Production: reviewed `dev → main` PR → merge commit (not squash) → fast-forward `dev`. CRM wave: feature branch → PR into `dev`. Wait for the Cloudflare Pages check on any prod release.
 4. **Report honestly.** State outcomes and discrepancies out loud. Ask when a request is genuinely ambiguous.
 5. **Keep context lean.** Delegate broad searches to subagents — file/pattern/caller *finding* goes to the cheap read-only **`upr-scout`** agent (Haiku); judgment work (review, money, consent, migrations, architecture) stays on the sonnet/opus checkers and reviewers. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components). `/clear` between unrelated tasks; `/btw` for side questions that shouldn't enter history.
+
+## Repository knowledge
+
+Before making architectural or cross-cutting changes, read:
+
+- `docs/architecture.md`
+- `docs/database-schema.md`
+- `docs/auth-and-authorization.md`
+- `docs/business-rules.md`
+- `docs/integrations.md`
+- `docs/testing-and-deployment.md`
+
+When a change alters architecture, schema, authorization, business rules, integrations, deployment,
+or testing conventions, update the corresponding document in the same commit.
+
+Do not infer production database behavior solely from TypeScript/generated types or client models.
+Inspect migrations, SQL functions, triggers, policies, grants, callers, and live catalog state when
+access is available.
+
+For database/auth/public-form/signing/Storage work, read the last live evidence at
+`docs/audit/2026-07/evidence/live-supabase.md`. It confirms urgent exceptions—including broad anon
+policies and authenticated `exec_read_sql`—that are findings to remove, never patterns to copy.
+
+Do not duplicate business rules across UI, API, Cloudflare Pages Functions, and SQL without
+documenting the enforcement boundary in `docs/business-rules.md`.
+
+Dated audit evidence belongs under `docs/audit/<year-month>/`; it is not current project law.
+
+### Task-specific foundation reading
+
+After the canonical documents above, read the smallest relevant foundation set before planning or
+editing. Do not rely on an older roadmap, dispatch prompt or audit snapshot without reconciling it
+against the current source, Git history and live external state where applicable.
+
+| Work in scope | Required additional reading |
+|---|---|
+| Any page or shared component | `UPR-Design-System.md`, `.claude/rules/page-lifecycle.md`, `.claude/rules/loading-error-states.md`, `.claude/rules/perf-budget.md`, `.claude/rules/close-out-standard.md` |
+| Motion, transitions or gestures | `.claude/rules/motion-standard.md` plus the UI foundation set above |
+| Field-tech/mobile UI | `.claude/rules/tech-mobile-ux.md` plus the UI foundation set above |
+| Database, RLS, RPC, Auth or Storage | `.claude/rules/database-standard.md`, `docs/database-schema.md`, `docs/auth-and-authorization.md`, and the latest live Supabase evidence |
+| Worker or external integration | `.claude/rules/workers-standard.md`, `docs/integrations.md`, `docs/business-rules.md`, and the provider-specific handoff/reference |
+| Billing, QBO or Stripe | `BILLING-CONTEXT.md`, `docs/business-rules.md`, `docs/integrations.md`, and the relevant current status/handoff |
+| Testing, CI, deployment or release | `docs/testing-and-deployment.md` and `.claude/rules/close-out-standard.md` |
+| Active roadmap phase or parallel wave | The initiative's current `docs/*-roadmap.md`, dispatch block and active ownership manifest; verify its status before treating a checkbox as fact |
+| Security/reliability remediation | The latest `docs/audit/<year-month>/executive-summary.md`, findings, remediation backlog and evidence addenda; promote lasting decisions into canonical docs |
+
+Before starting a new initiative, inspect existing roadmaps, feature flags, stubs and ownership
+manifests for overlapping or unfinished work. Prefer completing, explicitly blocking, cancelling or
+retiring an existing path over creating a parallel implementation. A foundation is not complete when
+only tokens, primitives, routes, schema or stubs exist; adoption, verification, rollout and legacy
+cleanup must be accounted for.
 
 ## Compact instructions
 
@@ -46,7 +97,7 @@ await db.delete(table, filter)        // DELETE — null on 204
 await db.rpc(fn, params)              // POST /rpc/{fn} — null on 204; default for anything complex or tables added after initial deploy
 ```
 
-**PostgREST/RLS (least-privilege default — supersedes the pre-2026-07-08 `anon, authenticated` + `USING (true)` template):** new tables need a `SECURITY DEFINER` RPC + `GRANT EXECUTE TO authenticated, service_role` (**not `anon`**), plus `ENABLE ROW LEVEL SECURITY` + an explicit policy scoped to the authenticated role — floor is `FOR ALL TO authenticated USING (true) WITH CHECK (true)`; tighten to an ownership/org predicate wherever the data is per-user or per-org (`USING (true)` is the floor, not the goal). **`anon` enters a GRANT or a policy ONLY for a deliberately-public endpoint**, via the named allowlist in [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md) §2 (login bootstrap, `/status`, public form submit, public e-sign pages, public job-file reads) — no new `anon` grant ships without an allowlist entry + a `-- public: <reason>` comment. Logged-in users already carry a real Supabase Auth JWT (`role=authenticated` — Rule 3), so authenticated-scoped policies do **not** break the app; the old blanket-`anon` template exposed every `USING(true)` table to unauthenticated reads. Unprotected (RLS-off) tables are invisible to PostgREST either way. After adding a table: `bust_postgrest_cache()` RPC or redeploy.
+**PostgREST/RLS (least privilege):** new exposed tables require `ENABLE ROW LEVEL SECURITY`, but RLS-enabled alone proves nothing about which rows a caller may use. Prefer operation-specific policies using active employee, role, assignment, owner or organization predicates. An always-true authenticated policy is only for explicitly documented company-wide data; it is not a default floor. Prefer `SECURITY INVOKER`; a necessary `SECURITY DEFINER` RPC pins `search_path`, validates the caller/capability inside SQL, revokes `PUBLIC`/`anon`, and is granted only to callers that need that operation. **Never expose free-form SQL to browser roles**; the live authenticated `exec_read_sql` grant is a Critical finding. **`anon` enters a GRANT or policy only for a deliberately public, minimal boundary** in [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md) §2, with a `-- public: <reason>` comment and abuse/capability tests. After adding an exposed contract, refresh/redeploy the PostgREST schema cache as prescribed by the standard.
 
 ## AuthContext — What's Exposed
 
@@ -64,7 +115,7 @@ const {
 
 ## Local Dev & UI Verification
 
-A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the **anon** key (safe — it's already shipped in every browser bundle) unlocks real local dev + UI verification: `preview_start({name: "Vite Dev Server"})` (config in `.claude/launch.json`) → Login screen's **"Dev Mode: Select Employee"** button → click any employee, no password, ever. Good for screenshots, click-throughs, layout/navigation/component work. If `.env.local` doesn't exist yet, get the URL + anon key via the Supabase MCP (`get_project_url` / `get_publishable_keys`) rather than asking the user to paste secrets in chat — but never create the file directly (`.claude/hooks/block-secrets.sh` blocks any `Write`/`Edit` to `.env*` by filename, on purpose); hand the two lines to a human to paste in.
+A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the **anon/publishable** key unlocks real local dev + UI verification: `preview_start({name: "Vite Dev Server"})` (config in `.claude/launch.json`) → Login screen's **"Dev Mode: Select Employee"** button → click an approved test employee. The key is intentionally public, not a secret, but that does **not** make database access safe—RLS/policies must assume every internet caller has it, and the live audit confirms broad anon exposure. Use this mode only for authorized UI verification; never treat it as authentication. If `.env.local` doesn't exist yet, get the URL + publishable key via the Supabase MCP (`get_project_url` / `get_publishable_keys`) rather than asking the user to paste secrets in chat—but never create the file directly (`.claude/hooks/block-secrets.sh` blocks any `Write`/`Edit` to `.env*` by filename, on purpose); hand the two lines to a human to paste in.
 
 **Limitation (expected, not a bug — don't waste time re-diagnosing it):** Dev Mode authenticates the *employee* row but the client still runs as Supabase's `anon` role, not a real JWT. Any RPC scoped `TO authenticated` (most of them, per `database-standard.md` §1) returns `42501 permission denied for function ...`, so dashboard/list data shows "Couldn't load" even though the UI itself is fine.
 
@@ -100,7 +151,7 @@ src/components/      Layout (app shell), TechLayout (tech shell), Sidebar, Error
                      collections/ tech/ overview/ (feature-scoped subfolders)
 functions/api/       Cloudflare Pages Functions (workers) — see below
 functions/lib/       supabase.js (worker-side client), cors.js, email.js
-supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count drifts; derive it: `ls supabase/migrations/*.sql | wc -l` (163 as of 2026-07; live DB has more — some pre-2026 migrations are untracked)
+supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count drifts; derive it with the current shell. The 2026-07-22 audit found 207 local files versus 375 live ledger entries; four newest live entries were on an unmerged feature branch, so verify provenance rather than comparing counts alone.
 .claude/rules/       tech-mobile-ux.md, documentation-standard.md, scope-sheet-rollback.md,
                      database-standard.md, and the UX-Quality laws: page-lifecycle.md,
                      loading-error-states.md, perf-budget.md, workers-standard.md,
@@ -165,7 +216,7 @@ Installed skills auto-load by description when a task matches; you rarely invoke
 
 **Env vars:** Cloudflare keeps separate Production (`main`) / Preview (`dev`+branches) sets — new secrets need both + a redeploy.
 
-**One shared Supabase across `dev`/`main` (critical):** migrations/data changes hit both immediately — sequence so consuming code deploys first. Runbook: `.claude/rules/scope-sheet-rollback.md`.
+**One shared Supabase across `dev`/`main` (critical):** migrations/data changes hit both immediately—sequence so consuming code deploys first. Apply only migration source committed to a reviewed commit reachable from the designated release branch; an owner-authorized emergency exception records the exact commit/reason and is reconciled immediately. Runbook: `.claude/rules/scope-sheet-rollback.md`.
 
 ## Task File Protocol
 

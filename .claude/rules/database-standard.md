@@ -9,6 +9,12 @@ is live in production the instant it applies; write every one as if it is.
 manifests and in `CLAUDE.md`'s DB Client API paragraph. Where an older manifest still shows the old
 template, it is describing what already shipped — new work follows this file.
 
+**Live audit correction (2026-07-22):** scoping a policy to `authenticated` closes logged-out
+access, but it does not create employee-, role-, assignment- or organization-level authorization.
+The live project still has broad anonymous exceptions, 146 advisor-flagged always-true policies and
+342 authenticated-executable `SECURITY DEFINER` overloads. Do not copy live broad grants/policies as
+templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
+
 **Why the flip is safe (verified, not assumed):** logged-in users already carry a real Supabase Auth
 JWT with `role=authenticated` (`AuthContext.jsx` builds the db client from `session.access_token`;
 the anon key is only used for pre-login bootstrap and DEV `devLogin`). `AuthContext.jsx` even
@@ -21,31 +27,41 @@ bundle.
 
 ## 1. Least-privilege grants & policies (the default)
 
-- **RPCs:** `SECURITY DEFINER` + `GRANT EXECUTE ... TO authenticated, service_role`. **Never `anon`**
-  unless the function is in the public allowlist (§2).
+- **RPCs:** use `SECURITY INVOKER` unless owner privileges are required. For `SECURITY DEFINER`,
+  validate the caller/employee/role or capability inside the function, pin `search_path`, and grant
+  only the roles that need the exact operation. `authenticated` is not an automatic grant;
+  service-only helpers receive service-role-only execution. **Never `anon`** unless the function is
+  in the public allowlist (§2).
   - **Managed-Supabase function trap (verified in Phase F):** this project re-applies Postgres's
     built-in `EXECUTE TO PUBLIC` to every new function at `ddl_command_end`, so the `ALTER DEFAULT
     PRIVILEGES` revoke does **not** cover functions. Every new/replaced function migration must add an
     explicit `REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon;` immediately before its `GRANT` — the
     `ALTER DEFAULT PRIVILEGES` backstop only reliably covers tables/sequences.
-- **Tables:** `ENABLE ROW LEVEL SECURITY` + an explicit policy scoped `TO authenticated`. The floor
-  is `FOR ALL TO authenticated USING (true) WITH CHECK (true)`; tighten to an ownership/org predicate
-  (`auth.uid()` → `employees` → assignment) wherever the data is per-user or per-org. `USING (true)`
-  is the floor, not the goal.
+- **Tables:** `ENABLE ROW LEVEL SECURITY` + only the operation-specific policies required by the
+  workflow. Use ownership, active employee, role, assignment or organization predicates. An
+  always-true authenticated policy is allowed only for data explicitly classified company-wide,
+  documented in `docs/auth-and-authorization.md`, and covered by role tests; it is not the default
+  floor. Updates require the intended SELECT visibility plus both `USING` and `WITH CHECK`.
+- **Free-form SQL:** never expose dynamic arbitrary-query RPCs to `PUBLIC`, `anon` or
+  `authenticated`. `exec_read_sql` is a confirmed live containment finding and must remain
+  service-only if retained.
 - A policy or grant naming `anon` or `public` outside §2 is a review failure.
 
 ## 2. Public allowlist — the ONLY place `anon` is granted
 
 Adding `anon` to any GRANT or policy requires (a) an entry in this list and (b) a
 `-- public: <reason>` comment in the migration naming the exact RPC/table and why it must be
-reachable before login. Current allowlist:
+reachable before login. Current temporary allowlist/legacy exceptions (all must be minimized; none
+is a template):
 
-- **login / session bootstrap** reads (employee lookup, feature flags, page access)
+- **login / session bootstrap** reads (replace broad table rows with purpose-built minimal bootstrap
+  results)
 - **`/status`** public roadmap mirror → `get_crm_build_progress`
-- **public form submit** `functions/f/[public_id].js` → `upsert_lead_from_form` *(worker path; revoke
-  client anon once confirmed no browser caller)*
-- **public e-sign pages** → `get_sign_request_by_token` (token-gated) + the SignPage template read
-- **public job-file READ** (photos/PDFs) until the P3 signed-URL migration lands
+- **public form submit** Workers → `upsert_lead_from_form` *(service-only target state; direct client
+  execution bypasses Worker abuse/consent controls and must be revoked)*
+- **public e-sign pages** → purpose-built retrieval constrained by token, status and expiration
+- **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
+  URLs)*
 
 Extend this list deliberately, one line per entry naming the exact object and the pre-auth reason.
 
@@ -75,6 +91,9 @@ Extend this list deliberately, one line per entry naming the exact object and th
   during a low-traffic window and **sequence so consuming code deploys first** for any additive column
   the frontend will read. Removals are forbidden on live tables (§3); if ever truly needed, they are a
   separate reviewed change, schema-last. Announce the apply in the PR.
+- Apply only migrations committed to a reviewed commit reachable from the designated release
+  branch. An emergency feature-branch apply requires owner authorization, a recorded commit/reason
+  and immediate merge/reconciliation; run a read-only live-ledger-versus-release-ref check.
 - Two migrations that issue strong-lock DDL (`CREATE/DROP POLICY`, `ADD CONSTRAINT`, `ADD/DROP INDEX`)
   against the **same** hot tables must not have overlapping apply windows — serialize the apply even
   though merge order is free. Use `ADD CONSTRAINT ... NOT VALID` → `VALIDATE CONSTRAINT` to keep the
