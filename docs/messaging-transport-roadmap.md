@@ -92,6 +92,10 @@ Current official [CallRail API v3 documentation](https://apidocs.callrail.com/) 
   either one public `media_url` or one uploaded `media_file`, not both; JPEG, PNG, and GIF are
   supported up to 5 MB.
 - SMS send is rate-limited separately (currently documented as 150/hour and 1,000/day by default).
+- Although the send endpoint documents `201 Created`, the 2026-07-23 controlled dev send returned
+  HTTP 200 with a valid conversation identity and was delivered. The adapter treats only 200/201
+  plus a usable identity as accepted; malformed or other 2xx responses require reconciliation and
+  must not be retried automatically.
 - received and sent text webhooks exist. They carry message/resource identity, numbers, content,
   provider conversation identity, timestamp, type, and short-lived MMS URLs.
 - CallRail conversation retrieval exposes only coarse outbound `sent`/error information. It does

@@ -149,8 +149,21 @@ compilation, provider fixtures, and reviewed retention remain activation blocker
 source now includes atomic canonical-message recovery plus a durable, fenced notification outbox;
 neither SQL contract has been applied or runtime-verified.
 
-All of this is repository-only and unconfigured: no Cloudflare variable, provider webhook, API
-credential, number assignment, deployment, database migration, or real send has occurred.
+The additive foundation migration and its index follow-up are applied to the shared Supabase
+project. On 2026-07-23 the owner approved a Preview/dev-only activation for CallRail number
+`+13853604121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
+and separate sent/received text webhooks targeting `/api/callrail-text-webhook`. Production remains
+`MESSAGING_SEND_MODE=disabled` and has no CallRail messaging provider bindings.
+
+The first controlled dev send to the owner's phone exposed two contract defects without requiring
+a retry: CallRail delivered the message and returned HTTP 200 with a conversation identity, while
+the adapter accepted only the documented HTTP 201; the signed sent and received webhooks reached
+UPR but failed strict payload normalization before durable claim. The adapter therefore accepts
+only HTTP 200 or 201 with a usable conversation identity, while every malformed or unfamiliar 2xx
+remains ambiguous and non-retryable pending reconciliation. Webhook authentication remains
+fail-closed. Value-free validation telemetry may record only the invalid field name so a later
+controlled event can identify provider schema drift without retaining raw payloads, message
+content, phone numbers, IDs, or secret material.
 
 The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
 active transport or provider configuration. RCS remains blocked until requested-versus-actual

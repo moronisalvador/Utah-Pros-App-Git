@@ -46,10 +46,11 @@ const ALLOWED_LEAD_STATUSES = new Set([
 ]);
 
 export class CallrailTextWebhookError extends Error {
-  constructor(code, message) {
+  constructor(code, message, { field = null } = {}) {
     super(message);
     this.name = 'CallrailTextWebhookError';
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -155,6 +156,7 @@ function requireText(value, field, { allowEmpty = false } = {}) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       `CallRail text webhook has an invalid ${field}`,
+      { field },
     );
   }
   return value;
@@ -168,6 +170,7 @@ function requireIdentifier(value, field) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       `CallRail text webhook has an invalid ${field}`,
+      { field },
     );
   }
   return String(value);
@@ -282,6 +285,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook media_urls must be an array',
+      { field: 'media_urls' },
     );
   }
 
@@ -295,6 +299,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
       throw new CallrailTextWebhookError(
         'INVALID_CALLRAIL_TEXT_EVENT',
         'CallRail text webhook media URLs must use HTTPS',
+        { field: 'media_urls' },
       );
     }
   });
@@ -306,6 +311,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail message_type does not match media_urls',
+      { field: 'media_urls' },
     );
   }
   return normalized;
@@ -337,6 +343,7 @@ export function normalizeCallrailTextWebhook(payload) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook payload must be an object',
+      { field: 'payload' },
     );
   }
   assertTextEventShape(payload);
@@ -351,6 +358,7 @@ export function normalizeCallrailTextWebhook(payload) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook has an invalid lead_status',
+      { field: 'lead_status' },
     );
   }
 

@@ -227,6 +227,23 @@ describe('sendCallRailMessage configuration and submission', () => {
     });
   });
 
+  it('accepts CallRail live HTTP 200 contract with a conversation identity', async () => {
+    h.fetchWithTimeout.mockResolvedValue(response(200, {
+      id: 'conversation-live-200',
+      customer_phone_number: '+18015550101',
+      current_tracking_number: '+18015550100',
+    }));
+
+    const result = await sendCallRailMessage(env, command);
+
+    expect(result).toMatchObject({
+      provider: 'callrail',
+      providerConversationId: 'conversation-live-200',
+      accepted: true,
+      providerHttpStatus: 200,
+    });
+  });
+
   it('falls back to a server-only API key when credential storage is unavailable', async () => {
     h.db.select.mockRejectedValue(new Error('database unavailable'));
 
@@ -343,13 +360,32 @@ describe('sendCallRailMessage provider failures', () => {
     expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
   });
 
-  it('marks a 201 without a conversation identity ambiguous', async () => {
-    h.fetchWithTimeout.mockResolvedValue(response(201, { unexpected: true }));
+  it.each([
+    [200, { unexpected: true }],
+    [201, { id: '   ' }],
+    [201, { id: { nested: 'not a provider identity' } }],
+  ])('marks malformed accepted response %i ambiguous', async (status, body) => {
+    h.fetchWithTimeout.mockResolvedValue(response(status, body));
 
     await expectCode(
       sendCallRailMessage(env, command),
       'CALLRAIL_SEND_AMBIGUOUS',
-      { status: 201, ambiguous: true, reconciliationRequired: true },
+      { status, ambiguous: true, reconciliationRequired: true },
     );
   });
+
+  it.each([202, 204])(
+    'does not accept unsupported successful response %i',
+    async (status) => {
+      h.fetchWithTimeout.mockResolvedValue(response(status, {
+        id: 'conversation-unsupported-status',
+      }));
+
+      await expectCode(
+        sendCallRailMessage(env, command),
+        'CALLRAIL_SEND_AMBIGUOUS',
+        { status, ambiguous: true, reconciliationRequired: true },
+      );
+    },
+  );
 });
