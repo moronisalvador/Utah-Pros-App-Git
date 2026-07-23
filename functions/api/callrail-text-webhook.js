@@ -115,6 +115,9 @@ async function duplicateResponse(db, existing, event, rawBodyHash, startedAt) {
   return response({ accepted: true, duplicate: true }, 200);
 }
 
+// public: CallRail cannot present a Supabase session; the exact raw request body
+// is authenticated with the server-only CallRail HMAC signing key before parsing
+// or any database/provider side effect.
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
