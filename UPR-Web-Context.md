@@ -796,6 +796,7 @@ functions/
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
     send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded (status `failed`, `error_code`/`error_message`) instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted (omni §7). Response is additive to F's frozen `/api/send-message` contract: direct blocked → 403 `{error, code:DND_ACTIVE|NO_CONSENT|CONTACT_NOT_FOUND, contact_id}` (unchanged); all-blocked group → 403 `ALL_RECIPIENTS_BLOCKED`; success → 201 `{success, message:<row0>, twilio:[per-recipient…]}` (+ top-level `error_code`/`error_message` when the direct send failed). `num_segments`/`price` left NULL for Phase A to fill from the status callback. SMS-only — omni-O's `channel`/email branch deferred (roadmap §8a). **Messaging Transport Phase 1 (Jul 23 2026):** its provider call now passes through `functions/lib/messaging-transport.js`; Twilio remains the only registered/default adapter, the arguments/result are unchanged, and unknown providers fail closed. No provider mode/env/client/DB/webhook behavior changed. Plan: `docs/messaging-transport-roadmap.md`.
+    messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; Production remains disabled pending owner-approved activation.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
     submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
@@ -815,6 +816,7 @@ functions/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
     messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; Phase 1's Twilio-only seam is published at `a6cd652`. The later integration build registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Scheduled/automated/campaign senders remain explicitly Twilio-only.
+    messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
     callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver (integration build only): verifies raw-body HMAC/timestamp, validates event shape, and deduplicates into the provider-event inbox. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS is copied through fixed authenticated CallRail endpoints into private `message-attachments`, with only owned references retained. No automated CallRail keyword reply is sent.
     message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
     process-callrail-events.js    — Scheduler-secret/native-cron recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
@@ -7728,13 +7730,15 @@ before/after magnitude (not guessed).
   `anon-grant-auditor` **pass** (grants confirmed live), `upr-pattern-checker` **pass** (after widening
   the Overview scope-note to cover the trend/division charts it had initially omitted).
 
-## `exec_read_sql` containment package (2026-07-23; authored, not applied)
+## `exec_read_sql` containment (2026-07-23; applied and verified)
 
 The dedicated evidence and apply record is
 `docs/audit/2026-07/exec-read-sql-containment.md`. Migration
-`20260723205127_exec_read_sql_containment.sql` is a grant-only Critical DB-003 containment: it revokes
-free-form SQL execution from `PUBLIC`, `anon`, and `authenticated` while preserving the verified
-owner-MCP `service_role` caller. It does not replace/drop the function, change its signature/body, read
-or mutate data, deploy code, or apply live SQL. The package includes exact rollback, read-only
-preflight/post-apply queries, negative-role and owner-caller contract tests, and merge-time canonical
-doc reconciliation pointers. Encircle files and its unapplied/dark-gated migration are untouched.
+`20260723205127_exec_read_sql_containment.sql` is the grant-only Critical DB-003 containment. It
+applied to shared Supabase on 2026-07-23 as live ledger entry
+`20260723221707 exec_read_sql_containment`. Catalog fingerprint checks passed; `anon` and
+`authenticated` harmless calls returned `42501`; the verified `service_role` owner-MCP contract
+returned `[{"ok":1}]`; and the security advisor no longer references `exec_read_sql`. The function
+signature/body/owner remain unchanged and no business data was read or mutated. Exact evidence:
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Encircle files and its
+unapplied/dark-gated migration remain untouched.

@@ -107,8 +107,8 @@ opening prompt. The user makes the final decision.
   and documented in the migration.
 - Do not copy an existing `USING (true)`/`WITH CHECK (true)` policy as a default. Classify whether
   access is company-wide, role-, assignment-, owner- or organization-scoped.
-- Never expose a free-form SQL RPC to browser roles. The live `exec_read_sql` authenticated grant is
-  a containment finding, not a precedent.
+- Never expose a free-form SQL RPC to browser roles. The `exec_read_sql` authenticated grant was
+  contained on 2026-07-23; its service-only ACL is a standing regression boundary, not a precedent.
 
 ## Security review checklist
 

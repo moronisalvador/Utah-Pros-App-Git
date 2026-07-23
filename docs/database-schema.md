@@ -55,18 +55,20 @@ Read-only inspection on 2026-07-22 found:
 This baseline is dated evidence, not a permanent constant. The sanitized query results, advisor
 counts and exclusions are in `docs/audit/2026-07/evidence/live-supabase.md`.
 
-Important verified exceptions:
+Important verified exceptions and contained history:
 
 - anonymous always-true policies remain on operational/customer/CRM tables deferred by the July
   closure wave;
 - authenticated access remains broad, including 342 executable privileged-function overloads;
-- `exec_read_sql(text)` is live as a privileged arbitrary-read function callable by
-  `authenticated`, contrary to its service-role-only source comment;
+- the 2026-07-22 snapshot found `exec_read_sql(text)` callable by `authenticated`; the reviewed
+  containment migration applied on 2026-07-23 and live role checks now deny `PUBLIC`, `anon`, and
+  `authenticated` while preserving `service_role`;
 - four latest live migrations were applied from an unmerged feature branch and were not present in
   audited `dev`.
 
-Treat these as remediation targets in `docs/audit/2026-07/security-findings.md`, not conventions to
-copy.
+Treat the remaining exceptions as remediation targets, and the contained `exec_read_sql` exposure
+as a standing regression prohibition, not a convention to copy. Apply evidence:
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`.
 
 ## Domain groups
 

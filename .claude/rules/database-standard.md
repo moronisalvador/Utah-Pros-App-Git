@@ -58,7 +58,7 @@ bundle.
   documented in `docs/auth-and-authorization.md`, and covered by role tests; it is not the default
   floor. Updates require the intended SELECT visibility plus both `USING` and `WITH CHECK`.
 - **Free-form SQL:** never expose dynamic arbitrary-query RPCs to `PUBLIC`, `anon` or
-  `authenticated`. `exec_read_sql` is a confirmed live containment finding and must remain
+  `authenticated`. `exec_read_sql` was contained to `service_role` on 2026-07-23 and must remain
   service-only if retained.
 - A policy or grant naming `anon` or `public` outside §2 is a review failure.
 

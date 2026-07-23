@@ -37,8 +37,8 @@ program. The program starts with evidence and containment, not a broad rewrite:
 1. Treat Encircle implementation commit `0a06a21` as landed and its writer lease as released.
    Preserve its pending rollout gates: migration unapplied, flag OFF, credentials unchanged.
 2. Reconcile work and ownership truth into one registry with explicit states and retirement rules.
-3. Use the next owner-authorized database writer/apply window for `exec_read_sql` containment, then
-   reconcile live migration provenance before any broad RLS or product wave.
+3. `exec_read_sql` containment completed and verified on 2026-07-23; next reconcile live migration
+   provenance before any broad RLS or product wave.
 4. Create isolated QA data and representative roles before making database/browser tests blocking.
 5. Repair skills/agents/plugin permissions and trigger governance before adding Figma or more
    automation.
@@ -47,13 +47,14 @@ program. The program starts with evidence and containment, not a broad rewrite:
 The Encircle lease is closed. No implementation currently holds the application/database writer
 lease under this roadmap. Encircle’s later migration apply, flag change, candidate entry, credential
 rotation, and obsolete Netlify retirement are owner/external gates, not an active writer reservation.
-Any authorized Encircle database apply still serializes with F1 and every other shared-database phase.
+Any authorized Encircle database apply still serializes with every other shared-database phase.
 
 ## 2. Evidence boundary
 
 ### Current, verified 2026-07-23
 
-- `origin/dev` and this branch base are `0a06a21` (`feat: add managed Encircle credentials`).
+- At the F1 apply, `origin/dev` was `1875e63`; reviewed containment commit `5cf546b` was reachable
+  from both `origin/dev` and `origin/main`.
 - Owner-reported GitHub CI and Cloudflare staging passed for `0a06a21`.
 - Repository and canonical docs confirm the managed-credential migration remains unapplied, the
   rollout flag remains OFF, and no credential entry/rotation/revocation occurred.
@@ -65,8 +66,9 @@ Any authorized Encircle database apply still serializes with F1 and every other 
   - 342 `SECURITY DEFINER` overloads executable by `authenticated`;
   - 33 unrestricted anonymous-policy cases and 176 unrestricted authenticated-policy cases under
     the audit classifier;
-  - `public.exec_read_sql(p_query text)` remains `SECURITY DEFINER`, denied to `anon`, executable by
-    `authenticated` and `service_role`;
+  - before F1, `public.exec_read_sql(p_query text)` was `SECURITY DEFINER` and executable by
+    `authenticated` and `service_role`; the 2026-07-23 apply now denies `PUBLIC`, `anon`, and
+    `authenticated` while preserving `service_role`;
   - CRM phases `4b` and `5-ops` remain `planned` with 12 `todo` stages;
   - no public table name contains `test`, `qa`, or `sandbox`.
 - The four July migration-ledger entries previously identified as branch-ahead-of-`dev`
@@ -99,14 +101,14 @@ device, or provider verification was run for this documentation-only initiative.
 The current counts above came from read-only catalog queries over `pg_class`, `pg_policy`,
 `pg_proc`, `information_schema.routine_privileges`, and the migration ledger. The unrestricted
 policy classifier counts explicit unconditional `USING`/`WITH CHECK` cases; it is a triage signal,
-not proof that every matching object is exploitable. Before F1/S/D work, preserve the exact query
+not proof that every matching object is exploitable. Before S/D work, preserve the exact query
 text and raw results in a newly dated evidence addendum and add direct intended/denied-role tests.
 
 ### Severity findings and interim controls
 
-1. **Critical — privileged SQL execution:** authenticated browser users can still execute
-   `exec_read_sql`. Until F1, treat any browser credential as capable of reaching this boundary;
-   do not add consumers or cite the function as a supported client contract.
+1. **Contained Critical regression boundary — privileged SQL execution:** F1 now denies browser
+   roles from `exec_read_sql` and preserves only the verified service-role consumer. Do not add
+   browser consumers or cite the function as a supported client contract.
 2. **Critical — broad database authorization:** aggregate unrestricted grants/policies remain large.
    Freeze new anonymous grants and new `SECURITY DEFINER` browser contracts pending classification.
 3. **High — live/source provenance drift:** four live ledger entries are absent from this checkout.
@@ -147,8 +149,8 @@ dependencies, exact files/schema/external systems, and retirement condition.
 
 - **Now:** no application/database writer lease is active. Encircle code is landed; its pending
   rollout gates do not retain a lease.
-- **Next:** one owner-authorized database/migration writer at a time, beginning with F1 unless the
-  owner changes the order. The unapplied Encircle migration uses a separate serialized apply window.
+- **Next:** one owner-authorized database/migration writer at a time. F1 is complete; F2 provenance
+  reconciliation or the separately authorized Encircle rollout uses the next serialized window.
 - Two application writers is an initial
   cap, not a target; use fewer unless pairwise disjointness is proven. Each implementation gets an
   independent review lane.
@@ -168,7 +170,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Master-planning pattern | HAVE | `.claude/skills/masterplan/SKILL.md:1-275`; CRM worked example | High | Use one registry/status model |
 | Durable program registry | MISSING | `src/lib/roadmapData.js:27-47` has only three states and July 3 freshness; CRM tracker is domain-specific | High | Registry fields/statuses/WIP/retirement enforced |
 | Encircle managed integration | PARTIAL; landed with owner/external verification tails | `0a06a21` on `origin/dev`; owner reports CI/staging passed; migration unapplied, flag OFF, credentials unchanged | High | Apply-window tests; owner-only flag; candidate activation; multi-runtime smoke; rotation/fallback cleanup |
-| `exec_read_sql` containment | PARTIAL + Critical | Current live query confirms authenticated execution; source at `20260627_exec_read_sql.sql:22-57` and later grant at `20260708_dbf_p3_anon_rpc_revoke.sql:160-161` | High | Browser roles denied; service boundary verified; regression test |
+| `exec_read_sql` containment | HAVE; Critical boundary contained | Applied/verified 2026-07-23; browser-role denials, service-role smoke, catalog fingerprint, ledger, and advisor evidence recorded | High | Keep service-only regression test and ACL invariant |
 | Anonymous/authenticated least privilege | PARTIAL + Critical | Current policy/function counts; July evidence enumerates affected objects | High aggregate; object behavior needs role tests | Classified role matrix and staged closures |
 | Migration provenance | PARTIAL + High | Four live ledger names remain absent from current checkout | High | Every live entry maps to reachable reviewed source and fingerprint |
 | Worker auth/shared libraries | PARTIAL | Shared helpers exist; inventory found 17 local auth helpers and limited timeout/telemetry adoption | High | Sensitive Workers use canonical auth/role/timeout/telemetry contracts |
@@ -238,8 +240,8 @@ schema, live, or external changes.
 
 ### Phase F1 — Emergency `exec_read_sql` containment
 
-> **Implementation:** `not_started` · **Gate:** `internal + owner` · **Disposition:** `active`
-> **Prerequisite:** owner-authorized apply window; Encircle lease is already released
+> **Implementation:** `verified` · **Gate:** complete · **Disposition:** `archived`
+> **Completed:** 2026-07-23; live ledger `20260723221707`; evidence addendum linked below
 > **Model · effort:** highest/high; privileged production boundary
 > **Scope:** one reviewed migration, one database-contract test, one rollback note; no Encircle tables
 
@@ -255,10 +257,13 @@ schema, live, or external changes.
   immediate direct post-apply negative tests for `anon` and `authenticated`; isolated-QA rerun stays
   an explicit verification tail.
 
+All acceptance checks passed. Evidence:
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`.
+
 ### Phase F2 — Migration provenance reconciliation
 
 > **Implementation:** `not_started` · **Gate:** `internal` · **Disposition:** `active`
-> **Prerequisite:** rebase after F1; applies serialized
+> **Prerequisite:** F1 complete; applies serialized
 > **Model · effort:** high; shared-production reproducibility
 > **Scope:** reconcile four known live-only ledger entries and add a read-only provenance gate
 
@@ -338,11 +343,11 @@ schema, live, or external changes.
 ## 7. Finish-first product waves
 
 These are program lanes, not immediate authorization. Each row must be split into one-session phase
-blocks and re-proven against `0a06a21` and any later Encircle rollout changes.
+blocks and re-proven against the current release head and any later Encircle rollout changes.
 
 | Order | Lane | Earliest state | Key work | Hard edges |
 |---:|---|---|---|---|
-| 1 | S — Public/data containment | after F1/F3 | highest-risk anon policies, form RPC, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any `0a06a21` contract overlap |
+| 1 | S — Public/data containment | after F3 | highest-risk anon policies, form RPC, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any Encircle contract overlap |
 | 2 | M — Money correctness | after F3 | QBO role/idempotency/recovery/Denver date; Stripe role/reuse/concurrency | shared auth/http seams owned once; provider sandboxes |
 | 3 | O — Owner/verification tails | anytime after relevant code | App Store Xcode/ASC, Tech Messages bake, Job Hub bake, Web Push, P9 cutover, purge cron, A2P | external/owner gates; no coding slot |
 | 4 | C — Started communications | after F3/F5 | per-thread push link, Omni inbound Phase I, CRM 4b decision, CallRail auth seam | messaging chokepoints serialized; consent auditor |
@@ -358,13 +363,13 @@ blocks and re-proven against `0a06a21` and any later Encircle rollout changes.
 - No application/database writer lease is active.
 - Registry review, read-only security/provenance refresh, QA architecture, governance design, and
   owner-gate preparation may run together.
-- F1 is the safest next implementation writer after owner authorization.
+- F1 is complete; F2 provenance reconciliation is the next internal database/release-control phase.
 - The unapplied Encircle migration remains a separate owner-gated rollout window and cannot overlap
-  F1 or another database apply.
+  another database apply.
 
 ### Foundation and later waves
 
-- F1 and F2 may be developed in separate files, but F2 rebases after F1 and applies serialize.
+- F2 now starts from the completed F1/release baseline and applies serially.
 - F3 and F5 are parallel only after exact paths are assigned. F5 trigger/checker tests may execute
   F3/CI tools, so shared fixtures and CI configuration have one owner and both lanes rebase/retest.
 - F4 follows F3 because it consumes the isolated environment.
@@ -417,7 +422,7 @@ blocks and re-proven against `0a06a21` and any later Encircle rollout changes.
 1. Approve the status vocabulary, WIP limits, and Markdown registry as the first authority.
 2. Schedule the Encircle migration/flag/candidate/rotation rollout as separate owner-gated windows;
    keep the migration unapplied, flag OFF, and credentials unchanged until authorized.
-3. Authorize or schedule the F1 production containment apply window.
+3. **Completed 2026-07-23:** authorized and verified the F1 production containment apply window.
 4. Choose isolated Supabase ownership, budget, seed/reset policy, and representative roles.
 5. Decide whether unmerged test-auth plan commit `3841056` is superseded, adopted only as an interim,
    or split into isolated-environment work.
@@ -435,7 +440,7 @@ Independent refute-first, disjointness, and counter-order reviews changed the dr
 
 | Challenge | Result | Plan change |
 |---|---|---|
-| “Encircle must finish before critical containment” | RESOLVED | Encircle landed at `0a06a21`; its writer lease is released; F1 awaits owner apply authority |
+| “Encircle must finish before critical containment” | RESOLVED | Encircle landed first; its writer lease was released; F1 then applied and verified independently |
 | One delivery-status column | REFUTED | Separate implementation, gate, disposition, and capability |
 | Full isolated QA is a hard prerequisite for F1 | MODIFIED | Emergency revoke may use static checks + immediate direct negative tests; QA rerun is a tail |
 | F3/F4/F5/F6 are one-session phases | REFUTED | Split into a/b/c bounded phases |
