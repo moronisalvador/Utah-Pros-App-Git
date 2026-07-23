@@ -156,3 +156,29 @@ The repository also reserves an unused RCS capability vocabulary for Twilio. Thi
 active transport or provider configuration. RCS remains blocked until requested-versus-actual
 channel persistence, sender/content identity, signed inbound/status normalization, consent review,
 test-device evidence, and an owner-approved no-fallback production configuration are complete.
+
+### Admin messaging setup boundary
+
+The Settings integration surface may read a redacted readiness contract from
+`GET /api/messaging-setup` and request bounded, read-only CallRail sender discovery with
+`GET /api/messaging-setup?action=callrail-options`. Both operations are active, internal-admin-only
+and must authorize before any provider lookup through the stored server credential. The status
+contract may expose booleans, safe mode labels, readiness blockers, the dedicated text-webhook
+path, and eligible active CallRail trackers/numbers needed to identify the intended sender. It
+never returns credentials, signing material, raw provider responses, customer conversations,
+destination numbers, or call-flow details.
+
+Configuration presence is not activation readiness. Status stays unverified until bounded live
+discovery confirms that the server-configured company and tracking number are the same active
+`sms_supported=true`, `sms_enabled=true` CallRail pair. Discovery uses the already-resolved account,
+applies a five-second timeout per page, and fails closed rather than returning a truncated
+inventory. Recovery counts are shared-database health, not proof that either deployment's webhook
+is installed or receiving events.
+
+This surface is an operator aid, not a deployment control plane. It cannot write
+`MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, `CALLRAIL_SIGNING_KEY`, provider webhook settings,
+or Cloudflare bindings, and it cannot send a test message. Preview and Production bindings remain
+owner-managed and independently verified; the shared Supabase project is never used to select a
+staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
+approved activation window and provider proof. The same boundary applies to future Twilio RCS:
+the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.

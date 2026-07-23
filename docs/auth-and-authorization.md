@@ -155,3 +155,16 @@ together.
 credential or webhook-secret access. These repository changes are not proof of deployed
 protection. Tests cover missing authentication, denied roles, inactive/external employees, forged
 actors, and allowed callers; deployed role behavior remains a release verification gate.
+
+`GET /api/messaging-setup` and its `action=callrail-options` discovery mode use the same strict
+integration-administrator boundary: valid Supabase session, resolved employee, `role='admin'`,
+`is_active=true`, and `is_external=false`. Authorization completes before service-role reads or
+CallRail requests. The route is read-only and redacted: it may report configuration-presence
+booleans, safe server mode labels, blockers, and eligible sender identifiers/numbers, but never an
+API key, access token, signing key, legacy webhook secret, raw upstream response, customer
+conversation, destination number, or call-flow payload. Missing or invalid authorization is
+fail-closed and provider discovery is not attempted.
+
+The browser has no authorization path for changing messaging/schema modes, webhook signing
+material, Cloudflare bindings, provider-console configuration, or sending a test message. A visible
+admin route or readiness indicator does not replace the separate owner-approved activation gate.

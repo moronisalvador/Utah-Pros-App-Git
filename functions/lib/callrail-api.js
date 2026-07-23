@@ -39,6 +39,118 @@
 import { fetchWithTimeout } from './http.js';
 
 const authHeader = (apiKey) => ({ Authorization: `Token token="${apiKey}"` });
+const CALLRAIL_API_ROOT = 'https://api.callrail.com/v3';
+const DISCOVERY_PAGE_SIZE = 250;
+const MAX_DISCOVERY_PAGES = 4;
+const DISCOVERY_REQUEST_TIMEOUT_MS = 5_000;
+
+export class CallRailDiscoveryError extends Error {
+  constructor(code, status = 503) {
+    super('CallRail messaging options are temporarily unavailable.');
+    this.name = 'CallRailDiscoveryError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+async function fetchDiscoveryPage(url, apiKey, fetcher) {
+  let response;
+  try {
+    response = await fetcher(
+      url,
+      { headers: authHeader(apiKey) },
+      DISCOVERY_REQUEST_TIMEOUT_MS,
+    );
+  } catch {
+    throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_UNAVAILABLE');
+  }
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new CallRailDiscoveryError('CALLRAIL_CREDENTIAL_REJECTED');
+    }
+    if (response.status === 429) {
+      throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_RATE_LIMITED', 429);
+    }
+    throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_UNAVAILABLE');
+  }
+  const body = await response.json().catch(() => null);
+  if (!body || typeof body !== 'object') {
+    throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_INVALID_RESPONSE');
+  }
+  return body;
+}
+
+/**
+ * Read-only inventory of CallRail numbers eligible for staff P2P messaging.
+ * It deliberately excludes destination numbers and call-flow details.
+ */
+export async function discoverCallRailMessagingOptions(apiKey, {
+  accountId,
+  fetcher = fetchWithTimeout,
+  maxPages = MAX_DISCOVERY_PAGES,
+} = {}) {
+  if (!apiKey) throw new CallRailDiscoveryError('CALLRAIL_CREDENTIAL_MISSING');
+  const resolvedAccountId = String(accountId || '').trim();
+  if (!resolvedAccountId) {
+    throw new CallRailDiscoveryError('CALLRAIL_ACCOUNT_ID_MISSING');
+  }
+  const grouped = new Map();
+  const pageLimit = Math.min(
+    Math.max(Number(maxPages) || 1, 1),
+    MAX_DISCOVERY_PAGES,
+  );
+
+  for (let page = 1; page <= pageLimit; page += 1) {
+    const body = await fetchDiscoveryPage(
+      `${CALLRAIL_API_ROOT}/a/${encodeURIComponent(resolvedAccountId)}/trackers.json?per_page=${DISCOVERY_PAGE_SIZE}&page=${page}`,
+      apiKey,
+      fetcher,
+    );
+    const trackers = Array.isArray(body.trackers) ? body.trackers : [];
+    for (const tracker of trackers) {
+      if (
+        tracker?.status !== 'active'
+        || tracker?.sms_supported !== true
+        || tracker?.sms_enabled !== true
+      ) continue;
+
+      const companyId = String(tracker?.company?.id || '').trim();
+      if (!companyId) continue;
+      if (!grouped.has(companyId)) {
+        grouped.set(companyId, {
+          id: companyId,
+          name: String(tracker.company?.name || 'CallRail company'),
+          senders: [],
+        });
+      }
+      const company = grouped.get(companyId);
+      const numbers = Array.isArray(tracker.tracking_numbers)
+        ? tracker.tracking_numbers
+        : [];
+      for (const number of numbers) {
+        const trackingNumber = String(number || '').trim();
+        if (!trackingNumber) continue;
+        company.senders.push({
+          option_id: `${tracker.id}:${trackingNumber}`,
+          tracker_id: String(tracker.id || ''),
+          tracker_name: String(tracker.name || 'CallRail tracker'),
+          tracker_type: String(tracker.type || 'unknown'),
+          tracking_number: trackingNumber,
+          sms_supported: true,
+          sms_enabled: true,
+        });
+      }
+    }
+
+    const totalPages = Number(body.total_pages) || 1;
+    if (totalPages > pageLimit) {
+      throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_TRUNCATED');
+    }
+    if (page >= totalPages) break;
+  }
+
+  return Array.from(grouped.values()).filter((company) => company.senders.length > 0);
+}
 
 /**
  * Resolve the CallRail account id. Order: saved config → env (back-compat) →

@@ -349,6 +349,35 @@ Rules:
 Because dev and production share Supabase, database state cannot safely select a staging-only send
 provider. Phase 1 deliberately does not add or read this variable, so Twilio behavior is unchanged.
 
+### Admin setup/readiness surface
+
+The in-app setup surface is deliberately read-only at the deployment boundary:
+
+- `GET /api/messaging-setup` returns redacted server readiness: resolved schema/send mode, whether
+  required CallRail configuration is present, the dedicated text-webhook path, deterministic
+  blocker codes, and whether outbound messaging is actually enabled;
+- `GET /api/messaging-setup?action=callrail-options` uses the stored server credential to discover
+  active CallRail companies and active trackers whose `sms_supported` and `sms_enabled` values are
+  both true, with bounded pagination and timed requests;
+- provider discovery returns only the company/tracker identifiers, names, types, and tracking
+  numbers needed to identify an eligible sender. It excludes destination numbers, call flows,
+  customer threads/messages, credentials, signing material, and raw upstream bodies;
+- both modes require an active, non-external admin before service-role/provider access and return
+  `Cache-Control: no-store`;
+- the route accepts no credential, provider mode, schema mode, signing key, company/tracking
+  override, webhook mutation, or send command.
+
+The panel may guide an owner through the remaining handoff, but it cannot mutate Cloudflare or
+CallRail control-plane state. `MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, signing material,
+provider webhooks, and number routing remain server/external configuration. There is no migration
+for this surface. Production remains disabled until Phase 5 is separately approved and evidenced.
+
+Presence of CallRail bindings is reported separately from verified readiness. Status stays
+unverified until the discovery action matches the configured company and sender to a live, active,
+SMS-enabled tracker. Discovery is account-scoped, timeout-bounded, and fails closed on incomplete
+pagination. Operational backlog counts are shared-database health only, not proof that a specific
+Preview or Production webhook is installed.
+
 ## 9. Authorization remediation
 
 ### `/api/send-message`
@@ -481,6 +510,8 @@ block activation. The routes are unconfigured and fail closed.
 Status: not started and not authorized. This phase is external-state work and cannot be completed
 in parallel with repository-only construction.
 
+- ship the admin-only, read-only setup/readiness surface without changing Production's disabled
+  mode; its status/discovery results are preparation evidence, not activation;
 - confirm business registration, eligible tracking number, API/signing credentials, documented
   webhook configuration, consent copy, retention, and support runbook;
 - configure Preview first with production sending still disabled;
@@ -521,6 +552,7 @@ pure outbound/observation capability policies are built. RCS remains disabled an
 | Seam | Twilio receives exact existing args; exact result returned; unsupported/missing future provider fails before fetch |
 | Staff worker | frozen 201/403/400/401/500 shapes; internal note bypasses transport; consent/DND/missing contact fail closed; group blocked in CallRail mode |
 | Authorization | missing/expired token; no/inactive/external employee; wrong capability; forged actor; missing conversation; allowed office/field-tech cases; assignment/tenant denial when that model exists |
+| Admin setup | active internal admin only; status/default and CallRail-options actions; unknown action; no-store; redaction; missing config; provider auth/rate-limit/timeout/5xx; eligible active SMS tracker filtering; no write/send/control-plane mutation |
 | Idempotency | same request id same content returns prior result; changed content rejected; concurrent duplicates one submission; ambiguous attempt never auto-resubmits |
 | CallRail adapter | disabled/missing config; 140-char final-body boundary; number/tracker validation; MMS type/count/size; 201; 4xx/422; 429; 5xx; timeout |
 | Webhook security | valid/invalid signature; raw-body integrity; stale timestamp; replay; unknown event; duplicate event |
