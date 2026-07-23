@@ -157,8 +157,11 @@ export async function onRequestPost(context) {
     await recordRunBestEffort(db, {
       workerName: WORKER_NAME,
       status: 'error',
-      errorMessage: error.code || 'Invalid CallRail text event',
+      errorMessage: error.field
+        ? `${error.code || 'INVALID_CALLRAIL_TEXT_EVENT'}:${error.field}`
+        : error.code || 'Invalid CallRail text event',
       startedAt,
+      meta: error.field ? { invalid_field: error.field } : undefined,
     });
     return response({
       error: forbidden ? 'Forbidden' : 'Invalid CallRail text event',

@@ -63,6 +63,11 @@ function clean(value) {
   return result || null;
 }
 
+function cleanProviderIdentity(value) {
+  if (typeof value !== 'string') return null;
+  return clean(value);
+}
+
 function normalizeNorthAmericanNumber(value, code) {
   const raw = clean(value);
   if (!raw) fail(code, 'A valid US or Canadian phone number is required.');
@@ -250,18 +255,29 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
     );
   }
 
-  if (response.status !== 201) {
+  if (response.status !== 200 && response.status !== 201) {
+    if (response.status >= 200 && response.status < 300) {
+      throw new CallRailMessagingError(
+        'CALLRAIL_SEND_AMBIGUOUS',
+        'CallRail accepted the request without a supported response contract.',
+        {
+          status: response.status,
+          ambiguous: true,
+          reconciliationRequired: true,
+        },
+      );
+    }
     throw classifyProviderFailure(response.status);
   }
 
   const data = await response.json().catch(() => ({}));
-  const providerConversationId = clean(data?.id);
+  const providerConversationId = cleanProviderIdentity(data?.id);
   if (!providerConversationId) {
     throw new CallRailMessagingError(
       'CALLRAIL_SEND_AMBIGUOUS',
       'CallRail accepted the request without a usable conversation identity.',
       {
-        status: 201,
+        status: response.status,
         ambiguous: true,
         reconciliationRequired: true,
       },
@@ -274,7 +290,7 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
     accepted: true,
     status: 'queued',
     providerStatus: 'accepted',
-    providerHttpStatus: 201,
+    providerHttpStatus: response.status,
     sentAt: null,
     from: trackingNumber,
     to: recipient,

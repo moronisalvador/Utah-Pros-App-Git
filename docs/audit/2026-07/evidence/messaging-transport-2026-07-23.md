@@ -97,6 +97,26 @@ and `service_role` is the sole application role with ledger table privileges.
 Provider credentials, text webhooks, phone-number routing, and live message traffic were not
 activated by this database apply.
 
+## Preview activation and first controlled round trip
+
+Later on 2026-07-23, the owner separately approved Preview/dev activation and one controlled send
+to the owner's phone. Preview was configured for CallRail number `+13853604121`; Production
+remained disabled and unconfigured for messaging. The dedicated sent and received text webhooks
+were saved in CallRail with the dev endpoint.
+
+The phone and CallRail inbox both confirmed delivery of the outbound test and receipt of the
+owner's `TEST RECEIVED` reply. UPR retained the outbound canonical message and send attempt, but
+incorrectly marked them failed because the live provider response was HTTP 200 rather than the
+documented 201. The provider-event inbox contained no corresponding rows. Worker telemetry proved
+both webhook deliveries passed signature verification and then failed payload normalization with
+`INVALID_CALLRAIL_TEXT_EVENT`.
+
+No retry was issued. The corrective repository slice accepts only HTTP 200/201 responses that also
+contain a usable conversation identity, preserves all other 2xx outcomes as ambiguous, and adds
+field-name-only webhook validation telemetry. Existing outbound and inbound provider history must
+be recovered through exact CallRail conversation reconciliation; it must not be recreated by
+resending.
+
 ## Apply-window recapture
 
 Immediately before any owner-approved apply, recapture:
