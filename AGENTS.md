@@ -77,6 +77,20 @@ branch, preview, or staging deploy does not create a staging database.
 
 Do not infer that a UI role gate protects a worker or RPC. Trace the complete authorization path.
 
+## Conversation boundaries
+
+Continue in the current conversation while the same objective, implementation, verification, or
+closely related decisions remain in progress, even when the conversation is long or compacted. At a
+natural completed-task boundary, if the next request is independently scoped and accumulated
+unrelated context is likely to reduce reliability, tell the user: “This is a good handoff point. I
+recommend continuing in a new conversation.”
+
+Do not recommend switching based on length or an estimated token percentage alone, and never
+interrupt in-flight work merely to change conversations. First leave the repository in a known
+state and provide a concise handoff: completed outcome, branch/commit and working-tree state,
+changed files, verification performed, unresolved decisions or external gates, and a ready-to-use
+opening prompt. The user makes the final decision.
+
 ## Implementation rules that frequently matter
 
 - Components obtain `db` from `useAuth()`; follow the bootstrapping exceptions documented in

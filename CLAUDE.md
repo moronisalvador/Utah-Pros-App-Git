@@ -1,5 +1,5 @@
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 22, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** July 23, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
 
 ## ⚠️ NON-NEGOTIABLE RULES
@@ -23,7 +23,7 @@
 2. **Verify before shipping.** Run `npm run lint`, `npm run build`, `npm test` (vitest). CI runs **build+test on PRs to `main` AND `dev`** (staging no longer ships unchecked); lint is non-blocking (pre-existing baseline) but don't add new ones — the changed-files ratchet surfaces them. Any change touching `src/pages`|`src/components` runs the **3-agent gauntlet** (`upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`) and the [close-out standard](.claude/rules/close-out-standard.md) — including the **minimize/resume test** and a 390px mobile check. Behavior law: [`page-lifecycle.md`](.claude/rules/page-lifecycle.md); perf budget: [`perf-budget.md`](.claude/rules/perf-budget.md). Report the real result — never claim "done" unverified.
 3. **Ship the sanctioned way (Rule 4).** Routine work: commit direct to `dev`, it auto-deploys to staging — no branch, no PR. Production: reviewed `dev → main` PR → merge commit (not squash) → fast-forward `dev`. CRM wave: feature branch → PR into `dev`. Wait for the Cloudflare Pages check on any prod release.
 4. **Report honestly.** State outcomes and discrepancies out loud. Ask when a request is genuinely ambiguous.
-5. **Keep context lean.** Delegate broad searches to subagents — file/pattern/caller *finding* goes to the cheap read-only **`upr-scout`** agent (Haiku); judgment work (review, money, consent, migrations, architecture) stays on the sonnet/opus checkers and reviewers. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components). `/clear` between unrelated tasks; `/btw` for side questions that shouldn't enter history.
+5. **Keep context lean.** Delegate broad searches to subagents — file/pattern/caller *finding* goes to the cheap read-only **`upr-scout`** agent (Haiku); judgment work (review, money, consent, migrations, architecture) stays on the sonnet/opus checkers and reviewers. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components). `/clear` between unrelated tasks; `/btw` for side questions that shouldn't enter history. At a completed-task boundary, if the next request is independent and accumulated unrelated context would reduce reliability, proactively recommend `/clear` or a new conversation and provide a concise handoff; never interrupt in-flight work or switch based on length alone.
 
 ## Repository knowledge
 
