@@ -68,6 +68,35 @@ with `rg` for writes to `messages` and reads of the two inbox clients.
 - Implement the database capability predicate as active, non-external employee plus the same
   force-disable, employee-override, admin, and role-permission precedence used by the Worker.
 
+## Apply addendum — 2026-07-23
+
+The owner authorized release to `dev` and `main` and the shared-database apply. The preflight
+returned zero missing dependency columns, zero duplicate Twilio identity groups, zero active lock
+waits, two existing `messages` rows, and an available `gen_random_uuid()`.
+
+The first apply attempt aborted transactionally because live `employees.role` is `employee_role`
+while `nav_permissions.role` is `text`. The reviewed predicate was corrected to compare
+`np.role = actor.role::text`, and a structural regression assertion was added. No partial objects
+remained from the failed attempt.
+
+The complete corrected migration then applied successfully as
+`20260723215926_messaging_transport_foundation`. Post-apply read-only verification confirmed:
+
+- `message_send_attempts`, `message_provider_events`, and `message_notification_outbox` exist;
+- the recipient-claim and conversations-access functions exist;
+- the three ledgers grant table access only to `postgres` and `service_role`;
+- `messages` grants `authenticated` only `SELECT`, with no anonymous grant; and
+- no legacy Twilio row remained with a missing generic provider identity.
+
+The post-apply performance advisor identified uncovered `contact_id` and `conversation_id` foreign
+keys on `message_notification_outbox`. Migration
+`20260723220207_messaging_transport_foundation_indexes` added both covering indexes. The advisor's
+RLS-without-policy notices are intentional for the service-only ledgers: browser grants are revoked
+and `service_role` is the sole application role with ledger table privileges.
+
+Provider credentials, text webhooks, phone-number routing, and live message traffic were not
+activated by this database apply.
+
 ## Apply-window recapture
 
 Immediately before any owner-approved apply, recapture:
