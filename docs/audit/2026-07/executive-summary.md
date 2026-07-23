@@ -7,6 +7,11 @@ Auditor: Codex
 Scope: repository evidence plus read-only live Supabase metadata; no application/database source or
 live state was changed
 
+> **Post-snapshot update (2026-07-23):** Critical finding DB-003 was contained and verified by
+> revoking `exec_read_sql` from browser roles while retaining the service-role owner contract. The
+> original audit statements below remain the evidence observed on 2026-07-22. Current apply evidence:
+> [exec-read-sql-containment-2026-07-23.md](evidence/exec-read-sql-containment-2026-07-23.md).
+
 ## Bottom line
 
 UPR is a substantial, working internal restoration-business platform rather than a prototype. It has a coherent React/Cloudflare/Supabase architecture, unusually strong domain documentation, migration-based database change history, broad unit/integration-style test coverage, native iOS packaging, and explicit rules for money, messaging consent, authentication, database changes, and release flow.

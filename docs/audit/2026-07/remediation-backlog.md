@@ -7,7 +7,7 @@ This backlog does not authorize source changes. It sequences the canonical findi
 
 | Order | Finding | Action | Effort | Depends on / coordinate with | Exit evidence |
 |---:|---|---|---:|---|---|
-| 1 | DB-003 | Revoke authenticated/PUBLIC execution of `exec_read_sql`; retain only a dedicated service boundary if needed | S | None for revoke | Anon/authenticated denied across `public`/`auth`/credential read attempts; advisor cleared |
+| 1 | DB-003 | **COMPLETED 2026-07-23:** revoked PUBLIC/anon/authenticated execution; retained verified service-role owner boundary | S | None for revoke | Live catalog passed; anon/authenticated returned `42501`; service role passed; advisor no longer references function |
 | 2 | DB-004 | Close highest-risk anonymous SELECT/write policies in tested workflow waves | L | TEST-002; messaging/scheduling/CRM owners | Anon role matrix denies every non-allowlisted table and core public journeys still work |
 | 3 | AUTH-004 | Make form Worker/service role the sole submission boundary; stop trusting caller consent context | M | DB-004, TEST-002 | Direct RPC denied; Worker abuse/schema/consent tests pass |
 | 4 | SEC-005 | Disable obsolete `sheets-proxy` or bring it under source control, authentication and limits | S–M | Integration owner, TEST-004 | Live hash matches release source; hostile/unauthenticated requests denied |
@@ -97,8 +97,8 @@ Every formal finding is scheduled above:
 
 ## Suggested implementation batches
 
-1. **Emergency database/public-boundary containment:** DB-003, highest-risk DB-004 policies,
-   AUTH-004, SEC-004 and SEC-005.
+1. **Emergency database/public-boundary containment:** DB-003 is complete; continue with highest-risk
+   DB-004 policies, AUTH-004, SEC-004 and SEC-005.
 2. **Payment authorization + consistency:** AUTH-001, AUTH-002, COR-001, COR-002, COR-003.
 3. **Provenance + isolated authorization testing:** DB-005, ARCH-001, TEST-002, DB-001, DB-002,
    AUTH-005 and SEC-006.
