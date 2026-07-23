@@ -127,7 +127,7 @@ supported Encircle consumer or a credential-rotation dependency.
 
 ## Messaging transport build state (2026-07-23)
 
-Phase 1 is published with Twilio behavior unchanged. The later integration branch adds a disabled
+Phase 1 is published with Twilio behavior unchanged. The integrated transport foundation adds a
 server-only selector (`MESSAGING_SEND_MODE=disabled|callrail|twilio`), a schema writer gated by
 `MESSAGING_SCHEMA_MODE=legacy|foundation`, a person-to-person-only CallRail adapter, and a dedicated
 `/api/callrail-text-webhook` receiver. Missing/unknown send mode disables outbound messaging;
@@ -146,12 +146,14 @@ through CallRail. The repository build copies verified MMS bytes into private
 messaging authorization and message/index binding. The separate reconciliation worker polls
 CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
 compilation, provider fixtures, and reviewed retention remain activation blockers. Repository
-source now includes atomic canonical-message recovery plus a durable, fenced notification outbox;
-neither SQL contract has been applied or runtime-verified.
+source includes atomic canonical-message recovery plus a durable, fenced notification outbox. The
+foundation and covering-index migrations are live; repository tests cover the SQL callers, but
+isolated PostgreSQL compilation of every later projection/recovery contract remains a separate QA
+requirement.
 
 The additive foundation migration and its index follow-up are applied to the shared Supabase
-project. On 2026-07-23 the owner approved a Preview/dev-only activation for CallRail number
-`+13853604121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
+project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
+ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
 and separate sent/received text webhooks targeting `/api/callrail-text-webhook`. Production remains
 `MESSAGING_SEND_MODE=disabled` and has no CallRail messaging provider bindings.
 
@@ -169,6 +171,13 @@ That controlled event identified `id` as the drifted field: the valid signed Cal
 omitted the documented secondary numeric event ID while retaining `resource_id`. UPR accepts a
 missing/null secondary ID but still requires `resource_id`, which remains the durable provider
 message identity and dedupe key. A malformed non-null `id` still fails closed.
+
+The finish-first recapture first found two CallRail attempts (`accepted=1`, `failed=1`) and zero
+provider events. Concurrent recovery then reconciled both outbound attempts to `confirmed`, with
+two processed `text_reconciled` events and two canonical `sent` messages; no resend occurred. These
+are recovery records, not proof that a signed sent/received webhook can directly claim and project
+the live payload. The controlled inbound reply is not represented as a CallRail inbound message in
+the safe aggregate, so direct signed-event/inbound projection remains unverified.
 
 The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
 active transport or provider configuration. RCS remains blocked until requested-versus-actual

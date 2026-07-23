@@ -24,16 +24,17 @@ NOTES / GOTCHAS:
 
 **Slug:** `messaging-transport`
 
-**Base verified:** `dev` / `origin/dev` at `b55008f`
+**Base verified:** live/repository recapture from `dev` at `94b2e9f` (2026-07-23)
 
 **Ownership:** `.claude/rules/messaging-transport-wave-ownership.md`
 
 ## 0. Outcome and scope
 
 UPR will keep its own conversation, message, consent, DND, scheduling, and automation domain while
-placing provider details behind server-side adapters. CallRail is the intended first provider for
-staff-to-customer, person-to-person SMS inside UPR. Twilio remains the provider for the current live
-code and the only adapter implemented in Phase 1.
+placing provider details behind server-side adapters. CallRail is the active Preview-only provider
+for owner-controlled staff-to-customer tests; Production remains disabled. Twilio remains a
+registered staff-send adapter and the separately governed transport for existing
+scheduled/automated paths.
 
 CallRail must never receive UPR scheduled, automated, group, broadcast, bulk, campaign, or text-blast
 sends. Those workflows remain Twilio-only until an owner approves a separate provider and compliance
@@ -53,9 +54,10 @@ Verified from the checkout named above:
 
 - `src/pages/Conversations.jsx` and `src/pages/tech/v2/messages/useThread.js` both send outbound
   messages through `POST /api/send-message`. No client chooses a provider.
-- `functions/api/send-message.js` is the staff-send chokepoint. It enforces per-recipient DND and
-  opt-in, adds the staff-name prefix, calls `functions/lib/twilio.js`, writes the outbound
-  `messages` row, and preserves the frozen `{success,message,twilio}` response.
+- `functions/api/send-message.js` is the staff-send chokepoint. It resolves an active internal
+  employee and the conversations capability before service-role access, derives/rejects the actor,
+  enforces per-recipient DND and opt-in, dispatches through the server-selected provider adapter,
+  writes canonical outbound state, and preserves the frozen response shape additively.
 - Internal notes also use `/api/send-message`, but have no transport and must remain provider-free.
 - `functions/lib/automated-send.js` and `functions/api/process-scheduled.js` call Twilio directly.
   That is intentional for this initiative: they must not enter a CallRail-selectable seam.
@@ -71,11 +73,12 @@ Verified from the checkout named above:
   `functions/api/callrail-webhook.js`.
 - `callrail-webhook.js` decides “form” versus “call” and treats every other payload as a call.
   It is therefore unsafe as a text-message endpoint.
-- `send-message.js` verifies a Supabase token with a local helper but does not resolve the employee,
-  reject an inactive employee, enforce the `conversations` capability, or prove `sent_by` belongs
-  to the caller.
-- `callrail-connect.js` accepts any employee session for reading the webhook secret, writing the
-  CallRail API key, and disconnecting it. The UI location is not a server authorization boundary.
+- `send-message.js` now uses shared worker authorization, the live conversations capability
+  predicate, and server-derived actor identity. Stable client request IDs and the attempt/event
+  foundation are integrated.
+- `callrail-connect.js` now requires an active, non-external admin before reading configuration or
+  changing the stored key. Its legacy query-secret setup contract remains adjacent debt; the
+  dedicated text receiver uses the server-only signing-key binding instead.
 - The existing CallRail webhook uses a query-string shared secret even though current CallRail
   documentation defines a `Signature` header generated from the raw payload with the company
   signing key and provides a timestamp for replay defense. That existing voice/form remediation is
@@ -435,9 +438,10 @@ Rollback: revert the `send-message.js` import to `functions/lib/twilio.js` and r
 
 ### Phase 2 — Authorization and idempotent persistence foundation
 
-Status (2026-07-23): build branch implementation and migration source are under review. The live
-catalog was recaptured read-only; the migration has not been applied. The worker code that writes
-new columns/tables must not deploy ahead of the migration.
+Status (2026-07-23): implemented and deployed. The corrected additive migration applied as
+`20260723215926 messaging_transport_foundation`, followed by
+`20260723220207 messaging_transport_foundation_indexes`. The generic fields and three service-only
+ledgers are live; browser writes to `messages` are closed. The migration must not be reapplied.
 
 Exact proposed next phase:
 
@@ -462,57 +466,68 @@ outcomes retain the canonical body/media/address facts needed by the service-onl
 `materialize_message_send_attempt` recovery RPC. The protected recovery worker is database-only
 and never resubmits to a provider.
 
-Remaining review gates before the foundation can deploy:
+Remaining verification/retention gates for the live foundation:
 
 - approve and implement restricted `submitted_body` and canonical recovery-snapshot
-  retention/deletion before applying the draft;
-- compile/execute the migration and RPCs against an isolated post-Encircle PostgreSQL fixture.
+  retention/deletion before any broader provider activation;
+- compile/execute the committed migration and RPCs against an isolated post-Encircle PostgreSQL
+  fixture as reproducibility evidence; do not reapply them to shared Supabase.
 
-### Phase 3 — CallRail adapter, disabled
+### Phase 3 — CallRail adapter, Production disabled
 
-Status (2026-07-23): adapter/mode code and fixture tests are built on the uncommitted integration
-branch. No environment contains the new mode or CallRail messaging credentials, and no provider
-call has been made.
+Status (2026-07-23): implemented and deployed. Preview is explicitly `callrail` with the required
+server bindings; Production is `disabled` and has no CallRail messaging bindings. Owner-approved
+controlled sends exposed and drove the HTTP 200 response-contract fix. No further send is
+authorized by this status.
 
-- re-verify official API limits and account/company/tracking-number inventory;
-- implement and unit-test the CallRail person-to-person adapter;
-- add `MESSAGING_SEND_MODE`, defaulting missing/unknown to disabled;
-- prove group/automated/scheduled/campaign attempts cannot reach the adapter;
-- deploy with `disabled`; no provider console or webhook change.
+- keep official API limits and account/company/tracking-number eligibility current;
+- retain unit coverage for the CallRail person-to-person adapter and fail-closed mode resolver;
+- preserve proof that group/automated/scheduled/campaign attempts cannot reach the adapter;
+- keep Production disabled; additional Preview/provider-console changes require an exact owner gate.
 
 ### Phase 4 — CallRail text ingestion and reconciliation
 
 Status (2026-07-23): the signed receiver, normalized service-only event inbox, atomic canonical
 inbound processor, STOP/START/HELP state handling (including consent-only MMS failure handling),
 sent-event identity reconciliation, provider-history polling, bounded retry worker, and atomic
-polling-outcome projection are built on the uncommitted integration branch. The
+polling-outcome projection are integrated on `dev`. The
 processor never sends an automated compliance reply through CallRail; HELP is recorded as requiring
 a staff reply. Private MMS capture now derives fixed authenticated CallRail media endpoints,
 enforces redirect/type/signature/size limits, stores only UPR-owned references, and resolves them
-through a message-bound authorized short-lived URL route. It remains activation-blocked until the
-unapplied schema and real official/provider media fixture are verified. Accepted or ambiguous sends
+through a message-bound authorized short-lived URL route. The schema is live; a real
+official/provider media fixture remains an activation blocker. Accepted or ambiguous sends
 without a provider message ID are polled by provider conversation, exact addresses, submitted body,
 and a narrow time window; zero/multiple matches fail closed. HELP is persisted for staff visibility
 and ordinary/HELP inbound projection atomically enqueues a service-only notification outbox row.
 A fenced, lease-based worker retries and dead-letters delivery without making the provider-event
-projection best-effort. The remaining gaps, plus unapplied schema and unverified runtime fixtures,
-block activation. The routes are unconfigured and fail closed.
+projection best-effort. Preview's signed webhook reached the route, but the live payload omitted
+the documented secondary `id`; reviewed source now allows only that field to be missing while
+retaining required `resource_id` dedupe. Both controlled outbound attempts were later reconciled
+without resend to `confirmed`, with processed `text_reconciled` recovery events and canonical
+`sent` messages. Those records do not prove direct signed-webhook claim or inbound projection; the
+controlled reply is still absent from the safe CallRail inbound aggregate. Direct webhook proof and
+a real provider media fixture remain activation blockers. Production remains unconfigured and fail
+closed.
 
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
   official or owner-approved provider test fixtures;
 - compile and execute both transactional projection functions against isolated PostgreSQL and the
-  reviewed live-schema snapshot before any shared apply;
-- execute notification-outbox enqueue/lease/retry behavior in isolated PostgreSQL before apply;
+  reviewed live-schema snapshot as reproducibility evidence; do not reapply the live migration;
+- execute notification-outbox enqueue/lease/retry behavior in isolated PostgreSQL;
 - move Twilio inbound projection behind the same per-phone serialization boundary before any
   dual-provider overlap/cutover window, so late events cannot create competing direct threads;
 - provider sandbox/fixture tests for replay, malformed payloads, media failure, and sent/inbound
   ordering;
-- deploy endpoint disabled/unconfigured; do not point CallRail at it yet.
+- keep Production unconfigured; prove Preview's configured signed endpoint can directly claim and
+  project sent and received events before any broader activation.
 
 ### Phase 5 — Owner-gated activation
 
-Status: not started and not authorized. This phase is external-state work and cannot be completed
-in parallel with repository-only construction.
+Status (2026-07-23): Preview-only activation partially executed under separate owner approvals;
+Production remains disabled. The admin readiness surface is shipped. Controlled outbound/reply
+traffic reached CallRail and the signed route. Outbound history recovery later completed without
+resend, but direct signed-event and inbound projection remain unproved. Further traffic, recovery
+mutation, provider configuration, or Production activation requires a new exact owner approval.
 
 - ship the admin-only, read-only setup/readiness surface without changing Production's disabled
   mode; its status/discovery results are preparation evidence, not activation;

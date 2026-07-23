@@ -3,7 +3,7 @@ FILE: docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md
 PURPOSE: Sanitized read-only live evidence used to draft the messaging transport foundation.
 LAST VERIFIED: 2026-07-23
 
-This is dated evidence, not current project law. It records no secrets, phone numbers, message
+This is dated evidence, not current project law. It records no secrets, full phone numbers, message
 content, employee identities, or writable operations.
 -->
 
@@ -97,10 +97,10 @@ and `service_role` is the sole application role with ledger table privileges.
 Provider credentials, text webhooks, phone-number routing, and live message traffic were not
 activated by this database apply.
 
-## Preview activation and first controlled round trip
+## Preview activation and controlled round trips
 
-Later on 2026-07-23, the owner separately approved Preview/dev activation and one controlled send
-to the owner's phone. Preview was configured for CallRail number `+13853604121`; Production
+Later on 2026-07-23, the owner separately approved Preview/dev activation and controlled sends
+to the owner's phone. Preview was configured for the CallRail sender ending in `4121`; Production
 remained disabled and unconfigured for messaging. The dedicated sent and received text webhooks
 were saved in CallRail with the dev endpoint.
 
@@ -122,6 +122,51 @@ signed sent webhook then reported the safe diagnostic `invalid_field=id`: CallRa
 documented numeric event ID while retaining its stable `resource_id`. The follow-up compatibility
 change makes only that secondary ID optional; `resource_id` remains required and continues to
 drive durable dedupe.
+
+## Finish-first recapture — 2026-07-23
+
+The repository and live state were recaptured read-only after the controlled tests:
+
+- live ledger entries `20260723215926 messaging_transport_foundation` and
+  `20260723220207 messaging_transport_foundation_indexes` remain present; they were not reapplied;
+- `messages` has the generic provider/request/address fields, and all three service ledgers exist
+  with RLS enabled;
+- `message_send_attempts`, `message_provider_events`, and `message_notification_outbox` grant table
+  access only to `postgres` and `service_role`; `messages` grants browser roles only
+  capability-gated authenticated `SELECT`;
+- safe aggregate state initially contained two CallRail attempts (`accepted=1`, `failed=1`), zero
+  provider events, and zero notification-outbox rows. A final read-only recapture after concurrent
+  recovery work showed two `confirmed` attempts, two processed `text_reconciled` provider events,
+  two canonical CallRail messages with `sent` status, and zero outbox rows. No message body, phone
+  number, provider identifier, or customer/employee identity was selected;
+- Cloudflare Pages Production is `MESSAGING_SCHEMA_MODE=foundation` and
+  `MESSAGING_SEND_MODE=disabled`, with no CallRail company/sender/signing binding;
+- Preview is `MESSAGING_SCHEMA_MODE=foundation` and `MESSAGING_SEND_MODE=callrail`, with the
+  company, sender, and signing-key bindings present. Binding values and secrets were not read;
+- the HTTP 200 compatibility fix is merged into `dev`; the missing-secondary-`id` compatibility
+  fix is integrated at `2fbf755` / merge `94b2e9f` after its successful Preview deployment.
+
+The two outbound controlled actions are now reconciled without resending. Their durable events are
+`text_reconciled` recovery records, not direct signed webhook events. The signed webhook has
+therefore still not proved direct durable claim/canonical inbound projection, and the controlled
+reply is not represented as a CallRail inbound message in the safe aggregate. Do not resend either
+controlled action or invent the missing inbound row; any provider-history recovery or live mutation
+still requires an exact owner-approved target and window.
+
+No provider request, message send, provider-console change, Cloudflare mutation, database write, or
+migration apply occurred during this recapture.
+
+Repository verification:
+
+- focused transport/adapter/webhook/send/recovery/setup suite: 12 files, 199 tests passed;
+- independent consent-path audit suite: 15 files, 365 tests passed;
+- production build: passed;
+- consent-path review: PASS; CallRail remains staff-P2P-only, DND/consent run before provider
+  access, STOP/START/HELP stay canonical, and no provider/channel fallback exists;
+- messaging phase review: PASS after the final live aggregate recapture;
+- UPR pattern review: PASS for this bounded phase after adding the explicit public-HMAC webhook
+  annotation. Pre-existing direct event-table REST mutations remain tracked as `MSG-004` for a
+  narrow-RPC follow-up; they were not introduced or silently waived here.
 
 ## Apply-window recapture
 
