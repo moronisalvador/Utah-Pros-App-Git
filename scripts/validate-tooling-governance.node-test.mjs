@@ -1,5 +1,5 @@
 /**
- * FILE: validate-tooling-governance.test.mjs
+ * FILE: validate-tooling-governance.node-test.mjs
  *
  * WHAT THIS DOES (plain language):
  *   Proves the tooling validator catches missing metadata, broken paths, trigger collisions, and
