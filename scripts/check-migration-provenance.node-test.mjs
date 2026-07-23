@@ -51,13 +51,24 @@ function makeFixture() {
   spawnSync('git', ['config', 'user.name', 'Fixture'], { cwd: root, windowsHide: true });
   spawnSync('git', ['add', '.'], { cwd: root, windowsHide: true });
   spawnSync('git', ['commit', '-m', 'fixture'], { cwd: root, windowsHide: true });
+  const captureBaseCommit = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).stdout.trim();
 
   const local = extractFunctionBodies(source).get('fixture');
   const liveBody = '\n SELECT 1;\n';
   const manifest = {
     projectRef: 'fixture',
     ledgerFloorVersion: '1',
-    ledgerMappings: [{ version: '1', name: 'fixture', path: 'supabase/migrations/fixture.sql' }],
+    evidenceMaxAgeHours: 6,
+    ledgerMappings: [{
+      version: '1',
+      name: 'fixture',
+      path: 'supabase/migrations/fixture.sql',
+      reviewedOriginCommit: 'HEAD',
+    }],
     selectedFunctions: [{
       identity: 'fixture()',
       path: 'supabase/migrations/fixture.sql',
@@ -66,6 +77,8 @@ function makeFixture() {
     selectedPolicies: [],
   };
   const evidence = {
+    capturedAt: '2026-07-23T22:48:29Z',
+    captureBaseCommit,
     projectRef: 'fixture',
     ledgerTail: [{ version: '1', name: 'fixture' }],
     functions: [{
@@ -86,7 +99,12 @@ function makeFixture() {
 
 test('allows documented comment-only raw drift', () => {
   const fixture = makeFixture();
-  const result = validateProvenance({ ...fixture, ref: 'HEAD', worktree: false });
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
   assert.equal(result.ok, true);
   assert.equal(result.warnings.length, 1);
 });
@@ -94,7 +112,12 @@ test('allows documented comment-only raw drift', () => {
 test('blocks an unmapped live ledger row', () => {
   const fixture = makeFixture();
   fixture.evidence.ledgerTail.push({ version: '2', name: 'unreviewed' });
-  const result = validateProvenance({ ...fixture, ref: 'HEAD', worktree: false });
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => issue.includes('Unmapped live ledger row')));
 });
@@ -102,7 +125,87 @@ test('blocks an unmapped live ledger row', () => {
 test('blocks functional body drift', () => {
   const fixture = makeFixture();
   fixture.evidence.functions[0].semanticMd5 = md5('SELECT 2;');
-  const result = validateProvenance({ ...fixture, ref: 'HEAD', worktree: false });
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => issue.includes('semantic fingerprint drift')));
+});
+
+test('blocks a wrong reviewed-origin commit', () => {
+  const fixture = makeFixture();
+  fixture.manifest.ledgerMappings[0].reviewedOriginCommit = 'deadbeef';
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('not reachable')));
+});
+
+test('blocks a release blob that differs from the reviewed origin', () => {
+  const fixture = makeFixture();
+  const migrationPath = path.join(fixture.root, 'supabase', 'migrations', 'fixture.sql');
+  fs.appendFileSync(migrationPath, '-- unreviewed release edit\n');
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: true,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('differs from reviewed origin')));
+});
+
+test('blocks stale live evidence', () => {
+  const fixture = makeFixture();
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-24T12:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('release window')));
+});
+
+test('blocks an evidence capture base outside release ancestry', () => {
+  const fixture = makeFixture();
+  fixture.evidence.captureBaseCommit = 'deadbeef';
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('is not an ancestor')));
+});
+
+test('compares selected policy identities and fingerprints', () => {
+  const fixture = makeFixture();
+  fixture.manifest.selectedPolicies = [{
+    identity: 'public.fixture:fixture_select',
+    command: 'SELECT',
+    roles: ['authenticated'],
+    usingMd5: md5('true'),
+    withCheckMd5: null,
+  }];
+  fixture.evidence.policies = [{
+    ...fixture.manifest.selectedPolicies[0],
+    usingMd5: md5('false'),
+  }];
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('unexpected live policy usingMd5')));
 });

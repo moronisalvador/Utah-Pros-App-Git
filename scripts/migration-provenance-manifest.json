@@ -1,6 +1,7 @@
 {
   "projectRef": "glsmljpabrwonfiltiqm",
   "ledgerFloorVersion": "20260722222426",
+  "evidenceMaxAgeHours": 6,
   "ledgerMappings": [
     {
       "version": "20260722222426",
@@ -62,5 +63,14 @@
       "allowedRawDrift": "comments_only"
     }
   ],
-  "selectedPolicies": []
+  "selectedPolicies": [
+    {
+      "identity": "public.messages:messages_authenticated_select",
+      "sourcePath": "supabase/migrations/20260723215926_messaging_transport_foundation.sql",
+      "command": "SELECT",
+      "roles": ["authenticated"],
+      "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+  ]
 }

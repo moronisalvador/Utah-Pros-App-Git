@@ -93,6 +93,15 @@ function releaseCommit(root, ref, worktree) {
   return result.stdout.trim();
 }
 
+function isAncestor(root, ancestor, ref) {
+  const result = spawnSync('git', ['merge-base', '--is-ancestor', ancestor, ref], {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  return result.status === 0;
+}
+
 function compareFunction(source, live, selected, issues, warnings) {
   const name = selected.identity.slice(0, selected.identity.indexOf('('));
   const local = source.get(name);
@@ -132,11 +141,44 @@ function compareFunction(source, live, selected, issues, warnings) {
   }
 }
 
-export function validateProvenance({ root, ref, worktree, manifest, evidence }) {
+function comparePolicy(live, selected, issues) {
+  if (!live) {
+    issues.push(`Live evidence is missing policy ${selected.identity}`);
+    return;
+  }
+  for (const field of ['command', 'roles', 'usingMd5', 'withCheckMd5']) {
+    if (JSON.stringify(live[field]) !== JSON.stringify(selected[field])) {
+      issues.push(`${selected.identity}: unexpected live policy ${field}`);
+    }
+  }
+}
+
+export function validateProvenance({
+  root,
+  ref,
+  worktree,
+  manifest,
+  evidence,
+  now = new Date(),
+}) {
   const issues = [];
   const warnings = [];
   if (manifest.projectRef !== evidence.projectRef) {
     issues.push('Evidence projectRef does not match the manifest');
+  }
+  const capturedAt = Date.parse(evidence.capturedAt);
+  const maximumAgeMs = manifest.evidenceMaxAgeHours * 60 * 60 * 1000;
+  if (
+    !Number.isFinite(capturedAt) ||
+    capturedAt > now.getTime() + 5 * 60 * 1000 ||
+    now.getTime() - capturedAt > maximumAgeMs
+  ) {
+    issues.push(
+      `Live evidence is not within the ${manifest.evidenceMaxAgeHours}-hour release window`,
+    );
+  }
+  if (!worktree && !isAncestor(root, evidence.captureBaseCommit, ref)) {
+    issues.push(`Evidence capture base ${evidence.captureBaseCommit} is not an ancestor of ${ref}`);
   }
 
   const evidenceLedger = new Map(
@@ -150,10 +192,19 @@ export function validateProvenance({ root, ref, worktree, manifest, evidence }) 
     mappedLedger.add(key);
     if (!evidenceLedger.has(key)) issues.push(`Live evidence is missing ledger row ${key}`);
     try {
-      sourceByPath.set(
+      const releaseSource = readAtRef(root, ref, mapping.path, worktree);
+      const reviewedSource = readAtRef(
+        root,
+        mapping.reviewedOriginCommit,
         mapping.path,
-        readAtRef(root, ref, mapping.path, worktree),
+        false,
       );
+      sourceByPath.set(mapping.path, releaseSource);
+      if (releaseSource !== reviewedSource) {
+        issues.push(
+          `${mapping.path} differs from reviewed origin ${mapping.reviewedOriginCommit}`,
+        );
+      }
     } catch (error) {
       issues.push(error.message);
     }
@@ -183,8 +234,16 @@ export function validateProvenance({ root, ref, worktree, manifest, evidence }) 
     );
   }
 
-  if ((manifest.selectedPolicies || []).length !== (evidence.policies || []).length) {
-    issues.push('Selected policy fingerprint count differs from live evidence');
+  const livePolicies = new Map((evidence.policies || []).map((entry) => [entry.identity, entry]));
+  const selectedPolicyIds = new Set();
+  for (const selected of manifest.selectedPolicies || []) {
+    selectedPolicyIds.add(selected.identity);
+    comparePolicy(livePolicies.get(selected.identity), selected, issues);
+  }
+  for (const identity of livePolicies.keys()) {
+    if (!selectedPolicyIds.has(identity)) {
+      issues.push(`Unmapped selected live policy fingerprint ${identity}`);
+    }
   }
 
   return {
@@ -202,7 +261,7 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, options.manifest), 'utf8'));
-  const evidence = JSON.parse(fs.readFileSync(path.join(root, options.evidence), 'utf8'));
+    const evidence = JSON.parse(fs.readFileSync(path.join(root, options.evidence), 'utf8'));
   const result = validateProvenance({ root, ...options, manifest, evidence });
   for (const warning of result.warnings) process.stdout.write(`WARN ${warning}\n`);
   for (const issue of result.issues) process.stderr.write(`ERROR ${issue}\n`);

@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-23T22:48:29Z",
+  "capturedAt": "2026-07-23T22:58:15Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "367b4650b5662471bbd627a2c74a343d60009f33",
   "method": "Supabase migration ledger plus read-only pg_proc catalog queries",
@@ -25,5 +25,13 @@
     { "identity": "set_lead_caller_name(uuid,text,boolean)", "rawMd5": "6c17dcd7774f2d0d92b06179dad5b727", "semanticMd5": "412e8189226e2904115a86fd174953f7", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
     { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "rawMd5": "d5abd852ebe5c3dfa2e440f45d40c4b3", "semanticMd5": "f867fd3938603ce8f67322188760d499", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false }
   ],
-  "policies": []
+  "policies": [
+    {
+      "identity": "public.messages:messages_authenticated_select",
+      "command": "SELECT",
+      "roles": ["authenticated"],
+      "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    }
+  ]
 }
