@@ -144,7 +144,7 @@ test('secret hook blocks literal authorization credentials and allows placeholde
   }
 
   const hook = path.resolve('.claude/hooks/block-secrets.sh');
-  const token = ['fixture', 'authorization', 'credential', '12345678901234567890'].join('_');
+  const token = ['codex', 'authz', 'credential', '12345678901234567890'].join('_');
   const blocked = spawnSync('bash', [hook], {
     input: JSON.stringify({
       tool_input: {
