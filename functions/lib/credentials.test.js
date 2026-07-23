@@ -124,4 +124,30 @@ describe('resolveCredential — safety', () => {
   it('rejects an unknown provider', async () => {
     await expect(resolveCredential(DB_ENV, fakeDb(), 'paypal')).rejects.toThrow(/unknown provider/);
   });
+
+  it('encircle: active DB token wins over env and is never cached', async () => {
+    let calls = 0;
+    const db = {
+      async select() {
+        calls++;
+        return [{ access_token: 'enc_db', managed_status: 'active' }];
+      },
+    };
+    const env = { ...DB_ENV, ENCIRCLE_API_KEY: 'enc_env' };
+    expect(await resolveCredential(env, db, 'encircle')).toEqual({ apiKey: 'enc_db', source: 'managed' });
+    expect(await resolveCredential(env, db, 'encircle')).toEqual({ apiKey: 'enc_db', source: 'managed' });
+    expect(calls).toBe(2);
+  });
+
+  it('encircle: migration fallback uses env, but explicit disabled suppresses it', async () => {
+    const env = { ...DB_ENV, ENCIRCLE_API_KEY: 'enc_env' };
+    const fallbackDb = fakeDb({ credentials: [{ access_token: null, managed_status: 'fallback' }] });
+    expect(await resolveCredential(env, fallbackDb, 'encircle'))
+      .toEqual({ apiKey: 'enc_env', source: 'environment' });
+
+    clearCredentialCache();
+    const disabledDb = fakeDb({ credentials: [{ access_token: null, managed_status: 'disabled' }] });
+    expect(await resolveCredential(env, disabledDb, 'encircle'))
+      .toEqual({ apiKey: undefined, source: 'disabled' });
+  });
 });

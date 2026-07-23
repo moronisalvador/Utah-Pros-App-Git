@@ -94,3 +94,13 @@ database mutation tests can safely become a complete blocking gate.
 Known July 2026 test/deployment gaps are retained in
 `docs/audit/2026-07/maintainability.md` and `docs/audit/2026-07/remediation-backlog.md`. Update this
 canonical file in the same commit as a test, CI, environment, branch, deployment or release change.
+
+For Encircle rotation, release evidence additionally shows resolver parity across Pages and
+`upr-mcp`, failed-candidate/no-write behavior, inactive/wrong-role denial, fallback and explicit
+disable behavior, no-cache disable semantics, and token-free status responses. Deploy compatible
+code before the inert shared migration, keep the flag default-OFF, and treat candidate entry,
+provider rotation/revocation, fallback removal, and retirement of the obsolete Netlify deployment
+as separate owner gates.
+The apply window must also run `supabase/tests/encircle_managed_credentials.test.js` with
+short-lived active-admin and non-admin access tokens; that read-only test proves the replacement
+zero-argument status RPC preserves legacy provider rows while enforcing its database admin gate.

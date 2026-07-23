@@ -7,6 +7,29 @@ git history for the full findings)
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+## Encircle managed credentials initiative (2026-07-23)
+
+Implementation is authored locally and dark-gated; no migration, deployment, credential entry,
+rotation, or revocation has occurred. The plan of record is
+`docs/encircle-managed-credentials-roadmap.md`.
+
+- Seven Pages Encircle workers now resolve the locked `integration_credentials` source first and
+  retain the current environment binding as a temporary fallback.
+- `upr-mcp/src/encircle.js` uses the same managed row/state precedence.
+- New `/api/encircle-credential` requires an active admin plus a fail-closed rollout flag, validates
+  a candidate against Encircle before storage, and never returns it.
+- `20260723_encircle_managed_credentials.sql` is pending apply. It seeds no secret, leaves the flag
+  OFF, adds fallback/active/disabled plus verification metadata, and preserves zero-policy RLS.
+- `/settings/integrations` adds the Encircle card only when the explicit flag row is effectively on.
+- Technician Scope Sheet files and payload/response contracts were intentionally not changed.
+- Service-role writer gates were tightened without removing the technician new-job path: import is
+  active admin/office/project-manager, backfill and legacy bulk sync are owner-only, and technician
+  Scope Sheet/new-claim calls require an active employee.
+- Read-only Cloudflare evidence confirms `ENCIRCLE_API_KEY` bindings exist in Pages Production,
+  Pages Preview, and the deployed `upr-mcp` Worker. The owner confirmed on 2026-07-23 that the
+  legacy Netlify Demo Sheet is obsolete and unsupported; retire that deployment and any remaining
+  secret binding separately. It is not a credential-rotation dependency.
+
 **Live URL:** https://dev.utahpros.app (dev branch) | https://utahpros.app (main)
 **GitHub repo:** moronisalvador/Utah-Pros-App-Git
 **Local repo:** F:\APPS\RestorationAPP\Utah-Pros-App-Git
@@ -2599,19 +2622,20 @@ setup is finished.
 
 **On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
 
-### Settings Overhaul P9 — Credential management (app-managed Stripe / Twilio / Resend keys)
-Migration `20260707_p9_credential_management.sql`. Moves the Stripe/Twilio/Resend secrets out of Cloudflare env into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables — an admin pastes/rotates them on **`/settings/integrations`** instead of editing env vars (resale win). **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
-- **Rows:** `integration_credentials` gains `stripe` / `twilio` / `resend` rows (`access_token` = the secret: Stripe secret key, Twilio auth token, Resend API key). `integration_config` gains `twilio_account_sid`, `twilio_messaging_service_sid`, `twilio_phone_number` (non-secret identifiers). OAuth *app-registration* client IDs (QBO/Google) deliberately stay env — see the roadmap architecture caveat.
+### Settings Overhaul P9 + Encircle — managed credentials
+Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend secrets into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables. The pending, **not applied** `20260723_encircle_managed_credentials.sql` adds Encircle to the same source with an inert default-OFF rollout. Admins manage these on **`/settings/integrations`** instead of editing environment bindings. **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
+- **Rows:** `integration_credentials` contains `stripe` / `twilio` / `resend`; the pending migration seeds an Encircle placeholder with no token. Encircle adds `managed_status` (`fallback|active|disabled`), `last_verified_at`, and `last_verification_status`. `integration_config` holds `twilio_account_sid`, `twilio_messaging_service_sid`, `twilio_phone_number` (non-secret identifiers). OAuth *app-registration* client IDs (QBO/Google) deliberately stay env — see the roadmap architecture caveat.
 - **RPCs** (SECURITY DEFINER; writes admin-gated via `auth.uid()`→`employees.role='admin' AND is_active`; never return a token):
-  - `get_managed_credentials_status()` → SETOF json, one per provider: `{ provider, connected(bool), connected_at, updated_at, phone_number, has_account_sid, has_messaging_service }` (booleans + public phone only). GRANT `authenticated` only (REVOKE FROM PUBLIC — anon cannot enumerate providers; the never-echo posture).
+  - `get_managed_credentials_status()` → SETOF json. Pending shape has four provider rows and preserves legacy fields while adding Encircle-safe `managed_status`, verification timestamps/status, and organization name. It never selects a token and calls `p9_assert_admin()` before reading.
   - `set_integration_secret(p_provider, p_secret)` — write the Stripe/Resend key or Twilio auth token. GRANT `authenticated`.
   - `set_twilio_config(p_account_sid, p_messaging_service_sid, p_phone_number)` — NULL arg = leave unchanged, `''` = clear. GRANT `authenticated`.
   - `disconnect_integration(p_provider)` — clears the secret (+ Twilio config). GRANT `authenticated`.
   - `p9_assert_admin()` — shared admin guard used by the write RPCs.
-- **Resolver:** `functions/lib/credentials.js` — `resolveCredential(env, db, provider)` reads **DB-first, env-fallback** (per field), 60s in-memory cache, never throws on a DB blip, skips the DB entirely when no `SUPABASE_URL`. Shapes: stripe `{ secretKey }`, resend `{ apiKey }`, twilio `{ accountSid, authToken, messagingServiceSid, phoneNumber }`.
+- **Resolver:** `functions/lib/credentials.js` — `resolveCredential(env, db, provider)` reads **DB-first, env-fallback** (per field), never throws on a DB blip, and skips the DB entirely when no `SUPABASE_URL`. Stripe/Resend/Twilio retain the 60s cache. Encircle is deliberately uncached so `disabled` suppresses the legacy fallback on the next request. Shapes: stripe `{ secretKey }`, resend `{ apiKey }`, twilio `{ accountSid, authToken, messagingServiceSid, phoneNumber }`, Encircle `{ apiKey, source }`.
+- **Encircle writer:** `functions/api/encircle-credential.js` is active-admin + fail-closed-flag gated, validates a candidate with a harmless Encircle organization read before persisting, and returns status metadata only. `upr-mcp/src/encircle.js` independently reads the same managed row/state because it is a separate Worker runtime.
 - **Swaps (one additive line each, env fallback retained → behavior-identical when the DB row is absent):** `functions/lib/stripe.js` (`stripeFetch` uses the resolved key), `functions/lib/twilio.js` (`sendMessage`), `functions/lib/email.js` (`sendEmail`).
 - **Cutover:** owner removes the Cloudflare env secrets only AFTER verifying the DB path on dev. **Follow-up (out of P9's owned files):** the env-based `stripeConfigured(env)` pre-flight gate in the 4 Stripe workers and Twilio's `twilio-webhook.js` signature validation still read env — so Stripe/Twilio env can't be fully removed until those are migrated too (the *send* path is DB-first now).
-- **UI:** `src/pages/settings/Integrations.jsx` admin-only paste-key cards (Twilio/Resend/Stripe): `connected` boolean pill, write-only secret input, two-click disconnect (css §P9). Tests: `functions/lib/credentials.test.js` (resolver) + `supabase/tests/p9_credential_management.test.js` (RLS-cannot-read, never-echo, non-admin-cannot-write).
+- **UI:** `src/pages/settings/Integrations.jsx` admin-only paste-key cards use write-only inputs and two-click disconnect/disable. The Encircle card appears only when the explicit dark flag exists and is effective. Tests cover resolver/fallback parity, candidate validation/no-write, negative authorization, token-free UI helpers, and the apply-window authenticated RPC contract.
 
 **UI:** `/settings/integrations` (admin-only) — Connect/Reconnect, connection status, synced/pending/error counts, **Preview sync** (dry-run with per-contact create/link breakdown), and "Sync existing customers" backfill. (P7-lite, 2026-07-04: the DevTools → Integrations tab this was ported from has been deleted.)
 

@@ -3,7 +3,10 @@
 // Returns { rooms: [{id, name, structureId, structureName}], structures: [...] }.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { requireUser } from '../lib/auth.js';
+import { requireEmployee } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -11,11 +14,11 @@ export async function onRequestOptions(context) {
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const auth = await requireUser(request, env);
+  const auth = await requireEmployee(request, env, supabase(env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
-  const apiKey = env.ENCIRCLE_API_KEY;
+  const { apiKey } = await resolveCredential(env, null, 'encircle');
   if (!apiKey) {
-    return jsonResponse({ error: 'ENCIRCLE_API_KEY not configured' }, 500, request, env);
+    return jsonResponse({ error: 'Encircle not configured' }, 500, request, env);
   }
 
   const claimId = new URL(request.url).searchParams.get('claim_id');
@@ -30,7 +33,7 @@ export async function onRequestGet(context) {
   };
 
   try {
-    const structRes = await fetch(
+    const structRes = await fetchWithTimeout(
       `https://api.encircleapp.com/v1/property_claims/${claimId}/structures?limit=100`,
       { headers },
     );
@@ -44,7 +47,7 @@ export async function onRequestGet(context) {
     const structures = (JSON.parse(structText).list) || [];
 
     const roomFetches = structures.map(s =>
-      fetch(
+      fetchWithTimeout(
         `https://api.encircleapp.com/v1/property_claims/${claimId}/structures/${s.id}/rooms?limit=100`,
         { headers },
       )

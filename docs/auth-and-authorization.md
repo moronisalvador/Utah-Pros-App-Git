@@ -118,3 +118,17 @@ For a new or changed workflow, document:
 
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
+
+## Credential-management authorization
+
+Credential-management Workers require a valid session, an employee row with `is_active=true`, and
+the `admin` role before any provider request or secret write. The Encircle rollout additionally
+requires an explicit enabled/dev-only flag row and treats a missing row as OFF. This server check is
+the authority; `/settings/integrations` remaining under `AdminRoute` is only the matching UI gate.
+
+Encircle service-role writers have separate operational capabilities. Manual selective import is
+limited to active `admin`, `office`, or `project_manager` employees; historical backfill and the
+legacy bulk sync repeat the owner-only Dev Tools predicate server-side. The automatic new-claim
+push, Scope Sheet search/room reads, and note upload require an active employee because field
+technicians use those paths; inactive and non-employee sessions are denied before service-role or
+provider access.

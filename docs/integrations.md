@@ -99,3 +99,18 @@ webhook delivery.
 Update this file in the same commit when adding/removing a provider, changing data exchanged,
 moving credential ownership, changing webhook/auth/idempotency behavior, or altering production
 configuration requirements.
+
+## Encircle managed credential rollout
+
+The permanent target is the service-only `integration_credentials` row managed from Connections.
+All seven Pages Encircle workers and the separate `upr-mcp` adapter resolve that row first. The
+existing `ENCIRCLE_API_KEY` remains a temporary fallback only while the row is absent or explicitly
+`fallback`; `disabled` suppresses it. Candidate activation is active-admin-only and validates via a
+bounded read-only organization request before storage.
+
+Read-only Cloudflare inspection on 2026-07-23 confirmed the fallback binding name exists in both
+Pages Production and Preview and on the deployed `upr-mcp` Worker; no values were read. A read-only
+request to `demo-sheet.netlify.app` returned HTTP 200 with the Utah Pros Demo Sheet title, so that
+legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 that it is obsolete and
+unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
+supported Encircle consumer or a credential-rotation dependency.

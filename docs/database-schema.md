@@ -125,3 +125,12 @@ provider state and representative-role behavior still require separate evidence.
 
 Update this file in the same commit whenever schema ownership, database conventions, environment
 topology or a cross-domain data relationship changes.
+
+## Pending Encircle managed-credential extension
+
+`20260723_encircle_managed_credentials.sql` is authored but not applied. It adds nullable
+`managed_status`, `last_verified_at`, and `last_verification_status` columns to
+`integration_credentials`, seeds an Encircle placeholder in `fallback` state, and seeds the
+default-OFF `feature:encircle_managed_credentials` flag. The secret table retains zero RLS policies;
+the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
+its signature, becomes active-admin gated, and returns no secret fields.

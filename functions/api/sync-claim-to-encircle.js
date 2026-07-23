@@ -7,7 +7,11 @@
 // On failure, records the error on claims.encircle_sync_error for retry.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { requireUser } from '../lib/auth.js';
+import { requireEmployee } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 // Internal trigger auth — lets server-side callers (e.g. a pg_net backfill from
 // the database) invoke this worker without a user session. The caller sends an
@@ -21,7 +25,7 @@ async function isValidInternalSecret(request, env) {
   const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY;
   if (!url || !sbKey) return false;
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `${url}/rest/v1/integration_config?key=eq.encircle_sweep_secret&select=value`,
       { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
     );
@@ -84,7 +88,7 @@ function encircleClaimMatchesClaim(existing, contactName, fullAddress) {
 }
 
 async function fetchClaimWithContact(sbUrl, sbKey, claimId) {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/claims?id=eq.${claimId}&select=*,contact:contact_id(id,name,phone,email)`,
     { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
   );
@@ -94,7 +98,7 @@ async function fetchClaimWithContact(sbUrl, sbKey, claimId) {
 }
 
 async function updateClaimSync(sbUrl, sbKey, claimId, patch) {
-  await fetch(`${sbUrl}/rest/v1/claims?id=eq.${claimId}`, {
+  await fetchWithTimeout(`${sbUrl}/rest/v1/claims?id=eq.${claimId}`, {
     method: 'PATCH',
     headers: { ...sbHeaders(sbKey), 'Prefer': 'return=minimal' },
     body: JSON.stringify(patch),
@@ -102,7 +106,7 @@ async function updateClaimSync(sbUrl, sbKey, claimId, patch) {
 }
 
 async function linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId) {
-  await fetch(
+  await fetchWithTimeout(
     `${sbUrl}/rest/v1/jobs?claim_id=eq.${claimId}&encircle_claim_id=is.null`,
     {
       method: 'PATCH',
@@ -120,7 +124,7 @@ async function linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId) {
 async function findExistingEncircleClaimByClm(env, clm) {
   if (!clm) return null;
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.encircleapp.com/v1/property_claims?contractor_identifier=${encodeURIComponent(clm)}&limit=10`,
       { headers: encircleHeaders(env) }
     );
@@ -136,21 +140,13 @@ async function findExistingEncircleClaimByClm(env, clm) {
   }
 }
 
-async function logWorkerRun(sbUrl, sbKey, status, records, errorMessage) {
-  try {
-    await fetch(`${sbUrl}/rest/v1/worker_runs`, {
-      method: 'POST',
-      headers: { ...sbHeaders(sbKey), 'Prefer': 'return=minimal' },
-      body: JSON.stringify({
-        worker_name: 'sync-claim-to-encircle',
-        status,
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        records_processed: records || 0,
-        error_message: errorMessage || null,
-      }),
-    });
-  } catch { /* best-effort logging — never block the sync on a logging failure */ }
+async function logWorkerRun(env, status, records, errorMessage) {
+  await recordWorkerRun(supabase(env), {
+    workerName: 'sync-claim-to-encircle',
+    status,
+    recordsProcessed: records || 0,
+    errorMessage,
+  });
 }
 
 async function doSync(request, env) {
@@ -158,7 +154,9 @@ async function doSync(request, env) {
   const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY
              || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
   if (!sbUrl || !sbKey) return jsonResponse({ error: 'Missing Supabase env vars' }, 500, request, env);
-  if (!env.ENCIRCLE_API_KEY) return jsonResponse({ error: 'Missing ENCIRCLE_API_KEY' }, 500, request, env);
+  const { apiKey } = await resolveCredential(env, null, 'encircle');
+  if (!apiKey) return jsonResponse({ error: 'Encircle not configured' }, 500, request, env);
+  env = { ...env, ENCIRCLE_API_KEY: apiKey };
 
   const body = await request.json().catch(() => ({}));
   const claimId = body.claim_id;
@@ -213,7 +211,7 @@ async function doSync(request, env) {
   if (!cleanPayload.policyholder_name) {
     const errMsg = 'Contact has no name — cannot create in Encircle (policyholder_name is required)';
     await updateClaimSync(sbUrl, sbKey, claimId, { encircle_sync_error: errMsg });
-    await logWorkerRun(sbUrl, sbKey, 'error', 0, `${claimId}: ${errMsg}`);
+    await logWorkerRun(env, 'error', 0, `${claimId}: ${errMsg}`);
     return jsonResponse({ error: errMsg, claim_id: claimId }, 400, request, env);
   }
 
@@ -227,7 +225,7 @@ async function doSync(request, env) {
     // surface it loudly instead of silently reporting success.
     const errMsg = `Encircle claim ${existing.id} carries our CLM ${claim.claim_number} but belongs to "${existing.policyholder_name}" (≠ "${cleanPayload.policyholder_name}"). Refusing to link — likely a duplicate claim number; resolve it and retry.`;
     await updateClaimSync(sbUrl, sbKey, claimId, { encircle_sync_error: errMsg });
-    await logWorkerRun(sbUrl, sbKey, 'error', 0, `${claimId}: ${errMsg}`);
+    await logWorkerRun(env, 'error', 0, `${claimId}: ${errMsg}`);
     return jsonResponse({ error: errMsg, claim_id: claimId, conflict_encircle_id: String(existing.id) }, 409, request, env);
   }
   if (existing) {
@@ -238,7 +236,7 @@ async function doSync(request, env) {
       encircle_sync_error: null,
     });
     await linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId);
-    await logWorkerRun(sbUrl, sbKey, 'completed', 1, null);
+    await logWorkerRun(env, 'completed', 1, null);
     return jsonResponse({
       ok: true,
       deduped: true,
@@ -252,7 +250,7 @@ async function doSync(request, env) {
   // POST to Encircle
   let encircleRes;
   try {
-    encircleRes = await fetch('https://api.encircleapp.com/v1/property_claims', {
+    encircleRes = await fetchWithTimeout('https://api.encircleapp.com/v1/property_claims', {
       method: 'POST',
       headers: {
         ...encircleHeaders(env),
@@ -263,7 +261,7 @@ async function doSync(request, env) {
   } catch (e) {
     const errMsg = `Network error: ${e.message}`;
     await updateClaimSync(sbUrl, sbKey, claimId, { encircle_sync_error: errMsg });
-    await logWorkerRun(sbUrl, sbKey, 'error', 0, `${claimId}: ${errMsg}`);
+    await logWorkerRun(env, 'error', 0, `${claimId}: ${errMsg}`);
     return jsonResponse({ error: errMsg, claim_id: claimId }, 502, request, env);
   }
 
@@ -271,7 +269,7 @@ async function doSync(request, env) {
     const detail = (await encircleRes.text()).slice(0, 400);
     const errMsg = `Encircle ${encircleRes.status}: ${detail}`;
     await updateClaimSync(sbUrl, sbKey, claimId, { encircle_sync_error: errMsg });
-    await logWorkerRun(sbUrl, sbKey, 'error', 0, `${claimId}: ${errMsg}`);
+    await logWorkerRun(env, 'error', 0, `${claimId}: ${errMsg}`);
     return jsonResponse({ error: 'Encircle API error', status: encircleRes.status, detail, claim_id: claimId }, 502, request, env);
   }
 
@@ -285,7 +283,7 @@ async function doSync(request, env) {
     encircle_sync_error:  null,
   });
   await linkJobsToEncircleId(sbUrl, sbKey, claimId, encircleId);
-  await logWorkerRun(sbUrl, sbKey, 'completed', 1, null);
+  await logWorkerRun(env, 'completed', 1, null);
 
   return jsonResponse({
     ok: true,
@@ -301,9 +299,15 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestPost(context) {
-  // Accept either a logged-in user (UI) or a valid internal trigger secret (server-side backfill).
+  // Accept either a valid internal trigger or an active employee. Field
+  // technicians create jobs through this path, so the capability is employee
+  // membership rather than an admin role; inactive/non-employee sessions fail.
   if (!(await isValidInternalSecret(context.request, context.env))) {
-    const auth = await requireUser(context.request, context.env);
+    const auth = await requireEmployee(
+      context.request,
+      context.env,
+      supabase(context.env),
+    );
     if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   }
   try {

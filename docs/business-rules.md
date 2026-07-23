@@ -113,3 +113,14 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 When a change introduces, removes or reinterprets a business rule, update this file and the detailed
 domain guide in the same commit. Add regression tests at the primary enforcement boundary and at any
 documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
+
+## Credential rotation
+
+- A candidate provider credential is validated with a read-only provider request before it becomes
+  active; failure leaves the current credential and technician workflows untouched.
+- A migration fallback is allowed only while explicitly marked `fallback`. An explicit `disabled`
+  state suppresses the legacy environment credential.
+- Provider keys are write-only to the browser. Status may disclose connection state, safe account
+  labels, and verification time, never the credential or raw provider error body.
+- Old credentials are revoked only after every surviving runtime is inventoried, deployed against
+  the managed source, and smoke-tested.

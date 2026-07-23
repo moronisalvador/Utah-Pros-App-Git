@@ -4,16 +4,13 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   One place the server-side workers ask "what is the key for Stripe / Twilio /
- *   Resend?" and get an answer. It looks in the app database FIRST (where an admin
+ *   One place the server-side workers ask for a Stripe, Twilio, Resend, or
+ *   Encircle key and get an answer. It looks in the app database FIRST (where an admin
  *   can paste and rotate keys from the Connections page) and falls back to the old
  *   Cloudflare environment variables if the database has nothing yet. That means
  *   the platform keeps working the whole way through the cutover — the env vars
- *   stay as a backup until the owner removes them. Answers are cached for a minute
- *   so a burst of sends doesn't hit the database once per message.
- *
- * WHERE IT LIVES:
- *   Route:        n/a (server-side helper for Cloudflare Workers)
+ *   stay as a backup until the owner removes them. Stripe/Twilio/Resend answers
+ *   are cached for a minute; Encircle is uncached so disable is immediate.
  *
  * DEPENDS ON:
  *   Packages:  none (pure fetch via ./supabase.js — runs in V8 isolates)
@@ -21,14 +18,15 @@
  *              RLS-locked integration_credentials + integration_config tables)
  *   Data:      reads  → integration_credentials (access_token per provider),
  *                        integration_config (twilio_* non-secret bits)
- *              writes → none (writes happen via the admin-gated SECURITY DEFINER
- *                        RPCs in 20260707_p9_credential_management.sql)
+ *              writes → none (the Encircle admin Worker and the existing
+ *                        credential RPCs own writes)
  *
  * EXPORTS:
  *   resolveCredential(env, db, provider) → Promise<object>
  *     provider 'stripe' → { secretKey }
  *     provider 'resend' → { apiKey }
  *     provider 'twilio' → { accountSid, authToken, messagingServiceSid, phoneNumber }
+ *     provider 'encircle' → { apiKey, source }
  *   clearCredentialCache()  — drops the in-memory cache (tests / after a rotation)
  *
  * NOTES / GOTCHAS:
@@ -50,7 +48,7 @@ import { supabase } from './supabase.js';
 // ─── SECTION: Config ──────────────
 const CACHE_TTL_MS = 60_000; // 1 minute — avoids a DB read per send during a burst
 
-const PROVIDERS = ['stripe', 'twilio', 'resend'];
+const PROVIDERS = ['stripe', 'twilio', 'resend', 'encircle'];
 
 // provider → { value, expires } resolved object.
 const cache = new Map();
@@ -75,14 +73,21 @@ async function readFromDb(env, db, provider) {
   try {
     const client = db || supabase(env);
     const [creds, cfgRows] = await Promise.all([
-      client.select('integration_credentials', `provider=eq.${provider}&select=access_token`),
+      client.select(
+        'integration_credentials',
+        `provider=eq.${provider}&select=access_token,managed_status`,
+      ),
       provider === 'twilio'
         ? client.select('integration_config', `key=in.(twilio_account_sid,twilio_messaging_service_sid,twilio_phone_number)&select=key,value`)
         : Promise.resolve([]),
     ]);
     const config = {};
     for (const r of (cfgRows || [])) config[r.key] = r.value;
-    return { accessToken: creds?.[0]?.access_token ?? null, config };
+    return {
+      accessToken: creds?.[0]?.access_token ?? null,
+      managedStatus: creds?.[0]?.managed_status ?? null,
+      config,
+    };
   } catch {
     return null; // fall back to env
   }
@@ -98,6 +103,18 @@ function shape(provider, dbRow, env) {
   if (provider === 'resend') {
     return { apiKey: pick(token, env?.RESEND_API_KEY) };
   }
+  if (provider === 'encircle') {
+    if (dbRow?.managedStatus === 'disabled') {
+      return { apiKey: undefined, source: 'disabled' };
+    }
+    if (dbRow?.managedStatus === 'active' && clean(token)) {
+      return { apiKey: clean(token), source: 'managed' };
+    }
+    return {
+      apiKey: clean(env?.ENCIRCLE_API_KEY) ?? undefined,
+      source: clean(env?.ENCIRCLE_API_KEY) ? 'environment' : 'unconfigured',
+    };
+  }
   // twilio: the auth token is the only secret; the rest are non-secret identifiers.
   return {
     accountSid:          pick(cfg.twilio_account_sid,            env?.TWILIO_ACCOUNT_SID),
@@ -109,10 +126,11 @@ function shape(provider, dbRow, env) {
 
 // ─── SECTION: Public API ──────────────
 /**
- * Resolve a provider's credential(s), DB-first with an env fallback, cached ~60s.
+ * Resolve a provider's credential(s), DB-first with an env fallback, cached
+ * ~60s except Encircle (uncached so disable is immediate).
  * @param {object} env      Cloudflare env (SUPABASE_URL for the DB read; the *_KEY vars for fallback)
  * @param {object|null} db  optional service-role client to reuse; when null one is built from env
- * @param {string} provider 'stripe' | 'twilio' | 'resend'
+ * @param {string} provider 'stripe' | 'twilio' | 'resend' | 'encircle'
  * @returns {Promise<object>} provider-shaped credential object (see file header)
  */
 export async function resolveCredential(env, db, provider) {
@@ -121,12 +139,16 @@ export async function resolveCredential(env, db, provider) {
   }
 
   const hit = cache.get(provider);
-  if (hit && hit.expires > Date.now()) return hit.value;
+  if (provider !== 'encircle' && hit && hit.expires > Date.now()) return hit.value;
 
   const dbRow = await readFromDb(env, db, provider);
   const value = shape(provider, dbRow, env);
 
-  cache.set(provider, { value, expires: Date.now() + CACHE_TTL_MS });
+  // Encircle is intentionally uncached: an emergency disable must suppress the
+  // legacy fallback on the very next request, including in a warm isolate.
+  if (provider !== 'encircle') {
+    cache.set(provider, { value, expires: Date.now() + CACHE_TTL_MS });
+  }
   return value;
 }
 

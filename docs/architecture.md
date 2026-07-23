@@ -96,3 +96,12 @@ tests, native behavior and operational configuration. Document the enforcement b
 Current dated risks and remediation priorities are recorded in
 `docs/audit/2026-07/executive-summary.md` and `docs/audit/2026-07/remediation-backlog.md`. Re-verify a
 snapshot finding against the current checkout and external systems before acting on it.
+
+## Managed provider credential cutover
+
+Provider runtimes may use a service-only `integration_credentials` row as their managed source with
+an explicitly temporary environment-secret fallback. The lifecycle distinguishes `fallback`,
+`active`, and `disabled`: an explicit disable suppresses fallback, while a missing pre-migration row
+may use it. Candidate credentials are validated at the Worker boundary before activation and are
+never returned to the browser. Independently deployed runtimes such as Pages and `upr-mcp` must
+implement and test the same precedence before an old credential is revoked.

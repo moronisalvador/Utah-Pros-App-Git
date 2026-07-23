@@ -173,6 +173,12 @@ function AdminRoute({ children }) {
   return children;
 }
 
+function RoleRoute({ roles, children }) {
+  const { employee } = useAuth();
+  if (!employee || !roles.includes(employee.role)) return <Navigate to="/" replace />;
+  return children;
+}
+
 // Feature-flagged pages — redirects to / when flag is disabled
 // No flag row in DB = unrestricted (isFeatureEnabled returns true)
 function FeatureRoute({ flag, children }) {
@@ -415,7 +421,9 @@ function WebRoutes() {
           </FeatureRoute>
         } />
         <Route path="import/encircle" element={
-          <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+          <RoleRoute roles={['admin', 'office', 'project_manager']}>
+            <ErrorBoundary section="Encircle Import"><EncircleImport /></ErrorBoundary>
+          </RoleRoute>
         } />
 
         {/* Send Feedback (desktop) — deliberately ungated: every logged-in

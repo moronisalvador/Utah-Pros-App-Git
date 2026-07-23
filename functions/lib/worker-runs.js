@@ -11,10 +11,6 @@
  *   copies with one helper so the log rows are consistent and telemetry never
  *   crashes a worker (the write is best-effort).
  *
- * WHERE IT LIVES:
- *   Worker library — imported by functions/api/*.js (cron/webhook/scheduled).
- *   Not a route.
- *
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  none. Callers pass in their own supabase() service-role client.
@@ -27,6 +23,8 @@
  *     Runs fn(); on success records a 'completed' row (fn may return
  *     { recordsProcessed, meta } to enrich it); on throw records an 'error' row
  *     and re-throws.
+ *   startWorkerRun(db, workerName) → Promise<string|null>
+ *   finishWorkerRun(db, runId, patch) → Promise<void>
  *
  * NOTES / GOTCHAS:
  *   - The insert is wrapped in try/catch and never throws — telemetry must not
@@ -67,6 +65,28 @@ export async function recordWorkerRun(db, {
     if (meta !== undefined) row.meta = meta;
     if (payload !== undefined) row.payload = payload;
     await db.insert('worker_runs', row);
+  } catch {
+    /* telemetry is best-effort — a logging failure must not fail the worker */
+  }
+}
+
+export async function startWorkerRun(db, workerName) {
+  try {
+    const rows = await db.insert('worker_runs', {
+      worker_name: workerName,
+      status: 'started',
+      started_at: new Date().toISOString(),
+    });
+    return rows?.[0]?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function finishWorkerRun(db, runId, patch) {
+  if (!runId) return;
+  try {
+    await db.update('worker_runs', `id=eq.${runId}`, patch);
   } catch {
     /* telemetry is best-effort — a logging failure must not fail the worker */
   }

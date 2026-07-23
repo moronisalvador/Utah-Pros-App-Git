@@ -22,7 +22,15 @@ X-Encircle-Attribution: UtahProsRestorationApp
 X-Encircle-Request: <unique-string-per-request>
 ```
 
-Our token is stored as `ENCIRCLE_API_KEY` in the Cloudflare Pages dashboard (used by `functions/api/sync-encircle.js` and `functions/api/encircle-import.js`). Also in the Netlify demo-sheet project env vars. Token ends in `...47c2`.
+The current token remains temporarily bound as `ENCIRCLE_API_KEY` in Cloudflare Pages Production,
+Pages Preview, and the separate `upr-mcp` Worker. Values are never recorded here. The permanent
+managed source is the RLS-locked `integration_credentials` Encircle row; compatible code resolves
+that row first and uses the environment binding only in explicit fallback state. The owner confirmed
+on 2026-07-23 that the historical Netlify Demo Sheet is obsolete and unsupported. It is not part of
+the credential cutover; its deployment and any remaining secret binding should be retired separately.
+
+Candidate keys are validated with `GET /v1/organizations?limit=1` before activation. A saved key is
+write-only to the browser; status exposes only safe lifecycle and verification metadata.
 
 ---
 
@@ -530,7 +538,7 @@ GET /v1/users/{email_address}
 |---|---|
 | `functions/api/sync-encircle.js` | Bulk sync: pulls 15 recent claims → upserts jobs + creates contacts |
 | `functions/api/encircle-import.js` | Selective import: search → preview → import with division selection → write-back CLM |
-| Demo Sheet (`demo-sheet.netlify.app`) | Search claims, fetch rooms, post notes |
+| UPR Scope Sheet (`/tech/tools/demo-sheet`) | Search claims, fetch rooms, post notes |
 
 ---
 

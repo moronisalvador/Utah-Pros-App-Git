@@ -3,7 +3,10 @@
 // Returns { ok: true, id: <encircle_note_id> } so the frontend can persist the id.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { requireUser } from '../lib/auth.js';
+import { requireEmployee } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -11,11 +14,11 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const auth = await requireUser(request, env);
+  const auth = await requireEmployee(request, env, supabase(env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
-  const apiKey = env.ENCIRCLE_API_KEY;
+  const { apiKey } = await resolveCredential(env, null, 'encircle');
   if (!apiKey) {
-    return jsonResponse({ error: 'ENCIRCLE_API_KEY not configured' }, 500, request, env);
+    return jsonResponse({ error: 'Encircle not configured' }, 500, request, env);
   }
 
   let body;
@@ -34,7 +37,7 @@ export async function onRequestPost(context) {
 
   let res;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

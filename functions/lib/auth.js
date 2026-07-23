@@ -11,9 +11,6 @@
  *   caller knows the shared cron secret. It replaces ~34 copy-pasted auth checks
  *   that used to live inside individual workers.
  *
- * WHERE IT LIVES:
- *   Worker library — imported by functions/api/*.js. Not a route.
- *
  * DEPENDS ON:
  *   Packages:  none (pure fetch, runs in a V8 isolate)
  *   Internal:  none. Callers pass in their own supabase() client where a DB
@@ -27,6 +24,7 @@
  *   requireUser(request, env)                → { user } | { error, status }
  *   requireEmployee(request, env, db)        → { user, employee } | { error, status }
  *   requireRole(request, env, db, roles)     → { user, employee } | { error, status }
+ *   requireOwner(request, env, db)            → { user, employee } | { error, status }
  *   checkCronSecret(request, db)             → boolean
  *   getActorEmployee(request, env, db)       → employee row | null  (legacy shape;
  *                                              moved here from google-drive.js)
@@ -95,13 +93,14 @@ export async function requireEmployee(request, env, db) {
   try {
     emp = await db.select(
       'employees',
-      `auth_user_id=eq.${auth.user.id}&select=id,full_name,email,role&limit=1`,
+      `auth_user_id=eq.${auth.user.id}&select=id,full_name,email,role,is_active&limit=1`,
     );
   } catch {
     return { error: 'Employee lookup failed', status: 500 };
   }
   const employee = emp?.[0];
   if (!employee) return { error: 'Not an employee', status: 403 };
+  if (!employee.is_active) return { error: 'Inactive employee', status: 403 };
   return { user: auth.user, employee };
 }
 
@@ -117,6 +116,17 @@ export async function requireRole(request, env, db, roles) {
     return { error: 'Insufficient role', status: 403 };
   }
   return { user: auth.user, employee: auth.employee };
+}
+
+// Dev Tools is owner-only in the UI. Workers reachable only from that surface
+// repeat the same boundary server-side.
+export async function requireOwner(request, env, db) {
+  const auth = await requireRole(request, env, db, ['admin']);
+  if (auth.error) return auth;
+  if (String(auth.employee.email || '').toLowerCase() !== 'moroni@utah-pros.com') {
+    return { error: 'Insufficient role', status: 403 };
+  }
+  return auth;
 }
 
 // ─── SECTION: Cron secret ──────────────

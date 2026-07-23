@@ -12,7 +12,11 @@
 // contact → claim → jobs chain, repairs legacy orphan jobs, dedup-safe, idempotent.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { requireUser } from '../lib/auth.js';
+import { requireOwner } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
+import { finishWorkerRun, startWorkerRun } from '../lib/worker-runs.js';
 
 // ── Shared helpers (match encircle-import.js) ─────────────────────────────────
 function normalizePhone(phone) {
@@ -94,7 +98,7 @@ async function fetchEncircleWindow({ env, fromISO, toISO, dateField, max }) {
   while (true) {
     const params = new URLSearchParams({ limit: '100', order: 'newest' });
     if (after) params.set('after', after);
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.encircleapp.com/v1/property_claims?${params.toString()}`,
       { headers: encircleHeaders(env) }
     );
@@ -141,7 +145,7 @@ async function fetchEncircleWindow({ env, fromISO, toISO, dateField, max }) {
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 async function fetchJobsForEncircleIds(sbUrl, sbKey, ids) {
   if (!ids.length) return new Map();
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/jobs?encircle_claim_id=in.(${ids.join(',')})&select=id,encircle_claim_id,claim_id,primary_contact_id,division`,
     { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
   );
@@ -157,7 +161,7 @@ async function fetchJobsForEncircleIds(sbUrl, sbKey, ids) {
 }
 
 async function findContactByPhone(sbUrl, sbKey, phone) {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1&select=id,name,email,phone`,
     { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
   );
@@ -167,7 +171,7 @@ async function findContactByPhone(sbUrl, sbKey, phone) {
 }
 
 async function findContactByEmail(sbUrl, sbKey, email) {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/contacts?email=eq.${encodeURIComponent(email)}&phone=is.null&limit=1&select=id,name,email,phone`,
     { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
   );
@@ -177,7 +181,7 @@ async function findContactByEmail(sbUrl, sbKey, email) {
 }
 
 async function insertContact(sbUrl, sbKey, { name, phone, email }) {
-  const res = await fetch(`${sbUrl}/rest/v1/contacts`, {
+  const res = await fetchWithTimeout(`${sbUrl}/rest/v1/contacts`, {
     method: 'POST',
     headers: { ...sbHeaders(sbKey), 'Prefer': 'return=representation' },
     body: JSON.stringify({ name: name || null, phone, email: email || null, role: 'homeowner' }),
@@ -189,7 +193,7 @@ async function insertContact(sbUrl, sbKey, { name, phone, email }) {
 
 async function insertContactAddress(sbUrl, sbKey, contactId, parsed) {
   if (!parsed.address) return;
-  await fetch(`${sbUrl}/rest/v1/contact_addresses`, {
+  await fetchWithTimeout(`${sbUrl}/rest/v1/contact_addresses`, {
     method: 'POST',
     headers: { ...sbHeaders(sbKey), 'Prefer': 'return=minimal' },
     body: JSON.stringify({
@@ -205,7 +209,7 @@ async function insertContactAddress(sbUrl, sbKey, contactId, parsed) {
 }
 
 async function insertClaim(sbUrl, sbKey, payload) {
-  const res = await fetch(`${sbUrl}/rest/v1/claims`, {
+  const res = await fetchWithTimeout(`${sbUrl}/rest/v1/claims`, {
     method: 'POST',
     headers: { ...sbHeaders(sbKey), 'Prefer': 'return=representation' },
     body: JSON.stringify(payload),
@@ -217,7 +221,7 @@ async function insertClaim(sbUrl, sbKey, payload) {
 
 async function upsertJobsBatch(sbUrl, sbKey, jobRows) {
   if (!jobRows.length) return [];
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/jobs?on_conflict=encircle_claim_id,division`,
     {
       method: 'POST',
@@ -231,7 +235,7 @@ async function upsertJobsBatch(sbUrl, sbKey, jobRows) {
 
 async function upsertContactJobPivotBatch(sbUrl, sbKey, pivotRows) {
   if (!pivotRows.length) return;
-  await fetch(
+  await fetchWithTimeout(
     `${sbUrl}/rest/v1/contact_jobs?on_conflict=contact_id,job_id,role`,
     {
       method: 'POST',
@@ -243,7 +247,7 @@ async function upsertContactJobPivotBatch(sbUrl, sbKey, pivotRows) {
 
 async function patchEncircleContractorId(env, encircleClaimId, clm) {
   try {
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://api.encircleapp.com/v1/property_claims/${encircleClaimId}`,
       { method: 'PATCH', headers: encircleHeaders(env), body: JSON.stringify({ contractor_identifier: clm }) }
     );
@@ -254,33 +258,9 @@ async function patchEncircleContractorId(env, encircleClaimId, clm) {
   }
 }
 
-async function logWorkerRunStart(sbUrl, sbKey) {
-  const res = await fetch(`${sbUrl}/rest/v1/worker_runs`, {
-    method: 'POST',
-    headers: { ...sbHeaders(sbKey), 'Prefer': 'return=representation' },
-    body: JSON.stringify({
-      worker_name: 'encircle-backfill',
-      status: 'started',
-      started_at: new Date().toISOString(),
-    }),
-  });
-  if (!res.ok) return null;
-  const [row] = await res.json();
-  return row?.id || null;
-}
-
-async function logWorkerRunFinish(sbUrl, sbKey, runId, patch) {
-  if (!runId) return;
-  await fetch(`${sbUrl}/rest/v1/worker_runs?id=eq.${runId}`, {
-    method: 'PATCH',
-    headers: { ...sbHeaders(sbKey), 'Prefer': 'return=minimal' },
-    body: JSON.stringify(patch),
-  });
-}
-
 async function checkConcurrentRun(sbUrl, sbKey) {
   const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${sbUrl}/rest/v1/worker_runs?worker_name=eq.encircle-backfill&status=eq.started&started_at=gte.${encodeURIComponent(cutoff)}&limit=1&select=id,started_at`,
     { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
   );
@@ -291,7 +271,7 @@ async function checkConcurrentRun(sbUrl, sbKey) {
 
 async function bustPostgrestCache(sbUrl, sbKey) {
   try {
-    await fetch(`${sbUrl}/rest/v1/rpc/bust_postgrest_cache`, {
+    await fetchWithTimeout(`${sbUrl}/rest/v1/rpc/bust_postgrest_cache`, {
       method: 'POST',
       headers: sbHeaders(sbKey),
       body: '{}',
@@ -495,7 +475,10 @@ async function runBackfill(request, env, { method }) {
   const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY
              || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
   if (!sbUrl || !sbKey) return jsonResponse({ error: 'Missing Supabase env vars' }, 500, request, env);
-  if (!env.ENCIRCLE_API_KEY) return jsonResponse({ error: 'Missing ENCIRCLE_API_KEY' }, 500, request, env);
+  const workerDb = supabase(env);
+  const { apiKey } = await resolveCredential(env, null, 'encircle');
+  if (!apiKey) return jsonResponse({ error: 'Encircle not configured' }, 500, request, env);
+  env = { ...env, ENCIRCLE_API_KEY: apiKey };
 
   // Parse options from query (GET) or body (POST)
   let opts;
@@ -545,7 +528,9 @@ async function runBackfill(request, env, { method }) {
   }
 
   const runStartMs = Date.now();
-  const workerRunId = opts.dryRun ? null : await logWorkerRunStart(sbUrl, sbKey);
+  const workerRunId = opts.dryRun
+    ? null
+    : await startWorkerRun(workerDb, 'encircle-backfill');
 
   try {
     // 1. Pull claims from Encircle window
@@ -583,7 +568,7 @@ async function runBackfill(request, env, { method }) {
 
     // 6. Log completion
     if (workerRunId) {
-      await logWorkerRunFinish(sbUrl, sbKey, workerRunId, {
+      await finishWorkerRun(workerDb, workerRunId, {
         status: 'completed',
         completed_at: new Date().toISOString(),
         records_processed: results.length,
@@ -629,7 +614,7 @@ async function runBackfill(request, env, { method }) {
 
   } catch (e) {
     if (workerRunId) {
-      await logWorkerRunFinish(sbUrl, sbKey, workerRunId, {
+      await finishWorkerRun(workerDb, workerRunId, {
         status: 'error',
         completed_at: new Date().toISOString(),
         error_message: e.message?.slice(0, 1000) || 'unknown',
@@ -706,13 +691,13 @@ export async function onRequestOptions(context) {
 }
 
 export async function onRequestGet(context) {
-  const auth = await requireUser(context.request, context.env);
+  const auth = await requireOwner(context.request, context.env, supabase(context.env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   return runBackfill(context.request, context.env, { method: 'GET' });
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireUser(context.request, context.env);
+  const auth = await requireOwner(context.request, context.env, supabase(context.env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   return runBackfill(context.request, context.env, { method: 'POST' });
 }
