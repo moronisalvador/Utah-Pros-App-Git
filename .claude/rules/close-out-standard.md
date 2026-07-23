@@ -1,7 +1,9 @@
 # Close-Out Standard
 
+**Last verified:** 2026-07-23
+
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
-session runs before opening its PR.** Manifests reference this file and list only their *deltas* (extra
+session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
 reviewers, migration steps) rather than restating it. Born from the UX audit's finding that the default
 direct-to-`dev` workflow had zero gates and "visual check" was too vague to catch the resume/loading
 bugs that reached techs.
@@ -25,8 +27,11 @@ bugs that reached techs.
      is not a pass. Companion for authoring a wave's motion work list: `improve-animations` (read-only,
      produces the recon → frequency-map → per-fix plans).
    - `page-behavior-checker` — lifecycle/loading/error (any `src/pages`|`src/components` change).
-   - `migration-safety-checker` + `anon-grant-auditor` — any `supabase/migrations/` or worker-auth change.
+   - `migration-safety-checker` + `anon-grant-auditor` — any `supabase/migrations/` or database
+     grant/catalog change.
    - `consent-path-auditor` — any send-path change.
+   - `worker-security-reviewer` — any changed worker that returns non-public data or causes a side
+     effect; SQL/catalog review remains with the database reviewers.
 3. **Minimize / resume test (NEW — mandatory for any page change).** Background the PWA (or hide the
    browser tab) for 30s+, then resume. **Nothing may happen:** no blank content, no spinner flash, no
    route loss, no scroll loss, no lost form input. (See `page-lifecycle.md`. Note in the PR when a step is
@@ -55,8 +60,10 @@ bugs that reached techs.
    reconcile the roadmap checkboxes **both directions** (nothing marked done-to-look-finished; nothing
    finished left as todo; owner-blocked stays open with the reason disclosed).
 10. **Delete TEST rows** created during verification.
-11. **Push `-u`, open a PR into `dev` as a handoff, and STOP.** The owner/orchestrator merges; sessions
-    never subscribe to / babysit / click-merge their own PR. Flag flips are the owner's.
+11. **Publish only when requested.** Without explicit commit/push/PR authorization, stop with the diff,
+    verification report, and owner gates. When publication is requested, use `CLAUDE.md`'s current
+    routine-versus-wave workflow. Sessions never click-merge or treat a provider/flag prerequisite as
+    authorization; live flag flips are separately owner-authorized.
 
 ## Standard agent output format (all reviewer agents)
 

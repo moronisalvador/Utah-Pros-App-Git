@@ -9,7 +9,9 @@
     "build:ios": "VITE_BUILD_TARGET=native vite build && cap sync ios",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:tooling": "node --test scripts/validate-tooling-governance.test.mjs",
+    "validate:tooling": "node scripts/validate-tooling-governance.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",

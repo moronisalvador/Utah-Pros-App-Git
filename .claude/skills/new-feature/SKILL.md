@@ -1,6 +1,6 @@
 ---
 name: new-feature
-description: Run a new UPR feature build the disciplined way — understand-first (right doc + live schema, not memory), plan, branch, test-first, build to CLAUDE.md rules, self-review, update docs, PR to dev via the template. Use when starting any non-trivial feature or change.
+description: Implement a non-trivial UPR feature with understand-first, test-first, project-law review, and documentation. This is the ordinary feature dispatcher; planning-only work stays read-only, and branch, commit, push, PR, or deploy occur only when explicitly requested.
 ---
 
 # new-feature
@@ -19,26 +19,30 @@ is enforced by `CLAUDE.md` — this skill just makes the sequence automatic.
 - For anything non-trivial, **plan first** (prefer plan mode) and reuse existing patterns
   over inventing. Delegate broad searches to Explore subagents to keep context lean.
 
-## 2. Branch
-- Feature branch off `dev`, descriptively named. Never work on `main`.
+## 2. Confirm authority and repository workflow
+- Implementation authorizes only the scoped repository edits. Live SQL, external writes, money,
+  outbound messages, credentials/permissions, commit, push, PR, and deploy are separate actions.
+- Do not create or switch branches unless requested or required by the current initiative manifest.
+  When delivery is requested, follow `CLAUDE.md`'s routine-versus-wave workflow. Never work on or
+  push `main` directly.
 
-## 3. Commit acceptance criteria + a failing test FIRST
+## 3. Write acceptance criteria + a failing test FIRST
 - Write concrete, checkable "done" conditions (they go in the PR template).
 - For the risky logic (money math, data writes, idempotency, auth, date/timezone),
-  **commit a failing test before the implementation**. Do not edit a committed test to
-  make it pass — fix the code. (`vitest` is set up; pure logic → unit test, SQL RPC →
-  integration test vs the Supabase dev branch.)
+  **write a failing test before the implementation**. A commit is required only when publication
+  was requested. Do not weaken a valid failing test to make it pass—fix the code. SQL integration
+  tests require an authorized isolated harness; do not experiment against shared production.
 
 ## 4. Build to the rules
-- `const { db } = useAuth()`; writes via `db.rpc()` on new tables; no `alert()`/`confirm()`
-  (use `upr:toast` + inline two-click confirm); CSS tokens not hardcoded hex; mobile CSS
+- `const { db } = useAuth()`; writes via the narrow approved contract; no `alert()`/`confirm()`
+  (use `src/lib/toast.js` + inline two-click confirm); CSS tokens not hardcoded hex; mobile CSS
   scoped to `@media (max-width: 768px)`.
-- **Migrations:** write to `supabase/migrations/` first, additive-only, RLS-enabled at
-  creation, applied + verified on `dev`. One shared Supabase — a migration hits prod
-  instantly, so sequence consuming code to deploy first. Follow
+- **Migrations:** write to `supabase/migrations/` first when implementation is requested,
+  additive-only, and RLS-enabled at creation. Do not apply or run mutation-capable direct SQL
+  without a separate explicit owner instruction for the exact reviewed migration. Follow
   **`.claude/rules/database-standard.md`**: least-privilege grants
-  (`GRANT EXECUTE TO authenticated, service_role`, policies `TO authenticated` — `anon`
-  only via its §2 allowlist), a rollback note on every live-table/RPC change, no
+  (prefer `SECURITY INVOKER`; necessary definers validate callers, revoke `PUBLIC`/`anon`, and grant
+  only intended roles; policies enforce owner/role/assignment/org scope), a rollback note, no
   anon/authenticated-readable secret columns, and `timestamptz` + `America/Denver` dates.
 - New/edited files get the Documentation Standard header.
 
@@ -52,11 +56,11 @@ is enforced by `CLAUDE.md` — this skill just makes the sequence automatic.
   no secret reachable by anon/authenticated). For a DB Foundation phase, also run
   **`db-foundation-phase-reviewer`**.
 
-## 6. Document + ship
+## 6. Document; ship only when requested
 - Update `UPR-Web-Context.md` (Rule 9) for any new table / RPC / component / page / worker.
-- Open a PR into `dev`, filling **every** section of the PR template honestly (blank = not
-  done). Push to `dev` to verify on staging; release to production only via a reviewed
-  `dev → main` PR. Never a direct `main` push.
+- Stop with a diff and verification report unless the user requested publication. If requested,
+  choose the exact routine or wave delivery path from `CLAUDE.md`, fill handoff material honestly,
+  and never push `main` directly.
 
 For a large multi-session feature, start a roadmap-of-record doc (`docs/<feature>-roadmap.md`)
 with per-phase branch / prerequisite / close-out blocks, and build it phase by phase.

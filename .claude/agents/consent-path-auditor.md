@@ -1,6 +1,6 @@
 ---
 name: consent-path-auditor
-description: Read-only auditor of every SMS/email send call site — asserts automated/marketing sends route through sendAutomatedMessage()/sendGatedEmail() (the structurally-unbypassable consent gate), flags direct sendEmail/twilio/skip_compliance use in automation context. Run before every CRM phase PR that touches sending, automations, campaigns, sequences, or forms. TCPA penalties are per message.
+description: Blocking read-only auditor for every changed SMS/email send path. Verifies the approved consent chokepoint, bans skip_compliance everywhere, and reviews claimed transactional exceptions against current authorization, purpose, suppression, provider, and audit requirements.
 tools: Read, Grep, Glob
 model: sonnet
 ---
@@ -15,21 +15,20 @@ Ground truth (verify it still holds before judging call sites):
   via `emailAllows()`, adds the unsubscribe footer + RFC 8058 headers). The sms branch
   (once built) must check `consentAllows()` against `sms_consent_log`/`contacts` and
   respect the `automation_settings.sms_sending_enabled` kill-switch.
-- `functions/api/send-message.js` — the staff-INTERACTIVE Twilio path with its own
-  compliance chain and a `skip_compliance` flag. Interactive staff sends through it are
-  legitimate; automations calling it directly (or passing `skip_compliance`) are NOT.
+- `functions/api/send-message.js` — the staff-interactive Twilio path with its own compliance chain.
+  `skip_compliance` was removed by SMS Experience H0 and must never be reintroduced.
 
 Procedure:
 1. Grep the changed files (and anything they import) for every send primitive:
    `sendEmail(`, `sendMessage(`, `twilio`, `api.resend.com`, `messages.json`, `fetch(`
    POSTs to Twilio/Resend, `send-message`, `skip_compliance`.
 2. Classify each call site: (a) routed through `sendAutomatedMessage`/`sendGatedEmail`
-   → PASS; (b) staff-interactive UI send via `/api/send-message` without
-   `skip_compliance` → PASS (note it); (c) known transactional exemptions — e-sign
-   (`send-esign`, `resend-esign`, `submit-esign`), `send-demo-sheet`, `billing-2fa`,
-   `generate-water-loss-report`, `google-calendar` appointment notices — PASS with note;
-   (d) anything else sending directly, any automation/cron/campaign/sequence/form path
-   bypassing the gate, any `skip_compliance` outside send-message.js's own definition,
+   → PASS; (b) staff-interactive UI send via `/api/send-message` with the full current compliance
+   chain → PASS; (c) claimed transactional paths—including e-sign, demo sheets, billing 2FA,
+   reports, and appointment notices—require REVIEW: verify server authorization, truly
+   transactional/non-promotional purpose, recipient relationship, suppression/provider rules, and
+   auditable delivery; (d) anything else sending directly, any automation/cron/campaign/sequence/form path
+   bypassing the gate, any `skip_compliance` anywhere,
    any new direct Twilio/Resend fetch → VIOLATION.
 3. Consent WRITES: code recording opt-in/opt-out must write `sms_consent_log`
    (with `performed_by`/source/IP where available) or `email_suppressions` — flag

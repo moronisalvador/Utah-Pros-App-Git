@@ -47,8 +47,9 @@ access exists, the live DB.
 5. **A2P live-path gate.** No session builds/tests a live A2P send before approval is confirmed; the
    decision fork (roadmap §7) is honored in the PR (built-against-frozen-contracts + deferred, never
    faked).
-6. **Migrations (F/F-red).** Additive-only; RLS + explicit `TO authenticated` policy; SECURITY DEFINER
-   RPCs `GRANT EXECUTE TO authenticated, service_role` (never `anon`); rollback note present; F-red is
+6. **Migrations (F/F-red).** Additive-only; RLS policies enforce the real access model; prefer
+   `SECURITY INVOKER`, and necessary definers validate callers, pin `search_path`, revoke
+   `PUBLIC, anon`, and grant only intended roles. Rollback is present; F-red is
    behavior-neutral and its apply is owner-gated. (Defer the deep SQL audit to `migration-safety-checker`
    + `anon-grant-auditor`; here, confirm presence + the wave's zero-schema rule for A/B/C/D/G.)
 7. **Ownership.** The phase edited ONLY its owned files (§2); no edit to a frozen/other-owned file

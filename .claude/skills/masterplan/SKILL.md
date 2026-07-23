@@ -1,14 +1,14 @@
 ---
 name: masterplan
-description: Run a full planning session for any UPR initiative (build, remake, or improve anything) to the roadmap-v3 standard — live-verified evidence audit, gap taxonomy with HAVE/PARTIAL/MISSING verdicts, Foundation-then-parallel-wave phase design with a file-ownership manifest, an adversarial challenge pass, security/reliability guardrails, seeded progress tracking, and copy-paste cold-session dispatch blocks. Use when the owner asks to plan any non-trivial initiative or invokes /masterplan <initiative>.
+description: Dispatcher for an explicitly requested UPR initiative plan or /masterplan invocation. Produces an evidence-backed plan and challenge report; repository writes, live seed/apply actions, commit, push, PR, and deploy remain separate owner-authorized steps.
 ---
 
 # masterplan
 
 You are running a PLANNING session, not a build session. The deliverable is an
-adversarially-reviewed plan of record committed to the repo (roadmap section, dispatch
-blocks, seeds, agents) — zero feature code. Work read-only until the owner explicitly
-approves the commit step (section 6). Best run as: fresh session, strongest available
+adversarially-reviewed plan of record proposal (roadmap section, dispatch blocks, optional seeds,
+agents) — zero feature code. Work read-only until the owner explicitly approves repository writes;
+live database work and publication require separate approval. Best run as: fresh session, strongest available
 model, high effort, plan mode on, "ultracode" included in the invocation — the
 challenge pass (section 5) fans out many agents.
 
@@ -159,12 +159,12 @@ is committed or seeded.
 
 ## 6. Present, then WAIT
 
-Present the plan + the challenge report ("what changed"). **Commit nothing until the
-owner says go.** If plan mode is active, exit via the approval flow.
+Present the plan + the challenge report ("what changed"). **Write nothing until the owner approves
+repository authoring.** That approval does not authorize live database changes or publication.
 
-## 7. On go — commit the plan of record (docs, seeds, agents only — no feature code)
+## 7. On authoring approval — prepare the plan of record (docs and agents; no feature code)
 
-1. Branch per CLAUDE.md (session-assigned, cut from `dev`).
+1. Preserve the current worktree/branch unless the owner separately requests a branch action.
 2. **Roadmap doc**: append a dated, versioned section to `docs/<slug>-roadmap.md`
    (create it if new): status-reconciliation table + stale-todo disclosures, severity
    findings with exposure + interim guidance, gap-audit appendix (evidence table,
@@ -190,20 +190,16 @@ owner says go.** If plan mode is active, exit via the approval flow.
    "Foundation shipped" recap, hard constraints (zero schema, frozen files, reserved
    css section, call-only send paths where relevant), ordered build list (riskiest
    first — e.g. data-integrity migrations before UI), named test-first targets, and
-   the full close-out. Each wave session's close-out ends by opening a **PR into `dev`
-   as a handoff and stopping** — the owner/orchestrator merges it; sessions never
+   the full close-out. Each wave session's close-out states that commit/push/PR happen only when
+   that delivery is explicitly authorized; when authorized, it opens a **PR into `dev`
+   as a handoff and stops** — the owner/orchestrator merges it; sessions never
    click-merge, subscribe to, babysit, or wait for a review on a PR (bot reviewer off).
    No block may reference any conversation. Blocks that cite Foundation's artifact names
    note the manifest + phase block are authoritative if names drift. State per wave that
    its sessions may launch simultaneously. **Base-preflight (mandatory in the dispatch
-   preamble):** the harness may start a session's container from `main` or a stale commit,
-   NOT the `dev` tip that carries the plan — so every session's FIRST action is to re-base
-   onto latest `dev` (`git fetch origin dev && git checkout -B "$(git branch --show-current)"
-   origin/dev`) and verify the plan-of-record files (roadmap, ownership manifest, any new
-   rules/agents) are on disk; **if missing, the base is wrong — STOP and re-sync, never
-   recreate them.** Plan docs are CONSUMED, never re-authored by a wave session. (A phase
-   that skips this branches from `main`, re-authors divergent plan copies, and can wipe the
-   wave plan — a real incident.)
+   preamble):** verify that the assigned worktree is based on the designated release branch and
+   that the plan-of-record files are on disk. If missing, stop and request resynchronization; do not
+   run a branch-reset recipe or recreate the plan without explicit authorization.
 5. **Agents**: reuse the existing roster in `.claude/agents/` (`ls` it — currently
    `upr-pattern-checker`, `design-consistency-checker`, `page-behavior-checker`,
    `migration-safety-checker`, `anon-grant-auditor`, `consent-path-auditor`, and the per-initiative
@@ -218,12 +214,11 @@ owner says go.** If plan mode is active, exit via the approval flow.
 7. **`UPR-Web-Context.md`** (Rule 9): session entry — what shipped, key findings,
    dispatch summary.
 8. Verify: `npm run test` + `npm run build` green; eslint n/a if no JS changed (say
-   so); apply + verify any seed migration live via MCP (re-query the rollup); run
+   so). A proposed seed remains an authored migration unless the owner separately authorizes its
+   live apply; if authorized, follow `database-standard.md` §0/§5 and re-query. Run
    `upr-pattern-checker` on changed files.
-9. Ship the plan-of-record the routine way (CLAUDE.md Rule 4): **commit the
-   doc/seed/agent artifacts directly to `dev`** (auto-deploys to staging) — no branch,
-   no PR. (The wave *build* sessions this plan dispatches are the exception — they use
-   branch + PR handoffs; see step 4.) Never push `main`.
+9. Stop with a diff and verification report unless publication was separately requested. If it was,
+   follow the current `CLAUDE.md` routine-versus-wave delivery path. Never push `main` directly.
 10. **Final message = the Wave 0 dispatch blocks verbatim** + the wave table, so the
     owner can launch immediately.
 
@@ -236,18 +231,18 @@ owner says go.** If plan mode is active, exit via the approval flow.
   (zero new hardcoded hex / bespoke `const C={}` palette); on tech surfaces it meets `tech-mobile-ux.md`.
   The 3-agent gauntlet + the `close-out-standard.md` minimize/390px/perf checks enforce this — carry
   them into the phase block, the same way consent/DB guardrails are carried.
-- Additive-only migrations; RLS + explicit policy (scoped `TO authenticated`, not `anon`)
-  in the SAME migration as every CREATE TABLE; `org_id` on domain parents (documented
+- Additive-only migrations; browser-readable tables get RLS + operation-specific
+  owner/role/assignment/org/capability policies in the same migration, while documented
+  service-only tables may intentionally have no browser policy; `org_id` on domain parents (documented
   child/global-tracker exceptions); UNIQUE on external-system IDs + ON CONFLICT upserts
-  (namespaced synthetic IDs like `'form:'||token` count); `GRANT EXECUTE ... TO
-  authenticated, service_role` on SECURITY DEFINER RPCs (**not `anon`** — least-privilege
-  default per `.claude/rules/database-standard.md`; `anon` only via its §2 public allowlist +
-  a `-- public: <reason>` comment; worker-only exceptions commented); rollback note on any
+  (namespaced synthetic IDs like `'form:'||token` count); prefer `SECURITY INVOKER`; necessary
+  definers validate callers, pin `search_path`, revoke `PUBLIC, anon`, and grant only intended
+  roles. Public exceptions require the §2 allowlist + reason + abuse tests. Include rollback on any
   live-table/RPC change; no secret column readable by anon/authenticated; `timestamptz` +
   `America/Denver` bucketing; idempotent seeds.
 - Consent gate structurally unbypassable (any phase that sends): automated/marketing
   sends only through `sendAutomatedMessage()`/`sendGatedEmail()`; no direct
-  Twilio/Resend, no `skip_compliance` outside `send-message.js` itself; consent
+  Twilio/Resend and no `skip_compliance` anywhere; consent
   writes land in `sms_consent_log`/`email_suppressions` with actor/IP (+ consent-text
   version for forms); suppressed/DND contacts excluded from audiences AND durably
   skipped at send time. TCPA penalties are per message — weight reviews accordingly.

@@ -1,12 +1,27 @@
 ---
 name: supabase
-description: "Use when doing ANY task involving Supabase. Triggers: Supabase products (Database, Auth, Edge Functions, Realtime, Storage, Vectors, Cron, Queues); client libraries and SSR integrations (supabase-js, @supabase/ssr) in Next.js, React, SvelteKit, Astro, Remix; auth issues (login, logout, sessions, JWT, cookies, getSession, getUser, getClaims, RLS); Supabase CLI or MCP server; schema changes, migrations, declarative schemas, security audits, Postgres extensions (pg_graphql, pg_cron, pg_vector)."
+description: "Vendor advisory for Supabase product and client-library questions. In UPR, db-migration owns database-change workflow and AGENTS.md, CLAUDE.md, and database-standard.md always win; this specialist never authorizes shared-project SQL, migration apply, or publication."
 metadata:
   author: supabase
   version: "0.1.2"
 ---
 
 # Supabase
+
+## UPR project override (mandatory)
+
+UPR has one shared Supabase project behind staging and production. Use this vendor guidance only
+after `AGENTS.md`, `CLAUDE.md`, and `.claude/rules/database-standard.md`.
+
+- Read-only live catalog inspection may support an in-scope task.
+- Author repository migrations only when implementation was requested.
+- Never use MCP `execute_sql`, `supabase db query`, `psql`, or similar mutation-capable SQL to
+  iterate on the shared project. Generic direct-SQL iteration below applies only to a verified
+  isolated local/test database.
+- Live `apply_migration` requires a fresh owner instruction for the exact reviewed migration plus
+  commit provenance, rollback, apply window, and post-apply verification.
+- Commit, push, PR, deploy, credentials/permissions, and other external writes are separately
+  authorized actions.
 
 ## Core Principles
 
@@ -86,7 +101,8 @@ supabase <group> <command> --help  # Flags for a specific command
 
 **Supabase CLI Known gotchas:**
 
-- `supabase db query` requires **CLI v2.79.0+** → use MCP `execute_sql` or `psql` as fallback
+- `supabase db query` requires **CLI v2.79.0+** → on a verified isolated local/test database only,
+  MCP `execute_sql` or `psql` may be a fallback; never use this fallback on UPR's shared project
 - `supabase db advisors` requires **CLI v2.81.3+** → use MCP `get_advisors` as fallback
 - In imperative migration projects, create new hand-authored migration files with `supabase migration new <name>` first. Never invent a migration filename or rely on memory for the expected format. Declarative schema projects generate migrations from `supabase/schemas/`; see "Making and Committing Schema Changes" below.
 
@@ -128,9 +144,13 @@ Use this when `supabase/schemas/` exists or `config.toml` sets `schema_paths`. E
 
 Use this when the project does not use declarative schemas.
 
-**To make schema changes, use `execute_sql` (MCP) or `supabase db query` (CLI).** These run SQL directly on the database without creating migration history entries, so you can iterate freely and generate a clean migration when ready.
+**Generic isolated-local workflow only:** when a project has a verified disposable local/test
+database, direct SQL may be used there to iterate before generating a migration. This does not apply
+to UPR's shared project.
 
-Do NOT use `apply_migration` to change a local database schema — it writes a migration history entry on every call, which means you can't iterate, and `supabase db diff` / `supabase db pull` will produce empty or conflicting diffs. If you use it, you'll be stuck with whatever SQL you passed on the first try.
+For UPR, author the migration file directly according to the project filename/header conventions,
+review it, and stop unless live apply was separately authorized. Do not use `execute_sql`,
+`supabase db query`, or `apply_migration` as an experimentation loop on the shared project.
 
 **When ready to commit** your changes to a migration file:
 

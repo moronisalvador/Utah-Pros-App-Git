@@ -27,5 +27,7 @@ dist-ssr
 
 # Claude Code worktrees
 .claude/worktrees/
+# Machine-local Claude permissions must remain untracked after the CAP-SEC-001 owner cleanup.
+.claude/settings.local.json
 CLEANUP-TEST-DATA.sql
 .env
