@@ -34,6 +34,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Provenance validation resolves reviewed historical commits and capture ancestry.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
