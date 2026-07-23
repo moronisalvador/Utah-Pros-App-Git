@@ -68,7 +68,7 @@ calls or service-role reads/writes. Record the actor for sensitive state changes
 - Authorization data must not rely on user-editable metadata. If JWT app metadata is used, account
   for claim staleness until token refresh.
 
-### Verified live posture (2026-07-22)
+### Verified live posture (2026-07-22; DB-003 contained 2026-07-23)
 
 The live database has RLS on all 130 public tables, but RLS-enabled does not mean least-privilege:
 
@@ -77,19 +77,22 @@ The live database has RLS on all 130 public tables, but RLS-enabled does not mea
 - authenticated always-true policies grant company-wide access to many tables;
 - 345 of 366 public functions are `SECURITY DEFINER`, and 342 privileged overloads are executable
   by `authenticated`;
-- `exec_read_sql(text)` allows an authenticated caller to perform arbitrary privileged reads and
-  is the highest-priority containment item;
+- the dated snapshot found `exec_read_sql(text)` executable by authenticated callers; migration
+  `20260723205127_exec_read_sql_containment.sql` was applied and verified on 2026-07-23, and now
+  denies `PUBLIC`, `anon`, and `authenticated` while preserving only `service_role`;
 - public form and signing RPCs rely on cooperative Worker/UI checks for some abuse, consent and
   expiration rules.
 
-Exact live evidence is in `docs/audit/2026-07/evidence/live-supabase.md`; remediation findings
-DB-002 through DB-004 and AUTH-004/AUTH-005 are in the dated security audit.
+The original snapshot is in `docs/audit/2026-07/evidence/live-supabase.md`; the DB-003 apply result
+is in `docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Other remediation
+findings remain in the dated security audit.
 
 Until those findings are fixed:
 
 - do not represent a hidden route or valid session as protection for data;
 - do not add a new authenticated/anonymous grant by copying an existing broad policy;
-- never call `exec_read_sql` from browser code or treat read-only execution as authorization;
+- never call or re-grant `exec_read_sql` from browser code/roles, or treat read-only execution as
+  authorization;
 - put public anti-abuse, consent and capability-link rules at the server/database boundary, not
   only in a caller.
 
