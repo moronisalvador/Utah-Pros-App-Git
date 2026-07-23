@@ -81,6 +81,8 @@ row is promoted into the control ledger with the full schema above.
 | TECH-004 | Tech More “Soon” rows | MISSING | planned | P2 | `TechMore.jsx:253-283` | Link, build, remove, or explicitly retire each row with role tests | Product owner |
 | MSG-001 | Specific-thread notification deep link | MISSING | planned | P0 | `Conversations.jsx:280-310`; `public/sw.js:50,60-71`; `sms-experience-roadmap.md:347-355` | Producer includes conversation ID; web/PWA/tech tap tests | SMS owner |
 | MSG-002 | A2P and SMS device verification | PARTIAL | blocked_external | P1 | `sms-experience-roadmap.md:281,318,356,420-425` | Provider configuration/approval, live smoke, on-device verification | Owner |
+| MSG-003 | Provider-neutral staff messaging transport | PARTIAL | verification_tail | P0 | live ledgers `20260723215926`/`20260723220207`; `2fbf755`; two confirmed/reconciled outbound attempts; `messaging-transport-2026-07-23.md` | No resend; direct signed-event/inbound projection proof; isolated SQL/runtime fixtures; Production stays disabled pending owner gate | Messaging owner + owner |
+| MSG-004 | Atomic provider-event write contracts | PARTIAL | blocked_internal | P1 | `callrail-text-webhook.js` direct service-role insert/update; unique `dedupe_key` claim | Replace complex new-table REST mutations with narrow service-role RPC claim/state transitions in a serialized reviewed migration; preserve webhook compatibility | Messaging DB owner |
 | OMNI-001 | Inbound email Phase I | MISSING | blocked_external | P1 | Foundation files exist; `email-worker/` and `inbound-email.js` absent | Cloudflare route/secret; spoof-safe triage/idempotency/live tail | Omni owner |
 | OMNI-002 | O/U roadmap reconciliation | PARTIAL | superseded | P2 | `omni-inbox-wave-ownership.md:20-27,54-61` | Rewrite dispatch against SMS-owned current code before any work | Registry owner |
 | CRM-001 | Text campaigns 4b | MISSING/PARTIAL | blocked_external | P1 | Live phase `4b planned`; `Marketing.jsx:25,30-38` | A2P or explicit supersession; compliance-gated send only | CRM/SMS owner |
@@ -101,7 +103,7 @@ row is promoted into the control ledger with the full schema above.
 | NOTIFY-001 | Web Push live owner-device proof | PARTIAL | verification_tail | P1 | `UPR-Web-Context.md:6694-6698,6767-6772` | Real device/browser delivery and tap evidence | Owner |
 | FEED-001 | Feedback purge/device gates | PARTIAL | blocked_external | P2 | `UPR-Web-Context.md:6483-6487,6519-6520` | APNs/device registration and purge scheduling | Owner |
 | ROAD-001 | Public/company roadmap staleness | PARTIAL | planned | P1 | `src/lib/roadmapData.js:41-47,91,96-120` contradicts shipped work | Rebuild from approved registry projection or clearly date/archive | Registry owner |
-| BRANCH-001 | Unreconciled worktrees/branches | PARTIAL | planned | P1 | `codex/messaging-transport-build`; stale initiative branches/worktrees; `3841056` plan commit | Adopt/supersede/archive each; no blind merge | Owner/release |
+| BRANCH-001 | Unreconciled worktrees/branches | PARTIAL | planned | P1 | Messaging transport build/live-contract branches reconciled into `dev`; other stale initiative branches/worktrees and `3841056` remain | Adopt/supersede/archive each remaining item; no blind merge | Owner/release |
 
 ## Landed Encircle contract and rollout seam set
 
