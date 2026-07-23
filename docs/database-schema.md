@@ -115,6 +115,32 @@ code.
 7. Run database security/performance advisors when access permits.
 8. Regenerate `docs/generated/`/baseline evidence; never hand-edit generated reports.
 
+## Messaging transport foundation (draft; not applied)
+
+The 2026-07-23 read-only recapture confirmed that `messages` still has legacy `twilio_sid`, broad
+anonymous/authenticated table access, and no generic provider identity. Repository migration
+`20260723183330_messaging_transport_foundation.sql` proposes:
+
+- additive provider/message/conversation identity, actual sender/recipient, and
+  `client_request_id` columns on `messages`;
+- a service-only `message_send_attempts` idempotency/reconciliation ledger with canonical recovery
+  snapshots and parent/recipient-child identity for multi-recipient provider effects;
+- a service-only deduplicated `message_provider_events` inbox containing the minimum normalized
+  text facts and UPR-owned private-media metadata needed for later domain recovery, but never raw
+  payloads or provider MMS URLs;
+- a service-only `message_notification_outbox` atomically enqueued by inbound projection and
+  claimed through a fenced lease RPC; and
+- removal of anonymous and authenticated browser writes to `messages`, retaining only
+  conversations-capability-gated reads for active non-external employees while service-role
+  workers remain the only writers.
+
+This describes unapplied source, not current live schema. Applying it changes the shared production
+database immediately and requires the owner-approved apply window, release-branch provenance,
+migration/anon-grant review, role verification, and rollback readiness.
+
+Sanitized live evidence and apply-window recapture queries:
+`docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
+
 ## Known limits
 
 The repository does not by itself prove current live state after the dated capture. The July 2026

@@ -43,7 +43,13 @@ vi.mock('../lib/twilio.js', () => ({ sendMessage: (...args) => h.twilio(...args)
 import { onRequestPost } from './send-message.js';
 
 // No credentials needed — the auth probe is a stubbed global fetch and the db is mocked.
-const ENV = { SUPABASE_URL: 'https://db.test', PAGES_URL: 'https://app.test' };
+const ENV = {
+  SUPABASE_URL: 'https://db.test',
+  SUPABASE_ANON_KEY: 'anon-test-key',
+  PAGES_URL: 'https://app.test',
+  MESSAGING_SEND_MODE: 'twilio',
+  MESSAGING_SCHEMA_MODE: 'foundation',
+};
 
 function req(body) {
   return {
@@ -59,8 +65,10 @@ function req(body) {
 // a per-contact_id map for multi-recipient tests. Every insert is recorded on `db.inserts`.
 function makeDb({ conversation, participants, contact, contactsById } = {}) {
   const inserts = [];
+  const attempts = [];
   return {
     inserts,
+    attempts,
     select: async (table, query = '') => {
       if (table === 'conversations') return conversation ? [conversation] : [];
       if (table === 'conversation_participants') return participants || [{ contact_id: 'c-1', phone: '+15551112222', is_active: true }];
@@ -72,20 +80,71 @@ function makeDb({ conversation, participants, contact, contactsById } = {}) {
         }
         return contact ? [contact] : [];
       }
-      if (table === 'employees') return [{ id: 'e-1', full_name: 'Rep' }];
+      if (table === 'employees') {
+        return [{
+          id: 'e-1',
+          full_name: 'Rep',
+          role: 'office',
+          is_active: true,
+          is_external: false,
+        }];
+      }
+      if (table === 'feature_flags' || table === 'employee_page_access') return [];
+      if (table === 'nav_permissions') return [{ can_view: true }];
+      if (table === 'message_send_attempts') {
+        const parentId = (/parent_attempt_id=eq\.([^&]+)/.exec(query) || [])[1];
+        if (parentId) {
+          const contactId = (/recipient_contact_id=eq\.([^&]+)/.exec(query) || [])[1];
+          const address = (/recipient_address=eq\.([^&]+)/.exec(query) || [])[1];
+          return attempts.filter((attempt) => (
+            attempt.parent_attempt_id === parentId
+            && (
+              (contactId && attempt.recipient_contact_id === contactId)
+              || (address && attempt.recipient_address === decodeURIComponent(address))
+            )
+          ));
+        }
+        const requestId = (/client_request_id=eq\.([^&]+)/.exec(query) || [])[1];
+        return attempts.filter((attempt) => attempt.client_request_id === requestId);
+      }
+      if (table === 'messages' && query.includes('client_request_id=eq.')) {
+        const requestId = (/client_request_id=eq\.([^&]+)/.exec(query) || [])[1];
+        return inserts
+          .filter((item) => (
+            item.table === 'messages'
+            && item.payload.client_request_id === requestId
+          ))
+          .map((item) => item.payload);
+      }
+      if (table === 'messages' && query.includes('id=eq.')) {
+        const id = (/id=eq\.([^&]+)/.exec(query) || [])[1];
+        return inserts
+          .filter((item) => item.table === 'messages' && item.payload.id === id)
+          .map((item) => item.payload);
+      }
       return [];
     },
     insert: async (table, payload) => {
-      inserts.push({ table, payload });
-      return [{ id: `m-${inserts.length}`, ...payload }];
+      const row = { id: table === 'message_send_attempts' ? `attempt-${attempts.length + 1}` : `m-${inserts.length + 1}`, ...payload };
+      if (table === 'message_send_attempts') attempts.push(row);
+      inserts.push({ table, payload: row });
+      return [row];
     },
-    update: async () => null,
+    update: async (table, filter, payload) => {
+      if (table === 'message_send_attempts') {
+        const id = (/id=eq\.([^&]+)/.exec(filter) || [])[1];
+        const attempt = attempts.find((item) => item.id === id);
+        if (attempt) Object.assign(attempt, payload);
+      }
+      return null;
+    },
     rpc: async () => null,
   };
 }
 
 const OPTED_IN = { id: 'c-1', dnd: false, opt_in_status: true, phone: '+15551112222' };
-const DIRECT = { id: 'conv-1', type: 'direct', status: 'open' };
+const DIRECT = { id: '11111111-1111-4111-8111-111111111111', type: 'direct', status: 'open' };
+const CLIENT_REQUEST_ID = '11111111-1111-4111-8111-111111111111';
 
 function outboundRows(db) {
   return db.inserts.filter((i) => i.table === 'messages' && i.payload.type === 'sms_outbound');
@@ -97,14 +156,17 @@ function consentBlocks(db) {
 beforeEach(() => {
   h.twilio = vi.fn(async () => ({ sid: 'SM-test', status: 'queued' }));
   // requireAuth() probes /auth/v1/user — always succeed in tests.
-  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({}) })));
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ id: 'auth-user-1' }),
+  })));
 });
 
 // ─── SECTION: compliance chain (Wave -1, unchanged by Phase B) ──────────────
 describe('send-message compliance chain', () => {
   it('blocks a DND contact before any send (403 DND_ACTIVE)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('DND_ACTIVE');
     expect(h.twilio).not.toHaveBeenCalled();
@@ -112,7 +174,7 @@ describe('send-message compliance chain', () => {
 
   it('blocks a not-opted-in contact before any send (403 NO_CONSENT)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, opt_in_status: false } });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('NO_CONSENT');
     expect(h.twilio).not.toHaveBeenCalled();
@@ -122,7 +184,7 @@ describe('send-message compliance chain', () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
     // A caller passing skip_compliance:true against a DND contact must STILL be blocked.
     const res = await onRequestPost({
-      request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1', skip_compliance: true }),
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1', skip_compliance: true }),
       env: ENV,
     });
     expect(res.status).toBe(403);
@@ -134,7 +196,7 @@ describe('send-message compliance chain', () => {
     // participants[0].contact_id points at a row that doesn't exist → we cannot
     // verify consent, so we must refuse rather than send unguarded.
     h.db = makeDb({ conversation: DIRECT, contact: undefined });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('CONTACT_NOT_FOUND');
     expect(h.twilio).not.toHaveBeenCalled();
@@ -142,7 +204,7 @@ describe('send-message compliance chain', () => {
 
   it('allows a direct send to a compliant, opted-in contact (201)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(1);
   });
@@ -151,7 +213,7 @@ describe('send-message compliance chain', () => {
   it('blocks a DND contact on a media-only (no caption) send — the gate runs for MMS too', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
     const res = await onRequestPost({
-      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
       env: ENV,
     });
     expect(res.status).toBe(403);
@@ -162,7 +224,7 @@ describe('send-message compliance chain', () => {
   it('allows a media-only (no caption) send to an opted-in contact (201, MMS dispatched)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const res = await onRequestPost({
-      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
       env: ENV,
     });
     expect(res.status).toBe(201);
@@ -172,7 +234,7 @@ describe('send-message compliance chain', () => {
 
   it('rejects a truly empty send — no body AND no media (400, no send)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(400);
     expect(h.twilio).not.toHaveBeenCalled();
   });
@@ -180,7 +242,7 @@ describe('send-message compliance chain', () => {
   it('rejects a media-only INTERNAL NOTE (400) — media cannot make an empty note sendable', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const res = await onRequestPost({
-      request: req({ conversation_id: 'conv-1', body: '', sent_by: 'e-1', is_internal_note: true, media_urls: ['https://files.test/p.jpg'] }),
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1', is_internal_note: true, media_urls: ['https://files.test/p.jpg'] }),
       env: ENV,
     });
     expect(res.status).toBe(400);
@@ -190,9 +252,242 @@ describe('send-message compliance chain', () => {
   it('rejects an unauthenticated caller (401) before touching compliance', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })));
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(401);
     expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the participant destination differs from the consented contact phone', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      participants: [{ contact_id: 'c-1', phone: '+15551119999', is_active: true }],
+      contact: OPTED_IN,
+    });
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 'hi',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_PHONE_MISMATCH');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed message and media shapes before transport work', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const invalidBody = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 42,
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+    expect((await invalidBody.json()).code).toBe('INVALID_MESSAGE_BODY');
+
+    const invalidMedia = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 'hi',
+        sent_by: 'e-1',
+        media_urls: 'https://files.test/not-an-array.jpg',
+      }),
+      env: ENV,
+    });
+    expect((await invalidMedia.json()).code).toBe('INVALID_MEDIA_URLS');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged sent_by before consent or transport work', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'other-employee' }),
+      env: ENV,
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('SENDER_MISMATCH');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(consentBlocks(h.db)).toHaveLength(0);
+  });
+});
+
+describe('send-message client request idempotency', () => {
+  it('rejects a malformed client_request_id before transport work', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 'hi',
+        sent_by: 'e-1',
+        client_request_id: 'pending-1',
+      }),
+      env: ENV,
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('INVALID_CLIENT_REQUEST_ID');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('keeps pre-migration persistence legacy until foundation schema is enabled', async () => {
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 'legacy compatible',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: { ...ENV, MESSAGING_SCHEMA_MODE: undefined },
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.db.inserts.some((item) => item.table === 'message_send_attempts')).toBe(false);
+    const [row] = outboundRows(h.db);
+    expect(row.payload).not.toHaveProperty('provider');
+    expect(row.payload).not.toHaveProperty('client_request_id');
+  });
+
+  it('submits a stable direct request once and returns the existing row on retry', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const body = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      body: 'hi',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+
+    const first = await onRequestPost({ request: req(body), env: ENV });
+    const repeat = await onRequestPost({ request: req(body), env: ENV });
+
+    expect(first.status).toBe(201);
+    expect(repeat.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect((await repeat.json()).twilio).toEqual([]);
+    expect(outboundRows(h.db)).toHaveLength(1);
+  });
+
+  it('rejects changed-content reuse of a client_request_id', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const base = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    await onRequestPost({ request: req({ ...base, body: 'first' }), env: ENV });
+    const conflict = await onRequestPost({
+      request: req({ ...base, body: 'changed' }),
+      env: ENV,
+    });
+    expect(conflict.status).toBe(409);
+    expect((await conflict.json()).code).toBe('CLIENT_REQUEST_CONFLICT');
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a recoverable accepted attempt when canonical insertion fails', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const insert = h.db.insert;
+    h.db.insert = vi.fn(async (table, payload) => {
+      if (table === 'messages' && payload.type === 'sms_outbound') {
+        throw new Error('simulated message persistence failure');
+      }
+      return insert(table, payload);
+    });
+    h.twilio = vi.fn(async () => ({
+      sid: 'SM-recoverable',
+      status: 'queued',
+      from: '+13853360611',
+    }));
+
+    const response = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'recover me',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+
+    expect(response.status).toBe(500);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'ambiguous',
+      provider_message_id: 'SM-recoverable',
+      provider_status: 'queued',
+      canonical_body: 'recover me',
+      sender_address: '+13853360611',
+      error_code: 'MESSAGE_PERSIST_FAILED',
+    });
+  });
+});
+
+describe('send-message provider mode isolation', () => {
+  it('fails closed when the server mode is missing or disabled', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: { ...ENV, MESSAGING_SEND_MODE: undefined },
+    });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('MESSAGING_SEND_DISABLED');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('rejects group/broadcast traffic before any CallRail provider call', async () => {
+    h.db = makeDb({
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
+      contact: OPTED_IN,
+    });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: { ...ENV, MESSAGING_SEND_MODE: 'callrail' },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CALLRAIL_PURPOSE_UNSUPPORTED');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(consentBlocks(h.db)).toHaveLength(0);
+  });
+
+  it('rejects CallRail mode until foundation persistence is enabled', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const res = await onRequestPost({
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }),
+      env: {
+        ...ENV,
+        MESSAGING_SEND_MODE: 'callrail',
+        MESSAGING_SCHEMA_MODE: 'legacy',
+      },
+    });
+    expect(res.status).toBe(503);
+    expect((await res.json()).code).toBe('MESSAGING_SCHEMA_NOT_READY');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+  });
+
+  it('fails CallRail MMS closed before credential lookup or provider fetch', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      participants: [{ contact_id: 'c-1', phone: '+18015551212', is_active: true }],
+      contact: { ...OPTED_IN, phone: '+18015551212' },
+    });
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: '11111111-1111-4111-8111-111111111111',
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: ['https://files.test/photo.jpg'],
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: { ...ENV, MESSAGING_SEND_MODE: 'callrail' },
+    });
+    const payload = await res.json();
+    expect(res.status).toBe(201);
+    expect(payload.error_code).toBe('CALLRAIL_MEDIA_TYPE_UNSUPPORTED');
+    expect(outboundRows(h.db)[0].payload.status).toBe('failed');
+    // The only fetch is requireAuth's Supabase user probe; no CallRail request.
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -201,7 +496,7 @@ describe('send-message worker is the sole writer', () => {
   it('the WORKER writes the outbound row, keyed to the twilio sid it dispatched', async () => {
     h.twilio = vi.fn(async () => ({ sid: 'SM-xyz', status: 'queued' }));
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     const rows = outboundRows(h.db);
     expect(rows).toHaveLength(1);
@@ -214,7 +509,7 @@ describe('send-message worker is the sole writer', () => {
   it('an internal note inserts one note row and never touches Twilio or consent', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const res = await onRequestPost({
-      request: req({ conversation_id: 'conv-1', body: 'private', sent_by: 'e-1', is_internal_note: true }),
+      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'private', sent_by: 'e-1', is_internal_note: true }),
       env: ENV,
     });
     expect(res.status).toBe(201);
@@ -223,13 +518,31 @@ describe('send-message worker is the sole writer', () => {
     expect(outboundRows(h.db)).toHaveLength(0);
     expect(consentBlocks(h.db)).toHaveLength(0);
   });
+
+  it('reuses an internal note for the same client request id', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const requestBody = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      body: 'private',
+      sent_by: 'e-1',
+      is_internal_note: true,
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    const first = await onRequestPost({ request: req(requestBody), env: ENV });
+    const repeat = await onRequestPost({ request: req(requestBody), env: ENV });
+
+    expect(first.status).toBe(201);
+    expect(repeat.status).toBe(201);
+    expect(h.db.inserts.filter((item) => item.table === 'messages')).toHaveLength(1);
+    expect((await repeat.json()).message.id).toBe((await first.json()).message.id);
+  });
 });
 
 // ─── SECTION: per-participant send loop (Phase B) ───────────────────────────
 describe('send-message per-participant consent loop', () => {
   it('group: a DND participant beyond index 0 is NOT texted; the compliant one is', async () => {
     h.db = makeDb({
-      conversation: { id: 'conv-1', type: 'group', status: 'open' },
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
       participants: [
         { contact_id: 'c-1', phone: '+15551110001', is_active: true },
         { contact_id: 'c-2', phone: '+15551110002', is_active: true },
@@ -239,7 +552,7 @@ describe('send-message per-participant consent loop', () => {
         'c-2': { id: 'c-2', dnd: true, opt_in_status: true, phone: '+15551110002' },
       },
     });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     // Only the consenting recipient was texted.
     expect(h.twilio).toHaveBeenCalledTimes(1);
@@ -249,9 +562,77 @@ describe('send-message per-participant consent loop', () => {
     expect(consentBlocks(h.db).some((b) => b.payload.event_type === 'send_blocked_dnd')).toBe(true);
   });
 
+  it('group: a repeated client request id never resubmits eligible recipients', async () => {
+    h.db = makeDb({
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001' },
+        { contact_id: 'c-2', phone: '+15551110002' },
+      ],
+      contactsById: {
+        'c-1': { id: 'c-1', dnd: false, opt_in_status: true, phone: '+15551110001' },
+        'c-2': { id: 'c-2', dnd: false, opt_in_status: true, phone: '+15551110002' },
+      },
+    });
+    const requestBody = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      body: 'hello group',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+
+    const first = await onRequestPost({ request: req(requestBody), env: ENV });
+    const repeat = await onRequestPost({ request: req(requestBody), env: ENV });
+
+    expect(first.status).toBe(201);
+    expect(repeat.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(2);
+    expect(outboundRows(h.db)).toHaveLength(2);
+  });
+
+  it('group: replay after recipient one resumes only the recipient without a child attempt', async () => {
+    h.db = makeDb({
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001' },
+        { contact_id: 'c-2', phone: '+15551110002' },
+      ],
+      contactsById: {
+        'c-1': { id: 'c-1', dnd: false, opt_in_status: true, phone: '+15551110001' },
+        'c-2': { id: 'c-2', dnd: false, opt_in_status: true, phone: '+15551110002' },
+      },
+    });
+    const requestBody = {
+      conversation_id: '11111111-1111-4111-8111-111111111111',
+      body: 'resume group',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    h.twilio = vi.fn(async (_env, { to }) => {
+      if (to === '+15551110002') throw new Error('simulated worker crash');
+      return { sid: 'SM-first', status: 'queued', to };
+    });
+
+    await onRequestPost({ request: req(requestBody), env: ENV });
+    const secondChild = h.db.attempts.find((attempt) => attempt.recipient_contact_id === 'c-2');
+    h.db.attempts.splice(h.db.attempts.indexOf(secondChild), 1);
+    h.db.inserts.splice(
+      h.db.inserts.findIndex((item) => item.table === 'message_send_attempts' && item.payload.id === secondChild.id),
+      1,
+    );
+    h.twilio = vi.fn(async (_env, { to }) => ({ sid: 'SM-second', status: 'queued', to }));
+
+    const replay = await onRequestPost({ request: req(requestBody), env: ENV });
+
+    expect(replay.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio.mock.calls[0][1].to).toBe('+15551110002');
+    expect(outboundRows(h.db).filter((row) => row.payload.recipient_address === '+15551110001')).toHaveLength(1);
+  });
+
   it('group: an opted-out participant beyond index 0 is skipped and audited', async () => {
     h.db = makeDb({
-      conversation: { id: 'conv-1', type: 'group', status: 'open' },
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
       participants: [
         { contact_id: 'c-1', phone: '+15551110001', is_active: true },
         { contact_id: 'c-2', phone: '+15551110002', is_active: true },
@@ -261,7 +642,7 @@ describe('send-message per-participant consent loop', () => {
         'c-2': { id: 'c-2', dnd: false, opt_in_status: false, phone: '+15551110002' },
       },
     });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(1);
     expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
@@ -275,7 +656,7 @@ describe('send-message per-participant consent loop', () => {
       return { sid: `SM-${to}`, status: 'queued', to };
     });
     h.db = makeDb({
-      conversation: { id: 'conv-1', type: 'group', status: 'open' },
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
       participants: [
         { contact_id: 'c-1', phone: '+15551110001', is_active: true },
         { contact_id: 'c-2', phone: '+15551110002', is_active: true },
@@ -285,7 +666,7 @@ describe('send-message per-participant consent loop', () => {
         'c-2': { id: 'c-2', dnd: false, opt_in_status: true, phone: '+15551110002' },
       },
     });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(2);
     // Both recipients get a row — one queued, one failed.
@@ -301,9 +682,9 @@ describe('send-message per-participant consent loop', () => {
     expect(failedResult.error_message).toBeTruthy();
   });
 
-  it('group: a recipient with no phone is refused (recorded failed), never cross-channel retargeted', async () => {
+  it('group: a recipient with no consented phone is skipped, never cross-channel retargeted', async () => {
     h.db = makeDb({
-      conversation: { id: 'conv-1', type: 'group', status: 'open' },
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
       participants: [
         { contact_id: 'c-1', phone: '+15551110001', is_active: true },
         { contact_id: 'c-2', phone: null, is_active: true },
@@ -313,18 +694,19 @@ describe('send-message per-participant consent loop', () => {
         'c-2': { id: 'c-2', dnd: false, opt_in_status: true, phone: null },
       },
     });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     // The no-phone recipient is never sent to (no silent retarget); only the reachable one is texted.
     expect(h.twilio).toHaveBeenCalledTimes(1);
     expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
-    // The refusal is still recorded as a failed row.
-    expect(outboundRows(h.db).some((r) => r.payload.status === 'failed')).toBe(true);
+    // A missing/mismatched consent destination is blocked before any provider
+    // side effect or canonical outbound message is created.
+    expect(outboundRows(h.db)).toHaveLength(1);
   });
 
   it('group: when EVERY recipient is blocked, nothing is sent and no message row is written (403)', async () => {
     h.db = makeDb({
-      conversation: { id: 'conv-1', type: 'group', status: 'open' },
+      conversation: { id: '11111111-1111-4111-8111-111111111111', type: 'group', status: 'open' },
       participants: [
         { contact_id: 'c-1', phone: '+15551110001', is_active: true },
         { contact_id: 'c-2', phone: '+15551110002', is_active: true },
@@ -334,7 +716,7 @@ describe('send-message per-participant consent loop', () => {
         'c-2': { id: 'c-2', dnd: false, opt_in_status: false, phone: '+15551110002' },
       },
     });
-    const res = await onRequestPost({ request: req({ conversation_id: 'conv-1', body: 'hi', sent_by: 'e-1' }), env: ENV });
+    const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('ALL_RECIPIENTS_BLOCKED');
     expect(h.twilio).not.toHaveBeenCalled();

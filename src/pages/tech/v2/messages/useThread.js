@@ -95,7 +95,6 @@ export function useThread(convId, { active = true } = {}) {
 
   const [overlay, setOverlay] = useState([]);   // optimistic bubbles for THIS conv
   const [sending, setSending] = useState(false);
-  const clientIdCounter = useRef(0);
   const retryStore = useRef({});                // clientId → { text, media_urls, isNote }
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -193,6 +192,7 @@ export function useThread(convId, { active = true } = {}) {
           conversation_id: convId,
           body: text,
           sent_by: employee?.id || null,
+          client_request_id: clientId,
           is_internal_note: isNote,
           ...(media_urls && media_urls.length ? { media_urls } : {}),
         }),
@@ -251,7 +251,7 @@ export function useThread(convId, { active = true } = {}) {
     const body = (text || '').trim();
     // A photo can send with no caption (media-only MMS); a text or note still needs a body.
     if (!body && !(media_urls && media_urls.length)) return;
-    const clientId = `pending-${++clientIdCounter.current}`;
+    const clientId = crypto.randomUUID();
     const optimistic = {
       id: clientId,
       _clientId: clientId,
@@ -281,7 +281,9 @@ export function useThread(convId, { active = true } = {}) {
       emitToast('Cannot retry this message', 'error');
       return;
     }
-    const matchKey = msg._clientId || msg.id;
+    // Keep the id across a fetch-level retry; a persisted failed provider row
+    // represents a completed attempt, so an explicit user retry gets a new id.
+    const matchKey = msg._clientId || crypto.randomUUID();
     retryStore.current[matchKey] = payload;
     // Flip the exact bubble back to pending — overlay entry OR cache row.
     setOverlay((o) => o.map((m) => (m._clientId === msg._clientId

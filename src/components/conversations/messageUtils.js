@@ -163,6 +163,12 @@ export function failureReason(msg) {
   return c.code ? c.label : 'Message failed to send';
 }
 
+/** True when provider acceptance is unresolved and resubmission could duplicate a text. */
+export function isAmbiguousSend(msg) {
+  return typeof msg?.error_code === 'string'
+    && msg.error_code.endsWith('_SEND_AMBIGUOUS');
+}
+
 // ─── SECTION: Helpers — per-conversation draft persistence ──────────────
 
 const DRAFT_PREFIX = 'upr:conv-draft:';

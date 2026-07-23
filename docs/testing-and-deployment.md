@@ -104,3 +104,22 @@ as separate owner gates.
 The apply window must also run `supabase/tests/encircle_managed_credentials.test.js` with
 short-lived active-admin and non-admin access tokens; that read-only test proves the replacement
 zero-argument status RPC preserves legacy provider rows while enforcing its database admin gate.
+
+## Messaging transport release sequence
+
+The combined Phase 2–4 build is not a one-step deploy:
+
+1. review and deploy authorization plus backward-compatible request-ID acceptance with
+   `MESSAGING_SCHEMA_MODE=legacy`;
+2. in an owner-approved window, apply and verify the committed messaging migration against the
+   intended roles;
+3. switch to `MESSAGING_SCHEMA_MODE=foundation` and deploy generic identity/attempt/event writes
+   with `MESSAGING_SEND_MODE=disabled`;
+4. verify the unconfigured CallRail webhook returns safely and Twilio/CallRail isolation tests pass;
+5. keep CallRail activation blocked until isolated PostgreSQL compilation, private MMS/provider
+   fixtures, submitted-body/recovery-snapshot retention, and notification-outbox execution pass
+   review;
+6. configure Preview/provider state and send traffic only under a separate Phase 5 approval.
+
+At no point may worker code that requires a new column/table deploy before that schema exists.
+Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
