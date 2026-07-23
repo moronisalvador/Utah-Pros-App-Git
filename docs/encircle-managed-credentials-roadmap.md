@@ -18,8 +18,8 @@ NOTES / GOTCHAS:
 
 # Encircle Managed Integration and Safe Credential Rotation
 
-Status: implementation authored locally; migration, deployments, flag changes, candidate entry, and
-old-key rotation/revocation are not performed.
+Status: repository rollout readiness reverified on current `origin/dev`; migration, deployments,
+flag changes, candidate entry, and old-key rotation/revocation are not performed.
 
 Owner decision: build and verify the permanent owner/admin interface first. Keep the existing
 Encircle token as a temporary zero-downtime fallback and rotate through the completed system.
@@ -43,6 +43,12 @@ Live database facts were recaptured read-only. `integration_credentials` had no 
 status/write functions still covered only Stripe/Twilio/Resend. Table privileges were broad even
 though zero-policy RLS blocked ordinary rows; the authored migration revokes unnecessary browser
 table privileges as defense in depth.
+
+The repository/live readiness recheck at release commit `4799feb` is recorded in
+`docs/audit/2026-07/evidence/encircle-managed-credential-readiness-2026-07-23.md`. It confirms the
+migration remains absent, the live catalog is compatible with the additive migration, the flag is
+absent/OFF, and the targeted repository suites pass. This is not authorization to apply the
+migration or change a credential.
 
 ## Consumer and workflow inventory
 

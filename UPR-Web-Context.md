@@ -9,9 +9,11 @@ Owner/developer: Moroni Salvador.
 
 ## Encircle managed credentials initiative (2026-07-23)
 
-Implementation is authored locally and dark-gated; no migration, deployment, credential entry,
-rotation, or revocation has occurred. The plan of record is
-`docs/encircle-managed-credentials-roadmap.md`.
+Implementation is landed and dark-gated; repository/live readiness was reverified on current
+`origin/dev` on 2026-07-23. No migration, deployment, credential entry, rotation, or revocation has
+occurred. The plan of record is `docs/encircle-managed-credentials-roadmap.md`, with the dated
+catalog and test snapshot at
+`docs/audit/2026-07/evidence/encircle-managed-credential-readiness-2026-07-23.md`.
 
 - Seven Pages Encircle workers now resolve the locked `integration_credentials` source first and
   retain the current environment binding as a temporary fallback.
