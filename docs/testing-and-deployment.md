@@ -25,6 +25,8 @@ NOTES / GOTCHAS:
 | `npm run build` | Production Vite compilation and asset generation | Does not prove runtime variables, Workers, native behavior or live integrations |
 | `npm test` | Vitest suites | May load local Supabase credentials; classify unit vs live/write tests before running |
 | `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
+| `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
+| `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run dev` | Frontend development server | `/api/*` needs a separate Wrangler Pages Functions process |
 | `npm run build:ios` | Native-target build and Capacitor sync | Still does not replace Xcode signing/simulator/device verification |
 
@@ -86,6 +88,11 @@ database mutation tests can safely become a complete blocking gate.
 - Migration name, apply state, role verification, advisor result and rollback readiness.
 - Read-only migration-provenance check: new live ledger entries map to files/commits reachable from
   the release ref, and live function/policy fingerprints match the intended migration bodies.
+- Provenance evidence is release-scoped: recapture the ledger tail and selected catalog fingerprints
+  read-only, record the capture-base commit, and run `npm run validate:provenance` within six hours.
+  CI rejects stale evidence, non-ancestor captures, unmapped rows, wrong reviewed origins, and selected
+  function/policy drift. A comment-only raw body difference is allowed only when explicitly manifested
+  and the normalized executable body still matches.
 - Required Preview/Production variables without revealing values.
 - Browser/device/provider sandbox evidence proportional to risk.
 - Updated canonical documentation and dated audit/addendum when appropriate.

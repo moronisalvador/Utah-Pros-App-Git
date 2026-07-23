@@ -63,8 +63,10 @@ Important verified exceptions and contained history:
 - the 2026-07-22 snapshot found `exec_read_sql(text)` callable by `authenticated`; the reviewed
   containment migration applied on 2026-07-23 and live role checks now deny `PUBLIC`, `anon`, and
   `authenticated` while preserving `service_role`;
-- four latest live migrations were applied from an unmerged feature branch and were not present in
-  audited `dev`.
+- four live CRM migrations were applied from a then-unmerged feature branch; Foundation F2 restored
+  only their byte-verified reviewed source to `dev` and added a read-only provenance gate. Ten of 11
+  selected function bodies match byte-for-byte; `set_lead_caller_name` differs only in comments and
+  was deliberately not replaced live.
 
 Treat the remaining exceptions as remediation targets, and the contained `exec_read_sql` exposure
 as a standing regression prohibition, not a convention to copy. Apply evidence:
@@ -113,6 +115,9 @@ code.
 4. Apply only through the authorized shared-database workflow and record the exact migration state.
 5. Verify every applied migration maps to a committed file reachable from the designated release
    branch; an emergency apply needs a recorded exception and immediate reconciliation.
+   The current gate is `npm run validate:provenance`: its evidence must be recaptured read-only within
+   six hours and it checks origin blobs, ledger coverage, capture ancestry, and selected function/policy
+   fingerprints without executing SQL.
 6. Query the intended behavior with the real role(s), not only a service-role client.
 7. Run database security/performance advisors when access permits.
 8. Regenerate `docs/generated/`/baseline evidence; never hand-edit generated reports.
