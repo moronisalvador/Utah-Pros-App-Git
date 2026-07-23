@@ -3,10 +3,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const migrationPath = fileURLToPath(new URL(
-  '../migrations/20260723213000_messaging_transport_foundation.sql',
+  '../migrations/20260723215926_messaging_transport_foundation.sql',
   import.meta.url,
 ));
 const migration = readFileSync(migrationPath, 'utf8');
+const followupMigration = readFileSync(fileURLToPath(new URL(
+  '../migrations/20260723220207_messaging_transport_foundation_indexes.sql',
+  import.meta.url,
+)), 'utf8');
 const activeSql = migration.split('-- OPERATIONAL ROLLBACK (owner-approved; no schema or ACL reversal)')[0];
 const activeStatements = activeSql.split(';').map((statement) => statement.trim());
 
@@ -73,6 +77,8 @@ describe('messaging transport foundation migration contract', () => {
     expect(activeSql).toContain('sms_consent_log_provider_event_action_key');
     expect(activeSql).toContain('message_send_attempts_conversation_idx');
     expect(activeSql).toContain('message_send_attempts_actor_employee_idx');
+    expect(followupMigration).toContain('message_notification_outbox_contact_idx');
+    expect(followupMigration).toContain('message_notification_outbox_conversation_idx');
   });
 
   it('keeps new ledgers service-only with RLS and explicit grants', () => {
@@ -98,6 +104,7 @@ describe('messaging transport foundation migration contract', () => {
     expect(activeSql).toMatch(/CREATE POLICY messages_authenticated_select[\s\S]+FOR SELECT[\s\S]+TO authenticated/);
     expect(activeSql).toContain('USING (public.messaging_can_access_conversations())');
     expect(activeSql).toContain('COALESCE(is_external, false) = false');
+    expect(activeSql).toContain('np.role = actor.role::text');
     expect(activeSql).toContain('REVOKE ALL ON FUNCTION public.messaging_can_access_conversations() FROM PUBLIC, anon');
   });
 

@@ -1,5 +1,5 @@
 -- ============================================================================
--- FILE: 20260723213000_messaging_transport_foundation.sql
+-- FILE: 20260723215926_messaging_transport_foundation.sql
 -- ============================================================================
 --
 -- WHAT THIS DOES (plain language):
@@ -385,7 +385,7 @@ AS $$
         ELSE COALESCE((
           SELECT np.can_view
           FROM public.nav_permissions np
-          WHERE np.role = actor.role
+          WHERE np.role = actor.role::text
             AND np.nav_key = 'conversations'
           LIMIT 1
         ), false)
