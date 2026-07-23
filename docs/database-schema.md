@@ -115,11 +115,12 @@ code.
 7. Run database security/performance advisors when access permits.
 8. Regenerate `docs/generated/`/baseline evidence; never hand-edit generated reports.
 
-## Messaging transport foundation (draft; not applied)
+## Messaging transport foundation (applied 2026-07-23)
 
-The 2026-07-23 read-only recapture confirmed that `messages` still has legacy `twilio_sid`, broad
-anonymous/authenticated table access, and no generic provider identity. Repository migration
-`20260723213000_messaging_transport_foundation.sql` proposes:
+The 2026-07-23 preflight confirmed that `messages` had legacy `twilio_sid`, broad
+anonymous/authenticated table access, and no generic provider identity. Migration
+`20260723215926_messaging_transport_foundation.sql` applied to the shared Supabase project after
+the reviewed application code was deployed to `dev` and `main`. It adds:
 
 - additive provider/message/conversation identity, actual sender/recipient, and
   `client_request_id` columns on `messages`;
@@ -134,9 +135,11 @@ anonymous/authenticated table access, and no generic provider identity. Reposito
   conversations-capability-gated reads for active non-external employees while service-role
   workers remain the only writers.
 
-This describes unapplied source, not current live schema. Applying it changes the shared production
-database immediately and requires the owner-approved apply window, release-branch provenance,
-migration/anon-grant review, role verification, and rollback readiness.
+Post-apply verification confirmed all three service-only ledgers and the atomic claim/access RPCs
+exist; `authenticated` retains `SELECT` only on `messages`, while `anon` has no message-table grant
+and browser roles have no ledger grants. The migration ledger records the foundation at
+`20260723215926` and its two advisor-driven outbox FK indexes at `20260723220207`.
+Outbound provider selection remains a separate Cloudflare owner gate and is disabled by default.
 
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
