@@ -7742,3 +7742,23 @@ returned `[{"ok":1}]`; and the security advisor no longer references `exec_read_
 signature/body/owner remain unchanged and no business data was read or mutated. Exact evidence:
 `docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Encircle files and its
 unapplied/dark-gated migration remain untouched.
+
+## Foundation F2 migration provenance (2026-07-23; source/release control only)
+
+Four CRM ledger rows that were already live but absent from `dev` now have reviewed source records
+restored without replaying SQL or overwriting live bodies:
+`crm_denver_day_bucketing`, `crm_sales_summary_total_vs_traced`,
+`crm_dedup_repeat_caller_leads`, and `crm_caller_name_follows_merge`. The restored files are
+byte-identical to reviewed origins `c10a8bb`, `a5ef0e1`, and `a7ee5f8`. Direct catalog comparison
+found 10 of 11 affected function bodies byte-identical. `set_lead_caller_name` is executable-body
+equivalent after removing comments/whitespace, but live omits explanatory comments; the live function
+was not replaced merely to align a hash.
+
+`npm run validate:provenance` is the read-only release gate. It maps every live ledger row from
+`20260722222426` onward to reviewed source reachable from the release ref, checks reviewed-origin
+blob equality, requires evidence captured within six hours from an ancestor commit, and validates 11
+function fingerprints plus the `messages_authenticated_select` policy identity/roles/predicate.
+`npm run test:provenance` covers unmapped rows, functional drift, wrong origins, changed release
+blobs, stale/non-ancestor evidence, and policy drift. The gate consumes sanitized evidence and never
+connects to or writes Supabase. Exact capture and review record:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
