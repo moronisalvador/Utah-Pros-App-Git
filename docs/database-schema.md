@@ -1,0 +1,127 @@
+<!--
+FILE: docs/database-schema.md
+
+WHAT THIS DOES (plain language):
+  Explains where database truth lives, how the main data areas relate, and how to change or verify
+  the schema safely. It does not pretend that migration files alone prove the live database state.
+
+DEPENDS ON:
+  Internal: .claude/rules/database-standard.md, supabase/migrations/, supabase/tests/,
+            docs/generated/, db/baseline/, UPR-Web-Context.md
+  Data:     reads → documentation and schema metadata
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - One Supabase project backs staging and production.
+  - Generated reports and snapshots are secondary evidence and can become stale.
+-->
+
+# Database and Schema
+
+## Sources of truth
+
+Use this order when determining database behavior:
+
+1. Live Supabase catalog, policies, grants, functions, triggers, Storage policies and migration
+   history, inspected read-only when available.
+2. Applied migration SQL in `supabase/migrations/` and the actual function/trigger bodies.
+3. Current callers and contract tests in `src/`, `functions/` and `supabase/tests/`.
+4. `UPR-Web-Context.md`, this document and focused domain references.
+5. Generated files in `docs/generated/` and `db/baseline/`, which are drift evidence rather than
+   authority.
+6. Historical plans, handoffs and dated audits.
+
+Do not infer production database behavior solely from TypeScript/generated types, client models or
+short documentation lists. Inspect migrations, SQL functions, triggers, policies, grants and the
+live catalog.
+
+## Environment constraint
+
+The same Supabase project currently serves `dev` and production. A migration, RLS change, data
+repair, cron change or test write against that project affects production immediately. Follow
+`.claude/rules/database-standard.md` for additive sequencing, apply windows, rollback and public
+allowlisting.
+
+## Last verified live baseline
+
+Read-only inspection on 2026-07-22 found:
+
+- 130 public tables, all with RLS enabled; 225 policies across 115 tables;
+- 1,689 public columns, 247 foreign keys, 419 valid/ready indexes and 47 application triggers;
+- 366 public functions, of which 345 are `SECURITY DEFINER`;
+- 375 applied migrations, ten active cron jobs, two Storage buckets and three public Realtime
+  publications.
+
+This baseline is dated evidence, not a permanent constant. The sanitized query results, advisor
+counts and exclusions are in `docs/audit/2026-07/evidence/live-supabase.md`.
+
+Important verified exceptions:
+
+- anonymous always-true policies remain on operational/customer/CRM tables deferred by the July
+  closure wave;
+- authenticated access remains broad, including 342 executable privileged-function overloads;
+- `exec_read_sql(text)` is live as a privileged arbitrary-read function callable by
+  `authenticated`, contrary to its service-role-only source comment;
+- four latest live migrations were applied from an unmerged feature branch and were not present in
+  audited `dev`.
+
+Treat these as remediation targets in `docs/audit/2026-07/security-findings.md`, not conventions to
+copy.
+
+## Domain groups
+
+| Domain | Representative objects | Primary invariants |
+|---|---|---|
+| Identity/access | `employees`, `nav_permissions`, `employee_page_access`, `feature_flags` | Auth user resolves to an active employee; roles/overrides and rollout remain distinct |
+| Customers/operations | contacts, addresses, claims, jobs, rooms, notes, documents | UUID relationships, assignment and job/claim lifecycle integrity |
+| Scheduling/field work | appointments, schedules, tasks, crews, time entries, equipment, readings | Timezone, assignment, status and mobile/offline convergence |
+| Billing | estimates, invoices, line items, adjustments, payments, job costs, vendors | Generated totals and trigger-owned payment/invoice/job rollups |
+| CRM | leads, stages, history, attribution, tasks, campaigns, sequences, automations | Canonical lead/sale rules, merge identity and auditable automated moves |
+| Communications | conversations, messages, templates, consent, notifications, device tokens | Consent/DND, provider idempotency, delivery and recipient visibility |
+| Integrations/operations | integration configuration/credentials, provider events, `worker_runs` | Service-only secrets, webhook deduplication and observable scheduled work |
+
+Object names evolve; verify them against the current catalog rather than copying this table into
+code.
+
+## Change rules
+
+- Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
+- Preserve deployed columns, RPC signatures and return shapes. Add new contract-compatible behavior
+  before removing old behavior.
+- Enable RLS on exposed tables and grant only intended roles. `TO authenticated` proves identity,
+  not row ownership or role authorization.
+- Do not use `USING (true)`/`WITH CHECK (true)` as a default template. Company-wide access requires
+  an explicit data-classification decision; otherwise use role, assignment, ownership or
+  organization predicates.
+- New/replaced privileged functions explicitly revoke `PUBLIC`/`anon`, pin `search_path`, validate
+  the caller and receive only the grants they need.
+- `SECURITY DEFINER` is a privileged boundary, not a permission-error workaround.
+- Free-form SQL RPCs must never be executable by browser roles or live in an exposed schema.
+- Every update policy needs appropriate SELECT visibility plus `USING` and `WITH CHECK` semantics.
+- Never expose service-role keys or client-readable credential values.
+- Use `timestamptz`; business-day bucketing is `America/Denver`.
+- Include concrete rollback instructions and schema-cache handling where applicable.
+- Never write database-trigger/generated billing columns from app code.
+
+## Verification workflow
+
+1. Inspect current columns, constraints, indexes, policies, grants, functions, triggers and callers.
+2. Decide which layer owns the invariant and write positive/negative contracts.
+3. Review migration safety, public grants, lock scope, rollback and deployment ordering.
+4. Apply only through the authorized shared-database workflow and record the exact migration state.
+5. Verify every applied migration maps to a committed file reachable from the designated release
+   branch; an emergency apply needs a recorded exception and immediate reconciliation.
+6. Query the intended behavior with the real role(s), not only a service-role client.
+7. Run database security/performance advisors when access permits.
+8. Regenerate `docs/generated/`/baseline evidence; never hand-edit generated reports.
+
+## Known limits
+
+The repository does not by itself prove current live state after the dated capture. The July 2026
+audit records the last verified catalog plus its exclusions in
+`docs/audit/2026-07/evidence/live-supabase.md`, `docs/audit/2026-07/security-findings.md` and
+`docs/audit/2026-07/coverage-ledger.md`. Backups/PITR, network restrictions, raw logs, external
+provider state and representative-role behavior still require separate evidence.
+
+Update this file in the same commit whenever schema ownership, database conventions, environment
+topology or a cross-domain data relationship changes.
