@@ -12,5 +12,19 @@ TWILIO_AUTH_TOKEN=your-auth-token-here
 TWILIO_PHONE_NUMBER=+18015551234
 TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
+# Staff person-to-person messaging transport.
+# Keep disabled until the reviewed migration, deployment, provider, and test-send
+# gates in docs/messaging-transport-roadmap.md are complete.
+MESSAGING_SEND_MODE=disabled
+# Keep legacy until the owner-approved migration is applied and verified.
+MESSAGING_SCHEMA_MODE=legacy
+
+# CallRail messaging (server-only; leave blank until an owner-approved activation)
+CALLRAIL_API_KEY=
+CALLRAIL_ACCOUNT_ID=
+CALLRAIL_COMPANY_ID=
+CALLRAIL_TRACKING_NUMBER=
+CALLRAIL_SIGNING_KEY=
+
 # Pages URL (auto-set in production, manual for local)
 PAGES_URL=http://localhost:5173

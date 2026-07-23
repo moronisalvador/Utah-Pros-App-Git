@@ -132,3 +132,23 @@ legacy bulk sync repeat the owner-only Dev Tools predicate server-side. The auto
 push, Scope Sheet search/room reads, and note upload require an active employee because field
 technicians use those paths; inactive and non-employee sessions are denied before service-role or
 provider access.
+
+## Messaging transport authorization (built; not deployed)
+
+The messaging build branch introduces one server-side `conversations` capability predicate for
+`POST /api/send-message`: authenticated user, resolved active non-external employee, force-disable
+precedence, employee override, admin allowance, then role permission. The worker derives
+`sent_by` from that identity and rejects a forged actor before service-role domain reads or
+provider calls.
+
+The current product is single-organization and treats conversations as company-wide for internal
+employees who have that capability; there is no narrower conversation assignment/ownership model
+to enforce today. The proposed `messages` RLS predicate mirrors the same capability and excludes
+anonymous users, nonemployees, inactive employees, external employees, force-disabled access, and
+denied overrides/roles. A future tenant or assignment scope must tighten both Worker and RLS
+together.
+
+`/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
+credential or webhook-secret access. These repository changes are not proof of deployed
+protection. Tests cover missing authentication, denied roles, inactive/external employees, forged
+actors, and allowed callers; deployed role behavior remains a release verification gate.

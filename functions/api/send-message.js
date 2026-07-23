@@ -7,7 +7,7 @@
  *   This is the single door every staff-typed text message goes through before it
  *   leaves the building. It looks up who the message is going to, checks each
  *   recipient's permission (Do-Not-Disturb off, opted-in) one person at a time, and
- *   only then hands the text to Twilio. It writes one message record per recipient
+ *   only then hands the text to the selected transport. It writes one message record per recipient
  *   so a text that fails for one person is still recorded instead of vanishing. An
  *   "internal note" is stored quietly with no text ever sent.
  *
@@ -17,13 +17,15 @@
  *
  * DEPENDS ON:
  *   Packages:  none (pure fetch via lib helpers)
- *   Internal:  functions/lib/supabase.js, functions/lib/twilio.js, functions/lib/cors.js
+ *   Internal:  functions/lib/supabase.js, functions/lib/messaging-transport.js,
+ *              functions/lib/cors.js
  *   Data:      reads  → conversations, conversation_participants, contacts, employees
  *              writes → messages, sms_consent_log, conversations
  *
  * Request body:
  *   { conversation_id: uuid, body: string, sent_by: uuid (employee id),
- *     media_urls?: string[], is_internal_note?: boolean }
+ *     media_urls?: string[], is_internal_note?: boolean,
+ *     client_request_id?: uuid }
  *
  * NOTES / GOTCHAS:
  *   - COMPLIANCE, NO BYPASS: the DND + opt-in gate runs for EVERY recipient (TCPA:
@@ -41,32 +43,41 @@
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { sendMessage } from '../lib/twilio.js';
+import {
+  resolveMessagingSchemaMode,
+  resolveMessagingSendMode,
+  sendMessage,
+} from '../lib/messaging-transport.js';
+import { requireMessagingAccess } from '../lib/messaging-auth.js';
+import {
+  claimChildMessageAttempt,
+  claimMessageAttempt,
+  completeMessageAttempt,
+  findMessageAttempt,
+} from '../lib/messaging-attempts.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
-// Verify the caller is an authenticated UPR user before sending SMS on the
-// company Twilio account. Without this, anyone who knows the URL could send
-// messages (cost + spam/reputation risk).
-async function requireAuth(request, env) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true };
-}
-
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizedPhoneIdentity(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return null;
+}
 
 // Run the per-recipient consent gate. Returns { blocked, code } and, when a
 // resolved contact is blocked, writes the audit row to sms_consent_log. Fails
 // CLOSED: a missing contact (dangling/forged participant) is a block, not a send.
-async function gateRecipient(db, contact, sentBy) {
+async function gateRecipient(db, contact, participantPhone, sentBy) {
   if (!contact) return { blocked: true, code: 'CONTACT_NOT_FOUND' };
+  const contactPhone = normalizedPhoneIdentity(contact.phone);
+  const destinationPhone = normalizedPhoneIdentity(participantPhone);
+  if (!contactPhone || destinationPhone !== contactPhone) {
+    return { blocked: true, code: 'CONTACT_PHONE_MISMATCH' };
+  }
 
   // CHECK 1: DND — Twilio can suspend accounts that message DND contacts.
   if (contact.dnd) {
@@ -101,8 +112,21 @@ async function gateRecipient(db, contact, sentBy) {
 // Never throws — a transport failure (or a missing SMS destination, which we refuse
 // rather than retarget) is captured as a `failed` row so it is visible, not lost.
 // The worker is the sole writer of this row (omni §7.1).
-async function sendToRecipient(db, env, { conversationId, participant, clientBody, rawBody, mediaUrls, statusCallback, sentBy }) {
-  let twilioResult = null;
+async function sendToRecipient(db, env, {
+  conversationId,
+  participant,
+  clientBody,
+  rawBody,
+  mediaUrls,
+  statusCallback,
+  sentBy,
+  provider,
+  requestedChannel,
+  foundationSchema,
+  clientRequestId = null,
+  attemptId = null,
+}) {
+  let providerResult = null;
   let error = null;
 
   if (!participant.phone) {
@@ -110,43 +134,128 @@ async function sendToRecipient(db, env, { conversationId, participant, clientBod
     error = new Error('No phone number for recipient');
   } else {
     try {
-      twilioResult = await sendMessage(env, {
-        to: participant.phone,
-        body: clientBody,
-        mediaUrls,
-        statusCallback,
-      });
+      providerResult = await sendMessage(env, {
+        purpose: 'staff_p2p',
+        recipient: {
+          contactId: participant.contact_id,
+          address: participant.phone,
+        },
+        sender: {
+          employeeId: sentBy,
+        },
+        content: {
+          body: clientBody,
+          mediaUrls,
+          // Existing clients carry URLs only. CallRail MMS therefore fails
+          // closed until owned-storage metadata is available.
+          media: (mediaUrls || []).map((url) => ({ url })),
+        },
+        statusCallbackUrl: statusCallback,
+      }, { provider });
     } catch (err) {
       error = err;
     }
   }
 
-  const sid = twilioResult?.sid || null;
+  const providerMessageId = provider === 'twilio'
+    ? providerResult?.sid || null
+    : providerResult?.providerMessageId || null;
+  const accepted = provider === 'twilio'
+    ? !!providerMessageId
+    : providerResult?.accepted === true;
+  const sid = provider === 'twilio' ? providerMessageId : null;
   const errorCode = error?.code != null ? String(error.code) : null;
   const errorMessage = error?.message || null;
+  const ambiguous = !!error && (
+    error?.ambiguous === true
+    || (provider === 'twilio' && !String(errorMessage).startsWith('Twilio send failed:'))
+  );
+  const ambiguousCode = provider === 'callrail'
+    ? 'CALLRAIL_SEND_AMBIGUOUS'
+    : 'TWILIO_SEND_AMBIGUOUS';
+  const reconciliationPending = ambiguous
+    || (provider === 'callrail' && accepted && !providerMessageId);
+  const actualChannel = accepted && provider === 'twilio'
+    ? (String(providerResult?.from || '').startsWith('rcs:') ? 'rcs' : requestedChannel)
+    : null;
 
-  const [row] = await db.insert('messages', {
-    conversation_id: conversationId,
-    type: 'sms_outbound',
-    body: rawBody,
-    channel: mediaUrls?.length > 0 ? 'mms' : 'sms',
-    status: sid ? 'queued' : 'failed',
-    twilio_sid: sid,
-    sent_by: sentBy,
-    media_urls: mediaUrls?.length > 0 ? JSON.stringify(mediaUrls) : null,
-    error_code: errorCode,
+  let row;
+  try {
+    const messageRecord = {
+      conversation_id: conversationId,
+      type: 'sms_outbound',
+      body: rawBody,
+      channel: mediaUrls?.length > 0 ? 'mms' : 'sms',
+      status: accepted ? (providerResult?.status || 'queued') : 'failed',
+      twilio_sid: sid,
+      sent_by: sentBy,
+      media_urls: mediaUrls?.length > 0 ? JSON.stringify(mediaUrls) : null,
+      error_code: ambiguous ? ambiguousCode : errorCode,
+      error_message: errorMessage,
+      // num_segments / price: intentionally NULL — Phase A fills them from the
+      // Twilio status callback (contract §9.2).
+    };
+    if (foundationSchema) {
+      Object.assign(messageRecord, {
+        provider,
+        provider_message_id: providerMessageId,
+        provider_conversation_id: providerResult?.providerConversationId || null,
+        client_request_id: clientRequestId,
+        sender_address: providerResult?.from || null,
+        recipient_address: participant.phone,
+      });
+    }
+    [row] = await db.insert('messages', messageRecord);
+  } catch (insertError) {
+    await completeMessageAttempt(db, attemptId, {
+      state: 'ambiguous',
+      provider_message_id: providerMessageId,
+      provider_conversation_id: providerResult?.providerConversationId || null,
+      provider_http_status: providerResult?.providerHttpStatus || error?.status || null,
+      provider_status: providerResult?.status || null,
+      sender_address: providerResult?.from || null,
+      actual_channel: actualChannel,
+      response_at: new Date().toISOString(),
+      error_code: 'MESSAGE_PERSIST_FAILED',
+      error_message: 'Provider outcome could not be linked to a message row',
+      reconcile_after: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    }).catch(() => {});
+    throw insertError;
+  }
+
+  await completeMessageAttempt(db, attemptId, {
+    state: accepted ? 'accepted' : ambiguous ? 'ambiguous' : 'failed',
+    message_id: row.id,
+    provider_message_id: providerMessageId,
+    provider_conversation_id: providerResult?.providerConversationId || null,
+    provider_http_status: providerResult?.providerHttpStatus || error?.status || null,
+    provider_status: providerResult?.status || null,
+    sender_address: providerResult?.from || null,
+    actual_channel: actualChannel,
+    response_at: new Date().toISOString(),
+    completed_at: reconciliationPending ? null : new Date().toISOString(),
+    reconcile_after: reconciliationPending
+      ? new Date(Date.now() + 5 * 60 * 1000).toISOString()
+      : null,
+    error_code: ambiguous ? ambiguousCode : errorCode,
     error_message: errorMessage,
-    // num_segments / price: intentionally NULL — Phase A fills them from the
-    // Twilio status callback (contract §9.2).
   });
 
   // The per-recipient result surfaced on the response (error_code/error_message
   // are additive to the frozen contract — never removed/renamed).
   const result = sid
-    ? { ...twilioResult, contact_id: participant.contact_id }
-    : { error: errorMessage, error_code: errorCode, error_message: errorMessage, to: participant.phone, contact_id: participant.contact_id };
+    ? { ...providerResult, contact_id: participant.contact_id }
+    : accepted
+      ? { ...providerResult, contact_id: participant.contact_id }
+    : {
+      error: errorMessage,
+      error_code: ambiguous ? ambiguousCode : errorCode,
+      error_message: errorMessage,
+      to: participant.phone,
+      contact_id: participant.contact_id,
+    };
 
-  return { result, row, sent: !!sid };
+  return { result, row, sent: accepted };
 }
 
 async function updateConversationAfterSend(db, conversation, rawBody) {
@@ -171,32 +280,130 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
+  const foundationSchema = resolveMessagingSchemaMode(env) === 'foundation';
 
-  // Verify caller is authenticated before any send/compliance work.
-  const auth = await requireAuth(request, env);
-  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  // Resolve a real active employee and the same conversations capability the UI
+  // uses before any service-role read, consent audit, note write, or provider call.
+  const auth = await requireMessagingAccess(request, env, db);
+  if (auth.error) {
+    const payload = { error: auth.error };
+    if (auth.code) payload.code = auth.code;
+    return jsonResponse(payload, auth.status, request, env);
+  }
 
   try {
-    const { conversation_id, body, sent_by, media_urls, is_internal_note } = await request.json();
+    const {
+      conversation_id,
+      body,
+      sent_by,
+      media_urls,
+      is_internal_note,
+      client_request_id,
+    } = await request.json();
+
+    if (!UUID_PATTERN.test(String(conversation_id || ''))) {
+      return jsonResponse({
+        error: 'conversation_id must be a UUID',
+        code: 'INVALID_CONVERSATION_ID',
+      }, 400, request, env);
+    }
+    if (body != null && typeof body !== 'string') {
+      return jsonResponse({
+        error: 'body must be text',
+        code: 'INVALID_MESSAGE_BODY',
+      }, 400, request, env);
+    }
+    if (
+      media_urls != null
+      && (
+        !Array.isArray(media_urls)
+        || media_urls.length > 10
+        || media_urls.some((url) => typeof url !== 'string' || !url.trim())
+      )
+    ) {
+      return jsonResponse({
+        error: 'media_urls must contain at most 10 non-empty URL strings',
+        code: 'INVALID_MEDIA_URLS',
+      }, 400, request, env);
+    }
 
     // A photo can go with no caption (media-only MMS); a text or note still needs a body.
     const hasMedia = Array.isArray(media_urls) && media_urls.length > 0;
     if (!conversation_id || (!body?.trim() && !(hasMedia && !is_internal_note))) {
       return jsonResponse({ error: 'conversation_id and a message body or media are required' }, 400, request, env);
     }
+    if (client_request_id != null && !UUID_PATTERN.test(client_request_id)) {
+      return jsonResponse({ error: 'client_request_id must be a UUID', code: 'INVALID_CLIENT_REQUEST_ID' }, 400, request, env);
+    }
+    if (sent_by && sent_by !== auth.employee.id) {
+      return jsonResponse({
+        error: 'sent_by does not match the authenticated employee',
+        code: 'SENDER_MISMATCH',
+      }, 403, request, env);
+    }
 
     const rawBody = (body || '').trim();
+    const actorEmployeeId = auth.employee.id;
 
-    // ═══ INTERNAL NOTE: just insert, no Twilio, no compliance needed ═══
+    // Resolve the canonical conversation before either a note write or any
+    // participant/provider work. Conversations are company-wide only for staff
+    // who passed the server conversations capability above.
+    const [conversation] = await db.select('conversations', `id=eq.${conversation_id}`);
+    if (!conversation) {
+      return jsonResponse({ error: 'Conversation not found' }, 404, request, env);
+    }
+
+    // ═══ INTERNAL NOTE: just insert, no provider call, no SMS compliance needed ═══
     // channel stays NULL (a note has no transport) — it is physically unsendable.
     if (is_internal_note) {
-      const [note] = await db.insert('messages', {
-        conversation_id,
-        type: 'internal_note',
-        body: rawBody,
-        status: 'received',
-        sent_by,
-      });
+      if (foundationSchema && client_request_id) {
+        const [existingNote] = await db.select(
+          'messages',
+          `client_request_id=eq.${client_request_id}&select=*&limit=1`,
+        );
+        if (existingNote) {
+          const sameNote = existingNote.type === 'internal_note'
+            && existingNote.conversation_id === conversation_id
+            && existingNote.sent_by === actorEmployeeId
+            && existingNote.body === rawBody;
+          if (!sameNote) {
+            return jsonResponse({
+              error: 'client_request_id was already used for a different message',
+              code: 'CLIENT_REQUEST_CONFLICT',
+            }, 409, request, env);
+          }
+          return jsonResponse({
+            success: true,
+            message: existingNote,
+            type: 'internal_note',
+          }, 201, request, env);
+        }
+      }
+
+      let note;
+      try {
+        const noteRecord = {
+          conversation_id,
+          type: 'internal_note',
+          body: rawBody,
+          status: 'received',
+          sent_by: actorEmployeeId,
+        };
+        if (foundationSchema) noteRecord.client_request_id = client_request_id || null;
+        [note] = await db.insert('messages', noteRecord);
+      } catch (insertError) {
+        if (!foundationSchema || !client_request_id) throw insertError;
+        const [winner] = await db.select(
+          'messages',
+          `client_request_id=eq.${client_request_id}&select=*&limit=1`,
+        );
+        const sameNote = winner?.type === 'internal_note'
+          && winner.conversation_id === conversation_id
+          && winner.sent_by === actorEmployeeId
+          && winner.body === rawBody;
+        if (!sameNote) throw insertError;
+        note = winner;
+      }
 
       await db.update('conversations', `id=eq.${conversation_id}`, {
         last_message_at: new Date().toISOString(),
@@ -209,12 +416,21 @@ export async function onRequestPost(context) {
 
     // ═══ OUTBOUND MESSAGE ═══
 
-    // 1. Load conversation + active participants.
-    const [conversation] = await db.select('conversations', `id=eq.${conversation_id}`);
-    if (!conversation) {
-      return jsonResponse({ error: 'Conversation not found' }, 404, request, env);
+    const provider = resolveMessagingSendMode(env);
+    if (provider === 'disabled') {
+      return jsonResponse({
+        error: 'Staff messaging is disabled',
+        code: 'MESSAGING_SEND_DISABLED',
+      }, 503, request, env);
+    }
+    if (provider === 'callrail' && !foundationSchema) {
+      return jsonResponse({
+        error: 'CallRail messaging persistence is not ready',
+        code: 'MESSAGING_SCHEMA_NOT_READY',
+      }, 503, request, env);
     }
 
+    // 1. Load active participants.
     const participants = await db.select(
       'conversation_participants',
       `conversation_id=eq.${conversation_id}&is_active=eq.true`
@@ -225,13 +441,19 @@ export async function onRequestPost(context) {
     }
 
     const isMulti = conversation.type === 'group' || conversation.type === 'broadcast';
+    if (
+      provider === 'callrail'
+      && (conversation.type !== 'direct' || isMulti || participants.length !== 1)
+    ) {
+      return jsonResponse({
+        error: 'CallRail supports staff person-to-person messages only',
+        code: 'CALLRAIL_PURPOSE_UNSUPPORTED',
+      }, 400, request, env);
+    }
 
     // 2. Sender prefix (Twilio/CTIA requires identifying the business in messages).
     let senderPrefix = '';
-    if (sent_by) {
-      const [employee] = await db.select('employees', `id=eq.${sent_by}`);
-      if (employee?.full_name) senderPrefix = `${employee.full_name}: `;
-    }
+    if (auth.employee.full_name) senderPrefix = `${auth.employee.full_name}: `;
     // Media-only send: drop the dangling "Name: " colon so the MMS carries just the
     // sender's name (CTIA identification) with the photo, not "Jane: " + nothing.
     const clientBody = rawBody ? senderPrefix + rawBody : senderPrefix.replace(/:\s*$/, '');
@@ -247,21 +469,101 @@ export async function onRequestPost(context) {
     if (!isMulti) {
       const participant = participants[0];
       const [contact] = await db.select('contacts', `id=eq.${participant.contact_id}`);
-      const gate = await gateRecipient(db, contact, sent_by);
+      const attemptCommand = {
+        clientRequestId: foundationSchema ? client_request_id || null : null,
+        conversationId: conversation_id,
+        actorEmployeeId,
+        recipientAddress: participant.phone,
+        body: clientBody,
+        mediaUrls: media_urls || [],
+        provider,
+        requestedChannel: media_urls?.length ? 'mms' : 'sms',
+        foundationSchema,
+        canonicalBody: rawBody,
+        recipientContactId: participant.contact_id,
+      };
+      let priorAttempt;
+      try {
+        priorAttempt = await findMessageAttempt(db, attemptCommand);
+      } catch (claimError) {
+        if (claimError.code === 'CLIENT_REQUEST_CONFLICT') {
+          return jsonResponse({ error: claimError.message, code: claimError.code }, 409, request, env);
+        }
+        throw claimError;
+      }
+      if (priorAttempt) {
+        if (priorAttempt.message_id) {
+          const [existingMessage] = await db.select(
+            'messages',
+            `id=eq.${priorAttempt.message_id}&select=*&limit=1`,
+          );
+          if (existingMessage) {
+            return jsonResponse({
+              success: true,
+              message: existingMessage,
+              twilio: [],
+            }, 201, request, env);
+          }
+        }
+        return jsonResponse({
+          error: 'This message request is already being processed or reconciled',
+          code: 'CLIENT_REQUEST_PENDING',
+        }, 409, request, env);
+      }
+      const gate = await gateRecipient(db, contact, participant.phone, actorEmployeeId);
       if (gate.blocked) {
         return jsonResponse({
           error: gate.code === 'DND_ACTIVE'
             ? 'Message blocked: contact has Do Not Disturb enabled'
             : gate.code === 'NO_CONSENT'
               ? 'Message blocked: contact has not opted in to SMS'
+              : gate.code === 'CONTACT_PHONE_MISMATCH'
+                ? 'Message blocked: conversation phone does not match the consented contact phone'
               : 'Message blocked: could not resolve contact for compliance check',
           code: gate.code,
           contact_id: contact?.id ?? null,
         }, 403, request, env);
       }
 
+      let claim;
+      try {
+        claim = await claimMessageAttempt(db, attemptCommand);
+      } catch (claimError) {
+        if (claimError.code === 'CLIENT_REQUEST_CONFLICT') {
+          return jsonResponse({ error: claimError.message, code: claimError.code }, 409, request, env);
+        }
+        throw claimError;
+      }
+
+      if (!claim.claimed) {
+        if (claim.attempt.message_id) {
+          const [existingMessage] = await db.select(
+            'messages',
+            `id=eq.${claim.attempt.message_id}&select=*&limit=1`,
+          );
+          if (existingMessage) {
+            return jsonResponse({ success: true, message: existingMessage, twilio: [] }, 201, request, env);
+          }
+        }
+        return jsonResponse({
+          error: 'This message request is already being processed or reconciled',
+          code: 'CLIENT_REQUEST_PENDING',
+        }, 409, request, env);
+      }
+
       const { result, row } = await sendToRecipient(db, env, {
-        conversationId: conversation_id, participant, clientBody, rawBody, mediaUrls: media_urls, statusCallback, sentBy: sent_by,
+        conversationId: conversation_id,
+        participant,
+        clientBody,
+        rawBody,
+        mediaUrls: media_urls,
+        statusCallback,
+        sentBy: actorEmployeeId,
+        provider,
+        requestedChannel: attemptCommand.requestedChannel,
+        foundationSchema,
+        clientRequestId: client_request_id || null,
+        attemptId: claim.attempt?.id || null,
       });
       await updateConversationAfterSend(db, conversation, rawBody);
 
@@ -275,29 +577,137 @@ export async function onRequestPost(context) {
     // audited; a per-recipient send failure records its own row. Nothing here can
     // text a DND/opted-out contact — the Wave -1 refuse-guard is replaced, not bypassed.
     const results = [];
-    const rows = [];
+    const eligibleParticipants = [];
     for (const participant of participants) {
       const [contact] = await db.select('contacts', `id=eq.${participant.contact_id}`);
-      const gate = await gateRecipient(db, contact, sent_by);
+      const gate = await gateRecipient(db, contact, participant.phone, actorEmployeeId);
       if (gate.blocked) {
         results.push({ skipped: true, code: gate.code, to: participant.phone, contact_id: participant.contact_id });
         continue;
       }
-      const { result, row } = await sendToRecipient(db, env, {
-        conversationId: conversation_id, participant, clientBody, rawBody, mediaUrls: media_urls, statusCallback, sentBy: sent_by,
-      });
-      results.push(result);
-      rows.push(row);
+      eligibleParticipants.push(participant);
     }
 
-    // Every recipient was blocked → nothing sent, no message written.
-    if (rows.length === 0) {
+    // Every recipient was blocked → nothing sent, no message or attempt written.
+    if (eligibleParticipants.length === 0) {
       return jsonResponse({
         error: 'Message blocked: no recipient in this conversation is eligible to receive SMS',
         code: 'ALL_RECIPIENTS_BLOCKED',
         twilio: results,
       }, 403, request, env);
     }
+
+    let groupClaim;
+    try {
+      groupClaim = await claimMessageAttempt(db, {
+        clientRequestId: foundationSchema ? client_request_id || null : null,
+        conversationId: conversation_id,
+        actorEmployeeId,
+        recipientAddress: eligibleParticipants
+          .map((participant) => participant.phone || '')
+          .sort()
+          .join(','),
+        body: clientBody,
+        mediaUrls: media_urls || [],
+        provider,
+        requestedChannel: media_urls?.length ? 'mms' : 'sms',
+        foundationSchema,
+      });
+    } catch (claimError) {
+      if (claimError.code === 'CLIENT_REQUEST_CONFLICT') {
+        return jsonResponse({ error: claimError.message, code: claimError.code }, 409, request, env);
+      }
+      throw claimError;
+    }
+
+    const rows = [];
+    for (const participant of eligibleParticipants) {
+      const childCommand = {
+        clientRequestId: null,
+        conversationId: conversation_id,
+        actorEmployeeId,
+        recipientAddress: participant.phone,
+        recipientContactId: participant.contact_id,
+        body: clientBody,
+        canonicalBody: rawBody,
+        mediaUrls: media_urls || [],
+        provider,
+        requestedChannel: media_urls?.length ? 'mms' : 'sms',
+        foundationSchema,
+        initialState: 'prepared',
+      };
+      let childClaim;
+      if (foundationSchema && groupClaim.attempt?.id) {
+        childClaim = await claimChildMessageAttempt(
+          db,
+          groupClaim.attempt.id,
+          childCommand,
+        );
+        if (!childClaim.claimed && childClaim.attempt.message_id) {
+          const [existingMessage] = await db.select(
+            'messages',
+            `id=eq.${childClaim.attempt.message_id}&select=*&limit=1`,
+          );
+          if (existingMessage) {
+            rows.push(existingMessage);
+            results.push({
+              contact_id: participant.contact_id,
+              to: participant.phone,
+              recovered: true,
+            });
+            continue;
+          }
+        }
+        if (
+          !childClaim.claimed
+          && childClaim.attempt.state !== 'prepared'
+          && !childClaim.attempt.message_id
+        ) {
+          results.push({
+            error: 'Recipient send is already being processed or reconciled',
+            error_code: 'CLIENT_REQUEST_PENDING',
+            error_message: 'Recipient send is already being processed or reconciled',
+            to: participant.phone,
+            contact_id: participant.contact_id,
+          });
+          continue;
+        }
+        await completeMessageAttempt(db, childClaim.attempt.id, {
+          state: 'submitting',
+          started_at: new Date().toISOString(),
+        });
+      }
+      const { result, row } = await sendToRecipient(db, env, {
+        conversationId: conversation_id,
+        participant,
+        clientBody,
+        rawBody,
+        mediaUrls: media_urls,
+        statusCallback,
+        sentBy: actorEmployeeId,
+        provider,
+        requestedChannel: media_urls?.length ? 'mms' : 'sms',
+        foundationSchema,
+        attemptId: childClaim?.attempt?.id || null,
+      });
+      results.push(result);
+      rows.push(row);
+    }
+
+    const anyAccepted = results.some((result) => !result.skipped && !result.error);
+    const anyAmbiguous = results.some((result) => (
+      typeof result.error_code === 'string'
+      && result.error_code.endsWith('_SEND_AMBIGUOUS')
+    ));
+    await completeMessageAttempt(db, groupClaim.attempt?.id || null, {
+      state: anyAmbiguous ? 'ambiguous' : anyAccepted ? 'accepted' : 'failed',
+      message_id: null,
+      response_at: new Date().toISOString(),
+      completed_at: anyAmbiguous ? null : new Date().toISOString(),
+      reconcile_after: anyAmbiguous
+        ? new Date(Date.now() + 5 * 60 * 1000).toISOString()
+        : null,
+    });
 
     await updateConversationAfterSend(db, conversation, rawBody);
 

@@ -57,8 +57,24 @@ import { supabase } from '../lib/supabase.js';
 import { validateTwilioSignature } from '../lib/twilio.js';
 import { resolveCredential } from '../lib/credentials.js';
 import { handleOptions } from '../lib/cors.js';
-import { normalizePhone } from '../lib/phone.js';
+import {
+  buildPhoneOrFilter,
+  detectKeyword,
+  isAmbiguousContentReply,
+  keywordReplyBody,
+} from '../lib/messaging-inbound.js';
+import { notifyInboundMessage } from '../lib/messaging-inbound-notifications.js';
 import { dispatchEvent } from './notify.js';
+
+export {
+  buildPhoneOrFilter,
+  detectKeyword,
+  isAmbiguousContentReply,
+  keywordReplyBody,
+  normalizeKeyword,
+  phoneMatchVariants,
+} from '../lib/messaging-inbound.js';
+export { notifyInboundMessage } from '../lib/messaging-inbound-notifications.js';
 
 const WORKER_NAME = 'twilio-webhook';
 
@@ -90,127 +106,6 @@ async function recordRun(db, { status, processed, errorMessage, startedAt }) {
 // rep when set, otherwise the office/admin fallback (resolved inside notify.js).
 // INERT until the catalog type is enabled (dispatchEvent returns {skipped}), and
 // wrapped so a notify hiccup can NEVER break the SMS-ingest business path.
-export async function notifyInboundMessage({ db, env, conversation, contact, from, text, dispatchImpl = dispatchEvent }) {
-  try {
-    const assignedTo = conversation?.assigned_to || null;
-    const who = (contact?.name && String(contact.name).trim()) || from;
-    const preview = (text || '').trim().slice(0, 140);
-    await dispatchImpl({
-      db, env,
-      typeKey: 'message.inbound',
-      body: {
-        title: `New text from ${who}`,
-        body: preview || '[Media]',
-        link: '/conversations',
-        entity_type: 'conversation',
-        entity_id: conversation?.id || null,
-        // Assigned rep wins; unassigned falls back to ROLE_AUDIENCE (office/admin).
-        recipient_ids: assignedTo ? [assignedTo] : undefined,
-        data: { conversation_id: conversation?.id || null, route: '/conversations' },
-      },
-    });
-  } catch { /* fire-and-forget — a notify failure never breaks SMS ingest */ }
-}
-
-// ── STOP/HELP/START keyword detection ──
-// CTIA/carrier requires handling these exact keywords (case-insensitive).
-// STOPALL is on Twilio's default opt-out keyword list alongside STOP.
-const STOP_KEYWORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'];
-const START_KEYWORDS = ['start', 'unstop', 'subscribe', 'yes'];
-const HELP_KEYWORDS = ['help', 'info'];
-
-// Punctuation tolerance: strip everything but a–z/0–9 so "STOP.", "Stop!",
-// "STOP ALL" and "s.t.o.p" all resolve to their keyword, while a real sentence
-// ("stop by tomorrow" → "stopbytomorrow") stays a non-match — only a lone
-// keyword token collapses onto an entry in the lists above.
-export function normalizeKeyword(body) {
-  return (body || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-export function detectKeyword(body) {
-  const norm = normalizeKeyword(body);
-  if (!norm) return null;
-  if (STOP_KEYWORDS.includes(norm)) return 'stop';
-  if (START_KEYWORDS.includes(norm)) return 'start';
-  if (HELP_KEYWORDS.includes(norm)) return 'help';
-  return null;
-}
-
-// ── F-3: digits-based contact lookup ──
-// The webhook used to resolve the inbound sender with an exact `phone=eq.{from}`.
-// A contact stored in a non-E.164 form (e.g. "(801) 919-6858") never matched, so
-// a STOP created a *duplicate* opted-out row while the original stayed opted-in —
-// a send-after-STOP TCPA hole. We now match against every common stored format of
-// the number. Twilio always sends E.164, but this is format-agnostic on both sides.
-export function phoneMatchVariants(rawFrom) {
-  const e164 = normalizePhone(rawFrom);
-  if (!e164) return [];
-  const ten = e164.slice(2); // strip the "+1"
-  const a = ten.slice(0, 3), b = ten.slice(3, 6), c = ten.slice(6);
-  return [
-    e164,                    // +1XXXXXXXXXX  (E.164 — the live majority)
-    ten,                     // XXXXXXXXXX    (bare 10-digit)
-    '1' + ten,               // 1XXXXXXXXXX   (bare 11-digit)
-    `(${a}) ${b}-${c}`,      // (XXX) XXX-XXXX (the live non-E.164 format)
-    `${a}-${b}-${c}`,        // XXX-XXX-XXXX
-    `${a}.${b}.${c}`,        // XXX.XXX.XXXX
-  ];
-}
-
-// Build a PostgREST `or=(...)` filter matching a contact stored in ANY of the
-// formats above. Each candidate is double-quoted (so parens/space/commas are
-// literal) and URL-encoded (so "+" becomes %2B, never a decoded space). Falls
-// back to an exact match for an unparseable sender (shortcode / junk).
-export function buildPhoneOrFilter(rawFrom) {
-  const variants = phoneMatchVariants(rawFrom);
-  if (variants.length === 0) {
-    return `phone=eq.${encodeURIComponent(rawFrom)}&limit=1`;
-  }
-  const enc = (v) => encodeURIComponent(`"${v}"`).replace(/\(/g, '%28').replace(/\)/g, '%29');
-  const conds = [...new Set(variants)].map((v) => `phone.eq.${enc(v)}`);
-  return `or=(${conds.join(',')})`;
-}
-
-// ── F-7: "yes" and "info" double as real customer replies ──
-// They live in the START/HELP keyword lists, so the webhook used to swallow them
-// (act on the keyword, never store the message). For these ambiguous words we
-// persist the inbound message BEFORE the keyword early-return so a genuine reply
-// is never lost; the keyword action (re-subscribe / HELP reply) still runs after.
-const AMBIGUOUS_CONTENT_KEYWORDS = ['yes', 'info'];
-export function isAmbiguousContentReply(body) {
-  return AMBIGUOUS_CONTENT_KEYWORDS.includes(normalizeKeyword(body));
-}
-
-// ── Compliance-keyword auto-reply copy ──
-// Customer-facing SMS support contact — kept in sync with the published Privacy
-// Policy (utahrestorationpros.com/privacy-policy). Carriers test the HELP reply.
-const SMS_SUPPORT_PHONE = '(385) 336-0611';
-const SMS_SUPPORT_EMAIL = 'restoration@utah-pros.com';
-
-// The SMS body the webhook should auto-reply with for a STOP/START/HELP keyword.
-// Returns '' when Advanced Opt-Out is enabled on the Twilio Messaging Service —
-// in that mode Twilio sends its own STOP/HELP confirmation AND blocks messaging
-// to opted-out numbers, so a second reply here would either double-text the
-// recipient or be rejected post-STOP (Twilio error 21610). The DB opt-in/DND
-// update + sms_consent_log audit run regardless of this value.
-export function keywordReplyBody(keyword, { advancedOptOut = false } = {}) {
-  if (advancedOptOut) return '';
-  switch (keyword) {
-    case 'stop':
-      return 'You have been unsubscribed from Utah Pros Restoration messages. ' +
-        'Reply START to re-subscribe. For help, reply HELP.';
-    case 'start':
-      return 'You have been re-subscribed to Utah Pros Restoration messages. ' +
-        'Reply STOP to unsubscribe at any time.';
-    case 'help':
-      return 'Utah Pros Restoration — SMS Support\n' +
-        `For help, call ${SMS_SUPPORT_PHONE} or email ${SMS_SUPPORT_EMAIL}.\n` +
-        'Reply STOP to unsubscribe. Msg & data rates may apply.';
-    default:
-      return '';
-  }
-}
-
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
@@ -459,7 +354,15 @@ async function persistInboundMessage(context, db, env, { contact, from, to, body
   await db.rpc('increment_conversation_unread', { p_conversation_id: conversation.id, p_by: 1 });
 
   // Fire-and-forget so Twilio still gets its TwiML instantly.
-  context.waitUntil(notifyInboundMessage({ db, env, conversation, contact, from, text: body }));
+  context.waitUntil(notifyInboundMessage({
+    db,
+    env,
+    conversation,
+    contact,
+    from,
+    text: body,
+    dispatchImpl: dispatchEvent,
+  }));
 
   return conversation;
 }

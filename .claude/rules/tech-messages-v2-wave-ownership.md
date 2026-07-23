@@ -98,3 +98,12 @@ gauntlet (`tech-phase-reviewer` graded against the phase's roadmap block;
 STRETCH items honestly, never silently) → push `-u` → **open a PR into `dev` as a handoff,
 mark ready, STOP** (owner/orchestrator merges; never subscribe/babysit/click-merge).
 Flag flips are the owner's, in DevTools → Flags.
+
+## 7. messaging-transport addendum (2026-07-23)
+
+The completed initiative's blanket freeze on `functions/api/send-message.js` and `functions/lib/*`
+is superseded only by `docs/messaging-transport-roadmap.md` and
+`.claude/rules/messaging-transport-wave-ownership.md`. The server may add the provider-neutral
+staff-send seam while preserving `/api/send-message`; the tech client remains call-only and
+unchanged in the behavior-neutral first slice. Consent, worker sole-writer, no-fallback, and
+owner-gated live-send rules remain binding.

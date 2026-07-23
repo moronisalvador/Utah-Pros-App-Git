@@ -281,3 +281,22 @@ truthful:
   (Phase B "not yet merged") are STALE — both merged (8f63ae9, 4a52d99).
 - Everything else in §§1–9 binds the new initiative unchanged (worker sole-writer, no
   `skip_compliance`, call-only workers, realtime.js frozen, A2P owner gate).
+
+---
+
+## 11. messaging-transport addendum (2026-07-23) — provider-neutral staff-send seam
+
+The `messaging-transport` initiative (`docs/messaging-transport-roadmap.md`,
+`.claude/rules/messaging-transport-wave-ownership.md`) supersedes this completed initiative's file
+freeze only as follows:
+
+- `functions/api/send-message.js` may replace its direct Twilio import with the new flat
+  `functions/lib/messaging-transport.js` seam and later implement the roadmap's reviewed
+  authorization/idempotency/provider phases.
+- `functions/lib/twilio.js` remains behavior-frozen and is consumed as the Twilio adapter.
+- The `/api/send-message` public contract, structurally unbypassable consent/DND, worker
+  sole-writer rule, and no-fallback rule remain binding.
+- Automated, scheduled, group/broadcast, bulk, and campaign CallRail sends remain forbidden.
+
+The new ownership manifest is authoritative for those named amendments; everything else in this
+manifest remains in force.

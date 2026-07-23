@@ -26,9 +26,11 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
+  isAmbiguousSend,
 } from './messageUtils';
 
 function formatMsgTime(iso) {
@@ -38,18 +40,74 @@ function formatMsgTime(iso) {
 
 // ─── SECTION: Helpers — attachment item ──────────────
 
-function MediaItem({ url }) {
+const OWNED_MEDIA_PREFIX = 'upr-storage://message-attachments/callrail/';
+
+function usePrivateMediaUrl(messageId, index, reference, apiKey) {
+  const isPrivate = reference.startsWith(OWNED_MEDIA_PREFIX);
+  const [state, setState] = useState({ url: isPrivate ? null : reference, failed: false });
+
+  useEffect(() => {
+    if (!isPrivate) {
+      setState({ url: reference, failed: false });
+      return undefined;
+    }
+    if (!messageId || !apiKey) {
+      setState({ url: null, failed: true });
+      return undefined;
+    }
+    let active = true;
+    let refreshTimer;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/message-media-url', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ message_id: messageId, index }),
+        });
+        if (!res.ok) throw new Error('private media unavailable');
+        const payload = await res.json();
+        if (active) {
+          setState({ url: payload.url, failed: false });
+          refreshTimer = setTimeout(load, Math.max(60, payload.expires_in - 60) * 1000);
+        }
+      } catch {
+        if (active) setState({ url: null, failed: true });
+      }
+    };
+    load();
+    return () => {
+      active = false;
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
+  }, [apiKey, index, isPrivate, messageId, reference]);
+
+  return { ...state, isPrivate };
+}
+
+function MediaItem({ url, messageId, index, apiKey }) {
   const [broken, setBroken] = useState(false);
-  if (broken || !isLikelyImageUrl(url)) {
+  const privateMedia = usePrivateMediaUrl(messageId, index, url, apiKey);
+  const resolvedUrl = privateMedia.url;
+  if (privateMedia.isPrivate && !resolvedUrl) {
     return (
-      <a className="conv-media-file" href={url} target="_blank" rel="noopener noreferrer">
+      <span className="conv-media-file">
+        {privateMedia.failed ? '📎 Attachment unavailable' : 'Loading attachment…'}
+      </span>
+    );
+  }
+  if (broken || !isLikelyImageUrl(privateMedia.isPrivate ? url : resolvedUrl)) {
+    return (
+      <a className="conv-media-file" href={resolvedUrl} target="_blank" rel="noopener noreferrer">
         📎 View attachment
       </a>
     );
   }
   return (
-    <a className="conv-media-thumb" href={url} target="_blank" rel="noopener noreferrer">
-      <img src={url} alt="Attachment" loading="lazy" onError={() => setBroken(true)} />
+    <a className="conv-media-thumb" href={resolvedUrl} target="_blank" rel="noopener noreferrer">
+      <img src={resolvedUrl} alt="Attachment" loading="lazy" onError={() => setBroken(true)} />
     </a>
   );
 }
@@ -66,12 +124,15 @@ function IconCheckDouble() {
 function StatusAffordance({ msg, onRetry }) {
   const status = msg.status;
   const failed = msg._failed || status === 'failed' || status === 'undelivered';
+  const ambiguous = isAmbiguousSend(msg);
 
   if (failed) {
     return (
       <span className={`conv-status conv-status-failed uiclass-${uiClassForMessage(msg)}`}>
-        <span className="conv-status-reason" title={failureReason(msg)}>Failed — {failureReason(msg)}</span>
-        {onRetry && (
+        <span className="conv-status-reason" title={failureReason(msg)}>
+          {ambiguous ? 'Awaiting provider confirmation' : `Failed — ${failureReason(msg)}`}
+        </span>
+        {onRetry && !ambiguous && (
           <button type="button" className="conv-retry-btn" onClick={() => onRetry(msg)}>Retry</button>
         )}
       </span>
@@ -89,6 +150,7 @@ function StatusAffordance({ msg, onRetry }) {
 // ─── SECTION: Render ──────────────
 
 export default function MessageBubble({ msg, onRetry }) {
+  const { db } = useAuth();
   const isInbound = msg.type === 'sms_inbound' || msg.type === 'email_inbound';
   const isNote = msg.type === 'internal_note';
   const media = parseMediaUrls(msg.media_urls);
@@ -105,7 +167,9 @@ export default function MessageBubble({ msg, onRetry }) {
         {isNote && <span className="msg-note-label">📝 {msg.employees?.full_name || 'Note'}</span>}
         {media.length > 0 && (
           <div className="conv-media-grid">
-            {media.map((url, i) => <MediaItem key={i} url={url} />)}
+            {media.map((url, i) => (
+              <MediaItem key={i} url={url} messageId={msg.id} index={i} apiKey={db?.apiKey} />
+            ))}
           </div>
         )}
         {msg.body && (

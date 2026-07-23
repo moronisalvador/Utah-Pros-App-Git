@@ -93,7 +93,7 @@ export async function requireEmployee(request, env, db) {
   try {
     emp = await db.select(
       'employees',
-      `auth_user_id=eq.${auth.user.id}&select=id,full_name,email,role,is_active&limit=1`,
+      `auth_user_id=eq.${auth.user.id}&select=id,full_name,email,role,is_active,is_external&limit=1`,
     );
   } catch {
     return { error: 'Employee lookup failed', status: 500 };

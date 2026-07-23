@@ -1,0 +1,214 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  CALLRAIL_MMS_BUCKET,
+  CALLRAIL_MMS_MAX_ITEMS,
+  buildCallrailMediaEndpoint,
+  ingestCallrailMms,
+  validateCallrailMmsCount,
+} from './callrail-mms.js';
+
+const INPUT = {
+  apiKey: 'server-secret',
+  accountId: 'ACC123',
+  companyResourceId: 'COM456',
+  providerConversationId: 'conv789',
+  providerMessageId: 'SCIabc',
+  mediaCount: 1,
+};
+
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]);
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01]);
+const GIF87A = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0x01]);
+const GIF89A = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01]);
+
+function mediaResponse(bytes, contentType, extraHeaders = {}) {
+  return new Response(bytes, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+      'Content-Length': String(bytes.byteLength),
+      ...extraHeaders,
+    },
+  });
+}
+
+function harness() {
+  return {
+    db: { uploadStorage: vi.fn(async () => true) },
+    fetchImpl: vi.fn(async () => mediaResponse(JPEG, 'image/jpeg')),
+  };
+}
+
+describe('CallRail MMS private ingestion', () => {
+  it('derives only the exact authenticated api.callrail.com endpoint', async () => {
+    const h = harness();
+    const result = await ingestCallrailMms(
+      { ...INPUT, db: h.db, ephemeralMediaUrls: ['https://attacker.test/file'] },
+      { fetchImpl: h.fetchImpl, timeoutMs: 3210 },
+    );
+
+    expect(h.fetchImpl).toHaveBeenCalledWith(
+      'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0',
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'error',
+        headers: expect.objectContaining({
+          Authorization: 'Token token="server-secret"',
+        }),
+      }),
+      3210,
+    );
+    expect(h.db.uploadStorage).toHaveBeenCalledWith(
+      CALLRAIL_MMS_BUCKET,
+      expect.stringMatching(
+        /^callrail\/COM456\/conv789\/SCIabc\/0-[a-f0-9]{16}\.jpg$/,
+      ),
+      expect.any(Uint8Array),
+      'image/jpeg',
+    );
+    expect(result.media[0]).toMatchObject({
+      bucket: 'message-attachments',
+      contentType: 'image/jpeg',
+      byteSize: JPEG.byteLength,
+      storageRef: expect.stringMatching(
+        /^upr-storage:\/\/message-attachments\/callrail\/COM456\/conv789\/SCIabc\//,
+      ),
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(JSON.stringify(result)).not.toContain('api.callrail.com');
+    expect(JSON.stringify(result)).not.toContain('attacker.test');
+    expect(JSON.stringify(result)).not.toContain('server-secret');
+  });
+
+  it.each([
+    ['image/png; charset=binary', PNG, '.png'],
+    ['image/gif', GIF87A, '.gif'],
+    ['image/gif; charset=binary', GIF89A, '.gif'],
+  ])('accepts verified %s media', async (contentType, bytes, extension) => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(mediaResponse(bytes, contentType));
+    const result = await ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    );
+    expect(result.media[0].storagePath.endsWith(extension)).toBe(true);
+  });
+
+  it('rejects identifiers that could alter the fixed media path', () => {
+    expect(() => buildCallrailMediaEndpoint({
+      accountId: '../private',
+      providerMessageId: 'SCIabc',
+      index: 0,
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_IDENTITY_INVALID' }));
+  });
+
+  it('refuses redirects and classifies provider rejection without uploading', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(new Response(null, {
+      status: 302,
+      headers: { Location: 'https://attacker.test/file' },
+    }));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+      retryable: false,
+      status: 302,
+    });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized declared object before reading or uploading', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(mediaResponse(JPEG, 'image/jpeg', {
+      'Content-Length': '5000001',
+    }));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({ code: 'CALLRAIL_MMS_SIZE_UNSUPPORTED' });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('enforces the stream cap when Content-Length is absent or dishonest', async () => {
+    const h = harness();
+    const oversized = new Uint8Array(5_000_001);
+    oversized.set(JPEG);
+    h.fetchImpl.mockResolvedValue(new Response(oversized, {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg' },
+    }));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({ code: 'CALLRAIL_MMS_SIZE_UNSUPPORTED' });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a MIME claim whose bytes have the wrong magic signature', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(mediaResponse(
+      new TextEncoder().encode('<html>not an image</html>'),
+      'image/jpeg',
+    ));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({ code: 'CALLRAIL_MMS_SIGNATURE_INVALID' });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('rejects a declared GIF without a GIF87a or GIF89a signature', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(mediaResponse(
+      new TextEncoder().encode('GIF00a-not-supported'),
+      'image/gif',
+    ));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({ code: 'CALLRAIL_MMS_SIGNATURE_INVALID' });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('enforces caller-visible count and aggregate limits', async () => {
+    expect(() => validateCallrailMmsCount(CALLRAIL_MMS_MAX_ITEMS + 1))
+      .toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_COUNT_UNSUPPORTED' }));
+
+    const h = harness();
+    h.fetchImpl.mockResolvedValue(mediaResponse(JPEG, 'image/jpeg'));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db, mediaCount: 2 },
+      {
+        fetchImpl: h.fetchImpl,
+        limits: { maxItems: 2, maxObjectBytes: 6, maxTotalBytes: 10 },
+      },
+    )).rejects.toMatchObject({ code: 'CALLRAIL_MMS_SIZE_UNSUPPORTED' });
+    expect(h.db.uploadStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it('makes download and private-storage failures retryable without leaking details', async () => {
+    const h = harness();
+    h.fetchImpl.mockRejectedValue(new Error('network secret detail'));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h.db },
+      { fetchImpl: h.fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_DOWNLOAD_FAILED',
+      retryable: true,
+      message: 'CallRail MMS media could not be downloaded.',
+    });
+
+    const h2 = harness();
+    h2.db.uploadStorage.mockRejectedValue(new Error('storage internal detail'));
+    await expect(ingestCallrailMms(
+      { ...INPUT, db: h2.db },
+      { fetchImpl: h2.fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_STORAGE_FAILED',
+      retryable: true,
+      message: 'CallRail MMS media could not be stored.',
+    });
+  });
+});
