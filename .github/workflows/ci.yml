@@ -50,6 +50,12 @@ jobs:
       - name: Test repository tooling governance
         run: npm run test:tooling
 
+      - name: Validate migration provenance
+        run: npm run validate:provenance
+
+      - name: Test migration provenance gate
+        run: npm run test:provenance
+
       # Mirror the production build. Supabase URL/anon key come from repo secrets
       # (same names the Capgo deploy workflow uses); the build also succeeds
       # without them, so this stays green even if the secrets are unset.
