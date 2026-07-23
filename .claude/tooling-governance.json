@@ -4,10 +4,15 @@
   "canonicalSource": ".claude",
   "trackedInventory": {
     "asOf": "2026-07-23",
-    "skills": 55,
-    "agents": 33,
+    "skills": 24,
+    "agents": 15,
     "rules": 23,
     "hooks": 2
+  },
+  "adapterStrategy": {
+    "status": "owner-approved",
+    "approvedOn": "2026-07-23",
+    "generationStatus": "not-implemented"
   },
   "requiredFrontmatter": {
     "skill": ["name", "description"],
@@ -203,8 +208,6 @@
     }
   ],
   "conditionalPathPrefixes": [
-    ".claude/skills/seo-",
-    ".claude/agents/seo-",
     ".claude/skills/brand-review/",
     ".claude/skills/campaign-plan/",
     ".claude/skills/competitive-brief/",

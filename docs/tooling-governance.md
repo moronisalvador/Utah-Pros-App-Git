@@ -1,6 +1,6 @@
 # UPR Skills, Agents, Plugins, and Tooling Governance
 
-**Status:** proposed project law for owner review
+**Status:** owner-approved project law
 **Last verified:** 2026-07-23
 **Scope:** repository-local instructions, hooks, permissions, validation, and future runtime adapters
 
@@ -22,8 +22,8 @@ not rewritten here.
 - `.claude/tooling-governance.json` is validation policy and review metadata. It is not a neutral
   capability source and must not be used to generate adapters yet.
 
-Tracked inventory at `origin/dev@8e1928b` plus this governance package: **55 skill entrypoints,
-33 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
+Tracked inventory after the owner-approved SEO retirement: **24 skill entrypoints,
+15 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
 requires this inventory stamp to change when tracked capability entrypoints are deliberately added
 or removed.
 
@@ -89,6 +89,15 @@ must produce an unavailable result, not an improvised fallback that claims provi
 External writes—including messages, submissions, uploads, CMS publication, index notifications,
 account changes, purchases, and plugin installation—require explicit authorization.
 
+### Retired repository SEO suite
+
+On 2026-07-23, the owner confirmed that this repository does not own the public website and does
+not need a repository-local SEO provider suite. The 31 tracked SEO skill bundles and 18 tracked SEO
+agent entrypoints (250 files total) were therefore retired rather than promoted into the governed
+tooling surface. The historical capability review and Git history preserve the evidence and prior
+implementation. Reintroduction belongs in the repository that owns the public website and requires
+fresh dependency, credential, permission, and trigger review.
+
 Deprecation is evidence-led: mark a capability conditional, unavailable, superseded, or archive
 candidate; record owner, reason, replacement, and observation date; then obtain owner approval before
 removal. Do not mass-delete optional bundles.
@@ -113,9 +122,12 @@ CAP-GOV-001. This initiative does not alter credentials. The temporary validator
 2026-08-06; the owner must rotate/revoke the credential, review history, sanitize/untrack the file,
 and reset local approvals before that date.
 
-## 7. Proposed neutral adapter strategy — not implemented
+## 7. Owner-approved neutral Claude/Codex adapter strategy
 
-After owner approval, move capability content into a neutral, provenance-preserving package model:
+The owner approved this direction on 2026-07-23. Claude Code and Codex can both produce UPR work
+today because `CLAUDE.md` and `AGENTS.md` share the same project law and both route to the tracked
+`.claude/rules/` standards. Keep that working path authoritative while implementing the neutral,
+provenance-preserving package model:
 
 - one capability manifest with stable id, owner, upstream source/version/license, status, risk tier,
   trigger domain/role, dependencies, permissions, and retirement metadata;
@@ -127,5 +139,7 @@ After owner approval, move capability content into a neutral, provenance-preserv
 - adapters containing pointers where the runtime supports them, with content duplication only when
   required and always generated.
 
-Do not generate or promote adapters until the owner approves the model, the target runtime schemas,
-and the migration plan for the current tracked `.claude/` authority.
+Adapter generation remains a separate implementation change. Do not promote generated output until
+the target runtime schemas are verified and cross-runtime fixtures prove equivalent decisions for
+database apply, authorization, secrets, money, messaging, destructive actions, and publication.
+Quality gates and project-law precedence must remain identical in Claude Code and Codex.
