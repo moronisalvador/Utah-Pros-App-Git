@@ -9,26 +9,30 @@ DEPENDS ON:
   Internal: supabase/migrations/20260723205127_exec_read_sql_containment.sql,
             supabase/tests/exec_read_sql_containment*
   Data:     reads → sanitized live PostgreSQL catalog and migration metadata
-            writes → none (the package is authored but unapplied)
+            writes → function ACL/comment and migration-ledger entry during the authorized apply
 
 NOTES / GOTCHAS:
-  - This record is current evidence, not proof that the migration has been applied.
+  - The original pre-apply evidence remains below; the dated apply evidence records the live result.
   - No business rows, Auth identities, credentials, tokens, or raw logs were inspected.
 -->
 
 # `exec_read_sql` Containment Record
 
-**Status:** authored and reviewed locally; **not applied**
+**Status:** **applied and verified** on 2026-07-23
 
 **Repository baseline:** `origin/dev` `0a06a21245633cb00ec6b3ad119ceefeede3f3ac`
 
-**Branch:** `codex/exec-read-sql-containment`
+**Reviewed source commit:** `5cf546b` (reachable from `origin/dev` and `origin/main` at apply time)
 
 **Live capture:** 2026-07-23 20:52 UTC; read-only Supabase catalog queries
 
 **Project:** `glsmljpabrwonfiltiqm`
 
-**Mutation performed during evidence capture:** none
+**Live apply:** 2026-07-23 22:17:07 UTC; ledger entry
+`20260723221707 exec_read_sql_containment`
+
+**Apply evidence:**
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`
 
 ## Decision
 
@@ -163,6 +167,10 @@ Local verification on 2026-07-23:
 
 ## Apply-window instructions
 
+These instructions were completed successfully on 2026-07-23. The exact preflight, apply result,
+role checks, advisor result, and live ledger version are preserved in the dated apply evidence
+linked above.
+
 1. Confirm the reviewed commit is reachable from the designated release branch and the Encircle
    migration remains unapplied/dark-gated.
 2. During a low-traffic window, run the read-only preflight. Stop if overload count, signature,
@@ -202,11 +210,10 @@ privileged functions containing dynamic `EXECUTE`:
 No changes to either object are included here. Their presence means this package closes DB-003 but
 does not certify all 345 live `SECURITY DEFINER` functions.
 
-## Merge-time canonical reconciliation
+## Post-apply canonical reconciliation
 
-To avoid colliding with CallRail and Encircle documentation work, this branch does not broadly
-rewrite canonical files. After the migration is actually applied, reconcile these statements in the
-merge/release commit:
+The apply reconciliation updates the current canonical and control documents while preserving the
+original dated findings and the 2026-07-22 live snapshot as historical evidence:
 
 - `docs/auth-and-authorization.md:80-92` — change the live authenticated exposure to remediated and
   retain the standing prohibition.
@@ -216,8 +223,8 @@ merge/release commit:
 - `docs/audit/2026-07/remediation-backlog.md:10` — record completion only after apply verification.
 - `docs/audit/2026-07/evidence/live-supabase.md:100-114` — do not rewrite the dated snapshot; add a
   dated addendum.
-- `docs/generated/rpc-inventory.md` and baseline artifacts — regenerate from the post-apply live
-  catalog rather than hand-editing.
+- `docs/generated/rpc-inventory.md` and baseline artifacts — still require a full post-apply
+  live-catalog regeneration; they were not hand-edited.
 - `CLAUDE.md`/`AGENTS.md` — retain “never expose free-form SQL”; update only wording that says the
   authenticated grant is still live.
 
