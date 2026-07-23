@@ -27,7 +27,10 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({}) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ db: {} }) }));
 
-import { qboReturnToast } from '@/pages/settings/Integrations';
+import {
+  isEncircleCredentialFlagEnabled,
+  qboReturnToast,
+} from '@/pages/settings/Integrations';
 
 describe('qboReturnToast (?qbo= return handler)', () => {
   it('returns null when there is no qbo param', () => {
@@ -52,5 +55,17 @@ describe('qboReturnToast (?qbo= return handler)', () => {
       type: 'error',
       message: 'QuickBooks connect failed: token expired',
     });
+  });
+});
+
+describe('Encircle managed-credential dark gate', () => {
+  it('fails closed when the feature-flag row is missing', () => {
+    expect(isEncircleCredentialFlagEnabled({}, () => true)).toBe(false);
+  });
+
+  it('requires both the seeded row and its effective enabled state', () => {
+    const flags = { 'feature:encircle_managed_credentials': { enabled: false } };
+    expect(isEncircleCredentialFlagEnabled(flags, () => false)).toBe(false);
+    expect(isEncircleCredentialFlagEnabled(flags, () => true)).toBe(true);
   });
 });

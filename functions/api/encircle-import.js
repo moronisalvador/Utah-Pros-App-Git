@@ -1,10 +1,37 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: encircle-import.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets authorized office staff find an Encircle claim and copy its customer,
+ *   claim, and selected jobs into UPR. It can also write UPR's claim number
+ *   back to Encircle after the import.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  ../lib/auth.js, ../lib/cors.js, ../lib/credentials.js,
+ *              ../lib/http.js, ../lib/supabase.js
+ *   Data:      reads  → contacts, claims, jobs, Encircle claims
+ *              writes → contacts, contact_addresses, claims, jobs, Encircle claims
+ *
+ * NOTES / GOTCHAS:
+ *   - The server capability is active admin, office, or project_manager.
+ *   - Every outbound call has a bounded timeout.
+ * ════════════════════════════════════════════════
+ */
 // GET  /api/encircle-import?action=search&policyholder_name=X&limit=20
 // GET  /api/encircle-import?action=get&claim_id=123
 // POST /api/encircle-import  { action: "patch", claim_id, contractor_identifier }
 // POST /api/encircle-import  { action: "import", ... }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { requireUser } from '../lib/auth.js';
+import { requireRole } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
+
+const ENCIRCLE_IMPORT_ROLES = ['admin', 'office', 'project_manager'];
 
 function normalizePhone(phone) {
   if (!phone) return null;
@@ -30,22 +57,6 @@ function normalizeLossType(raw) {
   if (v.includes('hail') || v.includes('snow') || v.includes('ice') || v.includes('rain')) return 'storm';
   if (v.includes('sewage') || v.includes('backup')) return 'sewer';
   return 'other';
-}
-
-function parseAddressParts(fullAddress) {
-  if (!fullAddress) return { address: null, city: null, state: null, zip: null };
-  const parts = fullAddress.split(',').map(s => s.trim());
-  if (parts.length >= 3) {
-    const street = parts[0];
-    const city = parts[1];
-    const last = parts[parts.length - 1];
-    const stateZip = last.split(/\s+/);
-    return { address: street, city, state: stateZip[0] || null, zip: stateZip[1] || null };
-  }
-  if (parts.length === 2) {
-    return { address: parts[0], city: parts[1], state: null, zip: null };
-  }
-  return { address: fullAddress, city: null, state: null, zip: null };
 }
 
 function encircleHeaders(env) {
@@ -83,7 +94,7 @@ async function handleSearch(url, request, env) {
   params.set('limit', limit);
   params.set('order', 'newest');
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://api.encircleapp.com/v1/property_claims?${params.toString()}`,
     { headers: encircleHeaders(env) }
   );
@@ -102,7 +113,7 @@ async function handleGet(url, request, env) {
   const claimId = url.searchParams.get('claim_id');
   if (!claimId) return jsonResponse({ error: 'Missing claim_id' }, 400, request, env);
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://api.encircleapp.com/v1/property_claims/${claimId}`,
     { headers: encircleHeaders(env) }
   );
@@ -124,7 +135,7 @@ async function handlePatch(body, request, env) {
     return jsonResponse({ error: 'Missing claim_id or contractor_identifier' }, 400, request, env);
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://api.encircleapp.com/v1/property_claims/${claim_id}`,
     {
       method: 'PATCH',
@@ -166,7 +177,7 @@ async function handleImport(body, request, env) {
   // Step 1: Upsert contact
   let contactId;
   if (normalizedPhone) {
-    const checkRes = await fetch(
+    const checkRes = await fetchWithTimeout(
       `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(normalizedPhone)}&limit=1`,
       { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
     );
@@ -177,7 +188,7 @@ async function handleImport(body, request, env) {
   }
 
   if (!contactId) {
-    const contactRes = await fetch(`${sbUrl}/rest/v1/contacts`, {
+    const contactRes = await fetchWithTimeout(`${sbUrl}/rest/v1/contacts`, {
       method: 'POST',
       headers: { ...hdrs, 'Prefer': 'return=representation' },
       body: JSON.stringify({
@@ -196,7 +207,7 @@ async function handleImport(body, request, env) {
 
     // Insert address
     if (address) {
-      await fetch(`${sbUrl}/rest/v1/contact_addresses`, {
+      await fetchWithTimeout(`${sbUrl}/rest/v1/contact_addresses`, {
         method: 'POST',
         headers: { ...hdrs, 'Prefer': 'return=minimal' },
         body: JSON.stringify({
@@ -213,7 +224,7 @@ async function handleImport(body, request, env) {
   }
 
   // Step 2: Create claim
-  const claimRes = await fetch(`${sbUrl}/rest/v1/claims`, {
+  const claimRes = await fetchWithTimeout(`${sbUrl}/rest/v1/claims`, {
     method: 'POST',
     headers: { ...hdrs, 'Prefer': 'return=representation' },
     body: JSON.stringify({
@@ -242,7 +253,7 @@ async function handleImport(body, request, env) {
   // Step 3: Create jobs — one per division
   const jobs = [];
   for (const division of divisions) {
-    const jobRes = await fetch(`${sbUrl}/rest/v1/jobs`, {
+    const jobRes = await fetchWithTimeout(`${sbUrl}/rest/v1/jobs`, {
       method: 'POST',
       headers: { ...hdrs, 'Prefer': 'return=representation' },
       body: JSON.stringify({
@@ -290,7 +301,7 @@ async function handleImport(body, request, env) {
   // Step 4: Write-back CLM number to Encircle
   let encircleWriteback = false;
   if (clmNumber) {
-    const patchRes = await fetch(
+    const patchRes = await fetchWithTimeout(
       `https://api.encircleapp.com/v1/property_claims/${encircle_claim_id}`,
       {
         method: 'PATCH',
@@ -314,14 +325,22 @@ async function handleImport(body, request, env) {
 // ── Request handlers ──────────────────────────────────────────────────────────
 
 export async function onRequestGet(context) {
-  const auth = await requireUser(context.request, context.env);
+  const auth = await requireRole(
+    context.request,
+    context.env,
+    supabase(context.env),
+    ENCIRCLE_IMPORT_ROLES,
+  );
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  const { apiKey } = await resolveCredential(context.env, null, 'encircle');
+  if (!apiKey) return jsonResponse({ error: 'Encircle not configured' }, 500, context.request, context.env);
+  const runtimeEnv = { ...context.env, ENCIRCLE_API_KEY: apiKey };
   try {
     const url = new URL(context.request.url);
     const action = url.searchParams.get('action');
 
-    if (action === 'search') return await handleSearch(url, context.request, context.env);
-    if (action === 'get') return await handleGet(url, context.request, context.env);
+    if (action === 'search') return await handleSearch(url, context.request, runtimeEnv);
+    if (action === 'get') return await handleGet(url, context.request, runtimeEnv);
 
     return jsonResponse({ error: 'Unknown action. Use action=search or action=get' }, 400, context.request, context.env);
   } catch (e) {
@@ -331,14 +350,22 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireUser(context.request, context.env);
+  const auth = await requireRole(
+    context.request,
+    context.env,
+    supabase(context.env),
+    ENCIRCLE_IMPORT_ROLES,
+  );
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
+  const { apiKey } = await resolveCredential(context.env, null, 'encircle');
+  if (!apiKey) return jsonResponse({ error: 'Encircle not configured' }, 500, context.request, context.env);
+  const runtimeEnv = { ...context.env, ENCIRCLE_API_KEY: apiKey };
   try {
     const body = await context.request.json();
     const action = body.action;
 
-    if (action === 'patch') return await handlePatch(body, context.request, context.env);
-    if (action === 'import') return await handleImport(body, context.request, context.env);
+    if (action === 'patch') return await handlePatch(body, context.request, runtimeEnv);
+    if (action === 'import') return await handleImport(body, context.request, runtimeEnv);
 
     return jsonResponse({ error: 'Unknown action. Use action=patch or action=import' }, 400, context.request, context.env);
   } catch (e) {

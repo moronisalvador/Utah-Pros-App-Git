@@ -26,9 +26,9 @@ NOTES / GOTCHAS:
 | QuickBooks Online | Customers, estimates/invoices, payments and reconciliation | QBO Worker libraries/endpoints plus durable external IDs |
 | Intuit Payments | Tokenized keyed-card charges | Browser tokenizer → Intuit; authorized Worker charge/reconciliation |
 | Stripe | Checkout payment links and payment webhooks | Authorized Worker, signed/idempotent webhook |
-| Twilio | SMS and future communications | Consent-gated shared send path, signed inbound/status webhooks |
+| Twilio | Current SMS transport and future communications | Provider adapter, consent-gated staff/automation paths, signed inbound/status webhooks |
 | Resend / email routing | Transactional/marketing email and replies | Suppression/unsubscribe/DND gates and signed webhooks |
-| CallRail / Deepgram | Call ingest, recording and transcription | Provider webhook/adapter into canonical CRM data |
+| CallRail / Deepgram | Call/form ingest and planned staff person-to-person SMS transport | Separate voice/form and text adapters into canonical CRM/messaging data |
 | Google | Drive, Calendar, Ads and Maps/autocomplete | OAuth callbacks, scoped tokens and server-side provider calls |
 | Meta Ads | Advertising integration | OAuth callback and server-side API |
 | Encircle | Restoration/job data import and reconciliation | Server-side adapter and external identity mapping |
@@ -58,6 +58,16 @@ bindings and provider consoles.
   environment.
 - Provider-specific raw payloads are normalized at the adapter boundary so business rules consume
   owned canonical fields.
+- Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
+  never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
+  no provider failure falls back to another provider/channel. Plan:
+  `docs/messaging-transport-roadmap.md`.
+- Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
+  shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
+  facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is
+  not approved. Readiness contract: `docs/messaging-rcs-readiness.md`.
+- CallRail text events require a dedicated route; the current CallRail voice/form webhook treats
+  non-form payloads as calls and must never receive SMS Received/Sent webhooks.
 
 ## Verification expectations
 
@@ -99,3 +109,50 @@ webhook delivery.
 Update this file in the same commit when adding/removing a provider, changing data exchanged,
 moving credential ownership, changing webhook/auth/idempotency behavior, or altering production
 configuration requirements.
+
+## Encircle managed credential rollout
+
+The permanent target is the service-only `integration_credentials` row managed from Connections.
+All seven Pages Encircle workers and the separate `upr-mcp` adapter resolve that row first. The
+existing `ENCIRCLE_API_KEY` remains a temporary fallback only while the row is absent or explicitly
+`fallback`; `disabled` suppresses it. Candidate activation is active-admin-only and validates via a
+bounded read-only organization request before storage.
+
+Read-only Cloudflare inspection on 2026-07-23 confirmed the fallback binding name exists in both
+Pages Production and Preview and on the deployed `upr-mcp` Worker; no values were read. A read-only
+request to `demo-sheet.netlify.app` returned HTTP 200 with the Utah Pros Demo Sheet title, so that
+legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 that it is obsolete and
+unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
+supported Encircle consumer or a credential-rotation dependency.
+
+## Messaging transport build state (2026-07-23)
+
+Phase 1 is published with Twilio behavior unchanged. The later integration branch adds a disabled
+server-only selector (`MESSAGING_SEND_MODE=disabled|callrail|twilio`), a schema writer gated by
+`MESSAGING_SCHEMA_MODE=legacy|foundation`, a person-to-person-only CallRail adapter, and a dedicated
+`/api/callrail-text-webhook` receiver. Missing/unknown send mode disables outbound messaging;
+missing/unknown schema mode stays legacy; missing webhook signing configuration fails closed.
+There is no provider or channel fallback.
+
+The receiver verifies CallRail's raw-body signature and timestamp before parsing, validates only
+text received/sent events, and claims a normalized dedupe record without retaining raw payloads or
+short-lived MMS URLs. The integration branch now projects inbound SMS into canonical contacts,
+conversations and messages through an atomic service-role RPC, applies shared STOP/START/HELP state
+rules (including a consent-only transaction when MMS capture fails), reconciles sent events by
+provider message identity or strict conversation/address/body/time identity, and retains transient
+failures with bounded backoff for the protected `process-callrail-events` recovery worker. It deliberately does not auto-send compliance replies
+through CallRail. The repository build copies verified MMS bytes into private
+`message-attachments`, persists only `upr-storage://` references, and signs a short URL only after
+messaging authorization and message/index binding. The separate reconciliation worker polls
+CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
+compilation, provider fixtures, and reviewed retention remain activation blockers. Repository
+source now includes atomic canonical-message recovery plus a durable, fenced notification outbox;
+neither SQL contract has been applied or runtime-verified.
+
+All of this is repository-only and unconfigured: no Cloudflare variable, provider webhook, API
+credential, number assignment, deployment, database migration, or real send has occurred.
+
+The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
+active transport or provider configuration. RCS remains blocked until requested-versus-actual
+channel persistence, sender/content identity, signed inbound/status normalization, consent review,
+test-device evidence, and an owner-approved no-fallback production configuration are complete.

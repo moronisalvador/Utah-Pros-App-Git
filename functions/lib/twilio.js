@@ -44,8 +44,12 @@ export async function validateTwilioSignature(request, authToken, url) {
 }
 
 /**
- * Send an SMS/MMS via Twilio REST API
- * Twilio auto-upgrades to RCS when the recipient supports it (if RCS sender is registered)
+ * Send an SMS/MMS via Twilio REST API.
+ *
+ * Do not add an RCS Sender to this Messaging Service while this legacy command
+ * uses an ordinary phone-number destination: Twilio may then select RCS and
+ * automatically fall back across channels. The future RCS adapter must use an
+ * explicit `rcs:` destination so UPR's no-fallback policy stays enforceable.
  */
 export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) {
   // DB-first (integration_credentials/config), env fallback — see functions/lib/credentials.js
@@ -56,7 +60,8 @@ export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) 
     Body: body,
   });
 
-  // Use Messaging Service SID (handles RCS upgrade + sender pool)
+  // Use the existing Messaging Service sender pool. RCS activation is blocked
+  // until the separate channel-locked adapter and rollout gates are complete.
   if (messagingServiceSid) {
     params.set('MessagingServiceSid', messagingServiceSid);
   } else {

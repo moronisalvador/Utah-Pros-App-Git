@@ -34,12 +34,13 @@ files.
      safe column set and NEVER `amount_paid`/`insurance_paid`/`homeowner_paid`/`status`/`paid_at`.
      Verify: a double-submit guard exists; `/api/qbo-payment` is POSTed only when
      `qbo_invoice_id` is present, with a Bearer header; a failed QBO sync is non-fatal (the UPR
-     `payments` row still persists). Confirm a committed test asserts the excluded columns.
+     `payments` row still persists). Also require server-side admin/manager authorization, a stable
+     idempotency key, retry/reconciliation behavior, and committed money-path tests.
      This is the highest-weighted check — a regression here corrupts invoice balances.
-   - **Financial-access gate (finding F-2, phases P1/P2).** The financial dashboard/AR RPCs are
-     NOT server-gated. Verify the UI reproduces `canAccess('overview_financials')` and skips
-     BOTH render AND fetch for non-privileged roles (the RPC must not be called). Confirm a
-     committed test. A leak here exposes revenue/AR to users the desktop hides it from.
+   - **Financial-access gate (finding F-2, phases P1/P2).** Missing server/RPC role or capability
+     enforcement is a blocker and remains owner-gated until remediated. Verify the trusted boundary
+     rejects non-privileged callers. UI `canAccess('overview_financials')` render/fetch suppression
+     is defense in depth only and does not cure an exposed RPC.
    - **Admin-only + dark-flag gating.** Every admin-mobile route is behind `AdminMobileRoute`
      (`role==='admin'` && `isFeatureEnabled('page:admin_mobile')`). A field tech must never see
      the `TechMore.jsx` admin group; a non-admin must be redirected. Verify the guard and its

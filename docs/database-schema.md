@@ -115,6 +115,32 @@ code.
 7. Run database security/performance advisors when access permits.
 8. Regenerate `docs/generated/`/baseline evidence; never hand-edit generated reports.
 
+## Messaging transport foundation (draft; not applied)
+
+The 2026-07-23 read-only recapture confirmed that `messages` still has legacy `twilio_sid`, broad
+anonymous/authenticated table access, and no generic provider identity. Repository migration
+`20260723213000_messaging_transport_foundation.sql` proposes:
+
+- additive provider/message/conversation identity, actual sender/recipient, and
+  `client_request_id` columns on `messages`;
+- a service-only `message_send_attempts` idempotency/reconciliation ledger with canonical recovery
+  snapshots and parent/recipient-child identity for multi-recipient provider effects;
+- a service-only deduplicated `message_provider_events` inbox containing the minimum normalized
+  text facts and UPR-owned private-media metadata needed for later domain recovery, but never raw
+  payloads or provider MMS URLs;
+- a service-only `message_notification_outbox` atomically enqueued by inbound projection and
+  claimed through a fenced lease RPC; and
+- removal of anonymous and authenticated browser writes to `messages`, retaining only
+  conversations-capability-gated reads for active non-external employees while service-role
+  workers remain the only writers.
+
+This describes unapplied source, not current live schema. Applying it changes the shared production
+database immediately and requires the owner-approved apply window, release-branch provenance,
+migration/anon-grant review, role verification, and rollback readiness.
+
+Sanitized live evidence and apply-window recapture queries:
+`docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
+
 ## Known limits
 
 The repository does not by itself prove current live state after the dated capture. The July 2026
@@ -125,3 +151,12 @@ provider state and representative-role behavior still require separate evidence.
 
 Update this file in the same commit whenever schema ownership, database conventions, environment
 topology or a cross-domain data relationship changes.
+
+## Pending Encircle managed-credential extension
+
+`20260723_encircle_managed_credentials.sql` is authored but not applied. It adds nullable
+`managed_status`, `last_verified_at`, and `last_verification_status` columns to
+`integration_credentials`, seeds an Encircle placeholder in `fallback` state, and seeds the
+default-OFF `feature:encircle_managed_credentials` flag. The secret table retains zero RLS policies;
+the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
+its signature, becomes active-admin gated, and returns no secret fields.

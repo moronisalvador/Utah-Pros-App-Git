@@ -77,6 +77,31 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - A caller-supplied boolean or IP address is not consent evidence by itself. Consent records must
   originate from the approved server path and bind the rendered disclosure/version, submitted
   choice, server-observed request context and resulting contact.
+- CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
+  automated, group, broadcast, bulk and campaign sends must never use it.
+- CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
+  must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
+  owner-approved provider-native compliant mechanism is evidenced.
+- A messaging-provider failure does not fall back to another provider or channel. Ambiguous
+  provider timeouts are reconciled before any retry that could duplicate a customer message.
+- RCS is a channel inside the existing messaging domain, not a new consent or conversation domain.
+  Canonical records distinguish the requested channel from the provider-confirmed actual channel.
+- Twilio provider-managed RCS-to-SMS/MMS fallback is prohibited. It may be enabled only by a
+  separate owner-approved policy/schema/consent rollout that records the fallback and proves both
+  channels are permitted for that purpose.
+- An RCS Sender identity is not a phone number. Preserve typed sender/recipient addresses and never
+  use a provider sender, Messaging Service, template, or provider thread as UPR conversation
+  identity.
+- RCS STOP/START/HELP, rich quick replies, delivery/read receipts, and action payloads enter through
+  authenticated provider webhooks and update the same canonical consent/audit domain idempotently.
+
+Detailed transport authority: `docs/messaging-transport-roadmap.md` and
+`docs/messaging-rcs-readiness.md`.
+
+For a direct staff send, `client_request_id` identifies one user action. A transport retry must
+reuse it; reusing it with changed recipient/content/media/provider is a conflict. An accepted or
+ambiguous attempt is returned/reconciled rather than automatically submitted again. Internal notes
+remain provider-free, and group/broadcast sends cannot enter the CallRail adapter.
 
 ## Capability links and public documents
 
@@ -113,3 +138,14 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 When a change introduces, removes or reinterprets a business rule, update this file and the detailed
 domain guide in the same commit. Add regression tests at the primary enforcement boundary and at any
 documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
+
+## Credential rotation
+
+- A candidate provider credential is validated with a read-only provider request before it becomes
+  active; failure leaves the current credential and technician workflows untouched.
+- A migration fallback is allowed only while explicitly marked `fallback`. An explicit `disabled`
+  state suppresses the legacy environment credential.
+- Provider keys are write-only to the browser. Status may disclose connection state, safe account
+  labels, and verification time, never the credential or raw provider error body.
+- Old credentials are revoked only after every surviving runtime is inventoried, deployed against
+  the managed source, and smoke-tested.

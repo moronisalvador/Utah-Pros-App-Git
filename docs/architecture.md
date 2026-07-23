@@ -74,6 +74,10 @@ be treated as current architecture without re-verification.
   releases.
 - Reuse shared auth, HTTP, database, telemetry, consent and provider libraries instead of local
   substitutes.
+- Staff-to-customer messaging keeps one browser contract (`POST /api/send-message`) and places
+  provider request/response details behind a server transport seam. Consent, DND, conversations and
+  message ownership remain above that seam; scheduled/automated/campaign paths are not implicitly
+  provider-selectable.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.
@@ -96,3 +100,12 @@ tests, native behavior and operational configuration. Document the enforcement b
 Current dated risks and remediation priorities are recorded in
 `docs/audit/2026-07/executive-summary.md` and `docs/audit/2026-07/remediation-backlog.md`. Re-verify a
 snapshot finding against the current checkout and external systems before acting on it.
+
+## Managed provider credential cutover
+
+Provider runtimes may use a service-only `integration_credentials` row as their managed source with
+an explicitly temporary environment-secret fallback. The lifecycle distinguishes `fallback`,
+`active`, and `disabled`: an explicit disable suppresses fallback, while a missing pre-migration row
+may use it. Candidate credentials are validated at the Worker boundary before activation and are
+never returned to the browser. Independently deployed runtimes such as Pages and `upr-mcp` must
+implement and test the same precedence before an old credential is revoked.

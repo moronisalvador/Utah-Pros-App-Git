@@ -11,28 +11,29 @@ the report. The ground truth for what is allowed is `.claude/rules/database-stan
 + allowlist, §4 secrets). One shared Supabase backs dev AND production, and the anon key ships in the
 browser bundle — an `anon` grant is an internet-reachable capability.
 
-Run these three lenses over every new/changed file under `supabase/migrations/` (and, if the Supabase
-MCP `execute_sql` tool is available, confirm against the live catalog):
+Run these three lenses over every new/changed file under `supabase/migrations/`. Use only an
+authorized read-only catalog tool for live confirmation. Do not use mutation-capable `execute_sql`
+merely because it is installed or allowlisted; if no read-only catalog path exists, report the live
+check as owner/tool-gated.
 
 **Lens 1 — anon/public grants & policies.**
 - Flag any `GRANT ... TO anon` or `GRANT ... TO public`, and any `CREATE POLICY ... TO anon`/`TO public`
   (or a policy whose `USING`/`WITH CHECK` does not scope the role), UNLESS the object is named in the
   `database-standard.md` §2 public allowlist AND the migration carries a `-- public: <reason>` comment.
-- Flag any new `SECURITY DEFINER` function missing `GRANT EXECUTE ... TO authenticated` (worker-only
-  functions must say so in a comment) — but its grant must be `TO authenticated, service_role`, never
-  `anon`, outside the allowlist.
-- **Default-privileges trap:** Postgres auto-grants `anon` on every NEW table/view/function in `public`.
-  A new reporting VIEW or table therefore re-opens `anon` even with zero explicit GRANT lines. Confirm
-  the migration either runs after Foundation's `ALTER DEFAULT PRIVILEGES ... REVOKE ... FROM anon`, or
-  appends an explicit `REVOKE ALL/EXECUTE ... FROM anon` after each `CREATE`. New views must be
-  `WITH (security_invoker = true)` so they cannot leak RLS-protected rows.
+- For every new `SECURITY DEFINER`, require caller/capability validation, pinned `search_path`, an
+  explicit revoke from `PUBLIC, anon`, and grants only to intended roles. Worker-only functions need
+  not be granted to `authenticated`.
+- **Default-privileges trap:** Postgres functions receive `EXECUTE TO PUBLIC` by default. Tables and
+  views do not generically receive `SELECT TO anon`; inspect actual ACLs and project default
+  privileges rather than assuming. Require the explicit UPR revokes and `security_invoker` views.
 
 **Lens 2 — secret non-exposure (highest weight).**
 - Identify every table with a secret-like column (name matching
   `%secret%|%token%|%api_key%|%apikey%|%password%|%credential%|%refresh%|%access_token%|%private%|%signing%`).
   Each MUST have RLS enabled and **no `anon`/`authenticated` SELECT policy** (deny-all; service-role
-  only). Live check when MCP is available: `SET LOCAL ROLE anon;` / `authenticated;` then
-  `SELECT count(*)` must be 0. Known deny-all secret stores to keep clean: `integration_credentials`,
+  only). An authorized live negative check runs in a read-only transaction that is always rolled
+  back; permission denied is the strongest result. A successful query returning zero current rows
+  does not prove the role lacks access. Known deny-all secret stores: `integration_credentials`,
   `integration_config`, `user_google_accounts`, `billing_2fa_codes`.
 - Flag any `SECURITY DEFINER` function granted to `anon`/`authenticated` that RETURNS a secret column
   value or `SELECT *`s a secret table (status/boolean/redacted metadata is fine; the raw token is not).

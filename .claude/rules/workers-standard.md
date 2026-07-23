@@ -1,10 +1,13 @@
 # Cloudflare Workers Standard
 
+**Last verified:** 2026-07-23
+
 Linked from `CLAUDE.md`. **The law for the ~95 Cloudflare Pages Functions in `functions/api/` and their
 shared libs in `functions/lib/`.** Born from the UX audit's worker census: 4 unauthenticated endpoints
 not by design, ~8 money/campaign endpoints role-gated in the UI only, `requireAuth` copy-pasted 14×
 + ~20 inline, 0 outbound fetches with a timeout, `worker_runs` hand-rolled in 31 files. Audited by
-`upr-pattern-checker` + `anon-grant-auditor` on any worker change.
+`worker-security-reviewer` on any worker change, plus `consent-path-auditor` for send paths and the
+database reviewers when a migration/catalog boundary also changes.
 
 > **Adoption note:** `functions/lib/{auth,http,worker-runs}.js` are being consolidated by the UX-Quality
 > F-B phase (it deletes the inline copies). Until F-B merges, a Phase-0-style inline helper that mirrors

@@ -1,5 +1,7 @@
 # DB Foundation — File & RPC Ownership Manifest
 
+**Last verified:** 2026-07-23
+
 **Committed with the plan of record. Binding for every DB Foundation phase session.**
 Linked from `docs/db-foundation-roadmap.md` and `docs/db-foundation-dispatch.md`. Each phase session's
 read scope = `CLAUDE.md` + its phase block in the roadmap + `.claude/rules/database-standard.md` +
@@ -99,11 +101,12 @@ surfaces), P8's photo URLs move public→signed (behind the helper). Everything 
 
 ## 7. Close-out (every phase session)
 
-Commit → `npm run test` + `npm run build` + `npx eslint` (changed files) → `migration-safety-checker`
+Repository diff → `npm run test` + `npm run build` + `npx eslint` (changed files) → `migration-safety-checker`
 + `anon-grant-auditor` (any migration) + `db-foundation-phase-reviewer` sign-off (weighted on the
-phase's blast surface) → apply + verify migrations live via MCP within the sequenced window → update
+phase's blast surface) → only with a fresh owner instruction, apply + verify the exact reviewed
+migrations live via MCP within the sequenced window → update
 `UPR-Web-Context.md` (Rule 9) → reconcile the roadmap checkboxes (both directions) → delete TEST rows →
-push `-u` → open a PR into `dev` as a handoff → **STOP** (the owner or the autonomy policy merges; do
+if separately authorized, commit/push/open a PR into `dev` as a handoff → **STOP** (the owner merges; do
 not subscribe to / babysit / click-merge). RED-tier actions (REVOKE / DROP / data UPDATE / bucket flip)
 stage the migration + rollback + tests and wait for the owner's OK per the roadmap's autonomy ledger.
 

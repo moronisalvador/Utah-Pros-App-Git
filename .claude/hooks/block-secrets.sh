@@ -39,4 +39,13 @@ if printf '%s' "$text" | grep -Eq \
   exit 2
 fi
 
+# 3) Block literal Authorization bearer/basic credentials while allowing obvious placeholders.
+#    Do not print the matched value.
+if printf '%s' "$text" | grep -Eiq 'Authorization[[:space:]]*:[[:space:]]*(Bearer|Basic)[[:space:]]+[A-Za-z0-9._~+/-]{12,}' &&
+   ! printf '%s' "$text" | grep -Eiq 'Authorization[[:space:]]*:[[:space:]]*(Bearer|Basic)[[:space:]]+(\$\{|<|\[|example|placeholder|fixture|fake|test)'; then
+  echo "BLOCKED: the content looks like it contains a literal Authorization credential." >&2
+  echo "Use an environment variable/secret store or a clearly marked placeholder; do not commit it." >&2
+  exit 2
+fi
+
 exit 0

@@ -23,6 +23,7 @@
  *   Internal:  @/contexts/AuthContext (useAuth → db.rpc for status/stats +
  *              isFeatureEnabled for the Twilio send-mode flag),
  *              @/lib/realtime (getAuthHeader — authenticated worker calls),
+ *              @/lib/toast (approved user feedback),
  *              @/components/settings/SettingsPageHeader
  *   Data:      reads/writes → integration_credentials + integration_config, but
  *              only via workers (/api/github-connect, /api/deepgram-connect,
@@ -51,10 +52,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { err, ok } from '@/lib/toast';
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
-
-function ok(message) { window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'success' } })); }
-function err(message) { window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type: 'error' } })); }
+import { StatusPill } from '@/components/ui';
 
 // ─── Helpers ──────────────
 
@@ -69,6 +69,15 @@ export function qboReturnToast(search) {
   if (qbo === 'connected') return { type: 'success', message: 'QuickBooks connected' };
   if (qbo === 'badstate')  return { type: 'error', message: 'QuickBooks connect failed: state mismatch — try again' };
   return { type: 'error', message: 'QuickBooks connect failed' + (params.get('msg') ? `: ${params.get('msg')}` : '') };
+}
+
+// Missing flag rows must stay OFF for credential rotation. AuthContext normally
+// treats missing flags as unrestricted for backwards compatibility, which is
+// intentionally too permissive for a secret-management rollout.
+// eslint-disable-next-line react-refresh/only-export-components
+export function isEncircleCredentialFlagEnabled(featureFlags, isFeatureEnabled) {
+  return !!featureFlags?.['feature:encircle_managed_credentials']
+    && isFeatureEnabled('feature:encircle_managed_credentials');
 }
 
 const fmtDate = (iso) => iso
@@ -910,9 +919,141 @@ function TwilioCard({ db, status, loading, live, reload }) {
   );
 }
 
-// Loads the status for all three managed providers in one RPC and renders the cards.
+function EncircleCredentialCard({ status, loading, reload }) {
+  const [candidate, setCandidate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const connected = !!status?.connected;
+  const fallback = status?.managed_status === 'fallback';
+
+  const run = async (body) => {
+    const auth = await getAuthHeader();
+    const response = await fetch('/api/encircle-credential', {
+      method: 'POST',
+      headers: { ...auth, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  };
+
+  const activate = async () => {
+    if (!candidate.trim()) return;
+    setSaving(true);
+    try {
+      await run({ action: 'activate', candidate: candidate.trim() });
+      setCandidate('');
+      ok('Encircle key verified and activated');
+      await reload();
+    } catch (error) {
+      err(error.message || 'Could not validate the Encircle key');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const verify = async () => {
+    setSaving(true);
+    try {
+      await run({ action: 'verify' });
+      ok('Encircle connection verified');
+      await reload();
+    } catch (error) {
+      err(error.message || 'Could not verify Encircle');
+      await reload();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disable = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setSaving(true);
+    try {
+      await run({ action: 'disable' });
+      setConfirming(false);
+      ok('Encircle managed credential disabled');
+      await reload();
+    } catch (error) {
+      err(error.message || 'Could not disable Encircle');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card settings-int-card">
+      <div className="settings-int-head">
+        <div className="settings-int-provider">
+          <span className="settings-int-badge">En</span>
+          <div>
+            <div className="settings-int-name">Encircle</div>
+            <div className="settings-int-sub">Claims, rooms, notes, and job sync</div>
+          </div>
+        </div>
+        <StatusPill
+          tone={loading ? 'neutral' : connected ? 'success' : fallback ? 'warning' : 'neutral'}
+          label={loading ? '…' : connected ? 'Verified' : fallback ? 'Legacy fallback' : 'Not connected'}
+        />
+      </div>
+
+      <div className="settings-int-body">
+        <p className="settings-int-meta">
+          {fallback
+            ? 'The existing Cloudflare key remains in use. A new key will be validated before it replaces this fallback.'
+            : connected
+              ? `Managed key active${status?.organization_name ? ` for ${status.organization_name}` : ''}.`
+              : 'Managed access is disabled. The legacy key is not used while disabled.'}
+        </p>
+        {status?.last_verified_at && (
+          <p className="settings-int-meta">
+            Last verification: {fmtDate(status.last_verified_at)} · {status.last_verification_status}
+          </p>
+        )}
+        <label className="label" htmlFor="cred-encircle">
+          API key {connected && '(paste a candidate to rotate)'}
+        </label>
+        <div className="settings-int-row">
+          <input
+            id="cred-encircle"
+            className="input"
+            type="password"
+            autoComplete="off"
+            value={candidate}
+            onChange={(event) => setCandidate(event.target.value)}
+            placeholder="Paste candidate Encircle key"
+          />
+          <button className="btn btn-primary" onClick={activate} disabled={saving || !candidate.trim()}>
+            {saving ? 'Checking…' : connected ? 'Validate & rotate' : 'Validate & activate'}
+          </button>
+        </div>
+        <div className="settings-cred-note">
+          The candidate is checked against Encircle before it is saved. The saved key is never shown again.
+        </div>
+        {(connected || fallback) && (
+          <div className="settings-int-row">
+            <button className="btn btn-secondary btn-sm" onClick={verify} disabled={saving}>
+              Verify current connection
+            </button>
+            <button
+              className={`btn btn-sm settings-int-disconnect${confirming ? ' settings-int-disconnect--armed' : ''}`}
+              onClick={disable}
+              onBlur={() => setConfirming(false)}
+              disabled={saving}
+            >
+              {confirming ? 'Confirm disable?' : 'Disable managed access'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Loads managed-provider status in one RPC and renders the cards.
 function CredentialCards() {
-  const { db, isFeatureEnabled } = useAuth();
+  const { db, featureFlags, isFeatureEnabled } = useAuth();
   const [byProvider, setByProvider] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -929,8 +1070,17 @@ function CredentialCards() {
 
   useEffect(() => { load(); }, [load]);
 
+  const encircleEnabled = isEncircleCredentialFlagEnabled(featureFlags, isFeatureEnabled);
+
   return (
     <>
+      {encircleEnabled && (
+        <EncircleCredentialCard
+          status={byProvider?.encircle}
+          loading={loading}
+          reload={load}
+        />
+      )}
       <TwilioCard db={db} status={byProvider?.twilio} loading={loading} live={isFeatureEnabled('feature:twilio_live')} reload={load} />
       <SecretCard
         db={db} provider="resend" name="Resend" badge="Re" badgeClass="settings-cred-badge--resend"

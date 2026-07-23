@@ -1,5 +1,7 @@
 # CRM Wave — File & RPC Ownership Manifest
 
+**Last verified:** 2026-07-23
+
 **Committed by Phase F (Foundation). Binding for every Wave-1 session.**
 Linked from `CLAUDE.md` ("CRM Phase Workflow") and `docs/crm-roadmap.md` (Roadmap v3).
 Each wave session's read scope = `CLAUDE.md` + its phase block in `docs/crm-roadmap.md`
@@ -62,7 +64,7 @@ Foundation** (see §4).
 | G | 8 | `src/pages/crm/CrmSequences.jsx`, `functions/api/process-sequences.js` (new) | `upsert_sequence`, `get_sequences`, `delete_sequence`, `enroll_in_sequence` |
 | H | 9 | `src/pages/crm/CrmReports.jsx`, `src/components/crm/ForecastWidget.jsx`, `src/lib/crmPipeline.js` + `src/lib/attribution.js` (+ tests), `functions/api/weekly-crm-digest.js` (new), `src/components/crm/AiReplySuggestions.jsx` (new) | `score_lead`, `get_conversion_trend`, `get_estimator_leaderboard`, `get_call_volume`, `get_speed_to_lead`, `get_estimate_aging`, `get_pipeline_movement`, `get_contact_ltv` |
 | I | 10 | `src/pages/crm/CrmForms.jsx`, `functions/f/[public_id].js` (new), `functions/api/form-submit.js` (new), `public/embed.js` (new), optional `functions/api/webflow-form-webhook.js` (new) | `upsert_lead_from_form`, `upsert_form`, `get_forms` |
-| J | 4b | `src/pages/Marketing.jsx`, `functions/api/send-text-campaign.js` (new); flips `automation_settings.sms_sending_enabled` ON via `set_automation_setting` after carrier approval | — (uses `sendAutomatedMessage('sms', …)`) |
+| J | 4b | `src/pages/Marketing.jsx`, `functions/api/send-text-campaign.js` (new); carrier approval is prerequisite evidence only—live flag enablement or sends require a separate explicit owner instruction and otherwise remain OFF | — (uses `sendAutomatedMessage('sms', …)`) |
 | A | 1-closeout | `functions/lib/callrail.test.js`, `supabase/tests/crm_phase1_callrail.test.js` (+ fix-only: `CrmCallLog.jsx`, `CrmIntegrations.jsx`, `callrail-webhook.js`) | — |
 
 `page:crm` opening to staff is gated on **Phase 6b** (defines per-screen roles first).
@@ -71,8 +73,11 @@ Foundation** (see §4).
 
 ## 3. Frozen stub signatures (contracts — change the BODY, never the signature)
 
-All are `SECURITY DEFINER`, `GRANT EXECUTE TO anon, authenticated`, and currently
-`RAISE EXCEPTION 'not implemented (phase X)'`. Fill the body via a **function-body-only**
+~~Historical Phase-F state: all were `SECURITY DEFINER`, `GRANT EXECUTE TO anon, authenticated`.~~
+**Superseded by `.claude/rules/database-standard.md`:** that grant state is a finding, not a frozen
+contract. Preserve callable signatures, but remediation validates callers, pins `search_path`,
+revokes `PUBLIC, anon`, and grants only intended roles; public exceptions require §2 evidence/tests.
+The stubs currently `RAISE EXCEPTION 'not implemented (phase X)'`. Fill the body via a **function-body-only**
 `CREATE OR REPLACE` migration; `migration-safety-checker` fails any signature change.
 
 **Phase 4d**

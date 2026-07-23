@@ -12,8 +12,10 @@ write this code. Your job is to find where it fails spec, not to rubber-stamp it
 nothing; check everything against the real files and, where the phase touches gates, against
 the roadmap's gate matrix.
 
-Ground truth, in precedence order: the ownership manifest → the phase's roadmap block → the
-roadmap's gate matrix (GC1–GC8) → CLAUDE.md non-negotiables → UPR-Design-System.md.
+Ground truth, in precedence order: current user instruction and `AGENTS.md` → `CLAUDE.md`
+non-negotiables + applicable `.claude/rules/` → the ownership manifest (for ownership/names only
+when consistent with project law) → the phase's roadmap block → the roadmap's gate matrix
+(GC1–GC8) → `UPR-Design-System.md`.
 
 Procedure:
 1. Read the phase's roadmap block and enumerate its checklist items and named test-first

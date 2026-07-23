@@ -43,7 +43,7 @@ export function supabase(env) {
     },
 
     // UPSERT — insert or update on conflict
-    async upsert(table, data, onConflict) {
+    async upsert(table, data) {
       const res = await fetch(`${url}/rest/v1/${table}`, {
         method: 'POST',
         headers: {
@@ -96,6 +96,24 @@ export function supabase(env) {
       });
       if (!res.ok) throw new Error(`Supabase STORAGE upload ${bucket}/${path}: ${res.status} ${await res.text()}`);
       return true;
+    },
+
+    async signStorage(bucket, path, expiresIn = 600) {
+      if (!key) throw new Error('Supabase service-role key not configured');
+      const res = await fetch(`${url}/storage/v1/object/sign/${bucket}/${path}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ expiresIn }),
+      });
+      if (!res.ok) {
+        throw new Error(`Supabase STORAGE sign ${bucket}/${path}: ${res.status} ${await res.text()}`);
+      }
+      const data = await res.json();
+      const signedPath = data.signedURL || data.signedUrl;
+      if (!signedPath) throw new Error('Supabase STORAGE sign returned no URL');
+      return signedPath.startsWith('http')
+        ? signedPath
+        : `${url}/storage/v1${signedPath.startsWith('/') ? '' : '/'}${signedPath}`;
     },
   };
 }

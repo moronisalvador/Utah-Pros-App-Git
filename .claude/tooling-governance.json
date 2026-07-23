@@ -1,0 +1,236 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Validation policy for the temporary tracked .claude authority; this is not a runtime adapter source.",
+  "canonicalSource": ".claude",
+  "trackedInventory": {
+    "asOf": "2026-07-23",
+    "skills": 24,
+    "agents": 15,
+    "rules": 23,
+    "hooks": 2
+  },
+  "adapterStrategy": {
+    "status": "owner-approved",
+    "approvedOn": "2026-07-23",
+    "generationStatus": "not-implemented"
+  },
+  "requiredFrontmatter": {
+    "skill": ["name", "description"],
+    "agent": ["name", "description"]
+  },
+  "declaredOptionalReferences": [
+    {
+      "path": ".claude/skills/supabase/SKILL.md",
+      "reference": "supabase/schemas/",
+      "reason": "The vendor skill describes how to detect a declarative-schema project; UPR does not currently use this optional directory."
+    },
+    {
+      "path": ".claude/skills/product-marketing/SKILL.md",
+      "reference": ".claude/product-marketing.md",
+      "reason": "This conditional context file is created only after an explicit marketing-context request."
+    },
+    {
+      "path": ".claude/skills/content-strategy/SKILL.md",
+      "reference": ".claude/product-marketing.md",
+      "reason": "Optional context input; absence is valid."
+    },
+    {
+      "path": ".claude/skills/copywriting/SKILL.md",
+      "reference": ".claude/product-marketing.md",
+      "reason": "Optional context input; absence is valid."
+    },
+    {
+      "path": ".claude/skills/cro/SKILL.md",
+      "reference": ".claude/product-marketing.md",
+      "reason": "Optional context input; absence is valid."
+    }
+  ],
+  "governedEntrypoints": [
+    {
+      "path": ".claude/skills/db-migration/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "database",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/skills/new-feature/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-when-red-surface",
+      "triggerDomain": "feature-delivery",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/skills/masterplan/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "advisory-until-owner-approves-writes",
+      "triggerDomain": "initiative-planning",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/skills/new-crm-module/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "conditional",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "crm-phase",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/skills/supabase/SKILL.md",
+      "owner": "Supabase upstream; UPR override maintained by UPR platform engineering",
+      "provenance": "vendor-derived",
+      "status": "active-advisory",
+      "riskTier": "red",
+      "reviewPolicy": "subordinate-to-project-law",
+      "triggerDomain": "database",
+      "triggerRole": "specialist"
+    },
+    {
+      "path": ".claude/agents/upr-scout.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "advisory",
+      "triggerDomain": "repository-recon",
+      "triggerRole": "specialist"
+    },
+    {
+      "path": ".claude/agents/upr-pattern-checker.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-for-project-law",
+      "triggerDomain": "code-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/page-behavior-checker.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-for-lifecycle-regressions",
+      "triggerDomain": "code-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/migration-safety-checker.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "database-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/anon-grant-auditor.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "authorization-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/consent-path-auditor.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "messaging-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/worker-security-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "worker-security-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/sms-experience-phase-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "conditional-active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "messaging-phase-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/admin-mobile-phase-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "conditional-active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "money-phase-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/settings-phase-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "conditional-active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "settings-auth-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/impeccable-manual-edit-applier.md",
+      "owner": "Impeccable upstream; UPR activation policy maintained by UPR platform engineering",
+      "provenance": "vendor-derived",
+      "status": "conditional",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-input-contract",
+      "triggerDomain": "manual-copy-apply",
+      "triggerRole": "specialist"
+    }
+  ],
+  "conditionalPathPrefixes": [
+    ".claude/skills/brand-review/",
+    ".claude/skills/campaign-plan/",
+    ".claude/skills/competitive-brief/",
+    ".claude/skills/content-strategy/",
+    ".claude/skills/email-sequence/",
+    ".claude/skills/performance-report/",
+    ".claude/skills/product-marketing/",
+    ".claude/skills/playwright-core/"
+  ],
+  "knownFindings": [
+    {
+      "rule": "secret-bearing-permission",
+      "path": ".claude/settings.local.json",
+      "finding": "CAP-SEC-001",
+      "ownerAction": "Rotate or revoke the provider credential, then untrack and sanitize the machine-local file.",
+      "expires": "2026-08-06"
+    },
+    {
+      "rule": "mutation-permission",
+      "path": ".claude/settings.local.json",
+      "finding": "CAP-GOV-001",
+      "ownerAction": "Reset machine-local approvals after credential rotation and stop tracking the file.",
+      "expires": "2026-08-06"
+    }
+  ]
+}

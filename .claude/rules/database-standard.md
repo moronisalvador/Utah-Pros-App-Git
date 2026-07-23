@@ -1,5 +1,7 @@
 # Database Standard
 
+**Last verified:** 2026-07-23
+
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
 Supabase project (`glsmljpabrwonfiltiqm`) that sits behind BOTH `dev` and production**. A migration
@@ -14,6 +16,19 @@ access, but it does not create employee-, role-, assignment- or organization-lev
 The live project still has broad anonymous exceptions, 146 advisor-flagged always-true policies and
 342 authenticated-executable `SECURITY DEFINER` overloads. Do not copy live broad grants/policies as
 templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
+
+## 0. Authority boundary — authoring is not applying
+
+- Read-only live catalog inspection is allowed when it is relevant and authorized by the task.
+- Writing a repository migration is allowed only when the user requested implementation.
+- Applying a migration or running SQL that can mutate the shared project requires a fresh,
+  task-specific owner instruction to perform that live action. A skill, roadmap, persistent tool
+  permission, provider approval, or prior apply instruction is not reusable authorization.
+- Never use `execute_sql`, `supabase db query`, or another direct-SQL path to iterate on the shared
+  project. Iterate only against a verified isolated local/test database; otherwise author and review
+  the migration without applying it.
+- Commit, push, PR, deploy, provider writes, and live cleanup/status changes are separate delivery
+  actions and require their own user authorization.
 
 **Why the flip is safe (verified, not assumed):** logged-in users already carry a real Supabase Auth
 JWT with `role=authenticated` (`AuthContext.jsx` builds the db client from `session.access_token`;
@@ -87,6 +102,8 @@ Extend this list deliberately, one line per entry naming the exact object and th
 
 ## 5. Apply-window discipline (shared prod)
 
+- Do not enter an apply window until §0's live-apply authorization is present for the exact reviewed
+  migration. If it is absent, stop after authoring, tests, rollback review and an apply plan.
 - One Supabase backs `dev` AND `main` — a migration hits production the moment it applies. Apply
   during a low-traffic window and **sequence so consuming code deploys first** for any additive column
   the frontend will read. Removals are forbidden on live tables (§3); if ever truly needed, they are a

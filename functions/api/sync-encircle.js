@@ -41,21 +41,12 @@
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireOwner } from '../lib/auth.js';
+import { resolveCredential } from '../lib/credentials.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { supabase } from '../lib/supabase.js';
 
 // ─── SECTION: Helpers ──────────────
-async function requireAuth(request, env) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { 'apikey': serviceKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true };
-}
-
 function cleanJobNumber(val) {
   if (!val) return null;
   if (val.length > 20) return null;
@@ -101,17 +92,17 @@ export async function onRequestOptions(context) {
 async function doSync(request, env) {
   const sbUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
   const sbKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const encircleKey = env.ENCIRCLE_API_KEY;
+  const { apiKey: encircleKey } = await resolveCredential(env, null, 'encircle');
 
   if (!sbUrl || !sbKey) {
     return jsonResponse({ error: 'Missing SUPABASE_URL or key in env' }, 500, request, env);
   }
   if (!encircleKey) {
-    return jsonResponse({ error: 'Missing ENCIRCLE_API_KEY in env' }, 500, request, env);
+    return jsonResponse({ error: 'Encircle not configured' }, 500, request, env);
   }
 
   // 1. Fetch claims from Encircle
-  const encRes = await fetch(
+  const encRes = await fetchWithTimeout(
     'https://api.encircleapp.com/v1/property_claims?limit=15&order=newest',
     {
       headers: {
@@ -159,7 +150,7 @@ async function doSync(request, env) {
   }));
 
   // 3. Upsert jobs
-  const upsertRes = await fetch(
+  const upsertRes = await fetchWithTimeout(
     // The unique index on jobs is (encircle_claim_id, division) — on_conflict
     // must name both columns or PostgREST's upsert fails with 42P10.
     `${sbUrl}/rest/v1/jobs?on_conflict=encircle_claim_id,division`,
@@ -192,7 +183,7 @@ async function doSync(request, env) {
 
     // Check for existing contact to avoid duplicates
     if (phone) {
-      const checkRes = await fetch(
+      const checkRes = await fetchWithTimeout(
         `${sbUrl}/rest/v1/contacts?phone=eq.${encodeURIComponent(phone)}&limit=1`,
         { headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` } }
       );
@@ -200,7 +191,7 @@ async function doSync(request, env) {
       if (existing.length > 0) continue;
     }
 
-    const contactRes = await fetch(`${sbUrl}/rest/v1/contacts`, {
+    const contactRes = await fetchWithTimeout(`${sbUrl}/rest/v1/contacts`, {
       method: 'POST',
       headers: {
         'apikey': sbKey,
@@ -224,7 +215,7 @@ async function doSync(request, env) {
       // Insert address into contact_addresses — parse city/state/zip from Encircle's full_address string
       if (newContact?.id && job.address) {
         const parsed = parseAddressParts(job.address);
-        await fetch(`${sbUrl}/rest/v1/contact_addresses`, {
+        await fetchWithTimeout(`${sbUrl}/rest/v1/contact_addresses`, {
           method: 'POST',
           headers: {
             'apikey': sbKey,
@@ -260,7 +251,7 @@ async function doSync(request, env) {
 }
 
 export async function onRequestPost(context) {
-  const auth = await requireAuth(context.request, context.env);
+  const auth = await requireOwner(context.request, context.env, supabase(context.env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     return await doSync(context.request, context.env);
@@ -271,7 +262,7 @@ export async function onRequestPost(context) {
 }
 
 export async function onRequestGet(context) {
-  const auth = await requireAuth(context.request, context.env);
+  const auth = await requireOwner(context.request, context.env, supabase(context.env));
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, context.request, context.env);
   try {
     return await doSync(context.request, context.env);

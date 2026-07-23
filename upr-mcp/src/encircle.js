@@ -1,3 +1,26 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: encircle.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Gives the owner-only MCP worker read and carefully confirmed write access to
+ *   Encircle. It uses the same managed database key as the main app, while the
+ *   old Worker secret remains a temporary fallback until rotation is complete.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  ./supabase.js
+ *   Data:      reads → integration_credentials
+ *              writes → Encircle only through explicitly invoked tools
+ *
+ * NOTES / GOTCHAS:
+ *   - An explicit managed "disabled" state suppresses the Worker-secret fallback.
+ *   - Encircle credentials are intentionally not cached, so disable is immediate.
+ * ════════════════════════════════════════════════
+ */
+import { supabase } from './supabase.js';
+
 // Encircle API layer for the MCP worker.
 // Encircle is UPR's claims source-of-truth. This module exposes the Encircle
 // REST API to the assistant so it can read AND (carefully) write claims, notes,
@@ -13,17 +36,58 @@
 // conveniences over the highest-value endpoints.
 
 const BASE = 'https://api.encircleapp.com';
+const ENCIRCLE_TIMEOUT_MS = 15_000;
+
+function fetchWithTimeout(url, options = {}) {
+  const signal = options.signal || (
+    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+      ? AbortSignal.timeout(ENCIRCLE_TIMEOUT_MS)
+      : undefined
+  );
+  return fetch(url, signal ? { ...options, signal } : options);
+}
+
+export function clearEncircleCredentialCache() {
+  // Kept as a stable test/rotation seam. Encircle is intentionally uncached.
+}
+
+export async function resolveEncircleApiKey(env) {
+  if (env?.SUPABASE_URL && env?.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const rows = await supabase(env).select(
+        'integration_credentials',
+        'provider=eq.encircle&select=access_token,managed_status&limit=1',
+      );
+      const row = rows?.[0];
+      if (row?.managed_status === 'disabled') {
+        return { apiKey: undefined, source: 'disabled' };
+      }
+      if (row?.managed_status === 'active' && String(row.access_token || '').trim()) {
+        return { apiKey: String(row.access_token).trim(), source: 'managed' };
+      }
+    } catch {
+      // Pre-migration schema or transient DB failure: keep the legacy secret as
+      // the zero-downtime rollback path.
+    }
+  }
+  const fallback = String(env?.ENCIRCLE_API_KEY || '').trim();
+  return {
+    apiKey: fallback || undefined,
+    source: fallback ? 'environment' : 'unconfigured',
+  };
+}
 
 // Core fetch. `path` begins with '/'. Handles 204 (→ null) and non-JSON bodies,
 // and surfaces Encircle's error message. options.method/body for writes.
 async function encircleFetch(env, path, options = {}) {
-  if (!env.ENCIRCLE_API_KEY) {
-    throw new Error('ENCIRCLE_API_KEY is not configured for the MCP worker — add it as a secret (wrangler secret put ENCIRCLE_API_KEY).');
+  const { apiKey } = await resolveEncircleApiKey(env);
+  if (!apiKey) {
+    throw new Error('Encircle is not configured for the MCP worker.');
   }
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchWithTimeout(`${BASE}${path}`, {
     ...options,
     headers: {
-      'Authorization': `Bearer ${env.ENCIRCLE_API_KEY}`,
+      'Authorization': `Bearer ${apiKey}`,
       'Accept': 'application/json',
       'Content-Type': 'application/json',
       'X-Encircle-Attribution': 'UtahProsRestorationApp',
@@ -93,11 +157,12 @@ export async function encircleCreateClaim(env, fields) {
 // GET /v1/property_claims/{id}/webapp_redirect returns a 302 to the Encircle web
 // app. We read the Location header manually so the tool returns the URL itself.
 export async function encircleWebappLink(env, claimId) {
-  if (!env.ENCIRCLE_API_KEY) throw new Error('ENCIRCLE_API_KEY is not configured for the MCP worker.');
-  const res = await fetch(`${BASE}/v1/property_claims/${encodeURIComponent(String(claimId))}/webapp_redirect`, {
+  const { apiKey } = await resolveEncircleApiKey(env);
+  if (!apiKey) throw new Error('Encircle is not configured for the MCP worker.');
+  const res = await fetchWithTimeout(`${BASE}/v1/property_claims/${encodeURIComponent(String(claimId))}/webapp_redirect`, {
     method: 'GET',
     redirect: 'manual',
-    headers: { 'Authorization': `Bearer ${env.ENCIRCLE_API_KEY}`, 'X-Encircle-Attribution': 'UtahProsRestorationApp' },
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'X-Encircle-Attribution': 'UtahProsRestorationApp' },
   });
   const location = res.headers.get('location');
   if (location) return { url: location };

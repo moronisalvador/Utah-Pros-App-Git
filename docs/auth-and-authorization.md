@@ -118,3 +118,37 @@ For a new or changed workflow, document:
 
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
+
+## Credential-management authorization
+
+Credential-management Workers require a valid session, an employee row with `is_active=true`, and
+the `admin` role before any provider request or secret write. The Encircle rollout additionally
+requires an explicit enabled/dev-only flag row and treats a missing row as OFF. This server check is
+the authority; `/settings/integrations` remaining under `AdminRoute` is only the matching UI gate.
+
+Encircle service-role writers have separate operational capabilities. Manual selective import is
+limited to active `admin`, `office`, or `project_manager` employees; historical backfill and the
+legacy bulk sync repeat the owner-only Dev Tools predicate server-side. The automatic new-claim
+push, Scope Sheet search/room reads, and note upload require an active employee because field
+technicians use those paths; inactive and non-employee sessions are denied before service-role or
+provider access.
+
+## Messaging transport authorization (built; not deployed)
+
+The messaging build branch introduces one server-side `conversations` capability predicate for
+`POST /api/send-message`: authenticated user, resolved active non-external employee, force-disable
+precedence, employee override, admin allowance, then role permission. The worker derives
+`sent_by` from that identity and rejects a forged actor before service-role domain reads or
+provider calls.
+
+The current product is single-organization and treats conversations as company-wide for internal
+employees who have that capability; there is no narrower conversation assignment/ownership model
+to enforce today. The proposed `messages` RLS predicate mirrors the same capability and excludes
+anonymous users, nonemployees, inactive employees, external employees, force-disabled access, and
+denied overrides/roles. A future tenant or assignment scope must tighten both Worker and RLS
+together.
+
+`/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
+credential or webhook-secret access. These repository changes are not proof of deployed
+protection. Tests cover missing authentication, denied roles, inactive/external employees, forged
+actors, and allowed callers; deployed role behavior remains a release verification gate.

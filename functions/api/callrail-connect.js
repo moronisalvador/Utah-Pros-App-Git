@@ -14,20 +14,19 @@
  *   reconnect, since it's already been pasted into CallRail's dashboard.
  *
  * ENDPOINT:
- *   GET    /api/callrail-connect     (authenticated — Supabase Bearer)
+ *   GET    /api/callrail-connect     (active admin — Supabase Bearer)
  *          returns { secret: string|null } — the webhook shared secret, so
  *          the Integrations page can show the webhook URL to paste into
  *          CallRail's dashboard. null before the first connect.
- *   POST   /api/callrail-connect     (authenticated — Supabase Bearer)
+ *   POST   /api/callrail-connect     (active admin — Supabase Bearer)
  *          body: { api_key: string } — returns { connected: true, secret }
- *   DELETE /api/callrail-connect     (authenticated — Supabase Bearer)
+ *   DELETE /api/callrail-connect     (active admin — Supabase Bearer)
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  ../lib/cors.js, ../lib/supabase.js, ../lib/google-drive.js
- *              (reuses its generic getActorEmployee Bearer-token check —
- *              not Google-Drive-specific despite the file name)
- *   Data:      reads  → employees (auth lookup, via getActorEmployee),
+ *   Internal:  ../lib/cors.js, ../lib/supabase.js, ../lib/auth.js,
+ *              ../lib/callrail-api.js
+ *   Data:      reads  → employees (session, role, and active-status checks),
  *                        integration_config
  *              writes → integration_credentials (provider='callrail'),
  *                        integration_config (webhook secret, first connect only)
@@ -37,13 +36,26 @@
  *     CallRail has no OAuth refresh flow, so refresh_token stays NULL.
  *     get_integration_status() was widened in the Phase 1 migration to
  *     recognize an access_token-only connection as "connected".
+ *   - Only an active admin may inspect connection configuration, replace the
+ *     key, or disconnect CallRail. Responses never include the API key.
  * ════════════════════════════════════════════════
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getActorEmployee } from '../lib/google-drive.js';
+import { requireRole } from '../lib/auth.js';
 import { resolveCallRailAccountId } from '../lib/callrail-api.js';
+
+const CALLRAIL_ADMIN_ROLES = ['admin'];
+
+async function requireActiveAdmin(request, env, db) {
+  const auth = await requireRole(request, env, db, CALLRAIL_ADMIN_ROLES);
+  if (auth.error) return auth;
+  if (auth.employee.is_external === true) {
+    return { error: 'External employees cannot manage integrations', status: 403 };
+  }
+  return auth;
+}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -53,8 +65,8 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await requireActiveAdmin(request, env, db);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const [row] = await db.select('integration_config', `key=eq.callrail_webhook_secret&select=value`);
   return jsonResponse({ secret: row?.value || null }, 200, request, env);
@@ -64,8 +76,8 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await requireActiveAdmin(request, env, db);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const body = await request.json().catch(() => ({}));
   const apiKey = (body.api_key || '').trim();
@@ -75,7 +87,7 @@ export async function onRequestPost(context) {
     provider: 'callrail',
     access_token: apiKey,
     environment: 'production',
-    connected_by: employee.id,
+    connected_by: auth.employee.id,
     connected_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
@@ -101,8 +113,8 @@ export async function onRequestDelete(context) {
   const { request, env } = context;
   const db = supabase(env);
 
-  const employee = await getActorEmployee(request, env, db);
-  if (!employee) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await requireActiveAdmin(request, env, db);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   await db.delete('integration_credentials', `provider=eq.callrail`);
   return jsonResponse({ disconnected: true }, 200, request, env);

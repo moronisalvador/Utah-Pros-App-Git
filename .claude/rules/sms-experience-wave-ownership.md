@@ -1,5 +1,7 @@
 # SMS Experience — File & RPC Ownership Manifest
 
+**Last verified:** 2026-07-23
+
 **Committed with the plan of record (2026-07-09). Binding for every sms-experience session.**
 Linked from `docs/sms-experience-roadmap.md` (plan of record) and `docs/sms-experience-dispatch.md`
 (cold-session launch blocks). Each session's read scope = `CLAUDE.md` + its phase block in the
@@ -79,8 +81,10 @@ gate; throttle to review bandwidth** (suggested: H0 → F-core → then wave).
   load-bearing** for held-retry in `process-sequences.js:143` and `process-crm-automations.js` — D may
   ADD new reason strings (additive-safe) but must NEVER rename these or reshape the result, and must
   ship committed backward-compat tests that both non-owned callers still succeed (§8).
-- **`claim_scheduled_message(p_id) → boolean`** (F-core). SECURITY DEFINER, `GRANT EXECUTE TO
-  authenticated, service_role`. A calls it; never re-defines it.
+- **`claim_scheduled_message(p_id) → boolean`** (F-core). The signature is frozen; its privilege
+  mode/grants are not. Prefer invoker semantics; if a definer remains necessary, validate the
+  scheduler/worker caller, pin `search_path`, revoke `PUBLIC, anon`, and grant only the intended
+  service caller. A calls it; never re-defines it.
 - **omni §7 wrong-channel invariants** (adopted, not redefined): the worker is the sole writer of any
   `sms_*` message row (the client inserts only `internal_note`); no cross-channel fallback; consent
   gate selected by channel.
@@ -114,7 +118,8 @@ tech-layout variant already lives at `index.css:1298-1304`. No other phase touch
   skipped at send time. **TCPA penalties are per message.**
 - **Worker is the sole writer** of `sms_*` rows (client inserts only `internal_note`) — C's fake-send
   removal enforces this; D's automated thread-writes use the service-role worker path.
-- **A2P live path** is gated (roadmap §7); no session tests the live send until approval confirmed.
+- **A2P live path** is gated (roadmap §7); provider approval is prerequisite evidence, while a live
+  test/send additionally requires an explicit owner instruction for that action.
 - **`process-scheduled` auth** (A): add the cron-secret/requireAuth gate — never leave it public.
 
 ## 7. Foundation artifacts the wave consumes (frozen contracts)
@@ -125,13 +130,14 @@ redefine.
 
 ## 8. Close-out (every session)
 
-Commit → `npm run test` + `npm run build` + `npx eslint` (changed files) → reviewer gauntlet
+Repository diff → `npm run test` + `npm run build` + `npx eslint` (changed files) → reviewer gauntlet
 (`sms-experience-phase-reviewer`; `consent-path-auditor` on any send-path change;
 `migration-safety-checker` + `anon-grant-auditor` on any migration; `upr-pattern-checker`) → visual
-check desktop + mobile incl. `/tech/conversations` (Phase C) → apply + verify migrations live via MCP
-within the sequenced window (F only) → update `UPR-Web-Context.md` (Rule 9) → reconcile the roadmap
+check desktop + mobile incl. `/tech/conversations` (Phase C) → only with a fresh owner instruction,
+apply + verify the exact reviewed migrations live via MCP within the sequenced window (F only) →
+update `UPR-Web-Context.md` (Rule 9) → reconcile the roadmap
 checkboxes (both directions; owner-gated stages stay open with the reason disclosed) → delete TEST rows
-→ push `-u` → **open a PR into `dev` as a handoff and STOP** (the owner merges; do not subscribe to /
+→ if separately authorized, commit/push/open a PR into `dev` as a handoff and STOP (the owner merges; do not subscribe to /
 babysit / click-merge). F-red's RED apply waits for the owner's explicit OK.
 
 ---
@@ -218,7 +224,8 @@ tests that both non-owned callers still succeed (roadmap §8).
 
 ```
 claim_scheduled_message(p_id uuid) → boolean
-  -- SECURITY DEFINER; GRANT EXECUTE TO authenticated, service_role (never anon).
+  -- Prefer SECURITY INVOKER; a necessary definer validates caller, pins search_path,
+  -- revokes PUBLIC/anon, and grants only intended callers.
   -- Atomic compare-and-set on scheduled_messages.claimed_at: returns TRUE to exactly ONE caller that
   -- claims a still-'pending' row (unclaimed, or stale-claimed >10 min ago → crash recovery). Does NOT
   -- touch `status` (the status CHECK has no 'processing' value — the old worker's 'processing' write is
@@ -230,7 +237,8 @@ claim_scheduled_message(p_id uuid) → boolean
   --    (write terminal status immediately post-send; idempotency/twilio dedup) is Phase A's acceptance line.
 
 increment_conversation_unread(p_conversation_id uuid, p_by integer DEFAULT 1) → integer
-  -- SECURITY DEFINER; GRANT EXECUTE TO authenticated, service_role (never anon).
+  -- Prefer SECURITY INVOKER; a necessary definer validates caller, pins search_path,
+  -- revokes PUBLIC/anon, and grants only intended callers.
   -- One atomic UPDATE (no read-modify-write race). Clamps at 0. Returns the new unread_count, or NULL
   -- if the conversation does not exist.
 ```
@@ -281,3 +289,22 @@ truthful:
   (Phase B "not yet merged") are STALE — both merged (8f63ae9, 4a52d99).
 - Everything else in §§1–9 binds the new initiative unchanged (worker sole-writer, no
   `skip_compliance`, call-only workers, realtime.js frozen, A2P owner gate).
+
+---
+
+## 11. messaging-transport addendum (2026-07-23) — provider-neutral staff-send seam
+
+The `messaging-transport` initiative (`docs/messaging-transport-roadmap.md`,
+`.claude/rules/messaging-transport-wave-ownership.md`) supersedes this completed initiative's file
+freeze only as follows:
+
+- `functions/api/send-message.js` may replace its direct Twilio import with the new flat
+  `functions/lib/messaging-transport.js` seam and later implement the roadmap's reviewed
+  authorization/idempotency/provider phases.
+- `functions/lib/twilio.js` remains behavior-frozen and is consumed as the Twilio adapter.
+- The `/api/send-message` public contract, structurally unbypassable consent/DND, worker
+  sole-writer rule, and no-fallback rule remain binding.
+- Automated, scheduled, group/broadcast, bulk, and campaign CallRail sends remain forbidden.
+
+The new ownership manifest is authoritative for those named amendments; everything else in this
+manifest remains in force.

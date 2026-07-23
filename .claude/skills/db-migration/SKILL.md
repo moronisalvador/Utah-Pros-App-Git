@@ -1,6 +1,6 @@
 ---
 name: db-migration
-description: Author and ship a SAFE Supabase migration the UPR way — additive-only, least-privilege RLS/grants, secrets never plaintext-readable, a rollback note, apply-window discipline on the one shared prod DB, test-first, and the reviewer-agent gauntlet. Use for any schema/RPC/policy/index change (new table or column, new or replaced RPC, RLS/grant change, constraint, index). The guided companion to `.claude/rules/database-standard.md`.
+description: Plan or author a SAFE Supabase migration the UPR way, and apply it only when the owner separately authorizes that live action. This is the UPR dispatcher for schema, RPC, policy, grant, constraint, and index changes; vendor database skills are advisory.
 ---
 
 # db-migration
@@ -9,6 +9,11 @@ The safe path for changing the database. One shared Supabase (`glsmljpabrwonfilt
 BOTH `dev` and production, so **every migration is live for real customers the instant it applies** —
 this skill makes the safe sequence automatic. Ground rules: `.claude/rules/database-standard.md`
 (the standard) + `CLAUDE.md` Rule 7. Follow in order.
+
+**Authority gate:** planning, repository authoring, live apply, and publication are separate. Do not
+author unless implementation was requested. Do not call `apply_migration` or mutation-capable direct
+SQL unless the owner explicitly asks to apply the exact reviewed migration in this task. Do not
+commit, push, open a PR, deploy, or mutate live cleanup/status data unless separately requested.
 
 ## 1. Understand the live truth first (never from memory)
 - Read the actual tables/RPCs you'll touch via the Supabase MCP: `information_schema.columns` for real
@@ -21,20 +26,22 @@ this skill makes the safe sequence automatic. Ground rules: `.claude/rules/datab
 
 ## 2. Write the failing test FIRST
 - Money math, data writes, idempotency, auth gates, date/timezone, and any RPC the frontend reads get
-  a committed failing test before the SQL (`supabase/tests/` integration test, or a `vitest` unit test
+  a failing test before the SQL (`supabase/tests/` integration test, or a `vitest` unit test
   for pure JS). Self-skip without creds (mirror the existing suites); use disposable fixture IDs; never
-  assert on live row counts. Never edit a committed test to green it — fix the code.
+  assert on live row counts. The test need not be committed unless delivery was requested. Never
+  weaken a valid failing test to green it — fix the code.
 
 ## 3. Write the migration to `.claude/rules/database-standard.md`
 - **Additive-only.** New tables/columns/indexes/constraints-on-new-columns. No `DROP`/`RENAME`/tightening
   `ALTER` on a live table.
-- **RLS at creation, scoped `TO authenticated`.** Every `CREATE TABLE` gets `ENABLE ROW LEVEL SECURITY`
-  + an explicit policy `TO authenticated` (floor `USING (true)`; tighten to an ownership/org predicate
-  for per-user/per-org data). A policy `TO anon`/`TO public` is only allowed for a genuinely public
-  surface via the standard's §2 allowlist + a `-- public: <reason>` comment.
-- **Least-privilege grants.** `SECURITY DEFINER` RPC + `GRANT EXECUTE TO authenticated, service_role`
-  — **never `anon`** outside the allowlist. New views: `WITH (security_invoker = true)` +
-  `REVOKE ALL ... FROM anon` (Postgres default-privileges would otherwise re-grant `anon`).
+- **RLS at creation, scoped to the real access model.** Browser-readable tables get operation-specific
+  policies using owner, assignment, role, organization, or capability predicates. `USING (true)` is
+  blocking unless the table is explicitly documented company-wide. Service-only secret/internal
+  tables may intentionally have RLS with no browser policy. `anon` is only allowed through §2.
+- **Least-privilege functions and grants.** Prefer `SECURITY INVOKER`. A necessary `SECURITY DEFINER`
+  function validates the caller inside the function, pins `search_path`, explicitly revokes
+  `EXECUTE` from `PUBLIC, anon`, and grants only to intended callers. Do not grant browser or service
+  roles reflexively. New views use `security_invoker` and explicit least-privilege ACLs.
 - **Backward-compatible replace.** A `CREATE OR REPLACE` of a live RPC keeps the exact signature (new
   params `DEFAULT`) and return shape — the **frontend contract is frozen** (no column rename/move, no
   return-shape change a deployed page reads). Grep `src/` for the RPC name; keep every caller working.
@@ -48,8 +55,12 @@ this skill makes the safe sequence automatic. Ground rules: `.claude/rules/datab
   the undo is the prior function body, the `DROP`/deactivation of the additive object, or the re-`GRANT`.
   A migration with no stated undo is not done.
 
-## 4. Apply + verify on the shared prod DB (carefully)
-- Apply via Supabase MCP `apply_migration` in a low-traffic window. **Sequence so consuming code deploys
+## 4. Apply + verify on the shared prod DB (only when separately authorized)
+- Without a fresh owner instruction to apply this exact reviewed migration, stop with the authored
+  migration, tests, rollback, review findings, and apply plan. Never use `execute_sql` for iterative
+  schema work on the shared project.
+- When explicitly authorized, apply via Supabase MCP `apply_migration` in a low-traffic window.
+  **Sequence so consuming code deploys
   first** for any additive column the frontend will read. If two migrations strong-lock the same hot
   tables (`CREATE/DROP POLICY`, `ADD CONSTRAINT`, `ADD/DROP INDEX`), don't overlap their apply windows.
 - Re-query live to prove it worked (the row is there, the policy scopes to `authenticated`, the RPC
@@ -60,5 +71,5 @@ this skill makes the safe sequence automatic. Ground rules: `.claude/rules/datab
   (no stray `anon`, no secret exposure) on the migration; for a DB Foundation phase also
   **`db-foundation-phase-reviewer`**. Then `npm run test` + `npm run build` green.
 - Update `UPR-Web-Context.md` (Rule 9) for any new/changed table/RPC. Delete disposable test rows.
-- Land per `CLAUDE.md` Rule 4: routine → commit to `dev`; a wave phase → PR into `dev` as a handoff.
-  Never a direct `main` push.
+- If publication was explicitly requested, land per `CLAUDE.md` Rule 4. Otherwise stop with a diff
+  and verification report. Never push `main` directly.

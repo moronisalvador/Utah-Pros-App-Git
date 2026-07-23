@@ -208,7 +208,6 @@ export default function Conversations({ replyAssist } = {}) {
   const fileInputRef = useRef(null);
   const activeIdRef = useRef(null);
   const atBottomRef = useRef(true);
-  const clientIdCounter = useRef(0);
   const attachCounter = useRef(0);
   const scheduleSendingRef = useRef(false);
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
@@ -739,6 +738,7 @@ export default function Conversations({ replyAssist } = {}) {
           conversation_id: convId,
           body: text,
           sent_by: employee?.id || null,
+          client_request_id: clientId,
           is_internal_note: note,
           ...(media_urls && media_urls.length ? { media_urls } : {}),
         }),
@@ -820,7 +820,7 @@ export default function Conversations({ replyAssist } = {}) {
     const convId = activeId;
     const wasNote = isNote;
     const previewMedia = attachments.map(a => a.url || a.localPreview).filter(Boolean);
-    const clientId = `pending-${++clientIdCounter.current}`;
+    const clientId = crypto.randomUUID();
     const optimistic = {
       id: clientId,
       _clientId: clientId,
@@ -861,7 +861,9 @@ export default function Conversations({ replyAssist } = {}) {
     if (!payload.text && !payload.media_urls.length) { emitToast('Cannot retry this message', 'error'); return; }
     // Flip this exact bubble back to pending. Match by _clientId (optimistic) OR by
     // id (real row) — never `undefined === undefined`, which would hit every row.
-    const matchKey = msg._clientId || msg.id;
+    // A fetch-level retry keeps the original request id. A user-requested retry
+    // of a persisted failed carrier row is a new provider attempt.
+    const matchKey = msg._clientId || crypto.randomUUID();
     retryStore.current[matchKey] = payload;
     setMessages(prev => prev.map(m => ((m._clientId && m._clientId === msg._clientId) || m.id === msg.id)
       ? { ...m, _clientId: matchKey, _pending: true, _failed: false, status: 'pending', error_message: null, error_code: null }
