@@ -77,6 +77,12 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - A caller-supplied boolean or IP address is not consent evidence by itself. Consent records must
   originate from the approved server path and bind the rendered disclosure/version, submitted
   choice, server-observed request context and resulting contact.
+- CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
+  automated, group, broadcast, bulk and campaign sends must never use it.
+- A messaging-provider failure does not fall back to another provider or channel. Ambiguous
+  provider timeouts are reconciled before any retry that could duplicate a customer message.
+
+Detailed transport authority: `docs/messaging-transport-roadmap.md`.
 
 ## Capability links and public documents
 

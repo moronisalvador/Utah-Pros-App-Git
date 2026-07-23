@@ -26,9 +26,9 @@ NOTES / GOTCHAS:
 | QuickBooks Online | Customers, estimates/invoices, payments and reconciliation | QBO Worker libraries/endpoints plus durable external IDs |
 | Intuit Payments | Tokenized keyed-card charges | Browser tokenizer → Intuit; authorized Worker charge/reconciliation |
 | Stripe | Checkout payment links and payment webhooks | Authorized Worker, signed/idempotent webhook |
-| Twilio | SMS and future communications | Consent-gated shared send path, signed inbound/status webhooks |
+| Twilio | Current SMS transport and future communications | Provider adapter, consent-gated staff/automation paths, signed inbound/status webhooks |
 | Resend / email routing | Transactional/marketing email and replies | Suppression/unsubscribe/DND gates and signed webhooks |
-| CallRail / Deepgram | Call ingest, recording and transcription | Provider webhook/adapter into canonical CRM data |
+| CallRail / Deepgram | Call/form ingest and planned staff person-to-person SMS transport | Separate voice/form and text adapters into canonical CRM/messaging data |
 | Google | Drive, Calendar, Ads and Maps/autocomplete | OAuth callbacks, scoped tokens and server-side provider calls |
 | Meta Ads | Advertising integration | OAuth callback and server-side API |
 | Encircle | Restoration/job data import and reconciliation | Server-side adapter and external identity mapping |
@@ -58,6 +58,12 @@ bindings and provider consoles.
   environment.
 - Provider-specific raw payloads are normalized at the adapter boundary so business rules consume
   owned canonical fields.
+- Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
+  never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
+  no provider failure falls back to another provider/channel. Plan:
+  `docs/messaging-transport-roadmap.md`.
+- CallRail text events require a dedicated route; the current CallRail voice/form webhook treats
+  non-form payloads as calls and must never receive SMS Received/Sent webhooks.
 
 ## Verification expectations
 

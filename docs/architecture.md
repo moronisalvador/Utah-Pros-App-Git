@@ -74,6 +74,10 @@ be treated as current architecture without re-verification.
   releases.
 - Reuse shared auth, HTTP, database, telemetry, consent and provider libraries instead of local
   substitutes.
+- Staff-to-customer messaging keeps one browser contract (`POST /api/send-message`) and places
+  provider request/response details behind a server transport seam. Consent, DND, conversations and
+  message ownership remain above that seam; scheduled/automated/campaign paths are not implicitly
+  provider-selectable.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.

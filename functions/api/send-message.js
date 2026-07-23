@@ -17,7 +17,8 @@
  *
  * DEPENDS ON:
  *   Packages:  none (pure fetch via lib helpers)
- *   Internal:  functions/lib/supabase.js, functions/lib/twilio.js, functions/lib/cors.js
+ *   Internal:  functions/lib/supabase.js, functions/lib/messaging-transport.js,
+ *              functions/lib/cors.js
  *   Data:      reads  → conversations, conversation_participants, contacts, employees
  *              writes → messages, sms_consent_log, conversations
  *
@@ -41,7 +42,7 @@
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
-import { sendMessage } from '../lib/twilio.js';
+import { sendMessage } from '../lib/messaging-transport.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
 // Verify the caller is an authenticated UPR user before sending SMS on the
