@@ -121,3 +121,16 @@ binding except as amended here.
   preserved). Audited by `migration-safety-checker`.
 - **index.css.** Session J appends a new `/* ─── SETTINGS OVERHAUL RESERVED — P9 (Credentials ·
   Session J) ─── */` marker at the bottom (Wave-2 markers were not pre-seeded); writes only inside it.
+
+## 9. Messaging setup coordination addendum (2026-07-23)
+
+The messaging-transport initiative may add a narrowly scoped setup/readiness panel within
+`src/pages/settings/Integrations.jsx` or a feature-local component consumed there. This is an
+explicit additive exception to the completed P2/P9 ownership above; it must preserve all existing
+integration and credential cards and reuse the established Settings/toast/loading/error patterns.
+
+Its server contract is admin-only and read-only (`GET /api/messaging-setup`, optionally
+`action=callrail-options`). The panel cannot write provider/schema mode, signing material,
+Cloudflare bindings, webhooks, number routing, or external provider state, and cannot send a test
+message. It adds no migration. Production remains disabled, and future RCS is displayed only as
+planned/channel-locked with automatic fallback prohibited.

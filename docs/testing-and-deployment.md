@@ -123,3 +123,23 @@ The combined Phase 2–4 build is not a one-step deploy:
 
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
+
+The repository-only admin setup panel does not change this sequence. Its
+`GET /api/messaging-setup` status and `action=callrail-options` discovery contracts are read-only,
+require an active internal admin, and add no migration. Before release, test missing/invalid
+sessions, nonemployee/inactive/external/non-admin callers, unknown actions, missing/unknown
+messaging modes, every readiness blocker, bounded CallRail pagination, provider 401/403/429/5xx and
+timeout behavior, eligible-tracker filtering, `Cache-Control: no-store`, and serialized-response
+redaction. Negative tests must prove the route performs no send, provider mutation, database write,
+mode change, signing-key disclosure, or provider fallback.
+
+Readiness tests also prove that binding presence alone never verifies a sender, live discovery
+matches the configured company/number pair, incomplete pagination fails closed, provider calls use
+bounded per-page timeouts, missing health evidence is not displayed as a clear backlog, and shared
+database health is not presented as deployment-specific webhook proof.
+
+Deploying the setup UI does not authorize activation. Production stays
+`MESSAGING_SEND_MODE=disabled`; Preview/Production Cloudflare bindings, the CallRail text webhook,
+tracking-number routing, signing key, and any real/test message remain separate owner/external
+gates. Future RCS setup remains planned only and must prove explicit channel locking with automatic
+RCS-to-SMS/MMS fallback disabled.

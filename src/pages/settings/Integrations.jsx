@@ -54,6 +54,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { err, ok } from '@/lib/toast';
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
+import MessagingSetupPanel from '@/components/settings/MessagingSetupPanel';
 import { StatusPill } from '@/components/ui';
 
 // ─── Helpers ──────────────
@@ -1107,6 +1108,8 @@ export default function Integrations() {
         title="Connections"
         subtitle="Every outside service the company connects to, in one place. Keys are stored securely on the server and never shown again."
       />
+
+      <MessagingSetupPanel />
 
       <h2 className="settings-int-grouphead">Managed here</h2>
       <div className="settings-int-grid">

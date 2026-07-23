@@ -50,6 +50,20 @@ Parallel agents owned disjoint new helpers/tests and the CallRail-connect/runboo
 remain serial integration work. This amendment does not authorize Phase 5, a database apply,
 deployment, provider/webhook configuration, secret changes, phone-number work, or a real message.
 
+### 2026-07-23 admin setup surface amendment
+
+The owner authorized repository-only construction of an in-app messaging setup/readiness surface.
+This amendment permits a new flat `functions/api/messaging-setup.js` plus focused tests and a
+settings-owned panel to consume it. The Worker is GET-only: default status and
+`action=callrail-options` read-only provider discovery. It must enforce active, internal admin
+authorization before database/provider access; use stored server credentials and timed provider
+GETs; return no-store, redacted results; and make no database write, provider mutation, or send.
+
+The surface does not own or change `MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, signing
+material, provider webhooks, Cloudflare variables, number routing, migration source, or external
+provider state. Production stays disabled. RCS may be shown only as planned/readiness information;
+it remains channel-locked and automatic RCS-to-SMS/MMS fallback is prohibited.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:
