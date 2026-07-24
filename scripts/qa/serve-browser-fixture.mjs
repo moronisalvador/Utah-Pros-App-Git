@@ -34,40 +34,56 @@ const fixture = fs.readFileSync(
   'utf8',
 );
 
-const server = http.createServer((request, response) => {
-  const host = request.headers.host;
-  const requestUrl = new URL(request.url || '/', LOCAL_BROWSER_ORIGIN);
-  const safeMethod = request.method === 'GET' || request.method === 'HEAD';
-  const safePath = requestUrl.pathname === '/qa' || requestUrl.pathname === '/health';
+export function createFixtureServer() {
+  const server = http.createServer((request, response) => {
+    const host = request.headers.host;
+    const requestUrl = new URL(request.url || '/', LOCAL_BROWSER_ORIGIN);
+    const safeMethod = request.method === 'GET' || request.method === 'HEAD';
+    const safePath = requestUrl.pathname === '/qa' || requestUrl.pathname === '/health';
 
-  response.setHeader('Cache-Control', 'no-store');
-  response.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
-  response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
-  response.setHeader('X-Content-Type-Options', 'nosniff');
+    response.setHeader('Cache-Control', 'no-store');
+    response.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http: https: ws: wss:; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+    response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
 
-  if (host !== expectedHost || !safeMethod || !safePath) {
-    response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-    response.end('Denied');
-    return;
-  }
+    if (host !== expectedHost || !safeMethod || !safePath) {
+      response.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('Denied');
+      return;
+    }
 
-  if (requestUrl.pathname === '/health') {
-    response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    response.end('ready');
-    return;
-  }
+    if (requestUrl.pathname === '/health') {
+      response.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      response.end('ready');
+      return;
+    }
 
-  response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  response.end(request.method === 'HEAD' ? undefined : fixture);
-});
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    response.end(request.method === 'HEAD' ? undefined : fixture);
+  });
 
-server.listen(Number(origin.port), origin.hostname, () => {
-  process.stdout.write(`Synthetic QA fixture ready at ${LOCAL_BROWSER_ORIGIN}/qa\n`);
-});
-
-function close() {
-  server.close(() => process.exit(0));
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(Number(origin.port), origin.hostname, () => {
+      server.off('error', reject);
+      resolve({
+        close: () => new Promise((closeResolve) => {
+          server.close(() => closeResolve());
+          server.closeAllConnections?.();
+        }),
+      });
+    });
+  });
 }
 
-process.on('SIGINT', close);
-process.on('SIGTERM', close);
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  const running = await createFixtureServer();
+  process.stdout.write(`Synthetic QA fixture ready at ${LOCAL_BROWSER_ORIGIN}/qa\n`);
+  const close = async () => {
+    await running.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', close);
+  process.on('SIGTERM', close);
+}
