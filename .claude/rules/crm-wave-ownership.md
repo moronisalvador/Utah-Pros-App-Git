@@ -28,6 +28,10 @@ split. Stay inside your files and your frozen stubs and no two sessions can coll
   > quiet-hours held-retry, MPS pacing) — signature AND return `{ok,skipped,reason}` vocabulary FROZEN
   > (`'sms_disabled'`/`'quiet_hours'` load-bearing for Phase 8/5 held-retry), with backward-compat
   > tests. See `docs/sms-experience-roadmap.md` §8.
+  > **AMENDED (2026-07-23, owner-approved consent remediation):** the historical-consent closeout
+  > may add `opt_out_at` to the contact projection and pure consent predicate so an explicit
+  > opt-out wins over a stale `opt_in_status=true`. Exported signatures and every existing
+  > `{ok,skipped,reason}` value remain frozen; `no_consent` stays a durable skip.
 - `functions/lib/sms-consent.js`, `functions/lib/email-consent.js` — consent predicates.
 - `functions/lib/twilio.js`, `functions/lib/email.js`, `functions/lib/supabase.js`,
   `functions/lib/cors.js`, `functions/lib/date-mt.js`, `functions/lib/phone.js`,

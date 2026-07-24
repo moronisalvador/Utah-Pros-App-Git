@@ -200,3 +200,7 @@ idempotency, attempt/reconciliation state, message row shape, private-media beha
 public `/api/send-message` response contract remain unchanged. The attestation operation never
 calls a provider; any subsequent staff send still passes the complete current transport,
 authorization, consent/DND, idempotency, media, and persistence chain.
+
+The compatibility amendment also permits the exact service-only consent-status RPC call from
+`send-message.js`. It may change only the consent decision seam: provider choice, submission,
+attempt ownership, reconciliation and returned message shapes stay frozen.
