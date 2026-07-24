@@ -185,7 +185,7 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
     const pushBody = JSON.stringify({
       title: body.title || type.label,
       body: body.body || '',
-      url: body.link || '/',
+      url: body.data?.url || body.link || '/',
       data: body.data || {},
     });
     const send = sendWebPushImpl || sendWebPush;
@@ -230,6 +230,29 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
 }
 
 // ─── SECTION: Body enrichment (nice titles/bodies for bare trigger payloads) ───
+
+/**
+ * Keep the bell in the office inbox while sending a tapped push directly into
+ * the field PWA's matching thread. Both inboxes already accept `?c=<id>`.
+ */
+export function enrichInboundMessageBody(body = {}) {
+  const conversationId = body.data?.conversation_id ||
+    (body.entity_type === 'conversation' ? body.entity_id : null);
+  const suffix = conversationId ? `?c=${encodeURIComponent(conversationId)}` : '';
+  const currentLink = body.link || '';
+  const bellLink = !currentLink || currentLink === '/conversations'
+    ? `/conversations${suffix}`
+    : currentLink;
+
+  return {
+    ...body,
+    link: bellLink,
+    data: {
+      ...(body.data || {}),
+      url: `/tech/conversations${suffix}`,
+    },
+  };
+}
 
 /**
  * Format a Denver wall-clock appointment for a notification line.
@@ -352,7 +375,9 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
 
   // Enrich bare trigger payloads with a human-readable title/body/link so the
   // bell, push, and email all read cleanly (not just the catalog label).
-  if (typeKey.startsWith('appointment.')) {
+  if (typeKey === 'message.inbound') {
+    body = enrichInboundMessageBody(body);
+  } else if (typeKey.startsWith('appointment.')) {
     body = await enrichAppointmentBody(db, typeKey, body);
   } else if (typeKey === 'estimate.accepted') {
     body = await enrichEstimateBody(db, body);
