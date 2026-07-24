@@ -37,8 +37,8 @@
  *   - All message-state mutations are guarded by activeIdRef so a reply that resolves
  *     after the user switches threads never lands in the wrong thread.
  *   - Toasts go through the global `upr:toast` CustomEvent (Rule 2) — no local toast.
- *   - Capacitor suspends the webview; a visibilitychange/focus refetch recovers state
- *     without touching the frozen realtime.js.
+ *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
+ *     without replacing loaded history or touching the frozen realtime.js.
  * ════════════════════════════════════════════════
  */
 
@@ -54,10 +54,18 @@ import {
   validateMessageFile,
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import {
+  captureVisibleMessageAnchor,
+  mergeNewestMessages,
+  repinThreadAfterLayout,
+  restoreVisibleMessageAnchor,
+} from '@/components/conversations/threadScroll';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import {
   buildConsentRemediationPrompt,
+  canAttestPriorSmsConsent,
   contactHasP2pSmsConsent,
   findConsentRetryMessage,
 } from '@/components/conversations/smsConsentRemediation';
@@ -230,7 +238,8 @@ export default function Conversations({ replyAssist } = {}) {
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
-  const prependAnchorRef = useRef(null);   // scrollHeight snapshot for load-earlier anchoring
+  const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
+  const isPrependingRef = useRef(false);
 
   const attachmentsRef = useRef([]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
@@ -261,6 +270,25 @@ export default function Conversations({ replyAssist } = {}) {
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
+  const reloadConversationListSilent = useCallback(async () => {
+    try {
+      const data = await db.select('conversations',
+        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason,p2p_sms_consent_at,p2p_sms_consent_source,p2p_sms_consent_phone))&order=last_message_at.desc.nullslast'
+      );
+      setConversations((previous) => {
+        const refreshedById = new Map(data.map((conversation) => [conversation.id, conversation]));
+        const previousIds = new Set(previous.map((conversation) => conversation.id));
+        const stableExisting = previous.map((conversation) =>
+          refreshedById.has(conversation.id) ? refreshedById.get(conversation.id) : conversation
+        );
+        const unseen = data.filter((conversation) => !previousIds.has(conversation.id));
+        return [...stableExisting, ...unseen];
+      });
+    } catch (error) {
+      console.error('Silent conversation refresh error:', error);
+    }
+  }, [db]);
+
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
     if (!convId) return;
@@ -278,17 +306,9 @@ export default function Conversations({ replyAssist } = {}) {
       const rows = await db.select('messages', `conversation_id=eq.${convId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
       if (activeIdRef.current !== convId) return;
       const asc = rows.slice().reverse();
-      const serverIds = new Set(asc.map(m => m.id));
-      // Match by body+type too: if a send's POST response AND its realtime INSERT were
-      // both lost during the webview suspend, the row is on the server but its pending
-      // bubble was never reconciled — drop it here so no permanent "Sending…" ghost
-      // renders next to the delivered row.
-      const serverBodies = new Set(asc.map(m => `${m.type}::${m.body}`));
-      setMessages(prev => {
-        const optimistic = prev.filter(m => (m._pending || m._failed)
-          && !serverIds.has(m.id) && !serverBodies.has(`${m.type}::${m.body}`));
-        return [...asc, ...optimistic];
-      });
+      // Merge the refreshed tail into the rendered thread. Older pages and unresolved
+      // optimistic bubbles stay mounted, so a reader's history position cannot clamp.
+      setMessages(prev => mergeNewestMessages(prev, asc));
       setHasMoreMessages(rows.length === PAGE);
     } catch (err) { console.error('Reload messages error:', err); }
   }, [db]);
@@ -426,24 +446,48 @@ export default function Conversations({ replyAssist } = {}) {
     const el = messagesScrollRef.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    atBottomRef.current = near;
     setAtBottom(near);
-    if (near) setNewInThread(0);
+    if (near) {
+      prependAnchorRef.current = null;
+      setNewInThread(0);
+    } else {
+      prependAnchorRef.current = captureVisibleMessageAnchor(el);
+    }
   }, []);
 
-  // Preserve scroll position when older messages are prepended (load-earlier).
-  useLayoutEffect(() => {
-    if (prependAnchorRef.current != null && messagesScrollRef.current) {
-      const el = messagesScrollRef.current;
-      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
-      prependAnchorRef.current = null;
-      prevLastIdRef.current = messages[messages.length - 1]?.id;
+  const handleMediaLayout = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (prependAnchorRef.current) {
+      if (!restoreVisibleMessageAnchor(el, prependAnchorRef.current)) {
+        prependAnchorRef.current = null;
+      }
+      return;
     }
-  }, [messages]);
+    repinThreadAfterLayout({
+      scrollElement: el,
+      wasAtBottom: atBottomRef.current,
+      isPrepending: isPrependingRef.current,
+    });
+  }, []);
+
+  // Preserve the first visible message when older rows are prepended. Keep the
+  // anchor afterward so delayed attachment layout above it is corrected too.
+  useLayoutEffect(() => {
+    if (prependAnchorRef.current) {
+      if (!restoreVisibleMessageAnchor(messagesScrollRef.current, prependAnchorRef.current)) {
+        prependAnchorRef.current = null;
+      }
+    }
+    if (isPrependingRef.current && !loadingEarlier) {
+      isPrependingRef.current = false;
+    }
+  }, [messages, loadingEarlier]);
 
   // Auto-scroll on tail growth: snap to bottom on thread open, follow new messages
   // only if the reader is already near the bottom, else bump the jump-to-latest pill.
-  useEffect(() => {
-    if (msgLoading || prependAnchorRef.current != null) return;
+  useLayoutEffect(() => {
+    if (msgLoading || isPrependingRef.current) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
     const wasFirstPaint = prevLastIdRef.current === undefined;
@@ -451,12 +495,12 @@ export default function Conversations({ replyAssist } = {}) {
     if (justOpenedRef.current || wasFirstPaint) {
       justOpenedRef.current = false;
       setNewInThread(0);
-      setTimeout(() => scrollToBottom(false), 50);
+      scrollToBottom(false);
       return;
     }
     if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
     else setNewInThread(n => n + 1);
-  }, [messages, msgLoading, scrollToBottom]);
+  }, [messages, msgLoading, loadingEarlier, scrollToBottom]);
 
   const loadEarlier = useCallback(async () => {
     const convId = activeIdRef.current;
@@ -470,7 +514,8 @@ export default function Conversations({ replyAssist } = {}) {
       if (activeIdRef.current !== convId) return;
       const older = rows.slice().reverse();
       if (older.length) {
-        prependAnchorRef.current = messagesScrollRef.current?.scrollHeight || 0;
+        prependAnchorRef.current = captureVisibleMessageAnchor(messagesScrollRef.current);
+        isPrependingRef.current = true;
         setMessages(prev => {
           const existing = new Set(prev.map(m => m.id));
           const fresh = older.filter(m => !existing.has(m.id));
@@ -484,25 +529,17 @@ export default function Conversations({ replyAssist } = {}) {
 
   // ─── SECTION: Lifecycle — suspend recovery + keyboard ──────────────
 
-  // Capacitor suspends the webview on background; realtime channels die silently.
-  // Only after a real hidden→visible transition do we refetch the OPEN thread (so a
-  // plain desktop refocus never resets a reader scrolled up in history). A cheap
-  // list refresh runs on any focus. NO edit to realtime.js.
-  const wasHiddenRef = useRef(false);
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') { wasHiddenRef.current = true; return; }
-      loadConversations();
-      if (wasHiddenRef.current) { wasHiddenRef.current = false; reloadActiveMessages(); }
-    };
-    const onFocus = () => { loadConversations(); };
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [loadConversations, reloadActiveMessages]);
+  // Capacitor suspends realtime while hidden. Recover through the shared lifecycle
+  // hook; both callbacks are silent and the message refresh merges into loaded history.
+  const resumeConversation = useCallback(() => {
+    reloadConversationListSilent();
+    reloadActiveMessages();
+  }, [reloadActiveMessages, reloadConversationListSilent]);
+  useResumeRefetch({
+    onResume: resumeConversation,
+    onFocus: reloadConversationListSilent,
+    hiddenEdgeOnly: true,
+  });
 
   // Lift the composer above the on-screen keyboard using the visual viewport.
   const [kbOpen, setKbOpen] = useState(false);
@@ -532,7 +569,7 @@ export default function Conversations({ replyAssist } = {}) {
     const p = activeConv.conversation_participants.find(p => p.role === 'primary') || activeConv.conversation_participants[0];
     return p?.contacts || null;
   }, [activeConv]);
-  const canAttestPriorConsent = employee?.role === 'admin' || employee?.role === 'office';
+  const canAttestPriorConsent = canAttestPriorSmsConsent(employee);
   const hasP2pSmsConsent = contactHasP2pSmsConsent(activeContact);
 
   // Length of the server-added "Name: " prefix, so the segment counter matches the wire.
@@ -603,6 +640,11 @@ export default function Conversations({ replyAssist } = {}) {
   };
 
   const selectConversation = (id) => {
+    atBottomRef.current = true;
+    prependAnchorRef.current = null;
+    isPrependingRef.current = false;
+    setAtBottom(true);
+    setNewInThread(0);
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
     setConsentPrompt(null);
     clearComposeState();
@@ -1136,7 +1178,14 @@ export default function Conversations({ replyAssist } = {}) {
                 )}
                 {groupedMessages.map((item, i) => {
                   if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
-                  return <MessageBubble key={item.data.id} msg={item.data} onRetry={retryMessage} />;
+                  return (
+                    <MessageBubble
+                      key={item.data.id}
+                      msg={item.data}
+                      onRetry={retryMessage}
+                      onMediaLayout={handleMediaLayout}
+                    />
+                  );
                 })}
               </>)}
               <div ref={messagesEndRef} />

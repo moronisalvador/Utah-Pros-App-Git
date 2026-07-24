@@ -125,6 +125,23 @@ export function appendMessageToPages(pages, msg) {
 }
 
 /**
+ * Merge a silently refreshed newest page into the existing descending page set.
+ * Loaded older pages remain intact; refreshed ids are moved to page 0 and deduped
+ * from every other page.
+ */
+export function mergeNewestPage(pages, newestRows) {
+  const current = Array.isArray(pages) ? pages : [];
+  const newest = Array.isArray(newestRows) ? newestRows : [];
+  if (current.length === 0) return newest.length ? [newest] : current;
+
+  const newestIds = new Set(newest.map((message) => message?.id).filter(Boolean));
+  const retained = current.map((page) =>
+    page.filter((message) => !message?.id || !newestIds.has(message.id)),
+  );
+  return [[...newest, ...(retained[0] || [])], ...retained.slice(1)];
+}
+
+/**
  * Patch a row by id across every page (a delivery-tick UPDATE: queued→sent→delivered→
  * read/failed). Preserves the existing `employees` embed if the update omits it. Returns
  * the same reference when the id is not loaded (nothing to patch — never refetch).
