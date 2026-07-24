@@ -210,6 +210,22 @@ function validateCallrailMediaRedirect(location) {
   return parsed.href;
 }
 
+function authenticatedMediaEndpoint(validatedUrl) {
+  const parsed = new URL(validatedUrl);
+  if (parsed.hostname !== CALLRAIL_MMS_APP_HOST) return parsed.href;
+
+  // CallRail's live webhook currently emits an app-host route, while its API
+  // contract says media links are retrieved with the API key. After the app
+  // route has passed exact account/message/index validation above, translate
+  // only its proven path identity onto the documented API host. Never send an
+  // API credential to the browser-session app host.
+  const [, , , account, , message, , index] = parsed.pathname.split('/');
+  return (
+    `https://${CALLRAIL_MMS_API_HOST}/v3/a/${encodeURIComponent(account)}` +
+    `/text-messages/${encodeURIComponent(message)}/media/${encodeURIComponent(index)}`
+  );
+}
+
 function contentTypeOf(response) {
   return (response.headers.get('Content-Type') || '')
     .split(';', 1)[0]
@@ -306,13 +322,14 @@ async function downloadOne({
   fetchImpl,
   timeoutMs,
 }) {
-  const endpoint = validateCallrailMediaEndpoint({
+  const validatedEndpoint = validateCallrailMediaEndpoint({
     accountId,
     accountAliases,
     providerMessageId,
     index,
     mediaUrl,
   });
+  const endpoint = authenticatedMediaEndpoint(validatedEndpoint);
   let response;
   try {
     response = await fetchImpl(endpoint, {

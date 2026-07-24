@@ -5185,6 +5185,11 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        Fixed automations suppress later runs only after their terminal event
                        persists; automated SMS remains activation-blocked until a pre-send
                        reservation closes that post-send persistence gap.
+                       **CallRail inbound-media host correction (Jul 24 2026):** signed webhooks
+                       currently emit an `app.callrail.com/msg/a/...` media path even though API-key
+                       retrieval belongs on `api.callrail.com/v3/a/...`. After exact account alias,
+                       message and index validation, UPR normalizes only that proven identity to the
+                       API host and never presents the API credential to the app host.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,

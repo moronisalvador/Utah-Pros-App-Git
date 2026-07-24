@@ -25,6 +25,8 @@ const MEDIA_URL =
   'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
 const LIVE_APP_MEDIA_URL =
   'https://app.callrail.com/msg/a/635117922/messages/SCIabc/media/0';
+const LIVE_API_MEDIA_URL =
+  'https://api.callrail.com/v3/a/635117922/text-messages/SCIabc/media/0';
 const SIGNED_ASSET_URL =
   'https://calltrk-mms-media-prod1.s3.amazonaws.com/object-key' +
   '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
@@ -105,7 +107,7 @@ describe('CallRail MMS private ingestion', () => {
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
-  it('accepts the captured CallRail app endpoint only for a proven account alias', async () => {
+  it('normalizes the captured app endpoint to the authenticated API host for a proven alias', async () => {
     const h = harness();
     h.fetchImpl
       .mockResolvedValueOnce(new Response(null, {
@@ -124,7 +126,7 @@ describe('CallRail MMS private ingestion', () => {
     expect(result.itemCount).toBe(1);
     expect(h.fetchImpl).toHaveBeenNthCalledWith(
       1,
-      LIVE_APP_MEDIA_URL,
+      LIVE_API_MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
         redirect: 'manual',
@@ -133,6 +135,11 @@ describe('CallRail MMS private ingestion', () => {
         }),
       }),
       CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+    expect(h.fetchImpl).not.toHaveBeenCalledWith(
+      LIVE_APP_MEDIA_URL,
+      expect.anything(),
+      expect.anything(),
     );
     expect(h.fetchImpl).toHaveBeenNthCalledWith(
       2,
@@ -516,6 +523,49 @@ describe('CallRail MMS private ingestion', () => {
       '/text-messages/conv789.json?per_page=250',
     );
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+  });
+
+  it('refreshes an app-host conversation link through the authenticated API host', async () => {
+    const h = harness();
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 12345,
+          content: 'Photo',
+          direction: 'incoming',
+          type: 'MMS',
+          media_urls: [LIVE_APP_MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(resolveCallRailAccountAliases).toHaveBeenCalledWith(
+      'server-secret',
+      'ACC123',
+      { fetcher: h.fetchImpl },
+    );
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl.mock.calls[1][0]).toBe(LIVE_API_MEDIA_URL);
+    expect(h.fetchImpl.mock.calls[1][1].headers.Authorization)
+      .toBe('Token token="server-secret"');
   });
 
   it('refreshes a queue retry across the proven numeric-to-masked account alias', async () => {

@@ -288,8 +288,10 @@ Authenticated CallRail history observed on 2026-07-24 returned account-scoped me
 documents the v3 `api.callrail.com` shape. UPR accepts either only when the account, provider message,
 media index, HTTPS scheme, port, credentials, and path exactly match already-proven event identity.
 
-The app endpoint is fetched with the CallRail API token and redirects are handled manually. UPR
-follows only a valid short-lived AWS4 signed URL on the exact known CallRail MMS S3 host, strips the
+After that exact identity validation, the app-host path is normalized to the equivalent documented
+`api.callrail.com/v3/a/...` endpoint before the CallRail API token is attached; UPR never presents
+the API credential to the browser-session app host. Redirects are handled manually. UPR follows
+only a valid short-lived AWS4 signed URL on the exact known CallRail MMS S3 host, strips the
 CallRail token from that request, rejects further redirects, and still verifies image MIME, magic
 bytes, item size, and total size before private Storage ownership. No provider or signed asset URL
 is persisted.
