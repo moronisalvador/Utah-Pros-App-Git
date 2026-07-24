@@ -7973,10 +7973,40 @@ uses real source comparison — `extractFunctionBodies` accepts `$$`-quoted bodi
 all 19 rows at/above the floor, 21 function fingerprints and 5 policies; gate **PASS**. Record:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-24.md`.
 
-**Still open (not done):** `20260724200000_payments_qbo_dedup_index.sql` is authored and unapplied —
-no `CONCURRENTLY`, exclusive lock on the hot `payments` table, and it fails if duplicates exist; needs
-a duplicate pre-check plus an owner-authorized window. `upr_qbo_payments_sync_hourly` has been live
-and healthy since 19:17 UTC against the already-deployed `/api/qbo-payments-sync` worker in `main`.
+`20260724200000_payments_qbo_dedup_index.sql` was subsequently **applied** under owner authorization
+(ledger `20260724230933`) — 0 pre-existing violations, index valid+unique, 86 rows unchanged. It
+closes the double-insert race between the hourly poller and the real-time webhook, both of which now
+write payments. `upr_qbo_payments_sync_hourly` has been live and healthy since 19:17 UTC against the
+already-deployed `/api/qbo-payments-sync` worker in `main`.
+
+## QBO payment webhook — cross-realm read + opaque-error fix (2026-07-24)
+
+One live `Payment/Create` event (19:49Z) recorded only `"QBO get payment 400"` and sat
+`processed_at=null` with nothing re-driving it. Two defects, both fixed:
+
+- **`qbo-webhook.js` extracted `note.realmId` for the dedup key but never used it to scope the
+  read.** `qboFetch` always builds `/v3/company/{stored connection realm}/…`, so an event from any
+  other company was looked up in OURS — and Intuit answers that with a bare 400. The worker now
+  resolves the connected realm once via `getConnection()` and records a foreign event as terminal
+  `status='ignored'` + `realm_mismatch` instead of issuing a cross-company read. It **fails open**
+  when the connection can't be read, so genuine events are never dropped.
+- **Intuit reports object-not-found as HTTP 400 + Fault code `610`, never 404**, so the existing
+  `res.status === 404` benign-skip branch in `qbo-payment-sync.js` was dead code and a genuinely
+  missing payment threw. Per Intuit's troubleshooting guide, 610 also fires when a txn is *"deleted
+  by one user and accessed by another"* — benign, but we recorded it as a hard error.
+  `readQboFault()` now parses `Fault.Error[0].{code,Message,Detail}`; `610`/`6240` become the
+  intended skip, everything else throws `QboRequestError` carrying the code in its text, with
+  `retryable` true only for 429/5xx.
+
+Status vocabulary is now `processed` / `ignored` / `retry` / `error`. **`qbo_events.status` has no
+CHECK constraint** (verified live) — if one is ever added it must include `ignored` and `retry`.
+Intuit retries a failed delivery only at **20/30/50 minutes and then disables the endpoint**, which
+is why the worker always acks 200 and recovery is ours to own.
+
+⚠️ **Still open:** nothing re-drives a `retry` row — that is registry item `COR-002`'s remaining
+internal half (its external blocker, Intuit sandbox semantics, is unchanged); the hourly poller is
+the only backstop today. `functions/api/qbo-webhook.test.js` is new — the worker previously had
+**no tests at all**, which is how a silent cross-company read reached production.
 
 ## July 23 engineering documentation closure and Figma checkpoint
 

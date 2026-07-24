@@ -316,9 +316,20 @@ already-deployed `https://utahpros.app/api/qbo-payments-sync` worker and returni
 migrations applied ahead of their own source reaching `dev`; that provenance gap is what the
 2026-07-24 reconciliation closed. See `scripts/migration-provenance-manifest.json`.
 
-`20260724200000_payments_qbo_dedup_index.sql` is **authored and NOT applied.** It adds the UNIQUE
-index `payments_qbo_payment_invoice_uniq` so one QuickBooks payment cannot be recorded twice against
-one invoice. It is written without `CONCURRENTLY`, so it takes an exclusive lock on the hot
-`payments` table and will fail outright if duplicate rows already exist — apply it only in an
-owner-authorized window, after a duplicate pre-check. Rollback:
+`20260724200000_payments_qbo_dedup_index.sql` is **live under ledger version `20260724230933`**
+(applied 2026-07-24 under owner authorization). It adds the partial UNIQUE index
+`payments_qbo_payment_invoice_uniq` on `(qbo_payment_id, invoice_id) WHERE qbo_payment_id IS NOT
+NULL`, so one QuickBooks payment cannot be recorded twice against the same invoice while still
+permitting the sanctioned rule-11 multi-invoice split. It mirrors the pre-existing
+`payments_stripe_charge_uniq` precedent on the same table.
+
+Precondition verified before applying: **0** duplicate `(qbo_payment_id, invoice_id)` groups across
+86 payment rows, so the index built cleanly. Verified after: present, `indisvalid AND indisunique`,
+row count unchanged at 86 (no data change). It is written without `CONCURRENTLY` and takes an
+exclusive lock — on an 86-row table that is a sub-millisecond window, but the same DDL against a
+large table would not be safe to apply casually. Rollback:
 `DROP INDEX IF EXISTS public.payments_qbo_payment_invoice_uniq;`.
+
+Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with no constraint
+behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
+poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.
