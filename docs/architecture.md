@@ -88,6 +88,10 @@ be treated as current architecture without re-verification.
 - Message images follow the same boundary: an authenticated Worker writes verified bytes to private
   Storage and returns an opaque reference; adapters alone translate that object into a direct
   multipart upload or short-lived provider-fetch URL.
+- Verified permission obtained before UPR tracked consent enters through the separate
+  `POST /api/attest-sms-consent` record-only boundary. That route cannot contact a provider; it
+  atomically updates the contact and consent history, after which the existing send chokepoint
+  independently rechecks consent, DND and explicit opt-out state.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.
