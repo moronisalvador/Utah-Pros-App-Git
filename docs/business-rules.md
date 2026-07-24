@@ -88,8 +88,10 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - Valid service-message permission may also have been obtained verbally on a customer call or in
   writing, including an SMS clause in a signed work authorization. Authorized admin/office staff
   may attest that verified prior permission only by recording its method, date and evidence note;
-  UPR records their server-derived identity and audit timestamp. Contact existence, an assumed
-  business relationship, or merely lacking a STOP record is never permission.
+  UPR records their server-derived identity, audit timestamp, attestation version, Utah Pros sender
+  identity and the fixed `service_related_customer_project_messages` scope. Contact existence, an
+  assumed business relationship, or merely lacking a STOP record is never permission. This
+  attestation does not authorize promotional, campaign or unrelated message subjects.
 - Prior-consent attestation is not re-subscription. It never clears manual DND, STOP, provider
   opt-out or `opt_out_at`; customer re-consent after revocation follows the established inbound
   START/affirmative written path.

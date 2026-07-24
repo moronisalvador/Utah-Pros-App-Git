@@ -10,15 +10,16 @@
  *   consent history together so the audit record cannot be skipped.
  *
  * WHERE IT LIVES:
- *   Route:        POST /api/attest-sms-consent
+ *   Route:        GET/POST /api/attest-sms-consent
  *   Rendered by:  src/components/conversations/SmsConsentAttestationModal.jsx
  *
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  functions/lib/auth.js, functions/lib/cors.js,
  *              functions/lib/supabase.js
- *   Data:      reads  → employees, contacts
- *              writes → contacts, sms_consent_log (through attest_prior_sms_consent)
+ *   Data:      reads  → employees, contacts, service_sms_consents
+ *              writes → service_sms_consents, sms_consent_log
+ *                       (through attest_prior_sms_consent)
  *
  * NOTES / GOTCHAS:
  *   - Only active, internal admin/office employees may attest prior permission.
@@ -30,6 +31,7 @@
 
 import { requireRole } from '../lib/auth.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireMessagingAccess } from '../lib/messaging-auth.js';
 import { supabase } from '../lib/supabase.js';
 
 const ATTESTATION_ROLES = ['admin', 'office'];
@@ -54,6 +56,19 @@ function denverDateValue(date = new Date()) {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+function isCalendarDate(value) {
+  if (!CONSENT_DATE_PATTERN.test(value)) return false;
+  const [yearText, monthText, dayText] = value.split('-');
+  const date = new Date(Date.UTC(
+    Number(yearText),
+    Number(monthText) - 1,
+    Number(dayText),
+  ));
+  return date.getUTCFullYear() === Number(yearText)
+    && date.getUTCMonth() === Number(monthText) - 1
+    && date.getUTCDate() === Number(dayText);
+}
+
 function statusForCode(code) {
   if (code === 'CONTACT_NOT_FOUND') return 404;
   if (code === 'CONSENT_ATTESTATION_NOT_AUTHORIZED') return 403;
@@ -61,6 +76,7 @@ function statusForCode(code) {
     code === 'CONTACT_DND_ACTIVE'
     || code === 'CONTACT_OPTED_OUT'
     || code === 'CONTACT_SUPPRESSION_CHANGED'
+    || code === 'CONTACT_PENDING_STOP'
   ) return 409;
   return 400;
 }
@@ -77,6 +93,8 @@ function errorForCode(code) {
       return 'Consent was not recorded because the contact previously opted out';
     case 'CONTACT_SUPPRESSION_CHANGED':
       return 'Consent was not recorded because the contact suppression state changed';
+    case 'CONTACT_PENDING_STOP':
+      return 'Consent was not recorded because an inbound STOP request is still being processed';
     case 'CONSENT_ATTESTATION_NOT_AUTHORIZED':
       return 'You are not authorized to record prior SMS consent';
     default:
@@ -86,6 +104,41 @@ function errorForCode(code) {
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
+}
+
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const db = supabase(env);
+  const auth = await requireMessagingAccess(request, env, db);
+  if (auth.error) {
+    return jsonResponse({
+      error: auth.error,
+      code: auth.code,
+    }, auth.status, request, env);
+  }
+
+  const contactId = new URL(request.url).searchParams.get('contact_id') || '';
+  if (!UUID_PATTERN.test(contactId)) {
+    return jsonResponse({ error: 'contact_id must be a UUID' }, 400, request, env);
+  }
+
+  try {
+    const result = await db.rpc('get_service_sms_consent_status', {
+      p_contact_id: contactId,
+      p_destination_phone: null,
+    });
+    const status = Array.isArray(result) ? result[0] : result;
+    return jsonResponse({
+      ok: true,
+      status: status || { allowed: false, code: 'NO_CONSENT' },
+    }, 200, request, env);
+  } catch (error) {
+    console.error('attest-sms-consent status:', error);
+    return jsonResponse({
+      error: 'Could not verify SMS consent status',
+      code: 'CONSENT_STATUS_FAILED',
+    }, 500, request, env);
+  }
 }
 
 export async function onRequestPost(context) {
@@ -119,7 +172,7 @@ export async function onRequestPost(context) {
     return jsonResponse({ error: 'Select how SMS permission was verified' }, 400, request, env);
   }
   if (
-    !CONSENT_DATE_PATTERN.test(consentObtainedOn)
+    !isCalendarDate(consentObtainedOn)
     || consentObtainedOn > denverDateValue()
   ) {
     return jsonResponse({ error: 'Enter the date SMS permission was obtained' }, 400, request, env);
@@ -131,12 +184,17 @@ export async function onRequestPost(context) {
   }
 
   try {
+    const connectionIp = String(request.headers.get('CF-Connecting-IP') || '').trim();
+    const requestIp = /^[0-9A-Fa-f:.]{3,64}$/.test(connectionIp)
+      ? connectionIp
+      : null;
     const result = await db.rpc('attest_prior_sms_consent', {
       p_contact_id: contactId,
       p_actor_id: auth.employee.id,
       p_consent_method: method,
       p_consent_obtained_on: consentObtainedOn,
       p_evidence_note: evidenceNote,
+      p_request_ip: requestIp,
     });
     const record = Array.isArray(result) ? result[0] : result;
 

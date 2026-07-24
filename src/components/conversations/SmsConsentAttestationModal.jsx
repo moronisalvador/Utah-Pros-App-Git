@@ -54,7 +54,6 @@ export default function SmsConsentAttestationModal({
   open,
   contactId,
   contactName,
-  retryAfterRecord = false,
   onClose,
   onRecorded,
 }) {
@@ -97,9 +96,7 @@ export default function SmsConsentAttestationModal({
         throw new Error(data.error || 'Could not record SMS permission');
       }
 
-      ok(retryAfterRecord
-        ? 'SMS permission recorded — retrying message'
-        : 'SMS permission recorded');
+      ok('SMS permission recorded');
       onRecorded?.(data.consent);
     } catch (error) {
       err(error.message || 'Could not record SMS permission');
@@ -127,11 +124,7 @@ export default function SmsConsentAttestationModal({
             Cancel
           </button>
           <button className="btn btn-primary" type="submit" form="sms-consent-attestation" disabled={!canSubmit}>
-            {submitting
-              ? 'Recording…'
-              : retryAfterRecord
-                ? 'Record and retry message'
-                : 'Record permission'}
+            {submitting ? 'Recording…' : 'Record permission'}
           </button>
         </>
       )}
@@ -198,8 +191,9 @@ export default function SmsConsentAttestationModal({
             disabled={submitting}
           />
           <span>
-            I verified this person gave SMS permission and has not revoked it. This does not clear
-            STOP or Do Not Disturb.
+            I verified this person gave Utah Pros Restoration permission to send service-related
+            texts about their requested work, and has not revoked it. This does not clear STOP or
+            Do Not Disturb.
           </span>
         </label>
       </form>

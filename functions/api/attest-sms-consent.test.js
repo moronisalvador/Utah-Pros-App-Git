@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   auth: null,
+  messagingAuth: null,
   db: null,
 }));
 
@@ -31,8 +32,11 @@ vi.mock('../lib/auth.js', () => ({
 vi.mock('../lib/supabase.js', () => ({
   supabase: () => h.db,
 }));
+vi.mock('../lib/messaging-auth.js', () => ({
+  requireMessagingAccess: (...args) => h.messagingAuth(...args),
+}));
 
-import { onRequestPost } from './attest-sms-consent.js';
+import { onRequestGet, onRequestPost } from './attest-sms-consent.js';
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
 const EMPLOYEE_ID = '22222222-2222-4222-8222-222222222222';
@@ -40,8 +44,12 @@ const ENV = {};
 
 function request(body) {
   return {
+    url: `https://app.test/api/attest-sms-consent?contact_id=${CONTACT_ID}`,
     json: vi.fn(async () => body),
-    headers: new Headers({ Authorization: 'Bearer test-token' }),
+    headers: new Headers({
+      Authorization: 'Bearer test-token',
+      'CF-Connecting-IP': '203.0.113.42',
+    }),
   };
 }
 
@@ -52,6 +60,7 @@ function validBody(overrides = {}) {
     consent_obtained_on: '2026-07-22',
     evidence_note: 'Customer gave verbal permission during the signed work intake.',
     performed_by: 'forged-client-actor',
+    ip_address: '198.51.100.99',
     ...overrides,
   };
 }
@@ -66,14 +75,64 @@ beforeEach(() => {
       is_external: false,
     },
   }));
+  h.messagingAuth = vi.fn(async () => ({
+    user: { id: 'auth-user' },
+    employee: {
+      id: EMPLOYEE_ID,
+      role: 'technician',
+      is_active: true,
+      is_external: false,
+    },
+  }));
   h.db = {
-    rpc: vi.fn(async () => ({
-      ok: true,
-      contact_id: CONTACT_ID,
-      opt_in_status: true,
-      recorded_by: EMPLOYEE_ID,
-    })),
+    rpc: vi.fn(async (name) => (
+      name === 'get_service_sms_consent_status'
+        ? {
+            allowed: true,
+            code: 'SERVICE_CONSENT',
+            contact_id: CONTACT_ID,
+          }
+        : {
+            ok: true,
+            contact_id: CONTACT_ID,
+            service_sms_consent: true,
+            recorded_by: EMPLOYEE_ID,
+          }
+    )),
   };
+});
+
+describe('GET /api/attest-sms-consent status', () => {
+  it('requires messaging access before reading the service-only status', async () => {
+    h.messagingAuth = vi.fn(async () => ({
+      error: 'Messaging access is not granted for this role',
+      code: 'MESSAGING_NOT_AUTHORIZED',
+      status: 403,
+    }));
+
+    const response = await onRequestGet({ request: request(), env: ENV });
+
+    expect(response.status).toBe(403);
+    expect(h.db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('returns only the service-role status decision for the requested contact', async () => {
+    const response = await onRequestGet({ request: request(), env: ENV });
+
+    expect(response.status).toBe(200);
+    expect(h.db.rpc).toHaveBeenCalledWith('get_service_sms_consent_status', {
+      p_contact_id: CONTACT_ID,
+      p_destination_phone: null,
+    });
+    expect(await response.json()).toEqual({
+      ok: true,
+      status: {
+        allowed: true,
+        code: 'SERVICE_CONSENT',
+        contact_id: CONTACT_ID,
+      },
+    });
+  });
 });
 
 describe('POST /api/attest-sms-consent authorization', () => {
@@ -137,7 +196,7 @@ describe('POST /api/attest-sms-consent evidence and audit contract', () => {
     expect(h.db.rpc).not.toHaveBeenCalled();
   });
 
-  it.each(['', '07/22/2026', '2099-01-01'])(
+  it.each(['', '07/22/2026', '2026-02-31', '2026-13-01', '2099-01-01'])(
     'rejects invalid consent date %s without calling the RPC',
     async (consentObtainedOn) => {
       const response = await onRequestPost({
@@ -150,7 +209,7 @@ describe('POST /api/attest-sms-consent evidence and audit contract', () => {
     },
   );
 
-  it('uses the authenticated employee as actor and ignores a forged client actor', async () => {
+  it('uses the authenticated employee and trusted connection IP, ignoring forged body values', async () => {
     const response = await onRequestPost({
       request: request(validBody()),
       env: ENV,
@@ -163,6 +222,7 @@ describe('POST /api/attest-sms-consent evidence and audit contract', () => {
       p_consent_method: 'verbal_permission',
       p_consent_obtained_on: '2026-07-22',
       p_evidence_note: 'Customer gave verbal permission during the signed work intake.',
+      p_request_ip: '203.0.113.42',
     });
   });
 
@@ -170,6 +230,7 @@ describe('POST /api/attest-sms-consent evidence and audit contract', () => {
     ['CONTACT_DND_ACTIVE', 409],
     ['CONTACT_OPTED_OUT', 409],
     ['CONTACT_SUPPRESSION_CHANGED', 409],
+    ['CONTACT_PENDING_STOP', 409],
   ])('keeps %s fail-closed', async (code, expectedStatus) => {
     h.db.rpc = vi.fn(async () => ({ ok: false, code }));
 

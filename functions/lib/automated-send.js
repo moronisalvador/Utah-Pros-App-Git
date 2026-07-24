@@ -430,7 +430,12 @@ export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
   }
 
   // Gate 2: TCPA consent.
-  if (!consentAllows({ phone, opt_in_status: contact?.opt_in_status, dnd: contact?.dnd })) {
+  if (!consentAllows({
+    phone,
+    opt_in_status: contact?.opt_in_status,
+    opt_out_at: contact?.opt_out_at,
+    dnd: contact?.dnd,
+  })) {
     const reason = !phone ? 'no_phone' : contact?.dnd ? 'dnd' : 'no_consent';
     const eventType = reason === 'dnd'
       ? 'send_blocked_dnd'
@@ -474,9 +479,12 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   }
 
   const db = supabase(env);
-  // opt_in_status is needed by the sms branch; billing_state backs the
+  // opt_in_status/opt_out_at are needed by the sms branch; billing_state backs the
   // per-recipient quiet-hours timezone fallback; both harmless for email.
-  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,phone,dnd,opt_in_status,billing_state`);
+  const [contact] = await db.select(
+    'contacts',
+    `id=eq.${contactId}&select=id,email,name,phone,dnd,opt_in_status,opt_out_at,billing_state`,
+  );
   if (!contact) return { ok: false, skipped: true, reason: 'contact_not_found' };
 
   let body = extra.html || extra.body || '';

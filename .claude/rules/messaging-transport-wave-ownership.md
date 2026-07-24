@@ -191,3 +191,12 @@ At minimum:
 
 Do not commit, push, open a PR, deploy, apply a migration, configure a provider, or send a message
 unless the user explicitly requests that delivery or external action.
+
+## 8. Verified prior-consent compatibility amendment (2026-07-23)
+
+The owner-approved historical-consent remediation may make the exact additive send-chokepoint
+changes named in `.claude/rules/sms-experience-wave-ownership.md` §12. Provider selection,
+idempotency, attempt/reconciliation state, message row shape, private-media behavior, and the
+public `/api/send-message` response contract remain unchanged. The attestation operation never
+calls a provider; any subsequent staff send still passes the complete current transport,
+authorization, consent/DND, idempotency, media, and persistence chain.
