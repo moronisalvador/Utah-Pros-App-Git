@@ -102,10 +102,25 @@ consents, evidence attestations and provider events.
 ## Application and release boundary
 
 The database boundary is live because staging and production share Supabase. The compatible
-Worker/UI code is on `dev`; production code on `main` remains unchanged until the normal release
-pull request is approved and merged.
+Worker/UI code was deployed to `dev` at commit `01f59ce` through Cloudflare Pages deployment
+`f87179a0-2b87-422f-9e77-0520d99497e9`. GitHub CI and the Cloudflare Pages check both passed for
+that commit. Production code on `main` remains unchanged until the normal release pull request is
+approved and merged.
 
-Before merging to `main`, release verification still needs to prove the deployed `dev` build and
-authenticated record-only UI/status behavior without sending a provider message. A live browser
-check requires a suitable test account and safe synthetic contact. General contact-table policy
-debt that predates this scoped phase is not represented as fixed by this migration.
+An authenticated no-send browser smoke was completed against `https://dev.utahpros.app` with the
+existing test-admin session and a QA-labeled direct contact:
+
+- the deployed Conversations route loaded its real authenticated data without a page error;
+- the scoped status check rendered the no-consent banner for the active contact and phone;
+- the message Send button remained disabled;
+- the record-only action opened the evidence modal;
+- source, date, evidence note and explicit verification controls were present;
+- the Record permission button remained disabled with the form untouched; and
+- the modal was closed without submitting an attestation or sending a provider message.
+
+One non-blocking browser console entry (`AbortError: Transition was skipped`) occurred during
+thread navigation. The target thread rendered normally and the consent workflow completed; no
+consent API or provider send was triggered by the observation.
+
+General contact-table policy debt that predates this scoped phase is not represented as fixed by
+this migration.
