@@ -258,3 +258,17 @@ topology or a cross-domain data relationship changes.
 default-OFF `feature:encircle_managed_credentials` flag. The secret table retains zero RLS policies;
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
+
+## Pending mobile messaging and CallRail reconciliation hardening
+
+`20260724173000_harden_find_or_create_conversation.sql` changes no table shape. It preserves
+`find_or_create_conversation(uuid) -> jsonb`, reuses only an active non-archived direct thread with
+no different contact participant, keeps the advisory transaction lock, and changes the RPC to
+`SECURITY INVOKER` with an in-function service-role assertion plus service-role-only execution.
+
+`20260724174000_fix_callrail_outbound_phone_identity.sql` also changes no table shape or RPC
+signature. It preserves the service-role-only, invoker-mode
+`project_callrail_outbound_event(uuid,uuid)` contract while treating validated NANP ten-digit and
+`+1` E.164 recipients as the same identity. Non-NANP addresses still require exact equality, and
+body, provider-message, provider-conversation, state, and canonical-message checks remain binding.
+Neither migration deletes or rewrites retained provider events.

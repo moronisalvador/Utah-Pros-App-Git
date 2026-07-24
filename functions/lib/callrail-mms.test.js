@@ -23,6 +23,15 @@ import {
 
 const MEDIA_URL =
   'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
+const LIVE_APP_MEDIA_URL =
+  'https://app.callrail.com/msg/a/635117922/messages/SCIabc/media/0';
+const SIGNED_ASSET_URL =
+  'https://calltrk-mms-media-prod1.s3.amazonaws.com/object-key' +
+  '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+  '&X-Amz-Date=20260724T145146Z' +
+  '&X-Amz-Expires=300' +
+  '&X-Amz-SignedHeaders=host' +
+  '&X-Amz-Signature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const INPUT = {
   apiKey: 'server-secret',
   accountId: 'ACC123',
@@ -68,7 +77,7 @@ describe('CallRail MMS private ingestion', () => {
       MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: expect.objectContaining({
           Authorization: 'Token token="server-secret"',
         }),
@@ -94,6 +103,49 @@ describe('CallRail MMS private ingestion', () => {
     });
     expect(JSON.stringify(result)).not.toContain('api.callrail.com');
     expect(JSON.stringify(result)).not.toContain('server-secret');
+  });
+
+  it('accepts the captured CallRail app endpoint only for a proven account alias', async () => {
+    const h = harness();
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: SIGNED_ASSET_URL },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestCallrailMms({
+      ...INPUT,
+      db: h.db,
+      accountAliases: ['635117922'],
+      ephemeralMediaUrls: [LIVE_APP_MEDIA_URL],
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      LIVE_APP_MEDIA_URL,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'manual',
+        headers: expect.objectContaining({
+          Authorization: 'Token token="server-secret"',
+        }),
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      SIGNED_ASSET_URL,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Accept: 'image/jpeg, image/png, image/gif',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
   });
 
   it.each([
@@ -137,7 +189,7 @@ describe('CallRail MMS private ingestion', () => {
     })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
   });
 
-  it('refuses redirects and classifies provider rejection without uploading', async () => {
+  it('refuses redirects outside CallRail MMS storage without uploading', async () => {
     const h = harness();
     h.fetchImpl.mockResolvedValue(new Response(null, {
       status: 302,
@@ -147,9 +199,8 @@ describe('CallRail MMS private ingestion', () => {
       { ...INPUT, db: h.db },
       { fetchImpl: h.fetchImpl },
     )).rejects.toMatchObject({
-      code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+      code: 'CALLRAIL_MMS_REDIRECT_REJECTED',
       retryable: false,
-      status: 302,
     });
     expect(h.db.uploadStorage).not.toHaveBeenCalled();
   });

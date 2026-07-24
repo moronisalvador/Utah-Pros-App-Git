@@ -113,7 +113,11 @@ describe('messaging-setup authorized contracts', () => {
     expect(h.db.calls).toEqual(expect.arrayContaining([
       expect.objectContaining({
         table: 'message_provider_events',
-        query: expect.stringContaining('processing_state=neq.processed'),
+        query: expect.stringContaining('processing_state=in.(received,claimed,retryable)'),
+      }),
+      expect.objectContaining({
+        table: 'message_provider_events',
+        query: expect.stringContaining('processing_state=eq.failed'),
       }),
       expect.objectContaining({
         table: 'message_send_attempts',
@@ -121,7 +125,11 @@ describe('messaging-setup authorized contracts', () => {
       }),
       expect.objectContaining({
         table: 'message_notification_outbox',
-        query: expect.stringContaining('delivery_state=in.'),
+        query: expect.stringContaining('delivery_state=in.(pending,processing,retryable)'),
+      }),
+      expect.objectContaining({
+        table: 'message_notification_outbox',
+        query: expect.stringContaining('delivery_state=eq.dead_letter'),
       }),
     ]));
   });

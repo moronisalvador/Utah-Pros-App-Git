@@ -20,6 +20,11 @@ export const CALLRAIL_MMS_MAX_ITEMS = 5;
 export const CALLRAIL_MMS_MAX_OBJECT_BYTES = 5_000_000;
 export const CALLRAIL_MMS_MAX_TOTAL_BYTES = 15_000_000;
 export const CALLRAIL_MMS_FETCH_TIMEOUT_MS = 15_000;
+const CALLRAIL_MMS_APP_HOST = 'app.callrail.com';
+const CALLRAIL_MMS_API_HOST = 'api.callrail.com';
+const CALLRAIL_MMS_ASSET_HOSTS = new Set([
+  'calltrk-mms-media-prod1.s3.amazonaws.com',
+]);
 
 const MEDIA_TYPES = Object.freeze({
   'image/jpeg': {
@@ -146,17 +151,61 @@ export function validateCallrailMediaEndpoint({
     `/v3/a/${encodeURIComponent(allowedAccount)}/text-messages/` +
     `${encodeURIComponent(message)}/media/${index}`
   ));
+  const exactAppPaths = Array.from(allowedAccounts, (allowedAccount) => (
+    `/msg/a/${encodeURIComponent(allowedAccount)}/messages/` +
+    `${encodeURIComponent(message)}/media/${index}`
+  ));
+  const isDocumentedApiEndpoint =
+    parsed.hostname === CALLRAIL_MMS_API_HOST
+    && exactPaths.includes(parsed.pathname);
+  // CallRail's live 2026-07-24 webhook/UI emitted this account-scoped endpoint
+  // even though its public docs show the v3 API form. The account identity must
+  // still be one proven by authenticated account discovery.
+  const isObservedAppEndpoint =
+    parsed.hostname === CALLRAIL_MMS_APP_HOST
+    && exactAppPaths.includes(parsed.pathname);
   if (
     parsed.protocol !== 'https:'
-    || parsed.hostname !== 'api.callrail.com'
     || parsed.port
     || parsed.username
     || parsed.password
     || parsed.hash
-    || !exactPaths.includes(parsed.pathname)
+    || (!isDocumentedApiEndpoint && !isObservedAppEndpoint)
     || parsed.href.length > 2_048
   ) {
     fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is outside the expected account.');
+  }
+  return parsed.href;
+}
+
+function validateCallrailMediaRedirect(location) {
+  let parsed;
+  try {
+    parsed = new URL(location);
+  } catch {
+    fail('CALLRAIL_MMS_REDIRECT_REJECTED', 'CallRail returned an invalid media redirect.');
+  }
+  const expires = Number(parsed.searchParams.get('X-Amz-Expires'));
+  if (
+    parsed.protocol !== 'https:'
+    || !CALLRAIL_MMS_ASSET_HOSTS.has(parsed.hostname)
+    || parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.hash
+    || parsed.searchParams.get('X-Amz-Algorithm') !== 'AWS4-HMAC-SHA256'
+    || !/^\d{8}T\d{6}Z$/.test(parsed.searchParams.get('X-Amz-Date') || '')
+    || !Number.isSafeInteger(expires)
+    || expires <= 0
+    || expires > 600
+    || !/^[a-f0-9]{64}$/i.test(parsed.searchParams.get('X-Amz-Signature') || '')
+    || parsed.searchParams.get('X-Amz-SignedHeaders') !== 'host'
+    || parsed.href.length > 8_192
+  ) {
+    fail(
+      'CALLRAIL_MMS_REDIRECT_REJECTED',
+      'CallRail returned a media redirect outside the expected storage host.',
+    );
   }
   return parsed.href;
 }
@@ -267,7 +316,7 @@ async function downloadOne({
   try {
     response = await fetchImpl(endpoint, {
       method: 'GET',
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: `Token token="${apiKey}"`,
         Accept: 'image/jpeg, image/png, image/gif',
@@ -279,6 +328,24 @@ async function downloadOne({
       'CallRail MMS media could not be downloaded.',
       { retryable: true },
     );
+  }
+  if (response && response.status >= 300 && response.status < 400) {
+    const assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
+    try {
+      response = await fetchImpl(assetEndpoint, {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Accept: 'image/jpeg, image/png, image/gif',
+        },
+      }, timeoutMs);
+    } catch {
+      fail(
+        'CALLRAIL_MMS_DOWNLOAD_FAILED',
+        'CallRail MMS media could not be downloaded.',
+        { retryable: true },
+      );
+    }
   }
   if (!response?.ok) throw providerFailure(response || { status: 0 });
 

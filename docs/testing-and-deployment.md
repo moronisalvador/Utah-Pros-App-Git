@@ -298,3 +298,22 @@ service-role-only execution. The remaining acceptance gate is deployment of the 
 and verification that a stale retained event becomes processed or durably retryable without
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
+
+### Mobile messaging release acceptance
+
+Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
+find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
+admin/office attestation, technician denial, internal-note availability, explicit post-attestation
+send, deep-link replacement, and newest-message anchoring.
+
+Provider health treats only `received`, `claimed`, and `retryable` CallRail events as an actionable
+backlog. Terminal `failed` events and notification `dead_letter` rows remain visible as historical
+counts but do not permanently block an otherwise healthy activation. Ambiguous send attempts and
+pending/processing/retryable notification rows remain blocking.
+
+A production claim requires distinct evidence layers: exact reviewed commit; migration provenance;
+shared-database apply plus grants/source fingerprint; Preview deployment and sender discovery;
+fresh outbound/inbound SMS; fresh outbound/inbound MMS with private object ownership; bell and Push
+link to the exact field-PWA thread; exact-build promotion to `main`; production-only provider
+bindings/webhook/scheduler cutover; and the same controlled Production proofs. A passing build or a
+historical provider row is not a substitute for those layers.
