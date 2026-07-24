@@ -208,6 +208,7 @@ scheduled paths accept only `GLOBAL_OPT_IN`.
 Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back
 while the fail-closed hardening remains; reopening either race requires a separate approved
 migration.
+Capture provenance/readback before deploying the dependent Worker/UI.
 
 ### 2026-07-23 Preview messaging proof
 

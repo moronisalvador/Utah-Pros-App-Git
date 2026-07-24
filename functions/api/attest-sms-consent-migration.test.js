@@ -1,21 +1,6 @@
 /**
- * ════════════════════════════════════════════════
- * FILE: attest-sms-consent-migration.test.js
- * ════════════════════════════════════════════════
- *
- * WHAT THIS DOES (plain language):
- *   Reads the applied prior-service SMS consent change as text and checks that its safety rules
- *   cannot be removed unnoticed. It does not connect to or change a database.
- *
- * DEPENDS ON:
- *   Packages:  node:fs, node:url, vitest
- *   Internal:  supabase/migrations/20260724014423_attest_prior_sms_consent.sql
- *   Data:      reads  → migration file only
- *              writes → none
- *
- * NOTES / GOTCHAS:
- *   - These are credential-free source checks; dated live-apply evidence is recorded separately.
- * ════════════════════════════════════════════════
+ * Credential-free static guard for the unapplied historical service-SMS consent
+ * migration. The DB lane mirrors these checks; live apply verification is separate.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
