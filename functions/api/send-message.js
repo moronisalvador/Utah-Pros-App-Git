@@ -29,8 +29,9 @@
  *
  * NOTES / GOTCHAS:
  *   - COMPLIANCE, NO BYPASS: the DND + opt-in gate runs for EVERY recipient (TCPA:
- *     consent before send; CTIA: DND/opt-out honored; 10DLC: sender name prefixed,
- *     status callback set). There is NO `skip_compliance` flag (removed Wave -1 /
+ *     consent before send; CTIA: DND/opt-out honored; 10DLC: company identity is
+ *     included and the first message carries STOP instructions, status callback set).
+ *     There is NO `skip_compliance` flag (removed Wave -1 /
  *     F-2) — never reintroduce it. TCPA penalties are per message.
  *   - WORKER IS THE SOLE WRITER of any `sms_*` message row (omni §7.1). The client
  *     inserts only `internal_note`. Never fall back to another channel (omni §7.3):
@@ -94,13 +95,17 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
   }
 
   // CHECK 2: Opt-in — TCPA requires prior express consent for business texts.
-  if (!contact.opt_in_status) {
+  // An explicit opt-out timestamp wins even if older/manual data left the
+  // boolean true. Prior-consent attestation is never allowed to erase STOP.
+  if (contact.opt_out_at || !contact.opt_in_status) {
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
       event_type: 'send_blocked_no_consent',
       source: 'system',
-      details: `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
+      details: contact.opt_out_at
+        ? `Outbound blocked: explicit opt-out recorded at ${contact.opt_out_at}. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`
+        : `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
       performed_by: sentBy,
     });
     return { blocked: true, code: 'NO_CONSENT' };
@@ -451,12 +456,25 @@ export async function onRequestPost(context) {
       }, 400, request, env);
     }
 
-    // 2. Sender prefix (Twilio/CTIA requires identifying the business in messages).
-    let senderPrefix = '';
-    if (auth.employee.full_name) senderPrefix = `${auth.employee.full_name}: `;
+    // 2. Sender identity + first-message opt-out notice. An employee name by itself
+    // does not identify the party that obtained consent. Repeating the company on
+    // later messages is safe and keeps every standalone message attributable.
+    const senderPrefix = auth.employee.full_name
+      ? `Utah Pros Restoration - ${auth.employee.full_name}: `
+      : 'Utah Pros Restoration: ';
+    const priorOutbound = await db.select(
+      'messages',
+      `conversation_id=eq.${conversation_id}&type=eq.sms_outbound&status=neq.failed&select=id&limit=1`,
+    );
+    const optOutNotice = priorOutbound.length === 0
+      ? ' Reply STOP to unsubscribe.'
+      : '';
     // Media-only send: drop the dangling "Name: " colon so the MMS carries just the
-    // sender's name (CTIA identification) with the photo, not "Jane: " + nothing.
-    const clientBody = rawBody ? senderPrefix + rawBody : senderPrefix.replace(/:\s*$/, '');
+    // sender identity plus the required first-message opt-out notice.
+    const identifiedBody = rawBody
+      ? senderPrefix + rawBody
+      : senderPrefix.replace(/:\s*$/, '');
+    const clientBody = identifiedBody + optOutNotice;
 
     // 3. Status callback URL for delivery receipts (Phase A reads segment/price here).
     const baseUrl = env.PAGES_URL || `https://${request.headers.get('host')}`;
