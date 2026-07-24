@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins, vitest
- *   Internal:  tests/qa/lib/target-policy.mjs, vitest.db.config.js
+ *   Internal:  tests/qa/lib/target-policy.mjs, vitest.config.js
  *   Data:      reads  → local test process settings
  *              writes → local isolated database only through the selected tests
  *
@@ -19,6 +19,8 @@
  * ════════════════════════════════════════════════
  */
 
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -36,6 +38,8 @@ function refuse(reason) {
 
 if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
   refuse(`UPR_QA_LOCAL_SENTINEL must equal ${LOCAL_DATABASE_SENTINEL}`);
+} else if (!process.env.SUPABASE_ANON_KEY) {
+  refuse('SUPABASE_ANON_KEY must be the current local-stack key');
 } else {
   try {
     assertLocalDatabaseTarget({
@@ -46,21 +50,51 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
 
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
+    const reportPath = path.join(os.tmpdir(), `upr-vitest-db-${process.pid}.json`);
     const result = spawnSync(
       process.execPath,
-      [vitest, 'run', '--config', path.join(root, 'vitest.db.config.js')],
+      [
+        vitest,
+        'run',
+        '--config',
+        path.join(root, 'vitest.config.js'),
+        '--reporter=default',
+        '--reporter=json',
+        `--outputFile.json=${reportPath}`,
+      ],
       {
         cwd: root,
         env: {
           ...process.env,
           VITE_SUPABASE_URL: process.env.SUPABASE_URL,
+          VITE_SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+          UPR_TEST_LANE: 'db',
           UPR_QA_CONFIRMED_LOCAL: LOCAL_DATABASE_SENTINEL,
         },
         stdio: 'inherit',
         windowsHide: true,
       },
     );
-    process.exitCode = result.error ? 1 : (result.status ?? 1);
+    let report;
+    try {
+      report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+    } finally {
+      fs.rmSync(reportPath, { force: true });
+    }
+    const unexpectedSkips =
+      (report?.numPendingTests || 0)
+      + (report?.numPendingTestSuites || 0)
+      + (report?.numTodoTests || 0);
+    if (result.error || result.status !== 0 || !report?.success || !report.numTotalTests) {
+      process.exitCode = result.status || 1;
+    } else if (unexpectedSkips !== 0) {
+      refuse(`database lane found ${unexpectedSkips} unexpected skipped/pending tests`);
+    } else {
+      process.stdout.write(
+        `Local DB QA: ${report.numPassedTests}/${report.numTotalTests} passed; 0 unexpected skips.\n`,
+      );
+      process.exitCode = 0;
+    }
   } catch (error) {
     refuse(error instanceof Error ? error.message : 'unknown target error');
   }
