@@ -182,9 +182,15 @@ history.
 Retained CallRail provider events use the existing service-only `message_provider_events` table.
 Migration source `20260724002500_callrail_event_recovery_scheduler.sql` adds no table, column,
 policy, or browser grant: it only seeds a non-secret exact Worker URL, defines a locked-down
-due-work wake helper, and schedules it every five minutes. The migration is repository-authored
-but unapplied; activating it affects the shared production database immediately and therefore
-requires a fresh owner-approved apply window.
+due-work wake helper, and schedules it every five minutes. It was owner-applied and verified on
+2026-07-24 under ledger version `20260724002500`; the helper remains outside browser execution.
+Live recovery then exposed that the prior PostgREST PATCH claim could mutate an event but return no
+representation, causing the worker to skip a row it had already claimed. Migration
+`20260724051500_claim_callrail_provider_event.sql` is live under ledger version `20260724051500`
+and replaces that boundary with a service-role-only, invoker-mode RPC that atomically fences and
+returns exactly one due event. It adds no table, column, provider send, or browser grant.
+Read-only catalog verification confirmed the exact source fingerprint, empty `search_path`,
+`SECURITY INVOKER` mode and service-role-only execution.
 
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
@@ -213,20 +219,16 @@ Attestation revalidates an active internal admin/office actor, serializes on the
 phone advisory lock as CallRail inbound projection, locks every duplicate contact and refuses DND,
 `opt_out_at` or a durable pending STOP. The status RPC returns only a safe allow/deny decision and
 requires the current contact phone, destination, suppression state, scope and version to agree.
-Pending additive hardening migration `20260724043000_harden_service_sms_consent.sql` makes both
-RPCs lock and re-read the target contact after entering the phone advisory-lock boundary and fail
-closed if its normalized phone changed. It also permits only a processed START with a strictly
-later `occurred_at` to supersede an unresolved STOP; equal timestamps leave STOP authoritative.
-Applying the follow-up alone sends nothing and changes no existing consent row.
-
-Pending additive hardening migration `20260724043000_harden_service_sms_consent.sql` makes both
-RPCs lock and re-read the target contact after entering the phone advisory-lock boundary and fail
+Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is live under
+migration-ledger version `20260724043000`. It makes both RPCs lock and re-read the target contact
+after entering the phone advisory-lock boundary and fail
 closed if its normalized phone changed. It also permits only a processed START with a strictly
 later `occurred_at` to supersede an unresolved STOP; equal timestamps leave STOP authoritative.
 The attestation RPC holds a share lock on the employee row so role removal, deactivation or
 externalization cannot race a consent record. Full live-definition hashes and exact-once patch
-needles make the migration abort on any unreviewed source drift.
-Applying the follow-up alone sends nothing and changes no existing consent row.
+needles make the migration abort on any unreviewed source drift. Read-only catalog recapture
+confirmed the signatures, empty `search_path`, `SECURITY INVOKER` mode and service-role-only
+execution remain intact. The migration sent nothing and changed no existing consent row.
 
 The exact migration blob from commit `e71e759b27b1da1fad713413c257b7059bd5905d` was applied to the
 shared project under live migration-ledger version

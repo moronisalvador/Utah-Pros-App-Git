@@ -158,7 +158,7 @@ push, Scope Sheet search/room reads, and note upload require an active employee 
 technicians use those paths; inactive and non-employee sessions are denied before service-role or
 provider access.
 
-## Messaging transport authorization (built; not deployed)
+## Messaging transport authorization
 
 The messaging build branch introduces one server-side `conversations` capability predicate for
 `POST /api/send-message`: authenticated user, resolved active non-external employee, force-disable
@@ -205,6 +205,14 @@ sent/failed/ambiguous history. `POST /api/message-media-url` signs only the medi
 already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
 path.
 
+The CallRail recovery worker claims provider events only through
+`claim_callrail_provider_event`. The RPC is `SECURITY INVOKER` with an empty search path, rejects
+any JWT role other than `service_role`, and revokes execution from `PUBLIC`, `anon`, and
+`authenticated`. Its exact event/state/time predicate and `UPDATE ... RETURNING` result are the
+worker's claim authority; browser sessions cannot claim or replay provider events. It is live
+under migration-ledger version `20260724051500`; read-only catalog verification confirmed the
+reviewed body fingerprint and the same service-only invoker boundary.
+
 ## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 
 `POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external
@@ -234,9 +242,11 @@ outside the legacy browser-readable log. No provider send occurred during verifi
 sanitized evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is authored but not
-applied. It pins and revalidates the contact phone after entering the inbound-projection
-serialization boundary and requires a strictly later processed START to supersede a pending STOP;
-equal timestamps remain blocked. The actor row is held `FOR SHARE` through the attestation write,
-closing concurrent role/deactivation races. The patch refuses any function-definition hash drift
-or duplicate patch anchor before replacing either service-only RPC.
+Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is live under
+migration-ledger version `20260724043000`. It pins and revalidates the contact phone after entering
+the inbound-projection serialization boundary and requires a strictly later processed START to
+supersede a pending STOP; equal timestamps remain blocked. The actor row is held `FOR SHARE`
+through the attestation write, closing concurrent role/deactivation races. The patch refuses any
+function-definition hash drift or duplicate patch anchor before replacing either service-only RPC.
+Read-only catalog recapture confirmed both functions remain `SECURITY INVOKER`, use an empty
+`search_path`, deny browser roles and permit only `service_role` execution.

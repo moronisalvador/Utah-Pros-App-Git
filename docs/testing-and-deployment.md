@@ -196,13 +196,14 @@ both RPCs while retaining the locked-down current/evidence tables and redacted `
 history. Sanitized apply evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-Pending migration `20260724043000_harden_service_sms_consent.sql` is a server-only schema-first
-follow-up: it replaces only the two existing service-role function definitions, sends nothing and
-changes no consent row. Apply only from the reviewed release commit during a low-traffic window,
-with no overlapping contacts/message-provider writes. Verify the ledger, unchanged function
-signatures/ACLs/search paths, contact-phone race closure and strict STOP→later-START chronology.
-Also verify the exact-source hash/length precondition, exact-once patch anchors and the employee
-share lock that serializes authorization revocation against attestation.
+Migration `20260724043000_harden_service_sms_consent.sql` is live under ledger version
+`20260724043000`. It replaced only the two existing service-role function definitions, sent
+nothing and changed no consent row. The 2026-07-24 read-only recapture verified the ledger,
+unchanged function signatures/ACLs/search paths, contact-phone race closure, strict
+STOP→later-START chronology, exact-source hash/length precondition, exact-once patch anchors and
+the employee share lock that serializes authorization revocation against attestation.
+Authenticated production no-send verification confirmed the missing-permission banner, disabled
+Send action and record-only modal without submitting an attestation.
 Verify browser denial, service-role execution, append-only audit history, and that automated and
 scheduled paths accept only `GLOBAL_OPT_IN`.
 Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back
@@ -285,10 +286,15 @@ This specifically invalidated the old derived media endpoint. Close-out must the
 corrected immediate webhook URL download and the conversation-API URL refresh used by a queued
 retry; neither repository tests nor the received provider event alone is sufficient.
 
-Queued retry additionally requires applying the reviewed CallRail event-recovery scheduler
-migration in a separate shared-Supabase window. Before apply, verify the exact dev Worker URL,
-existing cron secret presence without reading its value, `MESSAGING_SCHEMA_MODE=foundation`,
-CallRail company configuration, and the deployed protected route. After apply, verify the named
-cron job, one `process-callrail-events` `worker_runs` record, transition of the retained event
-without duplicate canonical history, and a fresh immediate inbound MMS. Repository tests and a
-deployed route alone do not prove the scheduler is active.
+The owner applied the reviewed CallRail event-recovery scheduler on 2026-07-24 after verifying the
+exact dev Worker URL, existing cron secret presence without reading its value,
+`MESSAGING_SCHEMA_MODE=foundation`, CallRail company configuration, and the protected route. Live
+retry proved the scheduler request and worker-run telemetry, but also exposed that the former
+PostgREST PATCH claim could update four rows to `claimed` while returning an empty representation;
+the worker therefore reported four skips. Migration
+`20260724051500_claim_callrail_provider_event.sql` is now live under the same ledger version;
+read-only verification confirmed the exact source fingerprint, invoker mode, empty search path and
+service-role-only execution. The remaining acceptance gate is deployment of the RPC-based worker
+and verification that a stale retained event becomes processed or durably retryable without
+duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
+separate end-to-end evidence.

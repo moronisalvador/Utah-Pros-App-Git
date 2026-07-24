@@ -46,6 +46,12 @@
       "reviewedOriginCommit": "5cf546b"
     },
     {
+      "version": "20260724002500",
+      "name": "callrail_event_recovery_scheduler",
+      "path": "supabase/migrations/20260724002500_callrail_event_recovery_scheduler.sql",
+      "reviewedOriginCommit": "ec2520e2470d1083e5f8525a7844609f054a3a14"
+    },
+    {
       "version": "20260724003818",
       "name": "message_notification_outbox_scheduler",
       "path": "supabase/migrations/20260724001500_message_notification_outbox_scheduler.sql",
@@ -56,6 +62,18 @@
       "name": "attest_prior_sms_consent",
       "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
       "reviewedOriginCommit": "e71e759"
+    },
+    {
+      "version": "20260724043000",
+      "name": "harden_service_sms_consent",
+      "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
+      "reviewedOriginCommit": "9dc5681577a7af0d94655e5d0f202aaed1806174"
+    },
+    {
+      "version": "20260724051500",
+      "name": "claim_callrail_provider_event",
+      "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
+      "reviewedOriginCommit": "13493f85ea7fa7d299aa837c1e00e3b9c036713e"
     }
   ],
   "selectedFunctions": [
@@ -76,7 +94,11 @@
     },
     {
       "identity": "get_service_sms_consent_status(uuid,text)",
-      "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
+      "expectedFingerprints": {
+        "rawMd5": "3912e63a1a2e75116f604e01e790b5b6",
+        "semanticMd5": "260cb7f4c9fdfc621f0d9d15d45be383"
+      },
       "expected": {
         "securityDefiner": false,
         "config": ["search_path=\"\""],
@@ -88,7 +110,24 @@
     },
     {
       "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)",
-      "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
+      "expectedFingerprints": {
+        "rawMd5": "f86494e84a1dc94543b2787e696f2b1a",
+        "semanticMd5": "1863e0f7c0148272dda01fe8c5822a51"
+      },
+      "expected": {
+        "securityDefiner": false,
+        "config": ["search_path=\"\""],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "claim_callrail_provider_event(uuid,timestamp with time zone,timestamp with time zone)",
+      "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
+      "allowedRawDrift": "comments_or_whitespace",
       "expected": {
         "securityDefiner": false,
         "config": ["search_path=\"\""],

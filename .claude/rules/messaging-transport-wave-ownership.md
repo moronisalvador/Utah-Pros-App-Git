@@ -116,6 +116,14 @@ or service-role execution, preserve provider events and configuration on rollbac
 a customer message. Authoring and deployment do not authorize applying the migration to the shared
 Supabase project; that remains a fresh owner-approved apply window.
 
+The owner approved and applied the scheduler on 2026-07-24. Its first controlled retry exposed a
+live claim-contract defect: PostgREST mutated four eligible events to `claimed` but returned an
+empty representation, so the worker skipped all four. This initiative additionally owns one
+service-role-only, invoker-mode atomic-claim RPC migration, the narrow worker caller change,
+contract tests, and canonical documentation. The RPC may mutate only one exact due/stale CallRail
+SMS/MMS event and must return only the row it successfully claimed. It does not authorize provider
+sends, broad event resets, browser grants, or unrelated database work.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:
