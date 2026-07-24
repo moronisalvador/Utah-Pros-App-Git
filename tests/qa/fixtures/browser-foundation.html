@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>UPR synthetic QA foundation</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: Canvas; color: CanvasText; }
+    header, main, nav { max-width: 72rem; margin: auto; padding: 1rem; }
+    header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid GrayText; }
+    nav { display: flex; gap: .75rem; overflow-x: auto; }
+    button, input, a { min-height: 44px; font: inherit; }
+    button, a { padding: .65rem .8rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .panel { min-height: 12rem; margin-block: 1rem; padding: 1rem; border: 1px solid GrayText; border-radius: .75rem; }
+    .error { border-color: #b42318; }
+    .stale { padding: .75rem; border: 2px solid #b54708; }
+    .skeleton { width: 75%; height: 1.25rem; background: GrayText; opacity: .35; border-radius: .25rem; }
+    dialog { width: min(30rem, calc(100% - 2rem)); padding: 1rem; }
+    .test-only { margin-top: 3rem; border-top: 1px dashed GrayText; padding-top: 1rem; }
+    @media (max-width: 768px) {
+      header { align-items: flex-start; flex-direction: column; gap: .5rem; }
+      nav { position: sticky; bottom: 0; background: Canvas; padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+      button, input, a { min-height: 48px; }
+      .controls > * { flex: 1 1 9rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong id="shell-name">Office shell</strong>
+      <div>Synthetic data only</div>
+    </div>
+    <label>Theme <select id="theme"><option>System</option><option>Light</option><option>Dark</option></select></label>
+  </header>
+  <main>
+    <h1>Credential-free workflow fixture</h1>
+    <p id="route-status" role="status" aria-live="polite">Ready</p>
+    <section aria-labelledby="state-heading">
+      <h2 id="state-heading">Deterministic states</h2>
+      <div class="controls">
+        <button data-state="loading">Loading</button>
+        <button data-state="error">Error</button>
+        <button data-state="empty">Empty</button>
+        <button data-state="stale">Stale</button>
+        <button data-state="ready">Ready</button>
+      </div>
+      <div id="state-panel" class="panel" tabindex="-1"></div>
+    </section>
+    <section aria-labelledby="interaction-heading">
+      <h2 id="interaction-heading">Lifecycle and focus</h2>
+      <label for="draft">Synthetic draft</label>
+      <input id="draft" autocomplete="off" value="unchanged">
+      <button id="open-dialog">Open details</button>
+      <dialog id="details" aria-labelledby="dialog-title">
+        <h2 id="dialog-title">Synthetic details</h2>
+        <button id="dialog-secondary">Secondary action</button>
+        <button id="close-dialog">Close</button>
+      </dialog>
+    </section>
+    <section class="test-only" aria-labelledby="denial-heading">
+      <h2 id="denial-heading">Denial fixtures</h2>
+      <div class="controls">
+        <button id="production-fetch">Production database request</button>
+        <button id="provider-fetch">Provider request</button>
+        <button id="popup">External popup</button>
+        <button id="websocket">External WebSocket</button>
+        <a id="download" download="fixture.txt" href="/qa?download=1">Download</a>
+      </div>
+      <output id="denial-result">Not attempted</output>
+    </section>
+  </main>
+  <nav aria-label="Synthetic primary">
+    <a href="/qa?shell=office">Office</a>
+    <a href="/qa?shell=tech">Tech</a>
+  </nav>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const shell = params.get('shell') === 'tech' ? 'Tech shell' : 'Office shell';
+    document.querySelector('#shell-name').textContent = shell;
+
+    const panel = document.querySelector('#state-panel');
+    const status = document.querySelector('#route-status');
+    function renderState(state) {
+      panel.className = `panel ${state === 'error' ? 'error' : ''}`;
+      if (state === 'loading') panel.innerHTML = '<div aria-label="Loading synthetic rows" class="skeleton"></div>';
+      if (state === 'error') panel.innerHTML = '<div role="alert"><strong>Could not load synthetic rows</strong><br><button data-state="ready">Try again</button></div>';
+      if (state === 'empty') panel.innerHTML = '<div><strong>No synthetic rows</strong><p>The request succeeded with zero results.</p></div>';
+      if (state === 'stale') panel.innerHTML = '<div class="stale" role="status">Showing saved synthetic rows while refresh is unavailable.</div><ul><li>QA-1001</li><li>QA-1002</li></ul>';
+      if (state === 'ready') panel.innerHTML = '<ul aria-label="Synthetic rows"><li>QA-1001</li><li>QA-1002</li></ul>';
+      status.textContent = state[0].toUpperCase() + state.slice(1);
+    }
+    document.addEventListener('click', (event) => {
+      const state = event.target.dataset.state;
+      if (state) renderState(state);
+    });
+    renderState('ready');
+
+    const dialog = document.querySelector('#details');
+    document.querySelector('#open-dialog').addEventListener('click', () => dialog.showModal());
+    document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
+
+    const result = document.querySelector('#denial-result');
+    async function attempt(action) {
+      try { await action(); result.textContent = 'Unexpectedly allowed'; }
+      catch { result.textContent = 'Denied'; }
+    }
+    document.querySelector('#production-fetch').addEventListener('click', () => attempt(() => fetch('https://glsmljpabrwonfiltiqm.supabase.co/rest/v1/employees')));
+    document.querySelector('#provider-fetch').addEventListener('click', () => attempt(() => fetch('https://api.twilio.com/2010-04-01/Accounts.json')));
+    document.querySelector('#popup').addEventListener('click', () => window.open('https://utahpros.app/', '_blank', 'noopener'));
+    document.querySelector('#websocket').addEventListener('click', () => attempt(() => new Promise((resolve, reject) => {
+      const socket = new WebSocket('wss://dev.utahpros.app/realtime/v1/websocket');
+      socket.onopen = resolve;
+      socket.onerror = reject;
+    })));
+  </script>
+</body>
+</html>
