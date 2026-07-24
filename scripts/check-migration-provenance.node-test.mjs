@@ -244,3 +244,20 @@ test('supports an explicit service-only invoker function contract', () => {
   });
   assert.equal(result.ok, true);
 });
+
+test('supports reviewed exact-source migrations that generate live function definitions', () => {
+  const fixture = makeFixture();
+  delete fixture.manifest.selectedFunctions[0].allowedRawDrift;
+  fixture.manifest.selectedFunctions[0].expectedLiveFingerprints = {
+    rawMd5: fixture.evidence.functions[0].rawMd5,
+    semanticMd5: fixture.evidence.functions[0].semanticMd5,
+  };
+
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, true);
+});

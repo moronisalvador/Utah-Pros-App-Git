@@ -131,3 +131,20 @@ contract: empty `search_path`, no `PUBLIC`/`anon`/`authenticated` execution, and
 `service_sms_consents` and `service_sms_consent_attestations`. No live mutation occurred during
 this refresh. `npm run validate:provenance -- --worktree` passed with nine ledger mappings,
 13 functions, four policies and the existing comment-only warning.
+
+## Messaging recovery and consent-hardening addendum — 2026-07-24 UTC
+
+The 2026-07-24 13:22:42 UTC read-only recapture records three additional owner-applied,
+release-reachable ledger rows: `20260724002500 callrail_event_recovery_scheduler`,
+`20260724043000 harden_service_sms_consent`, and
+`20260724051500 claim_callrail_provider_event`. The selected-function capture confirms the two
+consent RPCs remain service-only invoker functions after the reviewed exact-source hardening
+patch, and adds the atomic CallRail claim RPC with the same empty-search-path/service-only
+contract. All 14 selected function semantic fingerprints and all four selected policy
+fingerprints were recaptured; the older CRM raw-body differences remain semantic matches.
+
+Because the consent hardening migration generates its replacement definitions from guarded live
+source rather than containing static `CREATE FUNCTION` bodies, the provenance manifest records
+the observed post-patch raw and semantic fingerprints while still requiring the exact migration
+blob from reviewed commit `9dc5681`. The claim RPC is statically extracted from reviewed commit
+`13493f8`. No live mutation occurred during this recapture.

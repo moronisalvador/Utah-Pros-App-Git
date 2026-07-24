@@ -222,13 +222,20 @@ export function validateProvenance({
   const liveFunctions = new Map(evidence.functions.map((entry) => [entry.identity, entry]));
   const parsedByPath = new Map();
   for (const selected of manifest.selectedFunctions) {
-    if (!parsedByPath.has(selected.path)) {
-      const sql = sourceByPath.get(selected.path);
-      if (!sql) continue;
-      parsedByPath.set(selected.path, extractFunctionBodies(sql));
+    let selectedSource;
+    if (selected.expectedLiveFingerprints) {
+      const name = selected.identity.slice(0, selected.identity.indexOf('('));
+      selectedSource = new Map([[name, selected.expectedLiveFingerprints]]);
+    } else {
+      if (!parsedByPath.has(selected.path)) {
+        const sql = sourceByPath.get(selected.path);
+        if (!sql) continue;
+        parsedByPath.set(selected.path, extractFunctionBodies(sql));
+      }
+      selectedSource = parsedByPath.get(selected.path);
     }
     compareFunction(
-      parsedByPath.get(selected.path),
+      selectedSource,
       liveFunctions.get(selected.identity),
       selected,
       issues,
