@@ -55,6 +55,7 @@ import {
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
+import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import {
   getDraft,
   setDraft,
@@ -205,6 +206,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [scheduleDate, setScheduleDate] = useState('');
   const [scheduleTime, setScheduleTime] = useState('');
   const [showComposeActions, setShowComposeActions] = useState(false);
+  const [consentPrompt, setConsentPrompt] = useState(null);
 
   const [attachments, setAttachments] = useState([]);    // { clientId, name, url, localPreview, uploading, error }
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
@@ -245,7 +247,7 @@ export default function Conversations({ replyAssist } = {}) {
   const loadConversations = useCallback(async () => {
     try {
       const data = await db.select('conversations',
-        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at))&order=last_message_at.desc.nullslast'
+        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
       );
       setConversations(data);
     } catch (err) { console.error('Load conversations error:', err); }
@@ -525,12 +527,23 @@ export default function Conversations({ replyAssist } = {}) {
     const p = activeConv.conversation_participants.find(p => p.role === 'primary') || activeConv.conversation_participants[0];
     return p?.contacts || null;
   }, [activeConv]);
+  const canAttestPriorConsent = employee?.role === 'admin' || employee?.role === 'office';
 
-  // Length of the server-added "Name: " prefix, so the segment counter matches the wire.
+  // Length of server-added company/employee identity and, before any successful
+  // outbound in this thread, the required STOP notice. Keep the counter aligned
+  // with the exact wire text constructed by /api/send-message.
   const senderPrefixLen = useMemo(() => {
-    if (isNote || !employee?.full_name) return 0;
-    return `${employee.full_name}: `.length;
-  }, [isNote, employee]);
+    if (isNote) return 0;
+    const identity = employee?.full_name
+      ? `Utah Pros Restoration - ${employee.full_name}: `
+      : 'Utah Pros Restoration: ';
+    const hasPriorOutbound = messages.some(message =>
+      message.type === 'sms_outbound'
+      && message.status !== 'failed'
+      && !message._pending
+    );
+    return identity.length + (hasPriorOutbound ? 0 : ' Reply STOP to unsubscribe.'.length);
+  }, [isNote, employee, messages]);
 
   const replyContext = useMemo(() => {
     const lastInbound = [...messages].reverse().find(m => m.type === 'sms_inbound');
@@ -595,6 +608,7 @@ export default function Conversations({ replyAssist } = {}) {
 
   const selectConversation = (id) => {
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
+    setConsentPrompt(null);
     clearComposeState();
     setContextMenu(null); setShowComposeActions(false);
     setListLimit(LIST_PAGE);
@@ -753,6 +767,19 @@ export default function Conversations({ replyAssist } = {}) {
         const reason = data.code === 'DND_ACTIVE' ? 'Contact has Do Not Disturb enabled'
           : data.code === 'NO_CONSENT' ? 'Contact has not opted in to SMS'
             : (data.error || `Message not sent (${res.status})`);
+        if (
+          data.code === 'NO_CONSENT'
+          && data.contact_id
+          && canAttestPriorConsent
+          && activeIdRef.current === convId
+        ) {
+          setConsentPrompt({
+            contactId: data.contact_id,
+            convId,
+            clientId,
+            retryAfterRecord: true,
+          });
+        }
         // Mark the optimistic bubble failed (if still on this thread) — keep it for retry.
         if (activeIdRef.current === convId) {
           setMessages(prev => prev.map(m => m._clientId === clientId
@@ -783,7 +810,7 @@ export default function Conversations({ replyAssist } = {}) {
       }
       emitToast('Network error — message not sent', 'error');
     }
-  }, [employee]);
+  }, [employee, canAttestPriorConsent]);
 
   const handleSend = async () => {
     if (!activeId) return;
@@ -875,6 +902,34 @@ export default function Conversations({ replyAssist } = {}) {
       : m));
     dispatchSend({ clientId: matchKey, convId, text: payload.text, media_urls: payload.media_urls, isNote: payload.isNote });
   }, [dispatchSend]);
+
+  const handleConsentRecorded = useCallback((record) => {
+    const prompt = consentPrompt;
+    if (!prompt || !record?.contact_id) return;
+
+    setConversations(prev => prev.map(c => ({
+      ...c,
+      conversation_participants: c.conversation_participants?.map(p =>
+        p.contact_id === record.contact_id
+          ? {
+            ...p,
+            contacts: {
+              ...p.contacts,
+              opt_in_status: true,
+              opt_in_source: record.opt_in_source || 'prior_consent_attestation',
+              opt_in_at: record.opt_in_at || record.recorded_at || new Date().toISOString(),
+            },
+          }
+          : p
+      ),
+    })));
+    setConsentPrompt(null);
+
+    if (prompt.retryAfterRecord && activeIdRef.current === prompt.convId) {
+      const failed = messages.find(message => message._clientId === prompt.clientId);
+      if (failed) retryMessage(failed);
+    }
+  }, [consentPrompt, messages, retryMessage]);
 
   // ─── SECTION: Event handlers — composer input ──────────────
 
@@ -1143,6 +1198,30 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
+            {activeContact && !activeContact.dnd && activeContact.opt_in_status !== true && !isNote && (
+              <div className="conv-consent-banner">
+                <div>
+                  <strong>SMS permission is not recorded</strong>
+                  <span>Verify prior permission before texting this contact.</span>
+                </div>
+                {canAttestPriorConsent ? (
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    type="button"
+                    onClick={() => setConsentPrompt({
+                      contactId: activeContact.id,
+                      convId: activeId,
+                      clientId: null,
+                      retryAfterRecord: false,
+                    })}
+                  >
+                    Record verified permission
+                  </button>
+                ) : (
+                  <span className="conv-consent-role-note">Office or admin approval required</span>
+                )}
+              </div>
+            )}
 
             {/* ── Compose Actions Sheet ── */}
             {showComposeActions && (
@@ -1244,7 +1323,13 @@ export default function Conversations({ replyAssist } = {}) {
                 <div className="conv-dnd-row">
                   <div className="conv-dnd-info">
                     <div className="conv-dnd-title">Do Not Disturb</div>
-                    <div className="conv-dnd-desc">{activeContact.dnd ? 'All outbound messages blocked' : 'Outbound messaging allowed'}</div>
+                    <div className="conv-dnd-desc">
+                      {activeContact.dnd
+                        ? 'All outbound messages blocked'
+                        : activeContact.opt_in_status
+                          ? 'DND off and SMS permission recorded'
+                          : 'DND off; SMS permission not recorded'}
+                    </div>
                   </div>
                   <button
                     className={`conv-dnd-toggle${activeContact.dnd ? ' on' : ''}`}
@@ -1335,6 +1420,15 @@ export default function Conversations({ replyAssist } = {}) {
           </div>
         </div>
       )}
+
+      <SmsConsentAttestationModal
+        open={!!consentPrompt}
+        contactId={consentPrompt?.contactId || null}
+        contactName={activeContact?.name || activeConv?.title || ''}
+        retryAfterRecord={consentPrompt?.retryAfterRecord === true}
+        onClose={() => setConsentPrompt(null)}
+        onRecorded={handleConsentRecorded}
+      />
     </div>
   );
 }

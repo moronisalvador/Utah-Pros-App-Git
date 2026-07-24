@@ -698,6 +698,67 @@ tr:hover td { background: var(--bg-secondary); }
    Optimistic-send status, MMS render/attach, segment counter, jump-pill, pagination,
    mobile/keyboard. New .conv-* classes only; reuses the existing @keyframes spin. ── */
 
+/* Verified prior-consent attestation. The server/database remains authoritative;
+   this surface only explains a missing record and collects auditable evidence. */
+.conv-consent-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: var(--text-xs);
+}
+.conv-consent-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.conv-consent-banner strong { color: var(--text-primary); }
+.conv-consent-role-note { color: var(--text-secondary); }
+.conv-consent-attest-copy {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.conv-consent-attest-hint {
+  margin-top: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.conv-consent-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.conv-consent-confirm input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .conv-consent-banner {
+    align-items: stretch;
+    flex-direction: column;
+    padding: var(--space-3);
+  }
+  .conv-consent-banner .btn {
+    min-height: 44px;
+    width: 100%;
+  }
+}
+
 /* Message body: preserve the newlines the sender typed (multiline pre-wrap). */
 .conv-msg-text { white-space: pre-wrap; }
 .conv-msg-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; word-break: break-word; }
