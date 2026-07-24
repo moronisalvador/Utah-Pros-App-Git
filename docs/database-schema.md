@@ -191,19 +191,21 @@ Sanitized live evidence and apply-window recapture queries:
 
 ## Prior SMS consent attestation (authored; not applied)
 
-Migration `20260724014423_attest_prior_sms_consent.sql` adds only the service-role RPC
-`attest_prior_sms_consent`. It lets the authorized Worker record verified verbal permission,
-a signed work authorization, other written permission, or another evidenced customer request.
-The operation records the consent date, evidence note, authenticated employee actor and server
-timestamp in `sms_consent_log` while updating `contacts.opt_in_status` in the same transaction.
-The audit details also pin `prior_sms_consent_v1`, Utah Pros Restoration as the sender and the
-`service_related_customer_project_messages` subject scope so later code cannot reinterpret this
-evidence as blanket marketing consent.
+Migration `20260724014423_attest_prior_sms_consent.sql` adds the service-only
+`service_sms_consents` table plus `attest_prior_sms_consent` and
+`get_service_sms_consent_status`. The authoritative table pins the exact phone, evidence method,
+consent date/note, employee actor, trusted request IP, `prior_sms_consent_v1`, Utah Pros
+Restoration sender identity, and `service_related_customer_project_messages` scope. Every
+successful attestation also appends `sms_consent_log`; it never changes `contacts.opt_in_status`.
 
-The RPC is `SECURITY INVOKER`, is executable only by `service_role`, revalidates an active internal
-admin/office actor, locks the contact, and refuses DND or any existing `opt_out_at`. It does not add
-or broaden table policies/grants, infer consent from contact existence, erase STOP/DND, send a
-message, or modify existing rows merely by being applied.
+The table has enabled and forced RLS, no browser policy, explicit revocation from
+`PUBLIC`/`anon`/`authenticated`, and only service-role `SELECT`/`INSERT`/`UPDATE`. Both functions
+are `SECURITY INVOKER`, pin an empty `search_path`, reject non-service callers, and have
+service-role-only execution. The status RPC serializes on the same normalized-phone advisory lock
+as CallRail inbound projection, checks every duplicate contact for DND/opt-out, and blocks a
+durable unprojected STOP unless a later processed START supersedes it. Attestation additionally
+locks the active internal admin/office actor and all duplicate contacts. Applying the migration
+alone sends nothing and changes no existing consent row.
 
 ## Known limits
 

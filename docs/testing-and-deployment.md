@@ -177,11 +177,18 @@ shared-database apply window. Before apply, run the Worker authorization/negativ
 migration contract tests, changed-file lint, build and the available credential-free suites. Do not
 deploy the UI/Worker before the RPC exists because the new route depends on that signature.
 
-In the apply window, apply only the reviewed committed migration and verify with representative
-roles that browser roles cannot execute the RPC, admin/office attestation succeeds, forged actors
-fail, and DND/STOP/`opt_out_at` cannot be cleared. Use controlled synthetic records; do not send a
-provider message as part of migration verification. Then deploy the Worker/UI and verify the modal,
-audit history and send gate separately. Rollback drops only the function and retains audit history.
+This is a server-only schema-first exception to the normal additive frontend-read sequence: no
+deployed browser reads `service_sms_consents`, and the consuming Worker/runtime must not deploy
+until both RPC signatures exist. Apply only from the reviewed release commit during a low-traffic
+window, with no overlapping contacts/employees/message-provider DDL. Verify the ledger,
+table/RPC ACLs, forced RLS, empty search paths, browser denial, service-role execution, actor and
+duplicate-contact locks, STOP→START chronology, append-only audit history, and that automated and
+scheduled paths accept only `GLOBAL_OPT_IN`. Use controlled synthetic records; do not send a
+provider message. Capture provenance/readback before deploying Worker/UI.
+
+Operational rollback first reverts consuming code and revokes both function execute grants while
+retaining the additive table/functions and audit evidence. Dropping the evidence table is not an
+operational rollback and would require a separate reviewed cleanup migration.
 
 ### 2026-07-23 Preview messaging proof
 

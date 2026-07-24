@@ -1,13 +1,14 @@
 /**
- * Database-lane contract mirror for the historical service-SMS consent migration.
- * Isolated PostgreSQL execution remains a separate local-runtime verification gate.
+ * Credential-free contract guard for the unapplied historical service-SMS
+ * consent migration. Isolated PostgreSQL execution and live role verification
+ * remain separate owner-gated release checks.
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const migration = readFileSync(fileURLToPath(new URL(
-  '../migrations/20260724014423_attest_prior_sms_consent.sql',
+  '../../supabase/migrations/20260724014423_attest_prior_sms_consent.sql',
   import.meta.url,
 )), 'utf8').replace(/\r\n/g, '\n');
 
@@ -16,7 +17,7 @@ const attestSignature =
 const statusSignature =
   'public.get_service_sms_consent_status(uuid, text)';
 
-describe('attest_prior_sms_consent database contract', () => {
+describe('historical service-SMS consent migration contract', () => {
   it('creates a deny-by-default service-only evidence table', () => {
     expect(migration).toContain('CREATE TABLE public.service_sms_consents');
     expect(migration).toContain(
@@ -34,7 +35,7 @@ describe('attest_prior_sms_consent database contract', () => {
     expect(migration).not.toMatch(/CREATE POLICY[\s\S]+service_sms_consents/i);
   });
 
-  it('keeps both exact RPC overloads service-role-only and invoker-rights', () => {
+  it('keeps both exact RPC signatures service-role-only and invoker-rights', () => {
     expect(migration.match(/SECURITY INVOKER/g)).toHaveLength(2);
     for (const signature of [attestSignature, statusSignature]) {
       expect(migration).toContain(
@@ -46,38 +47,38 @@ describe('attest_prior_sms_consent database contract', () => {
     }
   });
 
-  it('separates service consent from the generic automated-marketing boolean', () => {
-    expect(migration).toContain(
-      "'service_related_customer_project_messages'",
-    );
+  it('never promotes narrow service consent into generic automated consent', () => {
+    expect(migration).toContain("'service_related_customer_project_messages'");
     expect(migration).toContain("'prior_sms_consent_v1'");
     expect(migration).not.toMatch(/UPDATE public\.contacts[\s\S]+opt_in_status/i);
     expect(migration).not.toContain("opt_in_source = 'prior_consent_attestation'");
   });
 
-  it('serializes by phone and refuses duplicate suppression or a pending STOP', () => {
+  it('serializes suppression and preserves STOP to later START chronology', () => {
     expect(migration).toContain(
       "pg_advisory_xact_lock(hashtextextended('messaging-phone:' || v_phone_key, 0))",
     );
     expect(migration).toContain('ORDER BY c.id\n  FOR UPDATE;');
-    expect(migration).toContain('c.dnd IS TRUE');
-    expect(migration).toContain('c.opt_out_at IS NOT NULL');
+    expect(migration).toMatch(/FROM public\.employees[\s\S]+LIMIT 1\s+FOR SHARE;/i);
+    expect(migration).toContain("'code', 'CONTACT_OPTED_OUT'");
+    expect(migration).toContain("'code', 'CONTACT_PENDING_STOP'");
     expect(migration).toContain(
       "e.processing_state IN ('received', 'claimed', 'retryable', 'failed')",
     );
-    expect(migration).toContain(
-      "ARRAY['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit']",
-    );
+    expect(migration).toContain("later_event.processing_state = 'processed'");
+    expect(migration).toContain("ARRAY['start', 'unstop', 'subscribe', 'yes']");
   });
 
-  it('always appends actor, IP, date, evidence, scope, version, and sender audit data', () => {
+  it('appends trusted evidence and retains it during operational rollback', () => {
     expect(migration).toContain('ON CONFLICT (contact_id) DO UPDATE');
     expect(migration).toContain("'prior_consent_attested'");
     expect(migration).toContain("'consent_obtained_on', p_consent_obtained_on");
     expect(migration).toContain("'evidence_note', v_note");
     expect(migration).toContain("'request_ip', v_request_ip");
     expect(migration).toContain("'sender_identity', 'Utah Pros Restoration'");
-    expect(migration).toContain('v_actor.id');
-    expect(migration).toContain('v_recorded_at');
+    expect(migration).toContain(
+      'Destructive schema\n--   removal, if ever required, must be a separate reviewed cleanup migration.',
+    );
+    expect(migration).not.toContain('--   DROP TABLE public.service_sms_consents;');
   });
 });

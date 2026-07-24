@@ -208,6 +208,8 @@ export default function Conversations({ replyAssist } = {}) {
     contactId: null,
     allowed: false,
     loading: false,
+    code: null,
+    error: false,
   });
 
   const [attachments, setAttachments] = useState([]);    // { clientId, name, url, localPreview, uploading, error }
@@ -532,12 +534,13 @@ export default function Conversations({ replyAssist } = {}) {
   const canAttestPriorConsent = (
     employee?.role === 'admin' || employee?.role === 'office'
   ) && employee?.is_external !== true;
-  const hasExplicitSmsOptOut = !!activeContact?.opt_out_at;
-  const hasRecordedSmsPermission = activeContact?.opt_in_status === true
-    || (
-      serviceConsentStatus.contactId === activeContact?.id
-      && serviceConsentStatus.allowed === true
-    );
+  const hasExplicitSmsOptOut = !!activeContact?.opt_out_at
+    || serviceConsentStatus.code === 'CONTACT_OPTED_OUT';
+  const hasPendingSmsStop = serviceConsentStatus.code === 'CONTACT_PENDING_STOP';
+  const hasEffectiveDnd = !!activeContact?.dnd
+    || serviceConsentStatus.code === 'DND_ACTIVE';
+  const hasRecordedSmsPermission = serviceConsentStatus.contactId === activeContact?.id
+    && serviceConsentStatus.allowed === true;
 
   useEffect(() => {
     let cancelled = false;
@@ -546,12 +549,17 @@ export default function Conversations({ replyAssist } = {}) {
       !contactId
       || activeContact?.dnd
       || activeContact?.opt_out_at
-      || activeContact?.opt_in_status === true
     ) {
       setServiceConsentStatus({
         contactId: contactId || null,
         allowed: false,
         loading: false,
+        code: activeContact?.dnd
+          ? 'DND_ACTIVE'
+          : activeContact?.opt_out_at
+            ? 'CONTACT_OPTED_OUT'
+            : null,
+        error: false,
       });
       return () => { cancelled = true; };
     }
@@ -560,6 +568,8 @@ export default function Conversations({ replyAssist } = {}) {
       contactId,
       allowed: false,
       loading: true,
+      code: null,
+      error: false,
     });
     (async () => {
       try {
@@ -574,6 +584,8 @@ export default function Conversations({ replyAssist } = {}) {
             contactId,
             allowed: response.ok && data.status?.allowed === true,
             loading: false,
+            code: response.ok ? (data.status?.code || 'NO_CONSENT') : null,
+            error: !response.ok,
           });
         }
       } catch {
@@ -582,6 +594,8 @@ export default function Conversations({ replyAssist } = {}) {
             contactId,
             allowed: false,
             loading: false,
+            code: null,
+            error: true,
           });
         }
       }
@@ -831,6 +845,8 @@ export default function Conversations({ replyAssist } = {}) {
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON error body */ }
         const reason = data.code === 'DND_ACTIVE' ? 'Contact has Do Not Disturb enabled'
+          : data.code === 'CONTACT_OPTED_OUT' ? 'Contact opted out of SMS'
+            : data.code === 'CONTACT_PENDING_STOP' ? 'A STOP request is still being processed'
           : data.code === 'NO_CONSENT' ? 'Contact has not opted in to SMS'
             : (data.error || `Message not sent (${res.status})`);
         if (
@@ -975,6 +991,8 @@ export default function Conversations({ replyAssist } = {}) {
       contactId: record.contact_id,
       allowed: record.service_sms_consent === true,
       loading: false,
+      code: record.service_sms_consent === true ? 'SERVICE_CONSENT' : null,
+      error: false,
     });
     setConsentPrompt(null);
   }, [consentPrompt]);
@@ -1241,30 +1259,41 @@ export default function Conversations({ replyAssist } = {}) {
             )}
 
             {/* ── DND Banner ── */}
-            {activeContact?.dnd && !isNote && (
+            {hasEffectiveDnd && !isNote && (
               <div className="conv-dnd-banner">
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !activeContact.dnd && !hasRecordedSmsPermission && !isNote && (
+            {activeContact && !hasEffectiveDnd && !hasRecordedSmsPermission && !isNote && (
               <div className="conv-consent-banner">
                 <div>
                   <strong>
                     {hasExplicitSmsOptOut
                       ? 'This contact opted out of SMS'
-                      : serviceConsentStatus.loading
-                        ? 'Checking SMS permission'
-                        : 'SMS permission is not recorded'}
+                      : hasPendingSmsStop
+                        ? 'A STOP request is being processed'
+                        : serviceConsentStatus.error
+                          ? 'SMS permission could not be verified'
+                          : serviceConsentStatus.loading
+                            ? 'Checking SMS permission'
+                            : 'SMS permission is not recorded'}
                   </strong>
                   <span>
                     {hasExplicitSmsOptOut
                       ? 'They must text START before staff can send another message.'
-                      : serviceConsentStatus.loading
-                        ? 'Confirming the current service-message consent record.'
-                        : 'Verify prior service-message permission before texting this contact.'}
+                      : hasPendingSmsStop
+                        ? 'UPR will keep outbound messages blocked until the inbound request is reconciled.'
+                        : serviceConsentStatus.error
+                          ? 'Refresh the conversation before recording permission or sending a message.'
+                          : serviceConsentStatus.loading
+                            ? 'Confirming the current service-message consent record.'
+                            : 'Verify prior service-message permission before texting this contact.'}
                   </span>
                 </div>
-                {!hasExplicitSmsOptOut && canAttestPriorConsent ? (
+                {!hasExplicitSmsOptOut
+                  && !hasPendingSmsStop
+                  && !serviceConsentStatus.error
+                  && canAttestPriorConsent ? (
                   <button
                     className="btn btn-sm btn-secondary"
                     type="button"
@@ -1276,7 +1305,9 @@ export default function Conversations({ replyAssist } = {}) {
                   >
                     Record verified permission
                   </button>
-                ) : !hasExplicitSmsOptOut ? (
+                ) : !hasExplicitSmsOptOut
+                  && !hasPendingSmsStop
+                  && !serviceConsentStatus.error ? (
                   <span className="conv-consent-role-note">Office or admin approval required</span>
                 ) : null}
               </div>
@@ -1347,7 +1378,7 @@ export default function Conversations({ replyAssist } = {}) {
                 />
                 {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
               </div>
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (activeContact?.dnd && !isNote) || (sending && showSchedule)} aria-label="Send">
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (hasEffectiveDnd && !isNote) || (sending && showSchedule)} aria-label="Send">
                 {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>
@@ -1383,7 +1414,7 @@ export default function Conversations({ replyAssist } = {}) {
                   <div className="conv-dnd-info">
                     <div className="conv-dnd-title">Do Not Disturb</div>
                     <div className="conv-dnd-desc">
-                      {activeContact.dnd
+                      {hasEffectiveDnd
                         ? 'All outbound messages blocked'
                         : hasRecordedSmsPermission
                           ? 'DND off and SMS permission recorded'

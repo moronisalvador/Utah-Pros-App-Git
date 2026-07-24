@@ -25,7 +25,15 @@ import { checkCronSecret, processQueue } from './process-scheduled.js';
 const QUIET_NOW = new Date('2026-07-09T08:00:00Z');    // 02:00 MDT → inside quiet hours
 const SENDABLE_NOW = new Date('2026-07-09T21:00:00Z'); // 15:00 MDT → sendable
 
-function makeDb({ pending = [], claim = true, cronSecret = null, conversation, participants, contact } = {}) {
+function makeDb({
+  pending = [],
+  claim = true,
+  cronSecret = null,
+  conversation,
+  participants,
+  contact,
+  consentStatus = { allowed: true, code: 'GLOBAL_OPT_IN' },
+} = {}) {
   const calls = { select: [], insert: [], update: [], rpc: [] };
   const db = {
     async select(table, query) {
@@ -39,7 +47,12 @@ function makeDb({ pending = [], claim = true, cronSecret = null, conversation, p
     },
     async insert(table, data) { calls.insert.push({ table, data }); return Array.isArray(data) ? data : [data]; },
     async update(table, filter, data) { calls.update.push({ table, filter, data }); return null; },
-    async rpc(fn, params) { calls.rpc.push({ fn, params }); return claim; },
+    async rpc(fn, params) {
+      calls.rpc.push({ fn, params });
+      if (fn === 'claim_scheduled_message') return claim;
+      if (fn === 'get_service_sms_consent_status') return consentStatus;
+      return null;
+    },
   };
   return { db, calls };
 }
@@ -118,6 +131,61 @@ describe('processQueue — fails CLOSED on an unresolvable contact', () => {
     // Row marked failed (compliance could not be checked).
     const failed = calls.update.find((c) => c.table === 'scheduled_messages' && c.data?.status === 'failed');
     expect(failed).toBeTruthy();
+  });
+});
+
+describe('processQueue — global consent only', () => {
+  const pending = [{
+    id: 's1',
+    conversation_id: 'c1',
+    body: 'Scheduled update',
+    created_by: null,
+  }];
+  const base = {
+    pending,
+    claim: true,
+    conversation: { id: 'c1' },
+    participants: [{ contact_id: 'contact-1', phone: '+15551110000' }],
+    contact: {
+      id: 'contact-1',
+      phone: '+15551110000',
+      opt_in_status: false,
+      dnd: false,
+    },
+  };
+
+  it('does not consume staff-only service consent', async () => {
+    const { db, calls } = makeDb({
+      ...base,
+      consentStatus: { allowed: true, code: 'SERVICE_CONSENT' },
+    });
+
+    const res = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(res.processed).toBe(0);
+    expect(calls.insert.some((call) => call.table === 'messages')).toBe(false);
+    expect(calls.update).toContainEqual(expect.objectContaining({
+      table: 'scheduled_messages',
+      data: expect.objectContaining({ status: 'failed' }),
+    }));
+  });
+
+  it('fails closed while a durable STOP awaits projection', async () => {
+    const { db, calls } = makeDb({
+      ...base,
+      consentStatus: { allowed: false, code: 'CONTACT_PENDING_STOP' },
+    });
+
+    const res = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(res.processed).toBe(0);
+    expect(calls.insert.some((call) => call.table === 'messages')).toBe(false);
+    expect(calls.insert).toContainEqual(expect.objectContaining({
+      table: 'sms_consent_log',
+      data: expect.objectContaining({
+        event_type: 'send_blocked_no_consent',
+      }),
+    }));
   });
 });
 

@@ -328,6 +328,9 @@ release. This addendum authorizes only:
 - the narrow `functions/lib/sms-consent.js` and `functions/lib/automated-send.js` hardening that
   projects and refuses `opt_out_at`, with focused tests, while preserving every exported
   signature and the frozen `{ ok, skipped, reason }` vocabulary; and
+- the narrow `functions/api/process-scheduled.js` consent-decision call that preserves the
+  existing worker/claim/provider contract, fails closed on duplicate-contact or pending-STOP
+  suppression, and accepts only `GLOBAL_OPT_IN` (never staff-only `SERVICE_CONSENT`); and
 - matching canonical documentation and dated evidence.
 
 This flow records only verified prior permission for one-to-one service messages. It does not

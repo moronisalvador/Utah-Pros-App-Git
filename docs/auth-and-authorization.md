@@ -207,14 +207,16 @@ path.
 
 ## Prior SMS consent attestation (built; migration not applied)
 
-`POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external
-employee whose role is `admin` or `office`. The Worker derives the actor from that session; a
-request-body actor cannot select or forge the audit identity. It validates a supported evidence
-method, non-future consent date and evidence note before invoking the service-role-only database
-operation.
+`GET /api/attest-sms-consent` requires the conversations capability and returns only the
+service-role consent decision for one contact; it does not expose evidence text or actor/IP data.
+`POST /api/attest-sms-consent` additionally requires an active, non-external `admin` or `office`
+employee. The Worker derives the actor and bounded `CF-Connecting-IP`; request-body actor/IP values
+cannot forge the audit identity. It validates the evidence method, real non-future calendar date,
+and evidence note before invoking the service-role-only database operation.
 
-The database rechecks the same employee authority and current contact suppression state inside the
-transaction. Browser roles cannot execute the RPC directly. DND, STOP/provider opt-out, missing
-contacts and concurrent suppression changes fail closed, and the endpoint has no provider-send
-capability. Conversation UI visibility is presentation only; these Worker and database checks are
-the authority.
+The database rechecks and locks the same employee authority, serializes against inbound projection,
+and locks duplicate contact rows before recording evidence. Browser roles cannot read/write the
+evidence table or execute either RPC. Duplicate-contact DND/opt-out and durable pending STOP state
+fail closed; a later processed START can supersede an older unresolved STOP. The endpoint has no
+provider-send capability. Conversation UI visibility is presentation only; these Worker/database
+checks are the authority.

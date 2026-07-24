@@ -204,3 +204,7 @@ authorization, consent/DND, idempotency, media, and persistence chain.
 The compatibility amendment also permits the exact service-only consent-status RPC call from
 `send-message.js`. It may change only the consent decision seam: provider choice, submission,
 attempt ownership, reconciliation and returned message shapes stay frozen.
+
+The same status RPC may be consumed by automated and scheduled Twilio writers only as a
+suppression boundary. Those writers must require `GLOBAL_OPT_IN`; they must never consume
+staff-only `SERVICE_CONSENT`, route through CallRail, or change their existing provider contracts.
