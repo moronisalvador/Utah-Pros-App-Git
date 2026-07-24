@@ -261,3 +261,18 @@ The mobile PWA may read one contact's redacted consent decision through the exis
 `GET /api/attest-sms-consent` Worker. Only active, internal admin/office employees can record prior
 consent; technicians cannot. The UI fails closed while status is loading or unavailable, and
 `/api/send-message` independently rechecks consent and DND before provider dispatch.
+
+## QuickBooks Online attachments authorization (2026-07-24)
+
+`POST /api/qbo-attach` (push/remove a file on a QBO invoice/estimate) enforces
+`requireRole(['admin','manager'])` server-side — the same billing role the UI's `canEditBilling`
+checks — before any QuickBooks or DB side effect; the client `canEdit` prop is defense-in-depth only.
+The new `qbo_attachments` table is a **new** table, so it does NOT copy the documented-broad
+"any authenticated" read policy of `invoices`/`estimates` (that broad pattern is a known finding to
+fix, per the notes below — not a template). Its only policy is a SELECT scoped to active
+`admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` plus an `employees.auth_user_id =
+auth.uid() AND is_active AND role IN ('admin','manager')` predicate). It has no browser
+INSERT/UPDATE/DELETE policy — the worker writes via the service role (which bypasses RLS). The table
+holds no secret (opaque QuickBooks attachable id + file metadata only). Coverage: the
+`qbo-attachments-migration` test asserts the role-scoped predicate and the absence of a bare
+`USING (true)`; the `worker-security-reviewer` verified the server-side role gate.

@@ -258,8 +258,25 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
   `removeQboPaymentFromUpr`. The `amount_paid` trigger does the rest.
 
 ### Logging
-Workers log to **`worker_runs`** (`worker_name`, status, counts, error). Webhook events log to
-**`qbo_events`**.
+Workers log to **`worker_runs`** (`worker_name`, status, counts, error — attachments as
+`qbo-attach`). Webhook events log to **`qbo_events`**.
+
+### Attachments on invoices & estimates (2026-07-24)
+Staff attach a file to a **synced** invoice/estimate; it's pushed to QuickBooks via the **Attachable
+API** with `IncludeOnSend=true`, so it both shows on the transaction in QBO and is included on the
+email QuickBooks sends the customer (UPR sends invoices/estimates by asking QBO to email them, so QBO
+is the right attach point). `functions/api/qbo-attach.js` (`requireRole(['admin','manager'])`, ≤20 MB,
+`Idempotency-Key`, dedup) → `uploadAttachable`/`deleteAttachable` in `functions/lib/quickbooks.js`.
+The file goes browser → worker → QBO as base64; UPR stores only metadata + the opaque attachable id in
+`qbo_attachments` (never the bytes). UI: shared `src/components/collections/QboAttachments.jsx` in both
+editors. Uses the already-granted **accounting** scope (no Payments-scope reconnect required).
+
+### Payment two-way sync activation (2026-07-24)
+The QBO→UPR payment path is built; the hourly safety-net poller is now wired via pg_cron
+(`20260724180100_qbo_payments_sync_cron.sql`, owner-authorized apply pending) →
+`/api/qbo-payments-sync` using `integration_config.qbo_webhook_secret`. Real-time webhook still needs
+`QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare + the Intuit **Payment** subscription to
+`https://utahpros.app/api/qbo-webhook`. Dedup on `qbo_payment_id` keeps both paths from double-counting.
 
 ---
 

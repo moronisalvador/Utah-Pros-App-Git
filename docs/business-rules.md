@@ -46,6 +46,9 @@ against both and change both in one commit.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
 - Financial dates use the Denver business day, not UTC string slicing.
+- Invoice/estimate attachments are admin/manager-gated and human-selected: a person chooses which
+  file(s) to push to which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch.
+  They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 

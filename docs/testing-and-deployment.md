@@ -211,6 +211,30 @@ while the fail-closed hardening remains; reopening either race requires a separa
 migration.
 Capture provenance/readback before deploying the dependent Worker/UI.
 
+## QuickBooks Online attachments + payment-sync cron release sequence (2026-07-24)
+
+Two authored, not-yet-applied migrations (`20260724180000_qbo_attachments.sql`,
+`20260724180100_qbo_payments_sync_cron.sql`). Repository proof done: `npm run build`, worker+unit
+vitest lanes green, `npx eslint` clean on changed files, plus a static migration test
+(`functions/api/qbo-attachments-migration.test.js`) and a pure-helper unit test
+(`functions/lib/quickbooks-attachable.test.js`). Reviewer gauntlet:
+`migration-safety-checker` + `anon-grant-auditor` (both migrations), `worker-security-reviewer`
+(`qbo-attach.js`), `upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`
+(the `QboAttachments` UI).
+
+Shared-prod apply is owner-authorized per `database-standard.md` §0/§5 — deploy the `qbo-attach`
+worker/UI first, then apply `20260724180000_qbo_attachments.sql` (additive table; rollback
+`DROP TABLE`), verify the admin/manager SELECT scope and the two UNIQUE constraints, and confirm an
+end-to-end attach → QBO Attachable with `IncludeOnSend` and a QBO-sent email carrying the file.
+Attachments need only the already-granted accounting scope.
+
+The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_payments_sync_cron.sql`
+(rollback = `cron.unschedule` + `DROP FUNCTION` + delete the config row) only after confirming
+`QBO_WEBHOOK_SECRET` is set in Cloudflare; the real-time webhook half additionally needs
+`QBO_WEBHOOK_VERIFIER_TOKEN` set + the Intuit **Payment** webhook subscribed to
+`https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
+extra fire never double-counts.
+
 ### 2026-07-23 Preview messaging proof
 
 The owner-approved CallRail Preview test verified carrier delivery for two staff-authored outbound
