@@ -30,7 +30,7 @@ const migration = readFileSync(
   resolve(here, '../migrations/20260724014423_attest_prior_sms_consent.sql'),
   'utf8',
 ).replace(/\r\n/g, '\n');
-const signature = 'public.attest_prior_sms_consent(uuid, uuid, text, date, text)';
+const signature = 'public.attest_prior_sms_consent(uuid, uuid, text, date, text, text)';
 
 describe('attest_prior_sms_consent migration contract', () => {
   it('is service-role-only and uses invoker privileges', () => {
@@ -50,6 +50,7 @@ describe('attest_prior_sms_consent migration contract', () => {
     expect(migration).toContain('v_actor.is_active IS DISTINCT FROM true');
     expect(migration).toContain('v_actor.is_external IS DISTINCT FROM false');
     expect(migration).toContain("v_actor.role::text NOT IN ('admin', 'office')");
+    expect(migration).toMatch(/FROM public\.employees[\s\S]+LIMIT 1\s+FOR SHARE;/i);
   });
 
   it('refuses DND and prior opt-out state without clearing either field', () => {
@@ -61,15 +62,33 @@ describe('attest_prior_sms_consent migration contract', () => {
     expect(migration).not.toMatch(/\bSET[\s\S]*\bopt_out_at\s*=\s*null/i);
   });
 
-  it('records source, consent date, actor, timestamp, and evidence in sms_consent_log', () => {
-    expect(migration).toContain("'prior_consent_attested'");
+  it('records scoped source, consent date, actor, IP, timestamp, and evidence in sms_consent_log', () => {
+    expect(migration).toContain("'prior_p2p_consent_attested'");
+    expect(migration).toContain("'scope', 'staff_person_to_person'");
     expect(migration).toContain("'consent_obtained_on', p_consent_obtained_on");
     expect(migration).toContain("'evidence_note', v_note");
     expect(migration).toContain('v_actor.id');
+    expect(migration).toContain('v_ip_address');
+    expect(migration).toContain('ip_address');
     expect(migration).toContain('v_recorded_at');
     expect(migration).toMatch(
       /UPDATE public\.contacts[\s\S]+INSERT INTO public\.sms_consent_log/i,
     );
+  });
+
+  it('deduplicates an exact repeated submission without discarding first-time evidence', () => {
+    expect(migration).toContain("'evidence_key', v_evidence_key");
+    expect(migration).toMatch(/IF NOT EXISTS \([\s\S]+event_type = 'prior_p2p_consent_attested'/i);
+    expect(migration).toContain("'audit_recorded', v_audit_recorded");
+    expect(migration).not.toMatch(/IF v_contact\.opt_in_status IS TRUE[\s\S]+RETURN/i);
+  });
+
+  it('authorizes only person-to-person SMS without widening global opt-in', () => {
+    expect(migration).toContain('p2p_sms_consent_at');
+    expect(migration).toContain('p2p_sms_consent_source');
+    expect(migration).toContain('p2p_sms_consent_phone');
+    expect(migration).not.toMatch(/\bSET\s+opt_in_status\s*=\s*true/i);
+    expect(migration).not.toMatch(/\bSET[\s\S]*\bopt_in_at\s*=/i);
   });
 
   it('does not infer permission from contact existence', () => {
