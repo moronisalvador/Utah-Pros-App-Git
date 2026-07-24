@@ -106,12 +106,18 @@ export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
+function statusJsonResponse(data, status, request, env) {
+  const response = jsonResponse(data, status, request, env);
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env);
   const auth = await requireMessagingAccess(request, env, db);
   if (auth.error) {
-    return jsonResponse({
+    return statusJsonResponse({
       error: auth.error,
       code: auth.code,
     }, auth.status, request, env);
@@ -119,7 +125,7 @@ export async function onRequestGet(context) {
 
   const contactId = new URL(request.url).searchParams.get('contact_id') || '';
   if (!UUID_PATTERN.test(contactId)) {
-    return jsonResponse({ error: 'contact_id must be a UUID' }, 400, request, env);
+    return statusJsonResponse({ error: 'contact_id must be a UUID' }, 400, request, env);
   }
 
   try {
@@ -128,13 +134,13 @@ export async function onRequestGet(context) {
       p_destination_phone: null,
     });
     const status = Array.isArray(result) ? result[0] : result;
-    return jsonResponse({
+    return statusJsonResponse({
       ok: true,
       status: status || { allowed: false, code: 'NO_CONSENT' },
     }, 200, request, env);
   } catch (error) {
     console.error('attest-sms-consent status:', error);
-    return jsonResponse({
+    return statusJsonResponse({
       error: 'Could not verify SMS consent status',
       code: 'CONSENT_STATUS_FAILED',
     }, 500, request, env);

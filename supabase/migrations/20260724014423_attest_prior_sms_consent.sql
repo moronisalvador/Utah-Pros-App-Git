@@ -99,6 +99,8 @@ DECLARE
   v_service_consent public.service_sms_consents%ROWTYPE;
   v_phone_digits text;
   v_phone_key text;
+  v_locked_phone_digits text;
+  v_locked_phone_key text;
   v_destination_digits text;
   v_destination_key text;
 BEGIN
@@ -155,6 +157,32 @@ BEGIN
   -- durable STOP that is waiting for projection visible before consent is used.
   PERFORM pg_advisory_xact_lock(hashtextextended('messaging-phone:' || v_phone_key, 0));
 
+  -- Pin the target row after entering the phone serialization boundary. A phone
+  -- change committed while the advisory lock was being acquired must never let
+  -- suppression checks for the old number authorize the new number.
+  SELECT *
+  INTO v_contact
+  FROM public.contacts
+  WHERE id = p_contact_id
+  FOR SHARE;
+
+  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''), '[^0-9]', '', 'g');
+  IF length(v_locked_phone_digits) = 10 THEN
+    v_locked_phone_key := v_locked_phone_digits;
+  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = '1' THEN
+    v_locked_phone_key := right(v_locked_phone_digits, 10);
+  END IF;
+
+  IF v_contact.id IS NULL
+     OR v_locked_phone_key IS NULL
+     OR v_locked_phone_key <> v_phone_key THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'CONTACT_PHONE_CHANGED',
+      'contact_id', p_contact_id
+    );
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM public.contacts c
@@ -202,7 +230,7 @@ BEGIN
             regexp_replace(COALESCE(later_event.sender_address, ''), '[^0-9]', '', 'g'),
             10
           ) = v_phone_key
-          AND later_event.occurred_at >= e.occurred_at
+          AND later_event.occurred_at > e.occurred_at
           AND regexp_replace(
             lower(trim(COALESCE(later_event.content, ''))),
             '[^a-z0-9]',
@@ -279,6 +307,8 @@ DECLARE
   v_request_ip text := NULLIF(btrim(COALESCE(p_request_ip, '')), '');
   v_phone_digits text;
   v_phone_key text;
+  v_locked_phone_digits text;
+  v_locked_phone_key text;
   v_recorded_at timestamptz := now();
   v_already_recorded boolean := false;
 BEGIN
@@ -369,7 +399,21 @@ BEGIN
   SELECT *
   INTO v_contact
   FROM public.contacts
-  WHERE id = p_contact_id;
+  WHERE id = p_contact_id
+  FOR UPDATE;
+
+  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''), '[^0-9]', '', 'g');
+  IF length(v_locked_phone_digits) = 10 THEN
+    v_locked_phone_key := v_locked_phone_digits;
+  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = '1' THEN
+    v_locked_phone_key := right(v_locked_phone_digits, 10);
+  END IF;
+
+  IF v_contact.id IS NULL
+     OR v_locked_phone_key IS NULL
+     OR v_locked_phone_key <> v_phone_key THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'CONTACT_PHONE_CHANGED');
+  END IF;
 
   IF EXISTS (
     SELECT 1
@@ -411,7 +455,7 @@ BEGIN
             regexp_replace(COALESCE(later_event.sender_address, ''), '[^0-9]', '', 'g'),
             10
           ) = v_phone_key
-          AND later_event.occurred_at >= e.occurred_at
+          AND later_event.occurred_at > e.occurred_at
           AND regexp_replace(
             lower(trim(COALESCE(later_event.content, ''))),
             '[^a-z0-9]',

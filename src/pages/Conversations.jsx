@@ -541,6 +541,20 @@ export default function Conversations({ replyAssist } = {}) {
     || serviceConsentStatus.code === 'DND_ACTIVE';
   const hasRecordedSmsPermission = serviceConsentStatus.contactId === activeContact?.id
     && serviceConsentStatus.allowed === true;
+  const hasGlobalSmsPermission = hasRecordedSmsPermission
+    && serviceConsentStatus.code === 'GLOBAL_OPT_IN';
+  const hasRequiredSmsPermission = showSchedule
+    ? hasGlobalSmsPermission
+    : hasRecordedSmsPermission;
+  const customerSmsBlocked = !!activeContact && (
+    hasEffectiveDnd
+    || serviceConsentStatus.contactId !== activeContact.id
+    || serviceConsentStatus.loading
+    || serviceConsentStatus.error
+    || hasExplicitSmsOptOut
+    || hasPendingSmsStop
+    || !hasRequiredSmsPermission
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -898,6 +912,24 @@ export default function Conversations({ replyAssist } = {}) {
     // tick — before React re-renders — sees the box we blank below and no-ops.
     const el = composeRef.current;
     const text = (el ? (el.innerText || '') : compose).trim();
+
+    if (!isNote && customerSmsBlocked) {
+      const reason = showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+        ? 'Scheduled SMS requires the contact’s full SMS opt-in'
+        : serviceConsentStatus.loading
+          ? 'SMS permission is still being verified'
+          : serviceConsentStatus.error
+            ? 'SMS permission could not be verified'
+            : hasExplicitSmsOptOut
+              ? 'Contact opted out of SMS'
+              : hasPendingSmsStop
+                ? 'A STOP request is still being processed'
+                : hasEffectiveDnd
+                  ? 'Contact has Do Not Disturb enabled'
+                  : 'Record verified SMS permission before sending';
+      emitToast(reason, 'error');
+      return;
+    }
 
     // ── Scheduled message path (unchanged; text-only) ──
     if (showSchedule && scheduleDate && scheduleTime) {
@@ -1264,14 +1296,20 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !hasEffectiveDnd && !hasRecordedSmsPermission && !isNote && (
-              <div className="conv-consent-banner">
+            {activeContact && !hasEffectiveDnd && !hasRequiredSmsPermission && !isNote && (
+              <div
+                className="conv-consent-banner"
+                role={serviceConsentStatus.error ? 'alert' : 'status'}
+                aria-live={serviceConsentStatus.error ? 'assertive' : 'polite'}
+              >
                 <div>
                   <strong>
                     {hasExplicitSmsOptOut
                       ? 'This contact opted out of SMS'
                       : hasPendingSmsStop
                         ? 'A STOP request is being processed'
+                        : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+                          ? 'Scheduled SMS requires full opt-in'
                         : serviceConsentStatus.error
                           ? 'SMS permission could not be verified'
                           : serviceConsentStatus.loading
@@ -1283,6 +1321,8 @@ export default function Conversations({ replyAssist } = {}) {
                       ? 'They must text START before staff can send another message.'
                       : hasPendingSmsStop
                         ? 'UPR will keep outbound messages blocked until the inbound request is reconciled.'
+                        : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+                          ? 'Verified service-message permission allows immediate staff replies only. Send now or record full SMS opt-in before scheduling.'
                         : serviceConsentStatus.error
                           ? 'Refresh the conversation before recording permission or sending a message.'
                           : serviceConsentStatus.loading
@@ -1292,6 +1332,7 @@ export default function Conversations({ replyAssist } = {}) {
                 </div>
                 {!hasExplicitSmsOptOut
                   && !hasPendingSmsStop
+                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
                   && !serviceConsentStatus.error
                   && canAttestPriorConsent ? (
                   <button
@@ -1307,6 +1348,7 @@ export default function Conversations({ replyAssist } = {}) {
                   </button>
                 ) : !hasExplicitSmsOptOut
                   && !hasPendingSmsStop
+                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
                   && !serviceConsentStatus.error ? (
                   <span className="conv-consent-role-note">Office or admin approval required</span>
                 ) : null}
@@ -1378,7 +1420,7 @@ export default function Conversations({ replyAssist } = {}) {
                 />
                 {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
               </div>
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (hasEffectiveDnd && !isNote) || (sending && showSchedule)} aria-label="Send">
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (customerSmsBlocked && !isNote) || (sending && showSchedule)} aria-label="Send">
                 {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>

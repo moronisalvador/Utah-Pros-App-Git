@@ -37,6 +37,7 @@ describe('historical service-SMS consent migration contract', () => {
 
   it('keeps both exact RPC signatures service-role-only and invoker-rights', () => {
     expect(migration.match(/SECURITY INVOKER/g)).toHaveLength(2);
+    expect(migration.match(/IF current_user <> 'service_role' THEN/g)).toHaveLength(2);
     for (const signature of [attestSignature, statusSignature]) {
       expect(migration).toContain(
         `REVOKE ALL ON FUNCTION ${signature}\n  FROM PUBLIC, anon, authenticated, service_role;`,
@@ -67,6 +68,18 @@ describe('historical service-SMS consent migration contract', () => {
     );
     expect(migration).toContain("later_event.processing_state = 'processed'");
     expect(migration).toContain("ARRAY['start', 'unstop', 'subscribe', 'yes']");
+    expect(migration.match(/later_event\.occurred_at > e\.occurred_at/g)).toHaveLength(2);
+    expect(migration).not.toContain('later_event.occurred_at >= e.occurred_at');
+  });
+
+  it('revalidates and pins the contact phone after entering the serialization boundary', () => {
+    expect(migration.match(/v_locked_phone_key <> v_phone_key/g)).toHaveLength(2);
+    expect(migration).toMatch(
+      /pg_advisory_xact_lock[\s\S]+WHERE id = p_contact_id\s+FOR SHARE;[\s\S]+CONTACT_PHONE_CHANGED/i,
+    );
+    expect(migration).toMatch(
+      /ORDER BY c\.id\s+FOR UPDATE;[\s\S]+WHERE id = p_contact_id\s+FOR UPDATE;[\s\S]+CONTACT_PHONE_CHANGED/i,
+    );
   });
 
   it('appends trusted evidence and retains it during operational rollback', () => {

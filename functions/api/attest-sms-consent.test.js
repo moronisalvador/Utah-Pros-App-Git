@@ -113,6 +113,7 @@ describe('GET /api/attest-sms-consent status', () => {
     const response = await onRequestGet({ request: request(), env: ENV });
 
     expect(response.status).toBe(403);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(h.db.rpc).not.toHaveBeenCalled();
   });
 
@@ -120,6 +121,7 @@ describe('GET /api/attest-sms-consent status', () => {
     const response = await onRequestGet({ request: request(), env: ENV });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(h.db.rpc).toHaveBeenCalledWith('get_service_sms_consent_status', {
       p_contact_id: CONTACT_ID,
       p_destination_phone: null,
