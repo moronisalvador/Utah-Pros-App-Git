@@ -7790,3 +7790,21 @@ write-capable QA, but remains owner-blocked on a dirty messaging UI worktree, CA
 CAP-GOV-001 containment, explicit Figma permission/authority approval, and a dedicated
 authenticated read-only staging browser session. No Figma plugin connection or paid seat exists
 because those exact external steps require owner approval.
+
+## Money Worker authorization slice (2026-07-23)
+
+`functions/api/qbo-charge.js` and `stripe-pay-link.js` now use the shared `requireRole` boundary
+with the UI's `admin`/`manager` billing-role set. Missing sessions, missing/inactive employees, and
+non-billing roles return before provider calls. QBO charge no longer accepts the generic webhook
+secret as a money-moving alternate identity.
+
+The QBO route also requires a stable 16–64-character client `Idempotency-Key` and passes it as
+Intuit's `Request-Id`; validates positive whole-cent amounts against the current outstanding invoice
+balance; writes the actor into `payments.recorded_by`; and uses `mountainToday()` for both UPR
+`payment_date` and QBO `TxnDate`. Handler tests prove denied roles never reach either provider and
+the allowed execution passes the stable key, actor, and Mountain date.
+
+This does not close the captured-but-unrecorded failure window. A durable attempt must exist before
+provider execution, with sandbox-proven reconciliation after provider success/local insert failure.
+Stripe stored-session reuse/expiry/concurrency also remains open. Exact boundary and residual-risk
+evidence: `docs/audit/2026-07/evidence/money-worker-hardening-2026-07-23.md`.
