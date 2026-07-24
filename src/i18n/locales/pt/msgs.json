@@ -13,6 +13,17 @@
     "markUnread": "Marcar como não lida",
     "rowActions": "Ações da conversa"
   },
+  "newConversation": {
+    "title": "Nova conversa",
+    "searchPlaceholder": "Buscar contatos",
+    "typeHint": "Digite pelo menos 2 caracteres para encontrar um contato",
+    "loading": "Carregando contatos…",
+    "loadError": "Não foi possível carregar os contatos",
+    "startError": "Não foi possível iniciar a conversa",
+    "empty": "Nenhum contato encontrado",
+    "unnamed": "Contato sem nome",
+    "starting": "Abrindo…"
+  },
   "filters": {
     "all": "Todas",
     "unread": "Não lidas",
@@ -41,6 +52,57 @@
     "viewJob": "Ver trabalho",
     "enableDnd": "Ativar Não Perturbe",
     "dndOnState": "Não Perturbe está ativo"
+  },
+  "consent": {
+    "checking": "Verificando permissão para SMS…",
+    "unavailable": "O status da permissão para SMS não está disponível",
+    "tryAgain": "Tente novamente antes de enviar uma mensagem.",
+    "missing": "A permissão para SMS não está registrada",
+    "missingDetail": "Verifique a permissão anterior para mensagens de serviço antes de enviar uma mensagem a este contato.",
+    "record": "Registrar permissão verificada",
+    "officeOnly": "É necessária aprovação do escritório ou administrador",
+    "suppression": {
+      "pendingStop": {
+        "title": "A solicitação STOP de SMS ainda está sendo processada",
+        "detail": "Aguarde o processamento da recusa. A permissão anterior não pode substituir STOP."
+      },
+      "optedOut": {
+        "title": "Este número cancelou o recebimento de SMS",
+        "detail": "A pessoa precisa enviar START antes que a equipe possa mandar outra mensagem."
+      },
+      "dnd": {
+        "title": "SMS está bloqueado por Não Perturbe",
+        "detail": "Outro contato com este número está com Não Perturbe ativado."
+      },
+      "unavailable": {
+        "title": "Não é possível registrar a permissão para SMS",
+        "detail": "Confirme o contato e o número de telefone antes de tentar novamente."
+      }
+    }
+  },
+  "consentAttestation": {
+    "title": "Registrar permissão verificada para SMS",
+    "cancel": "Cancelar",
+    "record": "Registrar permissão",
+    "recording": "Registrando…",
+    "recorded": "Permissão para SMS registrada",
+    "recordError": "Não foi possível registrar a permissão para SMS",
+    "intro": "Registre somente após verificar que {{contact}} deu permissão à Utah Pros para enviar mensagens relacionadas ao serviço. A existência do contato, por si só, não é permissão.",
+    "thisContact": "este contato",
+    "methodLabel": "Como a permissão foi fornecida?",
+    "methodPlaceholder": "Selecione uma origem",
+    "methods": {
+      "verbalPermission": "Permissão verbal em uma ligação",
+      "signedWorkAuthorization": "Autorização de trabalho assinada",
+      "otherWrittenPermission": "Outra permissão por escrito",
+      "customerRequestedTexts": "O cliente pediu para receber mensagens",
+      "otherVerifiedPermission": "Outra permissão verificada"
+    },
+    "dateLabel": "Quando a permissão foi obtida?",
+    "evidenceLabel": "Nota de evidência",
+    "evidencePlaceholder": "Exemplo: ligação gravada às 14h14 ou autorização salva nos Documentos do trabalho",
+    "evidenceHint": "Mínimo de 10 caracteres ({{count}}/500). A origem, data da permissão, identidade do funcionário, IP confiável e horário do servidor serão mantidos no histórico.",
+    "confirm": "Verifiquei que esta pessoa deu permissão à Utah Pros Restoration para enviar mensagens de serviço sobre o trabalho solicitado e que não revogou a permissão. Isso não remove STOP nem Não Perturbe."
   },
   "composer": {
     "placeholder": "Mensagem",

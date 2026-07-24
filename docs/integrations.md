@@ -270,3 +270,20 @@ owner-managed and independently verified; the shared Supabase project is never u
 staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
 approved activation window and provider proof. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
+
+### CallRail live MMS endpoint compatibility
+
+Authenticated CallRail history observed on 2026-07-24 returned account-scoped media endpoints under
+`https://app.callrail.com/msg/a/<account>/messages/<message>/media/<index>`, although the public API
+documents the v3 `api.callrail.com` shape. UPR accepts either only when the account, provider message,
+media index, HTTPS scheme, port, credentials, and path exactly match already-proven event identity.
+
+The app endpoint is fetched with the CallRail API token and redirects are handled manually. UPR
+follows only a valid short-lived AWS4 signed URL on the exact known CallRail MMS S3 host, strips the
+CallRail token from that request, rejects further redirects, and still verifies image MIME, magic
+bytes, item size, and total size before private Storage ownership. No provider or signed asset URL
+is persisted.
+
+CallRail `message.sent` recipients may omit the `+1` stored on the original UPR attempt. Outbound
+projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
+provider-message, or attempt identity checks.

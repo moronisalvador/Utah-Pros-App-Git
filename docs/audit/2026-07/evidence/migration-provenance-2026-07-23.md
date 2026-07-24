@@ -172,3 +172,24 @@ Verification after reconciliation:
   concurrent atomic CallRail claim work;
 - targeted changed-file ESLint and `git diff --check` — PASS;
 - full-tree `npm run lint` — exceeded the 120-second close-out window without producing a result.
+
+## Mobile messaging live-ledger addendum — 2026-07-24 UTC
+
+The owner-authorized messaging release applied two reviewed, signature-preserving function
+replacements from exact commit `625cb1b5740a50302d5f71b45d2d9b7d7d8c8241` after Preview
+outbound messaging was disabled:
+
+| Live version | Name | Release source | Reviewed origin |
+|---|---|---|---|
+| `20260724152530` | `harden_find_or_create_conversation` | `20260724173000_harden_find_or_create_conversation.sql` | `5217ae86f1fb6960a4c75ac4bd9023f8f4e4028f` |
+| `20260724152614` | `fix_callrail_outbound_phone_identity` | `20260724174000_fix_callrail_outbound_phone_identity.sql` | `625cb1b5740a50302d5f71b45d2d9b7d7d8c8241` |
+
+The 2026-07-24 15:27:57 UTC read-only recapture confirmed both RPCs are `SECURITY INVOKER`,
+pin `search_path=pg_catalog, public`, expose execution only to `postgres` and `service_role`, and
+match their reviewed executable fingerprints. `find_or_create_conversation(uuid)` now rejects any
+non-service-role caller inside the function. `project_callrail_outbound_event(uuid,uuid)` retains
+its service-only assertion while accepting only validated NANP ten-digit/`+1` identity equivalence.
+
+The apply changed no table, policy, existing provider event, or message row and sent no customer
+message. Four pre-existing retryable CallRail events remained for the existing recovery worker.
+Fresh Preview SMS/MMS and private-storage proof remain separate activation gates.

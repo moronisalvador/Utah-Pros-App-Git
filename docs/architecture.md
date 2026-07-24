@@ -135,3 +135,12 @@ code generation, and public publishing. Repository runtime behavior, routes, aut
 business rules, tokens, and implementation remain authoritative. A later owner-approved Figma
 connection may receive explicitly selected design assets only under the handoff and manifest rules
 in `docs/upr-figma-governance-and-handoff.md`; it never becomes a deployment or runtime authority.
+
+## Mobile messaging conversation boundary
+
+Tech Messages v2 starts or reopens direct threads through `GET/POST /api/message-conversations`.
+The browser receives a bounded contact projection and never executes the privileged
+`find_or_create_conversation` RPC. The Worker first enforces the shared messaging capability, then
+uses the service role for contact search or one direct-thread creation. It does not send, infer
+consent, or change DND. Once a thread exists, both mobile and office clients continue to use the
+single `/api/send-message` chokepoint.

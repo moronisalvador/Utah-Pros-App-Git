@@ -216,3 +216,26 @@ attempt ownership, reconciliation and returned message shapes stay frozen.
 The same status RPC may be consumed by automated and scheduled Twilio writers only as a
 suppression boundary. Those writers must require `GLOBAL_OPT_IN`; they must never consume
 staff-only `SERVICE_CONSENT`, route through CallRail, or change their existing provider contracts.
+
+## 9. 2026-07-24 mobile release and live-readiness amendment
+
+The owner authorized the production-readiness follow-up needed for the team to use the mobile field
+inbox. This amendment owns:
+
+- `GET/POST /api/message-conversations`, its tests, and a service-role-only hardening of
+  `find_or_create_conversation(uuid)` so authenticated clients cannot invoke the write RPC directly;
+- Tech Messages v2's full-screen contact picker and authoritative direct-thread consent status;
+- reuse of the existing admin/office prior-consent attestation surface in the mobile PWA, with
+  fail-closed loading/error/DND behavior and no automatic send after attestation;
+- the narrow CallRail outbound NANP identity fix for ten-digit webhook recipients versus stored
+  `+1` E.164 attempts;
+- acceptance of the exact account-scoped `app.callrail.com/msg/.../media/...` endpoint observed in
+  authenticated CallRail history, followed manually only to the exact known CallRail MMS S3 host
+  after AWS signature-shape validation and with the CallRail API token stripped; and
+- readiness reporting that separates actionable retry queues from terminal failure history.
+
+This does not permit a second client send route, browser execution of privileged RPCs, consent
+inference from contact existence, automated CallRail traffic, provider fallback, public media, or
+Twilio/RCS activation. Production activation remains a sequenced owner operation: reviewed commit,
+shared-database apply and catalog verification, Preview proof, exact-build promotion, provider
+binding/webhook cutover, then controlled Production proof.

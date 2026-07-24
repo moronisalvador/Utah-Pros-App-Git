@@ -19,6 +19,23 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({}) }));
 vi.mock('@/lib/toast', () => ({ ok: vi.fn(), err: vi.fn() }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key, values = {}) => ({
+      'consentAttestation.title': 'Record verified SMS permission',
+      'consentAttestation.methods.verbalPermission': 'Verbal permission on a call',
+      'consentAttestation.methods.signedWorkAuthorization': 'Signed work authorization',
+      'consentAttestation.methods.otherWrittenPermission': 'Other written permission',
+      'consentAttestation.methods.customerRequestedTexts': 'Customer asked us to text',
+      'consentAttestation.methods.otherVerifiedPermission': 'Other verified permission',
+      'consentAttestation.dateLabel': 'When was permission obtained?',
+      'consentAttestation.evidenceLabel': 'Evidence note',
+      'consentAttestation.intro': `Record this only after verifying ${values.contact} gave Utah Pros permission to send service-related texts. Contact existence alone is not permission.`,
+      'consentAttestation.confirm': 'I verified this person gave Utah Pros Restoration permission to send service-related texts about their requested work, and has not revoked it. This does not clear STOP or Do Not Disturb.',
+      'consentAttestation.record': 'Record permission',
+    })[key] || key,
+  }),
+}));
 
 import SmsConsentAttestationModal from './SmsConsentAttestationModal';
 

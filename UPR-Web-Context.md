@@ -7901,3 +7901,25 @@ ambiguous references stay durable for history and safe retry. Abandoned private 
 retained until a durable draft/claim cleanup model can prevent deletion races and history loss;
 there is no browser delete route. No database migration, RCS activation, provider fallback, or
 automated CallRail path was added.
+
+## Mobile messaging completion and CallRail readiness (2026-07-24)
+
+Tech Messages v2 now includes a `?new=1` full-screen contact picker backed by
+`GET/POST /api/message-conversations`. The Worker requires the shared Conversations capability,
+returns at most 25 contacts projected to `id/name/phone/company`, and calls the service-role-only
+`find_or_create_conversation(uuid)` RPC. The hardened invoker-mode RPC reuses only active
+non-archived direct threads with no different contact participant. Starting a thread does not send
+or change consent.
+
+Direct mobile threads read `GET /api/attest-sms-consent` and disable customer SMS/MMS while consent
+is loading, unavailable, suppressed, DND, or not allowed. Active internal admin/office users may
+record prior consent through the localized attestation modal; technicians cannot. Notes remain
+available. The server remains the final authority and no attestation auto-sends.
+
+Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
+while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
+`app.callrail.com/msg/.../media/...` endpoint that redirects to CallRail's signed S3 asset. The
+pending migrations/helper changes normalize only equivalent NANP identity and accept only that
+exact account/message/index path plus a validated short-lived redirect, with the CallRail token
+stripped before private media download. Readiness now reports actionable queues separately from
+terminal failure history.

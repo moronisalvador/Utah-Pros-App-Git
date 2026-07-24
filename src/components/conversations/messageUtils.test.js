@@ -186,6 +186,39 @@ describe('getServiceConsentUiState', () => {
     })).toMatchObject({ canAttest: false, suppressionCopy: null });
   });
 
+  it('does not leave an already-recorded global opt-in in a checking state', () => {
+    expect(getServiceConsentUiState({
+      status: {
+        ...baseStatus,
+        allowed: false,
+        checked: false,
+        code: null,
+      },
+      contact: { ...contact, opt_in_status: true },
+    })).toMatchObject({
+      matches: true,
+      checking: false,
+      canAttest: false,
+      suppressionKey: null,
+      suppressionCopy: null,
+    });
+  });
+
+  it.each([
+    ['mismatched contact', { contactId: 'contact-2' }, { matches: false, checking: true, suppressionKey: null }],
+    ['mismatched phone', { phone: '+18015550999' }, { matches: false, checking: true, suppressionKey: null }],
+    ['loading', { loading: true }, { matches: true, checking: true, suppressionKey: null }],
+    ['pending STOP', { source: 'pending_stop' }, { matches: true, checking: false, suppressionKey: 'pendingStop' }],
+    ['explicit opt-out', { source: 'explicit_opt_out' }, { matches: true, checking: false, suppressionKey: 'optedOut' }],
+    ['DND', { code: 'DND_ACTIVE' }, { matches: true, checking: false, suppressionKey: 'dnd' }],
+  ])('keeps %s authoritative over recorded global opt-in', (_label, statusPatch, expected) => {
+    const state = getServiceConsentUiState({
+      status: { ...baseStatus, ...statusPatch },
+      contact: { ...contact, opt_in_status: true },
+    });
+    expect(state).toMatchObject({ ...expected, canAttest: false });
+  });
+
   it.each([
     ['pending_stop', 'NO_CONSENT', 'SMS STOP request is still processing'],
     ['explicit_opt_out', 'NO_CONSENT', 'This phone number opted out of SMS'],

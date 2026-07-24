@@ -706,3 +706,24 @@ This plan amends completed initiatives only for the named files:
 
 The matching amendments are recorded in the old manifests as pointers to the new authoritative
 ownership manifest.
+
+## 15. 2026-07-24 production-readiness completion
+
+The owner authorized the missing mobile workflow and the repository fixes exposed by live Preview
+evidence:
+
+- Tech Messages v2 adds a full-screen new-conversation picker and direct-thread prior-consent
+  status/attestation while remaining provider-blind and using `/api/send-message`;
+- the browser calls a bounded, capability-checked Worker rather than the privileged find-or-create
+  RPC;
+- CallRail outbound projection accepts only equivalent NANP ten-digit/`+1` E.164 recipient forms;
+- inbound MMS accepts the exact authenticated CallRail app media endpoint observed in live history,
+  manually validates its short-lived signed storage redirect, and never forwards the CallRail token
+  or persists the provider URL; and
+- readiness distinguishes actionable retry queues from terminal history.
+
+Release order is migration provenance and review, reviewed commit on `dev`, exact shared-database
+apply, Preview deployment and fresh SMS/MMS/push proof, exact-build `main` promotion, then production
+provider bindings/webhook/scheduler cutover and fresh Production proof. Any failed inbound MMS,
+private-storage check, consent negative test, or exact-thread notification test stops activation.
+Twilio and RCS remain future capability contracts only; no automatic fallback is permitted.
