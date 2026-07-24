@@ -8,7 +8,7 @@
  *   database targets, production websites, provider endpoints, and unsafe browser modes are denied.
  *
  * DEPENDS ON:
- *   Packages:  vitest
+ *   Packages:  Node.js built-ins, vitest
  *   Internal:  tests/qa/lib/target-policy.mjs
  *   Data:      reads  → none
  *              writes → none
@@ -17,6 +17,9 @@
  *   - These are structural denial tests. They never contact any URL named in the fixtures.
  * ════════════════════════════════════════════════
  */
+
+import os from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -99,29 +102,43 @@ describe('isolated QA target policy', () => {
   });
 
   it('permits pipe-only ephemeral browser launches and denies TCP/profile reuse', () => {
+    const repositoryRoot = path.join(os.tmpdir(), 'upr-qa-repository');
+    const ephemeralProfile = path.join(os.tmpdir(), 'upr-qa-browser', 'run-123');
+    const repositoryProfile = path.join(repositoryRoot, '.profile');
+    const humanProfile = path.join(
+      path.parse(repositoryRoot).root,
+      'Users',
+      'person',
+      'AppData',
+      'Local',
+      'Google',
+      'Chrome',
+      'User Data',
+    );
+
     expect(
       assertCdpLaunchPolicy({
         transport: 'pipe',
-        userDataDir: 'C:\\Temp\\upr-qa-browser\\run-123',
-        repositoryRoot: 'C:\\workspace\\upr',
+        userDataDir: ephemeralProfile,
+        repositoryRoot,
       }),
     ).toMatchObject({ transport: 'pipe' });
 
     for (const target of [
       {
         transport: 'tcp',
-        userDataDir: 'C:\\Temp\\upr-qa-browser\\run-123',
-        repositoryRoot: 'C:\\workspace\\upr',
+        userDataDir: ephemeralProfile,
+        repositoryRoot,
       },
       {
         transport: 'pipe',
-        userDataDir: 'C:\\workspace\\upr\\.profile',
-        repositoryRoot: 'C:\\workspace\\upr',
+        userDataDir: repositoryProfile,
+        repositoryRoot,
       },
       {
         transport: 'pipe',
-        userDataDir: 'C:\\Users\\person\\AppData\\Local\\Google\\Chrome\\User Data',
-        repositoryRoot: 'C:\\workspace\\upr',
+        userDataDir: humanProfile,
+        repositoryRoot,
       },
     ]) {
       expect(() => assertCdpLaunchPolicy(target)).toThrow(/CDP launch denied/);
