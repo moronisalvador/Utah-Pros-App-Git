@@ -188,16 +188,19 @@ Sanitized live evidence and apply-window recapture queries:
 
 ## Prior SMS consent attestation (authored; not applied)
 
-Migration `20260724014423_attest_prior_sms_consent.sql` adds only the service-role RPC
-`attest_prior_sms_consent`. It lets the authorized Worker record verified verbal permission,
-a signed work authorization, other written permission, or another evidenced customer request.
-The operation records the consent date, evidence note, authenticated employee actor and server
-timestamp in `sms_consent_log` while updating `contacts.opt_in_status` in the same transaction.
+Migration `20260724014423_attest_prior_sms_consent.sql` adds three nullable purpose-scoped contact
+fields (`p2p_sms_consent_at`, `p2p_sms_consent_source`, `p2p_sms_consent_phone`) plus the
+service-role RPC `attest_prior_sms_consent`. It lets the authorized Worker record verified verbal
+permission, a signed work authorization, other written permission, or another evidenced customer
+request. The operation records consent date, evidence note, authenticated employee actor, trusted
+request IP and server timestamp in `sms_consent_log` while updating only the person-to-person
+consent fields in the same transaction. It does not set global `contacts.opt_in_status`.
 
 The RPC is `SECURITY INVOKER`, is executable only by `service_role`, revalidates an active internal
-admin/office actor, locks the contact, and refuses DND or any existing `opt_out_at`. It does not add
-or broaden table policies/grants, infer consent from contact existence, erase STOP/DND, send a
-message, or modify existing rows merely by being applied.
+admin/office actor under a shared row lock, locks the contact, and refuses DND or any existing
+`opt_out_at`. Exact repeated evidence is deduplicated under the contact lock; first-time evidence
+is always retained even when older global consent already exists. It does not add or broaden table
+policies/grants, infer consent from contact existence, erase STOP/DND, or send a message.
 
 ## Known limits
 

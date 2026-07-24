@@ -177,11 +177,15 @@ shared-database apply window. Before apply, run the Worker authorization/negativ
 migration contract tests, changed-file lint, build and the available credential-free suites. Do not
 deploy the UI/Worker before the RPC exists because the new route depends on that signature.
 
-In the apply window, apply only the reviewed committed migration and verify with representative
-roles that browser roles cannot execute the RPC, admin/office attestation succeeds, forged actors
-fail, and DND/STOP/`opt_out_at` cannot be cleared. Use controlled synthetic records; do not send a
-provider message as part of migration verification. Then deploy the Worker/UI and verify the modal,
-audit history and send gate separately. Rollback drops only the function and retains audit history.
+In the apply window, apply only the reviewed committed migration. Before Worker deployment, verify
+the exact function signature/body/ACL/search path, service-role execution, purpose-scoped contact
+columns, actor lock, evidence deduplication, trusted-IP storage and DND/STOP/`opt_out_at` refusal
+with controlled synthetic records. Browser-role denial is a direct database check; admin/office,
+wrong-role and forged-actor behavior is verified through the deployed Worker afterward. Do not send
+a provider message as part of migration verification. Capture the actual live ledger version/name,
+update the migration provenance manifest/evidence, and run `validate:provenance` before landing the
+Worker/UI. Rollback drops only the function; scoped columns and audit history remain so evidence is
+not erased.
 
 ### 2026-07-23 Preview messaging proof
 
