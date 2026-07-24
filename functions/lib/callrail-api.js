@@ -180,6 +180,54 @@ export async function resolveCallRailAccountId(db, apiKey, env) {
 }
 
 /**
+ * Resolve every documented identity for one configured CallRail account.
+ *
+ * Older UPR connections cached CallRail's numeric account id, while current
+ * MMS media URLs use the masked `ACC...` resource id. CallRail exposes
+ * `numeric_id` through field selection, so this lookup proves that both
+ * identities belong to the same API-visible account instead of trusting an
+ * arbitrary account segment from a webhook URL.
+ */
+export async function resolveCallRailAccountAliases(apiKey, configuredAccountId, {
+  fetcher = fetchWithTimeout,
+  maxPages = MAX_DISCOVERY_PAGES,
+} = {}) {
+  const configured = String(configuredAccountId || '').trim();
+  if (!apiKey || !configured) {
+    throw new CallRailDiscoveryError('CALLRAIL_ACCOUNT_ID_MISSING');
+  }
+  const pageLimit = Math.min(
+    Math.max(Number(maxPages) || 1, 1),
+    MAX_DISCOVERY_PAGES,
+  );
+  const accounts = [];
+  for (let page = 1; page <= pageLimit; page += 1) {
+    const body = await fetchDiscoveryPage(
+      `${CALLRAIL_API_ROOT}/a.json?fields=numeric_id&per_page=250&page=${page}`,
+      apiKey,
+      fetcher,
+    );
+    accounts.push(...(Array.isArray(body.accounts) ? body.accounts : []));
+    const totalPages = Number(body.total_pages) || 1;
+    if (totalPages > pageLimit) {
+      throw new CallRailDiscoveryError('CALLRAIL_DISCOVERY_TRUNCATED');
+    }
+    if (page >= totalPages) break;
+  }
+  const match = accounts.find((account) => (
+    String(account?.id || '') === configured
+    || String(account?.numeric_id || '') === configured
+  ));
+  if (!match?.id) return null;
+
+  return Array.from(new Set([
+    configured,
+    String(match.id),
+    match.numeric_id == null ? null : String(match.numeric_id),
+  ].filter(Boolean)));
+}
+
+/**
  * Resolve a CallRail recording URL to playable audio. CallRail's recording
  * endpoint responds one of two ways, and this normalizes both:
  *   { kind: 'url',    url }             — a short-lived signed CDN URL that is

@@ -14,7 +14,12 @@ vi.mock('./callrail-messaging.js', () => ({
 }));
 vi.mock('./callrail-api.js', () => ({
   resolveCallRailAccountId: vi.fn(async () => 'ACC123'),
+  resolveCallRailAccountAliases: vi.fn(async () => ['ACC123', '635117922']),
 }));
+import {
+  resolveCallRailAccountAliases,
+  resolveCallRailAccountId,
+} from './callrail-api.js';
 
 const MEDIA_URL =
   'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
@@ -273,6 +278,137 @@ describe('CallRail MMS private ingestion', () => {
     );
   });
 
+  it('accepts a masked media account only after CallRail proves its numeric alias', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    const event = {
+      providerConversationId: 'conv789',
+      providerMessageId: 'SCIabc',
+      companyResourceId: 'COM456',
+      mediaCount: 1,
+      ephemeralMediaUrls: [MEDIA_URL],
+      direction: 'inbound',
+      messageType: 'mms',
+      body: '',
+    };
+
+    const result = await ingestVerifiedCallrailEventMms(
+      { db: h.db, env: {}, event },
+      { fetchImpl: h.fetchImpl },
+    );
+
+    expect(resolveCallRailAccountAliases).toHaveBeenCalledWith(
+      'server-secret',
+      '635117922',
+      { fetcher: h.fetchImpl },
+    );
+    expect(result.itemCount).toBe(1);
+    expect(h.db.uploadStorage).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when CallRail cannot prove a mismatched media account', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(null);
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ephemeralMediaUrls: [MEDIA_URL],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: '',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URL_INVALID',
+      retryable: false,
+    });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('retains a mismatched-account MMS for retry when alias discovery is unavailable', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockRejectedValueOnce(new Error('provider unavailable'));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ephemeralMediaUrls: [MEDIA_URL],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: '',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_ACCOUNT_ALIAS_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(h.db.uploadStorage).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a mismatched-account MMS when CallRail rejects the credential', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockRejectedValueOnce({
+      code: 'CALLRAIL_CREDENTIAL_REJECTED',
+    });
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ephemeralMediaUrls: [MEDIA_URL],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: '',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED',
+      retryable: false,
+    });
+  });
+
+  it('retains rate-limited account discovery for bounded retry', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockRejectedValueOnce({
+      code: 'CALLRAIL_DISCOVERY_RATE_LIMITED',
+    });
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ephemeralMediaUrls: [MEDIA_URL],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: '',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_ACCOUNT_ALIAS_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+
   it('refreshes a queue retry from the matching conversation media path', async () => {
     const h = harness();
     h.fetchImpl
@@ -311,6 +447,94 @@ describe('CallRail MMS private ingestion', () => {
       '/text-messages/conv789.json?per_page=250',
     );
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+  });
+
+  it('refreshes a queue retry across the proven numeric-to-masked account alias', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 12345,
+          content: 'Photo',
+          direction: 'incoming',
+          type: 'MMS',
+          media_urls: [MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(resolveCallRailAccountAliases).toHaveBeenCalledWith(
+      'server-secret',
+      '635117922',
+      { fetcher: h.fetchImpl },
+    );
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+  });
+
+  it.each([
+    ['numeric first', [
+      'https://api.callrail.com/v3/a/635117922/text-messages/SCIabc/media/0',
+      MEDIA_URL,
+    ]],
+    ['masked first', [
+      MEDIA_URL,
+      'https://api.callrail.com/v3/a/635117922/text-messages/SCIabc/media/0',
+    ]],
+  ])('keeps mixed-account-alias history ambiguous with %s', async (_label, mediaUrls) => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    h.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({
+      messages: mediaUrls.map((mediaUrl, index) => ({
+        id: index + 1,
+        content: 'Photo',
+        direction: 'incoming',
+        type: 'MMS',
+        media_urls: [mediaUrl],
+      })),
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URL_REFRESH_AMBIGUOUS',
+      retryable: false,
+    });
   });
 
   it('fails closed when refreshed conversation media is absent or ambiguous', async () => {
