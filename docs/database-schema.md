@@ -290,3 +290,35 @@ non-arrays, empty arrays, non-string items, public/non-UPR paths, empty suffixes
 backslashes all remain fail-closed. It is live under ledger version `20260724200321`; rollback-only
 live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
 remain unchanged with `outbound_unmatched`.
+
+## QuickBooks Online attachments tracking (2026-07-24)
+
+`20260724180000_qbo_attachments.sql` (**live under ledger version `20260724190829`**) adds one additive table,
+`qbo_attachments`, that records files pushed to QuickBooks as Attachables for an invoice or estimate.
+It stores metadata only — `entity_type`, `invoice_id`/`estimate_id` (exactly one, CHECK-enforced,
+`ON DELETE CASCADE`), the opaque `qbo_attachable_id` (UNIQUE), `file_name`, `content_type`,
+`file_size`, `include_on_send`, a UNIQUE `idempotency_key`, `created_by`, `created_at` — never the
+file bytes (those live only in QuickBooks). RLS is enabled with a single SELECT policy scoped to
+active `admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` + an `employees` role check);
+there is deliberately no INSERT/UPDATE/DELETE policy — the `qbo-attach` worker writes via the
+service role. Rollback: `DROP TABLE IF EXISTS public.qbo_attachments;`.
+
+`20260724180100_qbo_payments_sync_cron.sql` (**live under ledger version `20260724190848`**) changes
+no table shape. It
+seeds a non-secret worker-URL config row, defines the locked-down `qbo_payments_sync_poll()`
+SECURITY DEFINER helper (REVOKEd from every role; exact URL allowlist; reads the existing
+`integration_config.qbo_webhook_secret`), and schedules it hourly via pg_cron to activate the
+QBO→UPR payment-sync safety-net poller (`/api/qbo-payments-sync`). Rollback: `cron.unschedule` +
+`DROP FUNCTION` + delete the config row.
+
+Its `upr_qbo_payments_sync_hourly` job is **running in production now** (`17 * * * *`), reaching the
+already-deployed `https://utahpros.app/api/qbo-payments-sync` worker and returning HTTP 200. Both
+migrations applied ahead of their own source reaching `dev`; that provenance gap is what the
+2026-07-24 reconciliation closed. See `scripts/migration-provenance-manifest.json`.
+
+`20260724200000_payments_qbo_dedup_index.sql` is **authored and NOT applied.** It adds the UNIQUE
+index `payments_qbo_payment_invoice_uniq` so one QuickBooks payment cannot be recorded twice against
+one invoice. It is written without `CONCURRENTLY`, so it takes an exclusive lock on the hot
+`payments` table and will fail outright if duplicate rows already exist — apply it only in an
+owner-authorized window, after a duplicate pre-check. Rollback:
+`DROP INDEX IF EXISTS public.payments_qbo_payment_invoice_uniq;`.
