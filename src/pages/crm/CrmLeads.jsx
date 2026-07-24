@@ -10,10 +10,12 @@
  *   drag a card to a new column to move it forward, with a mouse on desktop
  *   or a finger on iPad/iPhone. Tap a card (without dragging it) to open its
  *   details: who it is, how to reach them, a dropdown to change its stage,
- *   every answer they typed into the web form that created the lead, a
- *   free-text notes box, the to-dos tied to this lead, a log of every stage
- *   it's moved through, and a combined timeline of every call, text, note,
- *   and estimate tied to that contact. A filter bar above the board narrows
+ *   every answer they typed into the web form that created the lead, an
+ *   append-only notes log (many notes per lead, each stamped with when it was
+ *   written and who wrote it — one per follow-up), the to-dos tied to this
+ *   lead, a log of every stage it's moved through, and a combined timeline of
+ *   every call, text, note, and estimate tied to that contact. A filter bar
+ *   above the board narrows
  *   what's shown: a date-range switch (Week / Month / All time, or a custom
  *   range) plus a criteria panel (source, sentiment, service needed, time in
  *   stage) — both pure client-side filters over the leads already loaded,
@@ -31,9 +33,10 @@
  *              groupLeadsByStage, weightedPipelineValue),
  *              @/components/TabLoading
  *   Data:      reads  → pipeline_stages (get_pipeline_stages RPC),
- *                       inbound_leads (embeds contacts; .form_data/.notes read
- *                       by the detail panel), lead_pipeline_stage,
- *                       get_contact_activity RPC (opened lead's timeline),
+ *                       inbound_leads (embeds contacts; .form_data read by the
+ *                       detail panel), lead_pipeline_stage,
+ *                       crm_lead_notes (get_lead_notes RPC — the panel's Notes
+ *                       log), get_contact_activity RPC (opened lead's timeline),
  *                       form_definitions + form_definition_versions (the
  *                       submitted form's schema, for real field labels),
  *                       crm_tasks (get_crm_tasks RPC, filtered by lead_id),
@@ -43,9 +46,10 @@
  *                       the "+ New lead" manual-entry button; and
  *                       promote_lead_to_contact — the "+ Add as customer" action
  *                       that turns a raw lead into a linked contact),
- *                       inbound_leads.notes (direct update — the panel's
- *                       Notes box), crm_tasks (upsert_crm_task/set_task_status
- *                       — the panel's Tasks quick-add/check-off),
+ *                       crm_lead_notes (via add_lead_note — the panel's Notes
+ *                       composer AND the card's quick-note popover; append-only),
+ *                       crm_tasks (upsert_crm_task/set_task_status/delete_crm_task
+ *                       — the panel's Tasks quick-add/check-off/delete),
  *                       system_events (direct insert — click-to-call logging)
  *
  * NOTES / GOTCHAS:
@@ -540,7 +544,7 @@ export default function CrmLeads() {
     e.preventDefault();
     e.stopPropagation();
     setQuickPopover({ leadId: lead.id, type });
-    setQuickDraft(type === 'note' ? (lead.notes || '') : '');
+    setQuickDraft(''); // a fresh note/task each time — notes are an append-only log
   }, []);
 
   const closeQuickPopover = useCallback((e) => {
@@ -551,20 +555,20 @@ export default function CrmLeads() {
 
   const saveQuickNote = useCallback(async (e, lead) => {
     e.stopPropagation();
+    const body = quickDraft.trim();
+    if (!body) return;
     setQuickBusy(true);
     try {
-      const trimmed = quickDraft.trim() || null;
-      await db.update('inbound_leads', `id=eq.${lead.id}`, { notes: trimmed, updated_at: new Date().toISOString() });
-      setLeads(prev => prev.map(l => (l.id === lead.id ? { ...l, notes: trimmed } : l)));
-      ok('Note saved');
+      await db.rpc('add_lead_note', { p_lead_id: lead.id, p_body: body, p_created_by: employee?.id || null });
+      ok('Note added');
       setQuickPopover(null);
       setQuickDraft('');
     } catch {
-      err('Failed to save the note');
+      err('Failed to add the note');
     } finally {
       setQuickBusy(false);
     }
-  }, [db, quickDraft]);
+  }, [db, quickDraft, employee]);
 
   const submitQuickTask = useCallback(async (e, lead) => {
     e.stopPropagation();
@@ -988,8 +992,8 @@ export default function CrmLeads() {
                               />
                               <div className="crm-board-card-popover-actions">
                                 <button className="crm-btn crm-btn-ghost crm-btn-sm" onClick={closeQuickPopover}>Cancel</button>
-                                <button className="crm-btn crm-btn-primary crm-btn-sm" disabled={quickBusy} onClick={e => saveQuickNote(e, lead)}>
-                                  {quickBusy ? 'Saving…' : 'Save'}
+                                <button className="crm-btn crm-btn-primary crm-btn-sm" disabled={quickBusy || !quickDraft.trim()} onClick={e => saveQuickNote(e, lead)}>
+                                  {quickBusy ? 'Adding…' : 'Add note'}
                                 </button>
                               </div>
                             </>
@@ -1042,10 +1046,6 @@ export default function CrmLeads() {
           createdBy={employee?.id || null}
           actorId={employee?.id || null}
           onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load({ silent: true }); }}
-          onLeadPatched={(patch) => {
-            setSelectedLead(prev => (prev ? { ...prev, ...patch } : prev));
-            setLeads(prev => prev.map(l => (l.id === selectedLead.id ? { ...l, ...patch } : l)));
-          }}
           db={db}
         />
       )}
@@ -1141,7 +1141,7 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
 /* ═══════════════════════════════════════════════════
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
-function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, onLeadPatched, db }) {
+function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, db }) {
   const [promoting, setPromoting] = useState(false);
   // Pre-filled from what the AI already pulled off the call, so promoting a
   // known caller to a customer doesn't mean re-typing what we already have.
@@ -1150,7 +1150,13 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
   const [saving, setSaving] = useState(false);
 
   const [formSchema, setFormSchema] = useState(null);
-  const [notes, setNotes] = useState(lead.notes || '');
+  // Notes are an append-only log now (crm_lead_notes) — many per lead, each
+  // stamped with when it was written and who wrote it — not a single
+  // overwrite-able field. `newNote` is the composer draft; `notes` is the list.
+  const [notes, setNotes] = useState([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+  const [notesError, setNotesError] = useState(false);
+  const [newNote, setNewNote] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [tasksLoading, setTasksLoading] = useState(true);
@@ -1231,19 +1237,44 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     }
   }, [db, lead.id, promoteName, promoteEmail, createdBy, onPromoted]);
 
-  const saveNotes = useCallback(async () => {
+  // The lead's notes log — newest first, each with its timestamp + author.
+  const loadNotes = useCallback(async (signal) => {
+    setNotesLoading(true);
+    try {
+      const rows = await db.rpc('get_lead_notes', { p_lead_id: lead.id });
+      if (signal?.cancelled) return;
+      setNotes(rows || []);
+      setNotesError(false);
+    } catch {
+      if (!signal?.cancelled) { setNotes([]); setNotesError(true); err('Failed to load notes'); }
+    } finally {
+      if (!signal?.cancelled) setNotesLoading(false);
+    }
+  }, [db, lead.id]);
+
+  useEffect(() => {
+    const signal = { cancelled: false };
+    loadNotes(signal);
+    return () => { signal.cancelled = true; };
+  }, [loadNotes]);
+
+  const addNote = useCallback(async () => {
+    const body = newNote.trim();
+    if (!body) return;
     setSavingNotes(true);
     try {
-      const trimmed = notes.trim() || null;
-      await db.update('inbound_leads', `id=eq.${lead.id}`, { notes: trimmed, updated_at: new Date().toISOString() });
-      onLeadPatched?.({ notes: trimmed });
-      ok('Note saved');
+      const row = await db.rpc('add_lead_note', { p_lead_id: lead.id, p_body: body, p_created_by: createdBy });
+      // The RPC returns the inserted note already carrying author_name, so we
+      // prepend it (newest first) without a refetch.
+      if (row) setNotes(prev => [row, ...prev]);
+      setNewNote('');
+      ok('Note added');
     } catch {
-      err('Failed to save the note');
+      err('Failed to add the note');
     } finally {
       setSavingNotes(false);
     }
-  }, [db, lead.id, notes, onLeadPatched]);
+  }, [db, lead.id, newNote, createdBy]);
 
   const addTask = useCallback(async () => {
     const title = newTaskTitle.trim();
@@ -1416,22 +1447,46 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
 
         <div className="crm-panel-section">
           <div className="crm-panel-section-title">Notes</div>
+          {/* Composer sits ABOVE the newest-first list on purpose (unlike the
+              Tasks section's bottom composer): this is an append-and-read-latest
+              log, so a just-added note appears directly below the box where the
+              eye already is, not off at the far end. */}
           <textarea
             className="crm-input crm-task-textarea"
-            value={notes}
-            onChange={e => setNotes(e.target.value)}
-            placeholder="Anything worth remembering about this lead…"
+            value={newNote}
+            onChange={e => setNewNote(e.target.value)}
+            placeholder="Add a follow-up note…"
+            aria-label="Add a follow-up note"
             rows={3}
           />
           <div className="crm-panel-actions" style={{ padding: 0, marginTop: 'var(--space-3)' }}>
             <button
               className="crm-btn crm-btn-primary crm-btn-sm"
-              onClick={saveNotes}
-              disabled={savingNotes || (notes.trim() || '') === (lead.notes || '')}
+              onClick={addNote}
+              disabled={savingNotes || !newNote.trim()}
             >
-              {savingNotes ? 'Saving…' : 'Save note'}
+              {savingNotes ? 'Adding…' : 'Add note'}
             </button>
           </div>
+          {notesLoading ? (
+            <TabLoading />
+          ) : notesError ? (
+            <ErrorState message="Couldn't load notes for this lead." onRetry={() => loadNotes()} />
+          ) : notes.length === 0 ? (
+            <p className="crm-panel-empty" style={{ marginTop: 'var(--space-3)' }}>No notes yet.</p>
+          ) : (
+            <ul className="crm-lead-notes-list">
+              {notes.map(note => (
+                <li key={note.id} className="crm-lead-note">
+                  <p className="crm-lead-note-body">{note.body}</p>
+                  <p className="crm-lead-note-meta">
+                    {note.created_at ? new Date(note.created_at).toLocaleString() : '—'}
+                    {note.author_name && <span className="crm-lead-note-author"> · {note.author_name}</span>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div className="crm-panel-section">

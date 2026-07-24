@@ -5989,6 +5989,25 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
   `stages` prop. Zero new CSS (all four reuse existing `crm-panel-*`/`crm-task-*`/`crm-input` classes)
   and zero schema changes — `form_data`, `notes`, `crm_tasks`, and `lead_stage_history` all already
   existed with `authenticated`-scoped policies from earlier CRM-wave phases.
+  - **UPDATE (2026-07-24) — the single Notes field became an append-only notes LOG** (migration
+    `20260724180000_crm_lead_notes.sql`; owner-directed standalone). The overwrite-on-save `notes`
+    textarea/`onLeadPatched` model is retired: staff run several follow-ups per lead and need a fresh,
+    dated, attributed note for each. New table **`crm_lead_notes`** (`id, lead_id, org_id, contact_id,
+    body, created_by, created_at`; RLS-enabled with NO browser policy — RPC-only access,
+    `REVOKE ALL FROM PUBLIC, anon`). New RPCs (both `SECURITY DEFINER`, `REVOKE PUBLIC/anon`,
+    `GRANT authenticated, service_role`): **`add_lead_note(p_lead_id, p_body, p_created_by) → json`**
+    (append; resolves org_id+contact_id from the lead; returns the row already carrying `author_name`)
+    and **`get_lead_notes(p_lead_id) → SETOF json`** (newest first, `author_name` joined from
+    `employees`). The panel Notes section is now a list + composer; the board card's quick-note popover
+    appends via `add_lead_note` (no longer `db.update('inbound_leads', { notes })`). The migration
+    **backfills** existing `inbound_leads.notes` into the log (source column copied, NOT cleared —
+    rollback-safe) and does a **function-body-only** `CREATE OR REPLACE` of the frozen
+    `get_lead_activity` / `get_contact_activity` (signatures + `RETURNS TABLE` shape unchanged): adds a
+    `'note'` arm reading `crm_lead_notes` (rendered by `ActivityTimeline`'s existing `note` badge +
+    `meta.author_name`) and drops `il.notes`/`fu.notes` from the lead/follow-up body `COALESCE` so a
+    backfilled note isn't shown twice. `inbound_leads.notes` remains on the table (additive rule) but is
+    no longer written or displayed by the Leads UI. New CSS: `.crm-lead-note*` under a labeled marker at
+    the end of `src/index.css`. Backward-compat test: `supabase/tests/crm_lead_notes.test.js`.
   - Also polished (same date, same panel): the header no longer shows a contact-less lead's phone
     number twice (title falls back to it via `leadLabel()`, and the subtitle used to unconditionally
     repeat it as a `tel:` link — now the title itself becomes the link and the subtitle is skipped);
