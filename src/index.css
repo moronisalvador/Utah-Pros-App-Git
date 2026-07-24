@@ -11482,7 +11482,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    inside .tv2-msgs-thread). */
 .tv2-msgs-thread .message-bubble { width: fit-content; max-width: 100%; }
 .tv2-msgs-thread .message.outbound .message-bubble { align-self: flex-end; }
-.tv2-msgs-thread .message.inbound .message-bubble { align-self: flex-start; }
+.tv2-msgs-thread .message.inbound .message-bubble {
+  align-self: flex-start;
+  /* The shared desktop bubble uses --bg-secondary, which is also this pane's
+     thread canvas. Give received messages a distinct tonal surface so their
+     bubble remains visible in both light and tech-scoped dark palettes. */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
 /* Internal notes had no align-self, so they stretched full-width — hug content too. */
 .tv2-msgs-thread .message.internal-note { align-self: flex-end; }
 .tv2-msgs-thread .message.internal-note .message-bubble { align-self: flex-end; }
