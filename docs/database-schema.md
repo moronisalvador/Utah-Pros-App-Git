@@ -189,6 +189,19 @@ requires a fresh owner-approved apply window.
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 
+## Prior SMS consent attestation (authored; not applied)
+
+Migration `20260724014423_attest_prior_sms_consent.sql` adds only the service-role RPC
+`attest_prior_sms_consent`. It lets the authorized Worker record verified verbal permission,
+a signed work authorization, other written permission, or another evidenced customer request.
+The operation records the consent date, evidence note, authenticated employee actor and server
+timestamp in `sms_consent_log` while updating `contacts.opt_in_status` in the same transaction.
+
+The RPC is `SECURITY INVOKER`, is executable only by `service_role`, revalidates an active internal
+admin/office actor, locks the contact, and refuses DND or any existing `opt_out_at`. It does not add
+or broaden table policies/grants, infer consent from contact existence, erase STOP/DND, send a
+message, or modify existing rows merely by being applied.
+
 ## Known limits
 
 The repository does not by itself prove current live state after the dated capture. The July 2026

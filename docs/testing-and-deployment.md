@@ -170,6 +170,19 @@ The combined Phase 2–4 build is not a one-step deploy:
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
 
+## Prior SMS consent attestation release sequence
+
+Migration `20260724014423_attest_prior_sms_consent.sql` is repository-only until an owner-approved
+shared-database apply window. Before apply, run the Worker authorization/negative tests, static
+migration contract tests, changed-file lint, build and the available credential-free suites. Do not
+deploy the UI/Worker before the RPC exists because the new route depends on that signature.
+
+In the apply window, apply only the reviewed committed migration and verify with representative
+roles that browser roles cannot execute the RPC, admin/office attestation succeeds, forged actors
+fail, and DND/STOP/`opt_out_at` cannot be cleared. Use controlled synthetic records; do not send a
+provider message as part of migration verification. Then deploy the Worker/UI and verify the modal,
+audit history and send gate separately. Rollback drops only the function and retains audit history.
+
 ### 2026-07-23 Preview messaging proof
 
 The owner-approved CallRail Preview test verified carrier delivery for two staff-authored outbound
