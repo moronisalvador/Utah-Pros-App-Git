@@ -211,18 +211,22 @@ export function mergeRefreshedMessages(previous = [], refreshed = []) {
 /**
  * Turn the server's scoped consent decision into fail-closed UI state. Actions stay hidden until
  * the decision belongs to the active contact and current phone and confirms ordinary NO_CONSENT.
+ * A contact's already-recorded global opt-in is authoritative local state and does not wait on a
+ * redundant service-consent lookup; the send Worker still performs the final consent/DND check.
  */
 export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
   const matches = !!contact
     && status.contactId === contact.id
     && status.phone === (contact.phone || null);
+  const hasRecordedGlobalOptIn = contact?.opt_in_status === true;
   const checking = (
     !matches
     || status.loading
-    || (!status.checked && !status.error)
+    || (!status.checked && !status.error && !hasRecordedGlobalOptIn)
   );
   const canAttest = (
     matches
+    && !checking
     && status.checked
     && !status.allowed
     && status.code === 'NO_CONSENT'
@@ -250,7 +254,7 @@ export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
         title: 'SMS is blocked by Do Not Disturb',
         detail: 'Another contact with this phone number has Do Not Disturb enabled.',
       };
-    } else if (!canAttest && !status.allowed && !status.error) {
+    } else if (!hasRecordedGlobalOptIn && !canAttest && !status.allowed && !status.error) {
       suppressionKey = 'unavailable';
       suppressionCopy = {
         title: 'SMS permission cannot be recorded',
