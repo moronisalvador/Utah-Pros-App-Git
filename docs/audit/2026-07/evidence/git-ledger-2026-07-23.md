@@ -105,3 +105,36 @@ Remote pruning confirmed `origin/codex/callrail-history-recovery-once` is absent
 - `d3fd17a` is both branch-only historical evidence and superseded. Reintroducing it would violate the documented cleanup of the bounded CallRail recovery route.
 - `3841056` is both branch-only historical evidence and superseded by the isolated-QA decision package.
 - Branch/worktree deletion remains an owner/release cleanup action; this evidence does not authorize deletion.
+
+## Final recapture addendum — 2026-07-24 UTC
+
+This addendum preserves the original `b6d7092a` snapshot above and records the later July 23 MDT
+work. After `git fetch origin --prune`, `origin/dev=6651392`, `origin/main=891804a`, and local
+`dev=449bd6c` immediately before the final closure commit.
+
+### Later dev commits
+
+| Commit | Disposition | Subject |
+|---|---|---|
+| `a54f2df` | dev; documented-complete | docs(db): refresh live catalog inventory |
+| `78985fe` | dev; documented-complete | docs: close July 23 engineering ledger |
+| `625ccfd` | dev; documented-complete; scheduler SQL later applied under live version `20260724003818` | fix: dispatch inbound message notifications (#506) |
+| `142d3c4` | dev; repository-complete, owner device-tap tail open | fix: deep-link inbound message alerts (#507) |
+| `c85af2e` | dev; documented-complete bounded money authorization slice | fix(billing): harden money worker boundaries |
+| `1900a78` | dev; documented-complete bounded money evidence | docs(billing): record money worker hardening |
+| `9d937f8` | dev; documented-complete repository CI repair | fix(ci): validate paused iOS release workflow |
+| `6651392` | dev; documented-complete CI/Apple-gate evidence | docs(ci): record iOS workflow repair gates |
+| `449bd6c` | local dev closure input; exact cherry-pick of `882d34f` evidence | docs: record inbound notification activation |
+
+### Later branch-only commits
+
+| Commit/ref | Disposition |
+|---|---|
+| `6c02e43` / notification scheduler branch | integrated into dev as `625ccfd`; do not cherry-pick again |
+| `32ed3a5` / notification deep-link branch | integrated into dev as `142d3c4`; do not cherry-pick again |
+| `882d34f` / `codex/messaging-private-media` | evidence integrated into dev as `449bd6c` |
+| `67ab184` / `codex/messaging-live-evidence` | duplicate evidence patch on an older parent; superseded by `449bd6c` |
+
+The earlier `d3fd17a` and `3841056` classifications are unchanged: both remain unreferenced,
+superseded historical objects that must not be merged. No branch or worktree was deleted by this
+closure.

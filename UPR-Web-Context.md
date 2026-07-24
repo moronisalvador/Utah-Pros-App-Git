@@ -414,10 +414,12 @@ Docs + generator only — zero schema, zero `src/` page edits. Ships:
   `database-standard.md` §2's allowlist), never a second schema source. Distinct from Phase F's
   `db/baseline/` (a frozen comparison snapshot `db-drift-check.mjs` diffs against) — this generator
   never writes that directory; its own output is always "what does live look like right now."
-  Regenerated from a fresh read-only live catalog capture at 2026-07-24 00:20:26 UTC:
-  133 public tables and 372 distinct function-name rows (373 overloads in the separate closure
-  query). The generated RPC inventory shows `exec_read_sql` service-only and, correctly for the
-  pre-apply state, still shows `upsert_lead_from_form` executable by browser roles.
+  Regenerated again after the notification scheduler apply from a fresh read-only live catalog
+  capture at 2026-07-24 01:00:19 UTC: 133 public tables and 374 distinct function-name rows
+  (375 overloads in the separate closure query). The two new service-only scheduler functions
+  explain the delta. The generated RPC inventory shows `exec_read_sql` service-only and, correctly
+  for the still-unapplied public-form containment, `upsert_lead_from_form` executable by browser
+  roles.
 - `.claude/rules/documentation-standard.md` — new "SQL migration header" addendum formalizing the
   `MIGRATION:`/`Phase:`/`WHAT THIS DOES`/`ADDITIVE-ONLY`/`ROLLBACK` header pattern Phase F/P1's
   migrations already established, satisfying `database-standard.md` §6's rollback requirement.
@@ -7293,6 +7295,11 @@ Wave 2, launched after A + C merged into `dev`. Owned a new deliverability healt
   `NotificationBell` click-through. **One-line fix** (append `?c=${conversation?.id}`) lives in
   `twilio-webhook.js`, exclusively owned by Session A — G has no edit rights there per the ownership
   manifest, so this is a disclosed follow-up, not an in-phase fix.
+  **Current-state correction (2026-07-24 UTC):** the later provider-neutral notification dispatcher
+  now emits `/conversations?c=<id>` for bell rows and `/tech/conversations?c=<id>` for Web Push.
+  The owner received the push and the exact stored bell link was verified; the corrected
+  field-PWA push-tap remains an owner-device verification tail. The paragraph above is retained as
+  the historical Phase G finding, not current source behavior.
 - **Tech-PWA on-device lane**: no iOS simulator/device in this session (same disclosure as Phase C).
   Static grep confirms the `visibilitychange` Capacitor-suspend recovery and `visualViewport` keyboard
   handler Phase C claimed are actually present in `Conversations.jsx`. Full on-device confirmation

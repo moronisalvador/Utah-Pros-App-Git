@@ -134,3 +134,75 @@ Current-state updates made during this closure:
 
 This ledger closes the requested July 23 documentation audit. It deliberately does **not** claim the
 finish-first program or its owner/external gates are complete.
+
+## Final post-closure addendum — 2026-07-24 UTC
+
+The closure was reopened because messaging activation, money hardening and the iOS workflow repair
+landed after the original `b6d7092a` capture.
+
+### Current evidence boundary
+
+- final pre-closure Git recapture: `origin/dev=6651392`, `origin/main=891804a`, local
+  `dev=449bd6c`; later commits and duplicate branch dispositions are in the Git-ledger addendum;
+- fresh read-only live catalog capture: 2026-07-24 01:00:19 UTC, project
+  `glsmljpabrwonfiltiqm`;
+- generated reports: 133 public tables and 374 distinct public function-name rows;
+- exact aggregate: 375 overloads, 348 `SECURITY DEFINER`, six `anon`-executable, and 363
+  `authenticated`-executable overloads;
+- `exec_read_sql(text)` still denies `PUBLIC`/`anon`/`authenticated` and allows `service_role`;
+- `upsert_lead_from_form(...)` still allows `PUBLIC`/`anon`/`authenticated`; the reviewed
+  `20260723235900` containment remains unapplied;
+- live ledger now includes `20260724003818 message_notification_outbox_scheduler`.
+
+The scheduler's live statement matches the reviewed Git file at `625ccfd` after removing only the
+file's final newline (4,548 bytes; MD5 `c6193971d4a27418f5f08c10cbf655a9`). The active provenance
+manifest and fresh machine evidence now map that tool-assigned live version to repository file
+`20260724001500_message_notification_outbox_scheduler.sql`; no live body was rewritten.
+
+### Final status ledger
+
+#### Documented-complete
+
+- All items in the original documented-complete list.
+- Messaging notification scheduler apply, active five-minute cron, statement trigger, drained
+  six-row outbox, owner-confirmed mobile-PWA push, and dev deep-link correction/evidence.
+- QBO/Stripe server authorization slice: admin/manager gate, provider-never-called negatives,
+  QBO whole-cent/balance/actor/stable request ID and Mountain-date contract.
+- Paused iOS workflow validity: manual-only, no direct `secrets.*` step condition, regression test,
+  green CI, and no automatic iOS run on the repair push.
+- Fresh generated schema/RPC reports and eight-row provenance mapping.
+
+#### Still-in-progress
+
+- Public-form live ACL apply plus browser-role denial, service Worker smoke, advisors and provenance.
+- QBO durable pre-provider attempt/recovery and Intuit sandbox failure/retry proof (COR-002).
+- Stripe stored Checkout-session lifecycle and sandbox concurrency proof (COR-003).
+- Messaging corrected field-PWA deep-link tap on the owner device and remaining provider/device
+  rollout tails.
+- Signing/Storage privacy, account-deletion fulfillment, broad RPC/policy classification, and other
+  ready P0/P1 registry rows.
+
+#### External-gated
+
+- All external gates in the original list.
+- Apple enrollment/signing secrets, owner Xcode archive/device verification, explicit TestFlight
+  dispatch, screenshots, reviewer credentials and App Store Connect entry.
+- Intuit/Stripe sandbox access for the remaining money correctness phases.
+
+#### Superseded
+
+- `3841056` shared-production QA proposal and `d3fd17a` temporary recovery implementation.
+- `67ab184` duplicate messaging activation evidence and the rebased/squashed notification branch
+  commits after their dev equivalents landed.
+
+#### Branch-only
+
+- Notification scheduler/deep-link branch commits are integrated; messaging evidence is integrated
+  as `449bd6c`; their remaining branch tips are cleanup candidates, not missing work.
+- `d3fd17a` and `3841056` remain unreferenced superseded objects and must not be merged.
+- Branch/worktree deletion remains owner-controlled; unrelated `.agents/` and `.codex/` are
+  preserved.
+
+The repository-internal Foundation/documentation boundary is complete for this capture. The overall
+finish-first program remains open at the explicit live-apply, provider, credential, isolated-QA,
+device, legal and owner gates above.

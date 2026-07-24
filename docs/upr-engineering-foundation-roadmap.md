@@ -53,11 +53,12 @@ Any authorized Encircle database apply still serializes with every other shared-
 
 ### Current, verified 2026-07-23
 
-- Documentation-closure recapture at 2026-07-24 00:20–00:21 UTC found 133 public tables, 373
-  public function overloads across 372 names, and the exact three July 23 migration-ledger rows.
-  It reconfirmed `exec_read_sql(text)` service-only and `upsert_lead_from_form(...)` still
-  browser-executable pending its separate owner-authorized apply. Counts below preserve the
-  earlier planning capture where they explain the original decision.
+- Final documentation-closure recapture at 2026-07-24 01:00 UTC found 133 public tables, 375
+  public function overloads across 374 names, and the original three July 23 live-ledger rows plus
+  the later tool-versioned notification scheduler row. It reconfirmed `exec_read_sql(text)`
+  service-only and `upsert_lead_from_form(...)` still browser-executable pending its separate
+  owner-authorized apply. Counts below preserve the earlier planning capture where they explain
+  the original decision.
 
 - At the F1 apply, `origin/dev` was `1875e63`; reviewed containment commit `5cf546b` was reachable
   from both `origin/dev` and `origin/main`.
@@ -179,7 +180,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Encircle managed integration | PARTIAL; landed with owner/external verification tails | `0a06a21` on `origin/dev`; owner reports CI/staging passed; migration unapplied, flag OFF, credentials unchanged | High | Apply-window tests; owner-only flag; candidate activation; multi-runtime smoke; rotation/fallback cleanup |
 | `exec_read_sql` containment | HAVE; Critical boundary contained | Applied/verified 2026-07-23; browser-role denials, service-role smoke, catalog fingerprint, ledger, and advisor evidence recorded | High | Keep service-only regression test and ACL invariant |
 | Anonymous/authenticated least privilege | PARTIAL + Critical | Current policy/function counts; July evidence enumerates affected objects | High aggregate; object behavior needs role tests | Classified role matrix and staged closures |
-| Migration provenance | HAVE; High boundary reconciled | F2 maps the seven-entry live tail to reviewed release source and checks 11 function plus one policy fingerprint | High | Refresh read-only evidence within six hours of release validation |
+| Migration provenance | HAVE; High boundary reconciled | F2 mapped the original seven-entry live tail; the 2026-07-24 addendum maps the later scheduler row too; 11 function plus one policy fingerprints remain checked | High | Refresh read-only evidence within six hours of release validation |
 | Worker auth/shared libraries | PARTIAL | Shared helpers exist; inventory found 17 local auth helpers and limited timeout/telemetry adoption | High | Sensitive Workers use canonical auth/role/timeout/telemetry contracts |
 | Money-path safety | PARTIAL; AUTH-001/AUTH-002 and Denver-date/request-key slice complete | `money-worker-hardening-2026-07-23.md`; both Workers use `requireRole`; QBO stable request key/cents/balance/actor/MT date tests | High | Durable charge-attempt/recovery + Intuit sandbox; Stripe stored-session reuse/expiry + sandbox concurrency |
 | Public form/signing/file boundaries | PARTIAL + High | July evidence plus current migration/Worker source | High design evidence; live behavior needs refresh | Direct bypass denied; minimal capability DTOs; signed/private files |
@@ -283,10 +284,11 @@ All acceptance checks passed. Evidence:
 - Each new live ledger entry maps to reviewed source reachable from the release ref.
 - CI/release evidence reports ledger/source and selected function/policy fingerprint drift.
 
-All acceptance checks passed without a live write. The gate maps the seven-entry ledger tail,
-enforces reviewed-origin blob equality, bounds evidence freshness to six hours, verifies capture-base
-ancestry, and checks 11 function plus one policy fingerprint. The one raw body difference is
-comment-only and remains a warning. Evidence:
+All acceptance checks passed without a live write. The gate mapped the original seven-entry ledger
+tail, enforces reviewed-origin blob equality, bounds evidence freshness to six hours, verifies
+capture-base ancestry, and checks 11 function plus one policy fingerprint. A later read-only
+addendum maps the separately applied scheduler as the eighth row without changing its live body.
+The one raw body difference is comment-only and remains a warning. Evidence:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
 
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation

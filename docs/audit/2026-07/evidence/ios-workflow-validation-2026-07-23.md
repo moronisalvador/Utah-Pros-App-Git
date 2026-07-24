@@ -48,7 +48,9 @@ mistaken for release readiness.
   worktrees): 129 files, 1,589 tests passed;
 - production web build: passed;
 - changed-file ESLint and `git diff --check`: passed;
-- post-push GitHub acceptance: pending.
+- post-push GitHub acceptance: dev commit `6651392` created only CI run `30057412307`, which
+  passed; GitHub created no iOS release run for that push, proving the workflow is valid and
+  manual-only again.
 
 ## Remaining owner/external gates
 

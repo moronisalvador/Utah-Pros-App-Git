@@ -541,8 +541,9 @@ from the same canonical conversation identity.
   dual-provider overlap/cutover window, so late events cannot create competing direct threads;
 - provider sandbox/fixture tests for replay, malformed payloads, media failure, and sent/inbound
   ordering;
-- keep Production unconfigured; prove Preview's configured signed endpoint can directly claim and
-  project sent and received events before any broader activation.
+- keep Production unconfigured; Preview signed sent/received projection evidence is complete.
+  Any broader activation remains an explicit owner decision, and the corrected field-PWA
+  push-tap still needs owner-device verification.
 
 ### Phase 5 — Owner-gated activation
 
