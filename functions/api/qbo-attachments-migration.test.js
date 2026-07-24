@@ -22,7 +22,7 @@ describe('qbo_attachments migration', () => {
     expect(attachments).toContain('FROM public.employees e');
     expect(attachments).toContain('e.auth_user_id = auth.uid()');
     expect(attachments).toContain('e.is_active');
-    expect(attachments).toContain("e.role IN ('admin', 'manager')");
+    expect(attachments).toContain("e.role::text IN ('admin', 'manager')");
     // Must NOT be the bare always-true form.
     expect(attachments).not.toMatch(/USING \(true\)/);
   });

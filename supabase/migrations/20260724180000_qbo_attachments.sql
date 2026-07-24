@@ -70,6 +70,11 @@ CREATE POLICY qbo_attachments_select ON public.qbo_attachments
       SELECT 1 FROM public.employees e
       WHERE e.auth_user_id = auth.uid()
         AND e.is_active
-        AND e.role IN ('admin', 'manager')
+        -- Mirror src/lib/claimUtils BILLING_EDIT_ROLES exactly. The employee_role enum
+        -- has no 'manager' value (admin/office/project_manager/field_tech/estimator/
+        -- supervisor/crm_partner), so compare as text — 'manager' simply never matches
+        -- (same as the JS gate: today this is admin-effective) and Postgres doesn't
+        -- reject the literal against the enum.
+        AND e.role::text IN ('admin', 'manager')
     )
   );
