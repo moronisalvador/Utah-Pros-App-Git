@@ -116,6 +116,12 @@
       "name": "accept_frozen_callrail_mms_media_shape",
       "path": "supabase/migrations/20260724195802_accept_frozen_callrail_mms_media_shape.sql",
       "reviewedOriginCommit": "8e761e6031666b76616726354bb61884e54e22f8"
+    },
+    {
+      "version": "20260724230933",
+      "name": "payments_qbo_dedup_index",
+      "path": "supabase/migrations/20260724200000_payments_qbo_dedup_index.sql",
+      "reviewedOriginCommit": "f46e50f2d650708273e957ed9184d6a457dac475"
     }
   ],
   "selectedFunctions": [

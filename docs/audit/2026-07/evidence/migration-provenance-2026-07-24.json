@@ -1,28 +1,89 @@
 {
-  "capturedAt": "2026-07-24T22:38:00Z",
+  "capturedAt": "2026-07-24T23:10:00Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
-    { "version": "20260722222426", "name": "crm_denver_day_bucketing" },
-    { "version": "20260722222438", "name": "crm_sales_summary_total_vs_traced" },
-    { "version": "20260722225158", "name": "crm_dedup_repeat_caller_leads" },
-    { "version": "20260722232222", "name": "crm_caller_name_follows_merge" },
-    { "version": "20260723215926", "name": "messaging_transport_foundation" },
-    { "version": "20260723220207", "name": "messaging_transport_foundation_indexes" },
-    { "version": "20260723221707", "name": "exec_read_sql_containment" },
-    { "version": "20260724002500", "name": "callrail_event_recovery_scheduler" },
-    { "version": "20260724003818", "name": "message_notification_outbox_scheduler" },
-    { "version": "20260724035913", "name": "attest_prior_sms_consent" },
-    { "version": "20260724043000", "name": "harden_service_sms_consent" },
-    { "version": "20260724051500", "name": "claim_callrail_provider_event" },
-    { "version": "20260724152530", "name": "harden_find_or_create_conversation" },
-    { "version": "20260724152614", "name": "fix_callrail_outbound_phone_identity" },
-    { "version": "20260724181945", "name": "crm_lead_notes" },
-    { "version": "20260724190829", "name": "qbo_attachments" },
-    { "version": "20260724190848", "name": "qbo_payments_sync_cron" },
-    { "version": "20260724195329", "name": "bind_callrail_outbound_mms_identity" },
-    { "version": "20260724200321", "name": "accept_frozen_callrail_mms_media_shape" }
+    {
+      "version": "20260722222426",
+      "name": "crm_denver_day_bucketing"
+    },
+    {
+      "version": "20260722222438",
+      "name": "crm_sales_summary_total_vs_traced"
+    },
+    {
+      "version": "20260722225158",
+      "name": "crm_dedup_repeat_caller_leads"
+    },
+    {
+      "version": "20260722232222",
+      "name": "crm_caller_name_follows_merge"
+    },
+    {
+      "version": "20260723215926",
+      "name": "messaging_transport_foundation"
+    },
+    {
+      "version": "20260723220207",
+      "name": "messaging_transport_foundation_indexes"
+    },
+    {
+      "version": "20260723221707",
+      "name": "exec_read_sql_containment"
+    },
+    {
+      "version": "20260724002500",
+      "name": "callrail_event_recovery_scheduler"
+    },
+    {
+      "version": "20260724003818",
+      "name": "message_notification_outbox_scheduler"
+    },
+    {
+      "version": "20260724035913",
+      "name": "attest_prior_sms_consent"
+    },
+    {
+      "version": "20260724043000",
+      "name": "harden_service_sms_consent"
+    },
+    {
+      "version": "20260724051500",
+      "name": "claim_callrail_provider_event"
+    },
+    {
+      "version": "20260724152530",
+      "name": "harden_find_or_create_conversation"
+    },
+    {
+      "version": "20260724152614",
+      "name": "fix_callrail_outbound_phone_identity"
+    },
+    {
+      "version": "20260724181945",
+      "name": "crm_lead_notes"
+    },
+    {
+      "version": "20260724190829",
+      "name": "qbo_attachments"
+    },
+    {
+      "version": "20260724190848",
+      "name": "qbo_payments_sync_cron"
+    },
+    {
+      "version": "20260724195329",
+      "name": "bind_callrail_outbound_mms_identity"
+    },
+    {
+      "version": "20260724200321",
+      "name": "accept_frozen_callrail_mms_media_shape"
+    },
+    {
+      "version": "20260724230933",
+      "name": "payments_qbo_dedup_index"
+    }
   ],
   "functions": [
     {
@@ -32,7 +93,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -45,7 +108,9 @@
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
-      "config": ["search_path=\"\""],
+      "config": [
+        "search_path=\"\""
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": true,
@@ -58,7 +123,9 @@
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
-      "config": ["search_path=\"\""],
+      "config": [
+        "search_path=\"\""
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": true,
@@ -71,7 +138,9 @@
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
-      "config": ["search_path=pg_catalog, public"],
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": true,
@@ -84,7 +153,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -97,7 +168,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -110,7 +183,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -123,7 +198,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -136,7 +213,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -149,7 +228,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -162,7 +243,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -175,7 +258,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -188,7 +273,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -201,7 +288,9 @@
       "language": "sql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -214,7 +303,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -227,7 +318,9 @@
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
-      "config": ["search_path=\"\""],
+      "config": [
+        "search_path=\"\""
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": true,
@@ -240,7 +333,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "s",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -253,7 +348,9 @@
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
-      "config": ["search_path=pg_catalog, public"],
+      "config": [
+        "search_path=pg_catalog, public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": true,
@@ -266,7 +363,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": false,
       "serviceRoleExecute": false,
@@ -279,7 +378,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -292,7 +393,9 @@
       "language": "plpgsql",
       "securityDefiner": true,
       "volatility": "v",
-      "config": ["search_path=public"],
+      "config": [
+        "search_path=public"
+      ],
       "anonExecute": false,
       "authenticatedExecute": true,
       "serviceRoleExecute": true,
@@ -303,35 +406,45 @@
     {
       "identity": "public.messages:messages_authenticated_select",
       "command": "SELECT",
-      "roles": ["authenticated"],
+      "roles": [
+        "authenticated"
+      ],
       "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {
       "identity": "public.qbo_attachments:qbo_attachments_select",
       "command": "SELECT",
-      "roles": ["authenticated"],
+      "roles": [
+        "authenticated"
+      ],
       "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {
       "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_insert",
       "command": "INSERT",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "d41d8cd98f00b204e9800998ecf8427e",
       "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
     },
     {
       "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_select",
       "command": "SELECT",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "b326b5062b2f0e69046810717534cb09",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {
       "identity": "public.service_sms_consents:service_sms_consents_service_role_manage",
       "command": "ALL",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "b326b5062b2f0e69046810717534cb09",
       "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
     }
