@@ -303,6 +303,24 @@ describe('CallRail MMS private ingestion', () => {
     });
   });
 
+  it.each([404, 410])(
+    'retains an expired media endpoint returning %s for bounded URL refresh',
+    async (status) => {
+      const h = harness();
+      h.fetchImpl.mockResolvedValue(new Response(null, { status }));
+
+      await expect(ingestCallrailMms(
+        { ...INPUT, db: h.db },
+        { fetchImpl: h.fetchImpl },
+      )).rejects.toMatchObject({
+        code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+        retryable: true,
+        status,
+      });
+      expect(h.db.uploadStorage).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses the signed webhook media endpoint immediately without conversation refresh', async () => {
     const h = harness();
     const event = {

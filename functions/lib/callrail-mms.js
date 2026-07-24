@@ -286,7 +286,8 @@ async function sha256Hex(bytes) {
 }
 
 function providerFailure(response) {
-  const retryable = response.status === 429 || response.status >= 500;
+  const retryable = [404, 410, 429].includes(response.status)
+    || response.status >= 500;
   return new CallrailMmsError(
     'CALLRAIL_MMS_DOWNLOAD_REJECTED',
     'CallRail did not return the requested MMS media.',
