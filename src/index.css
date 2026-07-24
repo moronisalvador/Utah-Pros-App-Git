@@ -11770,6 +11770,21 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* ── List header: title row + mark-all-read ── */
 .tv2-msgs-list__titlerow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tv2-msgs-list__actions { display: flex; align-items: center; gap: 6px; }
+.tv2-msgs-new-btn {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  border: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+.tv2-msgs-new-btn:active { transform: scale(0.96); }
 .tv2-msgs-readall {
   display: inline-flex;
   align-items: center;
@@ -12076,6 +12091,75 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Full-screen new-conversation picker. It occupies the thread layer so browser Back
+   and iOS swipe-back return to the preserved list scroll position. */
+.tv2-msgs-new {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  background: var(--bg-secondary);
+}
+.tv2-msgs-new .tv2-msgs-search__input { height: 48px; }
+.tv2-msgs-new__search {
+  position: sticky;
+  top: calc(52px + env(safe-area-inset-top, 0px));
+  z-index: 5;
+  padding: 1px 14px 12px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+}
+.tv2-msgs-new__body { min-height: calc(100dvh - 128px); }
+.tv2-msgs-new__rows { display: flex; flex-direction: column; }
+.tv2-msgs-new__contact {
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  text-align: left;
+}
+.tv2-msgs-new__contact:active { background: var(--bg-secondary); }
+.tv2-msgs-new__contact:disabled { opacity: 0.65; }
+.tv2-msgs-new__contact-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv2-msgs-new__starting { flex-shrink: 0; color: var(--text-tertiary); font-size: 12px; }
+.tv2-msgs-new__state { padding: 56px 24px; color: var(--text-secondary); font-size: 15px; text-align: center; }
+
+/* Consent is authoritative server state. SMS remains disabled during lookup/error;
+   internal notes stay available through the composer. */
+.tv2-msgs-consent-banner {
+  padding: 10px 12px;
+  border-top: 1px solid var(--warning-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-secondary);
+  background: var(--warning-bg);
+  font-size: 12px;
+}
+.tv2-msgs-consent-banner > div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tv2-msgs-consent-banner strong { color: var(--text-primary); font-size: 13px; }
+.tv2-msgs-consent-banner button {
+  min-width: 48px;
+  min-height: 48px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  flex-shrink: 0;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  font: inherit;
+  font-weight: 700;
+}
+.tv2-msgs-consent-banner > span { font-weight: 600; }
 .tv2-msgs-empty .tv2-msgs-retry-btn { margin-top: 14px; }
 
 /* ── Dark-theme pane-scoped bubble override (internal-note uses hardcoded hexes;

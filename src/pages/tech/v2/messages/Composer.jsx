@@ -67,7 +67,13 @@ function IconX(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...props}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>);
 }
 
-export default function Composer({ convId, contact, onSend, sending }) {
+export default function Composer({
+  convId,
+  contact,
+  onSend,
+  sending,
+  smsBlocked = false,
+}) {
   const { t } = useTranslation('msgs');
   const [text, setText] = useState(() => getDraft(convId));
   const [isNote, setIsNote] = useState(false);
@@ -89,6 +95,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
 
   const dnd = !!contact?.dnd;
   const blockedByDnd = dnd && !isNote;
+  const blockedOutbound = !isNote && (blockedByDnd || smsBlocked);
 
   // Draft is seeded lazily from the initial state above. ThreadView is keyed by
   // conversation id, so this Composer remounts per thread — convId never changes within
@@ -111,7 +118,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
     const body = (el ? el.value : text).trim();
     const media = isNote ? [] : readyUrls;
     // Allow a photo-only send (media, no caption); a text or note still needs a body.
-    if (blockedByDnd || (!body && media.length === 0)) return;
+    if (blockedOutbound || (!body && media.length === 0)) return;
     if (uploading) return; // wait for attachments to finish
     // Blank synchronously so a same-tick double-Enter can't fire twice.
     if (el) el.value = '';
@@ -122,7 +129,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
     setSheet(null);
     // Keep focus for a fast back-and-forth.
     requestAnimationFrame(() => taRef.current?.focus());
-  }, [text, blockedByDnd, uploading, isNote, readyUrls, convId, onSend, clearAttachments]);
+  }, [text, blockedOutbound, uploading, isNote, readyUrls, convId, onSend, clearAttachments]);
 
   const onKeyDown = (e) => {
     // Touch: let Enter fall through to the textarea as a newline. Desktop: Enter
@@ -175,7 +182,7 @@ export default function Composer({ convId, contact, onSend, sending }) {
 
   // A ready (uploaded) photo can send on its own — text OR media enables Send.
   const hasReadyMedia = !isNote && readyUrls.length > 0;
-  const canSend = (!!text.trim() || hasReadyMedia) && !blockedByDnd && !sending && !uploading;
+  const canSend = (!!text.trim() || hasReadyMedia) && !blockedOutbound && !sending && !uploading;
 
   return (
     <div className="tv2-msgs-composer" data-note={isNote ? 'true' : undefined}>
@@ -184,7 +191,6 @@ export default function Composer({ convId, contact, onSend, sending }) {
           {isNote ? t('composer.dndNote') : t('composer.dndBlock')}
         </div>
       )}
-
       {/* Attachment tray (MMS) — thumbnails with a 48px remove target. */}
       {attachments.length > 0 && !isNote && (
         <div className="tv2-msgs-attach-tray" aria-label={t('composer.attachments')}>

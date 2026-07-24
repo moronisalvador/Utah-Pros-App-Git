@@ -309,3 +309,21 @@ fallback). Foundation-as-SPOF priced in via the full reviewer gauntlet before B1
    B1 at ceiling — suspend recovery + All/Unread+search moved IN, MMS/templates stay B2
    (attach-button premise tested and FALSE); B2 core-vs-stretch split made explicit;
    ~0.5 post-bake session budgeted. 3 planned sessions + 0.5.
+
+## Owner-requested mobile completion (2026-07-24)
+
+The previously shed “new conversation” workflow is reopened and completed for the mobile PWA. The
+list exposes a 48-pixel New Conversation control that opens a full-screen, independently scrollable
+`?new=1` contact picker. Selecting one contact calls the capability-checked
+`/api/message-conversations` Worker, reuses or creates only a direct thread, and replaces the URL
+with `?c=<id>` without sending.
+
+Each direct thread loads authoritative service-SMS status. SMS/MMS stays fail-closed during loading,
+errors, DND, STOP, or missing consent. Active internal admin/office users may reuse the prior-consent
+attestation modal; technicians see the restriction without an evidence-writing control. Internal
+notes remain available, and a successful attestation never auto-sends. The added mobile consent
+surface and suppression copy are localized in English, Spanish, and Portuguese. Opening a thread
+anchors the newest message/composer instead of restoring an offset above the bottom.
+
+The capability remains behind `page:tech_msgs_v2` until the exact reviewed build is deployed to both
+Preview and Production and receives owner-device verification.

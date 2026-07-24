@@ -43,6 +43,7 @@ import { useTranslation } from 'react-i18next';
 import TechMsgsPane from './messages/TechMsgsPane.jsx';
 import ConvoList from './messages/ConvoList.jsx';
 import ThreadView from './messages/ThreadView.jsx';
+import NewConversationView from './messages/NewConversationView.jsx';
 import { useTechConversations } from './messages/useTechConversations.js';
 import { useConvoMutations } from './messages/useConvoMutations.js';
 import { mergeConvoIntoList, hasConversation } from './messages/msgsSelectors.js';
@@ -55,6 +56,7 @@ export default function TechMessagesV2({ active = true }) {
   const navigate = useNavigate();
 
   const activeId = searchParams.get('c');
+  const newConversationOpen = searchParams.get('new') === '1';
   const threadScrollRef = useRef(null);
 
   const { setUnread, markAllRead, enableDnd } = useConvoMutations();
@@ -111,14 +113,33 @@ export default function TechMessagesV2({ active = true }) {
     setSearchParams(next);           // push → Back / iOS swipe-back closes the thread
   }, [searchParams, setSearchParams]);
 
+  const openNewConversation = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('c');
+    next.set('new', '1');
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+
   const closeThread = useCallback(() => {
     // navigate(-1) mirrors the push so the back-stack stays honest (native swipe-back).
     navigate(-1);
   }, [navigate]);
 
+  const handleConversationStarted = useCallback((conversation) => {
+    setDeepLinked(conversation);
+    queryClient.setQueriesData({ queryKey: ['tech', 'convos'] }, (data) => {
+      if (!data || !Array.isArray(data.conversations)) return data;
+      return { ...data, conversations: mergeConvoIntoList(data.conversations, conversation) };
+    });
+    const next = new URLSearchParams(searchParams);
+    next.delete('new');
+    next.set('c', conversation.id);
+    setSearchParams(next, { replace: true });
+  }, [queryClient, searchParams, setSearchParams]);
+
   // The thread layer covers the list whenever a ?c= is present (real thread OR the
   // not-found panel) so Back always returns to the list, never a dead end.
-  const threadOpen = !!activeId && (!!activeConv || deepLinkFailed);
+  const threadOpen = newConversationOpen || (!!activeId && (!!activeConv || deepLinkFailed));
 
   return (
     <TechMsgsPane
@@ -138,10 +159,16 @@ export default function TechMessagesV2({ active = true }) {
           onSearchChange={setSearchInput}
           onSetUnread={setUnread}
           onMarkAllRead={markAllRead}
+          onNewConversation={openNewConversation}
         />
       )}
       thread={threadOpen ? (
-        activeConv ? (
+        newConversationOpen ? (
+          <NewConversationView
+            onBack={closeThread}
+            onStarted={handleConversationStarted}
+          />
+        ) : activeConv ? (
           <ThreadView
             key={activeId}
             convId={activeId}

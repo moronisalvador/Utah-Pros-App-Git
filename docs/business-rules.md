@@ -180,3 +180,17 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   labels, and verification time, never the credential or raw provider error body.
 - Old credentials are revoked only after every surviving runtime is inventoried, deployed against
   the managed source, and smoke-tested.
+
+## Mobile person-to-person messaging
+
+- Starting a conversation is not consent and never sends a message.
+- A contact's presence in UPR is not consent evidence. Direct SMS/MMS stays blocked until the
+  authoritative consent decision allows it; loading, read failure, DND, STOP, phone mismatch, and
+  missing evidence fail closed.
+- Active internal admin/office employees may attest documented prior service consent. Technicians
+  may view the blocked state but cannot create the evidence record.
+- Recording consent never automatically sends or retries a draft. Staff must explicitly press Send,
+  and the server rechecks the complete consent/DND boundary.
+- Internal notes remain available when customer messaging is blocked because they do not leave UPR.
+- CallRail is person-to-person only. Scheduled, automated, group, bulk, campaign, and broadcast
+  sends never use it.

@@ -13,6 +13,17 @@
     "markUnread": "Marcar como no leída",
     "rowActions": "Acciones de la conversación"
   },
+  "newConversation": {
+    "title": "Nueva conversación",
+    "searchPlaceholder": "Buscar contactos",
+    "typeHint": "Escribe al menos 2 caracteres para buscar un contacto",
+    "loading": "Cargando contactos…",
+    "loadError": "No se pudieron cargar los contactos",
+    "startError": "No se pudo iniciar la conversación",
+    "empty": "No se encontraron contactos",
+    "unnamed": "Contacto sin nombre",
+    "starting": "Abriendo…"
+  },
   "filters": {
     "all": "Todas",
     "unread": "No leídas",
@@ -41,6 +52,57 @@
     "viewJob": "Ver trabajo",
     "enableDnd": "Activar No Molestar",
     "dndOnState": "No Molestar está activo"
+  },
+  "consent": {
+    "checking": "Verificando permiso para SMS…",
+    "unavailable": "El estado del permiso para SMS no está disponible",
+    "tryAgain": "Inténtalo de nuevo antes de enviar un mensaje.",
+    "missing": "El permiso para SMS no está registrado",
+    "missingDetail": "Verifica el permiso previo para mensajes de servicio antes de escribirle a este contacto.",
+    "record": "Registrar permiso verificado",
+    "officeOnly": "Se requiere aprobación de oficina o administrador",
+    "suppression": {
+      "pendingStop": {
+        "title": "La solicitud STOP de SMS aún se está procesando",
+        "detail": "Espera a que termine el proceso de baja. El permiso previo no puede anular STOP."
+      },
+      "optedOut": {
+        "title": "Este número canceló los SMS",
+        "detail": "La persona debe enviar START antes de que el personal pueda escribirle de nuevo."
+      },
+      "dnd": {
+        "title": "SMS está bloqueado por No Molestar",
+        "detail": "Otro contacto con este número tiene activado No Molestar."
+      },
+      "unavailable": {
+        "title": "No se puede registrar el permiso para SMS",
+        "detail": "Confirma el contacto y el número de teléfono antes de intentarlo de nuevo."
+      }
+    }
+  },
+  "consentAttestation": {
+    "title": "Registrar permiso verificado para SMS",
+    "cancel": "Cancelar",
+    "record": "Registrar permiso",
+    "recording": "Registrando…",
+    "recorded": "Permiso para SMS registrado",
+    "recordError": "No se pudo registrar el permiso para SMS",
+    "intro": "Registra esto solo después de verificar que {{contact}} dio permiso a Utah Pros para enviar mensajes de servicio. La existencia del contacto por sí sola no es permiso.",
+    "thisContact": "este contacto",
+    "methodLabel": "¿Cómo se proporcionó el permiso?",
+    "methodPlaceholder": "Selecciona una fuente",
+    "methods": {
+      "verbalPermission": "Permiso verbal en una llamada",
+      "signedWorkAuthorization": "Autorización de trabajo firmada",
+      "otherWrittenPermission": "Otro permiso por escrito",
+      "customerRequestedTexts": "El cliente pidió que le enviemos mensajes",
+      "otherVerifiedPermission": "Otro permiso verificado"
+    },
+    "dateLabel": "¿Cuándo se obtuvo el permiso?",
+    "evidenceLabel": "Nota de evidencia",
+    "evidencePlaceholder": "Ejemplo: llamada grabada a las 2:14 p. m. o autorización guardada en Documentos del trabajo",
+    "evidenceHint": "Mínimo 10 caracteres ({{count}}/500). La fuente, fecha del permiso, identidad del empleado, IP confiable y hora del servidor se guardarán en el historial.",
+    "confirm": "Verifiqué que esta persona dio permiso a Utah Pros Restoration para enviar mensajes de servicio sobre el trabajo solicitado y que no lo ha revocado. Esto no elimina STOP ni No Molestar."
   },
   "composer": {
     "placeholder": "Mensaje",

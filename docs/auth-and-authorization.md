@@ -250,3 +250,14 @@ through the attestation write, closing concurrent role/deactivation races. The p
 function-definition hash drift or duplicate patch anchor before replacing either service-only RPC.
 Read-only catalog recapture confirmed both functions remain `SECURITY INVOKER`, use an empty
 `search_path`, deny browser roles and permit only `service_role` execution.
+
+`GET/POST /api/message-conversations` requires the same server-side Conversations capability as
+the messaging send surface before any service-role read or write. Contact search is length- and
+grammar-bounded, returns only `id`, `name`, `phone`, and `company`, and caps results at 25.
+`find_or_create_conversation(uuid)` is `SECURITY INVOKER`, asserts `service_role` inside the
+function, and denies direct execution to `PUBLIC`, `anon`, and `authenticated`.
+
+The mobile PWA may read one contact's redacted consent decision through the existing
+`GET /api/attest-sms-consent` Worker. Only active, internal admin/office employees can record prior
+consent; technicians cannot. The UI fails closed while status is loading or unavailable, and
+`/api/send-message` independently rechecks consent and DND before provider dispatch.

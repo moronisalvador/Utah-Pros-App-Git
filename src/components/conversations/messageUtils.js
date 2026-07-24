@@ -230,23 +230,28 @@ export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
   );
 
   let suppressionCopy = null;
+  let suppressionKey = null;
   if (matches && !checking) {
     if (status.source === 'pending_stop') {
+      suppressionKey = 'pendingStop';
       suppressionCopy = {
         title: 'SMS STOP request is still processing',
         detail: 'Wait for the inbound opt-out to finish processing. Prior permission cannot override STOP.',
       };
     } else if (status.source === 'explicit_opt_out') {
+      suppressionKey = 'optedOut';
       suppressionCopy = {
         title: 'This phone number opted out of SMS',
         detail: 'They must text START before staff can send another message.',
       };
     } else if (status.code === 'DND_ACTIVE') {
+      suppressionKey = 'dnd';
       suppressionCopy = {
         title: 'SMS is blocked by Do Not Disturb',
         detail: 'Another contact with this phone number has Do Not Disturb enabled.',
       };
     } else if (!canAttest && !status.allowed && !status.error) {
+      suppressionKey = 'unavailable';
       suppressionCopy = {
         title: 'SMS permission cannot be recorded',
         detail: 'Confirm the contact and phone number before trying again.',
@@ -254,7 +259,13 @@ export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
     }
   }
 
-  return Object.freeze({ matches, checking, canAttest, suppressionCopy });
+  return Object.freeze({
+    matches,
+    checking,
+    canAttest,
+    suppressionKey,
+    suppressionCopy,
+  });
 }
 
 // ─── SECTION: Helpers — per-conversation draft persistence ──────────────
