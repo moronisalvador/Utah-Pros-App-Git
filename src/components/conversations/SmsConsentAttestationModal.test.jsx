@@ -39,6 +39,7 @@ describe('SmsConsentAttestationModal', () => {
     expect(output).toContain('Signed work authorization');
     expect(output).toContain('type="date"');
     expect(output).toContain('Evidence note');
+    expect(output).toContain('does not enable scheduled');
     expect(output).toContain('Contact existence alone is not permission');
     expect(output).toContain('This does not clear STOP or Do Not Disturb');
     expect(output).toMatch(/form="sms-consent-attestation" disabled=""/);

@@ -30,6 +30,7 @@ import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui';
 import { getAuthHeader } from '@/lib/realtime';
 import { err, ok } from '@/lib/toast';
+import { recordPriorP2pConsent } from './smsConsentRemediation';
 
 const METHODS = [
   { value: 'verbal_permission', label: 'Verbal permission on a call' },
@@ -82,25 +83,18 @@ export default function SmsConsentAttestationModal({
     setSubmitting(true);
     try {
       const authHeader = await getAuthHeader();
-      const response = await fetch('/api/attest-sms-consent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          contact_id: contactId,
-          consent_method: method,
-          consent_obtained_on: consentObtainedOn,
-          evidence_note: note,
-        }),
+      const consent = await recordPriorP2pConsent({
+        authHeader,
+        contactId,
+        method,
+        consentObtainedOn,
+        evidenceNote: note,
       });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not record SMS permission');
-      }
 
       ok(retryAfterRecord
         ? 'SMS permission recorded — retrying message'
         : 'SMS permission recorded');
-      onRecorded?.(data.consent);
+      onRecorded?.(consent);
     } catch (error) {
       err(error.message || 'Could not record SMS permission');
     } finally {
@@ -139,7 +133,8 @@ export default function SmsConsentAttestationModal({
       <form id="sms-consent-attestation" onSubmit={submit}>
         <p className="conv-consent-attest-copy">
           Record this only after verifying {contactName || 'this contact'} gave Utah Pros permission
-          to send service-related texts. Contact existence alone is not permission.
+          for staff to send person-to-person service texts. This does not enable scheduled,
+          automated, bulk, or marketing messages. Contact existence alone is not permission.
         </p>
 
         <div className="form-group">
@@ -186,7 +181,8 @@ export default function SmsConsentAttestationModal({
             required
           />
           <div className="conv-consent-attest-hint">
-            The source, consent date, your staff identity, and the server timestamp will be kept in consent history.
+            The source, consent date, your staff identity, trusted request IP, and server timestamp
+            will be kept in consent history.
           </div>
         </div>
 
