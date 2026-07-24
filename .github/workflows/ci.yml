@@ -71,6 +71,14 @@ jobs:
       - name: Test
         run: npm test
 
+      # Credential-free synthetic browser foundation only. The target origin is a code constant
+      # (127.0.0.1:4173); production/dev/hosted Supabase and provider egress fail closed.
+      - name: Install governed browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Test credential-free browser foundation
+        run: npm run test:browser
+
       # Non-blocking until the 175-error lint baseline is cleared. Surfaces lint
       # output in the run without failing the gate. Flip to blocking by removing
       # continue-on-error once the baseline is green.
