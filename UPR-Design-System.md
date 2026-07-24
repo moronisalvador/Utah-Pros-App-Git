@@ -1,5 +1,5 @@
 # UPR Platform — Design System Reference
-**Last updated:** July 13, 2026 (UX-Quality F-S2: minted the semantic token family + motion catalog, added the shared UI primitives `@/components/ui`, the Kit Registry, the dark-theme contract, and the Motion catalog; **deleted the inline-hex Status Color Palette recipe** — it contradicted the "no hardcoded colors" rule and was the single largest source of hex duplication)
+**Last updated:** July 23, 2026 (Figma-readiness inventory reverified the four-kit boundary, shared primitives and token sources; no visual standard or runtime component changed). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
 **For:** Claude Code — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
@@ -184,7 +184,7 @@ auto-zooms below 16px). Never set a font-size below these.
 
 ---
 
-## Kit Registry — which system a surface uses *(Last-verified: 2026-07-13)*
+## Kit Registry — which system a surface uses *(Last-verified: 2026-07-23)*
 
 Four visual systems coexist **by design**. Pick the one that owns the surface you're building; never mix
 their tokens/components. Full details are in each system's section below.
