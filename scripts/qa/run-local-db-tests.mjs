@@ -30,6 +30,7 @@ import {
   LOCAL_DATABASE_SENTINEL,
   assertLocalDatabaseTarget,
 } from '../../tests/qa/lib/target-policy.mjs';
+import { safeChildEnv } from './safe-child-env.mjs';
 
 function refuse(reason) {
   process.stderr.write(`Local DB QA refused: ${reason}\n`);
@@ -64,13 +65,16 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
       ],
       {
         cwd: root,
-        env: {
-          ...process.env,
+        env: safeChildEnv(process.env, {
+          NODE_ENV: 'test',
+          SUPABASE_URL: process.env.SUPABASE_URL,
+          SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+          SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
           VITE_SUPABASE_URL: process.env.SUPABASE_URL,
           VITE_SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
           UPR_TEST_LANE: 'db',
           UPR_QA_CONFIRMED_LOCAL: LOCAL_DATABASE_SENTINEL,
-        },
+        }),
         stdio: 'inherit',
         windowsHide: true,
       },

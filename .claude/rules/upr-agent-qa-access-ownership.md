@@ -24,24 +24,26 @@ deployment, account, or shared-database action was owned or changed. P1 ownershi
 close-out. P2a owns only the fail-closed runner contract until a separate checkpoint opens a governed
 local Supabase runtime/config and deterministic database fixtures.
 
-## 2. Encircle landed baseline and freeze
+## 2. Historical Encircle baseline and superseded P0 freeze
 
 Encircle implementation is now committed and pushed to `origin/dev` at `0a06a21`. The owner reports
 CI and Cloudflare staging passed. Its shared migration remains unapplied, its rollout flag remains
 OFF, and credentials remain unchanged. The legacy Netlify Demo Sheet is owner-confirmed obsolete and
 unsupported; it is not a supported QA target or credential-cutover dependency.
 
-This handoff permits the three planning artifacts to be rebased and committed. It does not authorize
-QA implementation, the pending migration, a flag change, credential entry/rotation, Netlify cleanup,
-or write-capable automation. Until a later phase receives exact ownership, this QA initiative must
-not edit:
+At P0 this handoff permitted only the three planning artifacts. It did not authorize QA
+implementation, the pending migration, a flag change, credential entry/rotation, Netlify cleanup,
+or write-capable automation. The later owner instruction superseded that restriction only for the
+exact completed P1 paths in section 1. The following product/shared-runtime paths remain frozen:
 
 - any Encircle page, component, Worker, library, migration, test, reference, or configuration;
 - `src/contexts/AuthContext.jsx`, `src/App.jsx`, or shared layouts;
 - `functions/lib/{auth,http,worker-runs,supabase,cors,credentials}.js`;
 - provider adapters or money/messaging Workers;
-- `package.json`, `package-lock.json`, Vite/Vitest/Playwright configuration, `.gitignore`, or CI;
 - Supabase migrations/tests, Cloudflare configuration, or existing canonical docs.
+
+Package/lock, Vitest/Playwright configuration, `.gitignore`, the assigned CI block, and exact
+canonical close-out documents were opened only for P1 and are released again at close-out.
 
 Before P1 or later, reverify the live/deployed Encircle state read-only and explicitly reserve every
 shared hotspot from the `0a06a21` baseline. Source presence is not proof that its migration, flag, or

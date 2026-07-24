@@ -31,17 +31,51 @@ const DENIED_ACTIONS = [
   'codeGeneration',
   'publicPublish',
 ];
-const ASK_ACTIONS = [
-  'readOrExport',
-  'writeDesign',
-  'comment',
-  'share',
-  'import',
-  'repositoryWrite',
-];
+const ASK_ACTIONS = {
+  readOrExport: 'ask-exact-scope',
+  writeDesign: 'ask-every-change',
+  comment: 'ask-every-change',
+  share: 'ask-every-change',
+  import: 'ask-every-change',
+  repositoryWrite: 'ask-every-change',
+};
+const AUTHORITY = {
+  approvedDesignIntent: 'repository-until-approved-figma-file-version',
+  runtimeBehavior: 'repository',
+  authorizationAccessibilityResponsiveTests: 'repository',
+  tokensComponentsShippedSource: 'repository',
+  conflictRule: 'repository-until-reviewed-commit',
+};
+const EXACT_KEYS = {
+  root: ['schemaVersion', 'status', 'lastVerified', 'scope', 'authority', 'actions', 'artifacts'],
+  scope: ['workspaceIds', 'fileIds', 'wildcardsAllowed', 'publicSharingAllowed'],
+  authority: Object.keys(AUTHORITY),
+  actions: [...DENIED_ACTIONS, ...Object.keys(ASK_ACTIONS)],
+  artifacts: [
+    'authStateInRepository',
+    'customerDataAllowed',
+    'baselineRequiresReleaseSha',
+    'baselineRequiresManifest',
+  ],
+};
+
+function rejectUnknownKeys(errors, label, value, allowed) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    errors.push(`${label} must be an object`);
+    return;
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) errors.push(`${label}.${key} is not allowed`);
+  }
+}
 
 export function validateFigmaGovernance(policy) {
   const errors = [];
+  rejectUnknownKeys(errors, 'policy', policy, EXACT_KEYS.root);
+  rejectUnknownKeys(errors, 'scope', policy?.scope, EXACT_KEYS.scope);
+  rejectUnknownKeys(errors, 'authority', policy?.authority, EXACT_KEYS.authority);
+  rejectUnknownKeys(errors, 'actions', policy?.actions, EXACT_KEYS.actions);
+  rejectUnknownKeys(errors, 'artifacts', policy?.artifacts, EXACT_KEYS.artifacts);
   if (policy?.schemaVersion !== 1) errors.push('schemaVersion must equal 1');
   if (policy?.status !== 'disconnected') errors.push('status must remain disconnected');
   if (policy?.scope?.wildcardsAllowed !== false) errors.push('wildcard scope must be disabled');
@@ -50,29 +84,30 @@ export function validateFigmaGovernance(policy) {
     const values = policy?.scope?.[field];
     if (!Array.isArray(values)) {
       errors.push(`${field} must be an array`);
-    } else if (values.some((value) => typeof value !== 'string' || !value || /[*?]/.test(value))) {
-      errors.push(`${field} contains an empty or wildcard scope`);
+    } else if (values.length !== 0) {
+      errors.push(`${field} must remain empty while disconnected`);
     }
   }
   for (const action of DENIED_ACTIONS) {
     if (policy?.actions?.[action] !== 'deny') errors.push(`${action} must remain deny`);
   }
-  for (const action of ASK_ACTIONS) {
-    if (!String(policy?.actions?.[action] || '').startsWith('ask-')) {
-      errors.push(`${action} must require exact approval`);
-    }
+  for (const [action, expected] of Object.entries(ASK_ACTIONS)) {
+    if (policy?.actions?.[action] !== expected) errors.push(`${action} must equal ${expected}`);
   }
-  if (policy?.authority?.runtimeBehavior !== 'repository') {
-    errors.push('runtime behavior authority must remain the repository');
-  }
-  if (policy?.authority?.authorizationAccessibilityResponsiveTests !== 'repository') {
-    errors.push('engineering safety authority must remain the repository');
+  for (const [field, expected] of Object.entries(AUTHORITY)) {
+    if (policy?.authority?.[field] !== expected) errors.push(`${field} must equal ${expected}`);
   }
   if (policy?.artifacts?.authStateInRepository !== false) {
     errors.push('Figma Auth state must be forbidden from the repository');
   }
   if (policy?.artifacts?.customerDataAllowed !== false) {
     errors.push('customer data must remain forbidden');
+  }
+  if (policy?.artifacts?.baselineRequiresReleaseSha !== true) {
+    errors.push('baselines must require a release SHA');
+  }
+  if (policy?.artifacts?.baselineRequiresManifest !== true) {
+    errors.push('baselines must require a manifest');
   }
   return errors;
 }

@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from '@playwright/test';
 
+import { safeChildEnv } from './safe-child-env.mjs';
 import { assertCdpLaunchPolicy } from '../../tests/qa/lib/target-policy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -38,6 +39,7 @@ try {
   assertCdpLaunchPolicy({ transport, userDataDir: profileRoot, repositoryRoot: root });
   const context = await chromium.launchPersistentContext(profileRoot, {
     headless: true,
+    env: safeChildEnv(process.env, { NODE_ENV: 'test' }),
     serviceWorkers: 'block',
   });
   const page = context.pages()[0] || await context.newPage();

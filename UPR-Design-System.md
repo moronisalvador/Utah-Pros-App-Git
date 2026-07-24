@@ -191,10 +191,10 @@ their tokens/components. Full details are in each system's section below.
 
 | Kit | Scope | Tokens source | Components | Notes |
 |---|---|---|---|---|
-| **Main / Shared** | Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs, everything not below | `:root` tokens in `index.css` (`--bg-*`, `--text-*`, `--accent`, `--success/--danger/…`, `--space-*`, `--radius-*`, `--motion-*`) | `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton) + the `.btn`/`.card`/`.input` utility classes | The default. New pages use this unless they live in a kit below. |
+| **Main / Shared** | Customers, Jobs, Claims, Admin, Settings, JobPage/CustomerPage tabs, everything not below; includes the Admin Mobile `.am-*` composition under `/tech/admin/*` | `:root` tokens in `index.css` (`--bg-*`, `--text-*`, `--accent`, `--success/--danger/…`, `--space-*`, `--radius-*`, `--motion-*`) | `@/components/ui` (Modal, StatusPill, EmptyState, ErrorState, PageHeader, SearchInput, IconButton) + the `.btn`/`.card`/`.input` utility classes + `src/components/admin-mobile/**` | The default. Admin Mobile is a responsive Main composition, not a fifth kit. New pages use this unless they live in a kit below. |
 | **Collections Kit** | Collections/AR, Time Tracking, Invoice/Estimate editors | `collTokens.js` (page-scoped hex — a DIFFERENT green/red than `--success`/`--danger`) | `collKit.jsx` (`CollCard`, `SegControl`, `Kpi`, `PopoverButton`, `StatusBadge`, `Pill`, …), `.coll-*` CSS | Page-scoped; do NOT import into unrelated pages. |
 | **Overview Kit** | Dashboard/home only | `overview/tokens.js` (dashboard-scoped) | `Card.jsx`/`Widgets.jsx` + `react-grid-layout`, `.ovw-*` CSS | Dashboard only. |
-| **Tech Mobile** | `src/pages/tech/**`, `src/components/tech/**` | `--tech-*` + `--status-*` tokens scoped on `.tech-layout`; v2 adds `tv2-*` classes | tech + tech-v2 primitives (`StatusChip`, `ApptListRow`, `TechPane`, skeletons) | Dark-mode capable (see Dark-theme contract). Status owns the color channel. |
+| **Tech Mobile** | `src/pages/tech/**`, `src/components/tech/**`, except `/tech/admin/*` pages consuming `src/components/admin-mobile/**` | `--tech-*` + `--status-*` tokens scoped on `.tech-layout`; v2 adds `tv2-*` classes | tech + tech-v2 primitives (`StatusChip`, `ApptListRow`, `TechPane`, skeletons) | Dark-mode capable (see Dark-theme contract). Status owns the color channel. |
 
 The `@/components/ui` primitives + `:root` tokens are the **shared** layer the Main kit uses and the
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
@@ -206,6 +206,10 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
   `--accent-light`, the `--status-*` tints, and the F-S2 semantic `--*-bg`/`--*-border` tints). The desktop
   office app is light-only today.
+- **Admin Mobile exception:** `/tech/admin/*` is a Main/Shared `.am-*` composition inside the tech
+  route shell. It is captured and accepted light-only until its `.am-*` tokens receive a separately
+  reviewed dark-theme contract; the surrounding tech shell may be dark without making the admin
+  content a Tech Mobile surface.
 - **The contract: components consume color ONLY through `var(--token)`.** A component that reads a token
   goes dark for free when the token is re-pointed; a component with an inline hex does not (and becomes a
   dark-mode bug). This is *why* `StatusPill` reads `--success`/`--danger`/… instead of the old inline

@@ -38,13 +38,13 @@ occurred.
 | 2. CAP-SEC-001/CAP-GOV-001 contained or owner-blocked | The tracked local permission history still contains the redacted live-looking Encircle bearer finding; rotation/history ruling and permission reset require owner/provider action. | **Owner-blocked, explicitly.** Rotate/revoke without reproducing the secret; decide history treatment; stop tracking the local permission file; reset mutation approvals; verify scanner fixtures. |
 | 3. Governed Figma/plugin mode and authority | Tooling review recommends connection only after cleanup. No Figma plugin is installed/connected in this checkpoint. | **Owner decision required.** Default proposal: reads/exports may run only in the approved project/file; every Figma write/comment/share/import and every repository change asks; no auto-sync, plugin install, seat purchase, or broad workspace access. |
 | 4. Authenticated read-only staging/browser capture | Repository documents a real-login account path, but this checkpoint has no dedicated authenticated browser session, role matrix, or screenshot capture proof. Staging shares production Supabase. | **Owner/session gate.** Provide a dedicated non-human browser profile/session with read-only navigation only. No form submit, mutation, provider action, money action, or human Chrome attachment. |
-| 5. Inventory and exact first sprint | Repository inventory: 164 files under `src/pages`, 204 under `src/components`, and 170 distinct CSS custom-property definitions. The design-system kit registry and sprint below constrain the work. | **Ready as plan.** Recount at sprint start after UI worktree clearance. |
+| 5. Inventory and exact first sprint | Repository inventory: 165 files under `src/pages`, 204 under `src/components`, and 170 distinct CSS custom-property definitions. The design-system kit registry and sprint below constrain the work. | **Ready as plan.** Recount at sprint start after UI worktree clearance. |
 | 6. Screenshot/version/handoff acceptance | Rules below define capture metadata, authority, diffs, and acceptance. | **Ready as contract, owner approval pending.** |
 
 ## Authority and permission contract
 
-- Figma owns approved design intent, annotated flows, component/variable proposals, and review
-  artifacts.
+- The repository owns design intent while disconnected. After an owner approves an exact Figma
+  file/version, that version may own its explicitly approved design intent and review artifacts.
 - The repository owns runtime behavior, authorization, accessibility, responsive implementation,
   tokens, component APIs, tests, and the shipped source of truth.
 - `UPR-Design-System.md` and `src/components/ui` remain authoritative until a reviewed repository
@@ -81,9 +81,11 @@ the state as unavailable; do not mutate production configuration to manufacture 
 **Sprint name:** Shared Main-kit list/detail foundation.
 
 **In scope:** design-only audit and proposed Figma components for `PageHeader`, list toolbar/search,
-standard card/table row, `StatusPill`, loading skeleton, `EmptyState`, `ErrorState`, `Modal`
+standard card/table row, `StatusPill`, the Main `TabLoading`/`.loading-page` vocabulary,
+`EmptyState`, `ErrorState`, `Modal`
 desktop/bottom-sheet, and the 390px responsive shell. Use `/jobs` plus an approved read-only job
-detail as the representative surface. Include light/dark and keyboard/focus annotations.
+detail as the representative surface. Include light-only and keyboard/focus annotations; Main does
+not gain a dark runtime contract through this design sprint.
 
 **Out of scope:** Collections/Overview/Tech kit consolidation, Conversations or Integrations while
 their dirty worktree exists, new product behavior, database/API changes, content/data migrations,
@@ -132,9 +134,12 @@ The internal contract work is now implemented without connecting Figma:
 - `docs/upr-figma-governance-and-handoff.md` records repository-versus-Figma authority, exit and
   version rules, a handoff manifest, current design-system/token/component/page inventory, and the
   desktop 1440×1000 plus mobile 390×844 capture plan;
-- the inventory was recounted as 164 page files, 204 component files, 112 route declarations,
+- the inventory was recounted as 165 page files, 204 component files, 112 route declarations,
   212 CSS custom-property definitions/170 distinct names, and ten shared `src/components/ui` files
   including seven runtime primitives.
+- the 49-file `admin-mobile` system is classified as a Main/Shared `.am-*` composition routed under
+  `/tech/admin/*`, and both office/tech Conversations are kit-specific compositions rather than a
+  fifth kit.
 
 These repository prerequisites change gate 3 from “contract missing” to “contract implemented,
 connection scope unapproved.” They do not clear the external boundary. The overlapping messaging

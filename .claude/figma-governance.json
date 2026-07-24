@@ -9,7 +9,7 @@
     "publicSharingAllowed": false
   },
   "authority": {
-    "approvedDesignIntent": "figma",
+    "approvedDesignIntent": "repository-until-approved-figma-file-version",
     "runtimeBehavior": "repository",
     "authorizationAccessibilityResponsiveTests": "repository",
     "tokensComponentsShippedSource": "repository",

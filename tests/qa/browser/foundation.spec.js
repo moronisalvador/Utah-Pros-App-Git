@@ -108,20 +108,25 @@ test('rejects production database and provider egress', async ({
   await expect(page.getByText('Denied')).toBeVisible();
   await page.getByRole('button', { name: 'Provider request' }).click();
   await expect(page.getByText('Denied')).toBeVisible();
+  await page.getByRole('button', { name: 'Local write request' }).click();
+  await expect(page.getByText('Denied')).toBeVisible();
 
   expect(guardDecisions).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: 'deny', origin: 'https://glsmljpabrwonfiltiqm.supabase.co' }),
     expect.objectContaining({ kind: 'deny', origin: 'https://api.twilio.com' }),
+    expect.objectContaining({ kind: 'deny', origin: 'http://127.0.0.1:4173', reason: 'method' }),
   ]));
 });
 
-test('rejects external popup, WebSocket, download, and direct production navigation', async ({
+test('rejects popup, worker, WebSocket, download, and direct production navigation', async ({
   page,
   guardDecisions,
 }, testInfo) => {
   await page.goto(routeFor(testInfo.project.name));
   await page.getByRole('button', { name: 'External popup' }).click();
   await page.getByRole('button', { name: 'External WebSocket' }).click();
+  await expect(page.getByText('Denied')).toBeVisible();
+  await page.getByRole('button', { name: 'Unexpected Worker' }).click();
   await expect(page.getByText('Denied')).toBeVisible();
   await page.getByRole('link', { name: 'Download' }).click();
 

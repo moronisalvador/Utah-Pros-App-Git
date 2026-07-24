@@ -1,3 +1,17 @@
+<!--
+FILE: tests/qa/fixtures/browser-foundation.html
+
+WHAT THIS DOES (plain language):
+  Provides deterministic synthetic UI states and denial controls for credential-free browser QA.
+
+DEPENDS ON:
+  Internal: scripts/qa/serve-browser-fixture.mjs, tests/qa/browser/foundation.spec.js
+  Data:     reads → synthetic labels only
+            writes → DOM state only
+
+NOTES / GOTCHAS:
+  - This is not the UPR application and contains no customer, employee, Auth, or provider data.
+-->
 <!doctype html>
 <html lang="en">
 <head>
@@ -69,8 +83,10 @@
       <div class="controls">
         <button id="production-fetch">Production database request</button>
         <button id="provider-fetch">Provider request</button>
+        <button id="local-write">Local write request</button>
         <button id="popup">External popup</button>
         <button id="websocket">External WebSocket</button>
+        <button id="worker">Unexpected Worker</button>
         <a id="download" download="fixture.txt" href="/qa?download=1">Download</a>
       </div>
       <output id="denial-result">Not attempted</output>
@@ -121,17 +137,24 @@
 
     const result = document.querySelector('#denial-result');
     async function attempt(action) {
+      result.textContent = 'Attempting';
       try { await action(); result.textContent = 'Unexpectedly allowed'; }
       catch { result.textContent = 'Denied'; }
     }
     document.querySelector('#production-fetch').addEventListener('click', () => attempt(() => fetch('https://glsmljpabrwonfiltiqm.supabase.co/rest/v1/employees')));
     document.querySelector('#provider-fetch').addEventListener('click', () => attempt(() => fetch('https://api.twilio.com/2010-04-01/Accounts.json')));
+    document.querySelector('#local-write').addEventListener('click', () => attempt(() => fetch('/qa', { method: 'POST' })));
     document.querySelector('#popup').addEventListener('click', () => window.open('https://utahpros.app/', '_blank', 'noopener'));
     document.querySelector('#websocket').addEventListener('click', () => attempt(() => new Promise((resolve, reject) => {
       const socket = new WebSocket('wss://dev.utahpros.app/realtime/v1/websocket');
       socket.onopen = resolve;
       socket.onerror = reject;
       socket.onclose = reject;
+    })));
+    document.querySelector('#worker').addEventListener('click', () => attempt(() => new Promise((resolve, reject) => {
+      const worker = new Worker('/qa-worker.js');
+      worker.onmessage = resolve;
+      worker.onerror = reject;
     })));
   </script>
 </body>

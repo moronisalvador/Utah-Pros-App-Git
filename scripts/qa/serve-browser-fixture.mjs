@@ -42,7 +42,7 @@ export function createFixtureServer() {
     const safePath = requestUrl.pathname === '/qa' || requestUrl.pathname === '/health';
 
     response.setHeader('Cache-Control', 'no-store');
-    response.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http: https: ws: wss:; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
+    response.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src http: https: ws: wss:; worker-src 'none'; img-src 'self' data:; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'");
     response.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
     response.setHeader('X-Content-Type-Options', 'nosniff');
 

@@ -26,6 +26,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import { safeChildEnv } from './safe-child-env.mjs';
+
 const lane = process.argv[2];
 if (!['unit', 'worker', 'qa'].includes(lane)) {
   process.stderr.write('Credential-free Vitest lane must be exactly unit, worker, or qa.\n');
@@ -34,13 +36,10 @@ if (!['unit', 'worker', 'qa'].includes(lane)) {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const reportPath = path.join(os.tmpdir(), `upr-vitest-${lane}-${process.pid}.json`);
-const childEnv = { ...process.env, UPR_TEST_LANE: lane };
-const sensitiveName =
-  /(?:SUPABASE|TWILIO|STRIPE|QBO|QUICKBOOKS|RESEND|ENCIRCLE|CALLRAIL|DEEPGRAM|GOOGLE|CLOUDFLARE|AUTH).*(?:KEY|TOKEN|SECRET|PASSWORD|URL)|^(?:VITE_SUPABASE_URL|VITE_SUPABASE_ANON_KEY)$/i;
-
-for (const key of Object.keys(childEnv)) {
-  if (sensitiveName.test(key)) delete childEnv[key];
-}
+const childEnv = safeChildEnv(process.env, {
+  NODE_ENV: 'test',
+  UPR_TEST_LANE: lane,
+});
 
 const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
 const result = spawnSync(

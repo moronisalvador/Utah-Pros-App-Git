@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Locks a Playwright browser context to the exact local fixture and read-only requests. It closes
- *   popups and rejects downloads, WebSockets, provider traffic, production traffic, and write methods.
+ *   popups and rejects workers, downloads, WebSockets, provider traffic, production traffic, and
+ *   write methods.
  *
  * DEPENDS ON:
  *   Packages:  @playwright/test
@@ -40,6 +41,9 @@ export async function installBrowserGuard(context, onDecision = () => {}) {
     const origin = originOf(request.url());
     try {
       assertBrowserTarget(request.url());
+      if (['worker', 'serviceworker'].includes(request.resourceType())) {
+        throw new Error('worker');
+      }
       if (!['GET', 'HEAD'].includes(method)) {
         throw new Error('write-method');
       }
@@ -49,7 +53,9 @@ export async function installBrowserGuard(context, onDecision = () => {}) {
       decision('deny', {
         method,
         origin,
-        reason: origin === LOCAL_BROWSER_ORIGIN ? 'method' : 'origin',
+        reason: ['worker', 'serviceworker'].includes(request.resourceType())
+          ? 'worker'
+          : origin === LOCAL_BROWSER_ORIGIN ? 'method' : 'origin',
       });
       await route.abort('blockedbyclient');
     }

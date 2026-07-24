@@ -105,7 +105,7 @@ Results:
 
 | Inventory | Count |
 |---|---:|
-| Files under `src/pages` | 164 |
+| Files under `src/pages` | 165 |
 | Files under `src/components` | 204 |
 | CSS custom-property definitions in `src/index.css` | 212 |
 | Distinct CSS custom-property names in `src/index.css` | 170 |
@@ -122,14 +122,14 @@ fully adopted.
 | Root `src/pages` | 35 | Main/Shared except named Collections, Overview and Conversations surfaces |
 | `src/pages/settings` | 20 | Main/Shared |
 | `src/pages/crm` | 20 | Main/Shared foundation with CRM-specific compositions; do not invent a fifth kit |
-| `src/pages/tech` | 89 | Tech Mobile |
+| `src/pages/tech` | 90 | Tech Mobile |
 
 ### Component inventory by repository area
 
 | Area | Files | Notes |
 |---|---:|---|
 | Root `src/components` | 50 | Shared/domain components; classify by consuming surface |
-| `admin-mobile` | 49 | Admin mobile compositions; verify Main/Shared versus tech-shell use per route |
+| `admin-mobile` | 49 | Main/Shared Admin Mobile composition routed under `/tech/admin/*`; `.am-*` remains its composition boundary, not a fifth kit or Tech Mobile primitive set |
 | `tech` | 33 | Tech Mobile |
 | `overview` | 18 | Overview Kit only |
 | `crm` | 17 | CRM-specific compositions on the Main/Shared foundation |
@@ -145,7 +145,7 @@ Do not merge kits during baseline capture or the first design sprint.
 
 | Kit | Owned surfaces | Token/component source | Repository files in primary component folder |
 |---|---|---|---:|
-| Main / Shared | Customers, Jobs, Claims, Admin, Settings and default surfaces | `:root` tokens, `.btn/.card/.input`, `src/components/ui` | 10 |
+| Main / Shared | Customers, Jobs, Claims, Admin, Settings, default surfaces, and the `.am-*` Admin Mobile composition | `:root` tokens, `.btn/.card/.input`, `src/components/ui`, `src/components/admin-mobile/**` | 10 shared primitives plus 49 Admin Mobile composition files |
 | Collections | Collections, Time Tracking, Invoice and Estimate editors | `collTokens.js`, `collKit.jsx`, `.coll-*` | 10 |
 | Overview | Dashboard/home only | `overview/tokens.js`, cards/widgets, `.ovw-*` | 18 |
 | Tech Mobile | `src/pages/tech/**`, `src/components/tech/**` | `.tech-layout` `--tech-*`/`--status-*`, `tv2-*` | 33 |
@@ -194,10 +194,11 @@ foundation validates the capture machinery and state vocabulary only; it is not 
 | billing-capable admin | one read-only invoice or estimate editor | Collections | yes | yes | line grid, totals, modal/sheet without save |
 | admin | `/settings` | Main/Shared | yes | yes | default, restricted row |
 | admin | `/settings/integrations` | Main/Shared | yes | yes | disconnected, loading/error; no connect action |
-| internal staff | `/conversations` | Conversations | yes | yes | list, selected thread, empty/error, mobile back state |
+| internal staff | `/conversations` | Main/Shared (Conversations composition) | yes | yes | list, selected thread, empty/error, mobile back state |
+| admin | one approved `/tech/admin/*` route | Main/Shared (Admin Mobile `.am-*` composition) | yes | yes | light-only card/list/detail, loading/error/empty, bottom sheet without mutation; manager unavailable by current gate |
 | field technician | `/tech` | Tech Mobile | yes | yes | light/dark, loading/error/ready, safe areas |
 | field technician | `/tech/schedule` | Tech Mobile | yes | yes | empty/upcoming, assigned rows, resume state |
-| field technician | `/tech/conversations` | Tech Mobile/Conversations | yes | yes | list/thread, exact back state |
+| field technician | `/tech/conversations` | Tech Mobile (Conversations composition) | yes | yes | list/thread, exact back state |
 | restricted fixture | `/crm/leads` | Main/Shared + CRM composition | yes | yes | allowed list, denied direct route, empty/error |
 | restricted fixture | `/crm/call-log` | Main/Shared + CRM composition | yes | yes | list/detail, unavailable recording |
 | approved fixture | shared primitive fixture or representative routes | Main/Shared | yes | yes | all seven primitives, five status tones, keyboard/focus |
@@ -261,9 +262,9 @@ authorization, accessibility, lifecycle, performance or responsive rules.
 
 Sprint: Shared Main-kit list/detail foundation.
 
-Design-only scope: `PageHeader`, list toolbar/search, standard card/table row, `StatusPill`, loading
-skeleton, `EmptyState`, `ErrorState`, `Modal` desktop/bottom-sheet, and the 390 shell using `/jobs`
-plus one approved read-only job detail.
+Design-only scope: `PageHeader`, list toolbar/search, standard card/table row, `StatusPill`,
+the existing Main `TabLoading`/`.loading-page` vocabulary, `EmptyState`, `ErrorState`, `Modal`
+desktop/bottom-sheet, and the 390 shell using `/jobs` plus one approved read-only job detail.
 
 Out of scope: kit consolidation, Conversations/Integrations while overlapping worktrees remain dirty,
 new behavior, database/API changes, feature flags, provider flows, money, owner-only controls,
