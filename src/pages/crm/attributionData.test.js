@@ -20,8 +20,12 @@
  *     'custom' is fully deterministic and asserted exactly.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
-import { rangeToDates } from './attributionData';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  fetchCrmSalesSummary,
+  normalizeCrmSalesSummary,
+  rangeToDates,
+} from './attributionData';
 
 describe('rangeToDates', () => {
   it('custom: reads both picked dates verbatim', () => {
@@ -60,5 +64,57 @@ describe('rangeToDates', () => {
 
   it('an unknown key falls back to unbounded, same as "all"', () => {
     expect(rangeToDates('not-a-real-key')).toEqual({ start: null, end: null });
+  });
+});
+
+describe('CRM sales summary — traced headline plus company-wide context', () => {
+  it('calls the canonical RPC with the same date window and normalizes PostgREST numbers', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      total_won: '104',
+      total_revenue: '628000.25',
+      traced_won: '8',
+      traced_revenue: '18752.35',
+    });
+
+    await expect(fetchCrmSalesSummary({ rpc }, '2026-07-01', '2026-07-22')).resolves.toEqual({
+      total_won: 104,
+      total_revenue: 628000.25,
+      traced_won: 8,
+      traced_revenue: 18752.35,
+    });
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith('get_crm_sales_summary', {
+      p_start_date: '2026-07-01',
+      p_end_date: '2026-07-22',
+    });
+  });
+
+  it('keeps an all-time window unbounded and missing values display as honest zeroes', async () => {
+    const rpc = vi.fn().mockResolvedValue(null);
+
+    await expect(fetchCrmSalesSummary({ rpc }, null, null)).resolves.toEqual({
+      total_won: 0,
+      total_revenue: 0,
+      traced_won: 0,
+      traced_revenue: 0,
+    });
+    expect(rpc).toHaveBeenCalledWith('get_crm_sales_summary', {
+      p_start_date: null,
+      p_end_date: null,
+    });
+  });
+
+  it('does not let malformed fields become NaN in a metric card', () => {
+    expect(normalizeCrmSalesSummary({
+      total_won: 'not-a-number',
+      total_revenue: undefined,
+      traced_won: Number.NaN,
+      traced_revenue: '',
+    })).toEqual({
+      total_won: 0,
+      total_revenue: 0,
+      traced_won: 0,
+      traced_revenue: 0,
+    });
   });
 });
