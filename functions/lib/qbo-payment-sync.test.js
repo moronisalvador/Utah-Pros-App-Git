@@ -26,7 +26,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../api/notify.js', () => ({ dispatchEvent: vi.fn(async () => ({ ok: true })) }));
 vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn() }));
 
-import { notifyPaymentReceived, syncQboPaymentToUpr } from './qbo-payment-sync.js';
+import {
+  notifyPaymentReceived,
+  syncQboPaymentToUpr,
+  readQboFault,
+  isQboNotFound,
+  QboRequestError,
+} from './qbo-payment-sync.js';
 import { dispatchEvent } from '../api/notify.js';
 import { qboFetch } from './quickbooks.js';
 
@@ -116,5 +122,69 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
     expect(out.results.some(r => r.skipped === 'already-synced')).toBe(true);
     expect(db.inserts).toHaveLength(0);
     expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ─── SECTION: Intuit Fault classification (2026-07-24) ──────────────
+//
+// Grounded in Intuit's documented behavior, not inference: entity reads report
+// "object not found" as HTTP **400 with Fault code 610**, never 404 — and Intuit's own
+// troubleshooting guide notes 610 also fires when a txn "is deleted by one user and
+// accessed by another". The pre-existing `res.status === 404` branch is therefore dead
+// code for this API, so a genuinely-missing payment used to fall through to a bare
+// `throw new Error('QBO get payment 400')`. That is exactly what one live production
+// event recorded, with no way to tell why.
+describe('Intuit Fault parsing + classification', () => {
+  const faultRes = (status, code, message, detail) => ({
+    ok: false,
+    status,
+    json: async () => ({ Fault: { type: 'ValidationFault', Error: [{ code, Message: message, Detail: detail }] } }),
+  });
+
+  it('parses code/message/detail out of a Fault body', async () => {
+    const fault = await readQboFault(faultRes(400, '610', 'Object Not Found', 'Object Not Found: Something you are trying to use has been made inactive.'));
+    expect(fault.status).toBe(400);
+    expect(fault.code).toBe('610');
+    expect(fault.message).toBe('Object Not Found');
+    expect(fault.detail).toContain('made inactive');
+  });
+
+  it('survives a non-JSON error body instead of masking it', async () => {
+    const fault = await readQboFault({ ok: false, status: 502, json: async () => { throw new Error('not json'); } });
+    expect(fault.status).toBe(502);
+    expect(fault.code).toBeNull();
+  });
+
+  it('treats 400/610 as not-found, and does NOT treat other 400s as not-found', async () => {
+    expect(isQboNotFound(await readQboFault(faultRes(400, '610', 'Object Not Found')))).toBe(true);
+    expect(isQboNotFound(await readQboFault(faultRes(400, '6240', 'Duplicate Name Exists')))).toBe(true);
+    expect(isQboNotFound(await readQboFault(faultRes(400, '2010', 'Invalid Reference')))).toBe(false);
+    expect(isQboNotFound(await readQboFault(faultRes(401, '3200', 'Unauthorized')))).toBe(false);
+  });
+
+  it('marks 429 and 5xx retryable, and a 400-family Fault permanent', async () => {
+    expect(new QboRequestError('get payment', await readQboFault(faultRes(429, '3001', 'Throttled'))).retryable).toBe(true);
+    expect(new QboRequestError('get payment', await readQboFault(faultRes(503, null, null))).retryable).toBe(true);
+    expect(new QboRequestError('get payment', await readQboFault(faultRes(400, '2010', 'Invalid Reference'))).retryable).toBe(false);
+  });
+
+  it('puts the fault code and message INTO the error text (the whole point)', async () => {
+    const err = new QboRequestError('get payment', await readQboFault(faultRes(400, '2010', 'Invalid Reference', 'bad ref')));
+    expect(err.message).toContain('400');
+    expect(err.message).toContain('code=2010');
+    expect(err.message).toContain('Invalid Reference');
+    expect(err.faultCode).toBe('2010');
+  });
+
+  it('a 610 payment read is a benign skip, not a throw', async () => {
+    qboFetch.mockResolvedValueOnce(faultRes(400, '610', 'Object Not Found'));
+    const out = await syncQboPaymentToUpr(ENV, { inserts: [] }, '5796');
+    expect(out.ok).toBe(true);
+    expect(out.results[0].skipped).toBe('payment-not-found');
+  });
+
+  it('a non-610 payment read still throws, now with the cause attached', async () => {
+    qboFetch.mockResolvedValueOnce(faultRes(400, '2010', 'Invalid Reference'));
+    await expect(syncQboPaymentToUpr(ENV, { inserts: [] }, '5796')).rejects.toThrow(/code=2010/);
   });
 });

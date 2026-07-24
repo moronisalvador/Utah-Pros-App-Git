@@ -33,6 +33,7 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { verifyIntuitSignature, sha256hex } from '../lib/intuit.js';
 import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment-sync.js';
+import { getConnection } from '../lib/quickbooks.js';
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -59,6 +60,19 @@ export async function onRequestPost(context) {
   const db = supabase(env);
   const notifications = Array.isArray(body.eventNotifications) ? body.eventNotifications : [];
 
+  // The realm a notification carries is the company the change happened in. Every QBO read we
+  // make is scoped to the realm on our STORED connection (qboFetch builds
+  // /v3/company/{conn.realm_id}/...), so an event from any other realm would silently be looked
+  // up in the wrong company — and Intuit answers that with a bare 400. Resolve our realm once
+  // and refuse mismatches explicitly instead of issuing a cross-company read.
+  let ourRealmId = null;
+  try {
+    const conn = await getConnection(env);
+    ourRealmId = conn?.realm_id ? String(conn.realm_id) : null;
+  } catch (err) {
+    console.error('qbo-webhook: cannot resolve QBO connection realm', err);
+  }
+
   for (const note of notifications) {
     const realmId = note.realmId || '';
     const entities = note.dataChangeEvent?.entities || [];
@@ -75,6 +89,18 @@ export async function onRequestPost(context) {
       }
       if (!claimed) continue; // duplicate delivery
 
+      // Cross-realm event: never read it out of the wrong company. Terminal by nature — a
+      // different company's payment will never become ours, so this is not retry-eligible.
+      if (ourRealmId && realmId && realmId !== ourRealmId) {
+        console.warn('qbo-webhook: ignoring event from another realm', realmId);
+        await db.update('qbo_events', `id=eq.${key}`, {
+          status: 'ignored',
+          error: `realm_mismatch: event realm ${realmId} is not the connected realm`,
+          processed_at: new Date().toISOString(),
+        });
+        continue;
+      }
+
       try {
         const op = String(e.operation || '');
         if (op === 'Delete' || op === 'Void' || op === 'Merge') {
@@ -85,7 +111,14 @@ export async function onRequestPost(context) {
         await db.update('qbo_events', `id=eq.${key}`, { status: 'processed', processed_at: new Date().toISOString() });
       } catch (err) {
         console.error('qbo-webhook process error', e.id, err);
-        await db.update('qbo_events', `id=eq.${key}`, { status: 'error', error: String(err?.message || err).slice(0, 500) });
+        // We always ack 200 to Intuit (it retries only at 20/30/50 min and then DISABLES the
+        // endpoint), so recovery is ours to own. Distinguish "try again" from "never will
+        // work" instead of flattening both to 'error' with no way to tell them apart.
+        const retryable = err?.retryable === true;
+        await db.update('qbo_events', `id=eq.${key}`, {
+          status: retryable ? 'retry' : 'error',
+          error: String(err?.message || err).slice(0, 500),
+        });
       }
     }
   }
