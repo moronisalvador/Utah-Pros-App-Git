@@ -7959,8 +7959,11 @@ available. The server remains the final authority and no attestation auto-sends.
 
 Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
 while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
-`app.callrail.com/msg/.../media/...` endpoint that redirects to CallRail's signed S3 asset. The
+`app.callrail.com/msg/.../media/...` endpoint that redirects to CallRail's signed S3 asset under a
+browser-authenticated session. The
 pending migrations/helper changes normalize only equivalent NANP identity and accept only that
-exact account/message/index path plus a validated short-lived redirect, with the CallRail token
-stripped before private media download. Readiness now reports actionable queues separately from
+exact account/message/index path plus a validated short-lived redirect. A controlled Preview MMS
+then proved the app host itself returns `401` to the API token, so verified app identities are
+canonicalized to the equivalent documented API media endpoint before download. The CallRail token
+is stripped before the signed S3 request. Readiness now reports actionable queues separately from
 terminal failure history.

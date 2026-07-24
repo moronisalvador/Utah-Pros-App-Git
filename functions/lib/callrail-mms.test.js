@@ -194,6 +194,12 @@ describe('CallRail MMS private ingestion', () => {
       index: 1,
       mediaUrl: MEDIA_URL,
     })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      providerMessageId: 'SCIabc',
+      index: 0,
+      mediaUrl: `${MEDIA_URL}?unexpected=value`,
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
   });
 
   it('refuses redirects outside CallRail MMS storage without uploading', async () => {

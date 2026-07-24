@@ -717,9 +717,10 @@ evidence:
 - the browser calls a bounded, capability-checked Worker rather than the privileged find-or-create
   RPC;
 - CallRail outbound projection accepts only equivalent NANP ten-digit/`+1` E.164 recipient forms;
-- inbound MMS accepts the exact authenticated CallRail app media endpoint observed in live history,
-  manually validates its short-lived signed storage redirect, and never forwards the CallRail token
-  or persists the provider URL; and
+- inbound MMS accepts the exact account-scoped CallRail app media identity observed in signed
+  webhooks, canonicalizes it to the equivalent documented API endpoint because the app host rejects
+  API-token downloads, manually validates its short-lived signed storage redirect, and never
+  forwards the CallRail token or persists the provider URL; and
 - readiness distinguishes actionable retry queues from terminal history.
 
 Release order is migration provenance and review, reviewed commit on `dev`, exact shared-database

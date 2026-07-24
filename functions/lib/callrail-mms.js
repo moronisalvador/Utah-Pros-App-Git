@@ -151,29 +151,41 @@ export function validateCallrailMediaEndpoint({
     `/v3/a/${encodeURIComponent(allowedAccount)}/text-messages/` +
     `${encodeURIComponent(message)}/media/${index}`
   ));
-  const exactAppPaths = Array.from(allowedAccounts, (allowedAccount) => (
-    `/msg/a/${encodeURIComponent(allowedAccount)}/messages/` +
-    `${encodeURIComponent(message)}/media/${index}`
+  const matchedAppAccount = Array.from(allowedAccounts).find((allowedAccount) => (
+    parsed.pathname === (
+      `/msg/a/${encodeURIComponent(allowedAccount)}/messages/` +
+      `${encodeURIComponent(message)}/media/${index}`
+    )
   ));
   const isDocumentedApiEndpoint =
     parsed.hostname === CALLRAIL_MMS_API_HOST
     && exactPaths.includes(parsed.pathname);
   // CallRail's live 2026-07-24 webhook/UI emitted this account-scoped endpoint
   // even though its public docs show the v3 API form. The account identity must
-  // still be one proven by authenticated account discovery.
+  // still be one proven by authenticated account discovery. The app endpoint
+  // requires a browser session and rejects the API token, so a verified match
+  // is canonicalized to the equivalent documented API endpoint.
   const isObservedAppEndpoint =
     parsed.hostname === CALLRAIL_MMS_APP_HOST
-    && exactAppPaths.includes(parsed.pathname);
+    && Boolean(matchedAppAccount);
   if (
     parsed.protocol !== 'https:'
     || parsed.port
     || parsed.username
     || parsed.password
+    || parsed.search
     || parsed.hash
     || (!isDocumentedApiEndpoint && !isObservedAppEndpoint)
     || parsed.href.length > 2_048
   ) {
     fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is outside the expected account.');
+  }
+  if (isObservedAppEndpoint) {
+    return (
+      `https://${CALLRAIL_MMS_API_HOST}/v3/a/` +
+      `${encodeURIComponent(matchedAppAccount)}/text-messages/` +
+      `${encodeURIComponent(message)}/media/${index}`
+    );
   }
   return parsed.href;
 }
