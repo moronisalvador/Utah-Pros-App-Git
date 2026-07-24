@@ -7745,6 +7745,15 @@ before/after magnitude (not guessed).
   explicit "company-wide on purpose" callouts on the Estimate-aging and Top-customers-LTV cards specifically
   (the two sections that are the exception, sitting right next to sections that ARE scoped — the contrast
   is exactly where confusion would happen without an explicit callout).
+- **Owner follow-up — "show both, labeled" (reconciled to `dev` 2026-07-23):**
+  `get_crm_sales_summary(date,date)` returns company-wide and CRM-traced won/revenue together using
+  the canonical `jobs.is_real_job` rule, claim/job sale date, Denver-day window and
+  `crm_contact_is_traced`. `CrmOverview` now uses the returned traced values as its Won jobs/Revenue
+  headlines and labels the returned company-wide values beside them. It passes the same selected
+  start/end dates as the attribution rollup and does not calculate either half independently.
+  Read-only live verification confirmed the four-key numeric JSON shape, `anon` denial and
+  `authenticated`/`service_role` execution. The migration was already live; this reconciliation
+  applied no SQL and restored only the missing current-compatible UI/test/documentation slice.
 - Committed test: `supabase/tests/crm_attribution_scoped_to_traced_contacts.test.js` — before/after
   deltas (never absolute counts) on all 4 rescoped RPCs, a genuine traced-vs-untraced contact pair, and a
   dedicated spam-only-touch edge case proving a spam-flagged-only lead does NOT count as traced.

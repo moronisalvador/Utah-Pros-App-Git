@@ -82,7 +82,10 @@ Important verified exceptions and contained history:
 - four live CRM migrations were applied from a then-unmerged feature branch; Foundation F2 restored
   only their byte-verified reviewed source to `dev` and added a read-only provenance gate. Ten of 11
   selected function bodies match byte-for-byte; `set_lead_caller_name` differs only in comments and
-  was deliberately not replaced live.
+  was deliberately not replaced live. The restored set includes
+  `get_crm_sales_summary(date,date) → json`, a stable read-only comparison of company-wide and
+  CRM-traced won/revenue values. Live verification on 2026-07-23 confirmed its four-key numeric
+  return contract, denial to `anon`, and execution for `authenticated`/`service_role`.
 
 Treat the remaining exceptions as remediation targets, and the contained `exec_read_sql` exposure
 as a standing regression prohibition, not a convention to copy. Apply evidence:

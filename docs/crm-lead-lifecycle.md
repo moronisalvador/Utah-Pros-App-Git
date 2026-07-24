@@ -1,8 +1,27 @@
+<!--
+FILE: docs/crm-lead-lifecycle.md
+
+WHAT THIS DOES (plain language):
+  Defines the canonical CRM lead lifecycle, counting rules, sales-summary semantics, and
+  enforcement boundaries from intake through reporting.
+
+DEPENDS ON:
+  Internal: UPR-Web-Context.md, docs/business-rules.md, docs/database-schema.md,
+            functions/api/callrail-webhook.js, src/pages/crm/
+  Data:     reads → CRM tables, reporting RPCs, and live-catalog evidence
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - `UPR-Web-Context.md` remains authoritative for exact schema and RPC signatures.
+  - Reporting date windows are inclusive America/Denver calendar dates.
+  - Company-wide totals and attribution-traced totals are intentionally distinct.
+-->
+
 # CRM Lead Lifecycle — Architecture, Canonical Rules & Invariants
 
-**Last-verified: 2026-07-22** (written the day the system was audited end-to-end, every claim below
-checked against the live database and code — see the 2026-07-22 entries in `UPR-Web-Context.md` for
-the change log behind it).
+**Last-verified: 2026-07-23** (the core lifecycle was audited end-to-end on 2026-07-22; the
+sales-summary contract and Denver reporting-window rules were rechecked against current code and
+the live catalog on 2026-07-23 — see the dated entries in `UPR-Web-Context.md`).
 
 **Who this is for:** any session touching CRM counting, the pipeline, telephony ingestion, or the
 dashboards. Read this BEFORE changing how anything is counted, staged, classified, or reported.
@@ -23,16 +42,19 @@ blurring two layers together.
 | 2 | **Enrich** | AI, ~1 min (+6h cron net) | `transcript_analysis`, `spam_flag`, contacts, stage advances | `transcribe-call.js` (Deepgram → Claude passes) |
 | 3 | **Pipeline** | humans + triggers, hours–days | `lead_pipeline_stage`, `lead_stage_history` | Kanban (`CrmLeads.jsx`), `move_lead_to_stage`, `crm_advance_lead_if_forward`, `crm_auto_advance_leads` |
 | 4 | **Sale truth** | hard evidence | `jobs.is_real_job` (+`job_real_flag_history`) | `mark_job_real` triggers, `set_job_real_job` |
-| 5 | **Reporting** | read-only | — | `get_attribution_rollup`, `get_call_volume`, `get_speed_to_lead`, `get_conversion_trend`, `get_crm_revenue_by_division`, `get_estimator_leaderboard`, `get_contact_ltv`, `get_real_job_evidence_mismatches` |
+| 5 | **Reporting** | read-only | — | `get_attribution_rollup`, `get_crm_sales_summary`, `get_call_volume`, `get_speed_to_lead`, `get_conversion_trend`, `get_crm_revenue_by_division`, `get_estimator_leaderboard`, `get_contact_ltv`, `get_real_job_evidence_mismatches` |
 
 ### Layer 1 — Capture
 CallRail fires the webhook **several times per call** (started / completed / recording-ready); the
 upsert is idempotent on `callrail_id`, so re-deliveries update one row. At ingest:
 - **Contact match**: `contact_id` links iff EXACTLY ONE contact shares the caller's last-10-digit
   phone suffix (ambiguous/no match → NULL — the backlink trigger closes this later, see §4).
-- **Redial merge**: same phone with an open prior lead — or a Lost-stage lead ≤3h old (the
-  Missed-Calls callback window) — sets `merged_into_lead_id`; the redial gets no card of its own.
-  A WON prior lead never absorbs a redial (a past customer's new problem is a new lead).
+- **Repeat-caller merge**: same phone merges into the most-alive existing lead when it is
+  open/stage-less, in a recoverable terminal stage such as Missed Calls, Won within 30 days, or
+  Lost within three hours. Open outranks recoverable, which outranks Won, which outranks Lost.
+  Recoverable stages have no redial time limit because the inquiry was never handled; post-Won
+  calls inside 30 days are job logistics. The redial gets no card of its own. After the Won/Lost
+  windows, a call is treated as genuinely new business.
 - **Missed-call auto-stage**: the delivery carrying CallRail's EXPLICIT `answered='false'` stages the
   lead into the org's "Missed Calls" stage (string-compared, never a throwing cast; the call-started
   delivery has no `answered` key, so a ringing call never stages prematurely).
@@ -96,7 +118,7 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
 | **Sale DATE** | `COALESCE(claims.created_at, jobs.created_at)` (matches `get_jobs_closed`). Exception: `get_commissions` deliberately uses `jobs.created_at` (payroll-period stability) — documented, do not "fix". | same migration |
 | **A countable marketing lead** | non-spam AND non-merged AND (form OR answered call). Answered = `crm_call_is_answered(raw_payload, duration_sec)` in SQL; `isCountableLead(lead)` in JS — **twins; change both or neither**. | `20260722_crm_leads_exclude_unanswered_calls.sql`; `crmCharts.js` |
 | **Speed-to-lead** | HUMAN first move only (`lead_stage_history.moved_by IS NOT NULL`). System moves are not responses. | `20260722_crm_speed_to_lead_human_moves_only.sql` |
-| **CRM-traced business** | `crm_contact_is_traced(contact_id)`: a `lead_attribution` row OR a non-spam lead link. Gates estimates/won-jobs/revenue on CRM pages. Company-wide totals live on the Home dashboard, deliberately not here. | `20260722_crm_scope_attribution_to_traced_contacts.sql` |
+| **CRM-traced business** | `crm_contact_is_traced(contact_id)`: a `lead_attribution` row OR a non-spam lead link. Gates estimates/won-jobs/revenue on CRM pages. When company-wide context is shown on Overview, `get_crm_sales_summary` returns both traced and total won/revenue for the same Denver window; the values stay explicitly labeled. | `20260722_crm_scope_attribution_to_traced_contacts.sql`; `20260722_crm_sales_summary_total_vs_traced.sql` |
 | **Who moved a card** | `lead_stage_history.moved_by`: uuid = a human; **NULL = the system** (auto-stage, AI advance, triggers). | convention, relied on by speed-to-lead |
 | **Ops vs marketing scope** | The Kanban board, task picker, and pipeline card show EVERYTHING non-spam/non-merged (staff must see missed calls to call back). Marketing metrics apply the countable-lead rule. This asymmetry is deliberate — do not "unify" it. | owner decision 2026-07-22 |
 
@@ -108,25 +130,30 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
    the canonical card ("Follow-up call" in the activity timeline).
    *(merge design + `crm_advance_lead_if_forward`'s pointer resolution; tests:
    `crm_merge_repeat_call_leads.test.js`, `crm_advance_revives_recoverable_stages.test.js`)*
-2. **Any pipeline-advance signal fired on a merged row acts on its canonical root.** The AI pass runs
+2. **Enrichment learned on a merged row reaches the canonical root.** The caller name usually comes
+   from a later call—the row most likely to merge—so `set_lead_caller_name` applies the name to the
+   merged row and canonical root under each row's own fill-blank/extend-only guard. Future
+   per-lead enrichment must make the same canonical-root decision.
+   *(`20260722_crm_caller_name_follows_merge.sql`)*
+3. **Any pipeline-advance signal fired on a merged row acts on its canonical root.** The AI pass runs
    on the redial row (where the transcript lives) — the function resolves the pointer first.
-3. **Won and Lost are human-sticky.** No automation ever moves a lead off them. The ONLY exception is
+4. **Won and Lost are human-sticky.** No automation ever moves a lead off them. The ONLY exception is
    a stage marked `pipeline_stages.is_recoverable = true` (today: Missed Calls — a callback
    work-queue, not a judgment), which forward evidence may revive.
-4. **A human's placement always beats the machine's.** Auto-stage/auto-advance never overwrite an
+5. **A human's placement always beats the machine's.** Auto-stage/auto-advance never overwrite an
    existing stage row backward, and auto-stage never fires at all when any stage row exists.
-5. **Every change to `jobs.is_real_job` / source / marked_at lands in `job_real_flag_history`** — RPC,
+6. **Every change to `jobs.is_real_job` / source / marked_at lands in `job_real_flag_history`** — RPC,
    trigger, or raw write alike — and **demotion preserves the original evidence**
    (`is_real_job=false` + `real_job_marked_at NOT NULL` = the recognizable "was sold, then demoted"
    signature). *(`20260722_real_job_flag_audit_trail.sql`)*
-6. **Every automated identity link is audited and reversible.** Backlinks write
+7. **Every automated identity link is audited and reversible.** Backlinks write
    `system_events('crm_lead_backlinked')`; a contact phone CHANGE releases that trigger's own prior
    links for the old number (`'crm_lead_backlink_reverted'`) — so a mistyped/recycled number can
    never permanently poach a stranger's lead history. Human-made links are never auto-touched.
    *(`20260722_crm_lead_contact_backlink.sql`)*
-7. **The webhook write path never throws on payload garbage.** String comparisons over casts,
+8. **The webhook write path never throws on payload garbage.** String comparisons over casts,
    best-effort side effects, 200-on-error (CallRail retry-storm guard).
-8. **Identity linking uses ONE phone rule everywhere**: digits-only, `right(digits,10)`, both sides
+9. **Identity linking uses ONE phone rule everywhere**: digits-only, `right(digits,10)`, both sides
    ≥10 digits, and link only when exactly ONE contact holds the suffix.
 
 ---
@@ -173,10 +200,11 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
 
 ## 7. Known limits & open items (flagged, deliberately not built — do not silently "fix")
 
-- **Owner rulings pending:** UTC-vs-Denver bucketing in the five CRM RPCs *and* `get_jobs_closed`
-  (24% of sales sit on the wrong Denver day); traced-gate display (8 of 87 real jobs / $18.7K of
-  $577K shown — mostly structural: the CRM postdates most jobs); adjudication of the 2026-07-03 bulk
-  demotion (the reconciler lists all 17+15 candidates with evidence and dollars).
+- **The 2026-07-22 owner rulings are closed, not pending.** CRM reporting and `get_jobs_closed` use
+  Denver-day bucketing; Overview shows the CRM-traced won/revenue headline with the same-window
+  company-wide total from `get_crm_sales_summary`; and the owner-approved payment/signed-work-auth
+  adjudication was recorded through `set_job_real_job`. Foundation F2 restored the four reviewed
+  migration files to `dev` without replaying them.
 - **Missed-call textback is dead-on-arrival** when A2P flips: `isMissedCall` in
   `run-automations.js` uses the duration proxy (ring time counts as "answered") AND requires
   `contact_id` (unanswered calls rarely have one). Consent-sensitive redesign — do not hot-fix.
@@ -192,6 +220,10 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
   unlinked until the survivor's phone is touched).
 - **`jobs.estimator` is NULL on all rows** — the Estimator Leaderboard card has always rendered
   empty. Populate it or remove the card.
+- **Database behavior tests remain externally gated.** The credential-free unit/Worker/QA/browser
+  lanes fail on skips, but there is no governed local Supabase runtime/seed/representative-role
+  fixture yet. Do not reinterpret a repository unit-test pass as live RLS/RPC proof; use the dated
+  read-only catalog evidence until the isolated database lane is built.
 
 ---
 

@@ -260,3 +260,26 @@ just the slot components.
   `OverdueTasksWidget` kept as-is.
 - **Everything else in §§1–8 stays frozen.** This is a one-file skeleton unfreeze for a disclosed,
   owner-approved standalone initiative — not a reopening of the wave.
+
+---
+
+## 10. Sales-summary addendum (2026-07-22) — labeled company-wide context
+
+Section 9's zero-migration boundary described the original dashboard-gap build. The owner later
+ruled that the traced-gate display must **"show both, labeled"**: keep the CRM-traced won/revenue
+headline and show the company-wide total for the same window beside it.
+
+- `20260722_crm_sales_summary_total_vs_traced.sql` is the one sanctioned additive extension. It
+  defines `get_crm_sales_summary(date,date) → json` with
+  `{ total_won, total_revenue, traced_won, traced_revenue }`, using the canonical
+  `jobs.is_real_job` sale rule, claim/job sale date, Denver-day windowing and
+  `crm_contact_is_traced`. It changes no table, column or policy.
+- Authorized files for this reconciliation are `src/pages/crm/CrmOverview.jsx`,
+  `src/pages/crm/attributionData.js`, `src/pages/crm/attributionData.test.js`, and the
+  `.crm-metric-sub-strong` rule beside the existing CRM metric styles in `src/index.css`.
+  `CrmOverview.jsx` may read this RPC in addition to §9's list. Both displayed sides come from this
+  one result; the UI must not reconstruct company-wide or traced sales independently.
+- Foundation F2 restored the reviewed migration source to `dev` after it had already applied live.
+  The 2026-07-23 read-only catalog check confirmed the signature, JSON shape, stable
+  `SECURITY DEFINER` contract, `anon` denial and `authenticated`/`service_role` execution.
+- Everything else in §§1–9 remains frozen.

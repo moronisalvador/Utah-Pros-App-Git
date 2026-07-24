@@ -56,6 +56,9 @@ Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the cur
 - A countable marketing lead is non-spam, non-merged, and a form or answered call.
 - Speed-to-lead begins with the first human stage move; system moves do not count as response.
 - Operational boards and marketing metrics intentionally have different inclusion scopes.
+- CRM sales headlines are CRM-traced; when company-wide context is shown, both traced and total
+  won/revenue values come from `get_crm_sales_summary` for the same Denver-day window and are
+  explicitly labeled. Do not calculate the comparison independently in the UI.
 - Merged leads resolve to one canonical root and do not own independent stage state.
 - Human Won/Lost decisions are sticky except for explicitly recoverable stages.
 - Automated identity linking is auditable/reversible and follows one normalized phone rule.
