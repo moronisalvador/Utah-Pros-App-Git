@@ -95,6 +95,11 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - Prior-consent attestation is not re-subscription. It never clears manual DND, STOP, provider
   opt-out or `opt_out_at`; customer re-consent after revocation follows the established inbound
   START/affirmative written path.
+- Verified service-message permission is stored separately from `contacts.opt_in_status`. It is
+  consumed only by the direct staff person-to-person send boundary and never authorizes a group,
+  broadcast, automated, campaign, bulk or promotional send. Recording it cannot itself trigger a
+  send or retry. Each attestation preserves raw evidence in service-only append history; the legacy
+  consent log receives only redacted reference metadata.
 - Staff messages still send only through `POST /api/send-message`. Every message identifies Utah
   Pros Restoration, and the first outbound message in a conversation includes “Reply STOP to
   unsubscribe.” A separate outbound SMS asking an unconsented number to opt in is prohibited; staff

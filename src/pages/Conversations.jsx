@@ -530,12 +530,14 @@ export default function Conversations({ replyAssist } = {}) {
     return p?.contacts || null;
   }, [activeConv]);
   const canAttestPriorConsent = (
-    employee?.role === 'admin' || employee?.role === 'office'
+    activeConv?.type === 'direct'
+    && (employee?.role === 'admin' || employee?.role === 'office')
   ) && employee?.is_external !== true;
   const hasExplicitSmsOptOut = !!activeContact?.opt_out_at;
   const hasRecordedSmsPermission = activeContact?.opt_in_status === true
     || (
-      serviceConsentStatus.contactId === activeContact?.id
+      activeConv?.type === 'direct'
+      && serviceConsentStatus.contactId === activeContact?.id
       && serviceConsentStatus.allowed === true
     );
 
@@ -544,6 +546,7 @@ export default function Conversations({ replyAssist } = {}) {
     const contactId = activeContact?.id;
     if (
       !contactId
+      || activeConv?.type !== 'direct'
       || activeContact?.dnd
       || activeContact?.opt_out_at
       || activeContact?.opt_in_status === true
@@ -590,6 +593,7 @@ export default function Conversations({ replyAssist } = {}) {
     return () => { cancelled = true; };
   }, [
     activeContact?.id,
+    activeConv?.type,
     activeContact?.dnd,
     activeContact?.opt_out_at,
     activeContact?.opt_in_status,

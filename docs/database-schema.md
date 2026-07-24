@@ -191,19 +191,28 @@ Sanitized live evidence and apply-window recapture queries:
 
 ## Prior SMS consent attestation (authored; not applied)
 
-Migration `20260724014423_attest_prior_sms_consent.sql` adds only the service-role RPC
-`attest_prior_sms_consent`. It lets the authorized Worker record verified verbal permission,
-a signed work authorization, other written permission, or another evidenced customer request.
-The operation records the consent date, evidence note, authenticated employee actor and server
-timestamp in `sms_consent_log` while updating `contacts.opt_in_status` in the same transaction.
-The audit details also pin `prior_sms_consent_v1`, Utah Pros Restoration as the sender and the
-`service_related_customer_project_messages` subject scope so later code cannot reinterpret this
-evidence as blanket marketing consent.
+Migration `20260724014423_attest_prior_sms_consent.sql` adds the current-state
+`service_sms_consents` table, append-only `service_sms_consent_attestations` evidence history, and
+the service-role-only `attest_prior_sms_consent` / `get_service_sms_consent_status` RPCs. Both
+tables enable and force RLS, have only explicit `service_role` policies, revoke all privileges from
+`PUBLIC`, `anon` and `authenticated`, and grant only the operations their server workflows use.
+Contact foreign keys use `ON DELETE RESTRICT`, so a browser-permitted parent delete cannot silently
+erase legally relevant consent evidence.
 
-The RPC is `SECURITY INVOKER`, is executable only by `service_role`, revalidates an active internal
-admin/office actor, locks the contact, and refuses DND or any existing `opt_out_at`. It does not add
-or broaden table policies/grants, infer consent from contact existence, erase STOP/DND, send a
-message, or modify existing rows merely by being applied.
+The attestation operation records the fixed
+`service_related_customer_project_messages` scope, `prior_sms_consent_v1` version, Utah Pros
+Restoration sender identity, consent method/date, evidence note, authenticated employee actor,
+trusted server request IP and server timestamp. It upserts current service state and always inserts
+a new row into the browser-inaccessible attestation history. The broadly readable legacy
+`sms_consent_log` receives only a redacted event and opaque attestation ID—never the evidence note,
+consent date or request IP. The operation never updates `contacts.opt_in_status`, so service
+permission cannot become automated or marketing consent.
+
+Both RPCs are `SECURITY INVOKER`, executable only by `service_role`, and pin an empty `search_path`.
+Attestation revalidates an active internal admin/office actor, serializes on the same normalized
+phone advisory lock as CallRail inbound projection, locks every duplicate contact and refuses DND,
+`opt_out_at` or a durable pending STOP. The status RPC returns only a safe allow/deny decision and
+requires the current contact phone, destination, suppression state, scope and version to agree.
 
 ## Known limits
 

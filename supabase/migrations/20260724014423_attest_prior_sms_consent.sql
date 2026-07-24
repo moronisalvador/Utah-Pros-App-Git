@@ -23,15 +23,13 @@
 --   REVOKE ALL ON FUNCTION public.attest_prior_sms_consent(uuid, uuid, text, date, text, text)
 --     FROM PUBLIC, anon, authenticated, service_role;
 --   DROP FUNCTION public.attest_prior_sms_consent(uuid, uuid, text, date, text, text);
---   REVOKE ALL ON TABLE public.service_sms_consents
---     FROM PUBLIC, anon, authenticated, service_role;
---   DROP TABLE public.service_sms_consents;
---   Matching sms_consent_log rows are retained because deleting audit history is unsafe.
+--   The locked-down tables and matching sms_consent_log rows are retained because
+--   deleting legally relevant consent evidence during rollback is unsafe.
 -- ════════════════════════════════════════════════
 
 CREATE TABLE public.service_sms_consents (
   contact_id uuid PRIMARY KEY
-    REFERENCES public.contacts(id) ON DELETE CASCADE,
+    REFERENCES public.contacts(id) ON DELETE RESTRICT,
   phone text NOT NULL,
   consent_scope text NOT NULL
     DEFAULT 'service_related_customer_project_messages',
@@ -70,6 +68,47 @@ CREATE TABLE public.service_sms_consents (
         char_length(request_ip) BETWEEN 3 AND 64
         AND request_ip ~ '^[0-9A-Fa-f:.]+$'
       )
+  )
+);
+
+CREATE TABLE public.service_sms_consent_attestations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id uuid NOT NULL
+    REFERENCES public.contacts(id) ON DELETE RESTRICT,
+  phone text NOT NULL,
+  consent_scope text NOT NULL,
+  consent_method text NOT NULL,
+  consent_obtained_on date NOT NULL,
+  evidence_note text NOT NULL,
+  attestation_version text NOT NULL,
+  sender_identity text NOT NULL,
+  recorded_by uuid NOT NULL
+    REFERENCES public.employees(id),
+  request_ip text,
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT service_sms_consent_attestations_scope_check
+    CHECK (consent_scope = 'service_related_customer_project_messages'),
+  CONSTRAINT service_sms_consent_attestations_method_check
+    CHECK (consent_method IN (
+      'verbal_permission',
+      'signed_work_authorization',
+      'other_written_permission',
+      'customer_requested_texts',
+      'other_verified_permission'
+    )),
+  CONSTRAINT service_sms_consent_attestations_evidence_check
+    CHECK (char_length(btrim(evidence_note)) BETWEEN 10 AND 500),
+  CONSTRAINT service_sms_consent_attestations_version_check
+    CHECK (attestation_version = 'prior_sms_consent_v1'),
+  CONSTRAINT service_sms_consent_attestations_sender_check
+    CHECK (sender_identity = 'Utah Pros Restoration'),
+  CONSTRAINT service_sms_consent_attestations_request_ip_check
+    CHECK (
+      request_ip IS NULL
+      OR (
+        char_length(request_ip) BETWEEN 3 AND 64
+        AND request_ip ~ '^[0-9A-Fa-f:.]+$'
+      )
     )
 );
 
@@ -79,14 +118,42 @@ COMMENT ON COLUMN public.service_sms_consents.phone IS
   'Phone at attestation time; the send gate requires it to match the current contact and destination.';
 COMMENT ON COLUMN public.service_sms_consents.request_ip IS
   'Trusted Cloudflare connection IP supplied by the server; never accepted from browser JSON.';
+COMMENT ON TABLE public.service_sms_consent_attestations IS
+  'Append-only service-role evidence history for each verified prior SMS attestation.';
 
 ALTER TABLE public.service_sms_consents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_sms_consents FORCE ROW LEVEL SECURITY;
+ALTER TABLE public.service_sms_consent_attestations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.service_sms_consent_attestations FORCE ROW LEVEL SECURITY;
 
 REVOKE ALL ON TABLE public.service_sms_consents
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE ON TABLE public.service_sms_consents
   TO service_role;
+
+REVOKE ALL ON TABLE public.service_sms_consent_attestations
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT, INSERT ON TABLE public.service_sms_consent_attestations
+  TO service_role;
+
+CREATE POLICY service_sms_consents_service_role_manage
+  ON public.service_sms_consents
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY service_sms_consent_attestations_service_role_select
+  ON public.service_sms_consent_attestations
+  FOR SELECT
+  TO service_role
+  USING (true);
+
+CREATE POLICY service_sms_consent_attestations_service_role_insert
+  ON public.service_sms_consent_attestations
+  FOR INSERT
+  TO service_role
+  WITH CHECK (true);
 
 CREATE OR REPLACE FUNCTION public.get_service_sms_consent_status(
   p_contact_id uuid,
@@ -266,6 +333,7 @@ DECLARE
   v_phone_key text;
   v_recorded_at timestamptz := now();
   v_already_recorded boolean := false;
+  v_attestation_id uuid;
 BEGIN
   IF current_user <> 'service_role' THEN
     RETURN jsonb_build_object(
@@ -396,6 +464,36 @@ BEGIN
   FOR UPDATE;
   v_already_recorded := v_existing.contact_id IS NOT NULL;
 
+  -- Raw evidence is append-only and browser-inaccessible. The legacy
+  -- sms_consent_log receives only a redacted reference to this row.
+  INSERT INTO public.service_sms_consent_attestations (
+    contact_id,
+    phone,
+    consent_scope,
+    consent_method,
+    consent_obtained_on,
+    evidence_note,
+    attestation_version,
+    sender_identity,
+    recorded_by,
+    request_ip,
+    recorded_at
+  )
+  VALUES (
+    v_contact.id,
+    v_contact.phone,
+    'service_related_customer_project_messages',
+    v_method,
+    p_consent_obtained_on,
+    v_note,
+    'prior_sms_consent_v1',
+    'Utah Pros Restoration',
+    v_actor.id,
+    v_request_ip,
+    v_recorded_at
+  )
+  RETURNING id INTO v_attestation_id;
+
   INSERT INTO public.service_sms_consents (
     contact_id,
     phone,
@@ -456,15 +554,13 @@ BEGIN
     v_method,
     jsonb_build_object(
       'attestation', 'verified_prior_sms_consent',
+      'attestation_id', v_attestation_id,
       'attestation_version', 'prior_sms_consent_v1',
       'consent_scope', 'service_related_customer_project_messages',
       'sender_identity', 'Utah Pros Restoration',
-      'consent_obtained_on', p_consent_obtained_on,
-      'evidence_note', v_note,
-      'request_ip', v_request_ip,
       'recorded_at', v_recorded_at
     )::text,
-    v_request_ip,
+    NULL,
     v_actor.id,
     v_recorded_at
   );

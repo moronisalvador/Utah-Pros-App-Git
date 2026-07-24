@@ -209,12 +209,18 @@ path.
 
 `POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external
 employee whose role is `admin` or `office`. The Worker derives the actor from that session; a
-request-body actor cannot select or forge the audit identity. It validates a supported evidence
-method, non-future consent date and evidence note before invoking the service-role-only database
-operation.
+request-body actor or IP cannot select or forge the audit identity/context. The server accepts only
+the trusted Cloudflare connection IP, and validates a supported evidence method, non-future consent
+date and evidence note before invoking the service-role-only database operation.
 
 The database rechecks the same employee authority and current contact suppression state inside the
-transaction. Browser roles cannot execute the RPC directly. DND, STOP/provider opt-out, missing
-contacts and concurrent suppression changes fail closed, and the endpoint has no provider-send
-capability. Conversation UI visibility is presentation only; these Worker and database checks are
-the authority.
+transaction. Browser roles have no policy or grant on `service_sms_consents` or the append-only
+`service_sms_consent_attestations` evidence history and cannot execute either consent RPC directly.
+Raw evidence and request IP never enter the broadly readable legacy consent log. DND,
+duplicate-contact suppression, STOP/provider opt-out, a durable STOP awaiting provider-event
+projection, missing contacts and phone mismatch fail closed.
+
+`GET /api/attest-sms-consent?contact_id=...` requires the shared server-side Conversations
+capability and returns only the service-role status decision; it never exposes the evidence note,
+phone, actor IP or full row. Conversation UI visibility is presentation only; these Worker and
+database checks are the authority.

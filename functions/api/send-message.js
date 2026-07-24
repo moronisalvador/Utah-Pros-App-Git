@@ -74,7 +74,13 @@ function normalizedPhoneIdentity(value) {
 // Run the per-recipient consent gate. Returns { blocked, code } and, when a
 // resolved contact is blocked, writes the audit row to sms_consent_log. Fails
 // CLOSED: a missing contact (dangling/forged participant) is a block, not a send.
-async function gateRecipient(db, contact, participantPhone, sentBy) {
+async function gateRecipient(
+  db,
+  contact,
+  participantPhone,
+  sentBy,
+  { allowServiceConsent = false } = {},
+) {
   if (!contact) return { blocked: true, code: 'CONTACT_NOT_FOUND' };
   const contactPhone = normalizedPhoneIdentity(contact.phone);
   const destinationPhone = normalizedPhoneIdentity(participantPhone);
@@ -90,7 +96,15 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
     p_destination_phone: participantPhone,
   });
   const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
-  if (status?.allowed === true) return { blocked: false };
+  if (
+    status?.allowed === true
+    && (
+      status.code === 'GLOBAL_OPT_IN'
+      || (allowServiceConsent && status.code === 'SERVICE_CONSENT')
+    )
+  ) {
+    return { blocked: false };
+  }
 
   if (status?.code === 'DND_ACTIVE') {
     await db.insert('sms_consent_log', {
@@ -544,7 +558,13 @@ export async function onRequestPost(context) {
           code: 'CLIENT_REQUEST_PENDING',
         }, 409, request, env);
       }
-      const gate = await gateRecipient(db, contact, participant.phone, actorEmployeeId);
+      const gate = await gateRecipient(
+        db,
+        contact,
+        participant.phone,
+        actorEmployeeId,
+        { allowServiceConsent: true },
+      );
       if (gate.blocked) {
         return jsonResponse({
           error: gate.code === 'DND_ACTIVE'

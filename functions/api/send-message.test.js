@@ -1074,9 +1074,12 @@ describe('send-message per-participant consent loop', () => {
       h.db.inserts.findIndex((item) => item.table === 'messages' && item.payload.recipient_address === '+15551110001'),
       1,
     );
-    h.db.rpc = vi.fn(async (name) => (
-      name === 'claim_message_recipient_attempt' ? false : null
-    ));
+    h.db.rpc = vi.fn(async (name) => {
+      if (name === 'get_service_sms_consent_status') {
+        return { allowed: true, code: 'GLOBAL_OPT_IN' };
+      }
+      return name === 'claim_message_recipient_attempt' ? false : null;
+    });
     h.twilio = vi.fn();
 
     const replay = await onRequestPost({ request: req(body), env: ENV });
@@ -1103,6 +1106,77 @@ describe('send-message per-participant consent loop', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
     expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
     expect(consentBlocks(h.db).some((b) => b.payload.event_type === 'send_blocked_no_consent')).toBe(true);
+  });
+
+  it('group: service-only consent cannot authorize a group or broadcast send', async () => {
+    h.db = makeDb({
+      conversation: { id: DIRECT.id, type: 'group', status: 'open' },
+      participants: [{ contact_id: 'c-1', phone: '+15551110001' }],
+      contactsById: {
+        'c-1': {
+          id: 'c-1',
+          dnd: false,
+          opt_in_status: false,
+          phone: '+15551110001',
+        },
+      },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Group update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('ALL_RECIPIENTS_BLOCKED');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+    expect(consentBlocks(h.db)).toHaveLength(1);
+  });
+
+  it('group: sends only to global opt-ins, never service-consent-only recipients', async () => {
+    h.db = makeDb({
+      conversation: { id: DIRECT.id, type: 'group', status: 'open' },
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001' },
+        { contact_id: 'c-2', phone: '+15551110002' },
+      ],
+      contactsById: {
+        'c-1': {
+          id: 'c-1',
+          dnd: false,
+          opt_in_status: true,
+          phone: '+15551110001',
+        },
+        'c-2': {
+          id: 'c-2',
+          dnd: false,
+          opt_in_status: false,
+          phone: '+15551110002',
+        },
+      },
+      serviceConsentsById: { 'c-2': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Group update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
+    expect(outboundRows(h.db)).toHaveLength(1);
+    expect(consentBlocks(h.db)).toHaveLength(1);
   });
 
   it('group: a per-recipient send failure records its OWN failed message row + surfaces the error', async () => {

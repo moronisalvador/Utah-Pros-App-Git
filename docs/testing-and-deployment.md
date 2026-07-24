@@ -174,14 +174,20 @@ Rollback first sets the mode to `disabled`; code can roll back while additive sc
 
 Migration `20260724014423_attest_prior_sms_consent.sql` is repository-only until an owner-approved
 shared-database apply window. Before apply, run the Worker authorization/negative tests, static
-migration contract tests, changed-file lint, build and the available credential-free suites. Do not
-deploy the UI/Worker before the RPC exists because the new route depends on that signature.
+migration contract tests, changed-file lint, build and the available credential-free suites. The
+reviewed migration commit must be reachable from `dev` before apply. Do not deploy the UI/Worker
+before the table and both RPCs exist because staff sends fail closed on the status RPC.
 
 In the apply window, apply only the reviewed committed migration and verify with representative
-roles that browser roles cannot execute the RPC, admin/office attestation succeeds, forged actors
-fail, and DND/STOP/`opt_out_at` cannot be cleared. Use controlled synthetic records; do not send a
-provider message as part of migration verification. Then deploy the Worker/UI and verify the modal,
-audit history and send gate separately. Rollback drops only the function and retains audit history.
+roles that browser roles cannot access the table or execute either RPC, admin/office attestation
+succeeds, forged actors/body IPs fail, and duplicate DND/STOP/`opt_out_at` plus pending provider
+STOP state fail closed. Verify that the general opt-in remains unchanged and every successful
+re-attestation appends service-only audit evidence while the legacy log stays redacted. Verify
+service consent permits only a direct conversation—not group/broadcast traffic. Use controlled
+synthetic records; do not send a provider message as part of migration verification. Then deploy
+the Worker/UI and verify status readback, the record-only modal, separate explicit Retry action,
+audit history and send gate. Operational rollback revokes and drops both RPCs while retaining the
+locked-down current/evidence tables and redacted `sms_consent_log` history.
 
 ### 2026-07-23 Preview messaging proof
 

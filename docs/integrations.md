@@ -64,8 +64,10 @@ bindings and provider consoles.
   `docs/messaging-transport-roadmap.md`.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
-  prior consent is recorded, `POST /api/send-message` remains the sole staff-send chokepoint and
-  adds Utah Pros identification plus first-conversation STOP instructions before provider dispatch.
+  prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
+  chokepoint, consumes the service-only consent decision, and adds Utah Pros identification plus
+  first-conversation STOP instructions before provider dispatch. Recording permission never
+  automatically retries or sends the failed message; staff must choose Retry as a separate action.
 - Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
   shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
   facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is
