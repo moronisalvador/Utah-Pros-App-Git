@@ -53,6 +53,12 @@ jobs:
       - name: Test repository tooling governance
         run: npm run test:tooling
 
+      - name: Validate disconnected Figma governance
+        run: npm run validate:figma-governance
+
+      - name: Test Figma governance refusals
+        run: npm run test:figma-governance
+
       - name: Validate migration provenance
         run: npm run validate:provenance
 

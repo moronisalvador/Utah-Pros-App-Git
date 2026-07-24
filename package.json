@@ -20,6 +20,8 @@
     "test:artifacts": "node scripts/qa/scan-test-artifacts.mjs",
     "test:tooling": "node --test scripts/validate-tooling-governance.node-test.mjs",
     "validate:tooling": "node scripts/validate-tooling-governance.mjs",
+    "test:figma-governance": "node --test scripts/validate-figma-governance.node-test.mjs",
+    "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
     "validate:provenance": "node scripts/check-migration-provenance.mjs"
   },
