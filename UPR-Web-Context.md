@@ -5187,9 +5187,11 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        reservation closes that post-send persistence gap.
                        **CallRail inbound-media host correction (Jul 24 2026):** signed webhooks
                        currently emit an `app.callrail.com/msg/a/...` media path even though API-key
-                       retrieval belongs on `api.callrail.com/v3/a/...`. After exact account alias,
-                       message and index validation, UPR normalizes only that proven identity to the
-                       API host and never presents the API credential to the app host.
+                       retrieval belongs on `api.callrail.com/v3/a/...`. After exact numeric/masked
+                       account alias, message and index validation, UPR prefers the current masked
+                       `ACC...` identity and normalizes only that proven identity to the API host. It
+                       never presents the API credential to the app host or relies on a numeric
+                       account redirect.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
