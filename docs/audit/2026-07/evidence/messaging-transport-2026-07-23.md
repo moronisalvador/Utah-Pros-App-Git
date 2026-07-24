@@ -1,7 +1,7 @@
 <!--
 FILE: docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md
 PURPOSE: Sanitized read-only live evidence used to draft the messaging transport foundation.
-LAST VERIFIED: 2026-07-23
+LAST VERIFIED: 2026-07-24
 
 This is dated evidence, not current project law. It records no secrets, full phone numbers, message
 content, employee identities, or writable operations.
@@ -290,3 +290,48 @@ canonical inbound projection. It does **not** prove replay deduplication or that
 received webhook after the compatibility deployment will project automatically; that remains the
 exact next Preview round-trip gate. Production messaging remains disabled and has no CallRail
 messaging bindings.
+
+## Inbound notification activation and device deep-link addendum — 2026-07-24
+
+A later fresh received webhook passed signature verification and projected directly as
+`inbound_persisted`, closing the signed-webhook projection gap. The projection atomically enqueued
+`message.inbound`, but live inspection found that no trigger, cron job, or external scheduler invoked
+the already-deployed `process-message-notification-outbox` worker. Notification type/defaults,
+the target employee's bell and push preferences, the web-push feature flag, two current push
+subscriptions, the scheduler secret, and worker deployment were all present. The durable outbox was
+the only stalled boundary.
+
+PR #506 merged as `625ccfd` after independent migration and security reviews and successful CI and
+Cloudflare checks. Migration `message_notification_outbox_scheduler` then applied once to the shared
+project. Post-apply verification confirmed:
+
+- the configured worker URL matches one of the two exact UPR allowlisted endpoints;
+- the five-minute `upr_message_notification_outbox` cron job is active;
+- the after-insert trigger exists and exception-contains wake-up failures so inbound persistence
+  cannot be rolled back by a local `pg_net` enqueue failure;
+- both helper functions are executable only by `postgres`; and
+- the migration ledger contains the scheduler migration.
+
+Six pending rows had accumulated by the apply window. One protected wake-up returned HTTP 200 with
+`claimed=6`, `delivered=6`, `retryable=0`, and `deadLettered=0`. Read-only verification then found
+zero pending/retryable/processing/dead-letter rows, six delivered rows, six new target bell rows,
+one completed worker run processing six records, and two current target push subscriptions. The
+owner confirmed receiving the push on the mobile PWA. Bell and push remain intentionally
+at-least-once across a crash after channel dispatch but before durable outbox finalization.
+
+The owner device test exposed a separate deep-link defect: the push opened the mobile office app at
+the conversations list. Repository evidence showed the canonical payload used only
+`/conversations`, even though both inboxes already support `?c=<conversation-id>`. PR #507 merged as
+`142d3c4`; the latest combined dev tip `1900a78` passed CI and Cloudflare. The provider-neutral
+notification dispatcher now emits:
+
+- `/conversations?c=<id>` for the in-app bell; and
+- `/tech/conversations?c=<id>` for Web Push.
+
+A controlled internal post-deployment alert—no customer SMS or provider send—returned HTTP 200 for
+one active internal recipient with `bell=true`, two push attempts, two accepted push deliveries,
+and no pruned subscription. The stored bell link matched the exact conversation. Final iOS tap
+verification of the corrected field-PWA route was pending at the time of this evidence update.
+
+Production customer messaging remained disabled throughout this activation. No production provider
+binding, customer send, secret disclosure, or unrelated migration was performed.
