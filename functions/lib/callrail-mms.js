@@ -698,10 +698,10 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
     const messages = Array.isArray(payload?.messages) ? payload.messages : [];
     const expectedDirection = event.direction === 'inbound' ? 'incoming' : 'outgoing';
     const possibleMatches = messages.filter((candidate) => {
+      const candidateType = candidate?.type ?? candidate?.message_type;
       if (
         candidate?.direction !== expectedDirection
-        || String(candidate?.type || '').toLowerCase() !== 'mms'
-        || String(candidate?.content || '') !== String(event.body || '')
+        || String(candidateType || '').toLowerCase() !== 'mms'
         || !Array.isArray(candidate?.media_urls)
         || candidate.media_urls.length !== event.mediaCount
       ) {

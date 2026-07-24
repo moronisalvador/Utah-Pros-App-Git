@@ -529,6 +529,47 @@ describe('CallRail MMS private ingestion', () => {
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
   });
 
+  it('does not accept a history media URL when direction or media count differs', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({
+      messages: [{
+        id: 'SCIabc',
+        content: 'Photo',
+        direction: 'outgoing',
+        message_type: 'mms',
+        media_urls: [MEDIA_URL],
+      }, {
+        id: 'SCIabc',
+        content: 'Photo',
+        direction: 'incoming',
+        message_type: 'mms',
+        media_urls: [MEDIA_URL, MEDIA_URL],
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URLS_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('refreshes an app-host conversation link through the authenticated API host', async () => {
     const h = harness();
     h.fetchImpl
@@ -644,10 +685,10 @@ describe('CallRail MMS private ingestion', () => {
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         messages: [{
-          id: 12345,
-          content: 'Photo',
+          id: 'SCIabc',
+          content: 'CallRail-normalized attachment text',
           direction: 'incoming',
-          type: 'MMS',
+          message_type: 'mms',
           media_urls: [MEDIA_URL],
         }],
       }), {
