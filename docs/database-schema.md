@@ -182,9 +182,15 @@ history.
 Retained CallRail provider events use the existing service-only `message_provider_events` table.
 Migration source `20260724002500_callrail_event_recovery_scheduler.sql` adds no table, column,
 policy, or browser grant: it only seeds a non-secret exact Worker URL, defines a locked-down
-due-work wake helper, and schedules it every five minutes. The migration is repository-authored
-and live under migration-ledger version `20260724002500`; read-only verification confirmed the
-cron is active and the helper remains outside browser execution.
+due-work wake helper, and schedules it every five minutes. It was owner-applied and verified on
+2026-07-24 under ledger version `20260724002500`; the helper remains outside browser execution.
+Live recovery then exposed that the prior PostgREST PATCH claim could mutate an event but return no
+representation, causing the worker to skip a row it had already claimed. Migration
+`20260724051500_claim_callrail_provider_event.sql` is live under ledger version `20260724051500`
+and replaces that boundary with a service-role-only, invoker-mode RPC that atomically fences and
+returns exactly one due event. It adds no table, column, provider send, or browser grant.
+Read-only catalog verification confirmed the exact source fingerprint, empty `search_path`,
+`SECURITY INVOKER` mode and service-role-only execution.
 
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.

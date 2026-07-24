@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-24T13:03:12Z",
+  "capturedAt": "2026-07-24T13:25:12Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "bd420154837159b26290d17d8b89c26b606e176b",
+  "captureBaseCommit": "13493f85ea7fa7d299aa837c1e00e3b9c036713e",
   "method": "Supabase migration ledger plus read-only pg_proc catalog queries",
   "ledgerTail": [
     { "version": "20260722222426", "name": "crm_denver_day_bucketing" },
@@ -14,7 +14,8 @@
     { "version": "20260724002500", "name": "callrail_event_recovery_scheduler" },
     { "version": "20260724003818", "name": "message_notification_outbox_scheduler" },
     { "version": "20260724035913", "name": "attest_prior_sms_consent" },
-    { "version": "20260724043000", "name": "harden_service_sms_consent" }
+    { "version": "20260724043000", "name": "harden_service_sms_consent" },
+    { "version": "20260724051500", "name": "claim_callrail_provider_event" }
   ],
   "functions": [
     { "identity": "get_attribution_rollup(date,date,uuid)", "rawMd5": "1e31e2c53a742ea07d5dc0350ecd4f6f", "semanticMd5": "26d844757e1cfcad697caeb3bba749f1", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
@@ -29,7 +30,8 @@
     { "identity": "set_lead_caller_name(uuid,text,boolean)", "rawMd5": "6c17dcd7774f2d0d92b06179dad5b727", "semanticMd5": "412e8189226e2904115a86fd174953f7", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
     { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "rawMd5": "d5abd852ebe5c3dfa2e440f45d40c4b3", "semanticMd5": "f867fd3938603ce8f67322188760d499", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
     { "identity": "get_service_sms_consent_status(uuid,text)", "rawMd5": "3912e63a1a2e75116f604e01e790b5b6", "semanticMd5": "260cb7f4c9fdfc621f0d9d15d45be383", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false },
-    { "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)", "rawMd5": "f86494e84a1dc94543b2787e696f2b1a", "semanticMd5": "1863e0f7c0148272dda01fe8c5822a51", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false }
+    { "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)", "rawMd5": "f86494e84a1dc94543b2787e696f2b1a", "semanticMd5": "1863e0f7c0148272dda01fe8c5822a51", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "claim_callrail_provider_event(uuid,timestamp with time zone,timestamp with time zone)", "rawMd5": "b2041fd84b38db1780af05bfbdb5dfe1", "semanticMd5": "96c9c017cabee581b76ef9e582dcfdf3", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false }
   ],
   "policies": [
     {

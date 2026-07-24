@@ -151,7 +151,10 @@ provider message identity or strict conversation/address/body/time identity, and
 failures with bounded backoff for the protected `process-callrail-events` recovery worker. It deliberately does not auto-send compliance replies
 through CallRail. The repository build immediately downloads the signed webhook's short-lived
 media endpoint after strict CallRail host/account validation; queue retries refresh current
-endpoints through the conversation API. It copies verified MMS bytes into private
+endpoints through the conversation API. Recovery claims use the service-role-only
+`claim_callrail_provider_event` RPC so a successful claim and its returned work item are one
+atomic database operation; an empty result means the worker lost the claim without mutating it.
+It copies verified MMS bytes into private
 `message-attachments`, persists only `upr-storage://` references, and signs a short URL only after
 messaging authorization and message/index binding. The separate reconciliation worker polls
 CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
@@ -181,11 +184,11 @@ integration can claim an end-to-end inbound MMS round trip.
 
 The same event exposed a separate recovery-wiring gap: Pages deployed the protected
 `/api/process-callrail-events` HTTP route, but an exported `scheduled()` handler does not create a
-route-level Pages Cron Trigger. An additive, unapplied scheduler migration now follows the
+route-level Pages Cron Trigger. An additive scheduler migration now follows the
 repository convention by using pg_cron/pg_net every five minutes, the existing cron secret, an
 exact dev/production URL allowlist, and a due-work predicate. It makes no provider send and
-preserves retained events on rollback. Shared-Supabase apply and live recovery verification remain
-a separate owner gate.
+preserves retained events on rollback. The owner applied and verified that scheduler on
+2026-07-24; the atomic-claim follow-up is coupled to its reviewed worker deployment.
 
 The notification outbox is dispatched through the protected
 `/api/process-message-notification-outbox` worker. An additive scheduler migration stores only the

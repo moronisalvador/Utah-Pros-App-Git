@@ -137,12 +137,14 @@ this refresh. `npm run validate:provenance -- --worktree` passed with nine ledge
 PR #512 merged to production as merge commit `bd420154837159b26290d17d8b89c26b606e176b`.
 A concurrent, already-reviewed consent-migration parse correction then landed on `dev` as
 `9dc5681577a7af0d94655e5d0f202aaed1806174`. A fresh read-only catalog capture at
-2026-07-24 13:03:12 UTC found two additional applied ledger rows:
+2026-07-24 13:03:12 UTC found two additional applied ledger rows. A later concurrent apply added
+the atomic CallRail claim RPC; the final read-only recapture at 13:25:12 UTC records all three:
 
 | Live version | Name | Release source | Reviewed origin |
 |---|---|---|---|
 | `20260724002500` | `callrail_event_recovery_scheduler` | `20260724002500_callrail_event_recovery_scheduler.sql` | `ec2520e` |
 | `20260724043000` | `harden_service_sms_consent` | `20260724043000_harden_service_sms_consent.sql` | `9dc5681` |
+| `20260724051500` | `claim_callrail_provider_event` | `20260724051500_claim_callrail_provider_event.sql` | `13493f8` |
 
 The consent hardening migration constructs exact replacement bodies dynamically after validating
 the prior definitions, so its checked-in file does not contain literal function bodies that the
@@ -154,15 +156,19 @@ normal source extractor can fingerprint. The gate now handles this narrow case b
 
 The refreshed evidence pins both hardened consent RPCs to their service-only invoker contract and
 records that the other 11 selected function fingerprints and four selected policy fingerprints
-remain unchanged. No Supabase mutation occurred during this reconciliation or recapture.
+remain unchanged. It also pins the new CallRail claim RPC to its literal reviewed source and
+service-only invoker contract. Its raw hash differs because the applied function retained CRLF
+formatting, while the comment/whitespace-normalized executable hash matches. This reconciliation
+performed read-only recapture only; the concurrent apply was performed outside this task.
 
 Verification after reconciliation:
 
-- `npm run validate:provenance -- --worktree` — PASS; 11 ledger mappings, 13 functions and four
-  policies, with only the existing documented comment-only warning;
-- `npm run test:provenance` — PASS, 12/12;
-- migration contract tests — PASS, 8/8;
+- `npm run validate:provenance -- --worktree` — PASS; 12 ledger mappings, 14 functions and four
+  policies, with only the two documented normalized-source warnings;
+- `npm run test:provenance` — PASS, 13/13;
+- consent and CallRail claim migration contract tests — PASS, 11/11;
 - `npm run build` — PASS;
-- `npm test` — PASS, 1,741/1,741 across unit, Worker and isolated-QA lanes;
+- `npm test` — PASS, 1,745/1,745 across unit, Worker and isolated-QA lanes after reconciling the
+  concurrent atomic CallRail claim work;
 - targeted changed-file ESLint and `git diff --check` — PASS;
 - full-tree `npm run lint` — exceeded the 120-second close-out window without producing a result.

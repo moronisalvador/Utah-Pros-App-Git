@@ -68,6 +68,12 @@
       "name": "harden_service_sms_consent",
       "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
       "reviewedOriginCommit": "9dc5681"
+    },
+    {
+      "version": "20260724051500",
+      "name": "claim_callrail_provider_event",
+      "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
+      "reviewedOriginCommit": "13493f8"
     }
   ],
   "selectedFunctions": [
@@ -109,6 +115,19 @@
         "rawMd5": "f86494e84a1dc94543b2787e696f2b1a",
         "semanticMd5": "1863e0f7c0148272dda01fe8c5822a51"
       },
+      "expected": {
+        "securityDefiner": false,
+        "config": ["search_path=\"\""],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "claim_callrail_provider_event(uuid,timestamp with time zone,timestamp with time zone)",
+      "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
+      "allowedRawDrift": "comments_or_whitespace",
       "expected": {
         "securityDefiner": false,
         "config": ["search_path=\"\""],

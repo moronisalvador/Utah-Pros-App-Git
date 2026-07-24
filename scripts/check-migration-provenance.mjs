@@ -130,10 +130,13 @@ function compareFunction(source, live, selected, issues, warnings) {
     }
     if (local.rawMd5 !== live.rawMd5) {
       if (
-        selected.allowedRawDrift === 'comments_only' &&
+        ['comments_only', 'comments_or_whitespace'].includes(selected.allowedRawDrift) &&
         local.semanticMd5 === live.semanticMd5
       ) {
-        warnings.push(`${selected.identity}: raw body differs, comment-only semantic hash matches`);
+        const driftType = selected.allowedRawDrift === 'comments_only'
+          ? 'comment-only'
+          : 'comment/whitespace-normalized';
+        warnings.push(`${selected.identity}: raw body differs, ${driftType} semantic hash matches`);
       } else {
         issues.push(`${selected.identity}: live/source body fingerprint drift`);
       }

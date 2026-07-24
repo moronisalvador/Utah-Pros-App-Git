@@ -109,6 +109,19 @@ test('allows documented comment-only raw drift', () => {
   assert.equal(result.warnings.length, 1);
 });
 
+test('allows documented comment-or-whitespace raw drift', () => {
+  const fixture = makeFixture();
+  fixture.manifest.selectedFunctions[0].allowedRawDrift = 'comments_or_whitespace';
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.warnings[0], /comment\/whitespace-normalized/);
+});
+
 test('blocks an unmapped live ledger row', () => {
   const fixture = makeFixture();
   fixture.evidence.ledgerTail.push({ version: '2', name: 'unreviewed' });
