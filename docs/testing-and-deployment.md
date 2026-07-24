@@ -203,6 +203,8 @@ with no overlapping contacts/message-provider writes. Verify the ledger, unchang
 signatures/ACLs/search paths, contact-phone race closure and strict STOP→later-START chronology.
 Also verify the exact-source hash/length precondition, exact-once patch anchors and the employee
 share lock that serializes authorization revocation against attestation.
+Verify browser denial, service-role execution, append-only audit history, and that automated and
+scheduled paths accept only `GLOBAL_OPT_IN`.
 Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back
 while the fail-closed hardening remains; reopening either race requires a separate approved
 migration.

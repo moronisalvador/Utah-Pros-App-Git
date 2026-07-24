@@ -128,7 +128,7 @@ export default function SmsConsentAttestationModal({
           <button className="btn btn-secondary" type="button" onClick={onClose} disabled={submitting}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="submit" form="sms-consent-attestation" disabled={!canSubmit}>
+          <button className="btn btn-primary btn-lg" type="submit" form="sms-consent-attestation" disabled={!canSubmit}>
             {submitting ? 'Recording…' : 'Record permission'}
           </button>
         </>
@@ -179,12 +179,15 @@ export default function SmsConsentAttestationModal({
             value={evidenceNote}
             onChange={(event) => setEvidenceNote(event.target.value)}
             maxLength={500}
+            aria-describedby="sms-consent-evidence-hint"
             placeholder="Example: Recorded call at 2:14 PM, or authorization stored in Job Documents"
             disabled={submitting}
             required
           />
-          <div className="conv-consent-attest-hint">
-            The source, consent date, your staff identity, and the server timestamp will be kept in consent history.
+          <div className="conv-consent-attest-hint" id="sms-consent-evidence-hint">
+            At least 10 characters ({evidenceNote.trim().length}/500). The source, consent date,
+            your staff identity, trusted request IP, and server timestamp will be kept in consent
+            history.
           </div>
         </div>
 

@@ -124,6 +124,28 @@ async function gateRecipient(
   if (status?.code === 'CONTACT_NOT_FOUND') {
     return { blocked: true, code: 'CONTACT_NOT_FOUND' };
   }
+  if (status?.code === 'CONTACT_OPTED_OUT') {
+    await db.insert('sms_consent_log', {
+      contact_id: contact.id,
+      phone: contact.phone,
+      event_type: 'send_blocked_no_consent',
+      source: 'system',
+      details: `Outbound blocked: explicit opt-out recorded. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`,
+      performed_by: sentBy,
+    });
+    return { blocked: true, code: 'CONTACT_OPTED_OUT' };
+  }
+  if (status?.code === 'CONTACT_PENDING_STOP') {
+    await db.insert('sms_consent_log', {
+      contact_id: contact.id,
+      phone: contact.phone,
+      event_type: 'send_blocked_no_consent',
+      source: 'system',
+      details: 'Outbound blocked: an inbound STOP request is awaiting projection.',
+      performed_by: sentBy,
+    });
+    return { blocked: true, code: 'CONTACT_PENDING_STOP' };
+  }
 
   // Missing/unknown status fails closed as NO_CONSENT. Never fall back to the
   // browser-visible contact boolean when the authoritative RPC is unavailable.
@@ -133,11 +155,7 @@ async function gateRecipient(
       phone: contact.phone,
       event_type: 'send_blocked_no_consent',
       source: 'system',
-      details: status?.source === 'explicit_opt_out'
-        ? `Outbound blocked: explicit opt-out recorded. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`
-        : status?.source === 'pending_stop'
-          ? 'Outbound blocked: an inbound STOP request is awaiting projection.'
-          : 'Outbound blocked: no current global or service-message consent.',
+      details: 'Outbound blocked: no current global or service-message consent.',
       performed_by: sentBy,
     });
     return { blocked: true, code: 'NO_CONSENT' };
@@ -569,11 +587,15 @@ export async function onRequestPost(context) {
         return jsonResponse({
           error: gate.code === 'DND_ACTIVE'
             ? 'Message blocked: contact has Do Not Disturb enabled'
-            : gate.code === 'NO_CONSENT'
-              ? 'Message blocked: contact has not opted in to SMS'
-              : gate.code === 'CONTACT_PHONE_MISMATCH'
-                ? 'Message blocked: conversation phone does not match the consented contact phone'
-              : 'Message blocked: could not resolve contact for compliance check',
+            : gate.code === 'CONTACT_OPTED_OUT'
+              ? 'Message blocked: contact opted out of SMS'
+              : gate.code === 'CONTACT_PENDING_STOP'
+                ? 'Message blocked: an inbound STOP request is still being processed'
+                : gate.code === 'NO_CONSENT'
+                  ? 'Message blocked: contact has not opted in to SMS'
+                  : gate.code === 'CONTACT_PHONE_MISMATCH'
+                    ? 'Message blocked: conversation phone does not match the consented contact phone'
+                    : 'Message blocked: could not resolve contact for compliance check',
           code: gate.code,
           contact_id: contact?.id ?? null,
         }, 403, request, env);

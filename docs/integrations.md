@@ -68,6 +68,8 @@ bindings and provider consoles.
   chokepoint, consumes the service-only consent decision, and adds Utah Pros identification plus
   first-conversation STOP instructions before provider dispatch. Recording permission never
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
+  Scheduled and automated SMS call the same suppression-aware status boundary but accept only
+  `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
 - Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
   shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
   facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is

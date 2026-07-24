@@ -429,14 +429,39 @@ export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }
 
-  // Gate 2: TCPA consent.
-  if (!consentAllows({
+  // Gate 2: TCPA consent. The database decision also sees duplicate-contact
+  // suppression and durable-but-unprojected STOP events. Automated traffic
+  // accepts GLOBAL_OPT_IN only; staff-only SERVICE_CONSENT is never consumed.
+  const locallyAllowed = consentAllows({
     phone,
     opt_in_status: contact?.opt_in_status,
     opt_out_at: contact?.opt_out_at,
     dnd: contact?.dnd,
-  })) {
-    const reason = !phone ? 'no_phone' : contact?.dnd ? 'dnd' : 'no_consent';
+  });
+  let consentStatus = null;
+  if (locallyAllowed && contact?.id) {
+    try {
+      const rawConsentStatus = await db.rpc('get_service_sms_consent_status', {
+        p_contact_id: contact.id,
+        p_destination_phone: phone,
+      });
+      consentStatus = Array.isArray(rawConsentStatus)
+        ? rawConsentStatus[0]
+        : rawConsentStatus;
+    } catch {
+      consentStatus = null;
+    }
+  }
+  if (
+    !locallyAllowed
+    || consentStatus?.allowed !== true
+    || consentStatus?.code !== 'GLOBAL_OPT_IN'
+  ) {
+    const reason = !phone
+      ? 'no_phone'
+      : contact?.dnd || consentStatus?.code === 'DND_ACTIVE'
+        ? 'dnd'
+        : 'no_consent';
     const eventType = reason === 'dnd'
       ? 'send_blocked_dnd'
       : reason === 'no_consent' ? 'send_blocked_no_consent' : 'send_blocked_no_phone';

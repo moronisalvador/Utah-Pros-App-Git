@@ -213,6 +213,10 @@ Attestation revalidates an active internal admin/office actor, serializes on the
 phone advisory lock as CallRail inbound projection, locks every duplicate contact and refuses DND,
 `opt_out_at` or a durable pending STOP. The status RPC returns only a safe allow/deny decision and
 requires the current contact phone, destination, suppression state, scope and version to agree.
+After entering the phone advisory-lock boundary, both RPCs lock and re-read the target contact and
+fail closed if its normalized phone changed. An unresolved STOP is superseded only by a processed
+START with a strictly later `occurred_at`; equal timestamps leave STOP authoritative. Applying the
+migration alone sends nothing and changes no existing consent row.
 
 Pending additive hardening migration `20260724043000_harden_service_sms_consent.sql` makes both
 RPCs lock and re-read the target contact after entering the phone advisory-lock boundary and fail

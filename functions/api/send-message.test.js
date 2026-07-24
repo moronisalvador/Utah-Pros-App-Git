@@ -166,7 +166,7 @@ function makeDb({
         if (resolvedContact.opt_out_at) {
           return {
             allowed: false,
-            code: 'NO_CONSENT',
+            code: 'CONTACT_OPTED_OUT',
             source: 'explicit_opt_out',
           };
         }
@@ -231,6 +231,36 @@ describe('send-message compliance chain', () => {
     expect(h.twilio).not.toHaveBeenCalled();
   });
 
+  it('keeps a durable pending STOP distinct and never offers a send', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+    });
+    h.db.rpc = vi.fn(async (name) => {
+      if (name === 'get_service_sms_consent_status') {
+        return {
+          allowed: false,
+          code: 'CONTACT_PENDING_STOP',
+          source: 'pending_stop',
+        };
+      }
+      return null;
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_PENDING_STOP');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
   it('keeps an explicit STOP/opt-out fail-closed even if opt_in_status is stale true', async () => {
     h.db = makeDb({
       conversation: DIRECT,
@@ -251,7 +281,7 @@ describe('send-message compliance chain', () => {
     });
 
     expect(res.status).toBe(403);
-    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect((await res.json()).code).toBe('CONTACT_OPTED_OUT');
     expect(h.twilio).not.toHaveBeenCalled();
     expect(consentBlocks(h.db)[0].payload.details).toContain('explicit opt-out');
   });
@@ -326,7 +356,7 @@ describe('send-message compliance chain', () => {
     });
 
     expect(res.status).toBe(403);
-    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect((await res.json()).code).toBe('CONTACT_OPTED_OUT');
     expect(h.twilio).not.toHaveBeenCalled();
   });
 
@@ -1074,12 +1104,12 @@ describe('send-message per-participant consent loop', () => {
       h.db.inserts.findIndex((item) => item.table === 'messages' && item.payload.recipient_address === '+15551110001'),
       1,
     );
-    h.db.rpc = vi.fn(async (name) => {
-      if (name === 'get_service_sms_consent_status') {
-        return { allowed: true, code: 'GLOBAL_OPT_IN' };
-      }
-      return name === 'claim_message_recipient_attempt' ? false : null;
-    });
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => (
+      name === 'claim_message_recipient_attempt'
+        ? false
+        : originalRpc(name, args)
+    ));
     h.twilio = vi.fn();
 
     const replay = await onRequestPost({ request: req(body), env: ENV });

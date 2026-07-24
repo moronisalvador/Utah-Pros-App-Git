@@ -31,6 +31,7 @@ const state = {
   inserts: [],
   updates: [],
   selects: [],
+  consentStatus: null,
 };
 
 vi.mock('./twilio.js', () => ({
@@ -66,7 +67,10 @@ vi.mock('./supabase.js', () => ({
       return [{ ...data }];
     },
     async update(table, filter, data) { state.updates.push({ table, filter, data }); return null; },
-    async rpc() { return null; },
+    async rpc(name) {
+      if (name === 'get_service_sms_consent_status') return state.consentStatus;
+      return null;
+    },
   }),
 }));
 
@@ -99,6 +103,7 @@ beforeEach(() => {
   state.updates = [];
   state.selects = [];
   state.contact = OPTED_IN;
+  state.consentStatus = { allowed: true, code: 'GLOBAL_OPT_IN' };
   state.sendImpl = null;
   state.failThreadWrite = false;
   sendMessage.mockClear();
@@ -153,6 +158,35 @@ describe('sendAutomatedMessage — SMS gate', () => {
     }));
     expect(state.selects.find(({ table }) => table === 'contacts')?.query)
       .toContain('opt_out_at');
+  });
+
+  it('does NOT consume staff-only service consent for an automated SMS', async () => {
+    state.smsEnabled = true;
+    state.contact = { ...OPTED_IN, opt_in_status: false };
+    state.consentStatus = { allowed: true, code: 'SERVICE_CONSENT' };
+
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'no_consent',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('fails closed while an inbound STOP event is awaiting projection', async () => {
+    state.smsEnabled = true;
+    state.consentStatus = { allowed: false, code: 'CONTACT_PENDING_STOP' };
+
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'no_consent',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('texts an opted-in contact only when the switch is ON (within the quiet-hours window)', async () => {

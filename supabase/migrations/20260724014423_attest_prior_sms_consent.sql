@@ -19,12 +19,11 @@
 -- ROLLBACK:
 --   REVOKE ALL ON FUNCTION public.get_service_sms_consent_status(uuid, text)
 --     FROM PUBLIC, anon, authenticated, service_role;
---   DROP FUNCTION public.get_service_sms_consent_status(uuid, text);
 --   REVOKE ALL ON FUNCTION public.attest_prior_sms_consent(uuid, uuid, text, date, text, text)
 --     FROM PUBLIC, anon, authenticated, service_role;
---   DROP FUNCTION public.attest_prior_sms_consent(uuid, uuid, text, date, text, text);
---   The locked-down tables and matching sms_consent_log rows are retained because
---   deleting legally relevant consent evidence during rollback is unsafe.
+--   Roll back consuming Worker/UI code while retaining the additive table,
+--   functions, locked-down current/history tables, and redacted sms_consent_log evidence. Destructive schema
+--   removal, if ever required, must be a separate reviewed cleanup migration.
 -- ════════════════════════════════════════════════
 
 CREATE TABLE public.service_sms_consents (
@@ -169,6 +168,8 @@ DECLARE
   v_service_consent public.service_sms_consents%ROWTYPE;
   v_phone_digits text;
   v_phone_key text;
+  v_locked_phone_digits text;
+  v_locked_phone_key text;
   v_destination_digits text;
   v_destination_key text;
 BEGIN
@@ -225,6 +226,29 @@ BEGIN
   -- durable STOP that is waiting for projection visible before consent is used.
   PERFORM pg_advisory_xact_lock(hashtextextended('messaging-phone:' || v_phone_key, 0));
 
+  SELECT *
+  INTO v_contact
+  FROM public.contacts
+  WHERE id = p_contact_id
+  FOR SHARE;
+
+  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''), '[^0-9]', '', 'g');
+  IF length(v_locked_phone_digits) = 10 THEN
+    v_locked_phone_key := v_locked_phone_digits;
+  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = '1' THEN
+    v_locked_phone_key := right(v_locked_phone_digits, 10);
+  END IF;
+
+  IF v_contact.id IS NULL
+     OR v_locked_phone_key IS NULL
+     OR v_locked_phone_key <> v_phone_key THEN
+    RETURN jsonb_build_object(
+      'allowed', false,
+      'code', 'CONTACT_PHONE_CHANGED',
+      'contact_id', p_contact_id
+    );
+  END IF;
+
   IF EXISTS (
     SELECT 1
     FROM public.contacts c
@@ -246,7 +270,7 @@ BEGIN
   ) THEN
     RETURN jsonb_build_object(
       'allowed', false,
-      'code', 'NO_CONSENT',
+      'code', 'CONTACT_OPTED_OUT',
       'contact_id', v_contact.id,
       'source', 'explicit_opt_out'
     );
@@ -262,10 +286,28 @@ BEGIN
         = v_phone_key
       AND regexp_replace(lower(trim(COALESCE(e.content, ''))), '[^a-z0-9]', '', 'g')
         = ANY (ARRAY['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'])
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.message_provider_events later_event
+        WHERE later_event.direction = 'inbound'
+          AND later_event.message_type IN ('sms', 'mms')
+          AND later_event.processing_state = 'processed'
+          AND right(
+            regexp_replace(COALESCE(later_event.sender_address, ''), '[^0-9]', '', 'g'),
+            10
+          ) = v_phone_key
+          AND later_event.occurred_at > e.occurred_at
+          AND regexp_replace(
+            lower(trim(COALESCE(later_event.content, ''))),
+            '[^a-z0-9]',
+            '',
+            'g'
+          ) = ANY (ARRAY['start', 'unstop', 'subscribe', 'yes'])
+      )
   ) THEN
     RETURN jsonb_build_object(
       'allowed', false,
-      'code', 'NO_CONSENT',
+      'code', 'CONTACT_PENDING_STOP',
       'contact_id', v_contact.id,
       'source', 'pending_stop'
     );
@@ -331,6 +373,8 @@ DECLARE
   v_request_ip text := NULLIF(btrim(COALESCE(p_request_ip, '')), '');
   v_phone_digits text;
   v_phone_key text;
+  v_locked_phone_digits text;
+  v_locked_phone_key text;
   v_recorded_at timestamptz := now();
   v_already_recorded boolean := false;
   v_attestation_id uuid;
@@ -378,7 +422,8 @@ BEGIN
   INTO v_actor
   FROM public.employees
   WHERE id = p_actor_id
-  LIMIT 1;
+  LIMIT 1
+  FOR SHARE;
 
   IF v_actor.id IS NULL
      OR v_actor.is_active IS DISTINCT FROM true
@@ -421,7 +466,21 @@ BEGIN
   SELECT *
   INTO v_contact
   FROM public.contacts
-  WHERE id = p_contact_id;
+  WHERE id = p_contact_id
+  FOR UPDATE;
+
+  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''), '[^0-9]', '', 'g');
+  IF length(v_locked_phone_digits) = 10 THEN
+    v_locked_phone_key := v_locked_phone_digits;
+  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = '1' THEN
+    v_locked_phone_key := right(v_locked_phone_digits, 10);
+  END IF;
+
+  IF v_contact.id IS NULL
+     OR v_locked_phone_key IS NULL
+     OR v_locked_phone_key <> v_phone_key THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'CONTACT_PHONE_CHANGED');
+  END IF;
 
   IF EXISTS (
     SELECT 1
@@ -453,6 +512,24 @@ BEGIN
         = v_phone_key
       AND regexp_replace(lower(trim(COALESCE(e.content, ''))), '[^a-z0-9]', '', 'g')
         = ANY (ARRAY['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit'])
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.message_provider_events later_event
+        WHERE later_event.direction = 'inbound'
+          AND later_event.message_type IN ('sms', 'mms')
+          AND later_event.processing_state = 'processed'
+          AND right(
+            regexp_replace(COALESCE(later_event.sender_address, ''), '[^0-9]', '', 'g'),
+            10
+          ) = v_phone_key
+          AND later_event.occurred_at > e.occurred_at
+          AND regexp_replace(
+            lower(trim(COALESCE(later_event.content, ''))),
+            '[^a-z0-9]',
+            '',
+            'g'
+          ) = ANY (ARRAY['start', 'unstop', 'subscribe', 'yes'])
+      )
   ) THEN
     RETURN jsonb_build_object('ok', false, 'code', 'CONTACT_PENDING_STOP');
   END IF;
