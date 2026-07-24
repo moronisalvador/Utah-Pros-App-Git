@@ -57,6 +57,11 @@ they never reinterpret missing configuration as permission to use production.
 - Money: cent rounding, stable idempotency, concurrent retry, partial failure and reconciliation.
 - Messaging: consent, DND, STOP/START/HELP, quiet hours, suppression and retry classification.
 - Database: intended and denied roles, RPC signature compatibility, trigger invariants and rollback.
+  For a reporting/timeline function assembled as a stack of `UNION ALL` arms and grown by repeated
+  function-body-only `CREATE OR REPLACE` migrations, add a durable guard that seeds every arm and
+  asserts each still returns at least one row — so a rebuild from a stale ancestor cannot silently
+  drop a live arm. Precedent: `supabase/tests/crm_contact_activity.test.js` guards all 24 arms of
+  `get_contact_activity` (added after a near-miss 2026-07-24 migration would have dropped 11).
 - UI: loading/error/empty states, minimize/resume, 390px mobile, keyboard/focus and stale-cache recovery.
 - Integrations: missing config, invalid signature/state, duplicate event, timeout/429/5xx and redacted logs.
 
