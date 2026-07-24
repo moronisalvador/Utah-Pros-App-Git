@@ -25,8 +25,6 @@ const MEDIA_URL =
   'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
 const LIVE_APP_MEDIA_URL =
   'https://app.callrail.com/msg/a/635117922/messages/SCIabc/media/0';
-const LIVE_API_MEDIA_URL =
-  'https://api.callrail.com/v3/a/635117922/text-messages/SCIabc/media/0';
 const SIGNED_ASSET_URL =
   'https://calltrk-mms-media-prod1.s3.amazonaws.com/object-key' +
   '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
@@ -126,7 +124,7 @@ describe('CallRail MMS private ingestion', () => {
     expect(result.itemCount).toBe(1);
     expect(h.fetchImpl).toHaveBeenNthCalledWith(
       1,
-      LIVE_API_MEDIA_URL,
+      MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
         redirect: 'manual',
@@ -402,7 +400,7 @@ describe('CallRail MMS private ingestion', () => {
         body: '',
       },
     }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
-      code: 'CALLRAIL_MMS_URL_INVALID',
+      code: 'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED',
       retryable: false,
     });
     expect(h.db.uploadStorage).not.toHaveBeenCalled();
@@ -563,7 +561,7 @@ describe('CallRail MMS private ingestion', () => {
       { fetcher: h.fetchImpl },
     );
     expect(result.itemCount).toBe(1);
-    expect(h.fetchImpl.mock.calls[1][0]).toBe(LIVE_API_MEDIA_URL);
+    expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
     expect(h.fetchImpl.mock.calls[1][1].headers.Authorization)
       .toBe('Token token="server-secret"');
   });
@@ -608,7 +606,23 @@ describe('CallRail MMS private ingestion', () => {
       { fetcher: h.fetchImpl },
     );
     expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl.mock.calls[0][0]).toBe(
+      'https://api.callrail.com/v3/a/ACC123/text-messages/conv789.json?per_page=250',
+    );
+    expect(h.fetchImpl.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      redirect: 'error',
+      headers: {
+        Authorization: 'Token token="server-secret"',
+        Accept: 'application/json',
+      },
+    });
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+    expect(h.fetchImpl.mock.calls.map(([url]) => url)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/v3/a/635117922/'),
+      ]),
+    );
   });
 
   it.each([

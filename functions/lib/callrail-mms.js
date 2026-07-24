@@ -210,18 +210,26 @@ function validateCallrailMediaRedirect(location) {
   return parsed.href;
 }
 
-function authenticatedMediaEndpoint(validatedUrl) {
+function preferredApiAccountId(accountId, accountAliases = []) {
+  return [accountId, ...accountAliases]
+    .map((value) => String(value || '').trim())
+    .find((value) => /^ACC[A-Za-z0-9_-]+$/.test(value))
+    || accountId;
+}
+
+function authenticatedMediaEndpoint(validatedUrl, { accountId, accountAliases }) {
   const parsed = new URL(validatedUrl);
-  if (parsed.hostname !== CALLRAIL_MMS_APP_HOST) return parsed.href;
 
   // CallRail's live webhook currently emits an app-host route, while its API
   // contract says media links are retrieved with the API key. After the app
   // route has passed exact account/message/index validation above, translate
-  // only its proven path identity onto the documented API host. Never send an
-  // API credential to the browser-session app host.
-  const [, , , account, , message, , index] = parsed.pathname.split('/');
+  // only its proven path identity onto the documented API host and its proven
+  // masked account identity. Never send an API credential to the browser-
+  // session app host or rely on a numeric-account redirect.
+  const [, , , , , message, , index] = parsed.pathname.split('/');
+  const apiAccount = preferredApiAccountId(accountId, accountAliases);
   return (
-    `https://${CALLRAIL_MMS_API_HOST}/v3/a/${encodeURIComponent(account)}` +
+    `https://${CALLRAIL_MMS_API_HOST}/v3/a/${encodeURIComponent(apiAccount)}` +
     `/text-messages/${encodeURIComponent(message)}/media/${encodeURIComponent(index)}`
   );
 }
@@ -329,7 +337,10 @@ async function downloadOne({
     index,
     mediaUrl,
   });
-  const endpoint = authenticatedMediaEndpoint(validatedEndpoint);
+  const endpoint = authenticatedMediaEndpoint(validatedEndpoint, {
+    accountId,
+    accountAliases,
+  });
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -545,14 +556,34 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
   const fetchImpl = options?.fetchImpl || fetchWithTimeout;
   let ephemeralMediaUrls = event.ephemeralMediaUrls;
   let accountAliases = [];
+  // Current CallRail APIs identify accounts with masked ACC... ids. Older UPR
+  // configuration may still hold the numeric identity, so prove and prefer the
+  // masked alias before any history or media request instead of relying on a
+  // provider redirect that would complicate credential and SSRF boundaries.
+  if (!/^ACC[A-Za-z0-9_-]+$/.test(accountId)) {
+    accountAliases = await resolveProvenAccountAliases({
+      apiKey,
+      configuredAccountId: accountId,
+      fetcher: fetchImpl,
+    });
+    if (!/^ACC[A-Za-z0-9_-]+$/.test(
+      preferredApiAccountId(accountId, accountAliases),
+    )) {
+      fail(
+        'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED',
+        'CallRail MMS account identity could not be verified.',
+      );
+    }
+  }
   if (!Array.isArray(ephemeralMediaUrls) || ephemeralMediaUrls.length === 0) {
     const conversation = requireIdentifier(
       event.providerConversationId,
       'CallRail conversation identity',
     );
     const message = requireIdentifier(event.providerMessageId, 'CallRail message identity');
+    const apiAccountId = preferredApiAccountId(accountId, accountAliases);
     const endpoint =
-      `https://api.callrail.com/v3/a/${encodeURIComponent(accountId)}` +
+      `https://api.callrail.com/v3/a/${encodeURIComponent(apiAccountId)}` +
       `/text-messages/${encodeURIComponent(conversation)}.json?per_page=250`;
     let response;
     try {
@@ -604,7 +635,7 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
         mediaUrls: candidate.media_urls,
       })
     ));
-    if (needsAliasDiscovery) {
+    if (needsAliasDiscovery && accountAliases.length === 0) {
       accountAliases = await resolveProvenAccountAliases({
         apiKey,
         configuredAccountId: accountId,
