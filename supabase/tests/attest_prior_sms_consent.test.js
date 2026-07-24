@@ -29,7 +29,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migration = readFileSync(
   resolve(here, '../migrations/20260724014423_attest_prior_sms_consent.sql'),
   'utf8',
-);
+).replace(/\r\n/g, '\n');
 const signature = 'public.attest_prior_sms_consent(uuid, uuid, text, date, text)';
 
 describe('attest_prior_sms_consent migration contract', () => {
