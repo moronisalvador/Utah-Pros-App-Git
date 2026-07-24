@@ -85,15 +85,18 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - Valid service-message permission may also have been obtained verbally on a customer call or in
   writing, including an SMS clause in a signed work authorization. Authorized admin/office staff
   may attest that verified prior permission only by recording its method, date and evidence note;
-  UPR records their server-derived identity and audit timestamp. Contact existence, an assumed
-  business relationship, or merely lacking a STOP record is never permission.
+  UPR records their server-derived identity, trusted request IP and audit timestamp. This
+  attestation authorizes only staff person-to-person service SMS to the exact attested phone;
+  scheduled, automated, group, campaign and marketing sends still require their existing global
+  consent gates. Contact existence, an assumed business relationship, or merely lacking a STOP
+  record is never permission.
 - Prior-consent attestation is not re-subscription. It never clears manual DND, STOP, provider
   opt-out or `opt_out_at`; customer re-consent after revocation follows the established inbound
   START/affirmative written path.
-- Staff messages still send only through `POST /api/send-message`. Every message identifies Utah
-  Pros Restoration, and the first outbound message in a conversation includes “Reply STOP to
-  unsubscribe.” A separate outbound SMS asking an unconsented number to opt in is prohibited; staff
-  instead records consent already obtained through the approved evidence flow.
+- Staff messages still send only through `POST /api/send-message`. A separate outbound SMS asking
+  an unconsented number to opt in is prohibited; staff instead records consent already obtained
+  through the approved evidence flow. Disclosure/body policy is not inferred from arbitrary legacy
+  conversation rows and remains a separate provider/compliance contract.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR

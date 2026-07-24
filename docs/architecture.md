@@ -90,8 +90,9 @@ be treated as current architecture without re-verification.
   multipart upload or short-lived provider-fetch URL.
 - Verified permission obtained before UPR tracked consent enters through the separate
   `POST /api/attest-sms-consent` record-only boundary. That route cannot contact a provider; it
-  atomically updates the contact and consent history, after which the existing send chokepoint
-  independently rechecks consent, DND and explicit opt-out state.
+  atomically records purpose-scoped staff person-to-person consent plus immutable evidence. The
+  existing send chokepoint independently rechecks the attested phone, DND and explicit opt-out
+  state. Scheduled, automated, group and campaign workers do not consume this scoped consent.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.
