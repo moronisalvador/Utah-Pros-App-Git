@@ -6222,13 +6222,14 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     `inbound_leads.notes` into the log (not cleared). The note surfaces on both timelines as a `'note'`
     row, told apart from the `job_notes` `'note'` arm by `meta.note_id`; the `lead`/`follow_up_call`
     bodies dropped `il.notes`/`fu.notes` from their COALESCE so a backfilled note isn't shown twice.
-    ⚠️ **Provenance:** this migration shipped on commit `44dc519` and is LIVE, but is NOT in the
-    `claude/gifted-sammet-22e7d1` migration tree (that branch was cut earlier). The four newer activity
-    migrations above ARE on this branch; only `crm_lead_notes` is not — so this branch's own migrations
-    do NOT reproduce the live function's second (`crm_lead_notes`) `note` arm; that 24th arm exists only
-    because that separate commit is applied to the one shared Supabase. Reconcile (rebase/merge the
-    `crm_lead_notes` migration) before treating this branch as a release ref, or the deployed branch
-    won't be reproducible from its own migration tree.
+    ✅ **Provenance — RESOLVED 2026-07-24.** This migration shipped on commit `44dc519` and was LIVE
+    while its source was unreachable from `dev` or `main`, so no branch reproduced the live function's
+    second (`crm_lead_notes`) `note` arm — the 24th arm existed only because that commit had been
+    applied to the one shared Supabase. PR #515 merged that source into `dev`, and the live
+    `get_contact_activity(uuid)` body was verified semantically identical to it before merging.
+    `dev` now reproduces all 24 arms from its own migration tree. See the "Concurrent-session
+    reconciliation (2026-07-24)" section and
+    `docs/audit/2026-07/evidence/migration-provenance-2026-07-24.md`.
   - **Durable 24-arm regression guard — `supabase/tests/crm_contact_activity.test.js` (2026-07-24).**
     A second suite seeds one contact wired to all 24 arms and asserts each returns ≥1 row (a dropped
     arm names itself in the failure). It exists to catch the recurring failure mode where a body-only
