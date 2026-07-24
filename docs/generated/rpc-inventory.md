@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 374 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-24T01:00:19.073034.
+Snapshot: 376 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-24T04:04:20.854338.
 
 ## Functions
 
@@ -23,6 +23,7 @@ Snapshot: 374 public functions. Source: live catalog (read-only introspection). 
 | apply_schedule_plan | yes | no | yes |
 | approve_time_entries | yes | no | yes |
 | assign_tasks_to_appointment | yes | no | yes |
+| attest_prior_sms_consent | no | no | no |
 | bust_postgrest_cache | yes | no | yes |
 | calc_time_entry_cost | no | no | yes |
 | capture_claim_status_history | yes | no | yes |
@@ -222,6 +223,7 @@ Snapshot: 374 public functions. Source: live catalog (read-only introspection). 
 | get_scheduled_queue | yes | no | yes |
 | get_segments | yes | no | yes |
 | get_sequences | yes | no | yes |
+| get_service_sms_consent_status | no | no | no |
 | get_sign_document_templates | yes | ⚠️ yes | yes |
 | get_sign_request_by_token | yes | ⚠️ yes | yes |
 | get_speed_to_lead | yes | no | yes |

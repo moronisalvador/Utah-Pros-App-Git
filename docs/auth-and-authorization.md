@@ -205,7 +205,7 @@ sent/failed/ambiguous history. `POST /api/message-media-url` signs only the medi
 already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
 path.
 
-## Prior SMS consent attestation (built; migration not applied)
+## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 
 `POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external
 employee whose role is `admin` or `office`. The Worker derives the actor from that session; a
@@ -224,3 +224,12 @@ projection, missing contacts and phone mismatch fail closed.
 capability and returns only the service-role status decision; it never exposes the evidence note,
 phone, actor IP or full row. Conversation UI visibility is presentation only; these Worker and
 database checks are the authority.
+
+The database boundary is live under migration-ledger version
+`20260724035913_attest_prior_sms_consent`. Read-only role verification confirmed neither `anon` nor
+`authenticated` can access the two evidence tables or execute the RPCs. A rollback-only synthetic
+transaction, acting through `service_role` with a real active internal admin/office identity,
+confirmed that duplicate-contact DND and pending STOP state fail closed while raw evidence remains
+outside the legacy browser-readable log. No provider send occurred during verification. Detailed
+sanitized evidence is in
+`docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.

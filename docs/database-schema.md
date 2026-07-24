@@ -189,7 +189,7 @@ requires a fresh owner-approved apply window.
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 
-## Prior SMS consent attestation (authored; not applied)
+## Prior SMS consent attestation (applied and verified 2026-07-23)
 
 Migration `20260724014423_attest_prior_sms_consent.sql` adds the current-state
 `service_sms_consents` table, append-only `service_sms_consent_attestations` evidence history, and
@@ -213,6 +213,15 @@ Attestation revalidates an active internal admin/office actor, serializes on the
 phone advisory lock as CallRail inbound projection, locks every duplicate contact and refuses DND,
 `opt_out_at` or a durable pending STOP. The status RPC returns only a safe allow/deny decision and
 requires the current contact phone, destination, suppression state, scope and version to agree.
+
+The exact migration blob from commit `e71e759b27b1da1fad713413c257b7059bd5905d` was applied to the
+shared project under live migration-ledger version
+`20260724035913_attest_prior_sms_consent`. Read-only catalog verification confirmed both tables,
+forced RLS, the explicit service-role-only policies and grants, and browser-inaccessible invoker
+RPCs. Rollback-only synthetic verification confirmed direct-service authorization, append-only
+re-attestation history, legacy-log redaction, unchanged general opt-in, duplicate-contact DND
+suppression and durable pending-STOP suppression. See
+`docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
 ## Known limits
 

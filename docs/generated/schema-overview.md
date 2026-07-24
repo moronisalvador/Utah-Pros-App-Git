@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 133 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-24T01:00:19.073034.
+Snapshot: 135 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-24T04:04:20.854338.
 
 ## Tables
 
@@ -130,6 +130,8 @@ Snapshot: 133 public tables. Source: live catalog (read-only introspection). Cap
 | scheduled_messages | 12 | yes | 3 | no |
 | selection_dispatches | 15 | yes | 1 | no |
 | selection_responses | 10 | yes | 1 | no |
+| service_sms_consent_attestations | 12 | yes | 2 | no |
+| service_sms_consents | 12 | yes | 1 | no |
 | sign_requests | 25 | yes | 4 | no |
 | sms_consent_log | 10 | yes | 3 | no |
 | stripe_events | 7 | yes | 0 | no |
