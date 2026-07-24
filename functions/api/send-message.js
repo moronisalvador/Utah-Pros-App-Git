@@ -55,6 +55,7 @@ import {
   completeMessageAttempt,
   findMessageAttempt,
 } from '../lib/messaging-attempts.js';
+import { resolveMessageMedia } from '../lib/message-media.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
@@ -128,12 +129,18 @@ async function sendToRecipient(db, env, {
 }) {
   let providerResult = null;
   let error = null;
+  let providerDispatchStarted = false;
 
   if (!participant.phone) {
     // No valid SMS destination → refuse (omni §7.3: never cross-channel fallback).
     error = new Error('No phone number for recipient');
   } else {
     try {
+      const media = await resolveMessageMedia(db, mediaUrls || [], conversationId, {
+        allowLegacyPublic: provider === 'twilio',
+        legacyPublicBaseUrl: env.SUPABASE_URL,
+      });
+      providerDispatchStarted = true;
       providerResult = await sendMessage(env, {
         purpose: 'staff_p2p',
         recipient: {
@@ -146,12 +153,10 @@ async function sendToRecipient(db, env, {
         content: {
           body: clientBody,
           mediaUrls,
-          // Existing clients carry URLs only. CallRail MMS therefore fails
-          // closed until owned-storage metadata is available.
-          media: (mediaUrls || []).map((url) => ({ url })),
+          media,
         },
         statusCallbackUrl: statusCallback,
-      }, { provider });
+      }, { provider, db });
     } catch (err) {
       error = err;
     }
@@ -168,7 +173,11 @@ async function sendToRecipient(db, env, {
   const errorMessage = error?.message || null;
   const ambiguous = !!error && (
     error?.ambiguous === true
-    || (provider === 'twilio' && !String(errorMessage).startsWith('Twilio send failed:'))
+    || (
+      provider === 'twilio'
+      && providerDispatchStarted
+      && !String(errorMessage).startsWith('Twilio send failed:')
+    )
   );
   const ambiguousCode = provider === 'callrail'
     ? 'CALLRAIL_SEND_AMBIGUOUS'

@@ -23,12 +23,13 @@
  *     Account/company/tracking identifiers are never accepted from the command.
  *   - A thrown network/timeout error is ambiguous: CallRail may have accepted the
  *     message. The caller must reconcile it and must not automatically resubmit.
- *   - Only one HTTPS media URL with complete type/size metadata is supported.
+ *   - Only one server-verified JPEG/PNG/GIF byte stream is supported.
  * ════════════════════════════════════════════════
  */
 
 import { resolveCallRailAccountId } from './callrail-api.js';
 import { fetchWithTimeout } from './http.js';
+import { validateMessageImage } from './message-media.js';
 import { supabase } from './supabase.js';
 
 const CALLRAIL_API_BASE = 'https://api.callrail.com/v3/a';
@@ -99,7 +100,7 @@ function validateMedia(mediaItems) {
   const media = mediaItems[0] || {};
   const mimeType = clean(media.mimeType)?.toLowerCase();
   const byteSize = Number(media.byteSize);
-  const mediaUrl = clean(media.url);
+  const bytes = media.bytes instanceof Uint8Array ? media.bytes : null;
 
   if (!SUPPORTED_MEDIA_TYPES.has(mimeType)) {
     fail('CALLRAIL_MEDIA_TYPE_UNSUPPORTED', 'CallRail supports JPEG, PNG, or GIF media only.');
@@ -108,16 +109,26 @@ function validateMedia(mediaItems) {
     fail('CALLRAIL_MEDIA_SIZE_UNSUPPORTED', 'CallRail media must be no larger than 5 MB.');
   }
 
-  let parsedUrl;
+  if (!bytes || bytes.byteLength !== byteSize) {
+    fail(
+      'CALLRAIL_MEDIA_BYTES_REQUIRED',
+      'CallRail media requires server-verified private image bytes.',
+    );
+  }
   try {
-    parsedUrl = new URL(mediaUrl);
+    validateMessageImage(bytes, mimeType);
   } catch {
-    fail('CALLRAIL_MEDIA_URL_INVALID', 'CallRail media requires a valid HTTPS URL.');
+    fail(
+      'CALLRAIL_MEDIA_SIGNATURE_INVALID',
+      'CallRail media content does not match its declared type.',
+    );
   }
-  if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password) {
-    fail('CALLRAIL_MEDIA_URL_INVALID', 'CallRail media requires a valid HTTPS URL.');
-  }
-  return parsedUrl.href;
+  return {
+    bytes,
+    mimeType,
+    byteSize,
+    fileName: clean(media.fileName) || `attachment.${mimeType.split('/')[1]}`,
+  };
 }
 
 export async function resolveCallRailApiKey(env, db) {
@@ -202,7 +213,7 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
       `CallRail message content cannot exceed ${MAX_CONTENT_CHARACTERS} characters.`
     );
   }
-  const mediaUrl = validateMedia(command?.content?.media);
+  const media = validateMedia(command?.content?.media);
 
   const companyId = clean(env?.CALLRAIL_COMPANY_ID);
   const trackingNumber = normalizeNorthAmericanNumber(
@@ -223,13 +234,23 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
     fail('CALLRAIL_ACCOUNT_ID_MISSING', 'CallRail messaging is not configured.');
   }
 
-  const requestBody = {
+  const requestBody = media ? new FormData() : {
     company_id: companyId,
     customer_phone_number: recipient,
     tracking_number: trackingNumber,
     content: body,
   };
-  if (mediaUrl) requestBody.media_url = mediaUrl;
+  if (media) {
+    requestBody.append('company_id', companyId);
+    requestBody.append('customer_phone_number', recipient);
+    requestBody.append('tracking_number', trackingNumber);
+    requestBody.append('content', body);
+    requestBody.append(
+      'media_file',
+      new Blob([media.bytes], { type: media.mimeType }),
+      media.fileName,
+    );
+  }
 
   let response;
   try {
@@ -237,11 +258,13 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
       `${CALLRAIL_API_BASE}/${encodeURIComponent(accountId)}/text-messages.json`,
       {
         method: 'POST',
-        headers: {
-          Authorization: `Token token="${apiKey}"`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
+        headers: media
+          ? { Authorization: `Token token="${apiKey}"` }
+          : {
+              Authorization: `Token token="${apiKey}"`,
+              'Content-Type': 'application/json',
+            },
+        body: media ? requestBody : JSON.stringify(requestBody),
       }
     );
   } catch {

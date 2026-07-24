@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CALLRAIL_MMS_BUCKET,
   CALLRAIL_MMS_MAX_ITEMS,
-  buildCallrailMediaEndpoint,
   ingestCallrailMms,
+  validateCallrailMediaEndpoint,
   validateCallrailMmsCount,
 } from './callrail-mms.js';
 
+const MEDIA_URL =
+  'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0.json';
 const INPUT = {
   apiKey: 'server-secret',
   accountId: 'ACC123',
@@ -14,6 +16,7 @@ const INPUT = {
   providerConversationId: 'conv789',
   providerMessageId: 'SCIabc',
   mediaCount: 1,
+  ephemeralMediaUrls: [MEDIA_URL],
 };
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]);
@@ -40,15 +43,15 @@ function harness() {
 }
 
 describe('CallRail MMS private ingestion', () => {
-  it('derives only the exact authenticated api.callrail.com endpoint', async () => {
+  it('downloads the signed-webhook URL only after exact CallRail account validation', async () => {
     const h = harness();
     const result = await ingestCallrailMms(
-      { ...INPUT, db: h.db, ephemeralMediaUrls: ['https://attacker.test/file'] },
+      { ...INPUT, db: h.db },
       { fetchImpl: h.fetchImpl, timeoutMs: 3210 },
     );
 
     expect(h.fetchImpl).toHaveBeenCalledWith(
-      'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0',
+      MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
         redirect: 'error',
@@ -76,7 +79,6 @@ describe('CallRail MMS private ingestion', () => {
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(JSON.stringify(result)).not.toContain('api.callrail.com');
-    expect(JSON.stringify(result)).not.toContain('attacker.test');
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
@@ -94,12 +96,15 @@ describe('CallRail MMS private ingestion', () => {
     expect(result.media[0].storagePath.endsWith(extension)).toBe(true);
   });
 
-  it('rejects identifiers that could alter the fixed media path', () => {
-    expect(() => buildCallrailMediaEndpoint({
-      accountId: '../private',
-      providerMessageId: 'SCIabc',
-      index: 0,
-    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_IDENTITY_INVALID' }));
+  it('rejects media URLs outside the resolved CallRail account', () => {
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      mediaUrl: 'https://attacker.test/v3/a/ACC123/private',
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      mediaUrl: 'https://api.callrail.com/v3/a/OTHER/private',
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
   });
 
   it('refuses redirects and classifies provider rejection without uploading', async () => {
@@ -179,7 +184,12 @@ describe('CallRail MMS private ingestion', () => {
     const h = harness();
     h.fetchImpl.mockResolvedValue(mediaResponse(JPEG, 'image/jpeg'));
     await expect(ingestCallrailMms(
-      { ...INPUT, db: h.db, mediaCount: 2 },
+      {
+        ...INPUT,
+        db: h.db,
+        mediaCount: 2,
+        ephemeralMediaUrls: [MEDIA_URL, `${MEDIA_URL}?item=2`],
+      },
       {
         fetchImpl: h.fetchImpl,
         limits: { maxItems: 2, maxObjectBytes: 6, maxTotalBytes: 10 },

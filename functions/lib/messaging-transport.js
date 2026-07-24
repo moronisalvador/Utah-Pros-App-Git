@@ -33,11 +33,39 @@
 import { sendMessage as sendTwilioMessage } from './twilio.js';
 import { sendCallRailMessage } from './callrail-messaging.js';
 
+async function twilioMediaUrls(command, db) {
+  const media = command.content.media || [];
+  if (media.length === 0) {
+    if (command.content.mediaUrls?.length) {
+      const error = new Error('Message media was not verified by the send worker');
+      error.code = 'MESSAGE_MEDIA_UNVERIFIED';
+      throw error;
+    }
+    return command.content.mediaUrls;
+  }
+  return Promise.all(media.map(async (item) => {
+    if (item.verified !== true) {
+      const error = new Error('Message media was not verified by the send worker');
+      error.code = 'MESSAGE_MEDIA_UNVERIFIED';
+      throw error;
+    }
+    if (item.url) return item.url;
+    if (!item.storagePath || !db?.signStorage) {
+      const error = new Error('Private message media is unavailable for Twilio');
+      error.code = 'MESSAGE_MEDIA_UNAVAILABLE';
+      throw error;
+    }
+    // Twilio fetches media asynchronously. The canonical object remains private;
+    // only this provider-scoped URL is time-limited.
+    return db.signStorage('message-attachments', item.storagePath, 3600);
+  }));
+}
+
 const ADAPTERS = Object.freeze({
-  twilio: (env, command) => sendTwilioMessage(env, {
+  twilio: async (env, command, { db } = {}) => sendTwilioMessage(env, {
     to: command.recipient.address,
     body: command.content.body,
-    mediaUrls: command.content.mediaUrls,
+    mediaUrls: await twilioMediaUrls(command, db),
     statusCallback: command.statusCallbackUrl,
   }),
   callrail: sendCallRailMessage,
@@ -57,7 +85,7 @@ export function resolveMessagingSchemaMode(env) {
 /**
  * Dispatch a staff-written message through one explicitly selected adapter.
  */
-export async function sendMessage(env, message, { provider } = {}) {
+export async function sendMessage(env, message, { provider, db } = {}) {
   if (provider === 'disabled' || provider == null) {
     const error = new Error('Staff messaging is disabled');
     error.code = 'MESSAGING_SEND_DISABLED';
@@ -71,5 +99,5 @@ export async function sendMessage(env, message, { provider } = {}) {
     error.code = 'UNSUPPORTED_MESSAGING_PROVIDER';
     throw error;
   }
-  return adapter(env, message);
+  return adapter(env, message, { db });
 }

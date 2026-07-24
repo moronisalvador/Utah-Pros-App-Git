@@ -98,6 +98,48 @@ export function supabase(env) {
       return true;
     },
 
+    async downloadStorage(bucket, path, maxBytes = 5_000_000) {
+      if (!key) throw new Error('Supabase service-role key not configured');
+      const res = await fetch(`${url}/storage/v1/object/authenticated/${bucket}/${path}`, {
+        headers: {
+          'Authorization': `Bearer ${key}`,
+          'apikey': key,
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`Supabase STORAGE download ${bucket}/${path}: ${res.status}`);
+      }
+      const declared = Number(res.headers.get('Content-Length'));
+      if (Number.isFinite(declared) && declared > maxBytes) {
+        throw new Error(`Supabase STORAGE download ${bucket}/${path}: object too large`);
+      }
+      if (!res.body?.getReader) throw new Error('Supabase STORAGE download returned no body');
+      const reader = res.body.getReader();
+      const chunks = [];
+      let total = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => {});
+          throw new Error(`Supabase STORAGE download ${bucket}/${path}: object too large`);
+        }
+        chunks.push(chunk);
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return {
+        bytes,
+        contentType: res.headers.get('Content-Type') || '',
+      };
+    },
+
     async signStorage(bucket, path, expiresIn = 600) {
       if (!key) throw new Error('Supabase service-role key not configured');
       const res = await fetch(`${url}/storage/v1/object/sign/${bucket}/${path}`, {
