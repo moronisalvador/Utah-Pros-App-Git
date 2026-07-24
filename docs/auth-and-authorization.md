@@ -158,7 +158,7 @@ push, Scope Sheet search/room reads, and note upload require an active employee 
 technicians use those paths; inactive and non-employee sessions are denied before service-role or
 provider access.
 
-## Messaging transport authorization (built; not deployed)
+## Messaging transport authorization
 
 The messaging build branch introduces one server-side `conversations` capability predicate for
 `POST /api/send-message`: authenticated user, resolved active non-external employee, force-disable
@@ -204,6 +204,12 @@ cleanup needs a durable draft-to-message claim before it can safely distinguish 
 sent/failed/ambiguous history. `POST /api/message-media-url` signs only the media reference
 already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
 path.
+
+The CallRail recovery worker claims provider events only through
+`claim_callrail_provider_event`. The RPC is `SECURITY INVOKER` with an empty search path, rejects
+any JWT role other than `service_role`, and revokes execution from `PUBLIC`, `anon`, and
+`authenticated`. Its exact event/state/time predicate and `UPDATE ... RETURNING` result are the
+worker's claim authority; browser sessions cannot claim or replay provider events.
 
 ## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 

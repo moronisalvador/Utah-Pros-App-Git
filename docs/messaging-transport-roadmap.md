@@ -541,10 +541,12 @@ from the same canonical conversation identity.
 
 The retained iPhone MMS also exposed that `process-callrail-events.js` had no live invoker. Pages
 deploys its protected HTTP route, but its `scheduled()` export does not create a Pages Cron Trigger.
-The repository now contains an additive five-minute pg_cron/pg_net scheduler migration, exact URL
-allowlist, locked-down helper, rollback, and contract test. It remains unapplied pending a fresh
-shared-Supabase apply approval; until then, a fresh webhook can use the corrected immediate media
-URL path, but the retained failed event will not recover automatically.
+The owner applied and verified the additive five-minute pg_cron/pg_net scheduler on 2026-07-24.
+The first controlled retry exposed a second live issue: PostgREST applied the PATCH claim to four
+events but returned no rows, so the worker counted four skips and left them claimed. The durable
+follow-up moves the claim into the least-privilege `claim_callrail_provider_event` RPC; its
+`UPDATE ... RETURNING` result is the only authority to process a row. Deploy/apply/readback and one
+stale-event recovery are required before inbound MMS recovery is closed.
 
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
   official or owner-approved provider test fixtures;

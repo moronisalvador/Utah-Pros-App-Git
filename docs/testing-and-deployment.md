@@ -285,10 +285,13 @@ This specifically invalidated the old derived media endpoint. Close-out must the
 corrected immediate webhook URL download and the conversation-API URL refresh used by a queued
 retry; neither repository tests nor the received provider event alone is sufficient.
 
-Queued retry additionally requires applying the reviewed CallRail event-recovery scheduler
-migration in a separate shared-Supabase window. Before apply, verify the exact dev Worker URL,
-existing cron secret presence without reading its value, `MESSAGING_SCHEMA_MODE=foundation`,
-CallRail company configuration, and the deployed protected route. After apply, verify the named
-cron job, one `process-callrail-events` `worker_runs` record, transition of the retained event
-without duplicate canonical history, and a fresh immediate inbound MMS. Repository tests and a
-deployed route alone do not prove the scheduler is active.
+The owner applied the reviewed CallRail event-recovery scheduler on 2026-07-24 after verifying the
+exact dev Worker URL, existing cron secret presence without reading its value,
+`MESSAGING_SCHEMA_MODE=foundation`, CallRail company configuration, and the protected route. Live
+retry proved the scheduler request and worker-run telemetry, but also exposed that the former
+PostgREST PATCH claim could update four rows to `claimed` while returning an empty representation;
+the worker therefore reported four skips. The follow-up acceptance gate is an exact-source apply
+of `20260724051500_claim_callrail_provider_event.sql`, deployment of the RPC-based worker, and
+verification that a stale retained event becomes processed or durably retryable without duplicate
+canonical history. A fresh immediate inbound MMS and owner-device rendering remain separate
+end-to-end evidence.

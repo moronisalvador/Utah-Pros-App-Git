@@ -21,16 +21,11 @@ const CLAIM_TTL_MS = 5 * 60 * 1000;
 
 async function processRow(db, row, now, env) {
   const staleBefore = new Date(now.getTime() - CLAIM_TTL_MS).toISOString();
-  const claimed = await db.update(
-    'message_provider_events',
-    `id=eq.${row.id}&or=(processing_state.eq.received,and(processing_state.eq.retryable,next_attempt_at.lte.${encodeURIComponent(now.toISOString())}),and(processing_state.eq.claimed,claimed_at.lt.${encodeURIComponent(staleBefore)}))`,
-    {
-      processing_state: 'claimed',
-      processing_attempts: (Number(row.processing_attempts) || 0) + 1,
-      claimed_at: now.toISOString(),
-      updated_at: now.toISOString(),
-    },
-  );
+  const claimed = await db.rpc('claim_callrail_provider_event', {
+    p_event_id: row.id,
+    p_now: now.toISOString(),
+    p_stale_before: staleBefore,
+  });
   if (!claimed[0]) return { skipped: true };
 
   try {

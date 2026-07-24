@@ -35,9 +35,11 @@ const ROW = {
 function db({ rows = [ROW], secret = 'cron-secret', claim = true } = {}) {
   const updates = [];
   const selectedTables = [];
+  const rpcs = [];
   return {
     updates,
     selectedTables,
+    rpcs,
     select: vi.fn(async (table) => {
       selectedTables.push(table);
       if (table === 'integration_config') return secret ? [{ value: secret }] : [];
@@ -46,8 +48,14 @@ function db({ rows = [ROW], secret = 'cron-secret', claim = true } = {}) {
     }),
     update: vi.fn(async (table, filter, data) => {
       updates.push({ table, filter, data });
-      if (data.processing_state === 'claimed') return claim ? [{ id: ROW.id }] : [];
       return [{ id: ROW.id }];
+    }),
+    rpc: vi.fn(async (name, params) => {
+      rpcs.push({ name, params });
+      if (name === 'claim_callrail_provider_event') {
+        return claim ? [{ ...ROW, processing_attempts: 1 }] : [];
+      }
+      return [];
     }),
     insert: vi.fn(async () => []),
   };
@@ -77,11 +85,27 @@ describe('CallRail event recovery worker', () => {
       CALLRAIL_COMPANY_ID: 'COM-test',
     });
     expect(result).toEqual({ success: true, processed: 1, failed: 0, skipped: 0 });
+    expect(h.db.rpc).toHaveBeenCalledWith('claim_callrail_provider_event', {
+      p_event_id: ROW.id,
+      p_now: expect.any(String),
+      p_stale_before: expect.any(String),
+    });
     expect(h.db.updates.at(-1).data).toMatchObject({
       processing_state: 'processed',
       message_id: 'message-1',
     });
     expect(h.db.selectedTables).not.toContain('notification_types');
+  });
+
+  it('skips an event when the atomic claim fence loses a race', async () => {
+    h.db = db({ claim: false });
+    h.process = vi.fn();
+    const result = await processCallrailEventQueue(h.db, {
+      MESSAGING_SCHEMA_MODE: 'foundation',
+      CALLRAIL_COMPANY_ID: 'COM-test',
+    });
+    expect(result).toEqual({ success: true, processed: 0, failed: 0, skipped: 1 });
+    expect(h.process).not.toHaveBeenCalled();
   });
 
   it('returns 401 without the scheduler secret', async () => {
