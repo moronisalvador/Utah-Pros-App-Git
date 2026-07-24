@@ -62,6 +62,12 @@ Never report expected results as executed results. Record command, commit, envir
 lint and bundle-size reporting currently provide non-blocking visibility. GitHub branch protection is
 external configuration and must be checked before relying on a workflow as an enforced gate.
 
+`.github/workflows/ios-release.yml` is a valid `workflow_dispatch`-only scaffold. It must remain
+manual-only until Apple enrollment and signing secrets are owner-confirmed. GitHub Actions forbids
+using `secrets.*` directly in a step `if`; map the signing gate into job `env` and branch on
+`env.APPLE_TEAM_ID`. `scripts/ios-release-workflow.test.js` preserves both boundaries without
+dispatching a macOS job, signing an app or contacting Apple.
+
 CI should keep unit and database/browser lanes explicit, report unexpected skips, validate required
 environment bindings and retain machine-readable evidence. An isolated database is required before
 database mutation tests can safely become a complete blocking gate.

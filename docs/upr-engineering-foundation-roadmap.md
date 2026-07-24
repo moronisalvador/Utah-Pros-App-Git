@@ -194,7 +194,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Tech v2 route/flag resilience | PARTIAL | Route elements can be null only when current runtime flags are disabled/force-disabled; missing flags default enabled (`App.jsx`, `TechLayout.jsx`, `AuthContext.jsx`, `featureFlags.js`) | Medium until all live flag states are queried | Test missing/enabled/disabled/force-disabled; provide explicit fallback |
 | Tech Job Hub H3 | PARTIAL / owner gate | `docs/tech-v2-roadmap.md:551-561`; legacy routes/files remain | High | Written bake, resolver/retarget/cleanup/device verification |
 | Schedule Desktop | PARTIAL/MISSING | Current bugs at `Schedule.jsx:66,392,554-555,766`; roadmap unbuilt | High | Correctness first, then A→B→C completion |
-| App Store release | PARTIAL; external gate | `docs/app-store-readiness-roadmap.md:214-225` | High | Xcode/TestFlight/ASC owner evidence |
+| App Store release | PARTIAL; repository workflow valid, external gate | `ios-workflow-validation-2026-07-23.md`; `docs/app-store-readiness-roadmap.md` §6 | High | Apple enrollment/signing, owner Xcode/TestFlight/ASC evidence |
 | Account deletion fulfillment | PARTIAL | Request-linked processor is absent; a generic Team hard-delete path exists (`Team.jsx`, `admin-users.js`) | High | Decide integrate/replace/disable; retention/revocation/audit tests |
 | UX failure/loading/resume | PARTIAL | Customers/Leads/Marketing failure→empty; Job/Customer detail blank; hook adoption gaps | High | Split list-page work from Encircle-frozen detail pages; errors/retry, silent resume, 390px/minimize tests |
 
