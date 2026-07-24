@@ -133,6 +133,34 @@ legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 tha
 unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
 supported Encircle consumer or a credential-rotation dependency.
 
+## QuickBooks Online attachments (2026-07-24)
+
+`POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
+Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
+shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
+Auth is `requireRole(['admin','manager'])` (mirrors `qbo-charge`); it requires the invoice/estimate to
+already carry a `qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as
+base64 (≤20 MB); the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
+`qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
+retry from creating a duplicate Attachable (which would email the customer twice). A `delete` action
+removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row. Outbound calls
+use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
+(`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
+shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
+already-granted **accounting** scope (no Payments-scope reconnect needed).
+
+## QuickBooks Online payment two-way sync activation (2026-07-24)
+
+The QBO→UPR payment path (`qbo-webhook.js` real-time + `qbo-payments-sync.js` hourly safety net,
+`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built and dormant. Migration
+`20260724180100_qbo_payments_sync_cron.sql` (authored; owner-authorized apply pending) wires the
+hourly poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
+`integration_config.qbo_webhook_secret` as `x-webhook-secret` (the value already set in Cloudflare as
+`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). Still owner/dashboard gated for
+the real-time half: set `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy,
+and subscribe the **Payment** webhook in Intuit Developer (production) to
+`https://utahpros.app/api/qbo-webhook`.
+
 ## Messaging transport build state (2026-07-23)
 
 Phase 1 is published with Twilio behavior unchanged. The integrated transport foundation adds a

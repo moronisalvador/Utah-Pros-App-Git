@@ -48,6 +48,7 @@ import DatePicker from '@/components/DatePicker';
 import ActionMenu from '@/components/collections/ActionMenu';
 import { CollCard, GhostButton, PrimaryButton, StatusBadge, ProgressBar, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, invoiceStatusKind, divLabel } from '@/components/collections/collTokens';
+import QboAttachments from '@/components/collections/QboAttachments';
 import usePageTransition from '@/hooks/usePageTransition';
 
 // Rotating status lines for the Xactimate import modal — each maps to a real step the worker
@@ -810,6 +811,8 @@ export default function InvoiceEditor() {
             )}
 
           </CollCard>
+
+          {canEditBilling(employee?.role) && <QboAttachments entityType="invoice" entityId={inv.id} synced={synced} canEdit={canEdit} />}
         </div>
       </div>
 

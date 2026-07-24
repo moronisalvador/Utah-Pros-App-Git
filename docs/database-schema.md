@@ -272,3 +272,22 @@ signature. It preserves the service-role-only, invoker-mode
 `+1` E.164 recipients as the same identity. Non-NANP addresses still require exact equality, and
 body, provider-message, provider-conversation, state, and canonical-message checks remain binding.
 Neither migration deletes or rewrites retained provider events.
+
+## QuickBooks Online attachments tracking (2026-07-24)
+
+`20260724180000_qbo_attachments.sql` (authored; not yet applied) adds one additive table,
+`qbo_attachments`, that records files pushed to QuickBooks as Attachables for an invoice or estimate.
+It stores metadata only — `entity_type`, `invoice_id`/`estimate_id` (exactly one, CHECK-enforced,
+`ON DELETE CASCADE`), the opaque `qbo_attachable_id` (UNIQUE), `file_name`, `content_type`,
+`file_size`, `include_on_send`, a UNIQUE `idempotency_key`, `created_by`, `created_at` — never the
+file bytes (those live only in QuickBooks). RLS is enabled with a single SELECT policy scoped to
+active `admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` + an `employees` role check);
+there is deliberately no INSERT/UPDATE/DELETE policy — the `qbo-attach` worker writes via the
+service role. Rollback: `DROP TABLE IF EXISTS public.qbo_attachments;`.
+
+`20260724180100_qbo_payments_sync_cron.sql` (authored; not yet applied) changes no table shape. It
+seeds a non-secret worker-URL config row, defines the locked-down `qbo_payments_sync_poll()`
+SECURITY DEFINER helper (REVOKEd from every role; exact URL allowlist; reads the existing
+`integration_config.qbo_webhook_secret`), and schedules it hourly via pg_cron to activate the
+QBO→UPR payment-sync safety-net poller (`/api/qbo-payments-sync`). Rollback: `cron.unschedule` +
+`DROP FUNCTION` + delete the config row.
