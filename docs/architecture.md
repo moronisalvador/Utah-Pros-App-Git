@@ -54,6 +54,13 @@ be treated as current architecture without re-verification.
 - `dev` is the staging application and `main` is production.
 - Both application environments currently use one shared Supabase project. A database migration is
   therefore a production change as soon as it is applied.
+- Credential-free browser QA is a separate local-only boundary at `http://127.0.0.1:4173`.
+  Repository guards refuse production Supabase identifiers/URLs, non-local browser origins, provider
+  egress, TCP/CDP attachment, and persistent human-browser profiles.
+- The future isolated database lane is pinned to `http://127.0.0.1:54321` plus an explicit
+  `upr-local-only-v1` sentinel. The repository currently has no governed local Supabase config or
+  hosted QA project, so database execution remains fail-closed rather than falling back to the
+  shared project.
 - Applied migration source must be reachable from the designated release branch (or an immediately
   reconciled owner-authorized emergency commit); otherwise the live backend is not reproducible
   from the deployed branch.
@@ -112,3 +119,12 @@ an explicitly temporary environment-secret fallback. The lifecycle distinguishes
 may use it. Candidate credentials are validated at the Worker boundary before activation and are
 never returned to the browser. Independently deployed runtimes such as Pages and `upr-mcp` must
 implement and test the same precedence before an old credential is revoked.
+
+## Design-tool boundary
+
+Figma is currently disconnected. The governed contract in `.claude/figma-governance.json` grants
+no scopes and denies installation, connection, paid-seat purchase, automatic synchronization,
+code generation, and public publishing. Repository runtime behavior, routes, authorization,
+business rules, tokens, and implementation remain authoritative. A later owner-approved Figma
+connection may receive explicitly selected design assets only under the handoff and manifest rules
+in `docs/upr-figma-governance-and-handoff.md`; it never becomes a deployment or runtime authority.

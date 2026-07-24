@@ -7803,6 +7803,35 @@ CAP-GOV-001 containment, explicit Figma permission/authority approval, and a ded
 authenticated read-only staging browser session. No Figma plugin connection or paid seat exists
 because those exact external steps require owner approval.
 
+## Credential-free isolated QA and Figma internal foundation (2026-07-23)
+
+Repository-internal P1/Foundation F3a groundwork now runs without hosted QA, real credentials,
+production data, or provider effects. `vitest.config.js` and the governed runner split pure unit,
+Worker-contract, QA-policy, and future isolated-database lanes. The credential-free lanes scrub
+hosted/provider environment variables, block network APIs, require non-empty discovery, and reject
+every skip/todo. The database runner recognizes only `http://127.0.0.1:54321`, the local project
+reference and `upr-local-only-v1` sentinel; production or ambiguous targets are refused.
+
+The Playwright foundation uses only the deterministic fixture served at
+`http://127.0.0.1:4173`. Desktop 1440px and mobile 390px projects cover loading/error/empty/stale/
+ready states, reduced motion, keyboard focus, lifecycle resume, overflow, and serious/critical axe
+rules. Browser guards deny production Supabase navigation, provider egress, write requests,
+popups, WebSockets, downloads, TCP/CDP attachment, and human browser profiles. Retained artifacts
+are scanned for authentication material, production identifiers, and realistic identity data.
+This is synthetic foundation evidence only; no real UPR account/page, hosted project, provider,
+iOS device, or production path was exercised.
+
+P2a database execution remains blocked because this repository has no governed
+`supabase/config.toml`, local CLI/runtime, deterministic database seed, or representative-role
+fixture. The runner fails closed instead of falling back to the shared project.
+
+Figma remains disconnected with zero granted scopes. `.claude/figma-governance.json` and CI now
+enforce the permission posture, while `docs/upr-figma-governance-and-handoff.md` records
+repository-versus-Figma authority, the current token/component/page inventory, handoff manifest,
+and representative desktop/390px screenshot plan. Plugin installation/connection, paid seat,
+selected-file scope, actual UPR screenshot capture, and the overlapping messaging-worktree
+reconciliation remain external/owner gates.
+
 ## Money Worker authorization slice (2026-07-23)
 
 `functions/api/qbo-charge.js` and `stripe-pay-link.js` now use the shared `requireRole` boundary

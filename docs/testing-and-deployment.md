@@ -23,7 +23,9 @@ NOTES / GOTCHAS:
 | Command | Purpose | Important limitation |
 |---|---|---|
 | `npm run build` | Production Vite compilation and asset generation | Does not prove runtime variables, Workers, native behavior or live integrations |
-| `npm test` | Vitest suites | May load local Supabase credentials; classify unit vs live/write tests before running |
+| `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
+| `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
+| `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
 | `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
@@ -31,6 +33,8 @@ NOTES / GOTCHAS:
 | `npm run build:ios` | Native-target build and Capacitor sync | Still does not replace Xcode signing/simulator/device verification |
 
 Never report expected results as executed results. Record command, commit, environment and failures.
+Credential-free lanes scrub hosted/provider environment variables and use deterministic fixtures;
+they never reinterpret missing configuration as permission to use production.
 
 ## Test layers
 
@@ -62,6 +66,11 @@ Never report expected results as executed results. Record command, commit, envir
 lint and bundle-size reporting currently provide non-blocking visibility. GitHub branch protection is
 external configuration and must be checked before relying on a workflow as an enforced gate.
 
+CI also validates the disconnected Figma permission contract, installs its governed Chromium
+runtime, and runs the guarded browser matrix. The custom Vitest and Playwright runners fail if a
+lane discovers zero tests or reports any skipped/todo test, and the artifact scanner fails retained
+output containing auth material, production identifiers or realistic identity fixtures.
+
 `.github/workflows/ios-release.yml` is a valid `workflow_dispatch`-only scaffold. It must remain
 manual-only until Apple enrollment and signing secrets are owner-confirmed. GitHub Actions forbids
 using `secrets.*` directly in a step `if`; map the signing gate into job `env` and branch on
@@ -71,6 +80,23 @@ dispatching a macOS job, signing an app or contacting Apple.
 CI should keep unit and database/browser lanes explicit, report unexpected skips, validate required
 environment bindings and retain machine-readable evidence. An isolated database is required before
 database mutation tests can safely become a complete blocking gate.
+
+## Isolated QA foundation state
+
+The repository-internal P1/Foundation F3a slice is complete for credential-free execution:
+
+- pure-unit, Worker-contract and QA-policy lanes are partitioned and network-blocked;
+- deterministic browser fixtures cover loading, error, empty, stale and ready states, keyboard
+  dialog behavior, lifecycle resume, 390px overflow, reduced motion, and serious/critical axe rules;
+- production Supabase identifiers/URLs, provider egress, popups, WebSockets, downloads, write
+  requests, non-pipe CDP and persistent human profiles are negative-tested refusals;
+- retained artifacts are scanned fail-closed and all governed lanes require zero unexpected skips.
+
+This is scaffold and synthetic-browser evidence, not proof of real UPR journeys, native behavior,
+provider behavior, production behavior, or a pinned Linux visual baseline. P2a database execution
+is externally gated on a reviewed local Supabase config/runtime and deterministic seed/role
+fixtures. Hosted QA remains separately gated on a dedicated project, non-production credentials,
+allowed origins and provider sandboxes.
 
 ## Release flow
 
