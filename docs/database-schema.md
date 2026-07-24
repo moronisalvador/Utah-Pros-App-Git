@@ -170,14 +170,17 @@ and browser roles have no ledger grants. The migration ledger records the founda
 `20260723215926` and its two advisor-driven outbox FK indexes at `20260723220207`.
 Outbound provider selection remains a separate Cloudflare owner gate and is disabled by default.
 
-Outbound MMS needs no new table or migration. Its canonical `messages.media_urls` value is an array
-of opaque `upr-storage://message-attachments/outbound/...` references. MIME type and byte size are
-retained by the private Supabase Storage object metadata and revalidated from the object response
-and bytes before each provider submission. Provider-fetch signed URLs are ephemeral transport
-artifacts and are never persisted. Sent, failed, and ambiguous message objects remain durable for
-inbox history and retry. This repository slice intentionally retains abandoned private uploads:
-safe cleanup needs a durable draft/claim model so deletion cannot race a send or erase message
-history.
+Outbound MMS needs no new table. Its logical `messages.media_urls` value is an array of opaque
+`upr-storage://message-attachments/outbound/...` references. The frozen message writer serializes
+that array once before inserting it into the JSONB column, so historical canonical rows have JSONB
+type `string`; the newer send-attempt ledger stores the equivalent value as a JSONB array.
+Confirmation normalizes either representation before applying the same non-empty private-reference
+checks. MIME type and byte size are retained by the private Supabase Storage object metadata and
+revalidated from the object response and bytes before each provider submission. Provider-fetch
+signed URLs are ephemeral transport artifacts and are never persisted. Sent, failed, and ambiguous
+message objects remain durable for inbox history and retry. This repository slice intentionally
+retains abandoned private uploads: safe cleanup needs a durable draft/claim model so deletion cannot
+race a send or erase message history.
 
 Retained CallRail provider events use the existing service-only `message_provider_events` table.
 Migration source `20260724002500_callrail_event_recovery_scheduler.sql` adds no table, column,
@@ -278,4 +281,12 @@ defense-in-depth confirmation boundary: the provider event channel must equal th
 and an MMS attempt must contain only non-empty private
 `upr-storage://message-attachments/outbound/` references. A mismatch returns a non-success outcome
 using the already-deployed `outbound_unmatched` contract before attempt, message, or provider-event
-state changes. The worker enforces the same boundary before invoking the RPC.
+state changes. The worker enforces the same boundary before invoking the RPC. It is live under
+ledger version `20260724195329`.
+
+`20260724195802_accept_frozen_callrail_mms_media_shape.sql` keeps that contract and ACL while
+normalizing the historical canonical JSON-string representation before validation. Invalid JSON,
+non-arrays, empty arrays, non-string items, public/non-UPR paths, empty suffixes, traversal and
+backslashes all remain fail-closed. It is live under ledger version `20260724200321`; rollback-only
+live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
+remain unchanged with `outbound_unmatched`.

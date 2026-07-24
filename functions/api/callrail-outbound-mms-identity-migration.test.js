@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  node:fs, node:url, vitest
- *   Internal:  CallRail outbound MMS identity migration and rollback
+ *   Internal:  CallRail outbound MMS identity migrations and rollbacks
  *   Data:      reads  → migration source files
  *              writes → none
  *
@@ -29,6 +29,14 @@ const migration = readFileSync(fileURLToPath(new URL(
 )), 'utf8');
 const rollback = readFileSync(fileURLToPath(new URL(
   '../../supabase/rollbacks/20260724193628_bind_callrail_outbound_mms_identity.rollback.sql',
+  import.meta.url,
+)), 'utf8');
+const frozenShapeMigration = readFileSync(fileURLToPath(new URL(
+  '../../supabase/migrations/20260724195802_accept_frozen_callrail_mms_media_shape.sql',
+  import.meta.url,
+)), 'utf8');
+const frozenShapeRollback = readFileSync(fileURLToPath(new URL(
+  '../../supabase/rollbacks/20260724195802_accept_frozen_callrail_mms_media_shape.rollback.sql',
   import.meta.url,
 )), 'utf8');
 
@@ -86,5 +94,63 @@ describe('CallRail outbound MMS identity migration', () => {
       /REVOKE ALL ON FUNCTION public\.project_callrail_outbound_event\(uuid, uuid\)[\s\S]+FROM PUBLIC, anon, authenticated/,
     );
     expect(rollback).not.toMatch(/\bTO\s+(?:PUBLIC|anon|authenticated)\b/i);
+  });
+
+  it('normalizes the frozen canonical JSON-string media shape before validation', () => {
+    expect(frozenShapeMigration).toContain(
+      "IF jsonb_typeof(v_existing_media) = 'string' THEN",
+    );
+    expect(frozenShapeMigration).toContain(
+      "v_existing_media := (v_existing_media #>> '{}')::jsonb",
+    );
+    expect(frozenShapeMigration).toContain(
+      "WHEN invalid_text_representation THEN",
+    );
+    expect(frozenShapeMigration).toContain(
+      "v_existing_media := '[]'::jsonb",
+    );
+    expect(frozenShapeMigration.indexOf(
+      "IF jsonb_typeof(v_existing_media) = 'string' THEN",
+    )).toBeLessThan(frozenShapeMigration.indexOf(
+      "jsonb_array_length(v_existing_media) = 0",
+    ));
+  });
+
+  it('keeps the same private-reference guard and service-only ACL in the follow-up', () => {
+    expect(frozenShapeMigration).toContain(
+      'CREATE OR REPLACE FUNCTION public.project_callrail_outbound_event(',
+    );
+    expect(frozenShapeMigration).toContain('p_event_id uuid');
+    expect(frozenShapeMigration).toContain('p_attempt_id uuid DEFAULT NULL');
+    expect(frozenShapeMigration).toMatch(
+      /RETURNS TABLE \(\s*outcome text,\s*message_id uuid,\s*send_attempt_id uuid\s*\)/,
+    );
+    expect(frozenShapeMigration).toContain(
+      'upr-storage://message-attachments/outbound/',
+    );
+    expect(frozenShapeMigration).toContain(
+      'v_attempt.requested_channel IS DISTINCT FROM v_event.message_type',
+    );
+    expect(frozenShapeMigration).toContain('SECURITY INVOKER');
+    expect(frozenShapeMigration).toContain('SET search_path = pg_catalog, public');
+    expect(frozenShapeMigration).toContain("current_user <> 'service_role'");
+    expect(frozenShapeMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.project_callrail_outbound_event\(uuid, uuid\)[\s\S]+FROM PUBLIC, anon, authenticated, service_role/,
+    );
+    expect(frozenShapeMigration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.project_callrail_outbound_event\(uuid, uuid\)[\s\S]+TO service_role/,
+    );
+  });
+
+  it('rolls the follow-up back to the exact prior function body', () => {
+    const priorBody = migration.slice(
+      migration.indexOf('CREATE OR REPLACE FUNCTION'),
+      migration.lastIndexOf(';') + 1,
+    );
+    const rollbackBody = frozenShapeRollback.slice(
+      frozenShapeRollback.indexOf('CREATE OR REPLACE FUNCTION'),
+      frozenShapeRollback.lastIndexOf(';') + 1,
+    );
+    expect(rollbackBody).toBe(priorBody);
   });
 });

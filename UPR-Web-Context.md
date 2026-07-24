@@ -64,9 +64,15 @@ Migration `20260724193628_bind_callrail_outbound_mms_identity.sql` preserves
 any attempt, message, or event state update. A mismatch returns the existing
 `outbound_unmatched` outcome for compatibility with both deployed and updated workers. Its exact
 prior-body rollback is
-`supabase/rollbacks/20260724193628_bind_callrail_outbound_mms_identity.rollback.sql`. At authoring
-time the migration is reviewed but not yet applied; live apply and recovery evidence must update
-this state.
+`supabase/rollbacks/20260724193628_bind_callrail_outbound_mms_identity.rollback.sql`. It is live as
+ledger version `20260724195329_bind_callrail_outbound_mms_identity`. The compatibility follow-up
+`20260724195802_accept_frozen_callrail_mms_media_shape.sql` accepts both the frozen canonical
+JSON-string media shape and the newer send-attempt array shape without weakening private-reference
+validation; it is live as ledger version
+`20260724200321_accept_frozen_callrail_mms_media_shape`. Post-apply rollback-only tests proved a
+valid historical JSON-string row confirms through the attempt-less fallback, malformed JSON stays
+`outbound_unmatched` with no state mutation, and channel/non-private attempt mismatches also stay
+unchanged. Anonymous and authenticated callers remain denied; only `service_role` can execute.
 
 ---
 
