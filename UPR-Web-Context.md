@@ -2758,7 +2758,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
 
-**QBO→UPR payment sync — HOURLY CRON WIRED (2026-07-24, authored/not-yet-applied).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). **Owner-gated apply** (shared prod). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription.
+**QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` remains **unapplied** and owner-gated.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
 - **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])`; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed).
@@ -7888,6 +7888,41 @@ service-only invoker consent RPC ACLs and all three service-only consent-table p
 blobs, stale/non-ancestor evidence, and policy drift. The gate consumes sanitized evidence and never
 connects to or writes Supabase. Exact capture and review record:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
+
+## Concurrent-session reconciliation (2026-07-24; source control only, no apply)
+
+Many parallel Codex/Claude sessions left three migrations **live in shared production with no source
+reachable from `dev` or `main`**: `20260724181945 crm_lead_notes` (PR #515) and
+`20260724190829 qbo_attachments` / `20260724190848 qbo_payments_sync_cron` (PR #516). Both PRs merged
+to `dev`; **no SQL was replayed and no live body was overwritten** — the drift was source missing from
+`dev`, and merging that source was the whole repair. Fingerprints were compared against the live
+catalog first: all five affected functions are semantically identical to the merged source, and
+`get_contact_activity(uuid)` holds its signature and return shape at **24 arms** (`get_lead_activity`
+at 5).
+
+Two things worth remembering, because both defeated a plausible check:
+
+1. **Live-but-unmerged rows can be interleaved, not a tail.** The two newest live rows sorted *above*
+   the three drifted ones, so walking the ledger down from the newest row until source appears finds
+   zero drift. Reachability must be a set comparison over the whole window at/above
+   `ledgerFloorVersion`, matched **by name** — ledger versions are assigned at apply time and do not
+   equal filename prefixes (one file prefix is *later* than its live version).
+2. **A passing `validate:provenance` against stale evidence proves nothing.** The gate reads a static
+   snapshot; its `Unmapped live ledger row` check cannot fire for rows applied after capture. The
+   manifest had drifted five rows behind live. Treat the six-hour evidence window as load-bearing, and
+   refresh evidence *before* trusting a green gate near a release.
+
+Also fixed: `project_callrail_outbound_event(uuid,uuid)` was covered by a hand-pinned
+`expectedFingerprints` that went stale when two later reviewed migrations replaced its body. It now
+uses real source comparison — `extractFunctionBodies` accepts `$$`-quoted bodies as well as
+`$function$`, removing the need for pins (and that whole stale-pin failure mode). Manifest now maps
+all 19 rows at/above the floor, 21 function fingerprints and 5 policies; gate **PASS**. Record:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-24.md`.
+
+**Still open (not done):** `20260724200000_payments_qbo_dedup_index.sql` is authored and unapplied —
+no `CONCURRENTLY`, exclusive lock on the hot `payments` table, and it fails if duplicates exist; needs
+a duplicate pre-check plus an owner-authorized window. `upr_qbo_payments_sync_hourly` has been live
+and healthy since 19:17 UTC against the already-deployed `/api/qbo-payments-sync` worker in `main`.
 
 ## July 23 engineering documentation closure and Figma checkpoint
 

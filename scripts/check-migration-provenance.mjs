@@ -26,7 +26,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-07-23.json';
+const DEFAULT_EVIDENCE = 'docs/audit/2026-07/evidence/migration-provenance-2026-07-24.json';
 const DEFAULT_MANIFEST = 'scripts/migration-provenance-manifest.json';
 
 function md5(value) {
@@ -40,11 +40,17 @@ export function normalizeFunctionBody(body) {
 export function extractFunctionBodies(sql) {
   const normalized = sql.replace(/\r\n/g, '\n');
   const functions = new Map();
+  // Accept either dollar-quote tag our migrations use: $function$ (pg_get_functiondef's
+  // own output, so drift-dumped migrations) or plain $$ (hand-authored migrations). The
+  // closing tag is backreferenced so the two can never be mismatched. Before this
+  // accepted $$, a $$-quoted function could only be covered by a hand-pinned
+  // expectedFingerprints entry — and such a pin silently went stale when a later
+  // migration replaced the body (project_callrail_outbound_event, 2026-07-24).
   const pattern =
-    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS \$function\$\n([\s\S]*?)\n\$function\$;/gi;
+    /CREATE OR REPLACE FUNCTION\s+public\.([a-z0-9_]+)\s*\(([\s\S]*?)\)\s*\n\s*RETURNS[\s\S]*?\nAS (\$function\$|\$\$)\n([\s\S]*?)\n\3;/gi;
   let match;
   while ((match = pattern.exec(normalized))) {
-    const body = `\n${match[3]}\n`;
+    const body = `\n${match[4]}\n`;
     functions.set(match[1], {
       rawMd5: md5(body),
       semanticMd5: md5(normalizeFunctionBody(body)),
