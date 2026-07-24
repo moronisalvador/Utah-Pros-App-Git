@@ -52,13 +52,26 @@ export function mergeNewestMessages(currentMessages, newestMessages) {
   const current = Array.isArray(currentMessages) ? currentMessages : [];
   const newest = Array.isArray(newestMessages) ? newestMessages : [];
   const newestById = new Map(newest.filter((message) => message?.id).map((message) => [message.id, message]));
-  const newestBodies = new Set(newest.map((message) => `${message.type}::${message.body || ''}`));
+  const currentCanonicalIds = new Set(current
+    .filter((message) => !message?._pending && !message?._failed)
+    .map((message) => message?.id)
+    .filter(Boolean));
+  const confirmedBodyCounts = new Map();
+  newest.forEach((message) => {
+    if (message?.id && currentCanonicalIds.has(message.id)) return;
+    const key = `${message?.type}::${message?.body || ''}`;
+    confirmedBodyCounts.set(key, (confirmedBodyCounts.get(key) || 0) + 1);
+  });
 
   const retained = current
     .filter((message) => {
       if (message?.id && newestById.has(message.id)) return true;
-      return !((message?._pending || message?._failed)
-        && newestBodies.has(`${message.type}::${message.body || ''}`));
+      if (!message?._pending && !message?._failed) return true;
+      const key = `${message?.type}::${message?.body || ''}`;
+      const remaining = confirmedBodyCounts.get(key) || 0;
+      if (remaining === 0) return true;
+      confirmedBodyCounts.set(key, remaining - 1);
+      return false;
     })
     .map((message) => newestById.get(message?.id) || message);
   const currentIds = new Set(retained.map((message) => message?.id).filter(Boolean));
@@ -69,4 +82,20 @@ export function mergeNewestMessages(currentMessages, newestMessages) {
     const bTime = new Date(b?.created_at || 0).getTime();
     return aTime - bTime;
   });
+}
+
+/**
+ * Count canonical messages appended after the previously rendered tail. If that
+ * tail is no longer present (for example after a bounded resume refresh), return
+ * one so the UI still advertises new activity without inventing a larger count.
+ */
+export function countNewCanonicalMessages(messages, previousLastId) {
+  const rows = Array.isArray(messages) ? messages : [];
+  const previousIndex = rows.findIndex((message) => message?.id === previousLastId);
+  if (!previousLastId || previousIndex < 0) return 1;
+  const count = rows
+    .slice(previousIndex + 1)
+    .filter((message) => message?.id && !message?._pending && !message?._failed)
+    .length;
+  return Math.max(1, count);
 }

@@ -62,6 +62,7 @@ import {
 import MessageBubble from '@/components/conversations/MessageBubble';
 import {
   captureVisibleMessageAnchor,
+  countNewCanonicalMessages,
   mergeNewestMessages,
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
@@ -178,7 +179,7 @@ const TEMPLATE_CATEGORIES = {
   auto: '🤖 Auto', general: '📝 General',
 };
 
-const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,created_at,employees(full_name)';
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
 const PAGE = 30;         // messages fetched per thread page
 const LIST_PAGE = 40;    // conversations fetched per list page
 
@@ -516,7 +517,9 @@ export default function Conversations({ replyAssist } = {}) {
     if (msgLoading || isPrependingRef.current) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
-    const wasFirstPaint = prevLastIdRef.current === undefined;
+    const previousLastId = prevLastIdRef.current;
+    const wasFirstPaint = previousLastId === undefined;
+    const newCount = countNewCanonicalMessages(messages, previousLastId);
     prevLastIdRef.current = lastId;
     if (justOpenedRef.current || wasFirstPaint) {
       justOpenedRef.current = false;
@@ -525,7 +528,7 @@ export default function Conversations({ replyAssist } = {}) {
       return;
     }
     if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
-    else setNewInThread(n => n + 1);
+    else setNewInThread(n => n + newCount);
   }, [messages, msgLoading, loadingEarlier, scrollToBottom]);
 
   const loadEarlier = useCallback(async () => {

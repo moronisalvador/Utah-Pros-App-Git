@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   captureVisibleMessageAnchor,
+  countNewCanonicalMessages,
   mergeNewestMessages,
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
@@ -122,5 +123,34 @@ describe('newest-page resume merge', () => {
 
     expect(merged.map((message) => message.id)).toEqual(['old', 'known', 'real', 'missed']);
     expect(merged.find((message) => message.id === 'known')?.status).toBe('delivered');
+  });
+
+  it('reconciles identical optimistic sends one-for-one', () => {
+    const current = [
+      { id: 'pending-1', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-23T12:00:00Z' },
+      { id: 'pending-2', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-23T12:00:01Z' },
+    ];
+    const newest = [
+      { id: 'real-1', type: 'sms_outbound', body: 'same', created_at: '2026-07-23T12:00:02Z' },
+    ];
+
+    expect(mergeNewestMessages(current, newest).map((message) => message.id))
+      .toEqual(['pending-2', 'real-1']);
+  });
+});
+
+describe('new-message count', () => {
+  it('counts every canonical row after the previous tail', () => {
+    const messages = [
+      { id: 'old' },
+      { id: 'new-1' },
+      { id: 'pending', _pending: true },
+      { id: 'new-2' },
+    ];
+    expect(countNewCanonicalMessages(messages, 'old')).toBe(2);
+  });
+
+  it('falls back to one when the previous tail is no longer loaded', () => {
+    expect(countNewCanonicalMessages([{ id: 'new-1' }], 'missing')).toBe(1);
   });
 });

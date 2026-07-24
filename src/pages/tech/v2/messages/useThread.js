@@ -57,7 +57,7 @@ import {
   failByClientId, summarizeSendResult,
 } from './msgsSelectors';
 
-const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,created_at,employees(full_name)';
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
 const PAGE = 30;
 
 function emitToast(message, type = 'info') {

@@ -41,6 +41,7 @@ import { useTranslation } from 'react-i18next';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import {
   captureVisibleMessageAnchor,
+  countNewCanonicalMessages,
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
 } from '@/components/conversations/threadScroll';
@@ -215,7 +216,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     if (isPrepending.current) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastId.current) return;
-    const firstPaint = prevLastId.current === undefined;
+    const previousLastId = prevLastId.current;
+    const firstPaint = previousLastId === undefined;
+    const newCount = countNewCanonicalMessages(messages, previousLastId);
     prevLastId.current = lastId;
     if (justOpened.current || firstPaint) {
       justOpened.current = false;
@@ -224,7 +227,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
       return;
     }
     if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
-    else setNewInThread((n) => n + 1);
+    else setNewInThread((n) => n + newCount);
   }, [messages, loadingEarlier, scrollToBottom]);
 
   const showLoader = isColdStart && messages.length === 0;
