@@ -160,6 +160,11 @@ delivery concurrency boundary. Bell and push delivery are at-least-once: a worke
 channel side effect but before durable outbox finalization can produce a duplicate alert when the
 stale lease is reclaimed.
 
+For `message.inbound`, the provider-neutral notification dispatcher derives both deep links from
+the canonical conversation ID. Bell navigation stays in the office inbox at
+`/conversations?c=<id>`; Web Push opens the exact thread in the installed field PWA at
+`/tech/conversations?c=<id>`. Provider adapters and webhook payloads do not choose UI routes.
+
 The additive foundation migration and its index follow-up are applied to the shared Supabase
 project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
 ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,

@@ -527,6 +527,11 @@ and device subscriptions were enabled. The owner-approved scheduler slice adds a
 after-insert wake-up and a five-minute due/stale-work safety net, tightens all notification
 audiences to active internal employees, and does not change provider behavior.
 
+The first owner device test received the push but exposed a deep-link defect: the tap opened the
+office conversations list instead of the exact field-PWA thread. The provider-neutral dispatcher
+now derives `/conversations?c=<id>` for bell rows and `/tech/conversations?c=<id>` for Web Push
+from the same canonical conversation identity.
+
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
   official or owner-approved provider test fixtures;
 - compile and execute both transactional projection functions against isolated PostgreSQL and the

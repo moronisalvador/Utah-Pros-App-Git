@@ -21,7 +21,15 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { resolveAudience, dispatchEvent, handleNotify, formatApptWhen, enrichAppointmentBody, enrichEstimateBody } from './notify.js';
+import {
+  resolveAudience,
+  dispatchEvent,
+  handleNotify,
+  formatApptWhen,
+  enrichAppointmentBody,
+  enrichEstimateBody,
+  enrichInboundMessageBody,
+} from './notify.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 
@@ -282,6 +290,67 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(emails[0].to).toBe('admin@utahpros.com');
     expect(emails[0].from).toMatch(/Notifications <restoration@utahpros\.app>/);
     expect(out.results[0].email).toBe('sent');
+  });
+});
+
+describe('message.inbound deep links', () => {
+  it('keeps bell navigation in the office inbox and sends push to the exact field-PWA thread', async () => {
+    expect(enrichInboundMessageBody({
+      link: '/conversations',
+      entity_type: 'conversation',
+      entity_id: 'conversation-1',
+      data: { conversation_id: 'conversation-1', route: '/conversations' },
+    })).toMatchObject({
+      link: '/conversations?c=conversation-1',
+      data: {
+        conversation_id: 'conversation-1',
+        route: '/conversations',
+        url: '/tech/conversations?c=conversation-1',
+      },
+    });
+
+    const pushes = [];
+    const db = makeDb({
+      types: {
+        'message.inbound': {
+          type_key: 'message.inbound',
+          label: 'New text message',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'admin-1', role: 'admin' }],
+      prefsByEmp: {
+        'admin-1': prefRows('message.inbound', { bell: true, push: true }),
+      },
+      subsByEmp: {
+        'admin-1': [{
+          id: 'subscription-1',
+          endpoint: 'https://push/1',
+          p256dh: 'p',
+          auth: 'a',
+        }],
+      },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'message.inbound',
+      body: {
+        link: '/conversations',
+        entity_type: 'conversation',
+        entity_id: 'conversation-1',
+        data: { conversation_id: 'conversation-1' },
+      },
+      sendWebPushImpl: async (_subscription, payload) => {
+        pushes.push(JSON.parse(payload));
+        return { ok: true, status: 201 };
+      },
+    });
+
+    const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
+    expect(bell.params.p_link).toBe('/conversations?c=conversation-1');
+    expect(pushes[0].url).toBe('/tech/conversations?c=conversation-1');
   });
 });
 

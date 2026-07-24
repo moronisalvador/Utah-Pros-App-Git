@@ -79,6 +79,11 @@ pending rows on rollback. It does not broaden the CallRail send scope, enable Pr
 change notification preferences, create a browser grant, or authorize unrelated delayed
 notifications.
 
+The same owner-authorized live test found that the notification payload linked every channel to the
+office `/conversations` list. The follow-up owns the narrow provider-neutral dispatcher correction:
+bell links select the exact office thread at `/conversations?c=<id>`, while Web Push selects the
+same thread inside the field PWA at `/tech/conversations?c=<id>`.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:

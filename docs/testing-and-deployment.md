@@ -165,6 +165,11 @@ row, and both bell and push evidence reach the intended employee. Because channe
 at-least-once across a crash between dispatch and outbox finalization, verification must tolerate
 and record a rare duplicate alert rather than claiming exact-once behavior.
 
+Inbound-message notification tests must separately assert channel routing: the bell link is the
+office route `/conversations?c=<conversation-id>`, and the serialized Web Push payload URL is the
+field route `/tech/conversations?c=<conversation-id>`. Device close-out must tap a fresh push and
+prove the installed PWA opens with that exact conversation selected.
+
 The repository-only admin setup panel does not change this sequence. Its
 `GET /api/messaging-setup` status and `action=callrail-options` discovery contracts are read-only,
 require an active internal admin, and add no migration. Before release, test missing/invalid
