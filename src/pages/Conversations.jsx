@@ -57,6 +57,11 @@ import MessageBubble from '@/components/conversations/MessageBubble';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import {
+  buildConsentRemediationPrompt,
+  contactHasP2pSmsConsent,
+  findConsentRetryMessage,
+} from '@/components/conversations/smsConsentRemediation';
+import {
   getDraft,
   setDraft,
   clearDraft,
@@ -247,7 +252,7 @@ export default function Conversations({ replyAssist } = {}) {
   const loadConversations = useCallback(async () => {
     try {
       const data = await db.select('conversations',
-        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
+        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason,p2p_sms_consent_at,p2p_sms_consent_source,p2p_sms_consent_phone))&order=last_message_at.desc.nullslast'
       );
       setConversations(data);
     } catch (err) { console.error('Load conversations error:', err); }
@@ -528,22 +533,13 @@ export default function Conversations({ replyAssist } = {}) {
     return p?.contacts || null;
   }, [activeConv]);
   const canAttestPriorConsent = employee?.role === 'admin' || employee?.role === 'office';
+  const hasP2pSmsConsent = contactHasP2pSmsConsent(activeContact);
 
-  // Length of server-added company/employee identity and, before any successful
-  // outbound in this thread, the required STOP notice. Keep the counter aligned
-  // with the exact wire text constructed by /api/send-message.
+  // Length of the server-added "Name: " prefix, so the segment counter matches the wire.
   const senderPrefixLen = useMemo(() => {
-    if (isNote) return 0;
-    const identity = employee?.full_name
-      ? `Utah Pros Restoration - ${employee.full_name}: `
-      : 'Utah Pros Restoration: ';
-    const hasPriorOutbound = messages.some(message =>
-      message.type === 'sms_outbound'
-      && message.status !== 'failed'
-      && !message._pending
-    );
-    return identity.length + (hasPriorOutbound ? 0 : ' Reply STOP to unsubscribe.'.length);
-  }, [isNote, employee, messages]);
+    if (isNote || !employee?.full_name) return 0;
+    return `${employee.full_name}: `.length;
+  }, [isNote, employee]);
 
   const replyContext = useMemo(() => {
     const lastInbound = [...messages].reverse().find(m => m.type === 'sms_inbound');
@@ -765,21 +761,18 @@ export default function Conversations({ replyAssist } = {}) {
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON error body */ }
         const reason = data.code === 'DND_ACTIVE' ? 'Contact has Do Not Disturb enabled'
-          : data.code === 'NO_CONSENT' ? 'Contact has not opted in to SMS'
+          : data.code === 'CONTACT_OPTED_OUT' ? 'Contact previously opted out of SMS'
+            : data.code === 'NO_CONSENT' ? 'Person-to-person SMS permission is not recorded'
             : (data.error || `Message not sent (${res.status})`);
-        if (
-          data.code === 'NO_CONSENT'
-          && data.contact_id
-          && canAttestPriorConsent
-          && activeIdRef.current === convId
-        ) {
-          setConsentPrompt({
-            contactId: data.contact_id,
-            convId,
-            clientId,
-            retryAfterRecord: true,
-          });
-        }
+        const prompt = buildConsentRemediationPrompt({
+          code: data.code,
+          contactId: data.contact_id,
+          canAttest: canAttestPriorConsent,
+          activeConversationId: activeIdRef.current,
+          conversationId: convId,
+          clientId,
+        });
+        if (prompt) setConsentPrompt(prompt);
         // Mark the optimistic bubble failed (if still on this thread) — keep it for retry.
         if (activeIdRef.current === convId) {
           setMessages(prev => prev.map(m => m._clientId === clientId
@@ -915,9 +908,13 @@ export default function Conversations({ replyAssist } = {}) {
             ...p,
             contacts: {
               ...p.contacts,
-              opt_in_status: true,
-              opt_in_source: record.opt_in_source || 'prior_consent_attestation',
-              opt_in_at: record.opt_in_at || record.recorded_at || new Date().toISOString(),
+              p2p_sms_consent_at: record.p2p_sms_consent_at
+                || record.recorded_at
+                || new Date().toISOString(),
+              p2p_sms_consent_source: record.p2p_sms_consent_source
+                || record.consent_method
+                || 'other_verified_permission',
+              p2p_sms_consent_phone: record.p2p_sms_consent_phone || p.phone,
             },
           }
           : p
@@ -926,7 +923,11 @@ export default function Conversations({ replyAssist } = {}) {
     setConsentPrompt(null);
 
     if (prompt.retryAfterRecord && activeIdRef.current === prompt.convId) {
-      const failed = messages.find(message => message._clientId === prompt.clientId);
+      const failed = findConsentRetryMessage({
+        prompt,
+        messages,
+        activeConversationId: activeIdRef.current,
+      });
       if (failed) retryMessage(failed);
     }
   }, [consentPrompt, messages, retryMessage]);
@@ -1198,7 +1199,19 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !activeContact.dnd && activeContact.opt_in_status !== true && !isNote && (
+            {activeContact && !activeContact.dnd && activeContact.opt_out_at && !isNote && (
+              <div className="conv-consent-banner">
+                <div>
+                  <strong>SMS opt-out is active</strong>
+                  <span>Prior-consent attestation cannot clear STOP or another recorded opt-out.</span>
+                </div>
+              </div>
+            )}
+            {activeContact
+              && !activeContact.dnd
+              && !activeContact.opt_out_at
+              && !hasP2pSmsConsent
+              && !isNote && (
               <div className="conv-consent-banner">
                 <div>
                   <strong>SMS permission is not recorded</strong>
@@ -1326,7 +1339,9 @@ export default function Conversations({ replyAssist } = {}) {
                     <div className="conv-dnd-desc">
                       {activeContact.dnd
                         ? 'All outbound messages blocked'
-                        : activeContact.opt_in_status
+                        : activeContact.opt_out_at
+                          ? 'SMS opt-out recorded; attestation cannot clear it'
+                        : hasP2pSmsConsent
                           ? 'DND off and SMS permission recorded'
                           : 'DND off; SMS permission not recorded'}
                     </div>
