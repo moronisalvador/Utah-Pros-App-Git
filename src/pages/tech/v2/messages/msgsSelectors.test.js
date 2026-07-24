@@ -96,6 +96,21 @@ describe('overlay reconcile — dedupe by id / pending-match by type+body / appe
     expect(reconcileOverlay(overlay, real)).toEqual([]);
   });
 
+  it('does not body-reconcile against a conflicting durable client request id', () => {
+    const overlay = [{
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-09T10:05:00Z',
+    }];
+    const otherSend = msg('real-2', 'same', '2026-07-09T10:05:02Z', {
+      client_request_id: 'pending-2',
+    });
+    expect(reconcileOverlay(overlay, otherSend)).toEqual(overlay);
+  });
+
   it('reconciles identical consecutive sends one-for-one', () => {
     const overlay = [
       { id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-09T10:05:00Z' },

@@ -152,7 +152,7 @@ export function reconcileOverlay(overlay, realMsg, clientId) {
   const exactIndex = durableClientId
     ? overlay.findIndex((o) => o._clientId === durableClientId)
     : -1;
-  const bodyIndex = exactIndex < 0 && realMsg
+  const bodyIndex = exactIndex < 0 && !durableClientId && realMsg
     ? overlay.findIndex((o) =>
       (o._pending || o._failed) && isBoundedFallbackMatch(realMsg, o))
     : -1;
