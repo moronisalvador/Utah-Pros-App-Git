@@ -36,7 +36,10 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
   },
-  reporter: [['list']],
+  reporter: [
+    ['list'],
+    ['./tests/qa/reporters/no-unexpected-skips.mjs'],
+  ],
   use: {
     baseURL: LOCAL_BROWSER_ORIGIN,
     locale: 'en-US',
