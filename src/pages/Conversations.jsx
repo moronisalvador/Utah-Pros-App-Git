@@ -42,8 +42,9 @@
  *   - All message-state mutations are guarded by activeIdRef so a reply that resolves
  *     after the user switches threads never lands in the wrong thread.
  *   - Toasts go through `@/lib/toast` (Rule 2) — no page-local dispatch path.
- *   - Capacitor suspends the webview; the shared resume hook silently refreshes the
- *     active thread and consent decision without touching the frozen realtime.js.
+ *   - Capacitor suspends the webview; useResumeRefetch silently merges missed rows
+ *     without replacing loaded history, refreshes consent, and does not touch the
+ *     frozen realtime.js.
  * ════════════════════════════════════════════════
  */
 
@@ -59,6 +60,12 @@ import {
   validateMessageFile,
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import {
+  captureVisibleMessageAnchor,
+  mergeNewestMessages,
+  repinThreadAfterLayout,
+  restoreVisibleMessageAnchor,
+} from '@/components/conversations/threadScroll';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import { ErrorState } from '@/components/ui';
@@ -72,7 +79,6 @@ import {
   clearDraft,
   parseMediaUrls,
   isRetryableMediaReference,
-  mergeRefreshedMessages,
   getServiceConsentUiState,
 } from '@/components/conversations/messageUtils';
 
@@ -247,7 +253,8 @@ export default function Conversations({ replyAssist } = {}) {
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
-  const prependAnchorRef = useRef(null);   // scrollHeight snapshot for load-earlier anchoring
+  const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
+  const isPrependingRef = useRef(false);
   const consentStatusRequestRef = useRef(0);
 
   const attachmentsRef = useRef([]);
@@ -309,11 +316,10 @@ export default function Conversations({ replyAssist } = {}) {
       const rows = await db.select('messages', `conversation_id=eq.${convId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
       if (activeIdRef.current !== convId) return;
       const asc = rows.slice().reverse();
-      // Match by body+type too: if a send's POST response AND its realtime INSERT were
-      // both lost during the webview suspend, the row is on the server but its pending
-      // bubble was never reconciled — drop it here so no permanent "Sending…" ghost
-      // renders next to the delivered row.
-      setMessages(prev => mergeRefreshedMessages(prev, asc));
+      // Merge the refreshed tail into the rendered thread. Older pages and unresolved
+      // optimistic bubbles stay mounted, so a reader's history position cannot clamp.
+      setMessages(prev => mergeNewestMessages(prev, asc));
+      setHasMoreMessages(rows.length === PAGE);
       setMessageLoadError(null);
     } catch (error) {
       console.error('Reload messages error:', error);
@@ -466,24 +472,48 @@ export default function Conversations({ replyAssist } = {}) {
     const el = messagesScrollRef.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    atBottomRef.current = near;
     setAtBottom(near);
-    if (near) setNewInThread(0);
+    if (near) {
+      prependAnchorRef.current = null;
+      setNewInThread(0);
+    } else {
+      prependAnchorRef.current = captureVisibleMessageAnchor(el);
+    }
   }, []);
 
-  // Preserve scroll position when older messages are prepended (load-earlier).
-  useLayoutEffect(() => {
-    if (prependAnchorRef.current != null && messagesScrollRef.current) {
-      const el = messagesScrollRef.current;
-      el.scrollTop = el.scrollHeight - prependAnchorRef.current;
-      prependAnchorRef.current = null;
-      prevLastIdRef.current = messages[messages.length - 1]?.id;
+  const handleMediaLayout = useCallback(() => {
+    const el = messagesScrollRef.current;
+    if (prependAnchorRef.current) {
+      if (!restoreVisibleMessageAnchor(el, prependAnchorRef.current)) {
+        prependAnchorRef.current = null;
+      }
+      return;
     }
-  }, [messages]);
+    repinThreadAfterLayout({
+      scrollElement: el,
+      wasAtBottom: atBottomRef.current,
+      isPrepending: isPrependingRef.current,
+    });
+  }, []);
+
+  // Preserve the first visible message when older rows are prepended. Keep the
+  // anchor afterward so delayed attachment layout above it is corrected too.
+  useLayoutEffect(() => {
+    if (prependAnchorRef.current) {
+      if (!restoreVisibleMessageAnchor(messagesScrollRef.current, prependAnchorRef.current)) {
+        prependAnchorRef.current = null;
+      }
+    }
+    if (isPrependingRef.current && !loadingEarlier) {
+      isPrependingRef.current = false;
+    }
+  }, [messages, loadingEarlier]);
 
   // Auto-scroll on tail growth: snap to bottom on thread open, follow new messages
   // only if the reader is already near the bottom, else bump the jump-to-latest pill.
-  useEffect(() => {
-    if (msgLoading || prependAnchorRef.current != null) return;
+  useLayoutEffect(() => {
+    if (msgLoading || isPrependingRef.current) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastIdRef.current) return;
     const wasFirstPaint = prevLastIdRef.current === undefined;
@@ -491,12 +521,12 @@ export default function Conversations({ replyAssist } = {}) {
     if (justOpenedRef.current || wasFirstPaint) {
       justOpenedRef.current = false;
       setNewInThread(0);
-      setTimeout(() => scrollToBottom(false), 50);
+      scrollToBottom(false);
       return;
     }
     if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
     else setNewInThread(n => n + 1);
-  }, [messages, msgLoading, scrollToBottom]);
+  }, [messages, msgLoading, loadingEarlier, scrollToBottom]);
 
   const loadEarlier = useCallback(async () => {
     const convId = activeIdRef.current;
@@ -510,7 +540,8 @@ export default function Conversations({ replyAssist } = {}) {
       if (activeIdRef.current !== convId) return;
       const older = rows.slice().reverse();
       if (older.length) {
-        prependAnchorRef.current = messagesScrollRef.current?.scrollHeight || 0;
+        prependAnchorRef.current = captureVisibleMessageAnchor(messagesScrollRef.current);
+        isPrependingRef.current = true;
         setMessages(prev => {
           const existing = new Set(prev.map(m => m.id));
           const fresh = older.filter(m => !existing.has(m.id));
@@ -756,6 +787,11 @@ export default function Conversations({ replyAssist } = {}) {
   };
 
   const selectConversation = (id) => {
+    atBottomRef.current = true;
+    prependAnchorRef.current = null;
+    isPrependingRef.current = false;
+    setAtBottom(true);
+    setNewInThread(0);
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
     setConsentPrompt(null);
     clearComposeState();
@@ -1342,7 +1378,14 @@ export default function Conversations({ replyAssist } = {}) {
                     )}
                     {groupedMessages.map((item, i) => {
                       if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
-                      return <MessageBubble key={item.data.id} msg={item.data} onRetry={retryMessage} />;
+                      return (
+                        <MessageBubble
+                          key={item.data.id}
+                          msg={item.data}
+                          onRetry={retryMessage}
+                          onMediaLayout={handleMediaLayout}
+                        />
+                      );
                     })}
                   </>)}
                 </>

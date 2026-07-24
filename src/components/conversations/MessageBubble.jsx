@@ -87,10 +87,15 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
   return { ...state, isPrivate };
 }
 
-function MediaItem({ url, messageId, index, apiKey }) {
+function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
   const [broken, setBroken] = useState(false);
   const privateMedia = usePrivateMediaUrl(messageId, index, url, apiKey);
   const resolvedUrl = privateMedia.url;
+  const handleError = () => {
+    setBroken(true);
+    // Notify after React swaps the broken image for its file-link fallback.
+    requestAnimationFrame(() => onMediaLayout?.());
+  };
   if (privateMedia.isPrivate && !resolvedUrl) {
     return (
       <span className="conv-media-file">
@@ -107,7 +112,13 @@ function MediaItem({ url, messageId, index, apiKey }) {
   }
   return (
     <a className="conv-media-thumb" href={resolvedUrl} target="_blank" rel="noopener noreferrer">
-      <img src={resolvedUrl} alt="Attachment" loading="lazy" onError={() => setBroken(true)} />
+      <img
+        src={resolvedUrl}
+        alt="Attachment"
+        loading="lazy"
+        onLoad={onMediaLayout}
+        onError={handleError}
+      />
     </a>
   );
 }
@@ -149,7 +160,7 @@ function StatusAffordance({ msg, onRetry }) {
 
 // ─── SECTION: Render ──────────────
 
-export default function MessageBubble({ msg, onRetry }) {
+export default function MessageBubble({ msg, onRetry, onMediaLayout }) {
   const { db } = useAuth();
   const isInbound = msg.type === 'sms_inbound' || msg.type === 'email_inbound';
   const isNote = msg.type === 'internal_note';
@@ -168,7 +179,14 @@ export default function MessageBubble({ msg, onRetry }) {
         {media.length > 0 && (
           <div className="conv-media-grid">
             {media.map((url, i) => (
-              <MediaItem key={i} url={url} messageId={msg.id} index={i} apiKey={db?.apiKey} />
+              <MediaItem
+                key={i}
+                url={url}
+                messageId={msg.id}
+                index={i}
+                apiKey={db?.apiKey}
+                onMediaLayout={onMediaLayout}
+              />
             ))}
           </div>
         )}

@@ -26,8 +26,8 @@
  *
  * NOTES / GOTCHAS:
  *   - The scroller is owned by the pane host (TechMsgsPane) and forwarded here as
- *     `scrollRef`; anchoring uses a scrollHeight snapshot in useLayoutEffect (pre-paint)
- *     — NO setTimeout.
+ *     `scrollRef`; a first-visible message anchor survives prepends and delayed media
+ *     layout, and opening snaps pre-paint — NO setTimeout.
  *   - Scrolling UP dismisses the keyboard (blurs the composer) — a native reading gesture.
  *   - The job chip links via jobHref() so the later Job-Hub cutover (M2/H3) retargets it
  *     without a code change here.
@@ -39,6 +39,11 @@ import React, { useRef, useMemo, useState, useEffect, useCallback, useLayoutEffe
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import {
+  captureVisibleMessageAnchor,
+  repinThreadAfterLayout,
+  restoreVisibleMessageAnchor,
+} from '@/components/conversations/threadScroll';
 import { jobHref } from '@/components/tech/v2/nav';
 import { useThread } from './useThread';
 import { groupMessagesByDay, isMultiConversation, recipientCount } from './msgsSelectors';
@@ -77,6 +82,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const prevLastId = useRef(undefined);
   const justOpened = useRef(true);
   const prependAnchor = useRef(null);
+  const isPrepending = useRef(false);
   const lastScrollTop = useRef(0);
   const rootRef = useRef(null);
 
@@ -137,8 +143,23 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     const go = () => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
     if (smooth && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     else go();
-    // A second frame catches late layout (image height) — rAF, never setTimeout.
+    // A second frame catches synchronous layout; attachment loads notify separately.
     requestAnimationFrame(() => { if (!smooth) go(); });
+  }, [scrollRef]);
+
+  const handleMediaLayout = useCallback(() => {
+    const el = scrollRef.current;
+    if (prependAnchor.current) {
+      if (!restoreVisibleMessageAnchor(el, prependAnchor.current)) {
+        prependAnchor.current = null;
+      }
+      return;
+    }
+    repinThreadAfterLayout({
+      scrollElement: el,
+      wasAtBottom: atBottomRef.current,
+      isPrepending: isPrepending.current,
+    });
   }, [scrollRef]);
 
   // Scroll handler: near-bottom tracking + auto load-earlier near the top (anchored) +
@@ -149,15 +170,21 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
     atBottomRef.current = near;
     setAtBottom(near);
-    if (near) setNewInThread(0);
+    if (near) {
+      prependAnchor.current = null;
+      setNewInThread(0);
+    } else {
+      prependAnchor.current = captureVisibleMessageAnchor(el);
+    }
     // Blur-on-scroll-up: an upward drag past a small threshold dismisses the keyboard.
     if (el.scrollTop < lastScrollTop.current - 24) {
       const ae = document.activeElement;
       if (ae && typeof ae.blur === 'function' && ae.tagName === 'TEXTAREA') ae.blur();
     }
     lastScrollTop.current = el.scrollTop;
-    if (el.scrollTop < 80 && hasMore && !loadingEarlier && prependAnchor.current == null) {
-      prependAnchor.current = el.scrollHeight;
+    if (el.scrollTop < 80 && hasMore && !loadingEarlier && !isPrepending.current) {
+      prependAnchor.current = captureVisibleMessageAnchor(el);
+      isPrepending.current = true;
       loadEarlier();
     }
   }, [scrollRef, hasMore, loadingEarlier, loadEarlier]);
@@ -169,20 +196,23 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     return () => el.removeEventListener('scroll', onScroll);
   }, [scrollRef, onScroll]);
 
-  // Restore scroll position after older messages are prepended (pre-paint, no jump).
+  // Restore the first visible message after a prepend. Keep its element anchor so
+  // delayed attachment layout above it can be corrected without moving the reader.
   useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (prependAnchor.current != null && el) {
-      el.scrollTop = el.scrollHeight - prependAnchor.current;
-      prependAnchor.current = null;
-      prevLastId.current = messages[messages.length - 1]?.id;
+    if (prependAnchor.current) {
+      if (!restoreVisibleMessageAnchor(scrollRef.current, prependAnchor.current)) {
+        prependAnchor.current = null;
+      }
     }
-  }, [messages, scrollRef]);
+    if (isPrepending.current && !loadingEarlier) {
+      isPrepending.current = false;
+    }
+  }, [messages, loadingEarlier, scrollRef]);
 
   // Tail growth: snap to bottom on open; follow new messages only if already at bottom,
   // else bump the jump-to-latest pill.
-  useEffect(() => {
-    if (prependAnchor.current != null) return;
+  useLayoutEffect(() => {
+    if (isPrepending.current) return;
     const lastId = messages[messages.length - 1]?.id;
     if (lastId === prevLastId.current) return;
     const firstPaint = prevLastId.current === undefined;
@@ -195,7 +225,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     }
     if (atBottomRef.current) { scrollToBottom(true); setNewInThread(0); }
     else setNewInThread((n) => n + 1);
-  }, [messages, scrollToBottom]);
+  }, [messages, loadingEarlier, scrollToBottom]);
 
   const showLoader = isColdStart && messages.length === 0;
   const dnd = !!contact?.dnd;
@@ -292,7 +322,12 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
             {items.map((item) => (item.type === 'day' ? (
               <div key={`day-${item.key}`} className="tv2-msgs-day">{dayLabel(item.key)}</div>
             ) : (
-              <MessageBubble key={item.data._clientId || item.data.id} msg={item.data} onRetry={retry} />
+              <MessageBubble
+                key={item.data._clientId || item.data.id}
+                msg={item.data}
+                onRetry={retry}
+                onMediaLayout={handleMediaLayout}
+              />
             )))}
           </>
         )}

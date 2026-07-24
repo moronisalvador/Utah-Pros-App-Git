@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
-  appendMessageToPages, patchMessageInPages, dayKeyOf, groupMessagesByDay,
+  appendMessageToPages, mergeNewestPage, patchMessageInPages, dayKeyOf, groupMessagesByDay,
   convoUnread, mergeConvoIntoList, hasConversation,
   markPendingByMatch, dropByClientId,
   setConvoUnreadInData, isMultiConversation, recipientCount, summarizeSendResult,
@@ -147,6 +147,26 @@ describe('appendMessageToPages / patchMessageInPages', () => {
 
   it('dropByClientId is a no-op (same ref) for the optimistic path (bubbles live in the overlay)', () => {
     expect(dropByClientId(pages, 'pending-1')).toBe(pages);
+  });
+
+  it('resume merge patches the newest page without discarding loaded history', () => {
+    const loaded = [
+      [
+        { ...msg('m3', 'three', '2026-07-09T10:03:00Z'), status: 'sent' },
+        msg('m2', 'two', '2026-07-09T10:02:00Z'),
+      ],
+      [msg('m1', 'one', '2026-07-09T10:01:00Z')],
+    ];
+    const refreshed = [
+      msg('m4', 'four', '2026-07-09T10:04:00Z'),
+      { ...msg('m3', 'three', '2026-07-09T10:03:00Z'), status: 'delivered' },
+    ];
+
+    const merged = mergeNewestPage(loaded, refreshed);
+
+    expect(merged[0].map((message) => message.id)).toEqual(['m4', 'm3', 'm2']);
+    expect(merged[0][1].status).toBe('delivered');
+    expect(merged[1].map((message) => message.id)).toEqual(['m1']);
   });
 });
 

@@ -38,6 +38,19 @@ catalog and test snapshot at
 **Deployment:** Cloudflare Pages (auto-deploys on push to `dev` branch)
 **Rule:** Always work on `dev` (or a feature branch). Ship to `main` only via a reviewed `dev → main` PR a human merges — see **Deployment & Release Workflow** below.
 
+## Conversation attachment scroll correction (2026-07-23)
+
+Both `/conversations` and the technician v2 thread reuse
+`src/components/conversations/MessageBubble.jsx`. Attachment images can change height after the
+initial message paint, especially after a private `upr-storage://message-attachments/...` reference
+is exchanged for its short-lived authenticated URL. `MessageBubble` now notifies its thread owner
+when an image finishes loading or falls back after failure. A near-bottom reader stays pinned; a
+history reader keeps the first visible message at the same viewport offset through both prepends and
+delayed image layout. Initial thread-open snapping now runs before paint and resets per-thread scroll
+intent. Resume recovery uses `useResumeRefetch` and merges the refreshed newest page into already
+loaded history instead of replacing it. The shared anchor/merge policy is in
+`src/components/conversations/threadScroll.js`; no send, webhook, consent, or provider contract changed.
+
 ---
 
 ## Deployment & Release Workflow
@@ -7380,7 +7393,8 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
     (worker sole writer; no `skip_compliance`); 201-with-failed-row preserved; the four 403
     codes (DND_ACTIVE/NO_CONSENT/CONTACT_NOT_FOUND/ALL_RECIPIENTS_BLOCKED) surfaced inline;
     mark-read on open (raw `db.update` — F-red safe) + inbound-while-open desync guard;
-    suspend/visibility → `invalidate` safety net.
+    suspend recovery through `useResumeRefetch` → silent newest-page merge that preserves loaded
+    history and the visible-message anchor.
   - **`messages/msgsSelectors.js`** — pure page-flatten/cursor, overlay merge+reconcile,
     append/patch/mark-pending/drop-by-clientId, `groupMessagesByDay`, unread math,
     `mergeConvoIntoList` — covered by `msgsSelectors.test.js` (overlay reconcile, page-merge+
