@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins, vitest
- *   Internal:  tests/qa/lib/target-policy.mjs, vitest.config.js
+ *   Internal:  scripts/qa/safe-child-env.mjs, tests/qa/lib/target-policy.mjs, vitest.config.js
  *   Data:      reads  → local test process settings
  *              writes → local isolated database only through the selected tests
  *

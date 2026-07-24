@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  @playwright/test, Node.js built-ins
- *   Internal:  tests/qa/lib/target-policy.mjs
+ *   Internal:  scripts/qa/safe-child-env.mjs, tests/qa/lib/target-policy.mjs
  *   Data:      reads  → none
  *              writes → one temporary browser profile outside the repository
  *

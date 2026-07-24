@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins, vitest
- *   Internal:  vitest.config.js
+ *   Internal:  scripts/qa/safe-child-env.mjs, vitest.config.js
  *   Data:      reads  → selected test source
  *              writes → one short-lived machine-readable report in the system temporary folder
  *
