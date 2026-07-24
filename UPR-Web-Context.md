@@ -4996,7 +4996,10 @@ demotion adjudication all await owner rulings.
   `authenticated, service_role` only, verified live before/after
   (`.claude/rules/crm-wave-ownership.md` §1 lists this RPC as a Foundation-owned frozen REPLACE —
   this was an owner-directed production fix, not an in-wave session, and stays backward-compatible
-  per that manifest's own REPLACE rule).
+  per that manifest's own REPLACE rule). **⚠️ This bullet describes only the FIRST few arms — the
+  live function has since grown to 24 arms via several more body-only `CREATE OR REPLACE`s. See the
+  dated "Contact-activity timeline — full current shape (2026-07-24)" addendum below for the
+  authoritative live arm list, the `crm_lead_notes` note arm, and the durable all-arms guard.**
 
 **Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
 the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
@@ -6191,6 +6194,56 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     switch remounts cleanly). `.claude/rules/crm-wave-ownership.md` §1 gained a disclosed amendment
     note — this is the second standalone-production-fix body-replace of the nominally Foundation-frozen
     `get_contact_activity`, same precedent as the 2026-07-21 contact-link-and-activity migration.
+  - **Contact-activity timeline — full current shape (2026-07-24), verified live via the Supabase
+    MCP (read-only, project `glsmljpabrwonfiltiqm`).** `get_contact_activity(p_contact_id uuid)` is now
+    a **24-arm** `UNION ALL` (23 distinct `activity_type` values — the two `note` arms both emit
+    `'note'`); signature + return shape (`activity_type, occurred_at, title, body, meta`) unchanged
+    since Phase 1. Authoritative arm list, in source order: `lead, sms, note (job_notes),
+    note (crm_lead_notes), estimate, email, job, task, appointment, invoice, work_authorization,
+    stage_change, follow_up_call, claim, phase_change, payment, document, contact_owner_set,
+    contact_lifecycle_set, work_auth_sent, work_auth_signed, scope_sheet, invoice_sent,
+    estimate_sent`. Grown after the 2026-07-21 contact-link/unlinked-lead work by a chain of
+    function-BODY-only `CREATE OR REPLACE` migrations (all additive, signature frozen):
+    `20260721_crm_contact_activity_payment_document_events.sql` (payment/document/contact_owner_set/
+    contact_lifecycle_set), `20260721_crm_contact_activity_send_events.sql` (work_auth_sent/
+    work_auth_signed/scope_sheet/invoice_sent/estimate_sent), `20260721_crm_activity_actor_names.sql`
+    (actor-name `meta` keys + claim/phase_change/follow_up_call), and `20260724180000_crm_lead_notes.sql`
+    (the second `note` arm). The sibling `get_lead_activity(p_lead_id uuid)` (unlinked leads) is now
+    **5 arms** — `lead, note, task, stage_change, follow_up_call`. Both remain `SECURITY DEFINER`,
+    `REVOKE ... FROM PUBLIC, anon`, `GRANT ... TO authenticated, service_role` (no `anon`).
+  - **Append-only lead notes — `crm_lead_notes` + `add_lead_note`/`get_lead_notes`
+    (`20260724180000_crm_lead_notes.sql`).** Replaces the single overwritable `inbound_leads.notes`
+    box with a real per-lead notes log. Table
+    `crm_lead_notes(id, lead_id NOT NULL, org_id NOT NULL, contact_id, body NOT NULL, created_by,
+    created_at NOT NULL)`, **RLS enabled with NO policies (deny-all — RPC-only)**. Writes go through
+    `add_lead_note(p_lead_id uuid, p_body text, p_created_by uuid)` (append; blank body rejected);
+    reads through `get_lead_notes(p_lead_id uuid)` (newest-first) — both `SECURITY DEFINER`,
+    `authenticated, service_role` only. A one-time additive backfill copied existing
+    `inbound_leads.notes` into the log (not cleared). The note surfaces on both timelines as a `'note'`
+    row, told apart from the `job_notes` `'note'` arm by `meta.note_id`; the `lead`/`follow_up_call`
+    bodies dropped `il.notes`/`fu.notes` from their COALESCE so a backfilled note isn't shown twice.
+    ⚠️ **Provenance:** this migration shipped on commit `44dc519` and is LIVE, but is NOT in the
+    `claude/gifted-sammet-22e7d1` migration tree (that branch was cut earlier). The four newer activity
+    migrations above ARE on this branch; only `crm_lead_notes` is not — so this branch's own migrations
+    do NOT reproduce the live function's second (`crm_lead_notes`) `note` arm; that 24th arm exists only
+    because that separate commit is applied to the one shared Supabase. Reconcile (rebase/merge the
+    `crm_lead_notes` migration) before treating this branch as a release ref, or the deployed branch
+    won't be reproducible from its own migration tree.
+  - **Durable 24-arm regression guard — `supabase/tests/crm_contact_activity.test.js` (2026-07-24).**
+    A second suite seeds one contact wired to all 24 arms and asserts each returns ≥1 row (a dropped
+    arm names itself in the failure). It exists to catch the recurring failure mode where a body-only
+    `CREATE OR REPLACE` is re-authored from a stale ancestor and silently drops live arms — the exact
+    near-miss review caught on the `crm_lead_notes` migration (a stale 12-arm ancestor would have
+    dropped 11 live arms). Integration test, self-skips without `VITE_SUPABASE` creds; because
+    `get_contact_activity`/`add_lead_note` are `authenticated`/`service_role`-only and `crm_lead_notes`
+    is deny-all, it only truly runs under a privileged harness or the Supabase MCP, not an anon session.
+    The live contract + every fixture column/enum was verified read-only via the Supabase MCP.
+    `migration-safety-checker` flagged this guard as recommended-not-required. **Sibling guard
+    (2026-07-24):** `supabase/tests/crm_lead_activity.test.js` carries the same guard for
+    `get_lead_activity`'s 5 arms, closing the gap where its older suite covered only
+    lead/task/stage_change and left `note` (crm_lead_notes) + `follow_up_call` unguarded. Both
+    guards are keyed to arm lists verified read-only against the live catalog; when a future
+    migration legitimately ADDS an arm, update the corresponding list in the same commit.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
