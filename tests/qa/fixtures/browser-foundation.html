@@ -105,6 +105,19 @@
     const dialog = document.querySelector('#details');
     document.querySelector('#open-dialog').addEventListener('click', () => dialog.showModal());
     document.querySelector('#close-dialog').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab') return;
+      const focusable = [...dialog.querySelectorAll('button:not([disabled])')];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      }
+    });
 
     const result = document.querySelector('#denial-result');
     async function attempt(action) {
@@ -118,6 +131,7 @@
       const socket = new WebSocket('wss://dev.utahpros.app/realtime/v1/websocket');
       socket.onopen = resolve;
       socket.onerror = reject;
+      socket.onclose = reject;
     })));
   </script>
 </body>

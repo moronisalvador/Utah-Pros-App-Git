@@ -67,7 +67,7 @@ export async function installBrowserGuard(context, onDecision = () => {}) {
   }
 
   context.on('page', async (page) => {
-    if (page.opener()) {
+    if (await page.opener()) {
       decision('deny', { method: 'POPUP', origin: originOf(page.url()), reason: 'popup' });
       await page.close();
       return;
