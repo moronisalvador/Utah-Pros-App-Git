@@ -233,3 +233,10 @@ confirmed that duplicate-contact DND and pending STOP state fail closed while ra
 outside the legacy browser-readable log. No provider send occurred during verification. Detailed
 sanitized evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
+
+Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is authored but not
+applied. It pins and revalidates the contact phone after entering the inbound-projection
+serialization boundary and requires a strictly later processed START to supersede a pending STOP;
+equal timestamps remain blocked. The actor row is held `FOR SHARE` through the attestation write,
+closing concurrent role/deactivation races. The patch refuses any function-definition hash drift
+or duplicate patch anchor before replacing either service-only RPC.

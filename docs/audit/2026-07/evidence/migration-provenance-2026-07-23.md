@@ -116,3 +116,18 @@ it does not revise the historical fact that F2 itself performed no live write.
 
 `npm run validate:provenance` passed at `3818b22` with eight ledger mappings, 11 functions, one
 policy and the expected comment-only warning. `npm run test:provenance` remained green at 8/8.
+
+## Prior-consent live-ledger addendum — 2026-07-24 UTC
+
+The 2026-07-24 04:27:21 UTC read-only refresh records the ninth mapped row:
+
+| Live version | Name | Release source | Reviewed origin |
+|---|---|---|---|
+| `20260724035913` | `attest_prior_sms_consent` | `20260724014423_attest_prior_sms_consent.sql` | `e71e759` |
+
+The refresh adds both consent RPCs to the function gate with their actual service-only invoker
+contract: empty `search_path`, no `PUBLIC`/`anon`/`authenticated` execution, and only
+`service_role` execution. It also fingerprints all three service-role policies on
+`service_sms_consents` and `service_sms_consent_attestations`. No live mutation occurred during
+this refresh. `npm run validate:provenance -- --worktree` passed with nine ledger mappings,
+13 functions, four policies and the existing comment-only warning.

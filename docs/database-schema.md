@@ -214,6 +214,15 @@ phone advisory lock as CallRail inbound projection, locks every duplicate contac
 `opt_out_at` or a durable pending STOP. The status RPC returns only a safe allow/deny decision and
 requires the current contact phone, destination, suppression state, scope and version to agree.
 
+Pending additive hardening migration `20260724043000_harden_service_sms_consent.sql` makes both
+RPCs lock and re-read the target contact after entering the phone advisory-lock boundary and fail
+closed if its normalized phone changed. It also permits only a processed START with a strictly
+later `occurred_at` to supersede an unresolved STOP; equal timestamps leave STOP authoritative.
+The attestation RPC holds a share lock on the employee row so role removal, deactivation or
+externalization cannot race a consent record. Full live-definition hashes and exact-once patch
+needles make the migration abort on any unreviewed source drift.
+Applying the follow-up alone sends nothing and changes no existing consent row.
+
 The exact migration blob from commit `e71e759b27b1da1fad713413c257b7059bd5905d` was applied to the
 shared project under live migration-ledger version
 `20260724035913_attest_prior_sms_consent`. Read-only catalog verification confirmed both tables,

@@ -70,7 +70,9 @@ function parseArgs(argv) {
 }
 
 function readAtRef(root, ref, repoPath, worktree) {
-  if (worktree) return fs.readFileSync(path.join(root, repoPath), 'utf8');
+  if (worktree) {
+    return fs.readFileSync(path.join(root, repoPath), 'utf8').replace(/\r\n/g, '\n');
+  }
   const result = spawnSync('git', ['show', `${ref}:${repoPath}`], {
     cwd: root,
     encoding: 'utf8',
@@ -126,7 +128,7 @@ function compareFunction(source, live, selected, issues, warnings) {
   if (local.semanticMd5 !== live.semanticMd5) {
     issues.push(`${selected.identity}: live/source semantic fingerprint drift`);
   }
-  const expected = {
+  const expected = selected.expected || {
     securityDefiner: true,
     config: ['search_path=public'],
     anonExecute: false,

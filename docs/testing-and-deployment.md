@@ -196,6 +196,17 @@ both RPCs while retaining the locked-down current/evidence tables and redacted `
 history. Sanitized apply evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
+Pending migration `20260724043000_harden_service_sms_consent.sql` is a server-only schema-first
+follow-up: it replaces only the two existing service-role function definitions, sends nothing and
+changes no consent row. Apply only from the reviewed release commit during a low-traffic window,
+with no overlapping contacts/message-provider writes. Verify the ledger, unchanged function
+signatures/ACLs/search paths, contact-phone race closure and strict STOP→later-START chronology.
+Also verify the exact-source hash/length precondition, exact-once patch anchors and the employee
+share lock that serializes authorization revocation against attestation.
+Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back
+while the fail-closed hardening remains; reopening either race requires a separate approved
+migration.
+
 ### 2026-07-23 Preview messaging proof
 
 The owner-approved CallRail Preview test verified carrier delivery for two staff-authored outbound

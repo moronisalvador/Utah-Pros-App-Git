@@ -162,6 +162,20 @@ test('blocks a release blob that differs from the reviewed origin', () => {
   assert.ok(result.issues.some((issue) => issue.includes('differs from reviewed origin')));
 });
 
+test('treats checkout CRLF conversion as the same reviewed repository text', () => {
+  const fixture = makeFixture();
+  const migrationPath = path.join(fixture.root, 'supabase', 'migrations', 'fixture.sql');
+  const source = fs.readFileSync(migrationPath, 'utf8');
+  fs.writeFileSync(migrationPath, source.replace(/\n/g, '\r\n'));
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: true,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, true);
+});
+
 test('blocks stale live evidence', () => {
   const fixture = makeFixture();
   const result = validateProvenance({
@@ -208,4 +222,25 @@ test('compares selected policy identities and fingerprints', () => {
   });
   assert.equal(result.ok, false);
   assert.ok(result.issues.some((issue) => issue.includes('unexpected live policy usingMd5')));
+});
+
+test('supports an explicit service-only invoker function contract', () => {
+  const fixture = makeFixture();
+  fixture.manifest.selectedFunctions[0].expected = {
+    securityDefiner: false,
+    config: ['search_path=""'],
+    anonExecute: false,
+    authenticatedExecute: false,
+    serviceRoleExecute: true,
+    publicExecute: false,
+  };
+  Object.assign(fixture.evidence.functions[0], fixture.manifest.selectedFunctions[0].expected);
+
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, true);
 });
