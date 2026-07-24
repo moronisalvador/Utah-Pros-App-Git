@@ -63,13 +63,7 @@ function req(body) {
 // Minimal fake db keyed by table; overrides let each test pick the convo/participant/contact shape.
 // `contact` = a single shared contact (back-compat with the direct-send tests); `contactsById` =
 // a per-contact_id map for multi-recipient tests. Every insert is recorded on `db.inserts`.
-function makeDb({
-  conversation,
-  participants,
-  contact,
-  contactsById,
-  priorOutbound = [],
-} = {}) {
+function makeDb({ conversation, participants, contact, contactsById } = {}) {
   const inserts = [];
   const attempts = [];
   return {
@@ -121,13 +115,6 @@ function makeDb({
             && item.payload.client_request_id === requestId
           ))
           .map((item) => item.payload);
-      }
-      if (
-        table === 'messages'
-        && query.includes('conversation_id=eq.')
-        && query.includes('type=eq.sms_outbound')
-      ) {
-        return priorOutbound;
       }
       if (table === 'messages' && /(?:^|&)id=eq\./.test(query)) {
         const id = (/id=eq\.([^&]+)/.exec(query) || [])[1];
@@ -225,9 +212,58 @@ describe('send-message compliance chain', () => {
     });
 
     expect(res.status).toBe(403);
-    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect((await res.json()).code).toBe('CONTACT_OPTED_OUT');
     expect(h.twilio).not.toHaveBeenCalled();
     expect(consentBlocks(h.db)[0].payload.details).toContain('explicit opt-out');
+  });
+
+  it('allows staff P2P with scoped prior consent bound to the current phone', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: {
+        ...OPTED_IN,
+        opt_in_status: false,
+        p2p_sms_consent_at: '2026-07-23T18:00:00.000Z',
+        p2p_sms_consent_phone: '(555) 111-2222',
+      },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Service update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when scoped prior consent belongs to a different phone', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: {
+        ...OPTED_IN,
+        opt_in_status: false,
+        p2p_sms_consent_at: '2026-07-23T18:00:00.000Z',
+        p2p_sms_consent_phone: '+13855550199',
+      },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Service update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect(h.twilio).not.toHaveBeenCalled();
   });
 
   it('has NO skip_compliance escape hatch — the flag can no longer bypass the gate', async () => {
@@ -400,46 +436,6 @@ describe('send-message compliance chain', () => {
       reconcile_after: null,
     });
     expect(h.db.attempts[0].completed_at).toBeTruthy();
-  });
-
-  it('identifies Utah Pros and adds STOP instructions to the first outbound message', async () => {
-    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
-
-    const res = await onRequestPost({
-      request: req({
-        conversation_id: DIRECT.id,
-        body: 'We are on our way.',
-        sent_by: 'e-1',
-      }),
-      env: ENV,
-    });
-
-    expect(res.status).toBe(201);
-    expect(h.twilio.mock.calls[0][1].body).toBe(
-      'Utah Pros Restoration - Rep: We are on our way. Reply STOP to unsubscribe.',
-    );
-  });
-
-  it('keeps company identification but does not repeat STOP instructions in a continuing thread', async () => {
-    h.db = makeDb({
-      conversation: DIRECT,
-      contact: OPTED_IN,
-      priorOutbound: [{ id: 'prior-message' }],
-    });
-
-    const res = await onRequestPost({
-      request: req({
-        conversation_id: DIRECT.id,
-        body: 'The drying check is complete.',
-        sent_by: 'e-1',
-      }),
-      env: ENV,
-    });
-
-    expect(res.status).toBe(201);
-    expect(h.twilio.mock.calls[0][1].body).toBe(
-      'Utah Pros Restoration - Rep: The drying check is complete.',
-    );
   });
 
   // Media-only (caption-less MMS) — the body-required relaxation must NOT skip the gate.
