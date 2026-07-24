@@ -22,9 +22,8 @@ export const CALLRAIL_MMS_MAX_TOTAL_BYTES = 15_000_000;
 export const CALLRAIL_MMS_FETCH_TIMEOUT_MS = 15_000;
 const CALLRAIL_MMS_APP_HOST = 'app.callrail.com';
 const CALLRAIL_MMS_API_HOST = 'api.callrail.com';
-const CALLRAIL_MMS_ASSET_HOSTS = new Set([
-  'calltrk-mms-media-prod1.s3.amazonaws.com',
-]);
+const CALLRAIL_MMS_ASSET_HOST =
+  /^calltrk-mms-media-prod1\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/;
 
 const MEDIA_TYPES = Object.freeze({
   'image/jpeg': {
@@ -200,7 +199,7 @@ function validateCallrailMediaRedirect(location) {
   const expires = Number(parsed.searchParams.get('X-Amz-Expires'));
   if (
     parsed.protocol !== 'https:'
-    || !CALLRAIL_MMS_ASSET_HOSTS.has(parsed.hostname)
+    || !CALLRAIL_MMS_ASSET_HOST.test(parsed.hostname)
     || parsed.port
     || parsed.username
     || parsed.password
@@ -413,21 +412,31 @@ async function downloadOne({
     );
   }
   if (response && response.status >= 300 && response.status < 400) {
-    const assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
-    try {
-      response = await fetchImpl(assetEndpoint, {
-        method: 'GET',
-        redirect: 'error',
-        headers: {
-          Accept: 'image/jpeg, image/png, image/gif',
-        },
-      }, timeoutMs);
-    } catch {
-      fail(
-        'CALLRAIL_MMS_DOWNLOAD_FAILED',
-        'CallRail MMS media could not be downloaded.',
-        { retryable: true },
-      );
+    let assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
+    for (let redirectCount = 0; redirectCount <= 1; redirectCount += 1) {
+      try {
+        response = await fetchImpl(assetEndpoint, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: {
+            Accept: 'image/jpeg, image/png, image/gif',
+          },
+        }, timeoutMs);
+      } catch {
+        fail(
+          'CALLRAIL_MMS_DOWNLOAD_FAILED',
+          'CallRail MMS media could not be downloaded.',
+          { retryable: true },
+        );
+      }
+      if (!(response.status >= 300 && response.status < 400)) break;
+      if (redirectCount >= 1) {
+        fail(
+          'CALLRAIL_MMS_REDIRECT_REJECTED',
+          'CallRail returned too many media redirects.',
+        );
+      }
+      assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
     }
   }
   if (!response?.ok) throw providerFailure(response || { status: 0 });

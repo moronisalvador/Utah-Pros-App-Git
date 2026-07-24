@@ -144,13 +144,51 @@ describe('CallRail MMS private ingestion', () => {
       SIGNED_ASSET_URL,
       expect.objectContaining({
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: {
           Accept: 'image/jpeg, image/png, image/gif',
         },
       }),
       CALLRAIL_MMS_FETCH_TIMEOUT_MS,
     );
+  });
+
+  it('follows one signed redirect to the exact CallRail regional S3 bucket', async () => {
+    const h = harness();
+    const regionalAssetUrl = SIGNED_ASSET_URL.replace(
+      '.s3.amazonaws.com',
+      '.s3.us-west-2.amazonaws.com',
+    );
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: SIGNED_ASSET_URL },
+      }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 307,
+        headers: { Location: regionalAssetUrl },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestCallrailMms({
+      ...INPUT,
+      db: h.db,
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      regionalAssetUrl,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          Accept: 'image/jpeg, image/png, image/gif',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+    expect(h.fetchImpl.mock.calls[2][1].headers.Authorization).toBeUndefined();
   });
 
   it.each([
