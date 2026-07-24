@@ -168,6 +168,14 @@ event, but the deployed derived download path failed before private Storage with
 webhook-URL flow and retry refresh require a controlled post-deploy image reply before this
 integration can claim an end-to-end inbound MMS round trip.
 
+The same event exposed a separate recovery-wiring gap: Pages deployed the protected
+`/api/process-callrail-events` HTTP route, but an exported `scheduled()` handler does not create a
+route-level Pages Cron Trigger. An additive, unapplied scheduler migration now follows the
+repository convention by using pg_cron/pg_net every five minutes, the existing cron secret, an
+exact dev/production URL allowlist, and a due-work predicate. It makes no provider send and
+preserves retained events on rollback. Shared-Supabase apply and live recovery verification remain
+a separate owner gate.
+
 The notification outbox is dispatched through the protected
 `/api/process-message-notification-outbox` worker. An additive scheduler migration stores only the
 non-secret exact worker URL, reuses the existing scheduler secret, wakes the worker after an outbox

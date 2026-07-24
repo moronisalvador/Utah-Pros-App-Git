@@ -535,6 +535,13 @@ office conversations list instead of the exact field-PWA thread. The provider-ne
 now derives `/conversations?c=<id>` for bell rows and `/tech/conversations?c=<id>` for Web Push
 from the same canonical conversation identity.
 
+The retained iPhone MMS also exposed that `process-callrail-events.js` had no live invoker. Pages
+deploys its protected HTTP route, but its `scheduled()` export does not create a Pages Cron Trigger.
+The repository now contains an additive five-minute pg_cron/pg_net scheduler migration, exact URL
+allowlist, locked-down helper, rollback, and contract test. It remains unapplied pending a fresh
+shared-Supabase apply approval; until then, a fresh webhook can use the corrected immediate media
+URL path, but the retained failed event will not recover automatically.
+
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
   official or owner-approved provider test fixtures;
 - compile and execute both transactional projection functions against isolated PostgreSQL and the

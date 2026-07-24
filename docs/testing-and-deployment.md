@@ -218,3 +218,11 @@ MMS, but media capture failed with `CALLRAIL_MMS_DOWNLOAD_FAILED` before any pri
 This specifically invalidated the old derived media endpoint. Close-out must therefore prove the
 corrected immediate webhook URL download and the conversation-API URL refresh used by a queued
 retry; neither repository tests nor the received provider event alone is sufficient.
+
+Queued retry additionally requires applying the reviewed CallRail event-recovery scheduler
+migration in a separate shared-Supabase window. Before apply, verify the exact dev Worker URL,
+existing cron secret presence without reading its value, `MESSAGING_SCHEMA_MODE=foundation`,
+CallRail company configuration, and the deployed protected route. After apply, verify the named
+cron job, one `process-callrail-events` `worker_runs` record, transition of the retained event
+without duplicate canonical history, and a fresh immediate inbound MMS. Repository tests and a
+deployed route alone do not prove the scheduler is active.
