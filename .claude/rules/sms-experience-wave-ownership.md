@@ -308,3 +308,30 @@ freeze only as follows:
 
 The new ownership manifest is authoritative for those named amendments; everything else in this
 manifest remains in force.
+
+---
+
+## 12. Verified prior-consent attestation addendum (2026-07-23)
+
+The owner authorized reconciling the standalone historical-consent remediation onto current
+`dev`, applying its reviewed service-only migration, and preparing it for the next production
+release. This addendum authorizes only:
+
+- `supabase/migrations/20260724014423_attest_prior_sms_consent.sql` and its static contract test;
+- the new `functions/api/attest-sms-consent.js` Worker and focused tests;
+- the additive prior-consent flow in `src/pages/Conversations.jsx`, the new
+  `src/components/conversations/SmsConsentAttestationModal*` files, and `.conv-consent-*` styles
+  inside the existing Phase-C conversation seam;
+- the narrow `functions/api/send-message.js` / test reinforcement that treats `opt_out_at` as a
+  hard block, identifies Utah Pros Restoration, and includes STOP instructions on the first
+  accepted outbound thread message; and
+- matching canonical documentation and dated evidence.
+
+This flow records only verified prior permission for one-to-one service messages. It does not
+authorize marketing/bulk consent, infer permission from contact existence or business
+relationship, clear DND/STOP/provider opt-out state, bypass the send chokepoint, select a provider,
+send a test message, or alter an automated/marketing sender. The Worker derives the actor from the
+verified session; the database operation is service-role-only, rechecks active internal
+admin/office authority, locks the contact, and writes the contact state plus audit record in one
+transaction. Customer re-subscription after revocation remains the inbound START/affirmative
+written path.

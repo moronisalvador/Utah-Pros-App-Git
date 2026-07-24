@@ -68,6 +68,7 @@ function makeDb({
   participants,
   contact,
   contactsById,
+  serviceConsentsById = {},
   priorOutbound = [],
 } = {}) {
   const inserts = [];
@@ -152,6 +153,31 @@ function makeDb({
       return null;
     },
     rpc: async (name, args) => {
+      if (name === 'get_service_sms_consent_status') {
+        const resolvedContact = contactsById
+          ? contactsById[args.p_contact_id]
+          : contact;
+        if (!resolvedContact) {
+          return { allowed: false, code: 'CONTACT_NOT_FOUND' };
+        }
+        if (resolvedContact.dnd) {
+          return { allowed: false, code: 'DND_ACTIVE' };
+        }
+        if (resolvedContact.opt_out_at) {
+          return {
+            allowed: false,
+            code: 'NO_CONSENT',
+            source: 'explicit_opt_out',
+          };
+        }
+        if (resolvedContact.opt_in_status) {
+          return { allowed: true, code: 'GLOBAL_OPT_IN' };
+        }
+        if (serviceConsentsById[args.p_contact_id]) {
+          return { allowed: true, code: 'SERVICE_CONSENT' };
+        }
+        return { allowed: false, code: 'NO_CONSENT' };
+      }
       if (name !== 'claim_message_recipient_attempt') return null;
       const attempt = attempts.find((item) => item.id === args.p_attempt_id);
       if (!attempt || attempt.state !== 'prepared') return false;
@@ -257,6 +283,51 @@ describe('send-message compliance chain', () => {
     const res = await onRequestPost({ request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: 'hi', sent_by: 'e-1' }), env: ENV });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows a direct service message with verified service consent without global opt-in', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps STOP fail-closed even when a service consent record exists', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: {
+        ...OPTED_IN,
+        opt_in_status: false,
+        opt_out_at: '2026-07-23T18:00:00.000Z',
+      },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect(h.twilio).not.toHaveBeenCalled();
   });
 
   it('keeps private MMS behind the same consent gate and gives Twilio only a signed URL', async () => {

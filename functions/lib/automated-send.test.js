@@ -25,7 +25,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mutable state the mocks read/record between tests.
-const state = { smsEnabled: false, sentTo: [], inserts: [], updates: [] };
+const state = {
+  smsEnabled: false,
+  sentTo: [],
+  inserts: [],
+  updates: [],
+  selects: [],
+};
 
 vi.mock('./twilio.js', () => ({
   // Behaviour is overridable per-test via state.sendImpl (e.g. to throw a 429).
@@ -38,7 +44,8 @@ vi.mock('./twilio.js', () => ({
 
 vi.mock('./supabase.js', () => ({
   supabase: () => ({
-    async select(table) {
+    async select(table, query = '') {
+      state.selects.push({ table, query });
       if (table === 'crm_orgs') return [{ id: 'org-real' }];
       if (table === 'automation_settings') return [{ sms_sending_enabled: state.smsEnabled }];
       if (table === 'contacts') return [state.contact];
@@ -90,6 +97,7 @@ beforeEach(() => {
   state.sentTo = [];
   state.inserts = [];
   state.updates = [];
+  state.selects = [];
   state.contact = OPTED_IN;
   state.sendImpl = null;
   state.failThreadWrite = false;
@@ -120,6 +128,31 @@ describe('sendAutomatedMessage — SMS gate', () => {
     expect(res.skipped).toBe(true);
     expect(res.reason).toBe('dnd');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT text an explicitly opted-out contact when the legacy opt-in boolean is stale true', async () => {
+    state.smsEnabled = true;
+    state.contact = {
+      ...OPTED_IN,
+      opt_out_at: '2026-07-23T18:00:00.000Z',
+    };
+
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'no_consent',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(state.inserts).toContainEqual(expect.objectContaining({
+      table: 'sms_consent_log',
+      data: expect.objectContaining({
+        event_type: 'send_blocked_no_consent',
+      }),
+    }));
+    expect(state.selects.find(({ table }) => table === 'contacts')?.query)
+      .toContain('opt_out_at');
   });
 
   it('texts an opted-in contact only when the switch is ON (within the quiet-hours window)', async () => {
@@ -345,6 +378,7 @@ describe('frozen sendAutomatedMessage return still drives non-owned held-retry',
     expect(planRunOutcome(run, actions, R.disabled, NOW).action).toBe('held');
     expect(planRunOutcome(run, actions, R.quiet, NOW).action).toBe('held');
     expect(planRunOutcome(run, actions, R.dnd, NOW).action).toBe('skipped');
+    expect(planRunOutcome(run, actions, R.noConsent, NOW).action).toBe('skipped');
     expect(planRunOutcome(run, actions, R.sent, NOW).action).toBe('sent');
     expect(planRunOutcome(run, actions, R.transientFail, NOW).action).toBe('retry');
     expect(planRunOutcome(run, actions, R.newReason, NOW).action).toBe('skipped');

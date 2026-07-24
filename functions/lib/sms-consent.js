@@ -22,7 +22,7 @@
  *              writes → none
  *
  * EXPORTS:
- *   consentAllows({ phone, opt_in_status, dnd }) → boolean
+ *   consentAllows({ phone, opt_in_status, opt_out_at, dnd }) → boolean
  *
  * NOTES / GOTCHAS:
  *   - Deliberately a pure predicate (no DB calls) so it's cheap to unit test —
@@ -41,6 +41,7 @@ export function consentAllows(row) {
   if (!row) return false;
   if (!row.phone) return false;
   if (row.dnd) return false;
+  if (row.opt_out_at) return false;
   if (!row.opt_in_status) return false;
   return true;
 }

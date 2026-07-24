@@ -40,7 +40,10 @@ describe('SmsConsentAttestationModal', () => {
     expect(output).toContain('type="date"');
     expect(output).toContain('Evidence note');
     expect(output).toContain('Contact existence alone is not permission');
+    expect(output).toContain('service-related texts about their requested work');
     expect(output).toContain('This does not clear STOP or Do Not Disturb');
+    expect(output).toContain('Record permission');
+    expect(output).not.toContain('retry message');
     expect(output).toMatch(/form="sms-consent-attestation" disabled=""/);
   });
 

@@ -36,7 +36,7 @@
  *     arrives first), matching by _clientId then by body to avoid a duplicate.
  *   - All message-state mutations are guarded by activeIdRef so a reply that resolves
  *     after the user switches threads never lands in the wrong thread.
- *   - Toasts go through the global `upr:toast` CustomEvent (Rule 2) — no local toast.
+ *   - Toasts go through `@/lib/toast` (Rule 2) — no page-local dispatch path.
  *   - Capacitor suspends the webview; a visibilitychange/focus refetch recovers state
  *     without touching the frozen realtime.js.
  * ════════════════════════════════════════════════
@@ -56,6 +56,7 @@ import {
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
+import { toast as emitToast } from '@/lib/toast';
 import {
   getDraft,
   setDraft,
@@ -142,10 +143,6 @@ function getInitials(name) {
 }
 function cleanName(title) { return (title || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
-function emitToast(message, type = 'info') {
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-}
-
 const STATUS_MAP = {
   needs_response: { label: 'Needs Response', cls: 'status-needs-response' },
   waiting_on_client: { label: 'Waiting', cls: 'status-waiting' },
@@ -207,6 +204,11 @@ export default function Conversations({ replyAssist } = {}) {
   const [scheduleTime, setScheduleTime] = useState('');
   const [showComposeActions, setShowComposeActions] = useState(false);
   const [consentPrompt, setConsentPrompt] = useState(null);
+  const [serviceConsentStatus, setServiceConsentStatus] = useState({
+    contactId: null,
+    allowed: false,
+    loading: false,
+  });
 
   const [attachments, setAttachments] = useState([]);    // { clientId, name, url, localPreview, uploading, error }
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
@@ -527,7 +529,71 @@ export default function Conversations({ replyAssist } = {}) {
     const p = activeConv.conversation_participants.find(p => p.role === 'primary') || activeConv.conversation_participants[0];
     return p?.contacts || null;
   }, [activeConv]);
-  const canAttestPriorConsent = employee?.role === 'admin' || employee?.role === 'office';
+  const canAttestPriorConsent = (
+    employee?.role === 'admin' || employee?.role === 'office'
+  ) && employee?.is_external !== true;
+  const hasExplicitSmsOptOut = !!activeContact?.opt_out_at;
+  const hasRecordedSmsPermission = activeContact?.opt_in_status === true
+    || (
+      serviceConsentStatus.contactId === activeContact?.id
+      && serviceConsentStatus.allowed === true
+    );
+
+  useEffect(() => {
+    let cancelled = false;
+    const contactId = activeContact?.id;
+    if (
+      !contactId
+      || activeContact?.dnd
+      || activeContact?.opt_out_at
+      || activeContact?.opt_in_status === true
+    ) {
+      setServiceConsentStatus({
+        contactId: contactId || null,
+        allowed: false,
+        loading: false,
+      });
+      return () => { cancelled = true; };
+    }
+
+    setServiceConsentStatus({
+      contactId,
+      allowed: false,
+      loading: true,
+    });
+    (async () => {
+      try {
+        const authHeader = await getAuthHeader();
+        const response = await fetch(
+          `/api/attest-sms-consent?contact_id=${encodeURIComponent(contactId)}`,
+          { headers: authHeader },
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!cancelled) {
+          setServiceConsentStatus({
+            contactId,
+            allowed: response.ok && data.status?.allowed === true,
+            loading: false,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setServiceConsentStatus({
+            contactId,
+            allowed: false,
+            loading: false,
+          });
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [
+    activeContact?.id,
+    activeContact?.dnd,
+    activeContact?.opt_out_at,
+    activeContact?.opt_in_status,
+  ]);
 
   // Length of server-added company/employee identity and, before any successful
   // outbound in this thread, the required STOP notice. Keep the counter aligned
@@ -776,8 +842,6 @@ export default function Conversations({ replyAssist } = {}) {
           setConsentPrompt({
             contactId: data.contact_id,
             convId,
-            clientId,
-            retryAfterRecord: true,
           });
         }
         // Mark the optimistic bubble failed (if still on this thread) — keep it for retry.
@@ -907,29 +971,13 @@ export default function Conversations({ replyAssist } = {}) {
     const prompt = consentPrompt;
     if (!prompt || !record?.contact_id) return;
 
-    setConversations(prev => prev.map(c => ({
-      ...c,
-      conversation_participants: c.conversation_participants?.map(p =>
-        p.contact_id === record.contact_id
-          ? {
-            ...p,
-            contacts: {
-              ...p.contacts,
-              opt_in_status: true,
-              opt_in_source: record.opt_in_source || 'prior_consent_attestation',
-              opt_in_at: record.opt_in_at || record.recorded_at || new Date().toISOString(),
-            },
-          }
-          : p
-      ),
-    })));
+    setServiceConsentStatus({
+      contactId: record.contact_id,
+      allowed: record.service_sms_consent === true,
+      loading: false,
+    });
     setConsentPrompt(null);
-
-    if (prompt.retryAfterRecord && activeIdRef.current === prompt.convId) {
-      const failed = messages.find(message => message._clientId === prompt.clientId);
-      if (failed) retryMessage(failed);
-    }
-  }, [consentPrompt, messages, retryMessage]);
+  }, [consentPrompt]);
 
   // ─── SECTION: Event handlers — composer input ──────────────
 
@@ -1198,28 +1246,39 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !activeContact.dnd && activeContact.opt_in_status !== true && !isNote && (
+            {activeContact && !activeContact.dnd && !hasRecordedSmsPermission && !isNote && (
               <div className="conv-consent-banner">
                 <div>
-                  <strong>SMS permission is not recorded</strong>
-                  <span>Verify prior permission before texting this contact.</span>
+                  <strong>
+                    {hasExplicitSmsOptOut
+                      ? 'This contact opted out of SMS'
+                      : serviceConsentStatus.loading
+                        ? 'Checking SMS permission'
+                        : 'SMS permission is not recorded'}
+                  </strong>
+                  <span>
+                    {hasExplicitSmsOptOut
+                      ? 'They must text START before staff can send another message.'
+                      : serviceConsentStatus.loading
+                        ? 'Confirming the current service-message consent record.'
+                        : 'Verify prior service-message permission before texting this contact.'}
+                  </span>
                 </div>
-                {canAttestPriorConsent ? (
+                {!hasExplicitSmsOptOut && canAttestPriorConsent ? (
                   <button
                     className="btn btn-sm btn-secondary"
                     type="button"
                     onClick={() => setConsentPrompt({
                       contactId: activeContact.id,
                       convId: activeId,
-                      clientId: null,
-                      retryAfterRecord: false,
                     })}
+                    disabled={serviceConsentStatus.loading}
                   >
                     Record verified permission
                   </button>
-                ) : (
+                ) : !hasExplicitSmsOptOut ? (
                   <span className="conv-consent-role-note">Office or admin approval required</span>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -1326,7 +1385,7 @@ export default function Conversations({ replyAssist } = {}) {
                     <div className="conv-dnd-desc">
                       {activeContact.dnd
                         ? 'All outbound messages blocked'
-                        : activeContact.opt_in_status
+                        : hasRecordedSmsPermission
                           ? 'DND off and SMS permission recorded'
                           : 'DND off; SMS permission not recorded'}
                     </div>
@@ -1425,7 +1484,6 @@ export default function Conversations({ replyAssist } = {}) {
         open={!!consentPrompt}
         contactId={consentPrompt?.contactId || null}
         contactName={activeContact?.name || activeConv?.title || ''}
-        retryAfterRecord={consentPrompt?.retryAfterRecord === true}
         onClose={() => setConsentPrompt(null)}
         onRecorded={handleConsentRecorded}
       />

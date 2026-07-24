@@ -196,6 +196,9 @@ Migration `20260724014423_attest_prior_sms_consent.sql` adds only the service-ro
 a signed work authorization, other written permission, or another evidenced customer request.
 The operation records the consent date, evidence note, authenticated employee actor and server
 timestamp in `sms_consent_log` while updating `contacts.opt_in_status` in the same transaction.
+The audit details also pin `prior_sms_consent_v1`, Utah Pros Restoration as the sender and the
+`service_related_customer_project_messages` subject scope so later code cannot reinterpret this
+evidence as blanket marketing consent.
 
 The RPC is `SECURITY INVOKER`, is executable only by `service_role`, revalidates an active internal
 admin/office actor, locks the contact, and refuses DND or any existing `opt_out_at`. It does not add

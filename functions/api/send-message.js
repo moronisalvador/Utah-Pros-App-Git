@@ -19,7 +19,8 @@
  *   Packages:  none (pure fetch via lib helpers)
  *   Internal:  functions/lib/supabase.js, functions/lib/messaging-transport.js,
  *              functions/lib/cors.js
- *   Data:      reads  → conversations, conversation_participants, contacts, employees
+ *   Data:      reads  → conversations, conversation_participants, contacts, employees,
+ *                       service_sms_consents (through get_service_sms_consent_status)
  *              writes → messages, sms_consent_log, conversations
  *
  * Request body:
@@ -81,8 +82,17 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
     return { blocked: true, code: 'CONTACT_PHONE_MISMATCH' };
   }
 
-  // CHECK 1: DND — Twilio can suspend accounts that message DND contacts.
-  if (contact.dnd) {
+  // One service-role-only database decision owns duplicate-phone suppression,
+  // durable-but-unprojected STOP events, global opt-in, and the narrow
+  // one-to-one service consent. Browser roles cannot forge the service record.
+  const rawStatus = await db.rpc('get_service_sms_consent_status', {
+    p_contact_id: contact.id,
+    p_destination_phone: participantPhone,
+  });
+  const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
+  if (status?.allowed === true) return { blocked: false };
+
+  if (status?.code === 'DND_ACTIVE') {
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
@@ -94,24 +104,30 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
     return { blocked: true, code: 'DND_ACTIVE' };
   }
 
-  // CHECK 2: Opt-in — TCPA requires prior express consent for business texts.
-  // An explicit opt-out timestamp wins even if older/manual data left the
-  // boolean true. Prior-consent attestation is never allowed to erase STOP.
-  if (contact.opt_out_at || !contact.opt_in_status) {
+  if (status?.code === 'CONTACT_PHONE_MISMATCH') {
+    return { blocked: true, code: 'CONTACT_PHONE_MISMATCH' };
+  }
+  if (status?.code === 'CONTACT_NOT_FOUND') {
+    return { blocked: true, code: 'CONTACT_NOT_FOUND' };
+  }
+
+  // Missing/unknown status fails closed as NO_CONSENT. Never fall back to the
+  // browser-visible contact boolean when the authoritative RPC is unavailable.
+  {
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
       event_type: 'send_blocked_no_consent',
       source: 'system',
-      details: contact.opt_out_at
-        ? `Outbound blocked: explicit opt-out recorded at ${contact.opt_out_at}. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`
-        : `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
+      details: status?.source === 'explicit_opt_out'
+        ? `Outbound blocked: explicit opt-out recorded. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`
+        : status?.source === 'pending_stop'
+          ? 'Outbound blocked: an inbound STOP request is awaiting projection.'
+          : 'Outbound blocked: no current global or service-message consent.',
       performed_by: sentBy,
     });
     return { blocked: true, code: 'NO_CONSENT' };
   }
-
-  return { blocked: false };
 }
 
 // Send to ONE already-consent-cleared recipient and record its own messages row.
@@ -464,7 +480,7 @@ export async function onRequestPost(context) {
       : 'Utah Pros Restoration: ';
     const priorOutbound = await db.select(
       'messages',
-      `conversation_id=eq.${conversation_id}&type=eq.sms_outbound&status=neq.failed&select=id&limit=1`,
+      `conversation_id=eq.${conversation_id}&type=eq.sms_outbound&status=in.(queued,sent,delivered,read)&select=id&limit=1`,
     );
     const optOutNotice = priorOutbound.length === 0
       ? ' Reply STOP to unsubscribe.'
