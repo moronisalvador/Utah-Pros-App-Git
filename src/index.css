@@ -12560,3 +12560,16 @@ html.ui-glass .tech-nav {
 .tech-pill { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
 .tech-pill:active:not(:disabled) { transform: scale(0.97); }
 @media (prefers-reduced-motion: reduce) { .tech-pill:active:not(:disabled) { transform: none; } }
+
+/* ─── CRM LEAD NOTES (append-only notes log · standalone 2026-07-24) ───
+   The lead detail panel's Notes section: many notes per lead, newest first,
+   each with its timestamp + author. Card styling mirrors .crm-task-row so the
+   Notes and Tasks lists read as one system. Token colors only. */
+.crm-lead-notes-list { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.crm-lead-note {
+  padding: var(--space-3) var(--space-4);
+  background: var(--crm-bg-content); border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
+}
+.crm-lead-note-body { font-size: var(--text-base); color: var(--crm-text-primary); white-space: pre-wrap; word-break: break-word; margin: 0; }
+.crm-lead-note-meta { font-size: var(--text-xs); color: var(--crm-text-tertiary); margin: var(--space-1) 0 0; }
+.crm-lead-note-author { color: var(--crm-text-tertiary); }
