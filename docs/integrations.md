@@ -287,3 +287,13 @@ is persisted.
 CallRail `message.sent` recipients may omit the `+1` stored on the original UPR attempt. Outbound
 projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
 provider-message, or attempt identity checks.
+
+Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
+provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
+identity without downloading UPR's own attachment back from CallRail. Confirmation requires the
+event channel to match the attempt channel and every MMS attachment to be a non-empty private
+`upr-storage://message-attachments/outbound/` reference. A binding mismatch reuses the deployed
+retryable `outbound_unmatched` outcome so older and newer workers both fail closed while the shared
+database migration rolls out. Inbound MMS remains
+fail-closed: it must download the verified provider media endpoint, validate the response bytes,
+and persist an owned private reference before canonical projection.

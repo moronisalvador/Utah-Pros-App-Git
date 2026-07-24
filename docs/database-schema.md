@@ -272,3 +272,10 @@ signature. It preserves the service-role-only, invoker-mode
 `+1` E.164 recipients as the same identity. Non-NANP addresses still require exact equality, and
 body, provider-message, provider-conversation, state, and canonical-message checks remain binding.
 Neither migration deletes or rewrites retained provider events.
+
+`20260724193628_bind_callrail_outbound_mms_identity.sql` preserves that signature and adds a
+defense-in-depth confirmation boundary: the provider event channel must equal the attempt channel,
+and an MMS attempt must contain only non-empty private
+`upr-storage://message-attachments/outbound/` references. A mismatch returns a non-success outcome
+using the already-deployed `outbound_unmatched` contract before attempt, message, or provider-event
+state changes. The worker enforces the same boundary before invoking the RPC.

@@ -51,6 +51,23 @@ intent. Resume recovery uses `useResumeRefetch` and merges the refreshed newest 
 loaded history instead of replacing it. The shared anchor/merge policy is in
 `src/components/conversations/threadScroll.js`; no send, webhook, consent, or provider contract changed.
 
+## CallRail outbound MMS projection hardening (2026-07-24)
+
+Outbound `message.sent` MMS events do not download UPR's own attachment back from CallRail. Both
+the immediate webhook and retained-event worker require private media capture only for inbound MMS;
+outbound confirmation instead matches the exact send-attempt ledger entry. The worker requires the
+event channel to equal `requested_channel`, and MMS attempts must contain only non-empty
+`upr-storage://message-attachments/outbound/` references.
+
+Migration `20260724193628_bind_callrail_outbound_mms_identity.sql` preserves
+`project_callrail_outbound_event(uuid,uuid)` and enforces the same checks transactionally before
+any attempt, message, or event state update. A mismatch returns the existing
+`outbound_unmatched` outcome for compatibility with both deployed and updated workers. Its exact
+prior-body rollback is
+`supabase/rollbacks/20260724193628_bind_callrail_outbound_mms_identity.rollback.sql`. At authoring
+time the migration is reviewed but not yet applied; live apply and recovery evidence must update
+this state.
+
 ---
 
 ## Deployment & Release Workflow

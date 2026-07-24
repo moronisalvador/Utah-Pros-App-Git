@@ -223,7 +223,9 @@ export async function onRequestPost(context) {
     });
     try {
       let processingEvent = { ...event, eventId: claimedEvent.id };
-      if (event.messageType === 'mms') {
+      // Outbound attachments are already copied into UPR's private bucket
+      // before submission. Only inbound MMS needs provider media capture.
+      if (event.direction === 'inbound' && event.messageType === 'mms') {
         try {
           const owned = await ingestVerifiedCallrailEventMms({
             db,

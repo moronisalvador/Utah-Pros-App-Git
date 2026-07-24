@@ -1,8 +1,10 @@
 /**
- * Recovers retained CallRail SMS events after transient processing failures.
+ * Recovers retained CallRail SMS and MMS events after transient failures.
  *
- * No provider send occurs here. MMS remains fail-closed, and this worker is
- * inert until the foundation schema and a scheduler secret are configured.
+ * No provider send occurs here. Inbound MMS is copied into private UPR storage
+ * before projection; outbound MMS uses the private media already recorded on
+ * its exact send attempt. The worker is inert until the foundation schema and
+ * a scheduler secret are configured.
  */
 
 import { supabase } from '../lib/supabase.js';
@@ -30,7 +32,11 @@ async function processRow(db, row, now, env) {
 
   try {
     let normalizedEvent = normalizeStoredCallrailEvent(row);
-    if (normalizedEvent.messageType === 'mms' && normalizedEvent.ownedMedia.length === 0) {
+    if (
+      normalizedEvent.direction === 'inbound'
+      && normalizedEvent.messageType === 'mms'
+      && normalizedEvent.ownedMedia.length === 0
+    ) {
       try {
         const owned = await ingestVerifiedCallrailEventMms({
           db,

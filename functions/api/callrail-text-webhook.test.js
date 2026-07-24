@@ -275,6 +275,48 @@ describe('CallRail text webhook receiver', () => {
     expect(waitUntil).not.toHaveBeenCalled();
   });
 
+  it('confirms outbound MMS without redundantly downloading UPR-owned media', async () => {
+    const outbound = {
+      ...EVENT,
+      eventType: 'message.sent',
+      direction: 'outbound',
+      from: EVENT.to,
+      to: EVENT.from,
+      dedupeKey: 'callrail:message.sent:SCI-test',
+    };
+    h.parse.mockResolvedValueOnce(outbound);
+    h.process.mockResolvedValueOnce({
+      outcome: 'outbound_confirmed',
+      messageId: 'message-1',
+      attemptId: 'attempt-1',
+    });
+
+    const res = await onRequestPost({
+      request: request(),
+      env: CONFIGURED_ENV,
+    });
+
+    expect(res.status).toBe(202);
+    expect(h.ingestMms).not.toHaveBeenCalled();
+    expect(h.process).toHaveBeenCalledWith({
+      db: h.db,
+      event: expect.objectContaining({
+        eventId: 'event-1',
+        direction: 'outbound',
+        messageType: 'mms',
+      }),
+    });
+    expect(h.db.update).toHaveBeenCalledWith(
+      'message_provider_events',
+      'id=eq.event-1',
+      expect.objectContaining({
+        processing_state: 'processed',
+        send_attempt_id: 'attempt-1',
+        outcome: 'outbound_confirmed',
+      }),
+    );
+  });
+
   it('records unsupported MMS as failed without persisting provider URLs', async () => {
     h.process.mockRejectedValueOnce(Object.assign(new Error('not enabled'), {
       code: 'CALLRAIL_MMS_NOT_ENABLED',
