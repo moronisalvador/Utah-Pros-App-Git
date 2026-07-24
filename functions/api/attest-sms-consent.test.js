@@ -41,7 +41,10 @@ const ENV = {};
 function request(body) {
   return {
     json: vi.fn(async () => body),
-    headers: new Headers({ Authorization: 'Bearer test-token' }),
+    headers: new Headers({
+      Authorization: 'Bearer test-token',
+      'CF-Connecting-IP': '203.0.113.14',
+    }),
   };
 }
 
@@ -163,7 +166,20 @@ describe('POST /api/attest-sms-consent evidence and audit contract', () => {
       p_consent_method: 'verbal_permission',
       p_consent_obtained_on: '2026-07-22',
       p_evidence_note: 'Customer gave verbal permission during the signed work intake.',
+      p_ip_address: '203.0.113.14',
     });
+  });
+
+  it('ignores a body-supplied IP and passes only the bounded Cloudflare client IP', async () => {
+    await onRequestPost({
+      request: request(validBody({ ip_address: '198.51.100.99' })),
+      env: ENV,
+    });
+
+    expect(h.db.rpc).toHaveBeenCalledWith(
+      'attest_prior_sms_consent',
+      expect.objectContaining({ p_ip_address: '203.0.113.14' }),
+    );
   });
 
   it.each([

@@ -43,6 +43,11 @@ const CONSENT_METHODS = new Set([
 ]);
 const CONSENT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+function trustedClientIp(request) {
+  const value = String(request.headers.get('CF-Connecting-IP') || '').trim();
+  return value && value.length <= 64 ? value : null;
+}
+
 function denverDateValue(date = new Date()) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Denver',
@@ -137,6 +142,7 @@ export async function onRequestPost(context) {
       p_consent_method: method,
       p_consent_obtained_on: consentObtainedOn,
       p_evidence_note: evidenceNote,
+      p_ip_address: trustedClientIp(request),
     });
     const record = Array.isArray(result) ? result[0] : result;
 
