@@ -64,6 +64,21 @@ material, provider webhooks, Cloudflare variables, number routing, migration sou
 provider state. Production stays disabled. RCS may be shown only as planned/readiness information;
 it remains channel-locked and automatic RCS-to-SMS/MMS fallback is prohibited.
 
+### 2026-07-23 inbound notification activation amendment
+
+The owner authorized closing the live CallRail inbound bell/push gap after evidence showed every
+canonical inbound projection atomically created a notification-outbox row but no scheduler ever
+claimed one. This amendment owns one additive migration, rollback, contract test and the matching
+canonical/evidence updates. The migration may add a trigger wake-up plus a five-minute pg_cron
+safety net for the already-deployed, scheduler-secret-protected
+`/api/process-message-notification-outbox` worker.
+
+The scheduler must use the existing cron secret, accept only the exact dev/production UPR worker
+URLs, remain inert when configuration or due work is absent, preserve fenced claims, and retain
+pending rows on rollback. It does not broaden the CallRail send scope, enable Production messaging,
+change notification preferences, create a browser grant, or authorize unrelated delayed
+notifications.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:

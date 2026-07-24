@@ -53,9 +53,10 @@ function makeDb(opts = {}) {
         const rolem = /role=in\.\(([^)]+)\)/.exec(query);
         if (rolem) {
           const roles = rolem[1].split(',');
-          return employees.filter(e => roles.includes(e.role));
+          return employees.filter(e => roles.includes(e.role)
+            && (!query.includes('is_active=eq.true') || e.is_active !== false));
         }
-        return employees;
+        return employees.filter(e => !query.includes('is_active=eq.true') || e.is_active !== false);
       }
       if (table === 'appointment_crew') {
         const m = /appointment_id=eq\.([^&]+)/.exec(query);
@@ -112,19 +113,22 @@ describe('resolveAudience', () => {
   });
 
   it('explicit recipient_ids win and are de-duped', async () => {
-    const db = makeDb({});
+    const db = makeDb({ employees: [{ id: 'x' }, { id: 'y' }] });
     const ids = await resolveAudience(db, 'anything', { recipient_ids: ['x', 'x', 'y'] });
     expect(ids.sort()).toEqual(['x', 'y']);
   });
 
   it('appointment.assigned → the crewed employee', async () => {
-    const db = makeDb({});
+    const db = makeDb({ employees: [{ id: 'emp-9' }] });
     const ids = await resolveAudience(db, 'appointment.assigned', { employee_id: 'emp-9' });
     expect(ids).toEqual(['emp-9']);
   });
 
   it('appointment.updated → the crew of the appointment', async () => {
-    const db = makeDb({ crewByAppt: { 'ap-1': [{ employee_id: 'c1' }, { employee_id: 'c2' }] } });
+    const db = makeDb({
+      employees: [{ id: 'c1' }, { id: 'c2' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'c1' }, { employee_id: 'c2' }] },
+    });
     const ids = await resolveAudience(db, 'appointment.updated', { appointment_id: 'ap-1' });
     expect(ids.sort()).toEqual(['c1', 'c2']);
   });
@@ -136,6 +140,51 @@ describe('resolveAudience', () => {
     ] });
     const ids = await resolveAudience(db, 'clock.abandoned', { payload: { employee_id: 't1' } });
     expect(ids.sort()).toEqual(['a1', 'a2', 't1']);
+  });
+
+  it('fails closed for inactive, external, and unknown explicit recipients', async () => {
+    const db = makeDb({ employees: [
+      { id: 'active', is_active: true, is_external: false },
+      { id: 'inactive', is_active: false, is_external: false },
+      { id: 'external', is_active: true, is_external: true },
+    ] });
+    const ids = await resolveAudience(db, 'anything', {
+      recipient_ids: ['active', 'inactive', 'external', 'missing'],
+    });
+    expect(ids).toEqual(['active']);
+  });
+
+  it('role fallback excludes inactive and external employees', async () => {
+    const db = makeDb({ employees: [
+      { id: 'active-admin', role: 'admin', is_active: true, is_external: false },
+      { id: 'inactive-admin', role: 'admin', is_active: false, is_external: false },
+      { id: 'external-admin', role: 'admin', is_active: true, is_external: true },
+    ] });
+    const ids = await resolveAudience(db, 'message.inbound');
+    expect(ids).toEqual(['active-admin']);
+  });
+
+  it('assigned and crew audiences exclude inactive and external employees', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'active', is_active: true, is_external: false },
+        { id: 'inactive', is_active: false, is_external: false },
+        { id: 'external', is_active: true, is_external: true },
+      ],
+      crewByAppt: {
+        'ap-1': [
+          { employee_id: 'active' },
+          { employee_id: 'inactive' },
+          { employee_id: 'external' },
+        ],
+      },
+    });
+    expect(await resolveAudience(db, 'appointment.assigned', {
+      employee_id: 'inactive',
+    })).toEqual([]);
+    expect(await resolveAudience(db, 'appointment.updated', {
+      appointment_id: 'ap-1',
+    })).toEqual(['active']);
   });
 });
 
@@ -284,6 +333,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
   it('the bell row carries the enriched date/time title + body', async () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
+      employees: [{ id: 'emp-9' }],
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
     });
