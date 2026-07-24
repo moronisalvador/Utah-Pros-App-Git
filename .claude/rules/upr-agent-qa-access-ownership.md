@@ -6,18 +6,23 @@ This manifest is binding for the proposed UPR Agent QA Access and Test Foundatio
 is `docs/upr-agent-qa-access-roadmap.md`; cold-session prompts are in
 `docs/upr-agent-qa-access-dispatch.md`.
 
-## 1. Current state: P0 documentation complete
+## 1. Current state: P1 internal foundation complete
 
-The initiative currently owns only:
+The P1 delivery owned and released only:
 
 - `docs/upr-agent-qa-access-roadmap.md`
 - `docs/upr-agent-qa-access-dispatch.md`
 - `.claude/rules/upr-agent-qa-access-ownership.md`
-- `docs/audit/2026-07/evidence/qa-foundation-decision-addendum-2026-07-23.md`
+- `.claude/figma-governance.json`
+- `.github/workflows/ci.yml`
+- `.gitignore`, `package.json`, `package-lock.json`, `vitest.config.js`, `playwright.config.js`
+- new `scripts/qa/**`, `tests/qa/**`, and Figma-governance validator/test files
+- the exact canonical, roadmap, registry, design-governance, and dated-evidence updates for close-out
 
-No application, test configuration, dependency, CI, migration, canonical knowledge file, external
-resource, or live state is owned or authorized yet. P1 and P2a are ready only for an exact ownership
-checkpoint; they are not opened by the P0 decision addendum.
+No product page/component, migration, external resource, live state, identity, credential, provider,
+deployment, account, or shared-database action was owned or changed. P1 ownership is released at
+close-out. P2a owns only the fail-closed runner contract until a separate checkpoint opens a governed
+local Supabase runtime/config and deterministic database fixtures.
 
 ## 2. Encircle landed baseline and freeze
 
@@ -44,13 +49,14 @@ credential cutover is live. “Different branch” is not proof of disjointness.
 
 ## 3. Proposed future ownership by phase
 
-The paths below are reservations to approve later, not current edit permission.
+The paths below record completed P1 ownership and reservations to approve later; they are not
+standing edit permission.
 
 | Phase | Proposed exclusive ownership | Must coordinate / frozen |
 |---|---|---|
 | P0 | QA decision/addendum docs only | all runtime and external state |
-| P1 | new Vitest/Playwright configs; new `tests/qa/**`; new browser/CDP guard/launcher; test artifact ignores; assigned scripts/CI block | package/lock, `.gitignore`, Vite, CI require explicit Encircle handoff |
-| P2a | new local isolated-DB runner/fixtures/seed/cleanup/tests | all shared/live migrations and existing DB initiative files |
+| P1 | delivered/released: Vitest/Playwright configs; `tests/qa/**`; browser/CDP guard/launcher; test artifact ignores; assigned scripts/CI block | no product/shared runtime files were opened |
+| P2a | refusal runner delivered; local isolated-DB config/fixtures/seed/cleanup/tests remain unowned | all shared/live migrations and existing DB initiative files |
 | P2b | new hosted-QA Auth/Storage/role fixtures and hosted seed/cleanup tests | shared project, production identities/data, and live migrations |
 | P3 | new side-effect-policy and QA telemetry modules/tests; narrow assigned auth/provider caller changes; QA deployment declarations | auth, credentials, provider adapters, workers, Cloudflare variables are shared RED hotspots |
 | P4 | representative browser workflows/fixtures only; minimal assigned product hooks if unavoidable | product pages/components remain owned by their current initiatives |
@@ -102,8 +108,9 @@ P4 -> P5 (one provider at a time)
 P5 -> P6
 ```
 
-P1 and P2a may run in parallel only after the post-`0a06a21` Encircle state and their assigned files
-are verified disjoint. P3 is a shared-hotspot serialization gate. Provider sessions do not overlap.
+P1 is complete. P2a may resume only after its local runtime/config ownership gate is recorded and
+the current branch/worktree inventory is verified again. P3 is a shared-hotspot serialization gate.
+Provider sessions do not overlap.
 
 ## 8. Phase close-out
 

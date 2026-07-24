@@ -206,3 +206,27 @@ manifest and fresh machine evidence now map that tool-assigned live version to r
 The repository-internal Foundation/documentation boundary is complete for this capture. The overall
 finish-first program remains open at the explicit live-apply, provider, credential, isolated-QA,
 device, legal and owner gates above.
+
+## QA and Figma internal foundation addendum — 2026-07-24 UTC
+
+The owner opened and completed the repository-internal P1/Foundation F3a slice from clean `dev`
+base `848230d`, then reconciled it with the newer messaging commits on `origin/dev`. The delivered
+boundary partitions credential-free unit/Worker/QA lanes; blocks network and provider egress;
+refuses production/ambiguous Supabase and browser targets; launches only an ephemeral pipe-based
+browser profile; executes deterministic desktop/390px Playwright/axe fixtures; scans retained
+artifacts; and fails any governed lane on zero tests or a skip/todo.
+
+The local database runner contract is present but execution is not claimed: there is no governed
+`supabase/config.toml`, local CLI/runtime, deterministic seed, or representative-role fixture.
+Hosted QA, real UPR authentication/data, providers, native/device testing, production smoke, and a
+pinned-Linux visual baseline remain open.
+
+The Figma internal permission/authority contract, repository inventory, handoff manifest, and
+representative capture matrix are also complete. Figma remains disconnected with zero scopes. The
+dirty overlapping messaging worktrees, CAP credential/permission containment, exact connection
+scope, authenticated read-only staging session, screenshot capture, and any paid seat remain
+owner/external gates.
+
+This addendum performed zero shared-database migrations, business-data mutations, identities,
+credential changes, provider calls, outbound messages, money actions, Cloudflare/Apple/Figma
+account changes, or production promotions. Untracked `.agents/` and `.codex/` remained preserved.

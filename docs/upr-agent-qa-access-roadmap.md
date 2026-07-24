@@ -21,13 +21,13 @@ NOTES / GOTCHAS:
 
 # UPR Agent QA Access and Test Foundation Roadmap
 
-Status: active; P0 repository decision package recorded, external gates remain
+Status: active; P1 credential-free internal foundation verified, P2a/P2b external gates remain
 
 Planning capture: 2026-07-23
 
-Implementation status: P0 documentation complete; P1/P2a ownership checkpoint pending
+Implementation status: P1 complete; P2a refusal scaffold complete but database execution blocked
 
-Repository base: refreshed on `dev` at `69076d1`
+Implementation base: clean `dev` at `848230d`; later reconciled with current `origin/dev`
 
 Companions:
 [`upr-agent-qa-access-dispatch.md`](upr-agent-qa-access-dispatch.md) and
@@ -48,11 +48,12 @@ Until gates 2–4 pass, authenticated write-capable automation is blocked. The e
 deployment is not a safe write target because `dev` and production share Supabase. Production remains
 read-only smoke only in every phase.
 
-This initiative remains documentation-only through P0. The repository-safe decisions and unresolved
-owner/external gates are recorded in
-`docs/audit/2026-07/evidence/qa-foundation-decision-addendum-2026-07-23.md`. No P1/P2 runtime
-ownership, user, data, schema, credential, deployment, browser session, outbound message, or money
-action is opened by that addendum.
+P0 remained documentation-only. On 2026-07-23 the owner opened the exact P1/internal F3a scope:
+credential-free test configuration, deterministic mocks, local-only browser guards, fail-closed
+database-runner refusal, artifact scanning, and CI. That work created no user, hosted resource,
+schema change, credential, deployed browser session, outbound message, provider call, money action,
+or production data access. Exact execution evidence and remaining P2 gates are recorded in
+`docs/audit/2026-07/evidence/isolated-qa-figma-internal-foundation-2026-07-23.md`.
 
 ## Encircle handoff snapshot
 
@@ -518,26 +519,35 @@ Acceptance:
 Scope: explicit Vitest partitions/excludes; Playwright/axe config; mocked browser workflows;
 navigation/egress guard; loopback CDP launcher; artifact redaction; no login credentials or live calls.
 
+**Repository outcome (2026-07-23):** complete for the internal credential-free scope. The browser
+matrix is deterministic synthetic-fixture evidence, not real UPR, hosted-QA, provider, native, or
+pinned-Linux screenshot evidence.
+
 Acceptance:
 
-- `test:unit` and mocked Worker lane make no network calls;
-- test discovery excludes worktrees/generated output;
-- localhost desktop/390px workflows cover loading/error/empty/resume and accessibility;
-- disallowed navigation/egress tests pass;
-- zero secrets or Auth state in diff/artifacts.
+- [x] `test:unit` and mocked Worker lane make no network calls;
+- [x] test discovery excludes worktrees/generated output;
+- [x] localhost desktop/390px workflows cover loading/error/empty/resume and accessibility;
+- [x] disallowed navigation/egress tests pass;
+- [x] zero secrets or Auth state in diff/artifacts;
+- [x] every credential-free lane fails on zero discovery or any skip/todo.
 
 ### P2a — Local database contract foundation
 
 Scope: clean local Supabase; migrations from zero; RLS/RPC/trigger/rollback and failure-injection
 tests; no hosted identities, storage state, deployed application, or provider calls.
 
+**Repository outcome (2026-07-23):** target-policy and runner refusal scaffold complete. Execution
+is blocked because no governed `supabase/config.toml`, local CLI/runtime, deterministic database
+seed, or representative-role fixture exists. No database lane was reported as passed or skipped.
+
 Acceptance:
 
-- local sentinel and known-shared-project refusal pass;
-- zero unexpected DB-test skips;
-- migration head/catalog fingerprint recorded;
-- role/assignment/active-status database contracts pass;
-- local seed and cleanup are idempotent with zero residual.
+- [x] local sentinel and known-shared-project refusal pass;
+- [ ] zero unexpected DB-test skips;
+- [ ] migration head/catalog fingerprint recorded;
+- [ ] role/assignment/active-status database contracts pass;
+- [ ] local seed and cleanup are idempotent with zero residual.
 
 ### P2b — Hosted isolated data and identity foundation
 

@@ -293,17 +293,18 @@ The one raw body difference is comment-only and remains a warning. Evidence:
 
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation
 
-> **Implementation:** P0 decision package complete; F3a internal ownership checkpoint ready ·
-> **Gate:** `external + owner` · **Disposition:** `active`
-> **Prerequisite:** owner chooses Supabase ownership/budget/reset policy
+> **Implementation:** F3a credential-free repository slice verified; local/hosted data targets blocked ·
+> **Gate:** `external + owner` for database/hosted continuation · **Disposition:** `active`
+> **Prerequisite:** owner opens governed local Supabase config/runtime or chooses hosted ownership/budget/reset policy
 > **Model · effort:** high; auth/data-isolation architecture
 > **Scope:** separate Supabase target or approved local stack, representative roles, TEST organization,
 > deterministic seeds/reset, provider sandboxes; never shared production
 
 **Split and acceptance**
 
-- **F3a — environment/bootstrap:** owner-selected hosted/local target, migration-from-zero, and CI
-  refusal of production project URLs/IDs.
+- **F3a — environment/bootstrap:** repository target policies, CI, local-origin enforcement, and
+  production project URL/ID refusal are delivered. Migration-from-zero still requires a governed
+  local runtime/config or owner-selected hosted target.
 - **F3b — identities/data:** anon, admin, office/PM, supervisor, field-tech, CRM-partner, inactive,
   unknown-employee, TEST organization, deterministic seeds, and no real employee credentials.
 - **F3c — reset/subsystems:** idempotent cleanup plus Storage/Auth/Realtime coverage. Provider
@@ -311,22 +312,26 @@ The one raw body difference is comment-only and remains a warning. Evidence:
 
 The 2026-07-23 P0 addendum records the safe environment, identity, provider, telemetry, GitHub,
 accessibility, and Encircle boundaries. It supersedes—not merges—the `3841056` plan because that plan
-would keep mutation-heavy integration tests on the shared production database. P1/P2a may begin only
-after exact file ownership is opened; hosted project/account creation remains an owner/external gate.
+would keep mutation-heavy integration tests on the shared production database. P1 is complete.
+P2a execution still requires exact local-runtime/config ownership; hosted project/account creation
+remains an owner/external gate.
 
 ### Phase F4a/F4b/F4c — Test, CI, deployment, and observability gates
 
-> **Implementation:** `not_started` · **Gate:** `internal` on F3 · **Disposition:** `active`
+> **Implementation:** F4a unit/Worker and F4b synthetic browser foundations verified; database,
+> real-journey visual, deployment, and observability tails remain · **Gate:** `internal + external`
+> on remaining F3 · **Disposition:** `active`
 > **Model · effort:** medium/high
 > **Scope:** split pure unit/Worker/database/browser lanes; deployment config preflight; provenance and
 > no-new-regression gates
 
 **Split and acceptance**
 
-- **F4a — unit/database:** deterministic blocking `test:unit`; `test:db` only against F3 with zero
-  unexpected skips; migration and authorization gates.
-- **F4b — browser/accessibility:** representative roles/core journeys, Playwright/axe, 390px,
-  minimize/resume, and forced failure/empty/loading states.
+- **F4a — unit/database:** deterministic blocking unit/Worker/QA-policy lanes are delivered with
+  zero-skip enforcement; `test:db:local` remains fail-closed until F3 supplies the isolated stack.
+- **F4b — browser/accessibility:** deterministic Playwright/axe desktop/390px synthetic fixtures,
+  resume/focus/overflow and forced failure/empty/loading states are delivered. Representative
+  authenticated roles, actual UPR pages, pinned-Linux screenshots and real-device proof remain.
 - **F4c — deployment/observability:** lint/bundle new-debt ratchets, binding preflight, provenance,
   read-only deployed smoke, and explicit native/provider verification tails.
 
@@ -349,7 +354,8 @@ after exact file ownership is opened; hosted project/account creation remains an
 
 ### Phase F6a/F6b — Design-system and Figma operating model
 
-> **Implementation:** `minimum-viable checkpoint recorded` · **Gate:** `internal + owner`
+> **Implementation:** internal authority, inventory, permission contract, and capture matrix recorded ·
+> **Gate:** `owner + external` for connection/session/seat
 > **Disposition:** `active`
 > **Model · effort:** high; product-wide visual authority
 > **Scope:** design source-of-truth, inspection/handoff/versioning rules, token/component coverage map;
@@ -366,9 +372,10 @@ after exact file ownership is opened; hosted project/account creation remains an
 prerequisite for starting design. The minimum gate and first sprint are in
 `docs/audit/2026-07/evidence/figma-readiness-checkpoint-2026-07-23.md`. Design remains
 owner-blocked because one messaging worktree has six dirty shared-UI files, CAP-SEC-001 and
-CAP-GOV-001 need owner/provider actions, the plugin permission/authority contract is unapproved,
-and a dedicated authenticated read-only staging browser session has not been demonstrated. No
-Figma plugin was installed or connected and no seat was purchased.
+CAP-GOV-001 need owner/provider actions, the repository permission/authority contract is implemented
+but no connection scope is owner-approved, and a dedicated authenticated read-only staging browser
+session has not been demonstrated. No Figma plugin was installed or connected and no seat was
+purchased.
 
 ## 7. Finish-first product waves
 

@@ -92,6 +92,10 @@ proposed documentation diff and unresolved owner actions. Do not publish.
 
 ## P1 — Credential-free localhost test foundation
 
+**Dispatch status (2026-07-23): delivered.** Reuse this prompt only for a reviewed follow-up; do not
+repeat the completed foundation or infer permission for hosted/database/provider work. Pinned-Linux
+visual baselines and real UPR journeys remain separate gates.
+
 ```text
 Objective: add the local, mocked browser/test foundation without credentials or live network access.
 
@@ -126,6 +130,11 @@ Stop with results and owner gates. Do not publish.
 ```
 
 ## P2a — Local Supabase database contracts
+
+**Dispatch status (2026-07-23): blocked after refusal scaffold.** The runner rejects the shared
+project and missing/ambiguous local configuration, but this repository has no governed
+`supabase/config.toml`, local CLI/runtime, deterministic seed, or representative-role fixture. A new
+ownership checkpoint must open those exact files before this prompt may execute.
 
 ```text
 Objective: build migration/RLS/RPC/trigger contracts in a clean local Supabase stack only.

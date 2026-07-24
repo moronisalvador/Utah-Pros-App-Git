@@ -121,3 +121,24 @@ does not authorize it.
 
 This checkpoint is sufficient to start design once those exact gates clear; it does not wait for
 write-capable hosted QA or the entire product backlog.
+
+## Repository-internal prerequisite addendum — 2026-07-23
+
+The internal contract work is now implemented without connecting Figma:
+
+- `.claude/figma-governance.json` grants zero scopes and denies installation, connection, paid-seat
+  purchase, auto-sync, code generation, broad imports, and public publishing;
+- its validator and regression tests run in CI, so a scope/action cannot be silently broadened;
+- `docs/upr-figma-governance-and-handoff.md` records repository-versus-Figma authority, exit and
+  version rules, a handoff manifest, current design-system/token/component/page inventory, and the
+  desktop 1440×1000 plus mobile 390×844 capture plan;
+- the inventory was recounted as 164 page files, 204 component files, 112 route declarations,
+  212 CSS custom-property definitions/170 distinct names, and ten shared `src/components/ui` files
+  including seven runtime primitives.
+
+These repository prerequisites change gate 3 from “contract missing” to “contract implemented,
+connection scope unapproved.” They do not clear the external boundary. The overlapping messaging
+worktrees remain dirty and owner-controlled; CAP-SEC-001/CAP-GOV-001 remain open; no dedicated
+authenticated read-only staging session or actual UPR screenshot matrix was supplied; and no
+workspace/file/action scope or seat was approved. No plugin was installed or connected, no seat was
+purchased, and no Figma/account/repository write occurred through a design tool.
