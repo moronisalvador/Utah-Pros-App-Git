@@ -7834,6 +7834,9 @@ ready states, reduced motion, keyboard focus, lifecycle resume, overflow, and se
 rules. Browser guards deny production Supabase navigation, provider egress, write requests,
 popups, WebSockets, downloads, TCP/CDP attachment, and human browser profiles. Retained artifacts
 are scanned for authentication material, production identifiers, and realistic identity data.
+The ephemeral-profile containment gate explicitly parses absolute Windows or POSIX paths and
+rejects relative/mixed-dialect inputs so repository/profile isolation behaves identically on local
+Windows and Linux CI.
 This is synthetic foundation evidence only; no real UPR account/page, hosted project, provider,
 iOS device, or production path was exercised.
 

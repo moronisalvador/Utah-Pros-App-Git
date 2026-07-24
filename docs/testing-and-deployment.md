@@ -90,6 +90,9 @@ The repository-internal P1/Foundation F3a slice is complete for credential-free 
   dialog behavior, lifecycle resume, 390px overflow, reduced motion, and serious/critical axe rules;
 - production Supabase identifiers/URLs, provider egress, popups, WebSockets, downloads, write
   requests, non-pipe CDP and persistent human profiles are negative-tested refusals;
+- ephemeral-profile containment recognizes absolute Windows and POSIX paths explicitly, rejects
+  relative or mixed-dialect paths, and applies the same repository/profile rules on local Windows
+  and Linux CI;
 - retained artifacts are scanned fail-closed and all governed lanes require zero unexpected skips.
 
 This is scaffold and synthetic-browser evidence, not proof of real UPR journeys, native behavior,

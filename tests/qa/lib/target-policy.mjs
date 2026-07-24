@@ -31,7 +31,9 @@ const HUMAN_PROFILE_MARKERS = [
   '/microsoft/edge/user data',
   '/brave-browser/user data',
   '/mozilla/firefox/profiles',
+  '/.mozilla/firefox/',
 ];
+const WINDOWS_ABSOLUTE_PATH = /^[a-z]:[\\/]/i;
 
 function denial(kind, reason) {
   throw new Error(`${kind} denied: ${reason}`);
@@ -90,10 +92,18 @@ export function assertCdpLaunchPolicy({ transport, userDataDir, repositoryRoot }
   if (transport !== 'pipe') denial('CDP launch', 'only pipe transport is implemented');
   if (!userDataDir || !repositoryRoot) denial('CDP launch', 'profile and repository paths are required');
 
-  const profile = path.resolve(userDataDir);
-  const repository = path.resolve(repositoryRoot);
-  const relative = path.relative(repository, profile);
-  if (relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))) {
+  const bothWindows =
+    WINDOWS_ABSOLUTE_PATH.test(userDataDir) && WINDOWS_ABSOLUTE_PATH.test(repositoryRoot);
+  const bothPosix = userDataDir.startsWith('/') && repositoryRoot.startsWith('/');
+  if (!bothWindows && !bothPosix) {
+    denial('CDP launch', 'profile and repository must use the same absolute path dialect');
+  }
+
+  const pathDialect = bothWindows ? path.win32 : path.posix;
+  const profile = pathDialect.resolve(userDataDir);
+  const repository = pathDialect.resolve(repositoryRoot);
+  const relative = pathDialect.relative(repository, profile);
+  if (relative === '' || (!relative.startsWith('..') && !pathDialect.isAbsolute(relative))) {
     denial('CDP launch', 'the ephemeral profile must live outside the repository');
   }
 

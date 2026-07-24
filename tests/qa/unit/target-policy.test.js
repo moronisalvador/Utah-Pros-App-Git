@@ -106,6 +106,13 @@ describe('isolated QA target policy', () => {
         repositoryRoot: 'C:\\workspace\\upr',
       }),
     ).toMatchObject({ transport: 'pipe' });
+    expect(
+      assertCdpLaunchPolicy({
+        transport: 'pipe',
+        userDataDir: '/tmp/upr-qa-browser/run-123',
+        repositoryRoot: '/workspace/upr',
+      }),
+    ).toMatchObject({ transport: 'pipe' });
 
     for (const target of [
       {
@@ -121,6 +128,26 @@ describe('isolated QA target policy', () => {
       {
         transport: 'pipe',
         userDataDir: 'C:\\Users\\person\\AppData\\Local\\Google\\Chrome\\User Data',
+        repositoryRoot: 'C:\\workspace\\upr',
+      },
+      {
+        transport: 'pipe',
+        userDataDir: '/workspace/upr/.profile',
+        repositoryRoot: '/workspace/upr',
+      },
+      {
+        transport: 'pipe',
+        userDataDir: '/home/person/.mozilla/firefox/profiles/default',
+        repositoryRoot: '/workspace/upr',
+      },
+      {
+        transport: 'pipe',
+        userDataDir: 'relative/upr-qa-browser/run-123',
+        repositoryRoot: '/workspace/upr',
+      },
+      {
+        transport: 'pipe',
+        userDataDir: '/tmp/upr-qa-browser/run-123',
         repositoryRoot: 'C:\\workspace\\upr',
       },
     ]) {
