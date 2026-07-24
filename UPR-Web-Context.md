@@ -6168,9 +6168,12 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     `get_contact_activity`/`add_lead_note` are `authenticated`/`service_role`-only and `crm_lead_notes`
     is deny-all, it only truly runs under a privileged harness or the Supabase MCP, not an anon session.
     The live contract + every fixture column/enum was verified read-only via the Supabase MCP.
-    `migration-safety-checker` flagged this guard as recommended-not-required. **Known coverage gap:**
-    `get_lead_activity`'s `note` + `follow_up_call` arms are not yet guarded this way (`crm_lead_activity.test.js`
-    covers only its lead/task/stage_change arms) — a worthwhile parallel follow-up.
+    `migration-safety-checker` flagged this guard as recommended-not-required. **Sibling guard
+    (2026-07-24):** `supabase/tests/crm_lead_activity.test.js` carries the same guard for
+    `get_lead_activity`'s 5 arms, closing the gap where its older suite covered only
+    lead/task/stage_change and left `note` (crm_lead_notes) + `follow_up_call` unguarded. Both
+    guards are keyed to arm lists verified read-only against the live catalog; when a future
+    migration legitimately ADDS an arm, update the corresponding list in the same commit.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
