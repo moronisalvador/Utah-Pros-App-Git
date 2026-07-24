@@ -44,6 +44,48 @@ export function restoreVisibleMessageAnchor(scrollElement, anchor) {
   return true;
 }
 
+const RECONCILE_WINDOW_MS = 10 * 60 * 1000;
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 1000;
+
+function normalizedMedia(mediaUrls) {
+  let values = mediaUrls;
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values); } catch { values = [values]; }
+  }
+  if (!Array.isArray(values)) values = values ? [values] : [];
+  return values.map(String).sort();
+}
+
+function messageContentKey(message) {
+  return `${message?.type}::${message?.body || ''}::${JSON.stringify(normalizedMedia(message?.media_urls))}`;
+}
+
+function isBoundedFallbackMatch(confirmed, optimistic) {
+  if (messageContentKey(confirmed) !== messageContentKey(optimistic)) return false;
+  const confirmedTime = new Date(confirmed?.created_at || '').getTime();
+  const optimisticTime = new Date(optimistic?.created_at || '').getTime();
+  return Number.isFinite(confirmedTime)
+    && Number.isFinite(optimisticTime)
+    && confirmedTime >= optimisticTime - CLOCK_SKEW_TOLERANCE_MS
+    && confirmedTime - optimisticTime <= RECONCILE_WINDOW_MS;
+}
+
+/** Find the one optimistic row confirmed by a canonical message. */
+export function findOptimisticMessageMatchIndex(messages, confirmed, excluded = new Set()) {
+  const rows = Array.isArray(messages) ? messages : [];
+  const eligible = (message, index) =>
+    !excluded.has(index) && (message?._pending || message?._failed);
+  const exactId = rows.findIndex((message, index) =>
+    eligible(message, index) && message?.id === confirmed?.id);
+  if (exactId >= 0) return exactId;
+  if (confirmed?.client_request_id) {
+    return rows.findIndex((message, index) =>
+      eligible(message, index) && message?._clientId === confirmed.client_request_id);
+  }
+  return rows.findIndex((message, index) =>
+    eligible(message, index) && isBoundedFallbackMatch(confirmed, message));
+}
+
 /**
  * Merge a refreshed newest page into an already-rendered ascending thread without
  * discarding older loaded history or unresolved optimistic bubbles.
@@ -56,23 +98,27 @@ export function mergeNewestMessages(currentMessages, newestMessages) {
     .filter((message) => !message?._pending && !message?._failed)
     .map((message) => message?.id)
     .filter(Boolean));
-  const confirmedBodyCounts = new Map();
-  newest.forEach((message) => {
-    if (message?.id && currentCanonicalIds.has(message.id)) return;
-    const key = `${message?.type}::${message?.body || ''}`;
-    confirmedBodyCounts.set(key, (confirmedBodyCounts.get(key) || 0) + 1);
-  });
+  const confirmations = newest.filter((message) =>
+    !message?.id || !currentCanonicalIds.has(message.id));
+  const matchedCurrentIndexes = new Set();
+
+  // Reserve all durable matches first so an out-of-order confirmation for send B
+  // cannot be consumed by identical send A's legacy content fallback.
+  confirmations
+    .filter((message) => message?.client_request_id)
+    .forEach((message) => {
+      const index = findOptimisticMessageMatchIndex(current, message, matchedCurrentIndexes);
+      if (index >= 0) matchedCurrentIndexes.add(index);
+    });
+  confirmations
+    .filter((message) => !message?.client_request_id)
+    .forEach((message) => {
+      const index = findOptimisticMessageMatchIndex(current, message, matchedCurrentIndexes);
+      if (index >= 0) matchedCurrentIndexes.add(index);
+    });
 
   const retained = current
-    .filter((message) => {
-      if (message?.id && newestById.has(message.id)) return true;
-      if (!message?._pending && !message?._failed) return true;
-      const key = `${message?.type}::${message?.body || ''}`;
-      const remaining = confirmedBodyCounts.get(key) || 0;
-      if (remaining === 0) return true;
-      confirmedBodyCounts.set(key, remaining - 1);
-      return false;
-    })
+    .filter((_, index) => !matchedCurrentIndexes.has(index))
     .map((message) => newestById.get(message?.id) || message);
   const currentIds = new Set(retained.map((message) => message?.id).filter(Boolean));
   const additions = newest.filter((message) => !message?.id || !currentIds.has(message.id));

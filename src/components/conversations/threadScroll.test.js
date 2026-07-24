@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
+  findOptimisticMessageMatchIndex,
   mergeNewestMessages,
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
@@ -136,6 +137,60 @@ describe('newest-page resume merge', () => {
 
     expect(mergeNewestMessages(current, newest).map((message) => message.id))
       .toEqual(['pending-2', 'real-1']);
+  });
+
+  it('reserves an out-of-order durable confirmation for the correct identical send', () => {
+    const current = [
+      { id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-23T12:00:00Z' },
+      { id: 'pending-2', _clientId: 'pending-2', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-23T12:00:01Z' },
+    ];
+    const confirmed = [{
+      id: 'real-2',
+      client_request_id: 'pending-2',
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-23T12:00:02Z',
+    }];
+    expect(mergeNewestMessages(current, confirmed).map((message) => message.id))
+      .toEqual(['pending-1', 'real-2']);
+  });
+
+  it('does not fallback when a durable confirmation conflicts with the loaded optimistic row', () => {
+    const pending = [{
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-23T12:00:00Z',
+    }];
+    const other = {
+      id: 'real-2',
+      client_request_id: 'pending-2',
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-23T12:00:02Z',
+    };
+    expect(findOptimisticMessageMatchIndex(pending, other)).toBe(-1);
+  });
+
+  it('does not hide a new send behind a recent older identical canonical row', () => {
+    const current = [{
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-23T12:05:00Z',
+    }];
+    const older = [{
+      id: 'old',
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-23T12:04:00Z',
+    }];
+    expect(mergeNewestMessages(current, older).map((message) => message.id))
+      .toEqual(['old', 'pending-1']);
   });
 });
 

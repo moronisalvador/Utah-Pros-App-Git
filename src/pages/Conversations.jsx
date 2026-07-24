@@ -63,6 +63,7 @@ import MessageBubble from '@/components/conversations/MessageBubble';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
+  findOptimisticMessageMatchIndex,
   mergeNewestMessages,
   repinThreadAfterLayout,
   restoreVisibleMessageAnchor,
@@ -443,16 +444,13 @@ export default function Conversations({ replyAssist } = {}) {
         if (isOutbound) {
           // Reconcile an optimistic bubble (pending OR already-marked-failed — the
           // worker can insert the row yet return an error, then deliver it here).
-          const idx = prev.findIndex(m => (m._pending || m._failed) && m.type === newMsg.type && m.body === newMsg.body);
+          const idx = findOptimisticMessageMatchIndex(prev, newMsg);
           if (idx !== -1) {
             const cid = prev[idx]._clientId;
             if (cid) delete retryStore.current[cid];
-            const copy = prev.slice();
-            copy[idx] = { ...newMsg, employees: prev[idx].employees || newMsg.employees };
-            return copy;
           }
         }
-        return [...prev, newMsg];
+        return mergeNewestMessages(prev, [newMsg]);
       });
       if (newMsg.type === 'sms_inbound' && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
         markActiveRead(convId);
