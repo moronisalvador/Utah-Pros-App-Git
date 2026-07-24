@@ -149,6 +149,9 @@ messaging authorization and message/index binding. The separate reconciliation w
 CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
 compilation, provider fixtures, and reviewed retention remain activation blockers. Repository
 source includes atomic canonical-message recovery plus a durable, fenced notification outbox. The
+MMS account check supports both CallRail's legacy numeric account id and its current masked
+`ACC...` resource id only after `/v3/a.json?fields=numeric_id` proves that they identify the same
+API-visible account; arbitrary account paths remain rejected.
 foundation and covering-index migrations are live; repository tests cover the SQL callers, but
 isolated PostgreSQL compilation of every later projection/recovery contract remains a separate QA
 requirement.

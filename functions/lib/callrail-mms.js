@@ -9,7 +9,10 @@
  */
 
 import { fetchWithTimeout } from './http.js';
-import { resolveCallRailAccountId } from './callrail-api.js';
+import {
+  resolveCallRailAccountAliases,
+  resolveCallRailAccountId,
+} from './callrail-api.js';
 import { resolveCallRailApiKey } from './callrail-messaging.js';
 
 export const CALLRAIL_MMS_BUCKET = 'message-attachments';
@@ -116,11 +119,19 @@ export function validateCallrailMmsCount(mediaCount, limits = {}) {
 
 export function validateCallrailMediaEndpoint({
   accountId,
+  accountAliases = [],
   providerMessageId,
   index,
   mediaUrl,
 }) {
   const account = requireIdentifier(accountId, 'CallRail account identity');
+  const allowedAccounts = new Set([
+    account,
+    ...accountAliases.map((value) => requireIdentifier(
+      value,
+      'CallRail account alias',
+    )),
+  ]);
   const message = requireIdentifier(providerMessageId, 'CallRail message identity');
   if (!Number.isSafeInteger(index) || index < 0 || index >= CALLRAIL_MMS_MAX_ITEMS) {
     fail('CALLRAIL_MMS_INDEX_INVALID', 'CallRail MMS media index is invalid.');
@@ -131,9 +142,10 @@ export function validateCallrailMediaEndpoint({
   } catch {
     fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is invalid.');
   }
-  const exactPath =
-    `/v3/a/${encodeURIComponent(account)}/text-messages/` +
-    `${encodeURIComponent(message)}/media/${index}`;
+  const exactPaths = Array.from(allowedAccounts, (allowedAccount) => (
+    `/v3/a/${encodeURIComponent(allowedAccount)}/text-messages/` +
+    `${encodeURIComponent(message)}/media/${index}`
+  ));
   if (
     parsed.protocol !== 'https:'
     || parsed.hostname !== 'api.callrail.com'
@@ -141,7 +153,7 @@ export function validateCallrailMediaEndpoint({
     || parsed.username
     || parsed.password
     || parsed.hash
-    || parsed.pathname !== exactPath
+    || !exactPaths.includes(parsed.pathname)
     || parsed.href.length > 2_048
   ) {
     fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is outside the expected account.');
@@ -236,6 +248,7 @@ function providerFailure(response) {
 async function downloadOne({
   apiKey,
   accountId,
+  accountAliases,
   providerMessageId,
   index,
   mediaUrl,
@@ -245,6 +258,7 @@ async function downloadOne({
 }) {
   const endpoint = validateCallrailMediaEndpoint({
     accountId,
+    accountAliases,
     providerMessageId,
     index,
     mediaUrl,
@@ -294,6 +308,7 @@ export async function ingestCallrailMms({
   db,
   apiKey,
   accountId,
+  accountAliases = [],
   companyResourceId,
   providerConversationId,
   providerMessageId,
@@ -339,6 +354,7 @@ export async function ingestCallrailMms({
     const downloaded = await downloadOne({
       apiKey: token,
       accountId: account,
+      accountAliases,
       providerMessageId: message,
       index,
       mediaUrl: ephemeralMediaUrls[index],
@@ -384,6 +400,57 @@ export async function ingestCallrailMms({
   });
 }
 
+function mediaUrlsMatchAccount({
+  accountId,
+  accountAliases = [],
+  providerMessageId,
+  mediaUrls,
+}) {
+  if (!Array.isArray(mediaUrls) || mediaUrls.length === 0) return false;
+  try {
+    mediaUrls.forEach((mediaUrl, index) => validateCallrailMediaEndpoint({
+      accountId,
+      accountAliases,
+      providerMessageId,
+      index,
+      mediaUrl,
+    }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveProvenAccountAliases({
+  apiKey,
+  configuredAccountId,
+  fetcher,
+}) {
+  let aliases;
+  try {
+    aliases = await resolveCallRailAccountAliases(
+      apiKey,
+      configuredAccountId,
+      { fetcher },
+    );
+  } catch (error) {
+    const permanent = [
+      'CALLRAIL_ACCOUNT_ID_MISSING',
+      'CALLRAIL_CREDENTIAL_REJECTED',
+      'CALLRAIL_DISCOVERY_TRUNCATED',
+    ].includes(error?.code);
+    fail(
+      permanent
+        ? 'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED'
+        : 'CALLRAIL_MMS_ACCOUNT_ALIAS_UNAVAILABLE',
+      'CallRail MMS account identity could not be verified.',
+      { retryable: !permanent },
+    );
+  }
+  return (aliases || [])
+    .filter((value) => value !== configuredAccountId);
+}
+
 export async function ingestVerifiedCallrailEventMms({ db, env, event }, options) {
   const apiKey = await resolveCallRailApiKey(env, db);
   const accountId = await resolveCallRailAccountId(db, apiKey, env);
@@ -392,6 +459,7 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
   }
   const fetchImpl = options?.fetchImpl || fetchWithTimeout;
   let ephemeralMediaUrls = event.ephemeralMediaUrls;
+  let accountAliases = [];
   if (!Array.isArray(ephemeralMediaUrls) || ephemeralMediaUrls.length === 0) {
     const conversation = requireIdentifier(
       event.providerConversationId,
@@ -432,7 +500,7 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
     }
     const messages = Array.isArray(payload?.messages) ? payload.messages : [];
     const expectedDirection = event.direction === 'inbound' ? 'incoming' : 'outgoing';
-    const matches = messages.filter((candidate) => {
+    const possibleMatches = messages.filter((candidate) => {
       if (
         candidate?.direction !== expectedDirection
         || String(candidate?.type || '').toLowerCase() !== 'mms'
@@ -442,20 +510,28 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
       ) {
         return false;
       }
-      try {
-        candidate.media_urls.forEach((mediaUrl, index) => {
-          validateCallrailMediaEndpoint({
-            accountId,
-            providerMessageId: message,
-            index,
-            mediaUrl,
-          });
-        });
-        return true;
-      } catch {
-        return false;
-      }
+      return true;
     });
+    const needsAliasDiscovery = possibleMatches.some((candidate) => (
+      !mediaUrlsMatchAccount({
+        accountId,
+        providerMessageId: message,
+        mediaUrls: candidate.media_urls,
+      })
+    ));
+    if (needsAliasDiscovery) {
+      accountAliases = await resolveProvenAccountAliases({
+        apiKey,
+        configuredAccountId: accountId,
+        fetcher: fetchImpl,
+      });
+    }
+    const matches = possibleMatches.filter((candidate) => mediaUrlsMatchAccount({
+      accountId,
+      accountAliases,
+      providerMessageId: message,
+      mediaUrls: candidate.media_urls,
+    }));
     if (matches.length > 1) {
       fail(
         'CALLRAIL_MMS_URL_REFRESH_AMBIGUOUS',
@@ -470,11 +546,33 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
         { retryable: true },
       );
     }
+  } else {
+    if (!mediaUrlsMatchAccount({
+      accountId,
+      providerMessageId: event.providerMessageId,
+      mediaUrls: ephemeralMediaUrls,
+    })) {
+      accountAliases = await resolveProvenAccountAliases({
+        apiKey,
+        configuredAccountId: accountId,
+        fetcher: fetchImpl,
+      });
+      // A signed webhook is one exact event, so preserve the strict URL error
+      // when authenticated account discovery did not prove its media path.
+      ephemeralMediaUrls.forEach((mediaUrl, index) => validateCallrailMediaEndpoint({
+        accountId,
+        accountAliases,
+        providerMessageId: event.providerMessageId,
+        index,
+        mediaUrl,
+      }));
+    }
   }
   return ingestCallrailMms({
     db,
     apiKey,
     accountId,
+    accountAliases,
     companyResourceId: event.companyResourceId,
     providerConversationId: event.providerConversationId,
     providerMessageId: event.providerMessageId,

@@ -105,6 +105,10 @@ Current official [CallRail API v3 documentation](https://apidocs.callrail.com/) 
   not provide Twilio's queued→sent→delivered/undelivered callback lifecycle.
 - CallRail says MMS media URLs are short-lived and should be downloaded immediately rather than
   persisted as the durable media location.
+- Existing UPR connections may retain CallRail's legacy numeric account id while current media
+  URLs use the masked `ACC...` resource id. UPR may accept both only after CallRail's authenticated
+  account inventory proves the `numeric_id`/resource-id pair; host, message id and media index
+  validation remain exact.
 
 Current official [Twilio Message resource documentation](https://www.twilio.com/docs/messaging/api/message-resource)
 and [webhook security guidance](https://www.twilio.com/docs/usage/webhooks/webhooks-security) state:
