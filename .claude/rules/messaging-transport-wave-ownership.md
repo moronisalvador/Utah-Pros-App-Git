@@ -64,6 +64,58 @@ material, provider webhooks, Cloudflare variables, number routing, migration sou
 provider state. Production stays disabled. RCS may be shown only as planned/readiness information;
 it remains channel-locked and automatic RCS-to-SMS/MMS fallback is prohibited.
 
+### 2026-07-23 inbound notification activation amendment
+
+The owner authorized closing the live CallRail inbound bell/push gap after evidence showed every
+canonical inbound projection atomically created a notification-outbox row but no scheduler ever
+claimed one. This amendment owns one additive migration, rollback, contract test and the matching
+canonical/evidence updates. The migration may add a trigger wake-up plus a five-minute pg_cron
+safety net for the already-deployed, scheduler-secret-protected
+`/api/process-message-notification-outbox` worker.
+
+The scheduler must use the existing cron secret, accept only the exact dev/production UPR worker
+URLs, remain inert when configuration or due work is absent, preserve fenced claims, and retain
+pending rows on rollback. It does not broaden the CallRail send scope, enable Production messaging,
+change notification preferences, create a browser grant, or authorize unrelated delayed
+notifications.
+
+The same owner-authorized live test found that the notification payload linked every channel to the
+office `/conversations` list. The follow-up owns the narrow provider-neutral dispatcher correction:
+bell links select the exact office thread at `/conversations?c=<id>`, while Web Push selects the
+same thread inside the field PWA at `/tech/conversations?c=<id>`.
+
+### 2026-07-24 private outbound media amendment
+
+The owner authorized completing the CallRail picture-message path and keeping the same inbox
+contract ready for Twilio MMS/RCS. This amendment owns the authenticated
+`/api/message-media-upload` boundary, provider-neutral private-media helpers, the CallRail
+multipart `media_file` adapter change, message-bound private resolution, the two existing composer
+upload helpers, focused tests, and matching canonical documentation.
+
+Outbound customer images must remain in private `message-attachments`; clients receive only opaque
+`upr-storage://` references. The Worker verifies actual JPEG/PNG/GIF bytes and the five-megabyte
+limit both at upload and before provider dispatch. CallRail receives at most one verified file by
+multipart upload. Twilio may receive only a short-lived signed fetch URL generated inside its
+adapter; no client or message row stores that URL. Sent/failed/ambiguous history retains the
+private reference for rendering and safe retry. Self-service object deletion is deliberately
+excluded until a durable draft-to-message claim can prevent races and history loss; private
+orphans are safer than destructive cleanup. This amendment adds no migration, provider binding,
+automatic RCS fallback, automated CallRail send, or live/provider test authority.
+
+### 2026-07-24 retained CallRail event recovery amendment
+
+The owner authorized completing the repository-side MMS recovery path after live evidence showed a
+retained `retryable` CallRail MMS event and no invocation history for the already-deployed
+`/api/process-callrail-events` worker. This amendment owns one additive scheduler migration,
+rollback, static contract test, and matching canonical documentation.
+
+The migration may store only a non-secret exact worker URL, reuse the existing cron secret, and run
+a five-minute pg_cron/pg_net safety net only when a CallRail SMS/MMS event is received, due for
+retry, or stale-claimed. It must accept only exact dev/production UPR worker URLs, grant no browser
+or service-role execution, preserve provider events and configuration on rollback, and never send
+a customer message. Authoring and deployment do not authorize applying the migration to the shared
+Supabase project; that remains a fresh owner-approved apply window.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:
@@ -139,3 +191,20 @@ At minimum:
 
 Do not commit, push, open a PR, deploy, apply a migration, configure a provider, or send a message
 unless the user explicitly requests that delivery or external action.
+
+## 8. Verified prior-consent compatibility amendment (2026-07-23)
+
+The owner-approved historical-consent remediation may make the exact additive send-chokepoint
+changes named in `.claude/rules/sms-experience-wave-ownership.md` §12. Provider selection,
+idempotency, attempt/reconciliation state, message row shape, private-media behavior, and the
+public `/api/send-message` response contract remain unchanged. The attestation operation never
+calls a provider; any subsequent staff send still passes the complete current transport,
+authorization, consent/DND, idempotency, media, and persistence chain.
+
+The compatibility amendment also permits the exact service-only consent-status RPC call from
+`send-message.js`. It may change only the consent decision seam: provider choice, submission,
+attempt ownership, reconciliation and returned message shapes stay frozen.
+
+The same status RPC may be consumed by automated and scheduled Twilio writers only as a
+suppression boundary. Those writers must require `GLOBAL_OPT_IN`; they must never consume
+staff-only `SERVICE_CONSENT`, route through CallRail, or change their existing provider contracts.

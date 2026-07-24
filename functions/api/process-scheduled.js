@@ -153,7 +153,15 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
           continue;
         }
 
-        if (contact?.dnd) {
+        const rawConsentStatus = await db.rpc('get_service_sms_consent_status', {
+          p_contact_id: contact.id,
+          p_destination_phone: primaryParticipant.phone,
+        });
+        const consentStatus = Array.isArray(rawConsentStatus)
+          ? rawConsentStatus[0]
+          : rawConsentStatus;
+
+        if (consentStatus?.code === 'DND_ACTIVE') {
           await markFailed(db, scheduled.id, 'Blocked: contact has DND enabled');
           await db.insert('sms_consent_log', {
             contact_id: contact.id,
@@ -167,14 +175,19 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
           continue;
         }
 
-        if (contact && !contact.opt_in_status) {
+        // Scheduled/automated traffic may consume only the existing global
+        // opt-in. Purpose-scoped SERVICE_CONSENT is staff P2P-only.
+        if (
+          consentStatus?.allowed !== true
+          || consentStatus?.code !== 'GLOBAL_OPT_IN'
+        ) {
           await markFailed(db, scheduled.id, 'Blocked: contact not opted in');
           await db.insert('sms_consent_log', {
             contact_id: contact.id,
             phone: contact.phone,
             event_type: 'send_blocked_no_consent',
             source: 'system',
-            details: `Scheduled message ${scheduled.id} blocked: no opt-in consent.`,
+            details: `Scheduled message ${scheduled.id} blocked: ${consentStatus?.code || 'consent status unavailable'}.`,
             performed_by: scheduled.created_by,
           });
           errors.push({ id: scheduled.id, error: 'No opt-in consent' });

@@ -50,6 +50,7 @@ const command = {
   recipient: { address: '+18015550101' },
   content: { body: 'Hello from Utah Pros', media: [] },
 };
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01]);
 
 function response(status, data = {}) {
   return {
@@ -138,20 +139,20 @@ describe('sendCallRailMessage restrictions', () => {
   it.each([
     [[
       { url: 'https://cdn.example/one.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-      { url: 'https://cdn.example/two.jpg', mimeType: 'image/jpeg', byteSize: 10 },
+      { bytes: JPEG, mimeType: 'image/jpeg', byteSize: JPEG.byteLength },
     ], 'CALLRAIL_MEDIA_COUNT_UNSUPPORTED'],
     [[
-      { url: 'https://cdn.example/file.pdf', mimeType: 'application/pdf', byteSize: 10 },
+      { bytes: JPEG, mimeType: 'application/pdf', byteSize: JPEG.byteLength },
     ], 'CALLRAIL_MEDIA_TYPE_UNSUPPORTED'],
     [[
-      { url: 'https://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 5_000_001 },
+      { bytes: JPEG, mimeType: 'image/jpeg', byteSize: 5_000_001 },
     ], 'CALLRAIL_MEDIA_SIZE_UNSUPPORTED'],
     [[
-      { url: 'http://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-    ], 'CALLRAIL_MEDIA_URL_INVALID'],
+      { url: 'https://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
+    ], 'CALLRAIL_MEDIA_BYTES_REQUIRED'],
     [[
-      { storagePath: 'private/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-    ], 'CALLRAIL_MEDIA_URL_INVALID'],
+      { bytes: new TextEncoder().encode('<html>'), mimeType: 'image/jpeg', byteSize: 6 },
+    ], 'CALLRAIL_MEDIA_SIGNATURE_INVALID'],
   ])('rejects incompatible media %#', async (media, code) => {
     await expectCode(
       sendCallRailMessage(env, { ...command, content: { ...command.content, media } }),
@@ -161,22 +162,30 @@ describe('sendCallRailMessage restrictions', () => {
   });
 
   it('accepts one supported image at the 5 MB boundary', async () => {
+    const gif = new Uint8Array(5_000_000);
+    gif.set(new TextEncoder().encode('GIF89a'));
     await sendCallRailMessage(env, {
       ...command,
       content: {
         body: 'Photo attached',
         media: [{
-          url: 'https://cdn.example/image.gif',
+          bytes: gif,
           mimeType: 'image/gif',
-          byteSize: 5_000_000,
+          byteSize: gif.byteLength,
+          fileName: 'image.gif',
         }],
       },
     });
 
     const [, options] = h.fetchWithTimeout.mock.calls[0];
-    expect(JSON.parse(options.body)).toMatchObject({
-      media_url: 'https://cdn.example/image.gif',
+    expect(options.headers).toEqual({
+      Authorization: 'Token token="callrail-secret"',
     });
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.body.get('content')).toBe('Photo attached');
+    const uploaded = options.body.get('media_file');
+    expect(uploaded.type).toBe('image/gif');
+    expect(uploaded.size).toBe(5_000_000);
   });
 });
 
@@ -224,6 +233,23 @@ describe('sendCallRailMessage configuration and submission', () => {
       from: '+18015550100',
       to: '+18015550101',
       rawReference: null,
+    });
+  });
+
+  it('accepts CallRail live HTTP 200 contract with a conversation identity', async () => {
+    h.fetchWithTimeout.mockResolvedValue(response(200, {
+      id: 'conversation-live-200',
+      customer_phone_number: '+18015550101',
+      current_tracking_number: '+18015550100',
+    }));
+
+    const result = await sendCallRailMessage(env, command);
+
+    expect(result).toMatchObject({
+      provider: 'callrail',
+      providerConversationId: 'conversation-live-200',
+      accepted: true,
+      providerHttpStatus: 200,
     });
   });
 
@@ -343,13 +369,32 @@ describe('sendCallRailMessage provider failures', () => {
     expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
   });
 
-  it('marks a 201 without a conversation identity ambiguous', async () => {
-    h.fetchWithTimeout.mockResolvedValue(response(201, { unexpected: true }));
+  it.each([
+    [200, { unexpected: true }],
+    [201, { id: '   ' }],
+    [201, { id: { nested: 'not a provider identity' } }],
+  ])('marks malformed accepted response %i ambiguous', async (status, body) => {
+    h.fetchWithTimeout.mockResolvedValue(response(status, body));
 
     await expectCode(
       sendCallRailMessage(env, command),
       'CALLRAIL_SEND_AMBIGUOUS',
-      { status: 201, ambiguous: true, reconciliationRequired: true },
+      { status, ambiguous: true, reconciliationRequired: true },
     );
   });
+
+  it.each([202, 204])(
+    'does not accept unsupported successful response %i',
+    async (status) => {
+      h.fetchWithTimeout.mockResolvedValue(response(status, {
+        id: 'conversation-unsupported-status',
+      }));
+
+      await expectCode(
+        sendCallRailMessage(env, command),
+        'CALLRAIL_SEND_AMBIGUOUS',
+        { status, ambiguous: true, reconciliationRequired: true },
+      );
+    },
+  );
 });

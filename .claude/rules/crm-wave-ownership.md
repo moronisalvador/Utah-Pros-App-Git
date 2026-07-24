@@ -28,6 +28,10 @@ split. Stay inside your files and your frozen stubs and no two sessions can coll
   > quiet-hours held-retry, MPS pacing) — signature AND return `{ok,skipped,reason}` vocabulary FROZEN
   > (`'sms_disabled'`/`'quiet_hours'` load-bearing for Phase 8/5 held-retry), with backward-compat
   > tests. See `docs/sms-experience-roadmap.md` §8.
+  > **AMENDED (2026-07-23, owner-approved consent remediation):** the historical-consent closeout
+  > may add `opt_out_at` to the contact projection and pure consent predicate so an explicit
+  > opt-out wins over a stale `opt_in_status=true`. Exported signatures and every existing
+  > `{ok,skipped,reason}` value remain frozen; `no_consent` stays a durable skip.
 - `functions/lib/sms-consent.js`, `functions/lib/email-consent.js` — consent predicates.
 - `functions/lib/twilio.js`, `functions/lib/email.js`, `functions/lib/supabase.js`,
   `functions/lib/cors.js`, `functions/lib/date-mt.js`, `functions/lib/phone.js`,
@@ -260,3 +264,26 @@ just the slot components.
   `OverdueTasksWidget` kept as-is.
 - **Everything else in §§1–8 stays frozen.** This is a one-file skeleton unfreeze for a disclosed,
   owner-approved standalone initiative — not a reopening of the wave.
+
+---
+
+## 10. Sales-summary addendum (2026-07-22) — labeled company-wide context
+
+Section 9's zero-migration boundary described the original dashboard-gap build. The owner later
+ruled that the traced-gate display must **"show both, labeled"**: keep the CRM-traced won/revenue
+headline and show the company-wide total for the same window beside it.
+
+- `20260722_crm_sales_summary_total_vs_traced.sql` is the one sanctioned additive extension. It
+  defines `get_crm_sales_summary(date,date) → json` with
+  `{ total_won, total_revenue, traced_won, traced_revenue }`, using the canonical
+  `jobs.is_real_job` sale rule, claim/job sale date, Denver-day windowing and
+  `crm_contact_is_traced`. It changes no table, column or policy.
+- Authorized files for this reconciliation are `src/pages/crm/CrmOverview.jsx`,
+  `src/pages/crm/attributionData.js`, `src/pages/crm/attributionData.test.js`, and the
+  `.crm-metric-sub-strong` rule beside the existing CRM metric styles in `src/index.css`.
+  `CrmOverview.jsx` may read this RPC in addition to §9's list. Both displayed sides come from this
+  one result; the UI must not reconstruct company-wide or traced sales independently.
+- Foundation F2 restored the reviewed migration source to `dev` after it had already applied live.
+  The 2026-07-23 read-only catalog check confirmed the signature, JSON shape, stable
+  `SECURITY DEFINER` contract, `anon` denial and `authenticated`/`service_role` execution.
+- Everything else in §§1–9 remains frozen.

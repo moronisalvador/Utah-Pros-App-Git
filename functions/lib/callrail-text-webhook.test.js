@@ -222,6 +222,20 @@ describe('CallRail text webhook normalization', () => {
     });
   });
 
+  it.each([
+    ['missing', { id: undefined }],
+    ['null', { id: null }],
+  ])('accepts a %s secondary event id when resource_id is present', async (_label, override) => {
+    await expect(parseSigned({
+      ...receivedPayload,
+      ...override,
+    })).resolves.toMatchObject({
+      providerEventId: null,
+      providerMessageId: 'SCI-received-001',
+      dedupeKey: 'callrail:message.received:SCI-received-001',
+    });
+  });
+
   it('retains MMS URLs only under the explicit ephemeral input field', async () => {
     const event = await parseSigned({
       ...receivedPayload,
@@ -268,12 +282,44 @@ describe('CallRail text webhook normalization', () => {
     expect(() => normalizeCallrailTextWebhook({
       ...sentPayload,
       agent: null,
-    })).toThrowError(expect.objectContaining({ code: 'INVALID_CALLRAIL_TEXT_EVENT' }));
+    })).toThrowError(expect.objectContaining({
+      code: 'INVALID_CALLRAIL_TEXT_EVENT',
+      field: 'agent',
+    }));
 
     expect(() => normalizeCallrailTextWebhook({
       ...receivedPayload,
       message_type: 'mms',
       media_urls: [],
-    })).toThrowError(expect.objectContaining({ code: 'INVALID_CALLRAIL_TEXT_EVENT' }));
+    })).toThrowError(expect.objectContaining({
+      code: 'INVALID_CALLRAIL_TEXT_EVENT',
+      field: 'media_urls',
+    }));
+  });
+
+  it.each([
+    ['id', { id: { invalid: true } }],
+    ['resource_id', { resource_id: null }],
+    ['conversation_id', { conversation_id: null }],
+    ['company_resource_id', { company_resource_id: null }],
+    ['person_resource_id', { person_resource_id: null }],
+    ['source_number', { source_number: null }],
+    ['destination_number', { destination_number: null }],
+    ['content', { content: null }],
+    ['media_urls', { media_urls: null }],
+    ['lead_status', { lead_status: 'unexpected_status' }],
+  ])('identifies invalid %s without retaining its value', (field, override) => {
+    let caught;
+    try {
+      normalizeCallrailTextWebhook({ ...receivedPayload, ...override });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      code: 'INVALID_CALLRAIL_TEXT_EVENT',
+      field,
+    });
+    expect(caught).not.toHaveProperty('value');
   });
 });

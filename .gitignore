@@ -24,6 +24,9 @@ dist-ssr
 *.sw?
 .dev.vars
 .wrangler/
+test-results/
+playwright-report/
+playwright/.auth/
 
 # Claude Code worktrees
 .claude/worktrees/

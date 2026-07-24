@@ -52,6 +52,19 @@ export function mountainYesterday(nowUtc) {
   return yesterday.toISOString().slice(0, 10);
 }
 
+// The Mountain-Time calendar date for `nowUtc`, as 'YYYY-MM-DD'. Money workers
+// use this for business transaction dates so an evening Utah payment is not
+// attributed to tomorrow merely because the runtime clock is already in UTC.
+export function mountainToday(nowUtc) {
+  const now = nowUtc instanceof Date ? nowUtc : new Date(nowUtc);
+  const [year, monthIndex, day] = mtDateParts(now);
+  return [
+    String(year).padStart(4, '0'),
+    String(monthIndex + 1).padStart(2, '0'),
+    String(day).padStart(2, '0'),
+  ].join('-');
+}
+
 // True when at least `days` Mountain-Time calendar days have elapsed between
 // `lastUtc` and `nowUtc`. A missing `lastUtc` (never contacted) counts as stale.
 export function isStale(lastUtc, nowUtc, days) {

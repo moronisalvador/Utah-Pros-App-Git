@@ -5,7 +5,7 @@
  *
  * WHAT THIS DOES (plain language):
  *   Runs the photo-attachment tray under the reply box. When a tech picks photos it
- *   caps them at five, shows each as a thumbnail while it uploads, and swaps in the
+ *   caps them to the active cross-provider envelope, shows a thumbnail while it uploads, and swaps in the
  *   real uploaded photo when it's ready (or an error mark if the upload failed). It
  *   hands back the finished photo links so Send can attach them, and cleans up when
  *   the tech switches to another conversation.
@@ -16,9 +16,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/contexts/AuthContext (db), ./mediaUpload (the ONE upload helper),
- *              @/lib/mediaCompress (MAX_FILES, validateFile)
- *   Data:      writes → Supabase Storage (via mediaUpload)
+ *   Internal:  @/contexts/AuthContext (db), ./mediaUpload, @/lib/messageMedia
+ *   Data:      writes → private message media via an authenticated Worker
  *
  * NOTES / GOTCHAS:
  *   - Copy-in of Conversations.jsx:673-716 (handleFilesSelected / removeAttachment),
@@ -31,8 +30,13 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { MAX_FILES, validateFile } from '@/lib/mediaCompress';
-import { uploadConversationMedia } from './mediaUpload';
+import {
+  MAX_MESSAGE_ATTACHMENTS,
+  validateMessageFile,
+} from '@/lib/messageMedia';
+import {
+  uploadConversationMedia,
+} from './mediaUpload';
 
 function emitToast(message, type = 'info') {
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
@@ -61,11 +65,11 @@ export function useComposerAttachments(convId) {
     // ≤MAX_FILES cap holds across the async loop without reading a ref during render.
     let count = attachmentsRef.current.length;
     for (const file of files) {
-      if (count >= MAX_FILES) {
-        emitToast(`Up to ${MAX_FILES} photos per message`, 'info');
+      if (count >= MAX_MESSAGE_ATTACHMENTS) {
+        emitToast('CallRail supports one photo per message', 'info');
         break;
       }
-      const check = validateFile(file);
+      const check = validateMessageFile(file);
       if (!check.ok) { emitToast(check.reason, 'error'); continue; }
       count += 1;
 
@@ -87,11 +91,9 @@ export function useComposerAttachments(convId) {
   }, [convId, db]);
 
   const removeAttachment = useCallback((clientId) => {
-    setAttachments((prev) => {
-      const gone = prev.find((a) => a.clientId === clientId);
-      revoke(gone);
-      return prev.filter((a) => a.clientId !== clientId);
-    });
+    const gone = attachmentsRef.current.find((a) => a.clientId === clientId);
+    revoke(gone);
+    setAttachments((prev) => prev.filter((a) => a.clientId !== clientId));
   }, []);
 
   const clearAttachments = useCallback(() => {

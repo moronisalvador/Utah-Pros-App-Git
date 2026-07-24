@@ -1,0 +1,62 @@
+{
+  "capturedAt": "2026-07-24T04:27:21Z",
+  "projectRef": "glsmljpabrwonfiltiqm",
+  "captureBaseCommit": "ab9e74f76251a55ee2649c3d04753a0276123947",
+  "method": "Supabase migration ledger plus read-only pg_proc catalog queries",
+  "ledgerTail": [
+    { "version": "20260722222426", "name": "crm_denver_day_bucketing" },
+    { "version": "20260722222438", "name": "crm_sales_summary_total_vs_traced" },
+    { "version": "20260722225158", "name": "crm_dedup_repeat_caller_leads" },
+    { "version": "20260722232222", "name": "crm_caller_name_follows_merge" },
+    { "version": "20260723215926", "name": "messaging_transport_foundation" },
+    { "version": "20260723220207", "name": "messaging_transport_foundation_indexes" },
+    { "version": "20260723221707", "name": "exec_read_sql_containment" },
+    { "version": "20260724003818", "name": "message_notification_outbox_scheduler" },
+    { "version": "20260724035913", "name": "attest_prior_sms_consent" }
+  ],
+  "functions": [
+    { "identity": "get_attribution_rollup(date,date,uuid)", "rawMd5": "1e31e2c53a742ea07d5dc0350ecd4f6f", "semanticMd5": "26d844757e1cfcad697caeb3bba749f1", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_call_volume(date,date,uuid)", "rawMd5": "c7255b0bbd2088ad0fe8108826ed5600", "semanticMd5": "352bd4de5c83af37a6c0ad4547de0364", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_conversion_trend(date,date,uuid)", "rawMd5": "b16e2c2c2d04fb33b6a74914c291a43a", "semanticMd5": "876bfe05f7c94d142f892851ad9ded65", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_crm_revenue_by_division(date,date)", "rawMd5": "d7ffc53bd164da6e43025dc4cc571dd5", "semanticMd5": "df5fc6232058bd895b67360c31a05fbf", "language": "sql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_crm_sales_summary(date,date)", "rawMd5": "32070861c2c8cd66e5ab9e0997a9294e", "semanticMd5": "6988425847ff8c4ce80cdeb08e7312e4", "language": "sql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_estimator_leaderboard(date,date,uuid)", "rawMd5": "9a67b6ecb753712c0de28581765e7ba0", "semanticMd5": "7e6e98abea09f5072233e116f92bdb1b", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_jobs_closed(date)", "rawMd5": "4e415ad8d5efb56a6b0072a87a329562", "semanticMd5": "ac679e1a6bd8f248c5756e48afdf606a", "language": "sql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_pipeline_movement(date,date,uuid)", "rawMd5": "061c7658fd94fca6ad541b39df2c86b8", "semanticMd5": "d2c1f29d0f12ee5e9b7d40dde21e2dbc", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_speed_to_lead(date,date,uuid)", "rawMd5": "20e02c7cbe922bd118b9e6f02f10d3f7", "semanticMd5": "3c3b72f8ceccf422fa5232031a4923c7", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "set_lead_caller_name(uuid,text,boolean)", "rawMd5": "6c17dcd7774f2d0d92b06179dad5b727", "semanticMd5": "412e8189226e2904115a86fd174953f7", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "rawMd5": "d5abd852ebe5c3dfa2e440f45d40c4b3", "semanticMd5": "f867fd3938603ce8f67322188760d499", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "get_service_sms_consent_status(uuid,text)", "rawMd5": "ac4ba8645f72ee9ef91c9c43650707a2", "semanticMd5": "00710ad4ece7948dde773d80c428e063", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)", "rawMd5": "04505b85f60d4ed2ef694c9c24af37a3", "semanticMd5": "1d324acb692263898042372617a6cc04", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false }
+  ],
+  "policies": [
+    {
+      "identity": "public.messages:messages_authenticated_select",
+      "command": "SELECT",
+      "roles": ["authenticated"],
+      "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_insert",
+      "command": "INSERT",
+      "roles": ["service_role"],
+      "usingMd5": "d41d8cd98f00b204e9800998ecf8427e",
+      "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
+    },
+    {
+      "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_select",
+      "command": "SELECT",
+      "roles": ["service_role"],
+      "usingMd5": "b326b5062b2f0e69046810717534cb09",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.service_sms_consents:service_sms_consents_service_role_manage",
+      "command": "ALL",
+      "roles": ["service_role"],
+      "usingMd5": "b326b5062b2f0e69046810717534cb09",
+      "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
+    }
+  ]
+}

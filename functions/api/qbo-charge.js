@@ -1,6 +1,7 @@
 // POST /api/qbo-charge — key a card on an invoice and charge it via QuickBooks Payments.
 //
-// Auth: x-webhook-secret (server-side) or a Supabase Bearer (admin).
+// Auth: active admin/manager Supabase employee session.
+// Headers: Idempotency-Key: stable client-generated value (16–64 safe characters).
 // Body: { invoice_id: "<uuid>", token: "<intuit-card-token>", amount: <number> }
 //
 // `token` is the opaque value-token minted CLIENT-SIDE by Intuit's tokenizer — the raw card
@@ -14,21 +15,22 @@
 //   The update_invoice_paid trigger rolls the payment into the invoice/job balance.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireRole } from '../lib/auth.js';
+import { mountainToday } from '../lib/date-mt.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, createCharge, createPayment } from '../lib/quickbooks.js';
 import { notifyPaymentReceived } from '../lib/qbo-payment-sync.js';
 
-async function isAuthorized(request, env) {
-  const secret = request.headers.get('x-webhook-secret');
-  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
+const BILLING_ROLES = ['admin', 'manager'];
+const IDEMPOTENCY_KEY_RE = /^[A-Za-z0-9_-]{16,64}$/;
+
+export function chargeAmountCents(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const cents = Math.round(amount * 100);
+  if (!Number.isSafeInteger(cents) || Math.abs(amount * 100 - cents) > 1e-8) return null;
+  return cents;
 }
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
@@ -46,47 +48,75 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
 
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
-
   const db = supabase(env);
+  const auth = await requireRole(request, env, db, BILLING_ROLES);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
+  let body = {};
+  try { body = await request.json(); } catch { /* empty */ }
+  const { invoice_id: invoiceId, token } = body;
+  const amountCents = chargeAmountCents(body.amount);
+  const idempotencyKey = request.headers.get('Idempotency-Key') || '';
+  if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
+  if (!token) return jsonResponse({ error: 'Provide a card token' }, 400, request, env);
+  if (amountCents == null) {
+    return jsonResponse({ error: 'Provide a positive amount in whole cents' }, 400, request, env);
+  }
+  if (!IDEMPOTENCY_KEY_RE.test(idempotencyKey)) {
+    return jsonResponse({ error: 'Provide a stable Idempotency-Key (16–64 letters, numbers, _ or -)' }, 400, request, env);
+  }
+
   const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
+  if (!conn || !conn.refresh_token) {
+    return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
+  }
   // The Payments API needs the payment scope; if we know the granted scopes and it's missing,
   // tell the user to reconnect rather than letting the charge fail with a cryptic 401.
   if (conn.granted_scopes && !conn.granted_scopes.includes('com.intuit.quickbooks.payment')) {
     return jsonResponse({ error: 'QuickBooks Payments isn’t authorized yet — reconnect QuickBooks (it will ask for payment permission) to enable card charging.' }, 409, request, env);
   }
 
-  let body = {};
-  try { body = await request.json(); } catch { /* empty */ }
-  const { invoice_id: invoiceId, token } = body;
-  const amount = Number(body.amount);
-  if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
-  if (!token) return jsonResponse({ error: 'Provide a card token' }, 400, request, env);
-  if (!(amount > 0)) return jsonResponse({ error: 'Provide a positive amount' }, 400, request, env);
-
   try {
-    const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
-    if (!inv) throw new Error('Invoice not found');
-    if (!inv.qbo_invoice_id) throw new Error('Save the invoice to QuickBooks before charging a card.');
+    const inv = (await db.select(
+      'invoices',
+      `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id,total,adjusted_total,amount_paid&limit=1`,
+    ))?.[0];
+    if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
+    if (!inv.qbo_invoice_id) {
+      return jsonResponse({ error: 'Save the invoice to QuickBooks before charging a card.' }, 400, request, env);
+    }
+    const totalCents = Math.round(Number(inv.adjusted_total ?? inv.total ?? 0) * 100);
+    const paidCents = Math.round(Number(inv.amount_paid || 0) * 100);
+    const balanceCents = totalCents - paidCents;
+    if (!(balanceCents > 0)) {
+      return jsonResponse({ error: 'Invoice has no outstanding balance' }, 400, request, env);
+    }
+    if (amountCents > balanceCents) {
+      return jsonResponse({ error: 'Charge amount exceeds the outstanding balance' }, 400, request, env);
+    }
+
     const contact = inv.contact_id
       ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id&limit=1`))?.[0]
       : null;
-    if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first.');
+    if (!contact?.qbo_customer_id) {
+      return jsonResponse({ error: 'Invoice contact has no QuickBooks customer — sync the client first.' }, 400, request, env);
+    }
 
+    const amount = amountCents / 100;
     // 1. Charge the tokenized card.
-    const charge = await createCharge(env, { amount, token });
+    const charge = await createCharge(env, { amount, token, requestId: idempotencyKey });
     if (charge.status && !/captured|succeeded/i.test(String(charge.status))) {
       throw new Error(`Card not charged (status: ${charge.status})`);
     }
 
     // 2. Record the UPR payment (no qbo_payment_id yet).
-    const today = new Date().toISOString().slice(0, 10);
+    const today = mountainToday(new Date());
     const inserted = await db.insert('payments', {
       invoice_id: inv.id, job_id: inv.job_id || null, contact_id: inv.contact_id || null,
       amount, payment_date: today,
       payment_method: 'credit_card', payer_type: 'homeowner', source: 'qbo',
       reference_number: `Card charge #${charge.id}`,
+      recorded_by: auth.employee.id,
     });
     const payRow = Array.isArray(inserted) ? inserted[0] : inserted;
 

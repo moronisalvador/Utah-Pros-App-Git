@@ -19,8 +19,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated REST client — fine for a
- *              test, not a component; see CLAUDE.md rule 3)
+ *   Internal:  functions/lib/supabase.js (service-role Worker client)
  *   Data:      reads  → form_definitions, form_submissions, inbound_leads,
  *                       contacts, sms_consent_log, lead_attribution,
  *                       system_events, crm_orgs
@@ -28,18 +27,47 @@
  *                       RPCs; every row deleted in afterAll.
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase project (a SQL RPC's
- *     behavior can't be a pure unit test). Self-skips via describe.skipIf when
- *     VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY are absent, same as the other
- *     CRM suites — CI's `npm test` doesn't pass those secrets.
+ *   - ISOLATED integration test only. It refuses the shared production project
+ *     and requires an explicit QA sentinel plus either localhost or an exact
+ *     non-production hosted project ref. It uses a non-VITE service-role variable
+ *     because upsert_lead_from_form is a Worker-only RPC.
  *   - Committed RED (before the RPC bodies were filled — the stubs raise
  *     'not implemented (phase 10)') per the Phase 10 test-first requirement.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { supabase } from '../../functions/lib/supabase.js';
 
-const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SHARED_PROJECT_REF = 'glsmljpabrwonfiltiqm';
+const nodeEnv = globalThis.process?.env || {};
+const qaUrl = nodeEnv.QA_SUPABASE_URL || '';
+const qaServiceRoleKey = nodeEnv.QA_SUPABASE_SERVICE_ROLE_KEY || '';
+const qaProjectRef = nodeEnv.QA_SUPABASE_PROJECT_REF || '';
+const qaSentinel = nodeEnv.QA_ALLOW_MUTATION_TESTS || '';
+
+function isAllowedIsolatedTarget() {
+  if (qaSentinel !== 'UPR_ISOLATED_QA' || !qaUrl || !qaServiceRoleKey) return false;
+  let hostname;
+  try {
+    hostname = new URL(qaUrl).hostname;
+  } catch {
+    return false;
+  }
+  if (hostname.includes(SHARED_PROJECT_REF) || qaProjectRef === SHARED_PROJECT_REF) return false;
+  if (hostname === '127.0.0.1' || hostname === 'localhost') return true;
+  return !!qaProjectRef && hostname === `${qaProjectRef}.supabase.co`;
+}
+
+const hasAnyQaConfig = !!(qaUrl || qaServiceRoleKey || qaProjectRef || qaSentinel);
+const hasCreds = isAllowedIsolatedTarget();
+if (hasAnyQaConfig && !hasCreds) {
+  throw new Error(
+    'CRM Forms integration tests refused: configure an exact isolated QA target and UPR_ISOLATED_QA sentinel',
+  );
+}
+const db = hasCreds
+  ? supabase({ SUPABASE_URL: qaUrl, SUPABASE_SERVICE_ROLE_KEY: qaServiceRoleKey })
+  : null;
 const one = (r) => (Array.isArray(r) ? r[0] : r);
 
 describe.skipIf(!hasCreds)('CRM Phase 10 — forms (integration)', () => {

@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { mountainYesterday, isStale } from './date-mt.js';
+import { mountainToday, mountainYesterday, isStale } from './date-mt.js';
+
+describe('mountainToday', () => {
+  it('keeps a summer evening payment on the Utah business date', () => {
+    expect(mountainToday('2026-07-24T05:30:00Z')).toBe('2026-07-23');
+  });
+
+  it('handles the winter UTC offset', () => {
+    expect(mountainToday('2026-01-15T06:30:00Z')).toBe('2026-01-14');
+  });
+
+  it('advances only after Mountain midnight', () => {
+    expect(mountainToday('2026-07-24T06:01:00Z')).toBe('2026-07-24');
+  });
+});
 
 describe('mountainYesterday', () => {
   it('returns the prior MT calendar date for a UTC morning instant (MDT, UTC-6)', () => {

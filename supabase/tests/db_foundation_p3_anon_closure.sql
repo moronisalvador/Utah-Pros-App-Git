@@ -16,8 +16,7 @@
 --
 -- KNOWN, SANCTIONED anon exceptions (everything else must be closed):
 --   RPCs (database-standard §2): get_feature_flags, get_employee_page_access,
---     get_crm_build_progress, upsert_lead_from_form, get_sign_request_by_token,
---     get_sign_document_templates.
+--     get_crm_build_progress, get_sign_request_by_token, get_sign_document_templates.
 --   Table policies (§2 login/devLogin bootstrap reads): employees, feature_flags,
 --     employee_page_access, nav_permissions (SELECT-only after P3's narrow).
 --   Deferred tables (manifest §8 — TEMPORARY: anon stays until the owning in-flight
@@ -32,7 +31,7 @@ DO $$
 DECLARE
   v_allow_rpcs text[] := ARRAY[
     'get_feature_flags','get_employee_page_access','get_crm_build_progress',
-    'upsert_lead_from_form','get_sign_request_by_token','get_sign_document_templates'
+    'get_sign_request_by_token','get_sign_document_templates'
   ];
   v_allow_policy_tables text[] := ARRAY[
     'employees','feature_flags','employee_page_access','nav_permissions'
@@ -104,4 +103,4 @@ SELECT 'functions_anon_execute_outside_allowlist',
 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
 WHERE n.nspname='public' AND has_function_privilege('anon', p.oid, 'EXECUTE')
   AND p.proname NOT IN ('get_feature_flags','get_employee_page_access','get_crm_build_progress',
-    'upsert_lead_from_form','get_sign_request_by_token','get_sign_document_templates');
+    'get_sign_request_by_token','get_sign_document_templates');

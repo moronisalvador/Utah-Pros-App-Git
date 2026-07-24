@@ -17,6 +17,7 @@
 -- ═════════════════════════════════════════════════════════════════════════════
 SELECT json_build_object(
   'generated_from', 'live catalog (read-only introspection)',
+  'captured_at_utc', timezone('utc', statement_timestamp()),
   'tables', (
     SELECT json_agg(t ORDER BY t.name) FROM (
       SELECT

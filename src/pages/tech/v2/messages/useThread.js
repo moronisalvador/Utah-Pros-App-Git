@@ -32,7 +32,7 @@
  *     + a pane-local `overlay` of not-yet-confirmed bubbles keyed by `_clientId`. A
  *     delivery-status UPDATE patches the cached row in place (ticks never refetch); an
  *     INSERT appends to the cache AND drops the reconciled overlay twin. Reconnect /
- *     suspend invalidates as the safety net.
+ *     suspend silently merges the newest page through useResumeRefetch.
  *   - The realtime subscription is gated on `active` (thread open + pane visible) so a
  *     backgrounded pane holds no socket; on return the suspend-recovery refetch closes
  *     any gap.
@@ -45,15 +45,19 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, getAuthHeader } from '@/lib/realtime';
 import { techKeys } from '@/lib/techQuery';
-import { parseMediaUrls } from '@/components/conversations/messageUtils';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import {
+  isRetryableMediaReference,
+  parseMediaUrls,
+} from '@/components/conversations/messageUtils';
 import { impact } from '@/lib/nativeHaptics';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
-  appendMessageToPages, patchMessageInPages, markPendingByMatch, dropByClientId,
+  appendMessageToPages, mergeNewestPage, patchMessageInPages, markPendingByMatch, dropByClientId,
   failByClientId, summarizeSendResult,
 } from './msgsSelectors';
 
-const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,created_at,employees(full_name)';
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
 const PAGE = 30;
 
 function emitToast(message, type = 'info') {
@@ -114,6 +118,7 @@ export function useThread(convId, { active = true } = {}) {
     },
     getNextPageParam: (lastPage) => nextThreadCursor(lastPage, PAGE),
     staleTime: 15_000,
+    refetchOnWindowFocus: false,
   });
 
   const pages = query.data?.pages;
@@ -144,6 +149,27 @@ export function useThread(convId, { active = true } = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId, enabled, active]);
 
+  const reloadNewest = useCallback(async () => {
+    const requestedConvId = convId;
+    try {
+      const rows = await db.select(
+        'messages',
+        `conversation_id=eq.${requestedConvId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`,
+      );
+      if (!mounted.current || requestedConvId !== convId) return;
+      setPages((pagesToMerge) => mergeNewestPage(pagesToMerge, rows || []));
+      markRead();
+    } catch (error) {
+      console.error('Resume thread refresh error:', error);
+    }
+  }, [convId, db, markRead, setPages]);
+
+  useResumeRefetch({
+    onResume: reloadNewest,
+    hiddenEdgeOnly: true,
+    enabled: enabled && active,
+  });
+
   // ─── SECTION: Realtime (active-gated) ──────────────
   useEffect(() => {
     if (!enabled || !active) return undefined;
@@ -162,23 +188,6 @@ export function useThread(convId, { active = true } = {}) {
     });
     return unsub;
   }, [enabled, active, convId, setPages, markRead]);
-
-  // ─── SECTION: Suspend / reconnect recovery (safety net) ──────────────
-  // Capacitor suspends the webview and realtime dies silently; only after a real
-  // hidden→visible transition do we invalidate the open thread (append-model reconciles).
-  const wasHidden = useRef(false);
-  useEffect(() => {
-    if (!enabled || !active) return undefined;
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') { wasHidden.current = true; return; }
-      if (wasHidden.current) {
-        wasHidden.current = false;
-        queryClient.invalidateQueries({ queryKey: techKeys.thread(convId) });
-      }
-    };
-    document.addEventListener('visibilitychange', onVis);
-    return () => document.removeEventListener('visibilitychange', onVis);
-  }, [enabled, active, convId, queryClient]);
 
   // ─── SECTION: Send (optimistic → POST → reconcile) ──────────────
   const dispatchSend = useCallback(async ({ clientId, text, media_urls, isNote }) => {
@@ -274,7 +283,7 @@ export function useThread(convId, { active = true } = {}) {
     const stored = msg._clientId ? retryStore.current[msg._clientId] : null;
     const payload = stored || {
       text: msg.body || '',
-      media_urls: parseMediaUrls(msg.media_urls).filter((u) => /^https?:/i.test(u)),
+      media_urls: parseMediaUrls(msg.media_urls).filter(isRetryableMediaReference),
       isNote: msg.type === 'internal_note',
     };
     if (!payload.text && !(payload.media_urls && payload.media_urls.length)) {

@@ -65,7 +65,29 @@ export function nextThreadCursor(lastPage, pageSize) {
 
 // ─── SECTION: Optimistic overlay merge ──────────────
 
-const bodyKey = (m) => `${m.type}::${m.body || ''}`;
+function normalizedMedia(mediaUrls) {
+  let values = mediaUrls;
+  if (typeof values === 'string') {
+    try { values = JSON.parse(values); } catch { values = [values]; }
+  }
+  if (!Array.isArray(values)) values = values ? [values] : [];
+  return values.map(String).sort();
+}
+
+const bodyKey = (m) =>
+  `${m.type}::${m.body || ''}::${JSON.stringify(normalizedMedia(m.media_urls))}`;
+const RECONCILE_WINDOW_MS = 10 * 60 * 1000;
+const CLOCK_SKEW_TOLERANCE_MS = 5 * 1000;
+
+function isBoundedFallbackMatch(serverMessage, optimistic) {
+  if (bodyKey(serverMessage) !== bodyKey(optimistic)) return false;
+  const serverTime = new Date(serverMessage?.created_at || '').getTime();
+  const optimisticTime = new Date(optimistic?.created_at || '').getTime();
+  return Number.isFinite(serverTime)
+    && Number.isFinite(optimisticTime)
+    && serverTime >= optimisticTime - CLOCK_SKEW_TOLERANCE_MS
+    && serverTime - optimisticTime <= RECONCILE_WINDOW_MS;
+}
 
 /**
  * Merge the ascending server list with the pane-local optimistic overlay, dropping any
@@ -79,10 +101,41 @@ const bodyKey = (m) => `${m.type}::${m.body || ''}`;
 export function mergeOverlay(serverAscending, overlay) {
   const server = Array.isArray(serverAscending) ? serverAscending : [];
   if (!overlay || overlay.length === 0) return server.slice();
-  const ids = new Set(server.map((m) => m.id));
-  const bodies = new Set(server.map(bodyKey));
-  const ghostsGone = overlay.filter((o) => !ids.has(o.id) && !bodies.has(bodyKey(o)));
-  return [...server, ...ghostsGone];
+  const usedServerIndexes = new Set();
+  const exactOverlayIndexes = new Set();
+
+  // Reserve every durable match before considering a legacy fallback. This keeps
+  // an out-of-order confirmation for send B from being consumed by identical send A.
+  overlay.forEach((optimistic, overlayIndex) => {
+    const matchIndex = server.findIndex((message, index) =>
+      !usedServerIndexes.has(index)
+      && (
+        message.id === optimistic.id
+        || (optimistic._clientId && message.client_request_id === optimistic._clientId)
+      ));
+    if (matchIndex < 0) return;
+    usedServerIndexes.add(matchIndex);
+    exactOverlayIndexes.add(overlayIndex);
+  });
+
+  const ghostsGone = overlay.filter((optimistic, overlayIndex) => {
+    if (exactOverlayIndexes.has(overlayIndex)) return false;
+    const matchIndex = server.findIndex((message, index) =>
+      !usedServerIndexes.has(index)
+      && !message.client_request_id
+      && isBoundedFallbackMatch(message, optimistic));
+    if (matchIndex < 0) return true;
+    usedServerIndexes.add(matchIndex);
+    return false;
+  });
+  return [...server, ...ghostsGone]
+    .map((message, index) => ({ message, index }))
+    .sort((a, b) => {
+      const aTime = new Date(a.message?.created_at || 0).getTime();
+      const bTime = new Date(b.message?.created_at || 0).getTime();
+      return aTime - bTime || a.index - b.index;
+    })
+    .map(({ message }) => message);
 }
 
 /**
@@ -95,12 +148,17 @@ export function mergeOverlay(serverAscending, overlay) {
  */
 export function reconcileOverlay(overlay, realMsg, clientId) {
   if (!Array.isArray(overlay) || overlay.length === 0) return overlay || [];
-  const key = realMsg ? bodyKey(realMsg) : null;
-  return overlay.filter((o) => {
-    if (clientId && o._clientId === clientId) return false;
-    if (key && (o._pending || o._failed) && bodyKey(o) === key) return false;
-    return true;
-  });
+  const durableClientId = clientId || realMsg?.client_request_id;
+  const exactIndex = durableClientId
+    ? overlay.findIndex((o) => o._clientId === durableClientId)
+    : -1;
+  const bodyIndex = exactIndex < 0 && !durableClientId && realMsg
+    ? overlay.findIndex((o) =>
+      (o._pending || o._failed) && isBoundedFallbackMatch(realMsg, o))
+    : -1;
+  const removeIndex = exactIndex >= 0 ? exactIndex : bodyIndex;
+  if (removeIndex < 0) return overlay.slice();
+  return overlay.filter((_, index) => index !== removeIndex);
 }
 
 // ─── SECTION: Server-page mutation (append / patch) ──────────────
@@ -122,6 +180,23 @@ export function appendMessageToPages(pages, msg) {
   const next = p.map((page) => page);
   next[0] = [msg, ...p[0]];
   return next;
+}
+
+/**
+ * Merge a silently refreshed newest page into the existing descending page set.
+ * Loaded older pages remain intact; refreshed ids are moved to page 0 and deduped
+ * from every other page.
+ */
+export function mergeNewestPage(pages, newestRows) {
+  const current = Array.isArray(pages) ? pages : [];
+  const newest = Array.isArray(newestRows) ? newestRows : [];
+  if (current.length === 0) return newest.length ? [newest] : current;
+
+  const newestIds = new Set(newest.map((message) => message?.id).filter(Boolean));
+  const retained = current.map((page) =>
+    page.filter((message) => !message?.id || !newestIds.has(message.id)),
+  );
+  return [[...newest, ...(retained[0] || [])], ...retained.slice(1)];
 }
 
 /**

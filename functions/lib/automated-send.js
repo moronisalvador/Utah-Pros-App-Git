@@ -429,9 +429,39 @@ export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }
 
-  // Gate 2: TCPA consent.
-  if (!consentAllows({ phone, opt_in_status: contact?.opt_in_status, dnd: contact?.dnd })) {
-    const reason = !phone ? 'no_phone' : contact?.dnd ? 'dnd' : 'no_consent';
+  // Gate 2: TCPA consent. The database decision also sees duplicate-contact
+  // suppression and durable-but-unprojected STOP events. Automated traffic
+  // accepts GLOBAL_OPT_IN only; staff-only SERVICE_CONSENT is never consumed.
+  const locallyAllowed = consentAllows({
+    phone,
+    opt_in_status: contact?.opt_in_status,
+    opt_out_at: contact?.opt_out_at,
+    dnd: contact?.dnd,
+  });
+  let consentStatus = null;
+  if (locallyAllowed && contact?.id) {
+    try {
+      const rawConsentStatus = await db.rpc('get_service_sms_consent_status', {
+        p_contact_id: contact.id,
+        p_destination_phone: phone,
+      });
+      consentStatus = Array.isArray(rawConsentStatus)
+        ? rawConsentStatus[0]
+        : rawConsentStatus;
+    } catch {
+      consentStatus = null;
+    }
+  }
+  if (
+    !locallyAllowed
+    || consentStatus?.allowed !== true
+    || consentStatus?.code !== 'GLOBAL_OPT_IN'
+  ) {
+    const reason = !phone
+      ? 'no_phone'
+      : contact?.dnd || consentStatus?.code === 'DND_ACTIVE'
+        ? 'dnd'
+        : 'no_consent';
     const eventType = reason === 'dnd'
       ? 'send_blocked_dnd'
       : reason === 'no_consent' ? 'send_blocked_no_consent' : 'send_blocked_no_phone';
@@ -474,9 +504,12 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   }
 
   const db = supabase(env);
-  // opt_in_status is needed by the sms branch; billing_state backs the
+  // opt_in_status/opt_out_at are needed by the sms branch; billing_state backs the
   // per-recipient quiet-hours timezone fallback; both harmless for email.
-  const [contact] = await db.select('contacts', `id=eq.${contactId}&select=id,email,name,phone,dnd,opt_in_status,billing_state`);
+  const [contact] = await db.select(
+    'contacts',
+    `id=eq.${contactId}&select=id,email,name,phone,dnd,opt_in_status,opt_out_at,billing_state`,
+  );
   if (!contact) return { ok: false, skipped: true, reason: 'contact_not_found' };
 
   let body = extra.html || extra.body || '';

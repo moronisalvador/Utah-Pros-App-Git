@@ -1,9 +1,9 @@
 <!--
 FILE: docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md
 PURPOSE: Sanitized read-only live evidence used to draft the messaging transport foundation.
-LAST VERIFIED: 2026-07-23
+LAST VERIFIED: 2026-07-24
 
-This is dated evidence, not current project law. It records no secrets, phone numbers, message
+This is dated evidence, not current project law. It records no secrets, full phone numbers, message
 content, employee identities, or writable operations.
 -->
 
@@ -97,6 +97,77 @@ and `service_role` is the sole application role with ledger table privileges.
 Provider credentials, text webhooks, phone-number routing, and live message traffic were not
 activated by this database apply.
 
+## Preview activation and controlled round trips
+
+Later on 2026-07-23, the owner separately approved Preview/dev activation and controlled sends
+to the owner's phone. Preview was configured for the CallRail sender ending in `4121`; Production
+remained disabled and unconfigured for messaging. The dedicated sent and received text webhooks
+were saved in CallRail with the dev endpoint.
+
+The phone and CallRail inbox both confirmed delivery of the outbound test and receipt of the
+owner's `TEST RECEIVED` reply. UPR retained the outbound canonical message and send attempt, but
+incorrectly marked them failed because the live provider response was HTTP 200 rather than the
+documented 201. The provider-event inbox contained no corresponding rows. Worker telemetry proved
+both webhook deliveries passed signature verification and then failed payload normalization with
+`INVALID_CALLRAIL_TEXT_EVENT`.
+
+No retry was issued. The corrective repository slice accepts only HTTP 200/201 responses that also
+contain a usable conversation identity, preserves all other 2xx outcomes as ambiguous, and adds
+field-name-only webhook validation telemetry. Existing outbound and inbound provider history must
+be recovered through exact CallRail conversation reconciliation; it must not be recreated by
+resending.
+
+After the fix reached dev, a second single controlled send succeeded in UPR and CallRail. The
+signed sent webhook then reported the safe diagnostic `invalid_field=id`: CallRail omitted the
+documented numeric event ID while retaining its stable `resource_id`. The follow-up compatibility
+change makes only that secondary ID optional; `resource_id` remains required and continues to
+drive durable dedupe.
+
+## Finish-first recapture — 2026-07-23
+
+The repository and live state were recaptured read-only after the controlled tests:
+
+- live ledger entries `20260723215926 messaging_transport_foundation` and
+  `20260723220207 messaging_transport_foundation_indexes` remain present; they were not reapplied;
+- `messages` has the generic provider/request/address fields, and all three service ledgers exist
+  with RLS enabled;
+- `message_send_attempts`, `message_provider_events`, and `message_notification_outbox` grant table
+  access only to `postgres` and `service_role`; `messages` grants browser roles only
+  capability-gated authenticated `SELECT`;
+- safe aggregate state initially contained two CallRail attempts (`accepted=1`, `failed=1`), zero
+  provider events, and zero notification-outbox rows. A final read-only recapture after concurrent
+  recovery work showed two `confirmed` attempts, two processed `text_reconciled` provider events,
+  two canonical CallRail messages with `sent` status, and zero outbox rows. No message body, phone
+  number, provider identifier, or customer/employee identity was selected;
+- Cloudflare Pages Production is `MESSAGING_SCHEMA_MODE=foundation` and
+  `MESSAGING_SEND_MODE=disabled`, with no CallRail company/sender/signing binding;
+- Preview is `MESSAGING_SCHEMA_MODE=foundation` and `MESSAGING_SEND_MODE=callrail`, with the
+  company, sender, and signing-key bindings present. Binding values and secrets were not read;
+- the HTTP 200 compatibility fix is merged into `dev`; the missing-secondary-`id` compatibility
+  fix is integrated at `2fbf755` / merge `94b2e9f` after its successful Preview deployment.
+
+The two outbound controlled actions are now reconciled without resending. Their durable events are
+`text_reconciled` recovery records, not direct signed webhook events. The signed webhook has
+therefore still not proved direct durable claim/canonical inbound projection, and the controlled
+reply is not represented as a CallRail inbound message in the safe aggregate. Do not resend either
+controlled action or invent the missing inbound row; any provider-history recovery or live mutation
+still requires an exact owner-approved target and window.
+
+No provider request, message send, provider-console change, Cloudflare mutation, database write, or
+migration apply occurred during this recapture.
+
+Repository verification:
+
+- focused transport/adapter/webhook/send/recovery/setup suite: 12 files, 199 tests passed;
+- independent consent-path audit suite: 15 files, 365 tests passed;
+- production build: passed;
+- consent-path review: PASS; CallRail remains staff-P2P-only, DND/consent run before provider
+  access, STOP/START/HELP stay canonical, and no provider/channel fallback exists;
+- messaging phase review: PASS after the final live aggregate recapture;
+- UPR pattern review: PASS for this bounded phase after adding the explicit public-HMAC webhook
+  annotation. Pre-existing direct event-table REST mutations remain tracked as `MSG-004` for a
+  narrow-RPC follow-up; they were not introduced or silently waived here.
+
 ## Apply-window recapture
 
 Immediately before any owner-approved apply, recapture:
@@ -169,3 +240,98 @@ order by r.table_name, r.column_name;
 
 The query must return zero rows. Separately verify
 `to_regprocedure('gen_random_uuid()') is not null`.
+
+## Bounded inbound-history recovery addendum — 2026-07-23
+
+After the missing-secondary-`id` webhook compatibility fix was deployed to Preview, the two replies
+sent before that fix were still absent from UPR. CallRail retained both replies in the provider
+conversation. Official history documentation was rechecked before recovery. The live response
+omitted `type` and `media_urls` for ordinary SMS, while the endpoint's documented `fields`
+parameter does not support requesting those message-level fields. The recovery parser therefore
+accepted an omitted type only when media was also absent/null/empty and treated that narrow shape
+as SMS; missing type with any media still failed closed.
+
+The recovery was deliberately isolated from durable application code:
+
+- an internal-admin-or-scheduler-secret-authenticated POST route existed only on a temporary
+  Preview branch and used the server-only service-role database client;
+- the request required one explicit UPR conversation ID, one provider conversation ID and strict
+  UTC bounds no wider than 24 hours;
+- a read-only uniqueness preflight proved the normalized customer phone had exactly one active
+  direct UPR conversation before any recovery write;
+- provider company, sender, customer, participant and conversation identities had to agree;
+- the provider access was GET-only, inbound SMS only and used the canonical event processor/RPC;
+- outbound records were always skipped for the established outbound reconciler;
+- MMS and ambiguous provider shapes failed closed; and
+- the response exposed only counts, states and provider record identities, never message bodies,
+  phone numbers, credentials or raw provider payloads.
+
+The owner-approved window was `2026-07-23T23:10:00Z` through
+`2026-07-23T23:28:30Z`. The provider returned four records. Recovery processed two inbound SMS
+records, skipped two outbound records and reported zero duplicates, deferred records or failures.
+No outbound provider call or resend occurred.
+
+Post-recovery read-only verification confirmed:
+
+- two `message.received` history events in `processed / inbound_persisted` state;
+- both events mapped to the intended canonical contact and conversation;
+- two canonical inbound CallRail messages with `received` status, provider message/conversation
+  identity, correct sender/recipient direction and original provider timestamps; and
+- the authenticated dev inbox displayed both replies in chronological order while both outbound
+  tests displayed `Sent`.
+
+Cleanup was completed immediately afterward. The temporary remote branch and alias were deleted,
+all five recovery Preview deployments were force-deleted through the Cloudflare API, and a final
+deployment inventory returned no deployment for that branch. The route was never merged into
+`dev` or `main`.
+
+This addendum proves live CallRail history normalization, durable event claiming/processing and
+canonical inbound projection. It does **not** prove replay deduplication or that a newly generated
+received webhook after the compatibility deployment will project automatically; that remains the
+exact next Preview round-trip gate. Production messaging remains disabled and has no CallRail
+messaging bindings.
+
+## Inbound notification activation and device deep-link addendum — 2026-07-24
+
+A later fresh received webhook passed signature verification and projected directly as
+`inbound_persisted`, closing the signed-webhook projection gap. The projection atomically enqueued
+`message.inbound`, but live inspection found that no trigger, cron job, or external scheduler invoked
+the already-deployed `process-message-notification-outbox` worker. Notification type/defaults,
+the target employee's bell and push preferences, the web-push feature flag, two current push
+subscriptions, the scheduler secret, and worker deployment were all present. The durable outbox was
+the only stalled boundary.
+
+PR #506 merged as `625ccfd` after independent migration and security reviews and successful CI and
+Cloudflare checks. Migration `message_notification_outbox_scheduler` then applied once to the shared
+project. Post-apply verification confirmed:
+
+- the configured worker URL matches one of the two exact UPR allowlisted endpoints;
+- the five-minute `upr_message_notification_outbox` cron job is active;
+- the after-insert trigger exists and exception-contains wake-up failures so inbound persistence
+  cannot be rolled back by a local `pg_net` enqueue failure;
+- both helper functions are executable only by `postgres`; and
+- the migration ledger contains the scheduler migration.
+
+Six pending rows had accumulated by the apply window. One protected wake-up returned HTTP 200 with
+`claimed=6`, `delivered=6`, `retryable=0`, and `deadLettered=0`. Read-only verification then found
+zero pending/retryable/processing/dead-letter rows, six delivered rows, six new target bell rows,
+one completed worker run processing six records, and two current target push subscriptions. The
+owner confirmed receiving the push on the mobile PWA. Bell and push remain intentionally
+at-least-once across a crash after channel dispatch but before durable outbox finalization.
+
+The owner device test exposed a separate deep-link defect: the push opened the mobile office app at
+the conversations list. Repository evidence showed the canonical payload used only
+`/conversations`, even though both inboxes already support `?c=<conversation-id>`. PR #507 merged as
+`142d3c4`; the latest combined dev tip `1900a78` passed CI and Cloudflare. The provider-neutral
+notification dispatcher now emits:
+
+- `/conversations?c=<id>` for the in-app bell; and
+- `/tech/conversations?c=<id>` for Web Push.
+
+A controlled internal post-deployment alert—no customer SMS or provider send—returned HTTP 200 for
+one active internal recipient with `bell=true`, two push attempts, two accepted push deliveries,
+and no pruned subscription. The stored bell link matched the exact conversation. Final iOS tap
+verification of the corrected field-PWA route was pending at the time of this evidence update.
+
+Production customer messaging remained disabled throughout this activation. No production provider
+binding, customer send, secret disclosure, or unrelated migration was performed.

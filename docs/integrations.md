@@ -62,6 +62,14 @@ bindings and provider consoles.
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
+- `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
+  adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
+  prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
+  chokepoint, consumes the service-only consent decision, and adds Utah Pros identification plus
+  first-conversation STOP instructions before provider dispatch. Recording permission never
+  automatically retries or sends the failed message; staff must choose Retry as a separate action.
+  Scheduled and automated SMS call the same suppression-aware status boundary but accept only
+  `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
 - Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
   shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
   facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is
@@ -127,7 +135,7 @@ supported Encircle consumer or a credential-rotation dependency.
 
 ## Messaging transport build state (2026-07-23)
 
-Phase 1 is published with Twilio behavior unchanged. The later integration branch adds a disabled
+Phase 1 is published with Twilio behavior unchanged. The integrated transport foundation adds a
 server-only selector (`MESSAGING_SEND_MODE=disabled|callrail|twilio`), a schema writer gated by
 `MESSAGING_SCHEMA_MODE=legacy|foundation`, a person-to-person-only CallRail adapter, and a dedicated
 `/api/callrail-text-webhook` receiver. Missing/unknown send mode disables outbound messaging;
@@ -141,16 +149,93 @@ conversations and messages through an atomic service-role RPC, applies shared ST
 rules (including a consent-only transaction when MMS capture fails), reconciles sent events by
 provider message identity or strict conversation/address/body/time identity, and retains transient
 failures with bounded backoff for the protected `process-callrail-events` recovery worker. It deliberately does not auto-send compliance replies
-through CallRail. The repository build copies verified MMS bytes into private
+through CallRail. The repository build immediately downloads the signed webhook's short-lived
+media endpoint after strict CallRail host/account validation; queue retries refresh current
+endpoints through the conversation API. It copies verified MMS bytes into private
 `message-attachments`, persists only `upr-storage://` references, and signs a short URL only after
 messaging authorization and message/index binding. The separate reconciliation worker polls
 CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
 compilation, provider fixtures, and reviewed retention remain activation blockers. Repository
-source now includes atomic canonical-message recovery plus a durable, fenced notification outbox;
-neither SQL contract has been applied or runtime-verified.
+source includes atomic canonical-message recovery plus a durable, fenced notification outbox. The
+MMS account check supports both CallRail's legacy numeric account id and its current masked
+`ACC...` resource id only after `/v3/a.json?fields=numeric_id` proves that they identify the same
+API-visible account; arbitrary account paths remain rejected.
+foundation and covering-index migrations are live; repository tests cover the SQL callers, but
+isolated PostgreSQL compilation of every later projection/recovery contract remains a separate QA
+requirement.
 
-All of this is repository-only and unconfigured: no Cloudflare variable, provider webhook, API
-credential, number assignment, deployment, database migration, or real send has occurred.
+Outbound MMS uses the same private bucket without publishing customer photos. Both inboxes upload
+through authenticated `POST /api/message-media-upload`; the Worker verifies one final JPEG, PNG, or
+GIF no larger than 5,000,000 bytes and returns only an opaque owned reference. `/api/send-message`
+downloads and revalidates that object after authorization/consent. The CallRail adapter streams it
+as documented multipart `media_file`. The Twilio adapter instead creates a one-hour signed URL
+inside the transport boundary because Twilio must fetch `MediaUrl`; that URL is never stored.
+CallRail's short-lived inbound provider media URLs are likewise never stored, so there is no
+provider-URL cleanup dependency after successful private capture.
+
+Live evidence on 2026-07-23 recorded one inbound iPhone MMS as a signed, deduplicated provider
+event, but the deployed derived download path failed before private Storage with
+`CALLRAIL_MMS_DOWNLOAD_FAILED`. That event proves receipt, not media completion. The corrected
+webhook-URL flow and retry refresh require a controlled post-deploy image reply before this
+integration can claim an end-to-end inbound MMS round trip.
+
+The same event exposed a separate recovery-wiring gap: Pages deployed the protected
+`/api/process-callrail-events` HTTP route, but an exported `scheduled()` handler does not create a
+route-level Pages Cron Trigger. An additive, unapplied scheduler migration now follows the
+repository convention by using pg_cron/pg_net every five minutes, the existing cron secret, an
+exact dev/production URL allowlist, and a due-work predicate. It makes no provider send and
+preserves retained events on rollback. Shared-Supabase apply and live recovery verification remain
+a separate owner gate.
+
+The notification outbox is dispatched through the protected
+`/api/process-message-notification-outbox` worker. An additive scheduler migration stores only the
+non-secret exact worker URL, reuses the existing scheduler secret, wakes the worker after an outbox
+insert commits, and runs a five-minute due/stale-work safety net. Missing configuration, an
+unrecognized URL, or an empty queue is a fail-closed no-op. The fenced claim token remains the
+delivery concurrency boundary. Bell and push delivery are at-least-once: a worker crash after a
+channel side effect but before durable outbox finalization can produce a duplicate alert when the
+stale lease is reclaimed.
+
+For `message.inbound`, the provider-neutral notification dispatcher derives both deep links from
+the canonical conversation ID. Bell navigation stays in the office inbox at
+`/conversations?c=<id>`; Web Push opens the exact thread in the installed field PWA at
+`/tech/conversations?c=<id>`. Provider adapters and webhook payloads do not choose UI routes.
+
+The additive foundation migration and its index follow-up are applied to the shared Supabase
+project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
+ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
+and separate sent/received text webhooks targeting `/api/callrail-text-webhook`. Production remains
+`MESSAGING_SEND_MODE=disabled` and has no CallRail messaging provider bindings.
+
+The first controlled dev send to the owner's phone exposed two contract defects without requiring
+a retry: CallRail delivered the message and returned HTTP 200 with a conversation identity, while
+the adapter accepted only the documented HTTP 201; the signed sent and received webhooks reached
+UPR but failed strict payload normalization before durable claim. The adapter therefore accepts
+only HTTP 200 or 201 with a usable conversation identity, while every malformed or unfamiliar 2xx
+remains ambiguous and non-retryable pending reconciliation. Webhook authentication remains
+fail-closed. Value-free validation telemetry may record only the invalid field name so a later
+controlled event can identify provider schema drift without retaining raw payloads, message
+content, phone numbers, IDs, or secret material.
+
+That controlled event identified `id` as the drifted field: the valid signed CallRail webhook
+omitted the documented secondary numeric event ID while retaining `resource_id`. UPR accepts a
+missing/null secondary ID but still requires `resource_id`, which remains the durable provider
+message identity and dedupe key. A malformed non-null `id` still fails closed.
+
+The finish-first recapture first found two CallRail attempts (`accepted=1`, `failed=1`) and zero
+provider events. Recovery then reconciled both outbound attempts to `confirmed`, with two processed
+`text_reconciled` events and two canonical `sent` messages; no resend occurred.
+
+A separate one-time Preview-only history importer was used after read-only checks proved the exact
+customer phone mapped to one active direct UPR conversation. Its explicit 18.5-minute window
+returned four CallRail records, skipped both outbound records, and projected both missing inbound
+SMS records with their provider identities and original timestamps. The canonical rows were
+verified as `received`, and the refreshed dev inbox displayed both replies in order. The importer
+branch, route alias, and all temporary Preview deployments were deleted and were never merged.
+
+The recovered rows prove live provider-history normalization and canonical inbound projection.
+They do not prove automatic direct ingestion from a fresh post-fix signed received webhook; that
+remains the next Preview proof before broader activation.
 
 The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
 active transport or provider configuration. RCS remains blocked until requested-versus-actual

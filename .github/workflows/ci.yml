@@ -34,6 +34,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Provenance validation resolves reviewed historical commits and capture ancestry.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,6 +53,18 @@ jobs:
       - name: Test repository tooling governance
         run: npm run test:tooling
 
+      - name: Validate disconnected Figma governance
+        run: npm run validate:figma-governance
+
+      - name: Test Figma governance refusals
+        run: npm run test:figma-governance
+
+      - name: Validate migration provenance
+        run: npm run validate:provenance
+
+      - name: Test migration provenance gate
+        run: npm run test:provenance
+
       # Mirror the production build. Supabase URL/anon key come from repo secrets
       # (same names the Capgo deploy workflow uses); the build also succeeds
       # without them, so this stays green even if the secrets are unset.
@@ -61,6 +76,14 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Credential-free synthetic browser foundation only. The target origin is a code constant
+      # (127.0.0.1:4173); production/dev/hosted Supabase and provider egress fail closed.
+      - name: Install governed browser runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Test credential-free browser foundation
+        run: npm run test:browser
 
       # Non-blocking until the 175-error lint baseline is cleared. Surfaces lint
       # output in the run without failing the gate. Flip to blocking by removing

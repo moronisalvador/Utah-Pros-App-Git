@@ -271,6 +271,20 @@ processor fee, `createTransfer` for the net payout) for automated QBO fee reconc
 payments land in UPR through the **same** QBO payment sync (`source='stripe'`) and are **view-only**
 in the UI — adjust/refund them in QBO so reconciliation stays intact.
 
+**Server boundary refresh (2026-07-23):** both `/api/stripe-pay-link` and `/api/qbo-charge` now
+resolve an active employee and require the same `admin`/`manager` billing-role predicate as the UI
+before configuration, invoice, credential, or provider access. The charge endpoint no longer
+accepts the generic QBO webhook secret as an alternate money-moving identity. It requires a stable
+client `Idempotency-Key`, passes it to Intuit as the request ID, rejects fractional-cent or
+over-balance charges, records the actor employee, and uses the Mountain-Time business date for both
+UPR and QBO.
+
+This is authorization/request-id containment, not full charge reconciliation. A durable
+pre-provider charge-attempt row, captured-but-unrecorded recovery, and Intuit sandbox failure
+injection remain required before COR-002 can close. Stripe's existing content-derived provider key
+reduces concurrent duplicate creation, but stored-session reuse/expiration and sandbox concurrency
+proof remain COR-003.
+
 ---
 
 ## 6. Xactimate AI import — `functions/api/analyze-xactimate.js` (+ InvoiceEditor)

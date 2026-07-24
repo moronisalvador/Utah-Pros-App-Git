@@ -37,8 +37,8 @@ program. The program starts with evidence and containment, not a broad rewrite:
 1. Treat Encircle implementation commit `0a06a21` as landed and its writer lease as released.
    Preserve its pending rollout gates: migration unapplied, flag OFF, credentials unchanged.
 2. Reconcile work and ownership truth into one registry with explicit states and retirement rules.
-3. `exec_read_sql` containment completed and verified on 2026-07-23; next reconcile live migration
-   provenance before any broad RLS or product wave.
+3. `exec_read_sql` containment and F2 migration provenance reconciliation completed and verified on
+   2026-07-23; preserve both as release-control regression boundaries.
 4. Create isolated QA data and representative roles before making database/browser tests blocking.
 5. Repair skills/agents/plugin permissions and trigger governance before adding Figma or more
    automation.
@@ -52,6 +52,13 @@ Any authorized Encircle database apply still serializes with every other shared-
 ## 2. Evidence boundary
 
 ### Current, verified 2026-07-23
+
+- Final documentation-closure recapture at 2026-07-24 01:00 UTC found 133 public tables, 375
+  public function overloads across 374 names, and the original three July 23 live-ledger rows plus
+  the later tool-versioned notification scheduler row. It reconfirmed `exec_read_sql(text)`
+  service-only and `upsert_lead_from_form(...)` still browser-executable pending its separate
+  owner-authorized apply. Counts below preserve the earlier planning capture where they explain
+  the original decision.
 
 - At the F1 apply, `origin/dev` was `1875e63`; reviewed containment commit `5cf546b` was reachable
   from both `origin/dev` and `origin/main`.
@@ -73,8 +80,8 @@ Any authorized Encircle database apply still serializes with every other shared-
   - no public table name contains `test`, `qa`, or `sandbox`.
 - The four July migration-ledger entries previously identified as branch-ahead-of-`dev`
   (`crm_denver_day_bucketing`, `crm_sales_summary_total_vs_traced`,
-  `crm_dedup_repeat_caller_leads`, `crm_caller_name_follows_merge`) still have no matching migration
-  file in this checkout.
+  `crm_dedup_repeat_caller_leads`, `crm_caller_name_follows_merge`) now map to byte-verified restored
+  source on `dev`; the live `set_lead_caller_name` body differs only by comments and is not rewritten.
 - Current source confirms `qbo-charge.js` authenticates any valid Supabase user before moving money
   and uses UTC date slicing (`functions/api/qbo-charge.js:22-31,77-90`); `stripe-pay-link.js`
   likewise accepts any valid user and always creates a new Checkout session
@@ -111,8 +118,9 @@ text and raw results in a newly dated evidence addendum and add direct intended/
    browser consumers or cite the function as a supported client contract.
 2. **Critical — broad database authorization:** aggregate unrestricted grants/policies remain large.
    Freeze new anonymous grants and new `SECURITY DEFINER` browser contracts pending classification.
-3. **High — live/source provenance drift:** four live ledger entries are absent from this checkout.
-   Do not replay or replace them from filenames; fingerprint and restore only reviewed equivalents.
+3. **Contained High regression boundary — live/source provenance drift:** F2 restored only the four
+   reviewed source records and added a fresh-evidence release gate. Do not replay live rows or replace
+   live bodies merely to align filenames or comments.
 4. **High — money authorization/idempotency:** current QBO/Stripe Workers authenticate without the
    required billing-role boundary. Do not expand callers or add adjacent money flows before M.
 5. **High — public form/signing/file coupling:** signing writes into the `job-files`/document path.
@@ -149,8 +157,8 @@ dependencies, exact files/schema/external systems, and retirement condition.
 
 - **Now:** no application/database writer lease is active. Encircle code is landed; its pending
   rollout gates do not retain a lease.
-- **Next:** one owner-authorized database/migration writer at a time. F1 is complete; F2 provenance
-  reconciliation or the separately authorized Encircle rollout uses the next serialized window.
+- **Next:** one owner-authorized database/migration writer at a time. F1 and F2 are complete; the
+  separately authorized Encircle rollout or the next selected finish-first phase uses the window.
 - Two application writers is an initial
   cap, not a target; use fewer unless pairwise disjointness is proven. Each implementation gets an
   independent review lane.
@@ -172,9 +180,9 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Encircle managed integration | PARTIAL; landed with owner/external verification tails | `0a06a21` on `origin/dev`; owner reports CI/staging passed; migration unapplied, flag OFF, credentials unchanged | High | Apply-window tests; owner-only flag; candidate activation; multi-runtime smoke; rotation/fallback cleanup |
 | `exec_read_sql` containment | HAVE; Critical boundary contained | Applied/verified 2026-07-23; browser-role denials, service-role smoke, catalog fingerprint, ledger, and advisor evidence recorded | High | Keep service-only regression test and ACL invariant |
 | Anonymous/authenticated least privilege | PARTIAL + Critical | Current policy/function counts; July evidence enumerates affected objects | High aggregate; object behavior needs role tests | Classified role matrix and staged closures |
-| Migration provenance | PARTIAL + High | Four live ledger names remain absent from current checkout | High | Every live entry maps to reachable reviewed source and fingerprint |
+| Migration provenance | HAVE; High boundary reconciled | F2 mapped the original seven-entry live tail; the 2026-07-24 addendum maps the later scheduler row too; 11 function plus one policy fingerprints remain checked | High | Refresh read-only evidence within six hours of release validation |
 | Worker auth/shared libraries | PARTIAL | Shared helpers exist; inventory found 17 local auth helpers and limited timeout/telemetry adoption | High | Sensitive Workers use canonical auth/role/timeout/telemetry contracts |
-| Money-path safety | PARTIAL + High/Critical | `qbo-charge.js` and `stripe-pay-link.js` current-source gaps | High | Role denial, stable idempotency, recovery/reuse, Denver date tests |
+| Money-path safety | PARTIAL; AUTH-001/AUTH-002 and Denver-date/request-key slice complete | `money-worker-hardening-2026-07-23.md`; both Workers use `requireRole`; QBO stable request key/cents/balance/actor/MT date tests | High | Durable charge-attempt/recovery + Intuit sandbox; Stripe stored-session reuse/expiry + sandbox concurrency |
 | Public form/signing/file boundaries | PARTIAL + High | July evidence plus current migration/Worker source | High design evidence; live behavior needs refresh | Direct bypass denied; minimal capability DTOs; signed/private files |
 | Authenticated local QA login | HAVE narrow path | `CLAUDE.md:124-129`; `src/pages/Login.jsx:86-90,259` | High | Keep restricted to dedicated test account |
 | Isolated DB/browser QA | MISSING | Shared production DB; no named QA tables; no Playwright/axe scripts | High | Separate target, seeded roles, reset, zero unexpected skips |
@@ -187,7 +195,7 @@ dependencies, exact files/schema/external systems, and retirement condition.
 | Tech v2 route/flag resilience | PARTIAL | Route elements can be null only when current runtime flags are disabled/force-disabled; missing flags default enabled (`App.jsx`, `TechLayout.jsx`, `AuthContext.jsx`, `featureFlags.js`) | Medium until all live flag states are queried | Test missing/enabled/disabled/force-disabled; provide explicit fallback |
 | Tech Job Hub H3 | PARTIAL / owner gate | `docs/tech-v2-roadmap.md:551-561`; legacy routes/files remain | High | Written bake, resolver/retarget/cleanup/device verification |
 | Schedule Desktop | PARTIAL/MISSING | Current bugs at `Schedule.jsx:66,392,554-555,766`; roadmap unbuilt | High | Correctness first, then A→B→C completion |
-| App Store release | PARTIAL; external gate | `docs/app-store-readiness-roadmap.md:214-225` | High | Xcode/TestFlight/ASC owner evidence |
+| App Store release | PARTIAL; repository workflow valid, external gate | `ios-workflow-validation-2026-07-23.md`; `docs/app-store-readiness-roadmap.md` §6 | High | Apple enrollment/signing, owner Xcode/TestFlight/ASC evidence |
 | Account deletion fulfillment | PARTIAL | Request-linked processor is absent; a generic Team hard-delete path exists (`Team.jsx`, `admin-users.js`) | High | Decide integrate/replace/disable; retention/revocation/audit tests |
 | UX failure/loading/resume | PARTIAL | Customers/Leads/Marketing failure→empty; Job/Customer detail blank; hook adoption gaps | High | Split list-page work from Encircle-frozen detail pages; errors/retry, silent resume, 390px/minimize tests |
 
@@ -262,7 +270,8 @@ All acceptance checks passed. Evidence:
 
 ### Phase F2 — Migration provenance reconciliation
 
-> **Implementation:** `not_started` · **Gate:** `internal` · **Disposition:** `active`
+> **Implementation:** `verified` · **Gate:** complete · **Disposition:** `archived`
+> **Completed:** 2026-07-23; release evidence and reviewer results linked below
 > **Prerequisite:** F1 complete; applies serialized
 > **Model · effort:** high; shared-production reproducibility
 > **Scope:** reconcile four known live-only ledger entries and add a read-only provenance gate
@@ -275,36 +284,54 @@ All acceptance checks passed. Evidence:
 - Each new live ledger entry maps to reviewed source reachable from the release ref.
 - CI/release evidence reports ledger/source and selected function/policy fingerprint drift.
 
+All acceptance checks passed without a live write. The gate mapped the original seven-entry ledger
+tail, enforces reviewed-origin blob equality, bounds evidence freshness to six hours, verifies
+capture-base ancestry, and checks 11 function plus one policy fingerprint. A later read-only
+addendum maps the separately applied scheduler as the eighth row without changing its live body.
+The one raw body difference is comment-only and remains a warning. Evidence:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
+
 ### Phase F3a/F3b/F3c — Isolated QA access and test-data foundation
 
-> **Implementation:** `not_started` · **Gate:** `external + owner` · **Disposition:** `active`
-> **Prerequisite:** owner chooses Supabase ownership/budget/reset policy
+> **Implementation:** F3a credential-free repository slice verified; local/hosted data targets blocked ·
+> **Gate:** `external + owner` for database/hosted continuation · **Disposition:** `active`
+> **Prerequisite:** owner opens governed local Supabase config/runtime or chooses hosted ownership/budget/reset policy
 > **Model · effort:** high; auth/data-isolation architecture
 > **Scope:** separate Supabase target or approved local stack, representative roles, TEST organization,
 > deterministic seeds/reset, provider sandboxes; never shared production
 
 **Split and acceptance**
 
-- **F3a — environment/bootstrap:** owner-selected hosted/local target, migration-from-zero, and CI
-  refusal of production project URLs/IDs.
+- **F3a — environment/bootstrap:** repository target policies, CI, local-origin enforcement, and
+  production project URL/ID refusal are delivered. Migration-from-zero still requires a governed
+  local runtime/config or owner-selected hosted target.
 - **F3b — identities/data:** anon, admin, office/PM, supervisor, field-tech, CRM-partner, inactive,
   unknown-employee, TEST organization, deterministic seeds, and no real employee credentials.
 - **F3c — reset/subsystems:** idempotent cleanup plus Storage/Auth/Realtime coverage. Provider
   sandboxes are separate external verification tails, not blockers for the core isolated target.
 
+The 2026-07-23 P0 addendum records the safe environment, identity, provider, telemetry, GitHub,
+accessibility, and Encircle boundaries. It supersedes—not merges—the `3841056` plan because that plan
+would keep mutation-heavy integration tests on the shared production database. P1 is complete.
+P2a execution still requires exact local-runtime/config ownership; hosted project/account creation
+remains an owner/external gate.
+
 ### Phase F4a/F4b/F4c — Test, CI, deployment, and observability gates
 
-> **Implementation:** `not_started` · **Gate:** `internal` on F3 · **Disposition:** `active`
+> **Implementation:** F4a unit/Worker and F4b synthetic browser foundations verified; database,
+> real-journey visual, deployment, and observability tails remain · **Gate:** `internal + external`
+> on remaining F3 · **Disposition:** `active`
 > **Model · effort:** medium/high
 > **Scope:** split pure unit/Worker/database/browser lanes; deployment config preflight; provenance and
 > no-new-regression gates
 
 **Split and acceptance**
 
-- **F4a — unit/database:** deterministic blocking `test:unit`; `test:db` only against F3 with zero
-  unexpected skips; migration and authorization gates.
-- **F4b — browser/accessibility:** representative roles/core journeys, Playwright/axe, 390px,
-  minimize/resume, and forced failure/empty/loading states.
+- **F4a — unit/database:** deterministic blocking unit/Worker/QA-policy lanes are delivered with
+  zero-skip enforcement; `test:db:local` remains fail-closed until F3 supplies the isolated stack.
+- **F4b — browser/accessibility:** deterministic Playwright/axe desktop/390px synthetic fixtures,
+  resume/focus/overflow and forced failure/empty/loading states are delivered. Representative
+  authenticated roles, actual UPR pages, pinned-Linux screenshots and real-device proof remain.
 - **F4c — deployment/observability:** lint/bundle new-debt ratchets, binding preflight, provenance,
   read-only deployed smoke, and explicit native/provider verification tails.
 
@@ -327,7 +354,8 @@ All acceptance checks passed. Evidence:
 
 ### Phase F6a/F6b — Design-system and Figma operating model
 
-> **Implementation:** `not_started` · **Gate:** `internal + owner` on F4/F5 and seat decision
+> **Implementation:** internal authority, inventory, permission contract, and capture matrix recorded ·
+> **Gate:** `owner + external` for connection/session/seat
 > **Disposition:** `active`
 > **Model · effort:** high; product-wide visual authority
 > **Scope:** design source-of-truth, inspection/handoff/versioning rules, token/component coverage map;
@@ -340,6 +368,15 @@ All acceptance checks passed. Evidence:
 - **F6b — QA baselines/adoption:** establish isolated-QA dark/mobile/accessibility baselines and
   replan UX W1-W5 with exact disjoint page/CSS sets.
 
+**Bounded checkpoint — 2026-07-23:** full write-capable hosted QA is no longer treated as a
+prerequisite for starting design. The minimum gate and first sprint are in
+`docs/audit/2026-07/evidence/figma-readiness-checkpoint-2026-07-23.md`. Design remains
+owner-blocked because one messaging worktree has six dirty shared-UI files, CAP-SEC-001 and
+CAP-GOV-001 need owner/provider actions, the repository permission/authority contract is implemented
+but no connection scope is owner-approved, and a dedicated authenticated read-only staging browser
+session has not been demonstrated. No Figma plugin was installed or connected and no seat was
+purchased.
+
 ## 7. Finish-first product waves
 
 These are program lanes, not immediate authorization. Each row must be split into one-session phase
@@ -347,7 +384,7 @@ blocks and re-proven against the current release head and any later Encircle rol
 
 | Order | Lane | Earliest state | Key work | Hard edges |
 |---:|---|---|---|---|
-| 1 | S — Public/data containment | after F3 | highest-risk anon policies, form RPC, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any Encircle contract overlap |
+| 1 | S — Public/data containment | form RPC repository-ready; apply owner-gated, remaining work after F3 | service-only form RPC; then highest-risk anon policies, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any Encircle contract overlap |
 | 2 | M — Money correctness | after F3 | QBO role/idempotency/recovery/Denver date; Stripe role/reuse/concurrency | shared auth/http seams owned once; provider sandboxes |
 | 3 | O — Owner/verification tails | anytime after relevant code | App Store Xcode/ASC, Tech Messages bake, Job Hub bake, Web Push, P9 cutover, purge cron, A2P | external/owner gates; no coding slot |
 | 4 | C — Started communications | after F3/F5 | per-thread push link, Omni inbound Phase I, CRM 4b decision, CallRail auth seam | messaging chokepoints serialized; consent auditor |
@@ -363,13 +400,13 @@ blocks and re-proven against the current release head and any later Encircle rol
 - No application/database writer lease is active.
 - Registry review, read-only security/provenance refresh, QA architecture, governance design, and
   owner-gate preparation may run together.
-- F1 is complete; F2 provenance reconciliation is the next internal database/release-control phase.
+- F1 and F2 are complete; provenance validation remains a CI/release regression boundary.
 - The unapplied Encircle migration remains a separate owner-gated rollout window and cannot overlap
   another database apply.
 
 ### Foundation and later waves
 
-- F2 now starts from the completed F1/release baseline and applies serially.
+- Any later database phase starts from the completed F1/F2 release-control baseline and applies serially.
 - F3 and F5 are parallel only after exact paths are assigned. F5 trigger/checker tests may execute
   F3/CI tools, so shared fixtures and CI configuration have one owner and both lanes rebase/retest.
 - F4 follows F3 because it consumes the isolated environment.
@@ -423,9 +460,10 @@ blocks and re-proven against the current release head and any later Encircle rol
 2. Schedule the Encircle migration/flag/candidate/rotation rollout as separate owner-gated windows;
    keep the migration unapplied, flag OFF, and credentials unchanged until authorized.
 3. **Completed 2026-07-23:** authorized and verified the F1 production containment apply window.
-4. Choose isolated Supabase ownership, budget, seed/reset policy, and representative roles.
-5. Decide whether unmerged test-auth plan commit `3841056` is superseded, adopted only as an interim,
-   or split into isolated-environment work.
+4. **Partially completed 2026-07-23:** dedicated/local isolation, reset safety, and representative
+   role design are recorded; hosted ownership, budget, retention, and project creation remain gates.
+5. **Completed 2026-07-23:** `3841056` is superseded, not merged; retain its diagnosis while moving
+   all mutation-heavy database tests to the isolated-environment contract.
 6. Decide which logged-out workflows and `job-files` objects must remain public.
 7. Confirm canonical billing roles and provider sandbox availability.
 8. Approve credential rotation/history treatment, obsolete Netlify retirement, canonical skill

@@ -7,8 +7,9 @@
  *   The CRM's front page — the one-glance business picture. Across the chosen
  *   time window it shows, top to bottom: the headline numbers (ad spend, leads,
  *   estimates, won jobs, real revenue, return on ad spend) — estimates/won-jobs/
- *   revenue count ONLY business traceable to a CRM lead (see NOTES; company-wide
- *   totals live on the main Home dashboard, not here); four donut charts (calls
+ *   revenue count ONLY business traceable to a CRM lead, with the matching
+ *   company-wide won/revenue total labeled beside each traced headline (see
+ *   NOTES); four donut charts (calls
  *   answered vs missed — from CallRail, leads by source, won jobs by division,
  *   leads by campaign) right under the headline, so the at-a-glance breakdown
  *   comes before the KPI strip/pipeline/trend detail; a strip of sales-and-
@@ -43,6 +44,8 @@
  *   Data:      reads  →
  *                get_attribution_rollup RPC (ad_spend + inbound_leads + estimates
  *                  + jobs, per channel),
+ *                get_crm_sales_summary RPC (company-wide and CRM-traced won/
+ *                  revenue from one canonical query for the same window),
  *                get_call_volume RPC (CallRail's own answered/missed
  *                  disposition — raw_payload.answered, NOT a duration proxy),
  *                get_speed_to_lead RPC (response-time buckets),
@@ -69,9 +72,12 @@
  *     shares the identical scope. Live check found only 24% of won jobs / 6%
  *     of revenue / 23% of estimates traced to a CRM lead at all — counting
  *     the rest made "won jobs" exceed "leads," which read as a broken/
- *     unreliable funnel. Company-WIDE totals (all business, not just
- *     CRM-traced) live on the main Home dashboard, not here — this page is
- *     deliberately the sales & marketing command center, not the P&L. Two
+ *     unreliable funnel. The Won jobs and Revenue cards keep the CRM-traced
+ *     value as their headline and label the matching company-wide total beside
+ *     it. Both numbers come from get_crm_sales_summary, one canonical query
+ *     using the same sale rule/date/window, so the comparison cannot be built
+ *     from two drifting UI calculations. This page remains the sales &
+ *     marketing command center, not the P&L. Two
  *     related RPCs on the Reports page (get_contact_ltv, get_estimate_aging)
  *     are DELIBERATELY NOT scoped this way — see CrmReports.jsx's own NOTES.
  *   - ⭐ **"Won jobs" uses THE canonical company-wide sale rule — `jobs.
@@ -89,6 +95,9 @@
  *     Revenue read $0 beside it); the honest number was 1. All-time
  *     CRM-traced: 31 → 8. See 20260722_crm_won_jobs_use_canonical_real_job_
  *     rule.sql. **If you need "did we sell this", read `is_real_job`.**
+ *   - All CRM reporting windows are Denver calendar days. The SQL functions
+ *     use mt_date()/mt_today() and this page passes the same start/end pair to
+ *     the traced rollup and company-wide sales summary.
  *   - "Lead win rate" (won ÷ decided, from the CRM lead pipeline stage) and the
  *     "Won jobs" headline are DIFFERENT OBJECTS and will legitimately differ:
  *     the former counts LEADS that reached a "Won" pipeline stage (a sales-board
@@ -154,7 +163,7 @@
  *     fix, not a change to ops/triage visibility.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { err } from '@/lib/toast';
 import {
@@ -166,7 +175,12 @@ import {
   fmtRatio,
 } from '@/lib/attribution';
 import { RangePicker, MetricCard } from './attributionParts';
-import { deriveRows, rangeToDates } from './attributionData';
+import {
+  deriveRows,
+  fetchCrmSalesSummary,
+  filterLeadsByDenverRange,
+  rangeToDates,
+} from './attributionData';
 import { sortStages, groupLeadsByStage } from '@/lib/crmPipeline';
 import {
   callVolumeSplit,
@@ -183,8 +197,6 @@ import ConversionTrendCard from '@/components/crm/ConversionTrendCard';
 import OverdueTasksWidget from '@/components/crm/OverdueTasksWidget';
 import { ErrorState } from '@/components/ui';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export default function CrmOverview() {
   const { db } = useAuth();
 
@@ -194,15 +206,18 @@ export default function CrmOverview() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const loadRequestId = useRef(0);
 
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
+    const requestId = ++loadRequestId.current;
     setLoading(true);
     setError(false);
     try {
       const { start, end } = rangeToDates(range, customRange);
       const [
         rollup,
+        salesSummary,
         callVolume,
         speed,
         aging,
@@ -213,6 +228,7 @@ export default function CrmOverview() {
         leads,
       ] = await Promise.all([
         db.rpc('get_attribution_rollup', { p_start_date: start, p_end_date: end }),
+        fetchCrmSalesSummary(db, start, end),
         db.rpc('get_call_volume', { p_start: start, p_end: end }),
         db.rpc('get_speed_to_lead', { p_start: start, p_end: end }),
         db.rpc('get_estimate_aging', {}),
@@ -231,8 +247,10 @@ export default function CrmOverview() {
       const leadPositions = {};
       for (const r of posRows || []) leadPositions[r.lead_id] = { stage_id: r.stage_id };
 
+      if (requestId !== loadRequestId.current) return;
       setData({
         rollup: rollup || [],
+        salesSummary,
         callVolume: callVolume || [],
         speed: speed || [],
         aging: aging || [],
@@ -245,14 +263,18 @@ export default function CrmOverview() {
         rangeEnd: end,
       });
     } catch {
+      if (requestId !== loadRequestId.current) return;
       err('Failed to load overview');
       setError(true);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestId.current) setLoading(false);
     }
   }, [db, range, customRange]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { loadRequestId.current += 1; };
+  }, [load]);
 
   // ─── SECTION: Derivations (all from the tested pure libs) ──────────────
   const derived = useMemo(() => {
@@ -274,17 +296,14 @@ export default function CrmOverview() {
     // `data.leads` is fetched unbounded by date (one select, up to 1000 rows);
     // EVERY consumer below scopes it to the picker's window first, so no card
     // on this page silently reports a different population than its neighbours.
-    // rangeEnd is a bare YYYY-MM-DD (same value the RPCs receive) — treated as
-    // inclusive through the END of that calendar day.
-    const startTs = data.rangeStart ? Date.parse(data.rangeStart) : null;
-    const endTs = data.rangeEnd ? Date.parse(data.rangeEnd) + DAY_MS : null;
-    const windowLeads = (data.leads || []).filter((l) => {
-      const t = Date.parse(l?.occurred_at);
-      if (!Number.isFinite(t)) return false;
-      if (startTs != null && t < startTs) return false;
-      if (endTs != null && t >= endTs) return false;
-      return true;
-    });
+    // rangeStart/rangeEnd are bare Denver YYYY-MM-DD values (the same values
+    // the RPCs receive). Convert them through the shared DST-aware helper so
+    // every local lead-derived card covers the identical reporting window.
+    const windowLeads = filterLeadsByDenverRange(
+      data.leads,
+      data.rangeStart,
+      data.rangeEnd,
+    );
 
     const sorted = sortStages(data.stages);
     // Scoped to the picker (owner decision 2026-07-22): the pipeline card used
@@ -321,7 +340,7 @@ export default function CrmOverview() {
     const newLeads = countableWindowLeads.length;
 
     return {
-      totals, channels, calls, sla, aging, trend,
+      totals, channels, calls, sla, aging, trend, sales: data.salesSummary,
       pipelineRows, outcome, campaigns, newLeads, divisions: data.divisions,
     };
   }, [data]);
@@ -364,15 +383,32 @@ export default function CrmOverview() {
             <MetricCard label="Ad spend" value={fmtMoney(derived.totals.spend)} sub="Google + Meta" />
             <MetricCard label="Leads" value={derived.totals.leads.toLocaleString('en-US')} sub="CallRail calls + forms" />
             <MetricCard label="Estimates" value={derived.totals.estimates.toLocaleString('en-US')} sub="sent · CRM-traced" />
-            <MetricCard label="Won jobs" value={derived.totals.won_jobs.toLocaleString('en-US')} sub="sold · CRM-traced" />
-            <MetricCard label="Revenue" value={fmtMoney(derived.totals.revenue)} sub="QBO invoiced · CRM-traced" />
+            <MetricCard
+              label="Won jobs"
+              value={derived.sales.traced_won.toLocaleString('en-US')}
+              sub={(
+                <span className="crm-metric-sub-strong">
+                  CRM-traced · {derived.sales.total_won.toLocaleString('en-US')} sold company-wide
+                </span>
+              )}
+            />
+            <MetricCard
+              label="Revenue"
+              value={fmtMoney(derived.sales.traced_revenue)}
+              sub={(
+                <span className="crm-metric-sub-strong">
+                  CRM-traced · {fmtMoney(derived.sales.total_revenue)} company-wide
+                </span>
+              )}
+            />
             <MetricCard label="ROAS" value={fmtRatio(derived.totals.roas)} sub="paid channels" />
           </div>
 
           <p className="crm-note crm-scope-note">
             Estimates, won jobs, and revenue on this page (including the won-jobs-by-division and
-            conversion-trend charts below) only count business traced to a CRM lead — company-wide
-            totals live on the main Home dashboard, not here.
+            conversion-trend charts below) only count business traced to a CRM lead. The company-wide
+            totals beside Won jobs and Revenue cover all sold work in the same selected window; older
+            jobs may predate the CRM and therefore cannot be attributed to a lead.
           </p>
 
           {/* The 4-donut charts grid sits right under the headline KPIs — the

@@ -6,7 +6,8 @@ vi.mock('../lib/messaging-auth.js', () => ({
   requireMessagingAccess: (...args) => h.auth(...args),
 }));
 
-import { onRequestPost, ownedCallrailStoragePath } from './message-media-url.js';
+import { onRequestPost } from './message-media-url.js';
+import { ownedMessageMediaPath } from '../lib/message-media.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const REF = 'upr-storage://message-attachments/callrail/COM/CONV/MSG/0-hash.jpg';
@@ -18,7 +19,11 @@ function request(body) {
 beforeEach(() => {
   h.auth = vi.fn(async () => ({ employee: { id: 'employee-1' } }));
   h.db = {
-    select: vi.fn(async () => [{ id: ID, media_urls: JSON.stringify([REF]) }]),
+    select: vi.fn(async () => [{
+      id: ID,
+      conversation_id: 'CONV',
+      media_urls: JSON.stringify([REF]),
+    }]),
     signStorage: vi.fn(async () => 'https://db.test/storage/v1/object/sign/test?token=x'),
   };
 });
@@ -50,6 +55,7 @@ describe('private message media URL route', () => {
   it('does not become a general bucket/path signer', async () => {
     h.db.select.mockResolvedValueOnce([{
       id: ID,
+      conversation_id: 'CONV',
       media_urls: JSON.stringify(['https://provider.test/private', '../secret']),
     }]);
     const res = await onRequestPost({
@@ -61,11 +67,46 @@ describe('private message media URL route', () => {
   });
 
   it('rejects traversal and wrong buckets', () => {
-    expect(ownedCallrailStoragePath(
+    expect(ownedMessageMediaPath(
       'upr-storage://message-attachments/callrail/../secret.jpg',
     )).toBeNull();
-    expect(ownedCallrailStoragePath(
+    expect(ownedMessageMediaPath(
       'upr-storage://job-files/callrail/photo.jpg',
     )).toBeNull();
+  });
+
+  it('also signs a canonical outbound private reference bound to a message', async () => {
+    const outbound = 'upr-storage://message-attachments/outbound/CONV/photo.jpg';
+    h.db.select.mockResolvedValueOnce([{
+      id: ID,
+      conversation_id: 'CONV',
+      media_urls: JSON.stringify([outbound]),
+    }]);
+    const res = await onRequestPost({
+      request: request({ message_id: ID, index: 0 }),
+      env: {},
+    });
+    expect(res.status).toBe(200);
+    expect(h.db.signStorage).toHaveBeenCalledWith(
+      'message-attachments',
+      'outbound/CONV/photo.jpg',
+      600,
+    );
+  });
+
+  it('rejects an outbound path for a different conversation', async () => {
+    h.db.select.mockResolvedValueOnce([{
+      id: ID,
+      conversation_id: 'OTHER',
+      media_urls: JSON.stringify([
+        'upr-storage://message-attachments/outbound/CONV/photo.jpg',
+      ]),
+    }]);
+    const res = await onRequestPost({
+      request: request({ message_id: ID, index: 0 }),
+      env: {},
+    });
+    expect(res.status).toBe(404);
+    expect(h.db.signStorage).not.toHaveBeenCalled();
   });
 });

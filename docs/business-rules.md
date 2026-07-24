@@ -56,12 +56,20 @@ Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the cur
 - A countable marketing lead is non-spam, non-merged, and a form or answered call.
 - Speed-to-lead begins with the first human stage move; system moves do not count as response.
 - Operational boards and marketing metrics intentionally have different inclusion scopes.
+- CRM sales headlines are CRM-traced; when company-wide context is shown, both traced and total
+  won/revenue values come from `get_crm_sales_summary` for the same Denver-day window and are
+  explicitly labeled. Do not calculate the comparison independently in the UI.
 - Merged leads resolve to one canonical root and do not own independent stage state.
 - Human Won/Lost decisions are sticky except for explicitly recoverable stages.
 - Automated identity linking is auditable/reversible and follows one normalized phone rule.
 - Public form acceptance flows through the Worker enforcement boundary: abuse controls, published
   schema validation, organization identity, request IP/user agent and consent evidence are
-  server-derived. The underlying transaction RPC is not a second public entry point.
+  server-derived. The underlying transaction RPC must not be a second public entry point.
+  `20260723235900_public_form_rpc_boundary.sql` implements that ACL contract in source but is
+  unapplied as of 2026-07-23; until its serialized apply, direct browser execution remains a known
+  live exception rather than an enforced rule.
+- The Webflow form adapter requires its configured shared secret and fails closed if the expected
+  database/environment value is missing; there is no unauthenticated bootstrap mode.
 
 Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 
@@ -77,11 +85,34 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - A caller-supplied boolean or IP address is not consent evidence by itself. Consent records must
   originate from the approved server path and bind the rendered disclosure/version, submitted
   choice, server-observed request context and resulting contact.
+- Valid service-message permission may also have been obtained verbally on a customer call or in
+  writing, including an SMS clause in a signed work authorization. Authorized admin/office staff
+  may attest that verified prior permission only by recording its method, date and evidence note;
+  UPR records their server-derived identity, audit timestamp, attestation version, Utah Pros sender
+  identity and the fixed `service_related_customer_project_messages` scope. Contact existence, an
+  assumed business relationship, or merely lacking a STOP record is never permission. This
+  attestation does not authorize promotional, campaign or unrelated message subjects.
+- Prior-consent attestation is not re-subscription. It never clears manual DND, STOP, provider
+  opt-out or `opt_out_at`; customer re-consent after revocation follows the established inbound
+  START/affirmative written path.
+- Verified service-message permission is stored separately from `contacts.opt_in_status`. It is
+  consumed only by the direct staff person-to-person send boundary and never authorizes a group,
+  broadcast, automated, campaign, bulk or promotional send. Recording it cannot itself trigger a
+  send or retry. Each attestation preserves raw evidence in service-only append history; the legacy
+  consent log receives only redacted reference metadata.
+- Staff messages still send only through `POST /api/send-message`. Every message identifies Utah
+  Pros Restoration, and the first outbound message in a conversation includes “Reply STOP to
+  unsubscribe.” A separate outbound SMS asking an unconsented number to opt in is prohibited; staff
+  instead records consent already obtained through the approved evidence flow.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
+- Outbound message images are canonical private objects, never public customer-photo URLs. The
+  current cross-provider envelope is one verified JPEG, PNG, or GIF up to 5,000,000 bytes. Clients
+  keep only an opaque private reference; provider-specific byte upload or signed fetch exposure
+  happens after consent inside the selected adapter.
 - A messaging-provider failure does not fall back to another provider or channel. Ambiguous
   provider timeouts are reconciled before any retry that could duplicate a customer message.
 - RCS is a channel inside the existing messaging domain, not a new consent or conversation domain.

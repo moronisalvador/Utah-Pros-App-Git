@@ -217,6 +217,9 @@ same convention as this repo's other "owner-gated" items.
 - [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning, guarded `markBundleReady()` on App mount.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
+- [x] Phase D validation repair — 2026-07-23: the manual-only workflow no longer references
+  `secrets.*` directly in step conditions (which made GitHub create no-job failures on every push);
+  repository tests preserve its valid, manual-only signing gate. No iOS workflow was dispatched.
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
 - [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)

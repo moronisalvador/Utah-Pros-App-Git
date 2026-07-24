@@ -21,13 +21,13 @@ NOTES / GOTCHAS:
 
 # UPR Agent QA Access and Test Foundation Roadmap
 
-Status: proposed for owner review
+Status: active; P1 credential-free internal foundation verified, P2a/P2b external gates remain
 
 Planning capture: 2026-07-23
 
-Implementation status: not started
+Implementation status: P1 complete; P2a refusal scaffold complete but database execution blocked
 
-Repository base: `origin/dev` at `0a06a21` (`feat: add managed Encircle credentials`)
+Implementation base: clean `dev` at `848230d`; later reconciled with current `origin/dev`
 
 Companions:
 [`upr-agent-qa-access-dispatch.md`](upr-agent-qa-access-dispatch.md) and
@@ -48,9 +48,12 @@ Until gates 2–4 pass, authenticated write-capable automation is blocked. The e
 deployment is not a safe write target because `dev` and production share Supabase. Production remains
 read-only smoke only in every phase.
 
-This initiative is planning-only today. It creates no users, data, schema, credentials, deployment,
-browser session, outbound message, or money action. Its delivery is limited to a local documentation
-commit unless the owner later authorizes publishing.
+P0 remained documentation-only. On 2026-07-23 the owner opened the exact P1/internal F3a scope:
+credential-free test configuration, deterministic mocks, local-only browser guards, fail-closed
+database-runner refusal, artifact scanning, and CI. That work created no user, hosted resource,
+schema change, credential, deployed browser session, outbound message, provider call, money action,
+or production data access. Exact execution evidence and remaining P2 gates are recorded in
+`docs/audit/2026-07/evidence/isolated-qa-figma-internal-foundation-2026-07-23.md`.
 
 ## Encircle handoff snapshot
 
@@ -117,6 +120,14 @@ The July live evidence found broad authenticated/anonymous policies, widespread 
 execution of privileged functions, and authenticated access to `exec_read_sql`:
 `docs/audit/2026-07/evidence/live-supabase.md:39-114`. Those findings mean a synthetic identity in
 the shared project is not isolated from production data.
+
+**Dated status correction — 2026-07-23:** the `exec_read_sql` sentence above describes the
+2026-07-22 snapshot, not current access. Foundation F1 applied
+`20260723221707 exec_read_sql_containment`; fresh catalog evidence on 2026-07-23 confirms
+`PUBLIC`, `anon`, and `authenticated` are denied while `service_role` remains executable. The
+remaining broad-policy findings still block shared-production QA writes. See
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md` and the fresh generated RPC
+inventory.
 
 ## Threat model and non-negotiable boundaries
 
@@ -492,38 +503,51 @@ location, haptics, push, safe areas, and installed-app lifecycle remain explicit
 Scope: review these artifacts; choose isolation, domains, provider posture, telemetry, retention, and
 ownership. No runtime changes.
 
+**Repository outcome (2026-07-23):** complete as a decision package. The addendum fixes the safe
+architecture, supersedes the shared-production test-auth proposal in `3841056`, and names every
+remaining owner/external choice. It does not claim those external choices are approved or configured.
+
 Acceptance:
 
-- owner accepts exact environment model and production read-only rule;
-- owner assigns paid/external accounts;
-- Encircle owner confirms the freeze/handoff boundary;
-- unresolved decisions are recorded, not assumed.
+- [x] exact environment model and production read-only rule recorded;
+- [ ] owner assigns paid/external accounts and resource owners;
+- [x] Encircle dark-rollout freeze/handoff boundary preserved;
+- [x] unresolved decisions recorded rather than assumed.
 
 ### P1 — Credential-free local test foundation
 
 Scope: explicit Vitest partitions/excludes; Playwright/axe config; mocked browser workflows;
 navigation/egress guard; loopback CDP launcher; artifact redaction; no login credentials or live calls.
 
+**Repository outcome (2026-07-23):** complete for the internal credential-free scope. The browser
+matrix is deterministic synthetic-fixture evidence, not real UPR, hosted-QA, provider, native, or
+pinned-Linux screenshot evidence.
+
 Acceptance:
 
-- `test:unit` and mocked Worker lane make no network calls;
-- test discovery excludes worktrees/generated output;
-- localhost desktop/390px workflows cover loading/error/empty/resume and accessibility;
-- disallowed navigation/egress tests pass;
-- zero secrets or Auth state in diff/artifacts.
+- [x] `test:unit` and mocked Worker lane make no network calls;
+- [x] test discovery excludes worktrees/generated output;
+- [x] localhost desktop/390px workflows cover loading/error/empty/resume and accessibility;
+- [x] disallowed navigation/egress tests pass;
+- [x] zero secrets or Auth state in diff/artifacts;
+- [x] every credential-free lane fails on zero discovery or any skip/todo.
 
 ### P2a — Local database contract foundation
 
 Scope: clean local Supabase; migrations from zero; RLS/RPC/trigger/rollback and failure-injection
 tests; no hosted identities, storage state, deployed application, or provider calls.
 
+**Repository outcome (2026-07-23):** target-policy and runner refusal scaffold complete. Execution
+is blocked because no governed `supabase/config.toml`, local CLI/runtime, deterministic database
+seed, or representative-role fixture exists. No database lane was reported as passed or skipped.
+
 Acceptance:
 
-- local sentinel and known-shared-project refusal pass;
-- zero unexpected DB-test skips;
-- migration head/catalog fingerprint recorded;
-- role/assignment/active-status database contracts pass;
-- local seed and cleanup are idempotent with zero residual.
+- [x] local sentinel and known-shared-project refusal pass;
+- [ ] zero unexpected DB-test skips;
+- [ ] migration head/catalog fingerprint recorded;
+- [ ] role/assignment/active-status database contracts pass;
+- [ ] local seed and cleanup are idempotent with zero residual.
 
 ### P2b — Hosted isolated data and identity foundation
 

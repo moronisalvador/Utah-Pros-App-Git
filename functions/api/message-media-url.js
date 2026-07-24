@@ -1,19 +1,25 @@
 /**
- * Signs one private CallRail attachment only after messaging authorization and
+ * Signs one UPR-owned private attachment only after messaging authorization and
  * binding the requested index to a canonical message row.
  */
 
 import { supabase } from '../lib/supabase.js';
 import { requireMessagingAccess } from '../lib/messaging-auth.js';
+import {
+  outboundMessageMediaPath,
+  ownedMessageMediaPath,
+} from '../lib/message-media.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PREFIX = 'upr-storage://message-attachments/callrail/';
 const EXPIRES_IN = 600;
 
 function response(body, status) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    },
   });
 }
 
@@ -26,20 +32,6 @@ function parseMedia(raw) {
   } catch {
     return [raw];
   }
-}
-
-export function ownedCallrailStoragePath(reference) {
-  if (typeof reference !== 'string' || !reference.startsWith(PREFIX)) return null;
-  const path = reference.slice('upr-storage://message-attachments/'.length);
-  if (
-    !path.startsWith('callrail/')
-    || path.includes('..')
-    || path.includes('\\')
-    || !/^[A-Za-z0-9_./-]+$/.test(path)
-  ) {
-    return null;
-  }
-  return path;
 }
 
 export async function onRequestPost({ request, env }) {
@@ -60,12 +52,20 @@ export async function onRequestPost({ request, env }) {
 
   const [message] = await db.select(
     'messages',
-    `id=eq.${body.message_id}&select=id,media_urls&limit=1`,
+    `id=eq.${body.message_id}&select=id,conversation_id,media_urls&limit=1`,
   );
   if (!message) return response({ error: 'Attachment not found' }, 404);
   const reference = parseMedia(message.media_urls)[index];
-  const path = ownedCallrailStoragePath(reference);
-  if (!path) return response({ error: 'Attachment not found' }, 404);
+  const path = ownedMessageMediaPath(reference);
+  if (
+    !path
+    || (
+      path.startsWith('outbound/')
+      && !outboundMessageMediaPath(reference, message.conversation_id)
+    )
+  ) {
+    return response({ error: 'Attachment not found' }, 404);
+  }
 
   try {
     const url = await db.signStorage('message-attachments', path, EXPIRES_IN);

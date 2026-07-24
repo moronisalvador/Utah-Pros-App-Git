@@ -79,22 +79,44 @@ export async function sendMessage(env, { to, body, mediaUrls, statusCallback }) 
     params.set('StatusCallback', statusCallback);
   }
 
-  const response = await fetchWithTimeout(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: params.toString(),
-    }
-  );
+  let response;
+  try {
+    response = await fetchWithTimeout(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params.toString(),
+      }
+    );
+  } catch (error) {
+    // Only a failure at the provider request boundary is ambiguous. Credential
+    // resolution, media signing, and validation happen before this block.
+    if (error && typeof error === 'object') error.ambiguous = true;
+    throw error;
+  }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (error) {
+    if (response.ok) {
+      if (error && typeof error === 'object') error.ambiguous = true;
+      throw error;
+    }
+    data = {};
+  }
 
   if (!response.ok) {
     throw new Error(`Twilio send failed: ${data.message || data.code || response.status}`);
+  }
+  if (!data?.sid) {
+    const error = new Error('Twilio accepted the request without a usable message identity');
+    error.ambiguous = true;
+    throw error;
   }
 
   return {

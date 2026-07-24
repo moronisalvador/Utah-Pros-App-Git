@@ -1,0 +1,136 @@
+{
+  "projectRef": "glsmljpabrwonfiltiqm",
+  "ledgerFloorVersion": "20260722222426",
+  "evidenceMaxAgeHours": 6,
+  "ledgerMappings": [
+    {
+      "version": "20260722222426",
+      "name": "crm_denver_day_bucketing",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql",
+      "reviewedOriginCommit": "c10a8bb"
+    },
+    {
+      "version": "20260722222438",
+      "name": "crm_sales_summary_total_vs_traced",
+      "path": "supabase/migrations/20260722_crm_sales_summary_total_vs_traced.sql",
+      "reviewedOriginCommit": "c10a8bb"
+    },
+    {
+      "version": "20260722225158",
+      "name": "crm_dedup_repeat_caller_leads",
+      "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql",
+      "reviewedOriginCommit": "a5ef0e1"
+    },
+    {
+      "version": "20260722232222",
+      "name": "crm_caller_name_follows_merge",
+      "path": "supabase/migrations/20260722_crm_caller_name_follows_merge.sql",
+      "reviewedOriginCommit": "a7ee5f8"
+    },
+    {
+      "version": "20260723215926",
+      "name": "messaging_transport_foundation",
+      "path": "supabase/migrations/20260723215926_messaging_transport_foundation.sql",
+      "reviewedOriginCommit": "eb27dd5"
+    },
+    {
+      "version": "20260723220207",
+      "name": "messaging_transport_foundation_indexes",
+      "path": "supabase/migrations/20260723220207_messaging_transport_foundation_indexes.sql",
+      "reviewedOriginCommit": "eb27dd5"
+    },
+    {
+      "version": "20260723221707",
+      "name": "exec_read_sql_containment",
+      "path": "supabase/migrations/20260723205127_exec_read_sql_containment.sql",
+      "reviewedOriginCommit": "5cf546b"
+    },
+    {
+      "version": "20260724003818",
+      "name": "message_notification_outbox_scheduler",
+      "path": "supabase/migrations/20260724001500_message_notification_outbox_scheduler.sql",
+      "reviewedOriginCommit": "625ccfd"
+    },
+    {
+      "version": "20260724035913",
+      "name": "attest_prior_sms_consent",
+      "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "reviewedOriginCommit": "e71e759"
+    }
+  ],
+  "selectedFunctions": [
+    { "identity": "get_attribution_rollup(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_call_volume(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_conversion_trend(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_crm_revenue_by_division(date,date)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_estimator_leaderboard(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_jobs_closed(date)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_pipeline_movement(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_speed_to_lead(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
+    { "identity": "get_crm_sales_summary(date,date)", "path": "supabase/migrations/20260722_crm_sales_summary_total_vs_traced.sql" },
+    { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql" },
+    {
+      "identity": "set_lead_caller_name(uuid,text,boolean)",
+      "path": "supabase/migrations/20260722_crm_caller_name_follows_merge.sql",
+      "allowedRawDrift": "comments_only"
+    },
+    {
+      "identity": "get_service_sms_consent_status(uuid,text)",
+      "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "expected": {
+        "securityDefiner": false,
+        "config": ["search_path=\"\""],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)",
+      "path": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "expected": {
+        "securityDefiner": false,
+        "config": ["search_path=\"\""],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    }
+  ],
+  "selectedPolicies": [
+    {
+      "identity": "public.messages:messages_authenticated_select",
+      "sourcePath": "supabase/migrations/20260723215926_messaging_transport_foundation.sql",
+      "command": "SELECT",
+      "roles": ["authenticated"],
+      "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_insert",
+      "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "command": "INSERT",
+      "roles": ["service_role"],
+      "usingMd5": "d41d8cd98f00b204e9800998ecf8427e",
+      "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
+    },
+    {
+      "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_select",
+      "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "command": "SELECT",
+      "roles": ["service_role"],
+      "usingMd5": "b326b5062b2f0e69046810717534cb09",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.service_sms_consents:service_sms_consents_service_role_manage",
+      "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
+      "command": "ALL",
+      "roles": ["service_role"],
+      "usingMd5": "b326b5062b2f0e69046810717534cb09",
+      "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
+    }
+  ]
+}

@@ -115,6 +115,9 @@ async function duplicateResponse(db, existing, event, rawBodyHash, startedAt) {
   return response({ accepted: true, duplicate: true }, 200);
 }
 
+// public: CallRail cannot present a Supabase session; the exact raw request body
+// is authenticated with the server-only CallRail HMAC signing key before parsing
+// or any database/provider side effect.
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
@@ -157,8 +160,11 @@ export async function onRequestPost(context) {
     await recordRunBestEffort(db, {
       workerName: WORKER_NAME,
       status: 'error',
-      errorMessage: error.code || 'Invalid CallRail text event',
+      errorMessage: error.field
+        ? `${error.code || 'INVALID_CALLRAIL_TEXT_EVENT'}:${error.field}`
+        : error.code || 'Invalid CallRail text event',
       startedAt,
+      meta: error.field ? { invalid_field: error.field } : undefined,
     });
     return response({
       error: forbidden ? 'Forbidden' : 'Invalid CallRail text event',

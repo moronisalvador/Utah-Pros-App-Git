@@ -19,7 +19,8 @@
  *   Packages:  none (pure fetch via lib helpers)
  *   Internal:  functions/lib/supabase.js, functions/lib/messaging-transport.js,
  *              functions/lib/cors.js
- *   Data:      reads  → conversations, conversation_participants, contacts, employees
+ *   Data:      reads  → conversations, conversation_participants, contacts, employees,
+ *                       service_sms_consents (through get_service_sms_consent_status)
  *              writes → messages, sms_consent_log, conversations
  *
  * Request body:
@@ -29,8 +30,9 @@
  *
  * NOTES / GOTCHAS:
  *   - COMPLIANCE, NO BYPASS: the DND + opt-in gate runs for EVERY recipient (TCPA:
- *     consent before send; CTIA: DND/opt-out honored; 10DLC: sender name prefixed,
- *     status callback set). There is NO `skip_compliance` flag (removed Wave -1 /
+ *     consent before send; CTIA: DND/opt-out honored; 10DLC: company identity is
+ *     included and the first message carries STOP instructions, status callback set).
+ *     There is NO `skip_compliance` flag (removed Wave -1 /
  *     F-2) — never reintroduce it. TCPA penalties are per message.
  *   - WORKER IS THE SOLE WRITER of any `sms_*` message row (omni §7.1). The client
  *     inserts only `internal_note`. Never fall back to another channel (omni §7.3):
@@ -55,6 +57,7 @@ import {
   completeMessageAttempt,
   findMessageAttempt,
 } from '../lib/messaging-attempts.js';
+import { resolveMessageMedia } from '../lib/message-media.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
@@ -71,7 +74,13 @@ function normalizedPhoneIdentity(value) {
 // Run the per-recipient consent gate. Returns { blocked, code } and, when a
 // resolved contact is blocked, writes the audit row to sms_consent_log. Fails
 // CLOSED: a missing contact (dangling/forged participant) is a block, not a send.
-async function gateRecipient(db, contact, participantPhone, sentBy) {
+async function gateRecipient(
+  db,
+  contact,
+  participantPhone,
+  sentBy,
+  { allowServiceConsent = false } = {},
+) {
   if (!contact) return { blocked: true, code: 'CONTACT_NOT_FOUND' };
   const contactPhone = normalizedPhoneIdentity(contact.phone);
   const destinationPhone = normalizedPhoneIdentity(participantPhone);
@@ -79,8 +88,25 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
     return { blocked: true, code: 'CONTACT_PHONE_MISMATCH' };
   }
 
-  // CHECK 1: DND — Twilio can suspend accounts that message DND contacts.
-  if (contact.dnd) {
+  // One service-role-only database decision owns duplicate-phone suppression,
+  // durable-but-unprojected STOP events, global opt-in, and the narrow
+  // one-to-one service consent. Browser roles cannot forge the service record.
+  const rawStatus = await db.rpc('get_service_sms_consent_status', {
+    p_contact_id: contact.id,
+    p_destination_phone: participantPhone,
+  });
+  const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
+  if (
+    status?.allowed === true
+    && (
+      status.code === 'GLOBAL_OPT_IN'
+      || (allowServiceConsent && status.code === 'SERVICE_CONSENT')
+    )
+  ) {
+    return { blocked: false };
+  }
+
+  if (status?.code === 'DND_ACTIVE') {
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
@@ -92,20 +118,48 @@ async function gateRecipient(db, contact, participantPhone, sentBy) {
     return { blocked: true, code: 'DND_ACTIVE' };
   }
 
-  // CHECK 2: Opt-in — TCPA requires prior express consent for business texts.
-  if (!contact.opt_in_status) {
+  if (status?.code === 'CONTACT_PHONE_MISMATCH') {
+    return { blocked: true, code: 'CONTACT_PHONE_MISMATCH' };
+  }
+  if (status?.code === 'CONTACT_NOT_FOUND') {
+    return { blocked: true, code: 'CONTACT_NOT_FOUND' };
+  }
+  if (status?.code === 'CONTACT_OPTED_OUT') {
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
       event_type: 'send_blocked_no_consent',
       source: 'system',
-      details: `Outbound blocked: opt_in_status is false. ${contact.opt_out_reason ? 'Opt-out reason: ' + contact.opt_out_reason : 'Never opted in.'}`,
+      details: `Outbound blocked: explicit opt-out recorded. ${contact.opt_out_reason ? 'Reason: ' + contact.opt_out_reason : ''}`,
+      performed_by: sentBy,
+    });
+    return { blocked: true, code: 'CONTACT_OPTED_OUT' };
+  }
+  if (status?.code === 'CONTACT_PENDING_STOP') {
+    await db.insert('sms_consent_log', {
+      contact_id: contact.id,
+      phone: contact.phone,
+      event_type: 'send_blocked_no_consent',
+      source: 'system',
+      details: 'Outbound blocked: an inbound STOP request is awaiting projection.',
+      performed_by: sentBy,
+    });
+    return { blocked: true, code: 'CONTACT_PENDING_STOP' };
+  }
+
+  // Missing/unknown status fails closed as NO_CONSENT. Never fall back to the
+  // browser-visible contact boolean when the authoritative RPC is unavailable.
+  {
+    await db.insert('sms_consent_log', {
+      contact_id: contact.id,
+      phone: contact.phone,
+      event_type: 'send_blocked_no_consent',
+      source: 'system',
+      details: 'Outbound blocked: no current global or service-message consent.',
       performed_by: sentBy,
     });
     return { blocked: true, code: 'NO_CONSENT' };
   }
-
-  return { blocked: false };
 }
 
 // Send to ONE already-consent-cleared recipient and record its own messages row.
@@ -134,6 +188,10 @@ async function sendToRecipient(db, env, {
     error = new Error('No phone number for recipient');
   } else {
     try {
+      const media = await resolveMessageMedia(db, mediaUrls || [], conversationId, {
+        allowLegacyPublic: provider === 'twilio',
+        legacyPublicBaseUrl: env.SUPABASE_URL,
+      });
       providerResult = await sendMessage(env, {
         purpose: 'staff_p2p',
         recipient: {
@@ -146,12 +204,10 @@ async function sendToRecipient(db, env, {
         content: {
           body: clientBody,
           mediaUrls,
-          // Existing clients carry URLs only. CallRail MMS therefore fails
-          // closed until owned-storage metadata is available.
-          media: (mediaUrls || []).map((url) => ({ url })),
+          media,
         },
         statusCallbackUrl: statusCallback,
-      }, { provider });
+      }, { provider, db });
     } catch (err) {
       error = err;
     }
@@ -166,10 +222,7 @@ async function sendToRecipient(db, env, {
   const sid = provider === 'twilio' ? providerMessageId : null;
   const errorCode = error?.code != null ? String(error.code) : null;
   const errorMessage = error?.message || null;
-  const ambiguous = !!error && (
-    error?.ambiguous === true
-    || (provider === 'twilio' && !String(errorMessage).startsWith('Twilio send failed:'))
-  );
+  const ambiguous = error?.ambiguous === true;
   const ambiguousCode = provider === 'callrail'
     ? 'CALLRAIL_SEND_AMBIGUOUS'
     : 'TWILIO_SEND_AMBIGUOUS';
@@ -451,12 +504,25 @@ export async function onRequestPost(context) {
       }, 400, request, env);
     }
 
-    // 2. Sender prefix (Twilio/CTIA requires identifying the business in messages).
-    let senderPrefix = '';
-    if (auth.employee.full_name) senderPrefix = `${auth.employee.full_name}: `;
+    // 2. Sender identity + first-message opt-out notice. An employee name by itself
+    // does not identify the party that obtained consent. Repeating the company on
+    // later messages is safe and keeps every standalone message attributable.
+    const senderPrefix = auth.employee.full_name
+      ? `Utah Pros Restoration - ${auth.employee.full_name}: `
+      : 'Utah Pros Restoration: ';
+    const priorOutbound = await db.select(
+      'messages',
+      `conversation_id=eq.${conversation_id}&type=eq.sms_outbound&status=in.(queued,sent,delivered,read)&select=id&limit=1`,
+    );
+    const optOutNotice = priorOutbound.length === 0
+      ? ' Reply STOP to unsubscribe.'
+      : '';
     // Media-only send: drop the dangling "Name: " colon so the MMS carries just the
-    // sender's name (CTIA identification) with the photo, not "Jane: " + nothing.
-    const clientBody = rawBody ? senderPrefix + rawBody : senderPrefix.replace(/:\s*$/, '');
+    // sender identity plus the required first-message opt-out notice.
+    const identifiedBody = rawBody
+      ? senderPrefix + rawBody
+      : senderPrefix.replace(/:\s*$/, '');
+    const clientBody = identifiedBody + optOutNotice;
 
     // 3. Status callback URL for delivery receipts (Phase A reads segment/price here).
     const baseUrl = env.PAGES_URL || `https://${request.headers.get('host')}`;
@@ -510,16 +576,26 @@ export async function onRequestPost(context) {
           code: 'CLIENT_REQUEST_PENDING',
         }, 409, request, env);
       }
-      const gate = await gateRecipient(db, contact, participant.phone, actorEmployeeId);
+      const gate = await gateRecipient(
+        db,
+        contact,
+        participant.phone,
+        actorEmployeeId,
+        { allowServiceConsent: true },
+      );
       if (gate.blocked) {
         return jsonResponse({
           error: gate.code === 'DND_ACTIVE'
             ? 'Message blocked: contact has Do Not Disturb enabled'
-            : gate.code === 'NO_CONSENT'
-              ? 'Message blocked: contact has not opted in to SMS'
-              : gate.code === 'CONTACT_PHONE_MISMATCH'
-                ? 'Message blocked: conversation phone does not match the consented contact phone'
-              : 'Message blocked: could not resolve contact for compliance check',
+            : gate.code === 'CONTACT_OPTED_OUT'
+              ? 'Message blocked: contact opted out of SMS'
+              : gate.code === 'CONTACT_PENDING_STOP'
+                ? 'Message blocked: an inbound STOP request is still being processed'
+                : gate.code === 'NO_CONSENT'
+                  ? 'Message blocked: contact has not opted in to SMS'
+                  : gate.code === 'CONTACT_PHONE_MISMATCH'
+                    ? 'Message blocked: conversation phone does not match the consented contact phone'
+                    : 'Message blocked: could not resolve contact for compliance check',
           code: gate.code,
           contact_id: contact?.id ?? null,
         }, 403, request, env);

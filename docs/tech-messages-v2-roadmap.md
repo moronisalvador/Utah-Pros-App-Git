@@ -114,7 +114,7 @@ fixed header.
    a pane-local overlay keyed by `_clientId`. Realtime message **UPDATE → row-patch via
    `setQueryData`** (delivery ticks never refetch); **INSERT → append via `setQueryData`**
    with legacy reconcile semantics (dedupe by id → reconcile pending/failed by type+body →
-   append; preserve `employees`); reconnect/suspend → invalidate as the safety net.
+   append; preserve `employees`); reconnect/suspend → shared-hook newest-page merge as the safety net.
    Copy-in sources: Conversations.jsx **:732-870 AND :258-278** (the merge heuristic);
    **:364-399 is reference-only — reimplement against the cache model**. `handleSend` is
    REWRITTEN for the textarea; the 201-with-failed-row path is preserved (201 ≠ delivered)
@@ -226,7 +226,7 @@ fixed header.
 > - [x] Composer: textarea autosize (capped 5 lines), Enter=send + Shift+Enter newline, `enterKeyHint="send"`, 16px, 48px send, prefixLen-aware SegmentCounter, per-thread drafts, internal-note toggle + amber note path, [+] actions-sheet SHELL (MMS/templates land B2)
 > - [x] Keyboard: active-gated visualViewport handler → pane-scoped `--tv2-msgs-kb` on `.tv2-msgs-pane` (never documentElement) → `.tv2-msgs-thread-layer` padding-bottom; no layout jump; nav-hide only while active (F-M's scoped `:has` rule)
 > - [x] Send: copied dispatchSend/retryMessage + REWRITTEN handleSend; optimistic overlay + reconcile-merge (:258-278 semantics via `mergeOverlay`/`reconcileOverlay`); 201-with-failed-row preserved; all four 403 codes surfaced inline; DND banner blocks send
-> - [x] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend (visibilitychange, active-gated) → invalidate; unread-desync guard; mark-read on open
+> - [x] Realtime: thread channel active-gated; UPDATE=row-patch, INSERT=append-reconcile; reconnect/suspend uses active-gated `useResumeRefetch` plus a silent newest-page merge; unread-desync guard; mark-read on open
 > - [x] i18n EN complete through `t()` (msgs+tech namespaces); PT/ES keys present (real translations, locale-parity green)
 > - [x] Named tests first: cursor/page-merge selectors, overlay reconcile (dedupe/pending-match/append), day-divider grouping, unread math, deep-link miss path (`msgsSelectors.test.js`, 25 cases)
 > - [x] `npm run test`+`build`+eslint (all green); `upr-pattern-checker` + `consent-path-auditor` (send path) + `tech-phase-reviewer` vs THIS block; UPR-Web-Context.md updated; reconciled; PR to `dev` ready; flag stays owner-only
@@ -252,6 +252,14 @@ fixed header.
 phone (flag owner-only). Budgeted: ~0.5 session of post-bake fixes — expected, not failure.
 Cutover = the owner flips `page:tech_msgs_v2` in DevTools → Flags. No deletion phase:
 legacy keeps serving web/CRM; the tech route mount simply never renders flag-on.**
+
+**Owner-bake attachment scroll correction (2026-07-23):** delayed public and private image
+layout now repins only a near-bottom reader. A history reader retains a first-visible element anchor
+through load-earlier and delayed media layout, and initial open snapping runs pre-paint. Both tech
+and office suspend recovery now use `useResumeRefetch`; the newest page merges into loaded history
+instead of replacing or invalidating it. Focused pure tests cover bottom policy, visible-anchor
+restoration, optimistic reconciliation, and newest-page history preservation. No schema, consent,
+send contract, provider behavior, or message ordering changed.
 
 ## Dependency graph
 

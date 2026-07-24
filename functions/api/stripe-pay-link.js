@@ -8,18 +8,11 @@
 // Body: { "invoice_id": "<uuid>" }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireRole } from '../lib/auth.js';
 import { supabase } from '../lib/supabase.js';
 import { stripeConfigured, createCheckoutSession } from '../lib/stripe.js';
 
-async function isAuthorized(request, env) {
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
+const BILLING_ROLES = ['admin', 'manager'];
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -27,14 +20,15 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
+  const db = supabase(env);
+  const auth = await requireRole(request, env, db, BILLING_ROLES);
+  if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (!stripeConfigured(env)) return jsonResponse({ error: 'Stripe not configured' }, 503, request, env);
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }
   if (!body.invoice_id) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
 
-  const db = supabase(env);
   try {
     const inv = (await db.select('invoices', `id=eq.${body.invoice_id}&select=id,invoice_number,qbo_doc_number,total,adjusted_total,amount_paid,job_id,contact_id&limit=1`))?.[0];
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);

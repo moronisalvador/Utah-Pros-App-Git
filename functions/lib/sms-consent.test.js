@@ -19,7 +19,12 @@ import { consentAllows } from './sms-consent.js';
 
 describe('consentAllows (SMS/TCPA)', () => {
   it('allows an opted-in, non-DND contact with a phone', () => {
-    expect(consentAllows({ phone: '+18014471917', opt_in_status: true, dnd: false })).toBe(true);
+    expect(consentAllows({
+      phone: '+18014471917',
+      opt_in_status: true,
+      opt_out_at: null,
+      dnd: false,
+    })).toBe(true);
   });
 
   it('blocks when there is no phone number', () => {
@@ -29,6 +34,15 @@ describe('consentAllows (SMS/TCPA)', () => {
 
   it('blocks a Do Not Disturb contact even if opted in', () => {
     expect(consentAllows({ phone: '+18014471917', opt_in_status: true, dnd: true })).toBe(false);
+  });
+
+  it('blocks an explicit opt-out even if the legacy opt-in boolean is stale true', () => {
+    expect(consentAllows({
+      phone: '+18014471917',
+      opt_in_status: true,
+      opt_out_at: '2026-07-23T18:00:00.000Z',
+      dnd: false,
+    })).toBe(false);
   });
 
   it('blocks when not opted in (TCPA requires prior express consent)', () => {

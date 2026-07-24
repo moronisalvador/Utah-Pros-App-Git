@@ -698,6 +698,96 @@ tr:hover td { background: var(--bg-secondary); }
    Optimistic-send status, MMS render/attach, segment counter, jump-pill, pagination,
    mobile/keyboard. New .conv-* classes only; reuses the existing @keyframes spin. ── */
 
+/* Verified prior-consent attestation. The server/database remains authoritative;
+   this surface only explains a missing record and collects auditable evidence. */
+.conv-consent-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--warning-border);
+  background: var(--warning-bg);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.conv-consent-banner > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.conv-consent-banner strong { color: var(--text-primary); }
+.conv-consent-role-note { color: var(--text-secondary); }
+.conv-consent-attest-copy {
+  margin: 0 0 var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.conv-consent-attest-hint {
+  margin-top: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+.conv-consent-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.conv-consent-confirm input {
+  width: 18px;
+  height: 18px;
+  margin: 1px 0 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .conv-consent-banner {
+    align-items: stretch;
+    flex-direction: column;
+    padding: var(--space-3);
+  }
+  .conv-consent-banner .btn {
+    min-height: 44px;
+    width: 100%;
+  }
+}
+.tech-layout .conv-consent-banner .btn {
+  min-height: var(--tech-min-tap);
+  font-size: var(--tech-text-label);
+}
+.tech-layout .sms-consent-attestation-modal .input,
+.tech-layout .sms-consent-attestation-modal .ui-modal-footer .btn {
+  min-height: var(--tech-min-tap);
+}
+.tech-layout .sms-consent-attestation-modal .ui-modal-footer .btn {
+  font-size: var(--tech-text-label);
+}
+.tech-layout .sms-consent-attestation-modal .ui-modal-close {
+  width: var(--tech-min-tap);
+  height: var(--tech-min-tap);
+  min-width: var(--tech-min-tap);
+}
+.tech-layout .conversations-layout .ui-error-state .btn {
+  min-height: var(--tech-min-tap);
+  font-size: var(--tech-text-label);
+}
+.ui-error-state.conv-inline-error {
+  margin: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+}
+.conv-inline-error .ui-error-state-icon { display: none; }
+.conv-inline-error .ui-error-state-actions { margin-top: var(--space-1); }
+
 /* Message body: preserve the newlines the sender typed (multiline pre-wrap). */
 .conv-msg-text { white-space: pre-wrap; }
 .conv-msg-link { color: inherit; text-decoration: underline; text-underline-offset: 2px; word-break: break-word; }
@@ -8790,6 +8880,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-metric-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--crm-text-tertiary); }
 .crm-metric-value { font-size: 24px; font-weight: 800; color: var(--crm-text-primary); margin-top: 4px; line-height: 1.1; }
 .crm-metric-sub { font-size: 11px; color: var(--crm-text-tertiary); margin-top: 2px; }
+.crm-metric-sub-strong { color: var(--crm-text-secondary); }
 
 /* Cards + section headings */
 .crm-card { background: var(--crm-bg-card); border: 1px solid var(--crm-border); border-radius: var(--crm-radius); padding: var(--space-5); margin-bottom: var(--space-5); }
@@ -11482,7 +11573,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
    inside .tv2-msgs-thread). */
 .tv2-msgs-thread .message-bubble { width: fit-content; max-width: 100%; }
 .tv2-msgs-thread .message.outbound .message-bubble { align-self: flex-end; }
-.tv2-msgs-thread .message.inbound .message-bubble { align-self: flex-start; }
+.tv2-msgs-thread .message.inbound .message-bubble {
+  align-self: flex-start;
+  /* The shared desktop bubble uses --bg-secondary, which is also this pane's
+     thread canvas. Give received messages a distinct tonal surface so their
+     bubble remains visible in both light and tech-scoped dark palettes. */
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
 /* Internal notes had no align-self, so they stretched full-width — hug content too. */
 .tv2-msgs-thread .message.internal-note { align-self: flex-end; }
 .tv2-msgs-thread .message.internal-note .message-bubble { align-self: flex-end; }

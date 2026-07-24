@@ -20,6 +20,7 @@ const h = vi.hoisted(() => ({
   parse: null,
   process: null,
   ingestMms: null,
+  recordRun: null,
 }));
 vi.mock('../lib/supabase.js', () => ({ supabase: () => h.db }));
 vi.mock('../lib/callrail-text-webhook.js', () => ({
@@ -41,7 +42,7 @@ vi.mock('../lib/callrail-mms.js', () => ({
   ingestVerifiedCallrailEventMms: (...args) => h.ingestMms(...args),
 }));
 vi.mock('../lib/worker-runs.js', () => ({
-  recordWorkerRun: vi.fn(async () => undefined),
+  recordWorkerRun: (...args) => h.recordRun(...args),
 }));
 
 import { onRequestPost } from './callrail-text-webhook.js';
@@ -153,6 +154,7 @@ beforeEach(() => {
       sha256: 'a'.repeat(64),
     }],
   }));
+  h.recordRun = vi.fn(async () => undefined);
   h.db = db();
 });
 
@@ -184,6 +186,35 @@ describe('CallRail text webhook receiver', () => {
     expect(h.db.insert).not.toHaveBeenCalledWith(
       'message_provider_events',
       expect.anything(),
+    );
+  });
+
+  it('records only the invalid field name when signed payload validation fails', async () => {
+    h.parse.mockRejectedValueOnce(Object.assign(new Error(
+      'CallRail text webhook has an invalid person_resource_id',
+    ), {
+      code: 'INVALID_CALLRAIL_TEXT_EVENT',
+      field: 'person_resource_id',
+    }));
+    const res = await onRequestPost({
+      request: request(),
+      env: CONFIGURED_ENV,
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'Invalid CallRail text event',
+      code: 'INVALID_CALLRAIL_TEXT_EVENT',
+    });
+    expect(h.recordRun).toHaveBeenCalledWith(
+      h.db,
+      expect.objectContaining({
+        errorMessage: 'INVALID_CALLRAIL_TEXT_EVENT:person_resource_id',
+        meta: { invalid_field: 'person_resource_id' },
+      }),
+    );
+    expect(JSON.stringify(h.recordRun.mock.calls)).not.toContain(
+      'CallRail text webhook has an invalid person_resource_id',
     );
   });
 

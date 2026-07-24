@@ -46,10 +46,11 @@ const ALLOWED_LEAD_STATUSES = new Set([
 ]);
 
 export class CallrailTextWebhookError extends Error {
-  constructor(code, message) {
+  constructor(code, message, { field = null } = {}) {
     super(message);
     this.name = 'CallrailTextWebhookError';
     this.code = code;
+    this.field = field;
   }
 }
 
@@ -155,6 +156,7 @@ function requireText(value, field, { allowEmpty = false } = {}) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       `CallRail text webhook has an invalid ${field}`,
+      { field },
     );
   }
   return value;
@@ -168,9 +170,15 @@ function requireIdentifier(value, field) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       `CallRail text webhook has an invalid ${field}`,
+      { field },
     );
   }
   return String(value);
+}
+
+function optionalIdentifier(value, field) {
+  if (value === null || value === undefined) return null;
+  return requireIdentifier(value, field);
 }
 
 function normalizeTimestamp(value) {
@@ -282,6 +290,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook media_urls must be an array',
+      { field: 'media_urls' },
     );
   }
 
@@ -295,6 +304,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
       throw new CallrailTextWebhookError(
         'INVALID_CALLRAIL_TEXT_EVENT',
         'CallRail text webhook media URLs must use HTTPS',
+        { field: 'media_urls' },
       );
     }
   });
@@ -306,6 +316,7 @@ function normalizeMediaUrls(messageType, mediaUrls) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail message_type does not match media_urls',
+      { field: 'media_urls' },
     );
   }
   return normalized;
@@ -337,6 +348,7 @@ export function normalizeCallrailTextWebhook(payload) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook payload must be an object',
+      { field: 'payload' },
     );
   }
   assertTextEventShape(payload);
@@ -351,6 +363,7 @@ export function normalizeCallrailTextWebhook(payload) {
     throw new CallrailTextWebhookError(
       'INVALID_CALLRAIL_TEXT_EVENT',
       'CallRail text webhook has an invalid lead_status',
+      { field: 'lead_status' },
     );
   }
 
@@ -358,7 +371,9 @@ export function normalizeCallrailTextWebhook(payload) {
     provider: 'callrail',
     eventType,
     direction,
-    providerEventId: requireIdentifier(payload.id, 'id'),
+    // CallRail's live 2026-07-23 text webhook omitted the documented numeric
+    // id. resource_id remains the stable message identity and dedupe key.
+    providerEventId: optionalIdentifier(payload.id, 'id'),
     providerMessageId: requireIdentifier(payload.resource_id, 'resource_id'),
     providerConversationId: requireIdentifier(payload.conversation_id, 'conversation_id'),
     companyResourceId: requireIdentifier(payload.company_resource_id, 'company_resource_id'),

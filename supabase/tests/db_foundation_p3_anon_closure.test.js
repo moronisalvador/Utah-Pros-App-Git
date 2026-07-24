@@ -35,10 +35,9 @@
  *     surface from PostgREST table/RPC grants and is therefore UNAFFECTED by the
  *     anon closure. We assert the *session-bootstrap reads* those flows depend on
  *     (feature flags, employee lookup) stay anon-reachable per database-standard §2.
- *   - public form submit runs entirely in a service-role worker
- *     (functions/api/form-submit.js) — there is no anon browser call to guard;
- *     we assert the allowlisted upsert_lead_from_form RPC stays anon-callable as a
- *     belt-and-suspenders regression guard for the §2 allowlist.
+ *   - public form submit runs entirely in service-role workers. The later
+ *     20260723235900_public_form_rpc_boundary migration removes the temporary anon
+ *     RPC exception after repository inventory found no direct browser caller.
  *   - The CLOSURE block is opt-in (RUN_P3_CLOSURE=1): the revokes are RED-tier and
  *     apply in the owner's window, so before they land these assertions would fail.
  *     After the owner applies the revokes, run `RUN_P3_CLOSURE=1 npm test` to verify.
@@ -48,7 +47,14 @@ import { describe, it, expect } from 'vitest';
 import { db } from '../../src/lib/supabase.js';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
-const runClosure = hasCreds && (import.meta.env.RUN_P3_CLOSURE === '1' || process.env?.RUN_P3_CLOSURE === '1');
+const nodeEnv = globalThis.process?.env || {};
+const runClosure =
+  hasCreds &&
+  (import.meta.env.RUN_P3_CLOSURE === '1' || nodeEnv.RUN_P3_CLOSURE === '1');
+const runFormBoundary =
+  hasCreds &&
+  (import.meta.env.RUN_PUBLIC_FORM_BOUNDARY === '1' ||
+    nodeEnv.RUN_PUBLIC_FORM_BOUNDARY === '1');
 
 // A random UUID that is not a real signing token — used to prove token-gating.
 const BOGUS_TOKEN = '00000000-0000-4000-8000-000000000000';
@@ -86,25 +92,6 @@ describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay rea
     expect(Array.isArray(rows)).toBe(true);
   });
 
-  // ── Surface: public form submit (worker path; RPC stays allowlisted) ──
-  it('form submit: upsert_lead_from_form is still anon-callable (allowlisted)', async () => {
-    // Do NOT actually insert a lead — just prove anon is not 403'd at the grant
-    // layer. A validation error from the function body still means "reachable".
-    let reachable = true;
-    try {
-      await db.rpc('upsert_lead_from_form', {
-        p_form_id: BOGUS_TOKEN,
-        p_submission_token: 'p3-regression-probe',
-        p_data: {},
-      });
-    } catch (e) {
-      // A 403 "permission denied for function" means the anon grant was revoked
-      // (regression). Any other error (bad form id, validation) means it is reachable.
-      if (/permission denied/i.test(String(e.message))) reachable = false;
-    }
-    expect(reachable).toBe(true);
-  });
-
   // ── Surface: e-sign SignPage ──
   it('e-sign: get_sign_request_by_token is anon-callable', async () => {
     // A non-existent token returns null (no row) rather than erroring — reachable.
@@ -117,6 +104,22 @@ describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay rea
     const rows = await db.rpc('get_sign_document_templates', { p_token: BOGUS_TOKEN });
     expect(Array.isArray(rows)).toBe(true);
     expect(rows.length).toBe(0);
+  });
+});
+
+describe.skipIf(!runFormBoundary)('public form RPC worker-only boundary (post-revoke)', () => {
+  it('denies the anonymous browser role before the function body can run', async () => {
+    let denied = false;
+    try {
+      await db.rpc('upsert_lead_from_form', {
+        p_form_id: BOGUS_TOKEN,
+        p_submission_token: 'public-form-boundary-probe',
+        p_data: {},
+      });
+    } catch (e) {
+      denied = /permission denied/i.test(String(e.message)) || /42501/.test(String(e.message));
+    }
+    expect(denied).toBe(true);
   });
 });
 

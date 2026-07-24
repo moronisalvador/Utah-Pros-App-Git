@@ -1,7 +1,7 @@
 # UPR Web Platform — Context Document
-Last updated: July 1, 2026 (accuracy audit — corrected table/employee/flag counts, DevTools tab count,
-Capgo pipeline status, PostgREST select() gotcha, divisionToQbo remodel bucket, and other drift; see
-git history for the full findings)
+Last updated: July 23, 2026 (live prior-service SMS consent boundary, release evidence, and
+cross-platform isolated-browser profile containment; see git history for earlier accuracy-audit
+findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -9,9 +9,11 @@ Owner/developer: Moroni Salvador.
 
 ## Encircle managed credentials initiative (2026-07-23)
 
-Implementation is authored locally and dark-gated; no migration, deployment, credential entry,
-rotation, or revocation has occurred. The plan of record is
-`docs/encircle-managed-credentials-roadmap.md`.
+Implementation is landed and dark-gated; repository/live readiness was reverified on current
+`origin/dev` on 2026-07-23. No migration, deployment, credential entry, rotation, or revocation has
+occurred. The plan of record is `docs/encircle-managed-credentials-roadmap.md`, with the dated
+catalog and test snapshot at
+`docs/audit/2026-07/evidence/encircle-managed-credential-readiness-2026-07-23.md`.
 
 - Seven Pages Encircle workers now resolve the locked `integration_credentials` source first and
   retain the current environment binding as a temporary fallback.
@@ -35,6 +37,19 @@ rotation, or revocation has occurred. The plan of record is
 **Local repo:** F:\APPS\RestorationAPP\Utah-Pros-App-Git
 **Deployment:** Cloudflare Pages (auto-deploys on push to `dev` branch)
 **Rule:** Always work on `dev` (or a feature branch). Ship to `main` only via a reviewed `dev → main` PR a human merges — see **Deployment & Release Workflow** below.
+
+## Conversation attachment scroll correction (2026-07-23)
+
+Both `/conversations` and the technician v2 thread reuse
+`src/components/conversations/MessageBubble.jsx`. Attachment images can change height after the
+initial message paint, especially after a private `upr-storage://message-attachments/...` reference
+is exchanged for its short-lived authenticated URL. `MessageBubble` now notifies its thread owner
+when an image finishes loading or falls back after failure. A near-bottom reader stays pinned; a
+history reader keeps the first visible message at the same viewport offset through both prepends and
+delayed image layout. Initial thread-open snapping now runs before paint and resets per-thread scroll
+intent. Resume recovery uses `useResumeRefetch` and merges the refreshed newest page into already
+loaded history instead of replacing it. The shared anchor/merge policy is in
+`src/components/conversations/threadScroll.js`; no send, webhook, consent, or provider contract changed.
 
 ---
 
@@ -354,6 +369,9 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
 -- KEPT anon (§2 allowlist): RPCs get_feature_flags, get_employee_page_access, get_crm_build_progress,
      upsert_lead_from_form, get_sign_request_by_token, get_sign_document_templates; table reads on
      employees / feature_flags / employee_page_access / nav_permissions (login+devLogin bootstrap).
+     Current correction: `20260723235900_public_form_rpc_boundary.sql` is now authored to remove
+     upsert_lead_from_form from this temporary exception because both runtime callers use the
+     service-role Worker path. It remains unapplied until an owner-authorized serialized window.
 -- DEFERRED (manifest §8 — anon LEFT until the owning in-flight phase merges): messages, conversations,
      conversation_participants, email_campaigns/recipients/exclusions, email_suppressions (omni);
      crm_automations, crm_automation_runs, jobs, job_phase_history (5-Ops); appointments, claims,
@@ -409,7 +427,12 @@ Docs + generator only — zero schema, zero `src/` page edits. Ships:
   `database-standard.md` §2's allowlist), never a second schema source. Distinct from Phase F's
   `db/baseline/` (a frozen comparison snapshot `db-drift-check.mjs` diffs against) — this generator
   never writes that directory; its own output is always "what does live look like right now."
-  Regenerated 2026-07-08 against the live catalog: 127 public tables, 337 public functions.
+  Regenerated again after the notification scheduler apply from a fresh read-only live catalog
+  capture at 2026-07-24 01:00:19 UTC: 133 public tables and 374 distinct function-name rows
+  (375 overloads in the separate closure query). The two new service-only scheduler functions
+  explain the delta. The generated RPC inventory shows `exec_read_sql` service-only and, correctly
+  for the still-unapplied public-form containment, `upsert_lead_from_form` executable by browser
+  roles.
 - `.claude/rules/documentation-standard.md` — new "SQL migration header" addendum formalizing the
   `MIGRATION:`/`Phase:`/`WHAT THIS DOES`/`ADDITIVE-ONLY`/`ROLLBACK` header pattern Phase F/P1's
   migrations already established, satisfying `database-standard.md` §6's rollback requirement.
@@ -557,7 +580,7 @@ rv_time_entries — hours, travel_minutes, rate, total_cost, computed_labor_cost
 ## Critical Coding Rules
 1. Always read files from disk before editing — never rely on memory for current code state
 2. Use `write_file` for full rewrites — `edit_file` fails silently on Windows CRLF files
-3. Never use `alert()` or `confirm()` — always use `window.dispatchEvent(new CustomEvent('upr:toast', ...))`
+3. Never use `alert()` or `confirm()` — use `src/lib/toast.js` (`toast`, `ok`, or `err`)
 4. Always use `const { db } = useAuth()` — never import `db` directly in components
 5. Work on `dev` branch only — never touch `main`
 6. All CSS changes must use `@media (max-width: 768px)` unless provably safe on desktop (dvh, env(safe-area-inset-bottom)) — never change desktop UI/layout/colors/spacing
@@ -682,7 +705,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On any send failure it surfaces the real error via `window.dispatchEvent(new CustomEvent('upr:toast', {detail:{message,type:'error'}}))` and appends no optimistic bubble.
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -795,7 +818,8 @@ functions/
                                     email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
-    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded (status `failed`, `error_code`/`error_message`) instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted (omni §7). Response is additive to F's frozen `/api/send-message` contract: direct blocked → 403 `{error, code:DND_ACTIVE|NO_CONSENT|CONTACT_NOT_FOUND, contact_id}` (unchanged); all-blocked group → 403 `ALL_RECIPIENTS_BLOCKED`; success → 201 `{success, message:<row0>, twilio:[per-recipient…]}` (+ top-level `error_code`/`error_message` when the direct send failed). `num_segments`/`price` left NULL for Phase A to fill from the status callback. SMS-only — omni-O's `channel`/email branch deferred (roadmap §8a). **Messaging Transport Phase 1 (Jul 23 2026):** its provider call now passes through `functions/lib/messaging-transport.js`; Twilio remains the only registered/default adapter, the arguments/result are unchanged, and unknown providers fail closed. No provider mode/env/client/DB/webhook behavior changed. Plan: `docs/messaging-transport-roadmap.md`.
+    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. Preview is CallRail-only for owner-controlled verification while Production is disabled. Plan: `docs/messaging-transport-roadmap.md`.
+    attest-sms-consent.js         — GET status + record-only POST for verified prior direct service-SMS permission. GET requires the Conversations capability and returns only a safe decision; POST is internal admin/office, derives actor + trusted Cloudflare IP server-side, requires method/date/evidence, and never sends/retries. Service-only RPCs use browser-inaccessible current + append-only evidence tables, never change general/automated opt-in, serialize with inbound CallRail, refuse duplicate suppression or pending STOP, and place only a redacted evidence reference in `sms_consent_log`. Direct staff sends may consume this scope; group/broadcast/automated/scheduled paths may not. The foundation is live as ledger version `20260724035913_attest_prior_sms_consent`; additive hardening migration `20260724043000_harden_service_sms_consent.sql` for contact-phone revalidation and strict STOP→START ordering is authored but not applied.
     messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; Production remains disabled pending owner-approved activation.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
     submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
@@ -815,13 +839,13 @@ functions/
   lib/
     cors.js                       — CORS helpers + jsonResponse(data, status, request, env)
     supabase.js                   — Supabase REST helper for workers
-    messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; Phase 1's Twilio-only seam is published at `a6cd652`. The later integration build registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Scheduled/automated/campaign senders remain explicitly Twilio-only.
+    messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Preview is CallRail for controlled verification; Production is disabled. Scheduled/automated/campaign senders remain explicitly Twilio-only.
     messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
-    callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver (integration build only): verifies raw-body HMAC/timestamp, validates event shape, and deduplicates into the provider-event inbox. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS is copied through fixed authenticated CallRail endpoints into private `message-attachments`, with only owned references retained. No automated CallRail keyword reply is sent.
+    callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS immediately consumes the signed webhook's short-lived media endpoint only after exact CallRail HTTPS/host/account validation, while retained-event retries refresh current endpoints from the documented conversation API. Verified bytes are copied into private `message-attachments`, and only owned references are retained. The account validator accepts a legacy numeric id and current masked `ACC...` media identity only after CallRail's authenticated account inventory proves the pair. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge. Live 2026-07-23 iPhone MMS evidence isolated the numeric-vs-masked account mismatch before Storage; post-deploy recovery and a fresh round trip remain required.
     message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
-    process-callrail-events.js    — Scheduler-secret/native-cron recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
+    process-callrail-events.js    — Scheduler-secret HTTP recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. Pages does not schedule its exported `scheduled()` handler; repository migration `20260724002500_callrail_event_recovery_scheduler.sql` adds a five-minute exact-URL pg_cron/pg_net invoker but remains unapplied pending a shared-Supabase apply window. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
     recover-message-send-attempts.js — Provider-neutral, scheduler-secret recovery of accepted provider attempts whose canonical message insert failed; RPC-only and never imports a provider adapter.
-    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection.
+    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection. An exact-URL pg_net wake-up runs after outbox insert/commit, backed by a five-minute pg_cron due/stale-work safety net; missing config or an empty queue is inert. The lease prevents concurrent dispatch, while bell/push delivery remains at-least-once across worker crashes. `message.inbound` bell links select `/conversations?c=<id>`; Web Push selects the same thread inside `/tech/conversations?c=<id>`.
     twilio.js                     — Twilio helpers
 ```
 
@@ -1060,6 +1084,12 @@ scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul
                           claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
+                          Live `attest_prior_sms_consent` RPC (applied Jul 23 2026) atomically
+                          records verified verbal/signed-work-authorization/other prior permission
+                          with consent date, evidence, employee actor and server timestamp in
+                          browser-inaccessible current + append-only tables. The legacy log keeps
+                          only a redacted event/opaque evidence reference. Service-role-only;
+                          refuses DND, explicit opt-out, duplicate suppression and pending STOP.
 -- NOTE (SMS-experience F-core, Jul 9 2026): the 5 SMS tables above (conversations, messages,
 -- conversation_participants, sms_consent_log, scheduled_messages) had drifted in with NO CREATE TABLE
 -- in migrations; 20260709_sms_f01_drift_capture.sql now captures their exact live shape (schema-as-code
@@ -3266,6 +3296,11 @@ live, not in-progress. Only the privacy-screen plugin (see Deferred below) is ge
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeBiometric.js` + `<BiometricGate>` in App.jsx. Cold-launch gate on native: if a Supabase session exists and the flag is set, show "Unlocking UPR…" lock screen and prompt Face ID / Touch ID / passcode. Cancel or failure → sign out + show login. Flag is enabled in Login.jsx after a successful password login on native, cleared in AuthContext.logout. Token still lives in localStorage — full Keychain migration is future hardening.
   - `@capgo/capacitor-updater` — OTA React/CSS/HTML updates without App Store resubmit. `src/lib/nativeUpdater.js` exposes `markBundleReady()` (called on App.jsx mount — critical, Capgo rolls back otherwise), plus `checkForUpdate` and `getCurrentBundleInfo` helpers. `capacitor.config.json` plugin config: `autoUpdate: true`, `defaultChannel: production`, auto-cleanup on success/fail.
 - **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
+  `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
+  the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
+  manual-only and no-direct-secret-condition boundaries. It remains owner-gated on Apple enrollment,
+  signing secrets, Xcode archive/device proof, and an explicitly dispatched release.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
 - **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
@@ -6163,6 +6198,10 @@ service-role client — that table is RLS-locked so anon/authenticated never see
 key exists); server-side `validateSubmission` against the PUBLISHED version;
 computes consent server-side from the submitted data; calls `upsert_lead_from_form`; logs a
 `worker_runs` row. Spam-dropped submissions return `200 {ok:true}` (a bot can't tell it was filtered).
+The supported public client posts only to this Worker. Direct browser execution of
+`upsert_lead_from_form` is scheduled for removal by the grant-only
+`20260723235900_public_form_rpc_boundary.sql`; pre-apply evidence confirms the migration is not live
+yet, so the direct ACL bypass remains a current owner-gated closure rather than a shipped claim.
 
 **Hosted page — `functions/f/[public_id].js`** (new; `GET /f/:public_id`): standalone HTML (not the
 SPA) rendered from the published schema; every field label/option/value escaped, labels/description/
@@ -7231,13 +7270,13 @@ importing the frozen `functions/lib/twilio-errors.js`, per-thread draft get/set/
   `media_urls` (the `message-attachments` bucket is private with no upload policy, and this phase ships zero
   schema — documented tradeoff; worker requires a non-empty body so MMS carries text).
 - **Composer** — live segment/char counter accounting for the server `Name: ` prefix; per-thread localStorage
-  **draft persistence**; multiline `pre-wrap`; toasts consolidated to the `upr:toast` CustomEvent (Rule 2).
+  **draft persistence**; multiline `pre-wrap`; feedback consolidated through `src/lib/toast.js`.
 - **List/scroll** — thread + list **pagination** (`Load earlier` / `Load more`), scroll anchoring on prepend,
   **jump-to-latest pill** (never yanks a scrolled-up reader), **unread-desync** fix (open+visible thread stays
   read via `markActiveRead`; conversations realtime UPDATE can't re-mark it unread).
 - **Deep-link + mobile** — per-thread **`?c=<id>` URL** (push-tap lands in-thread; no `App.jsx` route edit);
-  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via `document` `visibilitychange`
-  (hidden→visible only) + `visualViewport` keyboard offset — **no `realtime.js` edit**.
+  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via the shared
+  `useResumeRefetch` hidden→visible edge + `visualViewport` keyboard offset — **no `realtime.js` edit**.
 
 **Ownership honored:** edited only `Conversations.jsx`, new `components/conversations/**`, and `index.css`
 inside the §623 omni-U marker. No edit to `realtime.js` / `CrmConversations.jsx` / any worker. `test` +
@@ -7276,9 +7315,14 @@ Wave 2, launched after A + C merged into `dev`. Owned a new deliverability healt
   `NotificationBell` click-through. **One-line fix** (append `?c=${conversation?.id}`) lives in
   `twilio-webhook.js`, exclusively owned by Session A — G has no edit rights there per the ownership
   manifest, so this is a disclosed follow-up, not an in-phase fix.
+  **Current-state correction (2026-07-24 UTC):** the later provider-neutral notification dispatcher
+  now emits `/conversations?c=<id>` for bell rows and `/tech/conversations?c=<id>` for Web Push.
+  The owner received the push and the exact stored bell link was verified; the corrected
+  field-PWA push-tap remains an owner-device verification tail. The paragraph above is retained as
+  the historical Phase G finding, not current source behavior.
 - **Tech-PWA on-device lane**: no iOS simulator/device in this session (same disclosure as Phase C).
-  Static grep confirms the `visibilitychange` Capacitor-suspend recovery and `visualViewport` keyboard
-  handler Phase C claimed are actually present in `Conversations.jsx`. Full on-device confirmation
+  Static review confirms the shared hidden-edge resume hook and `visualViewport` keyboard handler are
+  present in `Conversations.jsx`. Full on-device confirmation
   (including the push-tap→thread check, blocked on the finding above) stays owner-gated.
 - **A2P live-smoke decision fork**: live-checked at session start — `automation_settings
   .sms_sending_enabled = false` and `integration_config.twilio_messaging_service_sid` /
@@ -7349,7 +7393,8 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
     (worker sole writer; no `skip_compliance`); 201-with-failed-row preserved; the four 403
     codes (DND_ACTIVE/NO_CONSENT/CONTACT_NOT_FOUND/ALL_RECIPIENTS_BLOCKED) surfaced inline;
     mark-read on open (raw `db.update` — F-red safe) + inbound-while-open desync guard;
-    suspend/visibility → `invalidate` safety net.
+    suspend recovery through `useResumeRefetch` → silent newest-page merge that preserves loaded
+    history and the visible-message anchor.
   - **`messages/msgsSelectors.js`** — pure page-flatten/cursor, overlay merge+reconcile,
     append/patch/mark-pending/drop-by-clientId, `groupMessagesByDay`, unread math,
     `mergeConvoIntoList` — covered by `msgsSelectors.test.js` (overlay reconcile, page-merge+
@@ -7721,6 +7766,15 @@ before/after magnitude (not guessed).
   explicit "company-wide on purpose" callouts on the Estimate-aging and Top-customers-LTV cards specifically
   (the two sections that are the exception, sitting right next to sections that ARE scoped — the contrast
   is exactly where confusion would happen without an explicit callout).
+- **Owner follow-up — "show both, labeled" (reconciled to `dev` 2026-07-23):**
+  `get_crm_sales_summary(date,date)` returns company-wide and CRM-traced won/revenue together using
+  the canonical `jobs.is_real_job` rule, claim/job sale date, Denver-day window and
+  `crm_contact_is_traced`. `CrmOverview` now uses the returned traced values as its Won jobs/Revenue
+  headlines and labels the returned company-wide values beside them. It passes the same selected
+  start/end dates as the attribution rollup and does not calculate either half independently.
+  Read-only live verification confirmed the four-key numeric JSON shape, `anon` denial and
+  `authenticated`/`service_role` execution. The migration was already live; this reconciliation
+  applied no SQL and restored only the missing current-compatible UI/test/documentation slice.
 - Committed test: `supabase/tests/crm_attribution_scoped_to_traced_contacts.test.js` — before/after
   deltas (never absolute counts) on all 4 rescoped RPCs, a genuine traced-vs-untraced contact pair, and a
   dedicated spam-only-touch edge case proving a spam-flagged-only lead does NOT count as traced.
@@ -7742,3 +7796,108 @@ returned `[{"ok":1}]`; and the security advisor no longer references `exec_read_
 signature/body/owner remain unchanged and no business data was read or mutated. Exact evidence:
 `docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Encircle files and its
 unapplied/dark-gated migration remain untouched.
+
+## Foundation F2 migration provenance (2026-07-23; source/release control only)
+
+Four CRM ledger rows that were already live but absent from `dev` now have reviewed source records
+restored without replaying SQL or overwriting live bodies:
+`crm_denver_day_bucketing`, `crm_sales_summary_total_vs_traced`,
+`crm_dedup_repeat_caller_leads`, and `crm_caller_name_follows_merge`. The restored files are
+byte-identical to reviewed origins `c10a8bb`, `a5ef0e1`, and `a7ee5f8`. Direct catalog comparison
+found 10 of 11 affected function bodies byte-identical. `set_lead_caller_name` is executable-body
+equivalent after removing comments/whitespace, but live omits explanatory comments; the live function
+was not replaced merely to align a hash.
+
+`npm run validate:provenance` is the read-only release gate. It maps every live ledger row from
+`20260722222426` onward to reviewed source reachable from the release ref, checks reviewed-origin
+blob equality, requires evidence captured within six hours from an ancestor commit, and validates 13
+function fingerprints plus four policy identities/roles/predicates. The refreshed live-ledger tail
+also maps `20260724035913_attest_prior_sms_consent` to reviewed origin `e71e759`, including both
+service-only invoker consent RPC ACLs and all three service-only consent-table policies.
+`npm run test:provenance` covers unmapped rows, functional drift, wrong origins, changed release
+blobs, stale/non-ancestor evidence, and policy drift. The gate consumes sanitized evidence and never
+connects to or writes Supabase. Exact capture and review record:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
+
+## July 23 engineering documentation closure and Figma checkpoint
+
+The end-of-day reconciliation is recorded in
+`docs/audit/2026-07/evidence/engineering-foundation-documentation-closure-2026-07-23.md`, with the
+complete dated Git reachability appendix in `git-ledger-2026-07-23.md`. It classifies every July 23
+commit visible after remote pruning plus explicitly requested unreferenced objects. Temporary
+CallRail recovery commit `d3fd17a` and shared-production QA proposal `3841056` are both branch-only
+historical evidence and superseded; neither should be merged.
+
+The minimum viable design-start contract is in
+`docs/audit/2026-07/evidence/figma-readiness-checkpoint-2026-07-23.md`. It does not wait for hosted
+write-capable QA, but remains owner-blocked on a dirty messaging UI worktree, CAP-SEC-001/
+CAP-GOV-001 containment, explicit Figma permission/authority approval, and a dedicated
+authenticated read-only staging browser session. No Figma plugin connection or paid seat exists
+because those exact external steps require owner approval.
+
+## Credential-free isolated QA and Figma internal foundation (2026-07-23)
+
+Repository-internal P1/Foundation F3a groundwork now runs without hosted QA, real credentials,
+production data, or provider effects. `vitest.config.js` and the governed runner split pure unit,
+Worker-contract, QA-policy, and future isolated-database lanes. The credential-free lanes scrub
+hosted/provider environment variables, block network APIs, require non-empty discovery, and reject
+every skip/todo. The database runner recognizes only `http://127.0.0.1:54321`, the local project
+reference and `upr-local-only-v1` sentinel; production or ambiguous targets are refused.
+
+The Playwright foundation uses only the deterministic fixture served at
+`http://127.0.0.1:4173`. Desktop 1440px and mobile 390px projects cover loading/error/empty/stale/
+ready states, reduced motion, keyboard focus, lifecycle resume, overflow, and serious/critical axe
+rules. Browser guards deny production Supabase navigation, provider egress, write requests,
+popups, WebSockets, downloads, TCP/CDP attachment, and human browser profiles. Retained artifacts
+are scanned for authentication material, production identifiers, and realistic identity data.
+The ephemeral-profile containment gate explicitly parses absolute Windows or POSIX paths and
+rejects relative/mixed-dialect inputs so repository/profile isolation behaves identically on local
+Windows and Linux CI.
+This is synthetic foundation evidence only; no real UPR account/page, hosted project, provider,
+iOS device, or production path was exercised.
+
+P2a database execution remains blocked because this repository has no governed
+`supabase/config.toml`, local CLI/runtime, deterministic database seed, or representative-role
+fixture. The runner fails closed instead of falling back to the shared project.
+
+Figma remains disconnected with zero granted scopes. `.claude/figma-governance.json` and CI now
+enforce the permission posture, while `docs/upr-figma-governance-and-handoff.md` records
+repository-versus-Figma authority, the current token/component/page inventory, handoff manifest,
+and representative desktop/390px screenshot plan. Plugin installation/connection, paid seat,
+selected-file scope, actual UPR screenshot capture, and the overlapping messaging-worktree
+reconciliation remain external/owner gates.
+
+## Money Worker authorization slice (2026-07-23)
+
+`functions/api/qbo-charge.js` and `stripe-pay-link.js` now use the shared `requireRole` boundary
+with the UI's `admin`/`manager` billing-role set. Missing sessions, missing/inactive employees, and
+non-billing roles return before provider calls. QBO charge no longer accepts the generic webhook
+secret as a money-moving alternate identity.
+
+The QBO route also requires a stable 16–64-character client `Idempotency-Key` and passes it as
+Intuit's `Request-Id`; validates positive whole-cent amounts against the current outstanding invoice
+balance; writes the actor into `payments.recorded_by`; and uses `mountainToday()` for both UPR
+`payment_date` and QBO `TxnDate`. Handler tests prove denied roles never reach either provider and
+the allowed execution passes the stable key, actor, and Mountain date.
+
+This does not close the captured-but-unrecorded failure window. A durable attempt must exist before
+provider execution, with sandbox-proven reconciliation after provider success/local insert failure.
+Stripe stored-session reuse/expiry/concurrency also remains open. Exact boundary and residual-risk
+evidence: `docs/audit/2026-07/evidence/money-worker-hardening-2026-07-23.md`.
+
+## Private outbound message media (2026-07-24)
+
+Both conversation composers now upload one final JPEG/PNG/GIF image through authenticated
+`POST /api/message-media-upload` instead of writing a public `job-files` object. The Worker binds
+the upload to an existing conversation, verifies the actual bytes and 5,000,000-byte maximum, and
+stores it under private `message-attachments/outbound/{conversation-id}/...`. Clients and
+`messages.media_urls` retain only the opaque `upr-storage://` reference.
+
+`/api/send-message` re-downloads and revalidates private media after the existing staff
+authorization/consent path. CallRail receives a multipart `media_file`; Twilio receives a one-hour
+signed Storage URL created only in its adapter. `message-media-url` now resolves both inbound
+CallRail and outbound private references only after message/index binding. Sent, failed, and
+ambiguous references stay durable for history and safe retry. Abandoned private uploads are
+retained until a durable draft/claim cleanup model can prevent deletion races and history loss;
+there is no browser delete route. No database migration, RCS activation, provider fallback, or
+automated CallRail path was added.

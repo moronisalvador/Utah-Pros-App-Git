@@ -72,7 +72,7 @@ function buildSchemaOverview(snapshot) {
   const anonPolicyTables = tables.filter((t) => t.has_anon_policy);
   const lines = [
     banner('Database Schema Overview (generated)'),
-    `Snapshot: ${tables.length} public tables. Source: ${snapshot.generated_from}.`,
+    `Snapshot: ${tables.length} public tables. Source: ${snapshot.generated_from}. Captured: ${snapshot.captured_at_utc || 'not recorded'}.`,
     '',
     '## Tables',
     '',
@@ -98,7 +98,7 @@ function buildRpcInventory(snapshot) {
   const anonFns = fns.filter((f) => f.anon_can_execute);
   const lines = [
     banner('RPC Inventory (generated)'),
-    `Snapshot: ${fns.length} public functions. Source: ${snapshot.generated_from}.`,
+    `Snapshot: ${fns.length} public functions. Source: ${snapshot.generated_from}. Captured: ${snapshot.captured_at_utc || 'not recorded'}.`,
     '',
     '## Functions',
     '',

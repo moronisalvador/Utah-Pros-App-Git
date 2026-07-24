@@ -23,7 +23,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
-  appendMessageToPages, patchMessageInPages, dayKeyOf, groupMessagesByDay,
+  appendMessageToPages, mergeNewestPage, patchMessageInPages, dayKeyOf, groupMessagesByDay,
   convoUnread, mergeConvoIntoList, hasConversation,
   markPendingByMatch, dropByClientId,
   setConvoUnreadInData, isMultiConversation, recipientCount, summarizeSendResult,
@@ -91,9 +91,94 @@ describe('overlay reconcile — dedupe by id / pending-match by type+body / appe
   });
 
   it('reconcileOverlay removes a pending entry by type+body when the clientId is unknown', () => {
-    const overlay = [{ id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'a' }];
+    const overlay = [{ id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'a', created_at: '2026-07-09T10:05:00Z' }];
     const real = msg('r1', 'a', '2026-07-09T10:06:00Z');
     expect(reconcileOverlay(overlay, real)).toEqual([]);
+  });
+
+  it('does not body-reconcile against a conflicting durable client request id', () => {
+    const overlay = [{
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-09T10:05:00Z',
+    }];
+    const otherSend = msg('real-2', 'same', '2026-07-09T10:05:02Z', {
+      client_request_id: 'pending-2',
+    });
+    expect(reconcileOverlay(overlay, otherSend)).toEqual(overlay);
+  });
+
+  it('reconciles identical consecutive sends one-for-one', () => {
+    const overlay = [
+      { id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-09T10:05:00Z' },
+      { id: 'pending-2', _clientId: 'pending-2', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-09T10:05:01Z' },
+    ];
+    const real = msg('r1', 'same', '2026-07-09T10:06:00Z', { client_request_id: 'pending-1' });
+
+    expect(reconcileOverlay(overlay, real).map((o) => o.id)).toEqual(['pending-2']);
+    expect(mergeOverlay([real], overlay).map((o) => o.id)).toEqual(['pending-2', 'r1']);
+  });
+
+  it('does not hide a new send behind an old identical canonical row', () => {
+    const old = msg('old', 'same', '2026-07-09T10:04:00Z');
+    const pending = {
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'same',
+      created_at: '2026-07-09T10:05:00Z',
+    };
+    expect(mergeOverlay([old], [pending]).map((o) => o.id)).toEqual(['old', 'pending-1']);
+  });
+
+  it('reserves an out-of-order durable confirmation for the correct identical send', () => {
+    const overlay = [
+      { id: 'pending-1', _clientId: 'pending-1', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-09T10:05:00Z' },
+      { id: 'pending-2', _clientId: 'pending-2', _pending: true, type: 'sms_outbound', body: 'same', created_at: '2026-07-09T10:05:01Z' },
+    ];
+    const secondConfirmed = msg('real-2', 'same', '2026-07-09T10:05:02Z', {
+      client_request_id: 'pending-2',
+    });
+
+    expect(mergeOverlay([secondConfirmed], overlay).map((o) => o.id))
+      .toEqual(['pending-1', 'real-2']);
+  });
+
+  it('normalizes JSON and array media identity for bounded fallback reconciliation', () => {
+    const pending = {
+      id: 'pending-1',
+      _pending: true,
+      type: 'sms_outbound',
+      body: 'photo',
+      media_urls: ['b', 'a'],
+      created_at: '2026-07-09T10:05:00Z',
+    };
+    const real = msg('real', 'photo', '2026-07-09T10:05:02Z', {
+      media_urls: '["a","b"]',
+    });
+    expect(mergeOverlay([real], [pending]).map((o) => o.id)).toEqual(['real']);
+  });
+
+  it('orders resumed inbound rows after an older lingering failed overlay', () => {
+    const server = [
+      msg('old', 'old', '2026-07-09T10:00:00Z'),
+      msg('in-1', 'new 1', '2026-07-09T10:07:00Z', { type: 'sms_inbound' }),
+      msg('in-2', 'new 2', '2026-07-09T10:08:00Z', { type: 'sms_inbound' }),
+    ];
+    const failed = [{
+      id: 'pending-1',
+      _clientId: 'pending-1',
+      _failed: true,
+      type: 'sms_outbound',
+      body: 'failed',
+      created_at: '2026-07-09T10:05:00Z',
+    }];
+    expect(mergeOverlay(server, failed).map((o) => o.id))
+      .toEqual(['old', 'pending-1', 'in-1', 'in-2']);
   });
 
   it('reconcileOverlay never mutates the input', () => {
@@ -147,6 +232,26 @@ describe('appendMessageToPages / patchMessageInPages', () => {
 
   it('dropByClientId is a no-op (same ref) for the optimistic path (bubbles live in the overlay)', () => {
     expect(dropByClientId(pages, 'pending-1')).toBe(pages);
+  });
+
+  it('resume merge patches the newest page without discarding loaded history', () => {
+    const loaded = [
+      [
+        { ...msg('m3', 'three', '2026-07-09T10:03:00Z'), status: 'sent' },
+        msg('m2', 'two', '2026-07-09T10:02:00Z'),
+      ],
+      [msg('m1', 'one', '2026-07-09T10:01:00Z')],
+    ];
+    const refreshed = [
+      msg('m4', 'four', '2026-07-09T10:04:00Z'),
+      { ...msg('m3', 'three', '2026-07-09T10:03:00Z'), status: 'delivered' },
+    ];
+
+    const merged = mergeNewestPage(loaded, refreshed);
+
+    expect(merged[0].map((message) => message.id)).toEqual(['m4', 'm3', 'm2']);
+    expect(merged[0][1].status).toBe('delivered');
+    expect(merged[1].map((message) => message.id)).toEqual(['m1']);
   });
 });
 

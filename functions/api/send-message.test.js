@@ -63,7 +63,14 @@ function req(body) {
 // Minimal fake db keyed by table; overrides let each test pick the convo/participant/contact shape.
 // `contact` = a single shared contact (back-compat with the direct-send tests); `contactsById` =
 // a per-contact_id map for multi-recipient tests. Every insert is recorded on `db.inserts`.
-function makeDb({ conversation, participants, contact, contactsById } = {}) {
+function makeDb({
+  conversation,
+  participants,
+  contact,
+  contactsById,
+  serviceConsentsById = {},
+  priorOutbound = [],
+} = {}) {
   const inserts = [];
   const attempts = [];
   return {
@@ -116,7 +123,14 @@ function makeDb({ conversation, participants, contact, contactsById } = {}) {
           ))
           .map((item) => item.payload);
       }
-      if (table === 'messages' && query.includes('id=eq.')) {
+      if (
+        table === 'messages'
+        && query.includes('conversation_id=eq.')
+        && query.includes('type=eq.sms_outbound')
+      ) {
+        return priorOutbound;
+      }
+      if (table === 'messages' && /(?:^|&)id=eq\./.test(query)) {
         const id = (/id=eq\.([^&]+)/.exec(query) || [])[1];
         return inserts
           .filter((item) => item.table === 'messages' && item.payload.id === id)
@@ -139,6 +153,31 @@ function makeDb({ conversation, participants, contact, contactsById } = {}) {
       return null;
     },
     rpc: async (name, args) => {
+      if (name === 'get_service_sms_consent_status') {
+        const resolvedContact = contactsById
+          ? contactsById[args.p_contact_id]
+          : contact;
+        if (!resolvedContact) {
+          return { allowed: false, code: 'CONTACT_NOT_FOUND' };
+        }
+        if (resolvedContact.dnd) {
+          return { allowed: false, code: 'DND_ACTIVE' };
+        }
+        if (resolvedContact.opt_out_at) {
+          return {
+            allowed: false,
+            code: 'CONTACT_OPTED_OUT',
+            source: 'explicit_opt_out',
+          };
+        }
+        if (resolvedContact.opt_in_status) {
+          return { allowed: true, code: 'GLOBAL_OPT_IN' };
+        }
+        if (serviceConsentsById[args.p_contact_id]) {
+          return { allowed: true, code: 'SERVICE_CONSENT' };
+        }
+        return { allowed: false, code: 'NO_CONSENT' };
+      }
       if (name !== 'claim_message_recipient_attempt') return null;
       const attempt = attempts.find((item) => item.id === args.p_attempt_id);
       if (!attempt || attempt.state !== 'prepared') return false;
@@ -146,6 +185,11 @@ function makeDb({ conversation, participants, contact, contactsById } = {}) {
       attempt.started_at = new Date().toISOString();
       return true;
     },
+    downloadStorage: vi.fn(async () => ({
+      bytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01]),
+      contentType: 'image/jpeg',
+    })),
+    signStorage: vi.fn(async () => 'https://db.test/signed/photo.jpg?token=x'),
   };
 }
 
@@ -187,6 +231,61 @@ describe('send-message compliance chain', () => {
     expect(h.twilio).not.toHaveBeenCalled();
   });
 
+  it('keeps a durable pending STOP distinct and never offers a send', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+    });
+    h.db.rpc = vi.fn(async (name) => {
+      if (name === 'get_service_sms_consent_status') {
+        return {
+          allowed: false,
+          code: 'CONTACT_PENDING_STOP',
+          source: 'pending_stop',
+        };
+      }
+      return null;
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_PENDING_STOP');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('keeps an explicit STOP/opt-out fail-closed even if opt_in_status is stale true', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: {
+        ...OPTED_IN,
+        opt_in_status: true,
+        opt_out_at: '2026-07-23T18:00:00.000Z',
+        opt_out_reason: 'stop_keyword',
+      },
+    });
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'hi',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_OPTED_OUT');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(consentBlocks(h.db)[0].payload.details).toContain('explicit opt-out');
+  });
+
   it('has NO skip_compliance escape hatch — the flag can no longer bypass the gate', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
     // A caller passing skip_compliance:true against a DND contact must STILL be blocked.
@@ -216,27 +315,294 @@ describe('send-message compliance chain', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
   });
 
+  it('allows a direct service message with verified service consent without global opt-in', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps STOP fail-closed even when a service consent record exists', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: {
+        ...OPTED_IN,
+        opt_in_status: false,
+        opt_out_at: '2026-07-23T18:00:00.000Z',
+      },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('CONTACT_OPTED_OUT');
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('keeps private MMS behind the same consent gate and gives Twilio only a signed URL', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/photo.jpg`;
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [reference],
+      }),
+      env: ENV,
+    });
+    expect(res.status).toBe(201);
+    expect(h.db.downloadStorage).toHaveBeenCalledWith(
+      'message-attachments',
+      `outbound/${DIRECT.id}/photo.jpg`,
+      5_000_000,
+    );
+    expect(h.twilio).toHaveBeenCalledWith(
+      ENV,
+      expect.objectContaining({
+        mediaUrls: ['https://db.test/signed/photo.jpg?token=x'],
+      }),
+    );
+    expect(outboundRows(h.db)[0].payload.media_urls).toBe(JSON.stringify([reference]));
+  });
+
+  it('records a local private-media failure as retryable, not an ambiguous Twilio send', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    h.db.downloadStorage.mockRejectedValueOnce(new Error('missing object'));
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/missing.jpg`;
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [reference],
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(res.status).toBe(201);
+    expect(payload.error_code).toBe('MESSAGE_MEDIA_UNAVAILABLE');
+    expect(h.db.signStorage).not.toHaveBeenCalled();
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)[0].payload).toMatchObject({
+      status: 'failed',
+      error_code: 'MESSAGE_MEDIA_UNAVAILABLE',
+    });
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'failed',
+      error_code: 'MESSAGE_MEDIA_UNAVAILABLE',
+      reconcile_after: null,
+    });
+    expect(h.db.attempts[0].completed_at).toBeTruthy();
+  });
+
+  it('records a signed-URL failure locally without claiming Twilio may have sent', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    h.db.signStorage.mockRejectedValueOnce(new Error('signing unavailable'));
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/photo.jpg`;
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [reference],
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('MESSAGE_MEDIA_UNAVAILABLE');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'failed',
+      error_code: 'MESSAGE_MEDIA_UNAVAILABLE',
+      reconcile_after: null,
+    });
+    expect(h.db.attempts[0].completed_at).toBeTruthy();
+  });
+
+  it('keeps a raw Twilio helper/network failure ambiguous for reconciliation', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const networkError = new Error('network connection reset');
+    networkError.ambiguous = true;
+    h.twilio.mockRejectedValueOnce(networkError);
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Hello',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('TWILIO_SEND_AMBIGUOUS');
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'ambiguous',
+      error_code: 'TWILIO_SEND_AMBIGUOUS',
+      completed_at: null,
+    });
+    expect(h.db.attempts[0].reconcile_after).toBeTruthy();
+  });
+
+  it('keeps a Twilio credential/config failure local and completed', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const configError = new Error('Twilio credentials are not configured');
+    configError.code = 'TWILIO_NOT_CONFIGURED';
+    h.twilio.mockRejectedValueOnce(configError);
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Hello',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('TWILIO_NOT_CONFIGURED');
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'failed',
+      error_code: 'TWILIO_NOT_CONFIGURED',
+      reconcile_after: null,
+    });
+    expect(h.db.attempts[0].completed_at).toBeTruthy();
+  });
+
+  it('identifies Utah Pros and adds STOP instructions to the first outbound message', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'We are on our way.',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio.mock.calls[0][1].body).toBe(
+      'Utah Pros Restoration - Rep: We are on our way. Reply STOP to unsubscribe.',
+    );
+  });
+
+  it('keeps company identification but does not repeat STOP instructions in a continuing thread', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: OPTED_IN,
+      priorOutbound: [{ id: 'prior-message' }],
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'The drying check is complete.',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio.mock.calls[0][1].body).toBe(
+      'Utah Pros Restoration - Rep: The drying check is complete.',
+    );
+  });
+
   // Media-only (caption-less MMS) — the body-required relaxation must NOT skip the gate.
   it('blocks a DND contact on a media-only (no caption) send — the gate runs for MMS too', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/p.jpg`;
     const res = await onRequestPost({
-      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      request: req({
+        conversation_id: DIRECT.id,
+        body: '',
+        sent_by: 'e-1',
+        media_urls: [reference],
+      }),
       env: ENV,
     });
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('DND_ACTIVE');
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+    expect(h.db.signStorage).not.toHaveBeenCalled();
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
+  it('blocks private media without consent before Storage or provider work', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+    });
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/p.jpg`;
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [reference],
+      }),
+      env: ENV,
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('NO_CONSENT');
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+    expect(h.db.signStorage).not.toHaveBeenCalled();
     expect(h.twilio).not.toHaveBeenCalled();
   });
 
   it('allows a media-only (no caption) send to an opted-in contact (201, MMS dispatched)', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const legacy =
+      `https://db.test/storage/v1/object/public/job-files/conversations/${DIRECT.id}/p.jpg`;
     const res = await onRequestPost({
-      request: req({ conversation_id: '11111111-1111-4111-8111-111111111111', body: '', sent_by: 'e-1', media_urls: ['https://files.test/p.jpg'] }),
+      request: req({
+        conversation_id: DIRECT.id,
+        body: '',
+        sent_by: 'e-1',
+        media_urls: [legacy],
+      }),
       env: ENV,
     });
     expect(res.status).toBe(201);
     expect(h.twilio).toHaveBeenCalledTimes(1);
-    expect(h.twilio.mock.calls[0][1].mediaUrls).toEqual(['https://files.test/p.jpg']);
+    expect(h.twilio.mock.calls[0][1].mediaUrls).toEqual([legacy]);
   });
 
   it('rejects a truly empty send — no body AND no media (400, no send)', async () => {
@@ -375,6 +741,27 @@ describe('send-message client request idempotency', () => {
     expect(outboundRows(h.db)).toHaveLength(1);
   });
 
+  it('downloads, signs, and dispatches the same private-media request only once', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/photo.jpg`;
+    const body = {
+      conversation_id: DIRECT.id,
+      body: 'Photo',
+      sent_by: 'e-1',
+      media_urls: [reference],
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+
+    await onRequestPost({ request: req(body), env: ENV });
+    await onRequestPost({ request: req(body), env: ENV });
+
+    expect(h.db.downloadStorage).toHaveBeenCalledTimes(1);
+    expect(h.db.signStorage).toHaveBeenCalledTimes(1);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(outboundRows(h.db)).toHaveLength(1);
+  });
+
   it('rejects changed-content reuse of a client_request_id', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const base = {
@@ -389,6 +776,40 @@ describe('send-message client request idempotency', () => {
     });
     expect(conflict.status).toBe(409);
     expect((await conflict.json()).code).toBe('CLIENT_REQUEST_CONFLICT');
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects changed-media reuse before a second Storage or provider operation', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const base = {
+      conversation_id: DIRECT.id,
+      body: 'Photo',
+      sent_by: 'e-1',
+      client_request_id: CLIENT_REQUEST_ID,
+    };
+    await onRequestPost({
+      request: req({
+        ...base,
+        media_urls: [
+          `upr-storage://message-attachments/outbound/${DIRECT.id}/first.jpg`,
+        ],
+      }),
+      env: ENV,
+    });
+    const conflict = await onRequestPost({
+      request: req({
+        ...base,
+        media_urls: [
+          `upr-storage://message-attachments/outbound/${DIRECT.id}/changed.jpg`,
+        ],
+      }),
+      env: ENV,
+    });
+
+    expect(conflict.status).toBe(409);
+    expect((await conflict.json()).code).toBe('CLIENT_REQUEST_CONFLICT');
+    expect(h.db.downloadStorage).toHaveBeenCalledTimes(1);
+    expect(h.db.signStorage).toHaveBeenCalledTimes(1);
     expect(h.twilio).toHaveBeenCalledTimes(1);
   });
 
@@ -457,6 +878,30 @@ describe('send-message provider mode isolation', () => {
     expect(consentBlocks(h.db)).toHaveLength(0);
   });
 
+  it('rejects CallRail group media before Storage or provider work', async () => {
+    h.db = makeDb({
+      conversation: { ...DIRECT, type: 'group' },
+      contact: OPTED_IN,
+    });
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [
+          `upr-storage://message-attachments/outbound/${DIRECT.id}/photo.jpg`,
+        ],
+      }),
+      env: { ...ENV, MESSAGING_SEND_MODE: 'callrail' },
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('CALLRAIL_PURPOSE_UNSUPPORTED');
+    expect(h.db.downloadStorage).not.toHaveBeenCalled();
+    expect(h.db.signStorage).not.toHaveBeenCalled();
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
   it('rejects CallRail mode until foundation persistence is enabled', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
     const res = await onRequestPost({
@@ -491,7 +936,7 @@ describe('send-message provider mode isolation', () => {
     });
     const payload = await res.json();
     expect(res.status).toBe(201);
-    expect(payload.error_code).toBe('CALLRAIL_MEDIA_TYPE_UNSUPPORTED');
+    expect(payload.error_code).toBe('MESSAGE_MEDIA_REFERENCE_INVALID');
     expect(outboundRows(h.db)[0].payload.status).toBe('failed');
     // The only fetch is requireAuth's Supabase user probe; no CallRail request.
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -659,8 +1104,11 @@ describe('send-message per-participant consent loop', () => {
       h.db.inserts.findIndex((item) => item.table === 'messages' && item.payload.recipient_address === '+15551110001'),
       1,
     );
-    h.db.rpc = vi.fn(async (name) => (
-      name === 'claim_message_recipient_attempt' ? false : null
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => (
+      name === 'claim_message_recipient_attempt'
+        ? false
+        : originalRpc(name, args)
     ));
     h.twilio = vi.fn();
 
@@ -688,6 +1136,77 @@ describe('send-message per-participant consent loop', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
     expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
     expect(consentBlocks(h.db).some((b) => b.payload.event_type === 'send_blocked_no_consent')).toBe(true);
+  });
+
+  it('group: service-only consent cannot authorize a group or broadcast send', async () => {
+    h.db = makeDb({
+      conversation: { id: DIRECT.id, type: 'group', status: 'open' },
+      participants: [{ contact_id: 'c-1', phone: '+15551110001' }],
+      contactsById: {
+        'c-1': {
+          id: 'c-1',
+          dnd: false,
+          opt_in_status: false,
+          phone: '+15551110001',
+        },
+      },
+      serviceConsentsById: { 'c-1': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Group update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(403);
+    expect((await res.json()).code).toBe('ALL_RECIPIENTS_BLOCKED');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+    expect(consentBlocks(h.db)).toHaveLength(1);
+  });
+
+  it('group: sends only to global opt-ins, never service-consent-only recipients', async () => {
+    h.db = makeDb({
+      conversation: { id: DIRECT.id, type: 'group', status: 'open' },
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001' },
+        { contact_id: 'c-2', phone: '+15551110002' },
+      ],
+      contactsById: {
+        'c-1': {
+          id: 'c-1',
+          dnd: false,
+          opt_in_status: true,
+          phone: '+15551110001',
+        },
+        'c-2': {
+          id: 'c-2',
+          dnd: false,
+          opt_in_status: false,
+          phone: '+15551110002',
+        },
+      },
+      serviceConsentsById: { 'c-2': true },
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Group update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.twilio.mock.calls[0][1].to).toBe('+15551110001');
+    expect(outboundRows(h.db)).toHaveLength(1);
+    expect(consentBlocks(h.db)).toHaveLength(1);
   });
 
   it('group: a per-recipient send failure records its OWN failed message row + surfaces the error', async () => {

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "status": "disconnected",
+  "lastVerified": "2026-07-23",
+  "scope": {
+    "workspaceIds": [],
+    "fileIds": [],
+    "wildcardsAllowed": false,
+    "publicSharingAllowed": false
+  },
+  "authority": {
+    "approvedDesignIntent": "repository-until-approved-figma-file-version",
+    "runtimeBehavior": "repository",
+    "authorizationAccessibilityResponsiveTests": "repository",
+    "tokensComponentsShippedSource": "repository",
+    "conflictRule": "repository-until-reviewed-commit"
+  },
+  "actions": {
+    "installPlugin": "deny",
+    "connectAccount": "deny",
+    "purchaseSeat": "deny",
+    "readOrExport": "ask-exact-scope",
+    "writeDesign": "ask-every-change",
+    "comment": "ask-every-change",
+    "share": "ask-every-change",
+    "import": "ask-every-change",
+    "repositoryWrite": "ask-every-change",
+    "autoSync": "deny",
+    "codeGeneration": "deny",
+    "publicPublish": "deny"
+  },
+  "artifacts": {
+    "authStateInRepository": false,
+    "customerDataAllowed": false,
+    "baselineRequiresReleaseSha": true,
+    "baselineRequiresManifest": true
+  }
+}
