@@ -24,7 +24,7 @@ NOTES / GOTCHAS:
 
 **Slug:** `messaging-transport`
 
-**Base verified:** live/repository recapture from `dev` at `94b2e9f` (2026-07-23)
+**Base verified:** live/repository recapture from `dev` at `bf3b0b9` (2026-07-23)
 
 **Ownership:** `.claude/rules/messaging-transport-wave-ownership.md`
 
@@ -504,9 +504,19 @@ projection best-effort. Preview's signed webhook reached the route, but the live
 the documented secondary `id`; reviewed source now allows only that field to be missing while
 retaining required `resource_id` dedupe. Both controlled outbound attempts were later reconciled
 without resend to `confirmed`, with processed `text_reconciled` recovery events and canonical
-`sent` messages. Those records do not prove direct signed-webhook claim or inbound projection; the
-controlled reply is still absent from the safe CallRail inbound aggregate. Direct webhook proof and
-a real provider media fixture remain activation blockers. Production remains unconfigured and fail
+`sent` messages. A one-time Preview-only history importer then read one explicit CallRail
+conversation in an owner-approved 18.5-minute window. It returned four records, skipped the two
+outbound records so the normal reconciler retained ownership, and projected the two missing inbound
+SMS records with their provider identities and original timestamps (`processed=2`, `skipped=2`,
+`failed=0`). Canonical database verification and a refreshed dev inbox showed both inbound replies
+in the intended direct conversation. The recovery branch, alias, endpoint, and all five temporary
+Preview deployments were deleted after verification; the route was never merged into `dev` or
+`main`.
+
+This history result proves the normalized inbound processor and canonical projection against live
+CallRail history. It does not yet prove that a fresh post-fix signed received webhook directly
+claims and projects an inbound event without recovery. That direct webhook proof and a real
+provider media fixture remain activation blockers. Production remains unconfigured and fail
 closed.
 
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
@@ -525,9 +535,12 @@ closed.
 
 Status (2026-07-23): Preview-only activation partially executed under separate owner approvals;
 Production remains disabled. The admin readiness surface is shipped. Controlled outbound/reply
-traffic reached CallRail and the signed route. Outbound history recovery later completed without
-resend, but direct signed-event and inbound projection remain unproved. Further traffic, recovery
-mutation, provider configuration, or Production activation requires a new exact owner approval.
+traffic reached CallRail and the signed route. Outbound reconciliation completed without resend,
+and a bounded one-time provider-history recovery projected the two missing inbound replies into the
+canonical conversation. The temporary recovery surface was deleted. A fresh post-fix signed
+received webhook still must prove automatic direct ingestion before broader activation. Further
+traffic, recovery mutation, provider configuration, or Production activation requires a new exact
+owner approval.
 
 - ship the admin-only, read-only setup/readiness surface without changing Production's disabled
   mode; its status/discovery results are preparation evidence, not activation;

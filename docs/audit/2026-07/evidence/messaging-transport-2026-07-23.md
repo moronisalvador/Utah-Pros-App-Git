@@ -240,3 +240,53 @@ order by r.table_name, r.column_name;
 
 The query must return zero rows. Separately verify
 `to_regprocedure('gen_random_uuid()') is not null`.
+
+## Bounded inbound-history recovery addendum — 2026-07-23
+
+After the missing-secondary-`id` webhook compatibility fix was deployed to Preview, the two replies
+sent before that fix were still absent from UPR. CallRail retained both replies in the provider
+conversation. Official history documentation was rechecked before recovery. The live response
+omitted `type` and `media_urls` for ordinary SMS, while the endpoint's documented `fields`
+parameter does not support requesting those message-level fields. The recovery parser therefore
+accepted an omitted type only when media was also absent/null/empty and treated that narrow shape
+as SMS; missing type with any media still failed closed.
+
+The recovery was deliberately isolated from durable application code:
+
+- an internal-admin-or-scheduler-secret-authenticated POST route existed only on a temporary
+  Preview branch and used the server-only service-role database client;
+- the request required one explicit UPR conversation ID, one provider conversation ID and strict
+  UTC bounds no wider than 24 hours;
+- a read-only uniqueness preflight proved the normalized customer phone had exactly one active
+  direct UPR conversation before any recovery write;
+- provider company, sender, customer, participant and conversation identities had to agree;
+- the provider access was GET-only, inbound SMS only and used the canonical event processor/RPC;
+- outbound records were always skipped for the established outbound reconciler;
+- MMS and ambiguous provider shapes failed closed; and
+- the response exposed only counts, states and provider record identities, never message bodies,
+  phone numbers, credentials or raw provider payloads.
+
+The owner-approved window was `2026-07-23T23:10:00Z` through
+`2026-07-23T23:28:30Z`. The provider returned four records. Recovery processed two inbound SMS
+records, skipped two outbound records and reported zero duplicates, deferred records or failures.
+No outbound provider call or resend occurred.
+
+Post-recovery read-only verification confirmed:
+
+- two `message.received` history events in `processed / inbound_persisted` state;
+- both events mapped to the intended canonical contact and conversation;
+- two canonical inbound CallRail messages with `received` status, provider message/conversation
+  identity, correct sender/recipient direction and original provider timestamps; and
+- the authenticated dev inbox displayed both replies in chronological order while both outbound
+  tests displayed `Sent`.
+
+Cleanup was completed immediately afterward. The temporary remote branch and alias were deleted,
+all five recovery Preview deployments were force-deleted through the Cloudflare API, and a final
+deployment inventory returned no deployment for that branch. The route was never merged into
+`dev` or `main`.
+
+This addendum proves live CallRail history normalization, durable event claiming/processing and
+canonical inbound projection. It does **not** prove replay deduplication or that a newly generated
+received webhook after the compatibility deployment will project automatically; that remains the
+exact next Preview round-trip gate. Production messaging remains disabled and has no CallRail
+messaging bindings.

@@ -131,6 +131,23 @@ The combined Phase 2–4 build is not a one-step deploy:
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
 
+### 2026-07-23 Preview messaging proof
+
+The owner-approved CallRail Preview test verified carrier delivery for two staff-authored outbound
+messages. Both attempts were reconciled to confirmed/canonical `sent` without retry or duplicate
+send. Two replies that arrived before the live webhook-shape fix were recovered from one exact
+provider conversation and a bounded 18.5-minute window: four provider records read, two outbound
+records skipped, two inbound SMS records processed, and zero failed or deferred. Read-only
+verification confirmed provider identity, original timestamps, `received` status, direction and
+the intended conversation; a refreshed authenticated dev inbox displayed both replies.
+
+The one-time recovery endpoint existed only on an isolated Preview branch. After recovery, the
+remote branch, alias and all five Preview deployments were deleted, and the route was never merged
+to `dev` or `main`. This evidence proves history recovery and canonical inbound projection, not a
+fresh received webhook after the compatibility fix. Before broader activation, send no duplicate
+test and instead require one newly generated signed received event to claim, dedupe and project
+without recovery.
+
 The repository-only admin setup panel does not change this sequence. Its
 `GET /api/messaging-setup` status and `action=callrail-options` discovery contracts are read-only,
 require an active internal admin, and add no migration. Before release, test missing/invalid
