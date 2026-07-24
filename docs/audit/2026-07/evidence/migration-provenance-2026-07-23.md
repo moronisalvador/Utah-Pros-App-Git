@@ -131,3 +131,38 @@ contract: empty `search_path`, no `PUBLIC`/`anon`/`authenticated` execution, and
 `service_sms_consents` and `service_sms_consent_attestations`. No live mutation occurred during
 this refresh. `npm run validate:provenance -- --worktree` passed with nine ledger mappings,
 13 functions, four policies and the existing comment-only warning.
+
+## Production-release reconciliation addendum — 2026-07-24 UTC
+
+PR #512 merged to production as merge commit `bd420154837159b26290d17d8b89c26b606e176b`.
+A concurrent, already-reviewed consent-migration parse correction then landed on `dev` as
+`9dc5681577a7af0d94655e5d0f202aaed1806174`. A fresh read-only catalog capture at
+2026-07-24 13:03:12 UTC found two additional applied ledger rows:
+
+| Live version | Name | Release source | Reviewed origin |
+|---|---|---|---|
+| `20260724002500` | `callrail_event_recovery_scheduler` | `20260724002500_callrail_event_recovery_scheduler.sql` | `ec2520e` |
+| `20260724043000` | `harden_service_sms_consent` | `20260724043000_harden_service_sms_consent.sql` | `9dc5681` |
+
+The consent hardening migration constructs exact replacement bodies dynamically after validating
+the prior definitions, so its checked-in file does not contain literal function bodies that the
+normal source extractor can fingerprint. The gate now handles this narrow case by requiring both:
+
+- the release migration blob must exactly equal the reviewed-origin blob; and
+- each dynamically replaced function must match an explicit reviewed raw and semantic live
+  fingerprint.
+
+The refreshed evidence pins both hardened consent RPCs to their service-only invoker contract and
+records that the other 11 selected function fingerprints and four selected policy fingerprints
+remain unchanged. No Supabase mutation occurred during this reconciliation or recapture.
+
+Verification after reconciliation:
+
+- `npm run validate:provenance -- --worktree` — PASS; 11 ledger mappings, 13 functions and four
+  policies, with only the existing documented comment-only warning;
+- `npm run test:provenance` — PASS, 12/12;
+- migration contract tests — PASS, 8/8;
+- `npm run build` — PASS;
+- `npm test` — PASS, 1,741/1,741 across unit, Worker and isolated-QA lanes;
+- targeted changed-file ESLint and `git diff --check` — PASS;
+- full-tree `npm run lint` — exceeded the 120-second close-out window without producing a result.

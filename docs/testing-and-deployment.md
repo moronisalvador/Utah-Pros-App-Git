@@ -196,13 +196,14 @@ both RPCs while retaining the locked-down current/evidence tables and redacted `
 history. Sanitized apply evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-Pending migration `20260724043000_harden_service_sms_consent.sql` is a server-only schema-first
-follow-up: it replaces only the two existing service-role function definitions, sends nothing and
-changes no consent row. Apply only from the reviewed release commit during a low-traffic window,
-with no overlapping contacts/message-provider writes. Verify the ledger, unchanged function
-signatures/ACLs/search paths, contact-phone race closure and strict STOP→later-START chronology.
-Also verify the exact-source hash/length precondition, exact-once patch anchors and the employee
-share lock that serializes authorization revocation against attestation.
+Migration `20260724043000_harden_service_sms_consent.sql` is live under ledger version
+`20260724043000`. It replaced only the two existing service-role function definitions, sent
+nothing and changed no consent row. The 2026-07-24 read-only recapture verified the ledger,
+unchanged function signatures/ACLs/search paths, contact-phone race closure, strict
+STOP→later-START chronology, exact-source hash/length precondition, exact-once patch anchors and
+the employee share lock that serializes authorization revocation against attestation.
+Authenticated production no-send verification confirmed the missing-permission banner, disabled
+Send action and record-only modal without submitting an attestation.
 Verify browser denial, service-role execution, append-only audit history, and that automated and
 scheduled paths accept only `GLOBAL_OPT_IN`.
 Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back

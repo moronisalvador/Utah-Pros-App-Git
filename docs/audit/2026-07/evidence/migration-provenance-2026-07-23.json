@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-24T04:27:21Z",
+  "capturedAt": "2026-07-24T13:03:12Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "ab9e74f76251a55ee2649c3d04753a0276123947",
+  "captureBaseCommit": "bd420154837159b26290d17d8b89c26b606e176b",
   "method": "Supabase migration ledger plus read-only pg_proc catalog queries",
   "ledgerTail": [
     { "version": "20260722222426", "name": "crm_denver_day_bucketing" },
@@ -11,8 +11,10 @@
     { "version": "20260723215926", "name": "messaging_transport_foundation" },
     { "version": "20260723220207", "name": "messaging_transport_foundation_indexes" },
     { "version": "20260723221707", "name": "exec_read_sql_containment" },
+    { "version": "20260724002500", "name": "callrail_event_recovery_scheduler" },
     { "version": "20260724003818", "name": "message_notification_outbox_scheduler" },
-    { "version": "20260724035913", "name": "attest_prior_sms_consent" }
+    { "version": "20260724035913", "name": "attest_prior_sms_consent" },
+    { "version": "20260724043000", "name": "harden_service_sms_consent" }
   ],
   "functions": [
     { "identity": "get_attribution_rollup(date,date,uuid)", "rawMd5": "1e31e2c53a742ea07d5dc0350ecd4f6f", "semanticMd5": "26d844757e1cfcad697caeb3bba749f1", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
@@ -26,8 +28,8 @@
     { "identity": "get_speed_to_lead(date,date,uuid)", "rawMd5": "20e02c7cbe922bd118b9e6f02f10d3f7", "semanticMd5": "3c3b72f8ceccf422fa5232031a4923c7", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
     { "identity": "set_lead_caller_name(uuid,text,boolean)", "rawMd5": "6c17dcd7774f2d0d92b06179dad5b727", "semanticMd5": "412e8189226e2904115a86fd174953f7", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
     { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "rawMd5": "d5abd852ebe5c3dfa2e440f45d40c4b3", "semanticMd5": "f867fd3938603ce8f67322188760d499", "language": "plpgsql", "securityDefiner": true, "volatility": "v", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },
-    { "identity": "get_service_sms_consent_status(uuid,text)", "rawMd5": "ac4ba8645f72ee9ef91c9c43650707a2", "semanticMd5": "00710ad4ece7948dde773d80c428e063", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false },
-    { "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)", "rawMd5": "04505b85f60d4ed2ef694c9c24af37a3", "semanticMd5": "1d324acb692263898042372617a6cc04", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false }
+    { "identity": "get_service_sms_consent_status(uuid,text)", "rawMd5": "3912e63a1a2e75116f604e01e790b5b6", "semanticMd5": "260cb7f4c9fdfc621f0d9d15d45be383", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false },
+    { "identity": "attest_prior_sms_consent(uuid,uuid,text,date,text,text)", "rawMd5": "f86494e84a1dc94543b2787e696f2b1a", "semanticMd5": "1863e0f7c0148272dda01fe8c5822a51", "language": "plpgsql", "securityDefiner": false, "volatility": "v", "config": ["search_path=\"\""], "anonExecute": false, "authenticatedExecute": false, "serviceRoleExecute": true, "publicExecute": false }
   ],
   "policies": [
     {

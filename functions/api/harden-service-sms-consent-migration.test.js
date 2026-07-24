@@ -37,6 +37,15 @@ describe('service-SMS consent hardening migration contract', () => {
     expect(hardening).toContain('attestation STOP chronology patch did not match reviewed foundation');
   });
 
+  it('explicitly concatenates adjacent escaped SQL fragments', () => {
+    const lines = hardening.split('\n');
+    const invalidPairs = lines.flatMap((line, index) => {
+      const next = lines[index + 1] || '';
+      return /^\s*E'/.test(next) && /'\s*$/.test(line) ? [[index + 1, line, next]] : [];
+    });
+    expect(invalidPairs).toEqual([]);
+  });
+
   it('rejects non-anchor drift and duplicate patch anchors', () => {
     const reviewed = 'reviewed definition with one PATCH anchor';
     const hash = md5(reviewed);

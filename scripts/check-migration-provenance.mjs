@@ -15,6 +15,8 @@
  *     read-only catalog queries, then pass the JSON with --evidence.
  *   - Raw function drift is a failure unless the manifest explicitly permits comment-only drift
  *     and the comment/whitespace-insensitive fingerprint still matches.
+ *   - A reviewed migration that constructs a function body dynamically may pin explicit live raw
+ *     and semantic fingerprints. Its migration file still has to equal the reviewed Git blob.
  */
 
 import crypto from 'node:crypto';
@@ -105,29 +107,42 @@ function isAncestor(root, ancestor, ref) {
 }
 
 function compareFunction(source, live, selected, issues, warnings) {
-  const name = selected.identity.slice(0, selected.identity.indexOf('('));
-  const local = source.get(name);
-  if (!local) {
-    issues.push(`${selected.path} does not define ${selected.identity}`);
-    return;
-  }
   if (!live) {
     issues.push(`Live evidence is missing ${selected.identity}`);
     return;
   }
-  if (local.rawMd5 !== live.rawMd5) {
-    if (
-      selected.allowedRawDrift === 'comments_only' &&
-      local.semanticMd5 === live.semanticMd5
-    ) {
-      warnings.push(`${selected.identity}: raw body differs, comment-only semantic hash matches`);
-    } else {
-      issues.push(`${selected.identity}: live/source body fingerprint drift`);
+
+  if (selected.expectedFingerprints) {
+    for (const field of ['rawMd5', 'semanticMd5']) {
+      if (
+        typeof selected.expectedFingerprints[field] !== 'string' ||
+        live[field] !== selected.expectedFingerprints[field]
+      ) {
+        issues.push(`${selected.identity}: unexpected live ${field} fingerprint`);
+      }
+    }
+  } else {
+    const name = selected.identity.slice(0, selected.identity.indexOf('('));
+    const local = source.get(name);
+    if (!local) {
+      issues.push(`${selected.path} does not define ${selected.identity}`);
+      return;
+    }
+    if (local.rawMd5 !== live.rawMd5) {
+      if (
+        selected.allowedRawDrift === 'comments_only' &&
+        local.semanticMd5 === live.semanticMd5
+      ) {
+        warnings.push(`${selected.identity}: raw body differs, comment-only semantic hash matches`);
+      } else {
+        issues.push(`${selected.identity}: live/source body fingerprint drift`);
+      }
+    }
+    if (local.semanticMd5 !== live.semanticMd5) {
+      issues.push(`${selected.identity}: live/source semantic fingerprint drift`);
     }
   }
-  if (local.semanticMd5 !== live.semanticMd5) {
-    issues.push(`${selected.identity}: live/source semantic fingerprint drift`);
-  }
+
   const expected = selected.expected || {
     securityDefiner: true,
     config: ['search_path=public'],
@@ -263,7 +278,7 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, options.manifest), 'utf8'));
-    const evidence = JSON.parse(fs.readFileSync(path.join(root, options.evidence), 'utf8'));
+  const evidence = JSON.parse(fs.readFileSync(path.join(root, options.evidence), 'utf8'));
   const result = validateProvenance({ root, ...options, manifest, evidence });
   for (const warning of result.warnings) process.stdout.write(`WARN ${warning}\n`);
   for (const issue of result.issues) process.stderr.write(`ERROR ${issue}\n`);

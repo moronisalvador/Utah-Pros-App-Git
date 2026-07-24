@@ -234,9 +234,11 @@ outside the legacy browser-readable log. No provider send occurred during verifi
 sanitized evidence is in
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is authored but not
-applied. It pins and revalidates the contact phone after entering the inbound-projection
-serialization boundary and requires a strictly later processed START to supersede a pending STOP;
-equal timestamps remain blocked. The actor row is held `FOR SHARE` through the attestation write,
-closing concurrent role/deactivation races. The patch refuses any function-definition hash drift
-or duplicate patch anchor before replacing either service-only RPC.
+Additive hardening migration `20260724043000_harden_service_sms_consent.sql` is live under
+migration-ledger version `20260724043000`. It pins and revalidates the contact phone after entering
+the inbound-projection serialization boundary and requires a strictly later processed START to
+supersede a pending STOP; equal timestamps remain blocked. The actor row is held `FOR SHARE`
+through the attestation write, closing concurrent role/deactivation races. The patch refuses any
+function-definition hash drift or duplicate patch anchor before replacing either service-only RPC.
+Read-only catalog recapture confirmed both functions remain `SECURITY INVOKER`, use an empty
+`search_path`, deny browser roles and permit only `service_role` execution.

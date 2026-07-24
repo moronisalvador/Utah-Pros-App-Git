@@ -65,36 +65,36 @@ BEGIN
   v_status_definition := replace(
     v_status_definition,
     v_needle,
-    E'  PERFORM pg_advisory_xact_lock(hashtextextended(''messaging-phone:'' || v_phone_key, 0));\n\n'
-    E'  -- Pin and revalidate the target after entering the phone boundary.\n'
-    E'  SELECT *\n'
-    E'  INTO v_contact\n'
-    E'  FROM public.contacts\n'
-    E'  WHERE id = p_contact_id\n'
-    E'  FOR SHARE;\n\n'
-    E'  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''''), ''[^0-9]'', '''', ''g'');\n'
-    E'  IF length(v_locked_phone_digits) = 10 THEN\n'
-    E'    v_locked_phone_key := v_locked_phone_digits;\n'
-    E'  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = ''1'' THEN\n'
-    E'    v_locked_phone_key := right(v_locked_phone_digits, 10);\n'
-    E'  END IF;\n\n'
-    E'  IF v_contact.id IS NULL\n'
-    E'     OR v_locked_phone_key IS NULL\n'
-    E'     OR v_locked_phone_key <> v_phone_key THEN\n'
-    E'    RETURN jsonb_build_object(\n'
-    E'      ''allowed'', false,\n'
-    E'      ''code'', ''CONTACT_PHONE_CHANGED'',\n'
-    E'      ''contact_id'', p_contact_id\n'
-    E'    );\n'
-    E'  END IF;\n\n'
+    E'  PERFORM pg_advisory_xact_lock(hashtextextended(''messaging-phone:'' || v_phone_key, 0));\n\n' ||
+    E'  -- Pin and revalidate the target after entering the phone boundary.\n' ||
+    E'  SELECT *\n' ||
+    E'  INTO v_contact\n' ||
+    E'  FROM public.contacts\n' ||
+    E'  WHERE id = p_contact_id\n' ||
+    E'  FOR SHARE;\n\n' ||
+    E'  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''''), ''[^0-9]'', '''', ''g'');\n' ||
+    E'  IF length(v_locked_phone_digits) = 10 THEN\n' ||
+    E'    v_locked_phone_key := v_locked_phone_digits;\n' ||
+    E'  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = ''1'' THEN\n' ||
+    E'    v_locked_phone_key := right(v_locked_phone_digits, 10);\n' ||
+    E'  END IF;\n\n' ||
+    E'  IF v_contact.id IS NULL\n' ||
+    E'     OR v_locked_phone_key IS NULL\n' ||
+    E'     OR v_locked_phone_key <> v_phone_key THEN\n' ||
+    E'    RETURN jsonb_build_object(\n' ||
+    E'      ''allowed'', false,\n' ||
+    E'      ''code'', ''CONTACT_PHONE_CHANGED'',\n' ||
+    E'      ''contact_id'', p_contact_id\n' ||
+    E'    );\n' ||
+    E'  END IF;\n\n' ||
     E'  IF EXISTS ('
   );
   IF v_status_definition = v_original THEN
     RAISE EXCEPTION 'status phone-lock patch did not match reviewed foundation';
   END IF;
 
-  v_needle := E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n'
-    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n'
+  v_needle := E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n' ||
+    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n' ||
     E'  ) THEN';
   IF (length(v_status_definition) - length(replace(v_status_definition, v_needle, '')))
        / length(v_needle) <> 1 THEN
@@ -104,26 +104,26 @@ BEGIN
   v_status_definition := replace(
     v_status_definition,
     v_needle,
-    E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n'
-    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n'
-    E'      AND NOT EXISTS (\n'
-    E'        SELECT 1\n'
-    E'        FROM public.message_provider_events later_event\n'
-    E'        WHERE later_event.direction = ''inbound''\n'
-    E'          AND later_event.message_type IN (''sms'', ''mms'')\n'
-    E'          AND later_event.processing_state = ''processed''\n'
-    E'          AND right(\n'
-    E'            regexp_replace(COALESCE(later_event.sender_address, ''''), ''[^0-9]'', '''', ''g''),\n'
-    E'            10\n'
-    E'          ) = v_phone_key\n'
-    E'          AND later_event.occurred_at > e.occurred_at\n'
-    E'          AND regexp_replace(\n'
-    E'            lower(trim(COALESCE(later_event.content, ''''))),\n'
-    E'            ''[^a-z0-9]'',\n'
-    E'            '''',\n'
-    E'            ''g''\n'
-    E'          ) = ANY (ARRAY[''start'', ''unstop'', ''subscribe'', ''yes''])\n'
-    E'      )\n'
+    E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n' ||
+    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n' ||
+    E'      AND NOT EXISTS (\n' ||
+    E'        SELECT 1\n' ||
+    E'        FROM public.message_provider_events later_event\n' ||
+    E'        WHERE later_event.direction = ''inbound''\n' ||
+    E'          AND later_event.message_type IN (''sms'', ''mms'')\n' ||
+    E'          AND later_event.processing_state = ''processed''\n' ||
+    E'          AND right(\n' ||
+    E'            regexp_replace(COALESCE(later_event.sender_address, ''''), ''[^0-9]'', '''', ''g''),\n' ||
+    E'            10\n' ||
+    E'          ) = v_phone_key\n' ||
+    E'          AND later_event.occurred_at > e.occurred_at\n' ||
+    E'          AND regexp_replace(\n' ||
+    E'            lower(trim(COALESCE(later_event.content, ''''))),\n' ||
+    E'            ''[^a-z0-9]'',\n' ||
+    E'            '''',\n' ||
+    E'            ''g''\n' ||
+    E'          ) = ANY (ARRAY[''start'', ''unstop'', ''subscribe'', ''yes''])\n' ||
+    E'      )\n' ||
     E'  ) THEN'
   );
   IF v_status_definition = v_original THEN
@@ -171,11 +171,11 @@ BEGIN
     E'  WHERE id = p_actor_id\n  LIMIT 1\n  FOR SHARE;'
   );
 
-  v_needle := E'  ORDER BY c.id\n  FOR UPDATE;\n\n'
-    E'  SELECT *\n'
-    E'  INTO v_contact\n'
-    E'  FROM public.contacts\n'
-    E'  WHERE id = p_contact_id;\n\n'
+  v_needle := E'  ORDER BY c.id\n  FOR UPDATE;\n\n' ||
+    E'  SELECT *\n' ||
+    E'  INTO v_contact\n' ||
+    E'  FROM public.contacts\n' ||
+    E'  WHERE id = p_contact_id;\n\n' ||
     E'  IF EXISTS (';
   IF (length(v_attest_definition) - length(replace(v_attest_definition, v_needle, '')))
        / length(v_needle) <> 1 THEN
@@ -185,31 +185,31 @@ BEGIN
   v_attest_definition := replace(
     v_attest_definition,
     v_needle,
-    E'  ORDER BY c.id\n  FOR UPDATE;\n\n'
-    E'  SELECT *\n'
-    E'  INTO v_contact\n'
-    E'  FROM public.contacts\n'
-    E'  WHERE id = p_contact_id\n'
-    E'  FOR UPDATE;\n\n'
-    E'  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''''), ''[^0-9]'', '''', ''g'');\n'
-    E'  IF length(v_locked_phone_digits) = 10 THEN\n'
-    E'    v_locked_phone_key := v_locked_phone_digits;\n'
-    E'  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = ''1'' THEN\n'
-    E'    v_locked_phone_key := right(v_locked_phone_digits, 10);\n'
-    E'  END IF;\n\n'
-    E'  IF v_contact.id IS NULL\n'
-    E'     OR v_locked_phone_key IS NULL\n'
-    E'     OR v_locked_phone_key <> v_phone_key THEN\n'
-    E'    RETURN jsonb_build_object(''ok'', false, ''code'', ''CONTACT_PHONE_CHANGED'');\n'
-    E'  END IF;\n\n'
+    E'  ORDER BY c.id\n  FOR UPDATE;\n\n' ||
+    E'  SELECT *\n' ||
+    E'  INTO v_contact\n' ||
+    E'  FROM public.contacts\n' ||
+    E'  WHERE id = p_contact_id\n' ||
+    E'  FOR UPDATE;\n\n' ||
+    E'  v_locked_phone_digits := regexp_replace(COALESCE(v_contact.phone, ''''), ''[^0-9]'', '''', ''g'');\n' ||
+    E'  IF length(v_locked_phone_digits) = 10 THEN\n' ||
+    E'    v_locked_phone_key := v_locked_phone_digits;\n' ||
+    E'  ELSIF length(v_locked_phone_digits) = 11 AND left(v_locked_phone_digits, 1) = ''1'' THEN\n' ||
+    E'    v_locked_phone_key := right(v_locked_phone_digits, 10);\n' ||
+    E'  END IF;\n\n' ||
+    E'  IF v_contact.id IS NULL\n' ||
+    E'     OR v_locked_phone_key IS NULL\n' ||
+    E'     OR v_locked_phone_key <> v_phone_key THEN\n' ||
+    E'    RETURN jsonb_build_object(''ok'', false, ''code'', ''CONTACT_PHONE_CHANGED'');\n' ||
+    E'  END IF;\n\n' ||
     E'  IF EXISTS ('
   );
   IF v_attest_definition = v_original THEN
     RAISE EXCEPTION 'attestation phone-lock patch did not match reviewed foundation';
   END IF;
 
-  v_needle := E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n'
-    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n'
+  v_needle := E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n' ||
+    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n' ||
     E'  ) THEN';
   IF (length(v_attest_definition) - length(replace(v_attest_definition, v_needle, '')))
        / length(v_needle) <> 1 THEN
@@ -219,26 +219,26 @@ BEGIN
   v_attest_definition := replace(
     v_attest_definition,
     v_needle,
-    E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n'
-    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n'
-    E'      AND NOT EXISTS (\n'
-    E'        SELECT 1\n'
-    E'        FROM public.message_provider_events later_event\n'
-    E'        WHERE later_event.direction = ''inbound''\n'
-    E'          AND later_event.message_type IN (''sms'', ''mms'')\n'
-    E'          AND later_event.processing_state = ''processed''\n'
-    E'          AND right(\n'
-    E'            regexp_replace(COALESCE(later_event.sender_address, ''''), ''[^0-9]'', '''', ''g''),\n'
-    E'            10\n'
-    E'          ) = v_phone_key\n'
-    E'          AND later_event.occurred_at > e.occurred_at\n'
-    E'          AND regexp_replace(\n'
-    E'            lower(trim(COALESCE(later_event.content, ''''))),\n'
-    E'            ''[^a-z0-9]'',\n'
-    E'            '''',\n'
-    E'            ''g''\n'
-    E'          ) = ANY (ARRAY[''start'', ''unstop'', ''subscribe'', ''yes''])\n'
-    E'      )\n'
+    E'      AND regexp_replace(lower(trim(COALESCE(e.content, ''''))), ''[^a-z0-9]'', '''', ''g'')\n' ||
+    E'        = ANY (ARRAY[''stop'', ''stopall'', ''unsubscribe'', ''cancel'', ''end'', ''quit''])\n' ||
+    E'      AND NOT EXISTS (\n' ||
+    E'        SELECT 1\n' ||
+    E'        FROM public.message_provider_events later_event\n' ||
+    E'        WHERE later_event.direction = ''inbound''\n' ||
+    E'          AND later_event.message_type IN (''sms'', ''mms'')\n' ||
+    E'          AND later_event.processing_state = ''processed''\n' ||
+    E'          AND right(\n' ||
+    E'            regexp_replace(COALESCE(later_event.sender_address, ''''), ''[^0-9]'', '''', ''g''),\n' ||
+    E'            10\n' ||
+    E'          ) = v_phone_key\n' ||
+    E'          AND later_event.occurred_at > e.occurred_at\n' ||
+    E'          AND regexp_replace(\n' ||
+    E'            lower(trim(COALESCE(later_event.content, ''''))),\n' ||
+    E'            ''[^a-z0-9]'',\n' ||
+    E'            '''',\n' ||
+    E'            ''g''\n' ||
+    E'          ) = ANY (ARRAY[''start'', ''unstop'', ''subscribe'', ''yes''])\n' ||
+    E'      )\n' ||
     E'  ) THEN'
   );
   IF v_attest_definition = v_original THEN
