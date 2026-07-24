@@ -30,11 +30,17 @@ export function validateMessageFile(file) {
 }
 
 async function finalUpload(file) {
-  // Preserve GIF animation. Other phone images may be converted to a smaller
-  // JPEG by the existing, battle-tested compressor. Unsupported browser image
-  // encodings (for example WebP/HEIC when decodable) must become JPEG even when
-  // the JPEG is slightly larger than the original.
-  if (file.type === 'image/gif') return { blob: file, name: file.name };
+  // Provider-safe files already inside the final cap need no browser decode.
+  // This preserves GIF animation and avoids blocking a valid small JPEG/PNG
+  // when createImageBitmap is unavailable or stalls. The Worker still verifies
+  // MIME, magic bytes, and size before Storage and again before dispatch.
+  if (SUPPORTED_TYPES.has(file.type) && file.size <= MAX_MESSAGE_IMAGE_BYTES) {
+    return { blob: file, name: file.name };
+  }
+  // Larger phone images may be converted to a smaller JPEG by the existing,
+  // battle-tested compressor. Unsupported browser image encodings (for example
+  // WebP/HEIC when decodable) must become JPEG even when the JPEG is slightly
+  // larger than the original.
   const compressed = await compressImage(file, {
     forceJpeg: !SUPPORTED_TYPES.has(file.type),
   });

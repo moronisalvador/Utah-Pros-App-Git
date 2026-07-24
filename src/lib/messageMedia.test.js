@@ -1,3 +1,22 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: messageMedia.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves that conversation photo attachments accept only supported files,
+ *   upload with the signed-in user's access, and return private references.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./messageMedia.js
+ *   Data:      reads  → none
+ *              writes → none (network calls are mocked)
+ *
+ * NOTES / GOTCHAS:
+ *   - Small provider-safe images must upload without browser image decoding.
+ * ════════════════════════════════════════════════
+ */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   MAX_MESSAGE_ATTACHMENTS,
@@ -56,6 +75,45 @@ describe('message media browser helper', () => {
         headers: { Authorization: 'Bearer user-token' },
       }),
     );
+  });
+
+  it('uploads an already-provider-safe PNG without requiring browser image decoding', async () => {
+    const reference =
+      `upr-storage://message-attachments/outbound/${CONVERSATION}/photo.png`;
+    const createImageBitmapMock = vi.fn(() => {
+      throw new Error('small provider-safe images must not be decoded');
+    });
+    const fetchMock = vi.fn(async (_url, options) => {
+      const uploaded = options.body.get('file');
+      expect(uploaded).toBeInstanceOf(File);
+      expect(uploaded.name).toBe('photo.png');
+      expect(uploaded.type).toBe('image/png');
+      return new Response(JSON.stringify({
+        reference,
+        mime_type: 'image/png',
+        byte_size: uploaded.size,
+      }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    vi.stubGlobal('createImageBitmap', createImageBitmapMock);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(uploadConversationMedia(
+      { apiKey: 'fresh-user-token' },
+      CONVERSATION,
+      new File([
+        new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]),
+      ], 'photo.png', { type: 'image/png' }),
+    )).resolves.toEqual({
+      url: reference,
+      reference,
+      mimeType: 'image/png',
+      byteSize: 9,
+    });
+    expect(createImageBitmapMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
 });
