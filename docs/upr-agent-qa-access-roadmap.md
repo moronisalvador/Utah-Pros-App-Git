@@ -120,6 +120,14 @@ execution of privileged functions, and authenticated access to `exec_read_sql`:
 `docs/audit/2026-07/evidence/live-supabase.md:39-114`. Those findings mean a synthetic identity in
 the shared project is not isolated from production data.
 
+**Dated status correction — 2026-07-23:** the `exec_read_sql` sentence above describes the
+2026-07-22 snapshot, not current access. Foundation F1 applied
+`20260723221707 exec_read_sql_containment`; fresh catalog evidence on 2026-07-23 confirms
+`PUBLIC`, `anon`, and `authenticated` are denied while `service_role` remains executable. The
+remaining broad-policy findings still block shared-production QA writes. See
+`docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md` and the fresh generated RPC
+inventory.
+
 ## Threat model and non-negotiable boundaries
 
 ### Assets being protected

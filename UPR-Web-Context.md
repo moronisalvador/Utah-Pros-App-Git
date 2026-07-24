@@ -414,7 +414,10 @@ Docs + generator only — zero schema, zero `src/` page edits. Ships:
   `database-standard.md` §2's allowlist), never a second schema source. Distinct from Phase F's
   `db/baseline/` (a frozen comparison snapshot `db-drift-check.mjs` diffs against) — this generator
   never writes that directory; its own output is always "what does live look like right now."
-  Regenerated 2026-07-08 against the live catalog: 127 public tables, 337 public functions.
+  Regenerated from a fresh read-only live catalog capture at 2026-07-24 00:20:26 UTC:
+  133 public tables and 372 distinct function-name rows (373 overloads in the separate closure
+  query). The generated RPC inventory shows `exec_read_sql` service-only and, correctly for the
+  pre-apply state, still shows `upsert_lead_from_form` executable by browser roles.
 - `.claude/rules/documentation-standard.md` — new "SQL migration header" addendum formalizing the
   `MIGRATION:`/`Phase:`/`WHAT THIS DOES`/`ADDITIVE-ONLY`/`ROLLBACK` header pattern Phase F/P1's
   migrations already established, satisfying `database-standard.md` §6's rollback requirement.
@@ -7771,3 +7774,19 @@ function fingerprints plus the `messages_authenticated_select` policy identity/r
 blobs, stale/non-ancestor evidence, and policy drift. The gate consumes sanitized evidence and never
 connects to or writes Supabase. Exact capture and review record:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
+
+## July 23 engineering documentation closure and Figma checkpoint
+
+The end-of-day reconciliation is recorded in
+`docs/audit/2026-07/evidence/engineering-foundation-documentation-closure-2026-07-23.md`, with the
+complete dated Git reachability appendix in `git-ledger-2026-07-23.md`. It classifies every July 23
+commit visible after remote pruning plus explicitly requested unreferenced objects. Temporary
+CallRail recovery commit `d3fd17a` and shared-production QA proposal `3841056` are both branch-only
+historical evidence and superseded; neither should be merged.
+
+The minimum viable design-start contract is in
+`docs/audit/2026-07/evidence/figma-readiness-checkpoint-2026-07-23.md`. It does not wait for hosted
+write-capable QA, but remains owner-blocked on a dirty messaging UI worktree, CAP-SEC-001/
+CAP-GOV-001 containment, explicit Figma permission/authority approval, and a dedicated
+authenticated read-only staging browser session. No Figma plugin connection or paid seat exists
+because those exact external steps require owner approval.

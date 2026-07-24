@@ -53,6 +53,12 @@ Any authorized Encircle database apply still serializes with every other shared-
 
 ### Current, verified 2026-07-23
 
+- Documentation-closure recapture at 2026-07-24 00:20–00:21 UTC found 133 public tables, 373
+  public function overloads across 372 names, and the exact three July 23 migration-ledger rows.
+  It reconfirmed `exec_read_sql(text)` service-only and `upsert_lead_from_form(...)` still
+  browser-executable pending its separate owner-authorized apply. Counts below preserve the
+  earlier planning capture where they explain the original decision.
+
 - At the F1 apply, `origin/dev` was `1875e63`; reviewed containment commit `5cf546b` was reachable
   from both `origin/dev` and `origin/main`.
 - Owner-reported GitHub CI and Cloudflare staging passed for `0a06a21`.
@@ -341,7 +347,7 @@ after exact file ownership is opened; hosted project/account creation remains an
 
 ### Phase F6a/F6b — Design-system and Figma operating model
 
-> **Implementation:** `not_started` · **Gate:** `internal + owner` on F4/F5 and seat decision
+> **Implementation:** `minimum-viable checkpoint recorded` · **Gate:** `internal + owner`
 > **Disposition:** `active`
 > **Model · effort:** high; product-wide visual authority
 > **Scope:** design source-of-truth, inspection/handoff/versioning rules, token/component coverage map;
@@ -353,6 +359,14 @@ after exact file ownership is opened; hosted project/account creation remains an
   semantic code tokens/primitives; define inspect/export/handoff/review permissions and seat exit.
 - **F6b — QA baselines/adoption:** establish isolated-QA dark/mobile/accessibility baselines and
   replan UX W1-W5 with exact disjoint page/CSS sets.
+
+**Bounded checkpoint — 2026-07-23:** full write-capable hosted QA is no longer treated as a
+prerequisite for starting design. The minimum gate and first sprint are in
+`docs/audit/2026-07/evidence/figma-readiness-checkpoint-2026-07-23.md`. Design remains
+owner-blocked because one messaging worktree has six dirty shared-UI files, CAP-SEC-001 and
+CAP-GOV-001 need owner/provider actions, the plugin permission/authority contract is unapproved,
+and a dedicated authenticated read-only staging browser session has not been demonstrated. No
+Figma plugin was installed or connected and no seat was purchased.
 
 ## 7. Finish-first product waves
 

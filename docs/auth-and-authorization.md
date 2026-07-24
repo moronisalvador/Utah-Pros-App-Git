@@ -68,15 +68,17 @@ calls or service-role reads/writes. Record the actor for sensitive state changes
 - Authorization data must not rely on user-editable metadata. If JWT app metadata is used, account
   for claim staleness until token refresh.
 
-### Verified live posture (2026-07-22; DB-003 contained 2026-07-23)
+### Verified live posture (2026-07-22 audit; boundaries refreshed 2026-07-24 UTC)
 
-The live database has RLS on all 130 public tables, but RLS-enabled does not mean least-privilege:
+Fresh catalog capture found RLS on all 133 public tables, but RLS-enabled does not mean
+least-privilege:
 
 - anonymous always-true policies still permit broad reads and mutations on deferred operational,
   customer, messaging and CRM tables;
 - authenticated always-true policies grant company-wide access to many tables;
-- 345 of 366 public functions are `SECURITY DEFINER`, and 342 privileged overloads are executable
-  by `authenticated`;
+- 346 of 373 public function overloads are `SECURITY DEFINER`, and 363 total overloads are
+  executable by `authenticated`; these fresh aggregate counts are not a finding-by-finding
+  reclassification of the July 22 audit;
 - the dated snapshot found `exec_read_sql(text)` executable by authenticated callers; migration
   `20260723205127_exec_read_sql_containment.sql` was applied and verified on 2026-07-23, and now
   denies `PUBLIC`, `anon`, and `authenticated` while preserving only `service_role`;

@@ -44,7 +44,23 @@ allowlisting.
 
 ## Last verified live baseline
 
-Read-only inspection on 2026-07-22 found:
+Fresh read-only catalog inspection on 2026-07-24 00:20–00:21 UTC found:
+
+- 133 public tables, all with RLS enabled;
+- 373 public function overloads across 372 distinct names, of which 346 overloads are
+  `SECURITY DEFINER`;
+- six overloads executable by `anon` and 363 executable by `authenticated`;
+- live migration-ledger entries on July 23 are `20260723215926 messaging_transport_foundation`,
+  `20260723220207 messaging_transport_foundation_indexes`, and
+  `20260723221707 exec_read_sql_containment`;
+- `exec_read_sql(text)` is executable only by `postgres` and `service_role`;
+- `upsert_lead_from_form(uuid,text,jsonb,jsonb,boolean,text,text,uuid)` still permits
+  `PUBLIC`, `anon`, and `authenticated`; its reviewed ACL-only migration remains unapplied.
+
+The generator-produced reports are in `docs/generated/`; the dated closure interpretation is in
+`docs/audit/2026-07/evidence/engineering-foundation-documentation-closure-2026-07-23.md`.
+
+The prior broad audit on 2026-07-22 found:
 
 - 130 public tables, all with RLS enabled; 225 policies across 115 tables;
 - 1,689 public columns, 247 foreign keys, 419 valid/ready indexes and 47 application triggers;
@@ -52,7 +68,7 @@ Read-only inspection on 2026-07-22 found:
 - 375 applied migrations, ten active cron jobs, two Storage buckets and three public Realtime
   publications.
 
-This baseline is dated evidence, not a permanent constant. The sanitized query results, advisor
+That broader baseline is dated evidence, not a permanent constant. The sanitized query results, advisor
 counts and exclusions are in `docs/audit/2026-07/evidence/live-supabase.md`.
 
 Important verified exceptions and contained history:
