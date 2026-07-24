@@ -149,6 +149,26 @@ export function isLikelyImageUrl(url = '') {
   return false;
 }
 
+/** Media references that can safely be replayed through the canonical send worker. */
+export function isRetryableMediaReference(value = '') {
+  if (value.startsWith('upr-storage://message-attachments/outbound/')) {
+    const path = value.slice('upr-storage://message-attachments/outbound/'.length);
+    return !!path
+      && !path.includes('..')
+      && !path.includes('\\')
+      && /^[A-Za-z0-9_./-]+$/.test(path);
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:'
+      && /^\/storage\/v1\/object\/public\/job-files\/conversations\/[^/]+\//.test(
+        decodeURIComponent(parsed.pathname),
+      );
+  } catch {
+    return false;
+  }
+}
+
 // ─── SECTION: Helpers — failure classification (mirrors twilio-errors uiClass) ──────────────
 
 /** Style token for a message's delivery state: 'blocked'|'carrier'|'unreachable'|'config'|'error'. */

@@ -195,3 +195,26 @@ Deploying the setup UI does not authorize activation. Production stays
 tracking-number routing, signing key, and any real/test message remain separate owner/external
 gates. Future RCS setup remains planned only and must prove explicit channel locking with automatic
 RCS-to-SMS/MMS fallback disabled.
+
+### Private outbound MMS verification
+
+Repository close-out for outbound media requires: upload-route authentication and conversation
+binding; JPEG/PNG/GIF magic-byte checks; one-item and 5,000,000-byte boundaries; traversal/foreign
+reference rejection; private Storage download contracts; CallRail multipart fields without
+a public URL; Twilio short-lived signing inside its adapter; message-bound rendering; retry
+retention; and no automated/scheduled CallRail import. Build and repository tests do not prove the
+live bucket, Cloudflare multipart behavior, provider acceptance, carrier rendering, or device
+round trip.
+
+A controlled live test is a separate owner-gated step: upload one non-sensitive image in Preview,
+send it to the approved test phone, reply with one image, verify both private objects and exact
+conversation rendering, replay the signed inbound event to prove dedupe, and confirm no raw
+CallRail URL or Twilio signed URL was persisted. Orphan cleanup remains blocked on a separately
+reviewed durable draft/claim design; there is no destructive browser cleanup route. Production and
+RCS remain unchanged.
+
+The 2026-07-23 pre-fix iPhone reply reached the signed webhook and durable provider-event inbox as
+MMS, but media capture failed with `CALLRAIL_MMS_DOWNLOAD_FAILED` before any private Storage write.
+This specifically invalidated the old derived media endpoint. Close-out must therefore prove the
+corrected immediate webhook URL download and the conversation-API URL refresh used by a queued
+retry; neither repository tests nor the received provider event alone is sufficient.

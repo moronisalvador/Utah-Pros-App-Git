@@ -195,17 +195,19 @@ export function formatDuration(seconds) {
  *   untouched original when it's ≤ FALLBACK_MAX_BYTES, otherwise throws.
  * - Never returns a blob larger than the original — if the JPEG comes out
  *   bigger (already-optimized small images), the original wins.
+ * @param {{ forceJpeg?: boolean }} options `forceJpeg` is for provider paths
+ *   that cannot accept the picked image's original encoding.
  * @returns {Promise<{ blob: Blob, width: number|null, height: number|null, didCompress: boolean }>}
  */
-export async function compressImage(file) {
+export async function compressImage(file, { forceJpeg = false } = {}) {
   let bitmap;
   try {
     bitmap = await createImageBitmap(file);
   } catch {
-    if (file.size <= FALLBACK_MAX_BYTES) {
+    if (!forceJpeg && file.size <= FALLBACK_MAX_BYTES) {
       return { blob: file, width: null, height: null, didCompress: false };
     }
-    throw new Error(`Couldn't read ${file.name || 'that photo'} — try a JPG or PNG under 10 MB`);
+    throw new Error(`Couldn't convert ${file.name || 'that photo'} — try a JPG or PNG under 5 MB`);
   }
 
   try {
@@ -216,7 +218,7 @@ export async function compressImage(file) {
     canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY));
 
-    if (!blob || blob.size >= file.size) {
+    if (!blob || (!forceJpeg && blob.size >= file.size)) {
       return { blob: file, width: bitmap.width, height: bitmap.height, didCompress: false };
     }
     return { blob, width, height, didCompress: true };

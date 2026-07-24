@@ -45,7 +45,10 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, getAuthHeader } from '@/lib/realtime';
 import { techKeys } from '@/lib/techQuery';
-import { parseMediaUrls } from '@/components/conversations/messageUtils';
+import {
+  isRetryableMediaReference,
+  parseMediaUrls,
+} from '@/components/conversations/messageUtils';
 import { impact } from '@/lib/nativeHaptics';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
@@ -274,7 +277,7 @@ export function useThread(convId, { active = true } = {}) {
     const stored = msg._clientId ? retryStore.current[msg._clientId] : null;
     const payload = stored || {
       text: msg.body || '',
-      media_urls: parseMediaUrls(msg.media_urls).filter((u) => /^https?:/i.test(u)),
+      media_urls: parseMediaUrls(msg.media_urls).filter(isRetryableMediaReference),
       isNote: msg.type === 'internal_note',
     };
     if (!payload.text && !(payload.media_urls && payload.media_urls.length)) {

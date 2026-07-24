@@ -1,9 +1,11 @@
 /**
  * Securely copies CallRail MMS objects into UPR-owned private Storage.
  *
- * Provider URLs from webhooks are deliberately not accepted. The media endpoint
- * is derived from server-resolved account/message identity and fixed to
- * api.callrail.com. Returned metadata contains only the private UPR reference.
+ * Signed webhooks provide short-lived authenticated media endpoints. They are
+ * accepted only after strict CallRail account/host validation, downloaded
+ * immediately, and never persisted. Queue retries refresh current media URLs
+ * through the documented text-conversation API. Returned metadata contains
+ * only the private UPR reference.
  */
 
 import { fetchWithTimeout } from './http.js';
@@ -112,14 +114,39 @@ export function validateCallrailMmsCount(mediaCount, limits = {}) {
   return mediaCount;
 }
 
-export function buildCallrailMediaEndpoint({ accountId, providerMessageId, index }) {
+export function validateCallrailMediaEndpoint({
+  accountId,
+  providerMessageId,
+  index,
+  mediaUrl,
+}) {
   const account = requireIdentifier(accountId, 'CallRail account identity');
   const message = requireIdentifier(providerMessageId, 'CallRail message identity');
   if (!Number.isSafeInteger(index) || index < 0 || index >= CALLRAIL_MMS_MAX_ITEMS) {
     fail('CALLRAIL_MMS_INDEX_INVALID', 'CallRail MMS media index is invalid.');
   }
-  return `https://api.callrail.com/v3/a/${encodeURIComponent(account)}` +
-    `/text-messages/${encodeURIComponent(message)}/media/${index}`;
+  let parsed;
+  try {
+    parsed = new URL(mediaUrl);
+  } catch {
+    fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is invalid.');
+  }
+  const exactPath =
+    `/v3/a/${encodeURIComponent(account)}/text-messages/` +
+    `${encodeURIComponent(message)}/media/${index}`;
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.hostname !== 'api.callrail.com'
+    || parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.hash
+    || parsed.pathname !== exactPath
+    || parsed.href.length > 2_048
+  ) {
+    fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is outside the expected account.');
+  }
+  return parsed.href;
 }
 
 function contentTypeOf(response) {
@@ -211,11 +238,17 @@ async function downloadOne({
   accountId,
   providerMessageId,
   index,
+  mediaUrl,
   maximumBytes,
   fetchImpl,
   timeoutMs,
 }) {
-  const endpoint = buildCallrailMediaEndpoint({ accountId, providerMessageId, index });
+  const endpoint = validateCallrailMediaEndpoint({
+    accountId,
+    providerMessageId,
+    index,
+    mediaUrl,
+  });
   let response;
   try {
     response = await fetchImpl(endpoint, {
@@ -265,6 +298,7 @@ export async function ingestCallrailMms({
   providerConversationId,
   providerMessageId,
   mediaCount,
+  ephemeralMediaUrls,
 }, {
   fetchImpl = fetchWithTimeout,
   timeoutMs = CALLRAIL_MMS_FETCH_TIMEOUT_MS,
@@ -283,6 +317,16 @@ export async function ingestCallrailMms({
   const message = requireIdentifier(providerMessageId, 'CallRail message identity');
   const normalizedLimits = normalizeLimits(limits);
   validateCallrailMmsCount(mediaCount, normalizedLimits);
+  if (
+    !Array.isArray(ephemeralMediaUrls)
+    || ephemeralMediaUrls.length !== mediaCount
+  ) {
+    fail(
+      'CALLRAIL_MMS_URLS_UNAVAILABLE',
+      'Current CallRail MMS media URLs are unavailable.',
+      { retryable: true },
+    );
+  }
 
   const ownedMedia = [];
   let totalBytes = 0;
@@ -297,6 +341,7 @@ export async function ingestCallrailMms({
       accountId: account,
       providerMessageId: message,
       index,
+      mediaUrl: ephemeralMediaUrls[index],
       maximumBytes,
       fetchImpl,
       timeoutMs,
@@ -345,6 +390,87 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
   if (!accountId) {
     fail('CALLRAIL_MMS_ACCOUNT_MISSING', 'CallRail MMS is not configured.');
   }
+  const fetchImpl = options?.fetchImpl || fetchWithTimeout;
+  let ephemeralMediaUrls = event.ephemeralMediaUrls;
+  if (!Array.isArray(ephemeralMediaUrls) || ephemeralMediaUrls.length === 0) {
+    const conversation = requireIdentifier(
+      event.providerConversationId,
+      'CallRail conversation identity',
+    );
+    const message = requireIdentifier(event.providerMessageId, 'CallRail message identity');
+    const endpoint =
+      `https://api.callrail.com/v3/a/${encodeURIComponent(accountId)}` +
+      `/text-messages/${encodeURIComponent(conversation)}.json?per_page=250`;
+    let response;
+    try {
+      response = await fetchImpl(endpoint, {
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Authorization: `Token token="${apiKey}"`,
+          Accept: 'application/json',
+        },
+      }, options?.timeoutMs || CALLRAIL_MMS_FETCH_TIMEOUT_MS);
+    } catch {
+      fail(
+        'CALLRAIL_MMS_URL_REFRESH_FAILED',
+        'Current CallRail MMS media URLs could not be refreshed.',
+        { retryable: true },
+      );
+    }
+    if (!response?.ok) throw providerFailure(response || { status: 0 });
+    const payloadBytes = await readBoundedBytes(response, 1_000_000);
+    let payload;
+    try {
+      payload = JSON.parse(new TextDecoder().decode(payloadBytes));
+    } catch {
+      fail(
+        'CALLRAIL_MMS_URL_REFRESH_INVALID',
+        'CallRail returned an invalid text conversation.',
+        { retryable: true },
+      );
+    }
+    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+    const expectedDirection = event.direction === 'inbound' ? 'incoming' : 'outgoing';
+    const matches = messages.filter((candidate) => {
+      if (
+        candidate?.direction !== expectedDirection
+        || String(candidate?.type || '').toLowerCase() !== 'mms'
+        || String(candidate?.content || '') !== String(event.body || '')
+        || !Array.isArray(candidate?.media_urls)
+        || candidate.media_urls.length !== event.mediaCount
+      ) {
+        return false;
+      }
+      try {
+        candidate.media_urls.forEach((mediaUrl, index) => {
+          validateCallrailMediaEndpoint({
+            accountId,
+            providerMessageId: message,
+            index,
+            mediaUrl,
+          });
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (matches.length > 1) {
+      fail(
+        'CALLRAIL_MMS_URL_REFRESH_AMBIGUOUS',
+        'More than one CallRail message matches this MMS event.',
+      );
+    }
+    ephemeralMediaUrls = matches[0]?.media_urls;
+    if (!Array.isArray(ephemeralMediaUrls) || ephemeralMediaUrls.length === 0) {
+      fail(
+        'CALLRAIL_MMS_URLS_UNAVAILABLE',
+        'Current CallRail MMS media URLs are unavailable.',
+        { retryable: true },
+      );
+    }
+  }
   return ingestCallrailMms({
     db,
     apiKey,
@@ -353,5 +479,6 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
     providerConversationId: event.providerConversationId,
     providerMessageId: event.providerMessageId,
     mediaCount: event.mediaCount,
+    ephemeralMediaUrls,
   }, options);
 }

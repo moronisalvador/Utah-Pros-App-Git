@@ -58,7 +58,10 @@ describe('messaging transport', () => {
     content: {
       body: 'Rep: hello',
       mediaUrls: ['https://files.test/photo.jpg'],
-      media: [],
+      media: [{
+        url: 'https://files.test/photo.jpg',
+        verified: true,
+      }],
     },
     statusCallbackUrl: 'https://app.test/api/twilio-status',
   };
@@ -91,7 +94,11 @@ describe('messaging transport', () => {
       provider: 'callrail',
       accepted: true,
     });
-    expect(h.callrail).toHaveBeenCalledWith({ marker: 'env' }, command);
+    expect(h.callrail).toHaveBeenCalledWith(
+      { marker: 'env' },
+      command,
+      { db: undefined },
+    );
   });
 
   it.each(['toString', 'unknown'])(
@@ -135,5 +142,50 @@ describe('messaging transport', () => {
     expect(resolveMessagingSchemaMode({ MESSAGING_SCHEMA_MODE: 'legacy' })).toBe('legacy');
     expect(resolveMessagingSchemaMode({ MESSAGING_SCHEMA_MODE: 'FOUNDATION' })).toBe('legacy');
     expect(resolveMessagingSchemaMode({ MESSAGING_SCHEMA_MODE: 'foundation' })).toBe('foundation');
+  });
+
+  it('gives Twilio a short-lived URL for canonical private media', async () => {
+    const db = {
+      signStorage: vi.fn(async () => 'https://db.test/signed/photo.jpg?token=x'),
+    };
+    const privateCommand = {
+      ...command,
+      content: {
+        ...command.content,
+        mediaUrls: ['upr-storage://message-attachments/outbound/c/photo.jpg'],
+        media: [{
+          storagePath: 'outbound/c/photo.jpg',
+          verified: true,
+          mimeType: 'image/jpeg',
+          byteSize: 10,
+          bytes: new Uint8Array([1]),
+        }],
+      },
+    };
+    await sendMessage({}, privateCommand, { provider: 'twilio', db });
+    expect(db.signStorage).toHaveBeenCalledWith(
+      'message-attachments',
+      'outbound/c/photo.jpg',
+      3600,
+    );
+    expect(h.twilio).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        mediaUrls: ['https://db.test/signed/photo.jpg?token=x'],
+      }),
+    );
+  });
+
+  it('refuses unverified Twilio media even when a URL is present', async () => {
+    await expect(sendMessage({}, {
+      ...command,
+      content: {
+        ...command.content,
+        media: [],
+      },
+    }, { provider: 'twilio' })).rejects.toMatchObject({
+      code: 'MESSAGE_MEDIA_UNVERIFIED',
+    });
+    expect(h.twilio).not.toHaveBeenCalled();
   });
 });

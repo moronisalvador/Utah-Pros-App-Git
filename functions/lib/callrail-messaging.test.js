@@ -50,6 +50,7 @@ const command = {
   recipient: { address: '+18015550101' },
   content: { body: 'Hello from Utah Pros', media: [] },
 };
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01]);
 
 function response(status, data = {}) {
   return {
@@ -138,20 +139,20 @@ describe('sendCallRailMessage restrictions', () => {
   it.each([
     [[
       { url: 'https://cdn.example/one.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-      { url: 'https://cdn.example/two.jpg', mimeType: 'image/jpeg', byteSize: 10 },
+      { bytes: JPEG, mimeType: 'image/jpeg', byteSize: JPEG.byteLength },
     ], 'CALLRAIL_MEDIA_COUNT_UNSUPPORTED'],
     [[
-      { url: 'https://cdn.example/file.pdf', mimeType: 'application/pdf', byteSize: 10 },
+      { bytes: JPEG, mimeType: 'application/pdf', byteSize: JPEG.byteLength },
     ], 'CALLRAIL_MEDIA_TYPE_UNSUPPORTED'],
     [[
-      { url: 'https://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 5_000_001 },
+      { bytes: JPEG, mimeType: 'image/jpeg', byteSize: 5_000_001 },
     ], 'CALLRAIL_MEDIA_SIZE_UNSUPPORTED'],
     [[
-      { url: 'http://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-    ], 'CALLRAIL_MEDIA_URL_INVALID'],
+      { url: 'https://cdn.example/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
+    ], 'CALLRAIL_MEDIA_BYTES_REQUIRED'],
     [[
-      { storagePath: 'private/image.jpg', mimeType: 'image/jpeg', byteSize: 10 },
-    ], 'CALLRAIL_MEDIA_URL_INVALID'],
+      { bytes: new TextEncoder().encode('<html>'), mimeType: 'image/jpeg', byteSize: 6 },
+    ], 'CALLRAIL_MEDIA_SIGNATURE_INVALID'],
   ])('rejects incompatible media %#', async (media, code) => {
     await expectCode(
       sendCallRailMessage(env, { ...command, content: { ...command.content, media } }),
@@ -161,22 +162,30 @@ describe('sendCallRailMessage restrictions', () => {
   });
 
   it('accepts one supported image at the 5 MB boundary', async () => {
+    const gif = new Uint8Array(5_000_000);
+    gif.set(new TextEncoder().encode('GIF89a'));
     await sendCallRailMessage(env, {
       ...command,
       content: {
         body: 'Photo attached',
         media: [{
-          url: 'https://cdn.example/image.gif',
+          bytes: gif,
           mimeType: 'image/gif',
-          byteSize: 5_000_000,
+          byteSize: gif.byteLength,
+          fileName: 'image.gif',
         }],
       },
     });
 
     const [, options] = h.fetchWithTimeout.mock.calls[0];
-    expect(JSON.parse(options.body)).toMatchObject({
-      media_url: 'https://cdn.example/image.gif',
+    expect(options.headers).toEqual({
+      Authorization: 'Token token="callrail-secret"',
     });
+    expect(options.body).toBeInstanceOf(FormData);
+    expect(options.body.get('content')).toBe('Photo attached');
+    const uploaded = options.body.get('media_file');
+    expect(uploaded.type).toBe('image/gif');
+    expect(uploaded.size).toBe(5_000_000);
   });
 });
 

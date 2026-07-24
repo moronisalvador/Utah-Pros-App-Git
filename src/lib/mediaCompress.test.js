@@ -20,20 +20,51 @@
  *   Data:      reads  → none · writes → none (pure unit tests, no network)
  *
  * NOTES / GOTCHAS:
- *   - Deliberately does NOT test compressImage/probeVideo — those live below
- *     the Browser-only SECTION marker and need canvas/<video> DOM APIs.
+ *   - Browser conversion is covered with narrow canvas/bitmap stubs; no real
+ *     image decoding happens in this node test environment.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   MAX_FILES, MAX_VIDEOS, MAX_VIDEO_SECONDS, MAX_IMAGE_BYTES, MAX_VIDEO_BYTES,
   isImage, isVideo, fitWithin, sanitizeFilename, buildStoragePath,
   stripBucketPrefix, validateFile, validateSelection, checkVideoDuration,
-  formatBytes, formatDuration,
+  formatBytes, formatDuration, compressImage,
 } from './mediaCompress.js';
 
 const img = (name, size = 1000) => ({ name, type: 'image/jpeg', size });
 const vid = (name, size = 1000) => ({ name, type: 'video/mp4', size });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('provider image conversion', () => {
+  it('keeps a forced JPEG even when it is larger than an unsupported original', async () => {
+    const close = vi.fn();
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+      width: 100,
+      height: 50,
+      close,
+    })));
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: vi.fn() }),
+        toBlob: (done) => done(new Blob(['jpeg'], { type: 'image/jpeg' })),
+      }),
+    });
+    const unsupported = new File(['x'], 'photo.webp', { type: 'image/webp' });
+
+    const converted = await compressImage(unsupported, { forceJpeg: true });
+
+    expect(converted.blob.type).toBe('image/jpeg');
+    expect(converted.blob.size).toBeGreaterThan(unsupported.size);
+    expect(converted.didCompress).toBe(true);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('caps', () => {
   it('exports the agreed limits', () => {

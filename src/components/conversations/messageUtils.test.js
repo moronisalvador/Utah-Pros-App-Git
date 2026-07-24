@@ -20,6 +20,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeSmsSegments, linkifyTokens, parseMediaUrls, isLikelyImageUrl,
+  isRetryableMediaReference,
   getDraft, setDraft, clearDraft,
 } from './messageUtils';
 
@@ -95,6 +96,25 @@ describe('parseMediaUrls', () => {
     expect(parseMediaUrls(null)).toEqual([]);
     expect(parseMediaUrls('')).toEqual([]);
     expect(parseMediaUrls('[not json')).toEqual([]);
+  });
+});
+
+describe('retryable message media', () => {
+  it('allows canonical private outbound references and narrow legacy URLs only', () => {
+    expect(isRetryableMediaReference(
+      'upr-storage://message-attachments/outbound/conversation/photo.jpg',
+    )).toBe(true);
+    expect(isRetryableMediaReference(
+      'https://db.test/storage/v1/object/public/job-files/conversations/conversation/photo.jpg',
+    )).toBe(true);
+    expect(isRetryableMediaReference('https://files.test/photo.jpg')).toBe(false);
+    expect(isRetryableMediaReference(
+      'upr-storage://message-attachments/callrail/provider/photo.jpg',
+    )).toBe(false);
+    expect(isRetryableMediaReference(
+      'upr-storage://message-attachments/outbound/../provider/photo.jpg',
+    )).toBe(false);
+    expect(isRetryableMediaReference('javascript:alert(1)')).toBe(false);
   });
 });
 

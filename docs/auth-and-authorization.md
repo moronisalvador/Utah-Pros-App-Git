@@ -196,3 +196,11 @@ fail-closed and provider discovery is not attempted.
 The browser has no authorization path for changing messaging/schema modes, webhook signing
 material, Cloudflare bindings, provider-console configuration, or sending a test message. A visible
 admin route or readiness indicator does not replace the separate owner-approved activation gate.
+
+`POST /api/message-media-upload` uses the same server-side conversations capability before any
+service-role Storage access. Upload also binds a valid conversation, verifies the final image
+bytes, and creates a random private object path. There is intentionally no browser delete route:
+cleanup needs a durable draft-to-message claim before it can safely distinguish an orphan from
+sent/failed/ambiguous history. `POST /api/message-media-url` signs only the media reference
+already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
+path.

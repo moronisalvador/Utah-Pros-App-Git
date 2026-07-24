@@ -87,6 +87,10 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
+- Outbound message images are canonical private objects, never public customer-photo URLs. The
+  current cross-provider envelope is one verified JPEG, PNG, or GIF up to 5,000,000 bytes. Clients
+  keep only an opaque private reference; provider-specific byte upload or signed fetch exposure
+  happens after consent inside the selected adapter.
 - A messaging-provider failure does not fall back to another provider or channel. Ambiguous
   provider timeouts are reconciled before any retry that could duplicate a customer message.
 - RCS is a channel inside the existing messaging domain, not a new consent or conversation domain.

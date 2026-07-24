@@ -25,7 +25,7 @@
  *                       jobs, message_templates
  *              writes → conversations (metadata/unread), scheduled_messages,
  *                       conversation_participants, contacts (dnd), sms_consent_log,
- *                       job-files storage (MMS attachments). Outbound SMS/MMS is sent
+ *                       private message-attachments storage (MMS attachments). Outbound SMS/MMS is sent
  *                       ONLY through POST /api/send-message — the worker is the sole
  *                       writer of any sms_* message row; the client inserts nothing
  *                       into `messages` (not even notes — the worker owns that too).
@@ -48,10 +48,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToMessages, subscribeToConversations, getAuthHeader } from '@/lib/realtime';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';
 import DatePicker from '@/components/DatePicker';
-import { compressImage, isImage, sanitizeFilename } from '@/lib/mediaCompress';
+import {
+  MAX_MESSAGE_ATTACHMENTS,
+  uploadConversationMedia,
+  validateMessageFile,
+} from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
-import { getDraft, setDraft, clearDraft, parseMediaUrls } from '@/components/conversations/messageUtils';
+import {
+  getDraft,
+  setDraft,
+  clearDraft,
+  parseMediaUrls,
+  isRetryableMediaReference,
+} from '@/components/conversations/messageUtils';
 
 // ═══════════════════════════════════════════════════════════════════
 // INLINE ICONS
@@ -674,29 +684,24 @@ export default function Conversations({ replyAssist } = {}) {
     e.target.value = '';
     const convId = activeIdRef.current;
     if (!convId) return;
+    let count = attachmentsRef.current.length;
     for (const file of files) {
-      if (attachments.length >= 5) { emitToast('Up to 5 attachments per message', 'info'); break; }
+      if (count >= MAX_MESSAGE_ATTACHMENTS) {
+        emitToast('CallRail supports one photo per message', 'info');
+        break;
+      }
+      const check = validateMessageFile(file);
+      if (!check.ok) {
+        emitToast(check.reason, 'error');
+        continue;
+      }
+      count += 1;
       const clientId = `att-${++attachCounter.current}`;
       let localPreview = null;
       try { localPreview = URL.createObjectURL(file); } catch { /* non-fatal */ }
       setAttachments(prev => [...prev, { clientId, name: file.name, url: null, localPreview, uploading: true, error: false }]);
       try {
-        let blob = file;
-        let uploadName = file.name;
-        if (isImage(file.type)) {
-          const c = await compressImage(file);
-          blob = c.blob;
-          if (c.didCompress) uploadName = uploadName.replace(/\.\w+$/, '') + '.jpg';
-        }
-        const ts = Date.now();
-        const path = `conversations/${convId}/${ts}-${sanitizeFilename(uploadName)}`;
-        const res = await fetch(`${db.baseUrl}/storage/v1/object/job-files/${path}`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${db.apiKey}`, 'Content-Type': blob.type || 'application/octet-stream' },
-          body: blob,
-        });
-        if (!res.ok) throw new Error('Upload failed');
-        const url = `${db.baseUrl}/storage/v1/object/public/job-files/${path}`;
+        const { url } = await uploadConversationMedia(db, convId, file);
         setAttachments(prev => prev.map(a => a.clientId === clientId ? { ...a, uploading: false, url } : a));
       } catch (err) {
         console.error('Attachment upload error:', err);
@@ -707,11 +712,9 @@ export default function Conversations({ replyAssist } = {}) {
   };
 
   const removeAttachment = (clientId) => {
-    setAttachments(prev => {
-      const gone = prev.find(a => a.clientId === clientId);
-      if (gone?.localPreview) { try { URL.revokeObjectURL(gone.localPreview); } catch { /* ignore */ } }
-      return prev.filter(a => a.clientId !== clientId);
-    });
+    const gone = attachmentsRef.current.find(a => a.clientId === clientId);
+    if (gone?.localPreview) { try { URL.revokeObjectURL(gone.localPreview); } catch { /* ignore */ } }
+    setAttachments(prev => prev.filter(a => a.clientId !== clientId));
   };
 
   // ─── SECTION: Event handlers — send (optimistic + reconcile + retry) ──────────────
@@ -810,7 +813,7 @@ export default function Conversations({ replyAssist } = {}) {
 
     if (uploadingAttachment) { emitToast('Attachment still uploading…', 'info'); return; }
     const readyMedia = attachments.filter(a => a.url).map(a => a.url);
-    if (!text) return;                               // worker requires a non-empty body (even for MMS)
+    if (!text && readyMedia.length === 0) return;
     if (activeContact?.dnd && !isNote) return;       // guarded by the compose UI too
 
     // Blank the composer synchronously (before the async optimistic append) so a
@@ -840,7 +843,9 @@ export default function Conversations({ replyAssist } = {}) {
 
     // Optimistic UI reset + conversation-list metadata bump.
     clearCompose(); clearDraft(convId); clearAttachments(); setIsNote(false);
-    const preview = wasNote ? `[Note] ${text.substring(0, 80)}` : text.substring(0, 100);
+    const preview = wasNote
+      ? `[Note] ${text.substring(0, 80)}`
+      : (text || '[Photo]').substring(0, 100);
     applyConvMeta(convId, wasNote, preview);
 
     dispatchSend({ clientId, convId, text, media_urls: readyMedia, isNote: wasNote });
@@ -855,7 +860,7 @@ export default function Conversations({ replyAssist } = {}) {
     const stored = msg._clientId ? retryStore.current[msg._clientId] : null;
     const payload = stored || {
       text: msg.body || '',
-      media_urls: parseMediaUrls(msg.media_urls).filter(u => /^https?:/i.test(u)),
+      media_urls: parseMediaUrls(msg.media_urls).filter(isRetryableMediaReference),
       isNote: msg.type === 'internal_note',
     };
     if (!payload.text && !payload.media_urls.length) { emitToast('Cannot retry this message', 'error'); return; }
@@ -1204,7 +1209,7 @@ export default function Conversations({ replyAssist } = {}) {
                 />
                 {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
               </div>
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={!compose.trim() || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime)) || (activeContact?.dnd && !isNote) || (sending && showSchedule)} aria-label="Send">
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (activeContact?.dnd && !isNote) || (sending && showSchedule)} aria-label="Send">
                 {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>

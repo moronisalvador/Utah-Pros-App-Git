@@ -1,12 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   CALLRAIL_MMS_BUCKET,
+  CALLRAIL_MMS_FETCH_TIMEOUT_MS,
   CALLRAIL_MMS_MAX_ITEMS,
-  buildCallrailMediaEndpoint,
   ingestCallrailMms,
+  ingestVerifiedCallrailEventMms,
+  validateCallrailMediaEndpoint,
   validateCallrailMmsCount,
 } from './callrail-mms.js';
 
+vi.mock('./callrail-messaging.js', () => ({
+  resolveCallRailApiKey: vi.fn(async () => 'server-secret'),
+}));
+vi.mock('./callrail-api.js', () => ({
+  resolveCallRailAccountId: vi.fn(async () => 'ACC123'),
+}));
+
+const MEDIA_URL =
+  'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
 const INPUT = {
   apiKey: 'server-secret',
   accountId: 'ACC123',
@@ -14,6 +25,7 @@ const INPUT = {
   providerConversationId: 'conv789',
   providerMessageId: 'SCIabc',
   mediaCount: 1,
+  ephemeralMediaUrls: [MEDIA_URL],
 };
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01, 0x02]);
@@ -40,15 +52,15 @@ function harness() {
 }
 
 describe('CallRail MMS private ingestion', () => {
-  it('derives only the exact authenticated api.callrail.com endpoint', async () => {
+  it('downloads the signed-webhook URL only after exact CallRail account validation', async () => {
     const h = harness();
     const result = await ingestCallrailMms(
-      { ...INPUT, db: h.db, ephemeralMediaUrls: ['https://attacker.test/file'] },
+      { ...INPUT, db: h.db },
       { fetchImpl: h.fetchImpl, timeoutMs: 3210 },
     );
 
     expect(h.fetchImpl).toHaveBeenCalledWith(
-      'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0',
+      MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
         redirect: 'error',
@@ -76,7 +88,6 @@ describe('CallRail MMS private ingestion', () => {
       sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
     });
     expect(JSON.stringify(result)).not.toContain('api.callrail.com');
-    expect(JSON.stringify(result)).not.toContain('attacker.test');
     expect(JSON.stringify(result)).not.toContain('server-secret');
   });
 
@@ -94,12 +105,31 @@ describe('CallRail MMS private ingestion', () => {
     expect(result.media[0].storagePath.endsWith(extension)).toBe(true);
   });
 
-  it('rejects identifiers that could alter the fixed media path', () => {
-    expect(() => buildCallrailMediaEndpoint({
-      accountId: '../private',
+  it('rejects media URLs outside the resolved CallRail account', () => {
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
       providerMessageId: 'SCIabc',
       index: 0,
-    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_IDENTITY_INVALID' }));
+      mediaUrl: 'https://attacker.test/v3/a/ACC123/private',
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      providerMessageId: 'SCIabc',
+      index: 0,
+      mediaUrl: 'https://api.callrail.com/v3/a/OTHER/private',
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      providerMessageId: 'SCIother',
+      index: 0,
+      mediaUrl: MEDIA_URL,
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      providerMessageId: 'SCIabc',
+      index: 1,
+      mediaUrl: MEDIA_URL,
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
   });
 
   it('refuses redirects and classifies provider rejection without uploading', async () => {
@@ -179,7 +209,12 @@ describe('CallRail MMS private ingestion', () => {
     const h = harness();
     h.fetchImpl.mockResolvedValue(mediaResponse(JPEG, 'image/jpeg'));
     await expect(ingestCallrailMms(
-      { ...INPUT, db: h.db, mediaCount: 2 },
+      {
+        ...INPUT,
+        db: h.db,
+        mediaCount: 2,
+        ephemeralMediaUrls: [MEDIA_URL, `${MEDIA_URL.slice(0, -1)}1`],
+      },
       {
         fetchImpl: h.fetchImpl,
         limits: { maxItems: 2, maxObjectBytes: 6, maxTotalBytes: 10 },
@@ -209,6 +244,115 @@ describe('CallRail MMS private ingestion', () => {
       code: 'CALLRAIL_MMS_STORAGE_FAILED',
       retryable: true,
       message: 'CallRail MMS media could not be stored.',
+    });
+  });
+
+  it('uses the signed webhook media endpoint immediately without conversation refresh', async () => {
+    const h = harness();
+    const event = {
+      providerConversationId: 'conv789',
+      providerMessageId: 'SCIabc',
+      companyResourceId: 'COM456',
+      mediaCount: 1,
+      ephemeralMediaUrls: [MEDIA_URL],
+      direction: 'inbound',
+      messageType: 'mms',
+      body: '',
+    };
+
+    await ingestVerifiedCallrailEventMms(
+      { db: h.db, env: {}, event },
+      { fetchImpl: h.fetchImpl },
+    );
+
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+    expect(h.fetchImpl).toHaveBeenCalledWith(
+      MEDIA_URL,
+      expect.any(Object),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+  });
+
+  it('refreshes a queue retry from the matching conversation media path', async () => {
+    const h = harness();
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 12345,
+          content: 'Photo',
+          direction: 'incoming',
+          type: 'MMS',
+          media_urls: [MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+    expect(h.fetchImpl.mock.calls[0][0]).toContain(
+      '/text-messages/conv789.json?per_page=250',
+    );
+    expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+  });
+
+  it('fails closed when refreshed conversation media is absent or ambiguous', async () => {
+    const event = {
+      providerConversationId: 'conv789',
+      providerMessageId: 'SCIabc',
+      companyResourceId: 'COM456',
+      mediaCount: 1,
+      ownedMedia: [],
+      direction: 'inbound',
+      messageType: 'mms',
+      body: 'Photo',
+    };
+    const none = harness();
+    none.fetchImpl.mockResolvedValue(new Response(JSON.stringify({ messages: [] }), {
+      status: 200,
+    }));
+    await expect(ingestVerifiedCallrailEventMms(
+      { db: none.db, env: {}, event },
+      { fetchImpl: none.fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URLS_UNAVAILABLE',
+      retryable: true,
+    });
+
+    const duplicate = {
+      id: 1,
+      content: 'Photo',
+      direction: 'incoming',
+      type: 'mms',
+      media_urls: [MEDIA_URL],
+    };
+    const ambiguous = harness();
+    ambiguous.fetchImpl.mockResolvedValue(new Response(JSON.stringify({
+      messages: [duplicate, { ...duplicate, id: 2 }],
+    }), { status: 200 }));
+    await expect(ingestVerifiedCallrailEventMms(
+      { db: ambiguous.db, env: {}, event },
+      { fetchImpl: ambiguous.fetchImpl },
+    )).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URL_REFRESH_AMBIGUOUS',
+      retryable: false,
     });
   });
 });

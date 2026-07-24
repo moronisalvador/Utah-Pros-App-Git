@@ -141,7 +141,9 @@ conversations and messages through an atomic service-role RPC, applies shared ST
 rules (including a consent-only transaction when MMS capture fails), reconciles sent events by
 provider message identity or strict conversation/address/body/time identity, and retains transient
 failures with bounded backoff for the protected `process-callrail-events` recovery worker. It deliberately does not auto-send compliance replies
-through CallRail. The repository build copies verified MMS bytes into private
+through CallRail. The repository build immediately downloads the signed webhook's short-lived
+media endpoint after strict CallRail host/account validation; queue retries refresh current
+endpoints through the conversation API. It copies verified MMS bytes into private
 `message-attachments`, persists only `upr-storage://` references, and signs a short URL only after
 messaging authorization and message/index binding. The separate reconciliation worker polls
 CallRail history read-only and projects a winning outcome atomically. Isolated PostgreSQL
@@ -150,6 +152,21 @@ source includes atomic canonical-message recovery plus a durable, fenced notific
 foundation and covering-index migrations are live; repository tests cover the SQL callers, but
 isolated PostgreSQL compilation of every later projection/recovery contract remains a separate QA
 requirement.
+
+Outbound MMS uses the same private bucket without publishing customer photos. Both inboxes upload
+through authenticated `POST /api/message-media-upload`; the Worker verifies one final JPEG, PNG, or
+GIF no larger than 5,000,000 bytes and returns only an opaque owned reference. `/api/send-message`
+downloads and revalidates that object after authorization/consent. The CallRail adapter streams it
+as documented multipart `media_file`. The Twilio adapter instead creates a one-hour signed URL
+inside the transport boundary because Twilio must fetch `MediaUrl`; that URL is never stored.
+CallRail's short-lived inbound provider media URLs are likewise never stored, so there is no
+provider-URL cleanup dependency after successful private capture.
+
+Live evidence on 2026-07-23 recorded one inbound iPhone MMS as a signed, deduplicated provider
+event, but the deployed derived download path failed before private Storage with
+`CALLRAIL_MMS_DOWNLOAD_FAILED`. That event proves receipt, not media completion. The corrected
+webhook-URL flow and retry refresh require a controlled post-deploy image reply before this
+integration can claim an end-to-end inbound MMS round trip.
 
 The notification outbox is dispatched through the protected
 `/api/process-message-notification-outbox` worker. An additive scheduler migration stores only the

@@ -827,7 +827,7 @@ functions/
     supabase.js                   — Supabase REST helper for workers
     messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Preview is CallRail for controlled verification; Production is disabled. Scheduled/automated/campaign senders remain explicitly Twilio-only.
     messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
-    callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS is copied through fixed authenticated CallRail endpoints into private `message-attachments`, with only owned references retained. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge; a fresh post-fix received webhook still must prove direct automatic ingestion.
+    callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS immediately consumes the signed webhook's short-lived media endpoint only after exact CallRail HTTPS/host/account validation, while retained-event retries refresh current endpoints from the documented conversation API. Verified bytes are copied into private `message-attachments`, and only owned references are retained. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge. A 2026-07-23 iPhone MMS proved direct webhook receipt but failed on the older derived download path before Storage; the corrected URL flow still requires a post-deploy round trip.
     message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
     process-callrail-events.js    — Scheduler-secret/native-cron recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
     recover-message-send-attempts.js — Provider-neutral, scheduler-secret recovery of accepted provider attempts whose canonical message insert failed; RPC-only and never imports a provider adapter.
@@ -7820,3 +7820,20 @@ This does not close the captured-but-unrecorded failure window. A durable attemp
 provider execution, with sandbox-proven reconciliation after provider success/local insert failure.
 Stripe stored-session reuse/expiry/concurrency also remains open. Exact boundary and residual-risk
 evidence: `docs/audit/2026-07/evidence/money-worker-hardening-2026-07-23.md`.
+
+## Private outbound message media (2026-07-24)
+
+Both conversation composers now upload one final JPEG/PNG/GIF image through authenticated
+`POST /api/message-media-upload` instead of writing a public `job-files` object. The Worker binds
+the upload to an existing conversation, verifies the actual bytes and 5,000,000-byte maximum, and
+stores it under private `message-attachments/outbound/{conversation-id}/...`. Clients and
+`messages.media_urls` retain only the opaque `upr-storage://` reference.
+
+`/api/send-message` re-downloads and revalidates private media after the existing staff
+authorization/consent path. CallRail receives a multipart `media_file`; Twilio receives a one-hour
+signed Storage URL created only in its adapter. `message-media-url` now resolves both inbound
+CallRail and outbound private references only after message/index binding. Sent, failed, and
+ambiguous references stay durable for history and safe retry. Abandoned private uploads are
+retained until a durable draft/claim cleanup model can prevent deletion races and history loss;
+there is no browser delete route. No database migration, RCS activation, provider fallback, or
+automated CallRail path was added.

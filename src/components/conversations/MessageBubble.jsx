@@ -40,7 +40,7 @@ function formatMsgTime(iso) {
 
 // ─── SECTION: Helpers — attachment item ──────────────
 
-const OWNED_MEDIA_PREFIX = 'upr-storage://message-attachments/callrail/';
+const OWNED_MEDIA_PREFIX = 'upr-storage://message-attachments/';
 
 function usePrivateMediaUrl(messageId, index, reference, apiKey) {
   const isPrivate = reference.startsWith(OWNED_MEDIA_PREFIX);

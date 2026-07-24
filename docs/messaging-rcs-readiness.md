@@ -146,6 +146,9 @@ labels, stable action IDs, URLs/phone actions, accessibility text, and the exact
 Before activation:
 
 - enforce Twilio's current content-type, size, count, text, and public-URL rules in the adapter;
+- keep private Storage canonical. The existing MMS seam may issue a short-lived signed provider
+  fetch URL, but neither clients nor canonical rows persist it. RCS-specific media above the
+  cross-provider five-megabyte envelope requires a later explicit capability/retention review;
 - treat Content SID and variables as provider submission details derived server-side;
 - validate action URLs and phone numbers; never execute an inbound action payload as code or URL;
 - preserve private customer media handling and retention rules;

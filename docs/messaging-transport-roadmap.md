@@ -492,10 +492,13 @@ inbound processor, STOP/START/HELP state handling (including consent-only MMS fa
 sent-event identity reconciliation, provider-history polling, bounded retry worker, and atomic
 polling-outcome projection are integrated on `dev`. The
 processor never sends an automated compliance reply through CallRail; HELP is recorded as requiring
-a staff reply. Private MMS capture now derives fixed authenticated CallRail media endpoints,
-enforces redirect/type/signature/size limits, stores only UPR-owned references, and resolves them
-through a message-bound authorized short-lived URL route. The schema is live; a real
-official/provider media fixture remains an activation blocker. Accepted or ambiguous sends
+a staff reply. Private MMS capture now consumes the signed webhook's documented short-lived media
+endpoints only after exact HTTPS/CallRail-host/account validation, refreshes current endpoints from
+the documented conversation API for queue retries, enforces redirect/type/signature/size limits,
+stores only UPR-owned references, and resolves them through a message-bound authorized short-lived
+URL route. The schema is live. A 2026-07-23 iPhone MMS proved webhook receipt but exposed the prior
+incorrect derived media path (`CALLRAIL_MMS_DOWNLOAD_FAILED`); the corrected URL flow still needs
+one controlled post-deploy round trip. Accepted or ambiguous sends
 without a provider message ID are polled by provider conversation, exact addresses, submitted body,
 and a narrow time window; zero/multiple matches fail closed. HELP is persisted for staff visibility
 and ordinary/HELP inbound projection atomically enqueues a service-only notification outbox row.
@@ -591,6 +594,22 @@ pure outbound/observation capability policies are built. RCS remains disabled an
 - gate test-device, sender registration, content, deployment, and canary work behind explicit owner
   approval. Detailed plan: `docs/messaging-rcs-readiness.md`.
 
+### Phase 8 — Private outbound MMS completion
+
+Status (2026-07-24): repository implementation complete; focused/full verification and controlled
+provider/device proof remain the close-out gates.
+
+- both inboxes upload through one authenticated Worker and retain only private owned references;
+- the Worker verifies JPEG/PNG/GIF magic bytes, one item, and 5,000,000 bytes at upload and again
+  before provider dispatch;
+- CallRail receives `multipart/form-data` with one `media_file`, never a public customer-photo URL;
+- Twilio receives a one-hour signed Storage URL only inside its adapter, preserving the same
+  client/request/message model for MMS and later RCS;
+- message-bound signed rendering and retry preserve durable history; abandoned private uploads are
+  retained until a durable draft/claim cleanup design can avoid races and history loss; and
+- no migration, provider mode, webhook, secret, phone-number, automation, or fallback behavior
+  changes in this phase.
+
 ## 11. Test matrix
 
 | Layer | Required cases |
@@ -605,6 +624,7 @@ pure outbound/observation capability policies are built. RCS remains disabled an
 | Reconciliation | POST-before-webhook; webhook-before-response persistence; no message id in POST; one match; no match; ambiguous multiple matches |
 | Inbound | new/existing conversation; normalized phone ambiguity; STOP/START/HELP; consent log; notification; duplicate delivery |
 | MMS | immediate authenticated fetch; redirect/MIME/size limits; private owned storage; expired URL retry; no durable provider URL |
+| Outbound MMS | authenticated upload; conversation binding; magic/type/size/count; CallRail multipart file; Twilio short-lived signed fetch; message-bound render/retry; no persisted provider URL; no destructive browser cleanup |
 | Isolation | scheduled, automated, group, broadcast, bulk, and campaign paths never import/call CallRail |
 | Twilio parity | SID/status callback lifecycle remains; legacy `twilio_sid` and response fields remain; provider switch requires no client rewrite |
 | RCS readiness | Twilio+RCS capability; CallRail+RCS refusal; requested/actual channel; read/action events; template identity; provider fallback refusal |
