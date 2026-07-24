@@ -57,6 +57,28 @@ const readAsDataUrl = (file) => new Promise((resolve, reject) => {
   r.readAsDataURL(file);
 });
 
+const sha256Hex = async (data) => {
+  const digest = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+// A CONTENT-derived idempotency key (AGENTS.md: "stable idempotency keys for external
+// side effects"). Re-picking the same file for the same invoice/estimate — after a lost
+// response, a refresh, or a remount — produces the SAME key, so the worker recognises the
+// attach it already made instead of sending QuickBooks a duplicate (which would email the
+// customer the file twice). Random-per-click keys cannot do that.
+async function attachmentKey(entityType, entityId, file) {
+  try {
+    const fileHash = await sha256Hex(await file.arrayBuffer());
+    const ctx = new TextEncoder().encode(`${entityType}:${entityId}:${file.name}:${file.size}:${fileHash}`);
+    return `att${(await sha256Hex(ctx)).slice(0, 48)}`; // 51 chars, matches the worker's [A-Za-z0-9_-]{16,64}
+  } catch {
+    // crypto.subtle needs a secure context; fall back so attaching still works (a retry
+    // then just can't dedupe — the worker's UNIQUE claim still prevents a double row).
+    return `att-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  }
+}
+
 export default function QboAttachments({ entityType, entityId, synced, canEdit }) {
   const { db } = useAuth();
   const dbRef = useRef(db);
@@ -99,7 +121,7 @@ export default function QboAttachments({ entityType, entityId, synced, canEdit }
     try {
       const dataUrl = await readAsDataUrl(file);
       const auth = await getAuthHeader();
-      const idempotencyKey = crypto?.randomUUID?.() || `att-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const idempotencyKey = await attachmentKey(entityType, entityId, file);
       const res = await fetch('/api/qbo-attach', {
         method: 'POST',
         headers: { ...auth, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },

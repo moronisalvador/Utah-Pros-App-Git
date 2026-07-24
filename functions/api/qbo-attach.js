@@ -98,10 +98,12 @@ export async function onRequestPost(context) {
     return jsonResponse({ error: `File too large (max ${Math.round(MAX_BYTES / 1024 / 1024)} MB)` }, 413, request, env);
   }
 
+  const priorFor = async (key) =>
+    (await db.select('qbo_attachments', `idempotency_key=eq.${encodeURIComponent(key)}&limit=1`))?.[0] || null;
+
   try {
-    // Idempotency: if this exact attach already recorded a row, return it — never
-    // upload a second copy to QuickBooks (which would email the customer twice).
-    const prior = (await db.select('qbo_attachments', `idempotency_key=eq.${encodeURIComponent(idempotencyKey)}&limit=1`))?.[0];
+    // Fast path: this exact attach already completed — return it, never upload again.
+    const prior = await priorFor(idempotencyKey);
     if (prior) {
       await logRun(db, 'completed', 0, null, startedAt);
       return jsonResponse({ ok: true, attachment: prior, qbo_attachable_id: prior.qbo_attachable_id, idempotent: true }, 200, request, env);
@@ -117,20 +119,49 @@ export async function onRequestPost(context) {
     const qboEntityId = row[cfg.qboCol];
     if (!qboEntityId) return jsonResponse({ error: `Save this ${entityType} to QuickBooks before attaching a file.` }, 409, request, env);
 
-    const attachable = await uploadAttachable(env, { entityType, qboEntityId, bytes, fileName, contentType, includeOnSend });
+    // CLAIM the key BEFORE calling QuickBooks. The select above is only a fast path — two
+    // concurrent requests could both pass it. This INSERT is the atomic gate: the UNIQUE on
+    // idempotency_key means exactly one caller wins, so only the winner uploads. Without it,
+    // both would create a QBO Attachable and the loser's insert would fail only AFTER
+    // QuickBooks already held a duplicate (which the customer would receive twice).
+    // qbo_attachable_id is NOT NULL + UNIQUE, so the claim parks a unique sentinel there and
+    // swaps in the real id once QuickBooks returns — no schema change needed.
+    const pendingId = `pending:${idempotencyKey}`;
+    let claimRow;
+    try {
+      const claimed = await db.insert('qbo_attachments', {
+        entity_type: entityType,
+        [cfg.idCol]: uprId,
+        qbo_attachable_id: pendingId,
+        file_name: fileName,
+        content_type: contentType,
+        file_size: bytes.length,
+        include_on_send: includeOnSend,
+        idempotency_key: idempotencyKey,
+        created_by: auth.employee?.id || null,
+      });
+      claimRow = Array.isArray(claimed) ? claimed[0] : claimed;
+    } catch {
+      // Lost the race (or a duplicate delivery): whoever holds the claim is doing the upload.
+      const held = await priorFor(idempotencyKey);
+      if (held) {
+        await logRun(db, 'completed', 0, null, startedAt);
+        return jsonResponse({ ok: true, attachment: held, qbo_attachable_id: held.qbo_attachable_id, idempotent: true }, 200, request, env);
+      }
+      return jsonResponse({ error: 'Could not record the attachment — please retry.' }, 409, request, env);
+    }
 
-    const inserted = await db.insert('qbo_attachments', {
-      entity_type: entityType,
-      [cfg.idCol]: uprId,
-      qbo_attachable_id: String(attachable.Id),
-      file_name: fileName,
-      content_type: contentType,
-      file_size: bytes.length,
-      include_on_send: includeOnSend,
-      idempotency_key: idempotencyKey,
-      created_by: auth.employee?.id || null,
-    });
-    const attachRow = Array.isArray(inserted) ? inserted[0] : inserted;
+    let attachable;
+    try {
+      attachable = await uploadAttachable(env, { entityType, qboEntityId, bytes, fileName, contentType, includeOnSend });
+    } catch (e) {
+      // QuickBooks never took the file — release the claim so a genuine retry can proceed.
+      try { await db.delete('qbo_attachments', `id=eq.${claimRow.id}`); } catch { /* best-effort */ }
+      throw e;
+    }
+
+    const updated = await db.update('qbo_attachments', `id=eq.${claimRow.id}`, { qbo_attachable_id: String(attachable.Id) });
+    const attachRow = (Array.isArray(updated) ? updated[0] : updated) || { ...claimRow, qbo_attachable_id: String(attachable.Id) };
 
     await logRun(db, 'completed', 1, null, startedAt);
     return jsonResponse({ ok: true, attachment: attachRow, qbo_attachable_id: String(attachable.Id) }, 200, request, env);
