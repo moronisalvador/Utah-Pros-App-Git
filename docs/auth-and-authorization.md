@@ -204,3 +204,17 @@ cleanup needs a durable draft-to-message claim before it can safely distinguish 
 sent/failed/ambiguous history. `POST /api/message-media-url` signs only the media reference
 already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
 path.
+
+## Prior SMS consent attestation (built; migration not applied)
+
+`POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external
+employee whose role is `admin` or `office`. The Worker derives the actor from that session; a
+request-body actor cannot select or forge the audit identity. It validates a supported evidence
+method, non-future consent date and evidence note before invoking the service-role-only database
+operation.
+
+The database rechecks the same employee authority and current contact suppression state inside the
+transaction. Browser roles cannot execute the RPC directly. DND, STOP/provider opt-out, missing
+contacts and concurrent suppression changes fail closed, and the endpoint has no provider-send
+capability. Conversation UI visibility is presentation only; these Worker and database checks are
+the authority.
