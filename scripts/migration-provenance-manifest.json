@@ -49,7 +49,7 @@
       "version": "20260724002500",
       "name": "callrail_event_recovery_scheduler",
       "path": "supabase/migrations/20260724002500_callrail_event_recovery_scheduler.sql",
-      "reviewedOriginCommit": "ec2520e"
+      "reviewedOriginCommit": "ec2520e2470d1083e5f8525a7844609f054a3a14"
     },
     {
       "version": "20260724003818",
@@ -67,13 +67,13 @@
       "version": "20260724043000",
       "name": "harden_service_sms_consent",
       "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
-      "reviewedOriginCommit": "9dc5681"
+      "reviewedOriginCommit": "9dc5681577a7af0d94655e5d0f202aaed1806174"
     },
     {
       "version": "20260724051500",
       "name": "claim_callrail_provider_event",
       "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
-      "reviewedOriginCommit": "13493f8"
+      "reviewedOriginCommit": "13493f85ea7fa7d299aa837c1e00e3b9c036713e"
     }
   ],
   "selectedFunctions": [
