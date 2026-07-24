@@ -758,6 +758,35 @@ tr:hover td { background: var(--bg-secondary); }
     width: 100%;
   }
 }
+.tech-layout .conv-consent-banner .btn {
+  min-height: var(--tech-min-tap);
+  font-size: var(--tech-text-label);
+}
+.tech-layout .sms-consent-attestation-modal .input,
+.tech-layout .sms-consent-attestation-modal .ui-modal-footer .btn {
+  min-height: var(--tech-min-tap);
+}
+.tech-layout .sms-consent-attestation-modal .ui-modal-footer .btn {
+  font-size: var(--tech-text-label);
+}
+.tech-layout .sms-consent-attestation-modal .ui-modal-close {
+  width: var(--tech-min-tap);
+  height: var(--tech-min-tap);
+  min-width: var(--tech-min-tap);
+}
+.tech-layout .conversations-layout .ui-error-state .btn {
+  min-height: var(--tech-min-tap);
+  font-size: var(--tech-text-label);
+}
+.ui-error-state.conv-inline-error {
+  margin: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+}
+.conv-inline-error .ui-error-state-icon { display: none; }
+.conv-inline-error .ui-error-state-actions { margin-top: var(--space-1); }
 
 /* Message body: preserve the newlines the sender typed (multiline pre-wrap). */
 .conv-msg-text { white-space: pre-wrap; }

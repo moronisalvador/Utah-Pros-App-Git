@@ -1,6 +1,21 @@
 /**
- * Database-lane contract mirror for the historical service-SMS consent migration.
- * Isolated PostgreSQL execution remains a separate local-runtime verification gate.
+ * ════════════════════════════════════════════════
+ * FILE: attest_prior_sms_consent.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Reads the prior-service SMS consent change and checks its database safety promises as part of
+ *   the isolated database test lane. It does not connect to the shared live database.
+ *
+ * DEPENDS ON:
+ *   Packages:  node:fs, node:url, vitest
+ *   Internal:  supabase/migrations/20260724014423_attest_prior_sms_consent.sql
+ *   Data:      reads  → migration file only
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Isolated PostgreSQL execution still requires the governed local runtime and role fixtures.
+ * ════════════════════════════════════════════════
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

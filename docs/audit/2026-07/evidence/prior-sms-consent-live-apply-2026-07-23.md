@@ -1,10 +1,22 @@
 <!--
 FILE: docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md
-PURPOSE: Sanitized release and live-verification evidence for prior direct-service SMS consent.
-LAST VERIFIED: 2026-07-23
 
-This is dated evidence, not current project law. It records no secrets, full phone numbers, message
-content, employee identities or durable synthetic records.
+WHAT THIS DOES (plain language):
+  Records exactly what was reviewed, applied and checked when UPR added a safe way to document
+  previously verified one-to-one service-text permission. It separates repository checks, live
+  database proof and the application release boundary.
+
+DEPENDS ON:
+  Internal: commit e71e759, supabase/migrations/20260724014423_attest_prior_sms_consent.sql,
+            docs/generated/schema-overview.md, docs/generated/rpc-inventory.md
+  Data:     reads → sanitized Supabase catalog, migration ledger and rollback-only synthetic results
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - This is dated evidence, not current project law.
+  - It records no secrets, full phone numbers, message content, employee identities or durable
+    synthetic records.
+  - Last verified 2026-07-23.
 -->
 
 # Prior SMS consent live apply evidence — 2026-07-23

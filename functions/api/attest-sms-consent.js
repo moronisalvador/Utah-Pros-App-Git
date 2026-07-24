@@ -6,8 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   Lets authorized office staff record SMS permission that was verified outside
  *   UPR before the app tracked consent. It never sends a message, never clears an
- *   opt-out or Do Not Disturb flag, and asks the database to update the contact and
- *   consent history together so the audit record cannot be skipped.
+ *   opt-out or Do Not Disturb flag, and asks the database to update the current
+ *   service record and evidence history together so the audit record cannot be skipped.
  *
  * WHERE IT LIVES:
  *   Route:        GET/POST /api/attest-sms-consent
@@ -16,9 +16,9 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  functions/lib/auth.js, functions/lib/cors.js,
- *              functions/lib/supabase.js
- *   Data:      reads  → employees, contacts, service_sms_consents
- *              writes → service_sms_consents, sms_consent_log
+ *              functions/lib/messaging-auth.js, functions/lib/supabase.js
+ *   Data:      reads  → employees, contacts, service_sms_consents, message_provider_events
+ *              writes → service_sms_consents, service_sms_consent_attestations, sms_consent_log
  *                       (through attest_prior_sms_consent)
  *
  * NOTES / GOTCHAS:

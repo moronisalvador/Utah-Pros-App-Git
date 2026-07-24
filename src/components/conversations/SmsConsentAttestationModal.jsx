@@ -15,9 +15,10 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/components/ui, @/lib/realtime, @/lib/toast
- *   Data:      writes → contacts, sms_consent_log through
- *                       POST /api/attest-sms-consent
+ *   Internal:  @/components/ui, @/lib/realtime, @/lib/toast, @/lib/nativeHaptics
+ *   Data:      reads  → none
+ *              writes → service_sms_consents, service_sms_consent_attestations,
+ *                       and redacted sms_consent_log through POST /api/attest-sms-consent
  *
  * NOTES / GOTCHAS:
  *   - This form records verified prior permission; it does not infer consent from
@@ -29,6 +30,7 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/ui';
 import { getAuthHeader } from '@/lib/realtime';
+import { impact, notify } from '@/lib/nativeHaptics';
 import { err, ok } from '@/lib/toast';
 
 const METHODS = [
@@ -78,6 +80,7 @@ export default function SmsConsentAttestationModal({
     const note = evidenceNote.trim();
     if (!method || !consentObtainedOn || note.length < 10 || !confirmed || !contactId) return;
 
+    impact('light');
     setSubmitting(true);
     try {
       const authHeader = await getAuthHeader();
@@ -97,6 +100,7 @@ export default function SmsConsentAttestationModal({
       }
 
       ok('SMS permission recorded');
+      notify('success');
       onRecorded?.(data.consent);
     } catch (error) {
       err(error.message || 'Could not record SMS permission');
@@ -117,6 +121,7 @@ export default function SmsConsentAttestationModal({
       onClose={submitting ? undefined : onClose}
       title="Record verified SMS permission"
       size="sm"
+      className="sms-consent-attestation-modal"
       closeOnOverlay={!submitting}
       footer={(
         <>

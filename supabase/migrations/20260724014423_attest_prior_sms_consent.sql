@@ -10,6 +10,10 @@
 --   service-only operation gives the staff-message Worker one authoritative,
 --   fail-closed decision before a send.
 --
+-- ADDITIVE-ONLY:
+--   Creates new tables, functions, policies and grants only; no existing table or
+--   column is dropped, renamed or tightened, and applying the migration changes no business data.
+--
 -- SECURITY:
 --   Browser roles cannot read or write the evidence table and cannot execute
 --   either function. Both functions use invoker privileges and independently

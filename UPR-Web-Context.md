@@ -1,7 +1,7 @@
 # UPR Web Platform — Context Document
-Last updated: July 1, 2026 (accuracy audit — corrected table/employee/flag counts, DevTools tab count,
-Capgo pipeline status, PostgREST select() gotcha, divisionToQbo remodel bucket, and other drift; see
-git history for the full findings)
+Last updated: July 23, 2026 (live prior-service SMS consent boundary, release evidence, and
+cross-platform isolated-browser profile containment; see git history for earlier accuracy-audit
+findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -567,7 +567,7 @@ rv_time_entries — hours, travel_minutes, rate, total_cost, computed_labor_cost
 ## Critical Coding Rules
 1. Always read files from disk before editing — never rely on memory for current code state
 2. Use `write_file` for full rewrites — `edit_file` fails silently on Windows CRLF files
-3. Never use `alert()` or `confirm()` — always use `window.dispatchEvent(new CustomEvent('upr:toast', ...))`
+3. Never use `alert()` or `confirm()` — use `src/lib/toast.js` (`toast`, `ok`, or `err`)
 4. Always use `const { db } = useAuth()` — never import `db` directly in components
 5. Work on `dev` branch only — never touch `main`
 6. All CSS changes must use `@media (max-width: 768px)` unless provably safe on desktop (dvh, env(safe-area-inset-bottom)) — never change desktop UI/layout/colors/spacing
@@ -692,7 +692,7 @@ src/
     Customers.jsx                 — Contact list, claims-grouped detail panel
     ContactProfile.jsx            — Individual contact detail
     CustomerPage.jsx              — Customer detail page
-    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On any send failure it surfaces the real error via `window.dispatchEvent(new CustomEvent('upr:toast', {detail:{message,type:'error'}}))` and appends no optimistic bubble. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
+    Conversations.jsx             — SMS/MMS messaging (GHL-style, TCPA compliant). **Wave -1 hotfix (Jul 9 2026):** `handleSend` now checks `res.ok` BEFORE parsing the body and the worker-failure fallback that inserted a `status:'queued'` ghost `messages` row was DELETED (F-1) — the worker is the sole writer of `sms_*` rows. On send failure it reports through `src/lib/toast.js` and keeps the exact failed optimistic bubble available for an explicit Retry; it never inserts a ghost canonical row. **Prior-consent remediation (applied Jul 23 2026):** admin/office users see a consent banner and `SmsConsentAttestationModal` only for a direct conversation with verified verbal permission, signed work authorization or other evidenced permission. It records method/date/note without sending or automatically retrying; the user must make a separate explicit Retry action after successful recording. Group/broadcast/automated traffic still requires global opt-in, and STOP/DND cannot be cleared.
     Schedule.jsx                  — Calendar dispatch board (Day/3Day/Week/Month) — fully on the UPR design system (shell, Week Calendar, Jobs/Crew/Month views; Jun 2026)
     ScheduleTemplates.jsx         — Schedule template management
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
@@ -805,7 +805,7 @@ functions/
                                     email_suppressions hard_bounce; complaint → complaint. worker_runs row.
     resend-esign.js               — Resend esign email for existing pending request
     send-esign.js                 — Create sign request + send email via Resend (functions/lib/email.js)
-    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (authored Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. Preview is CallRail-only for owner-controlled verification while Production is disabled. Plan: `docs/messaging-transport-roadmap.md`.
+    send-message.js               — Outbound SMS chokepoint with TCPA compliance + DND guard. **Wave -1 hotfix (Jul 9 2026):** `skip_compliance` param + gate REMOVED (F-2) — the DND + opt-in chain runs for every outbound message, no bypass. **SMS-experience Phase B (Jul 9 2026):** the Wave -1 group/broadcast refuse-guard is replaced by the real **per-participant consent loop** — every participant is DND+opt-in gated *before* being texted (a DND/opted-out participant beyond index 0 is never sent to), and each recipient gets its OWN `messages` row so a per-recipient send failure is recorded instead of vanishing. Worker is the sole writer of `sms_*` rows; a recipient with no valid phone is refused, never cross-channel-retargeted. **Messaging transport foundation (Jul 23 2026):** shared Worker authorization and the conversations capability run before service-role/provider access; actor identity is server-derived; stable client request IDs, provider adapters, and the live attempt/event/outbox foundation preserve consent, sole-writer, and no-fallback rules. **Prior-consent remediation (applied Jul 23 2026):** explicit `opt_out_at` wins even if stale data says opted in; every staff message identifies Utah Pros Restoration and a conversation's first outbound includes STOP instructions. Preview is CallRail-only for owner-controlled verification while Production is disabled. Plan: `docs/messaging-transport-roadmap.md`.
     attest-sms-consent.js         — GET status + record-only POST for verified prior direct service-SMS permission. GET requires the Conversations capability and returns only a safe decision; POST is internal admin/office, derives actor + trusted Cloudflare IP server-side, requires method/date/evidence, and never sends/retries. Service-only RPCs use browser-inaccessible current + append-only evidence tables, never change general/automated opt-in, serialize with inbound CallRail, refuse duplicate suppression or pending STOP, and place only a redacted evidence reference in `sms_consent_log`. Direct staff sends may consume this scope; group/broadcast/automated paths may not. Migration `20260724014423_attest_prior_sms_consent.sql` is live and verified as ledger version `20260724035913_attest_prior_sms_consent`.
     messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; Production remains disabled pending owner-approved activation.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
@@ -7257,13 +7257,13 @@ importing the frozen `functions/lib/twilio-errors.js`, per-thread draft get/set/
   `media_urls` (the `message-attachments` bucket is private with no upload policy, and this phase ships zero
   schema — documented tradeoff; worker requires a non-empty body so MMS carries text).
 - **Composer** — live segment/char counter accounting for the server `Name: ` prefix; per-thread localStorage
-  **draft persistence**; multiline `pre-wrap`; toasts consolidated to the `upr:toast` CustomEvent (Rule 2).
+  **draft persistence**; multiline `pre-wrap`; feedback consolidated through `src/lib/toast.js`.
 - **List/scroll** — thread + list **pagination** (`Load earlier` / `Load more`), scroll anchoring on prepend,
   **jump-to-latest pill** (never yanks a scrolled-up reader), **unread-desync** fix (open+visible thread stays
   read via `markActiveRead`; conversations realtime UPDATE can't re-mark it unread).
 - **Deep-link + mobile** — per-thread **`?c=<id>` URL** (push-tap lands in-thread; no `App.jsx` route edit);
-  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via `document` `visibilitychange`
-  (hidden→visible only) + `visualViewport` keyboard offset — **no `realtime.js` edit**.
+  `tech-mobile-ux.md` ≥48px targets; **Capacitor suspend recovery** via the shared
+  `useResumeRefetch` hidden→visible edge + `visualViewport` keyboard offset — **no `realtime.js` edit**.
 
 **Ownership honored:** edited only `Conversations.jsx`, new `components/conversations/**`, and `index.css`
 inside the §623 omni-U marker. No edit to `realtime.js` / `CrmConversations.jsx` / any worker. `test` +
@@ -7308,8 +7308,8 @@ Wave 2, launched after A + C merged into `dev`. Owned a new deliverability healt
   field-PWA push-tap remains an owner-device verification tail. The paragraph above is retained as
   the historical Phase G finding, not current source behavior.
 - **Tech-PWA on-device lane**: no iOS simulator/device in this session (same disclosure as Phase C).
-  Static grep confirms the `visibilitychange` Capacitor-suspend recovery and `visualViewport` keyboard
-  handler Phase C claimed are actually present in `Conversations.jsx`. Full on-device confirmation
+  Static review confirms the shared hidden-edge resume hook and `visualViewport` keyboard handler are
+  present in `Conversations.jsx`. Full on-device confirmation
   (including the push-tap→thread check, blocked on the finding above) stays owner-gated.
 - **A2P live-smoke decision fork**: live-checked at session start — `automation_settings
   .sms_sending_enabled = false` and `integration_config.twilio_messaging_service_sid` /

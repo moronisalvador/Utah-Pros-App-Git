@@ -7,7 +7,8 @@
  *   Checks the pure Messages helpers: the SMS segment counter picks GSM-7 vs UCS-2
  *   and counts parts the way a carrier does, links are pulled out safely (never as a
  *   dangerous javascript: link), the attachment column parses in every shape it can
- *   arrive in, and per-conversation drafts save and clear.
+ *   arrive in, per-conversation drafts save and clear, resume refreshes preserve older
+ *   history, and consent actions stay hidden until a scoped decision is verified.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file) — run via `npm test` (vitest)
@@ -21,6 +22,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   computeSmsSegments, linkifyTokens, parseMediaUrls, isLikelyImageUrl,
   isRetryableMediaReference,
+  mergeRefreshedMessages,
+  getServiceConsentUiState,
   getDraft, setDraft, clearDraft,
 } from './messageUtils';
 
@@ -125,6 +128,75 @@ describe('isLikelyImageUrl', () => {
   });
   it('false for a plain document link', () => {
     expect(isLikelyImageUrl('https://x/report.pdf')).toBe(false);
+  });
+});
+
+describe('mergeRefreshedMessages', () => {
+  it('patches the newest page without losing older history or duplicate optimistic rows', () => {
+    const previous = [
+      { id: 'older', type: 'sms_inbound', body: 'older', status: 'received' },
+      { id: 'existing', type: 'sms_outbound', body: 'updated', status: 'queued' },
+      { id: 'failed', type: 'sms_outbound', body: 'delivered after resume', _failed: true },
+    ];
+    const refreshed = [
+      { id: 'existing', type: 'sms_outbound', body: 'updated', status: 'delivered' },
+      { id: 'server-copy', type: 'sms_outbound', body: 'delivered after resume', status: 'delivered' },
+      { id: 'newest', type: 'sms_inbound', body: 'newest', status: 'received' },
+    ];
+
+    expect(mergeRefreshedMessages(previous, refreshed)).toEqual([
+      previous[0],
+      { ...previous[1], status: 'delivered' },
+      refreshed[1],
+      refreshed[2],
+    ]);
+  });
+});
+
+describe('getServiceConsentUiState', () => {
+  const contact = { id: 'contact-1', phone: '+18015550123' };
+  const baseStatus = {
+    contactId: contact.id,
+    phone: contact.phone,
+    allowed: false,
+    loading: false,
+    checked: true,
+    error: null,
+    code: 'NO_CONSENT',
+    source: null,
+  };
+
+  it('fails closed when the decision belongs to a prior contact or phone', () => {
+    expect(getServiceConsentUiState({
+      status: { ...baseStatus, contactId: 'contact-2' },
+      contact,
+    })).toMatchObject({ matches: false, checking: true, canAttest: false });
+    expect(getServiceConsentUiState({
+      status: { ...baseStatus, phone: '+18015550999' },
+      contact,
+    })).toMatchObject({ matches: false, checking: true, canAttest: false });
+  });
+
+  it('allows attestation only for a matching ordinary NO_CONSENT decision', () => {
+    expect(getServiceConsentUiState({ status: baseStatus, contact }))
+      .toMatchObject({ matches: true, checking: false, canAttest: true, suppressionCopy: null });
+    expect(getServiceConsentUiState({
+      status: { ...baseStatus, allowed: true, code: 'SERVICE_CONSENT' },
+      contact,
+    })).toMatchObject({ canAttest: false, suppressionCopy: null });
+  });
+
+  it.each([
+    ['pending_stop', 'NO_CONSENT', 'SMS STOP request is still processing'],
+    ['explicit_opt_out', 'NO_CONSENT', 'This phone number opted out of SMS'],
+    [null, 'DND_ACTIVE', 'SMS is blocked by Do Not Disturb'],
+  ])('blocks attestation for %s / %s', (source, code, title) => {
+    const state = getServiceConsentUiState({
+      status: { ...baseStatus, source, code },
+      contact,
+    });
+    expect(state.canAttest).toBe(false);
+    expect(state.suppressionCopy?.title).toBe(title);
   });
 });
 

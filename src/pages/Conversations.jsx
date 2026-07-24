@@ -19,12 +19,17 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/realtime (subscriptions + auth header),
- *              @/lib/mediaCompress (image attach), ./conversations/* (bubble, counter,
- *              utils), @/components/Icons, @/components/DatePicker
+ *              @/lib/messageMedia (image attach), @/components/conversations/*,
+ *              @/components/Icons, @/components/DatePicker, @/components/ui,
+ *              @/components/TabLoading, @/hooks/useResumeRefetch,
+ *              @/lib/nativeHaptics, @/lib/toast
  *   Data:      reads  → conversations, conversation_participants, contacts, messages,
- *                       jobs, message_templates
+ *                       jobs, message_templates, service_sms_consents and
+ *                       message_provider_events through GET /api/attest-sms-consent
  *              writes → conversations (metadata/unread), scheduled_messages,
  *                       conversation_participants, contacts (dnd), sms_consent_log,
+ *                       service_sms_consents and service_sms_consent_attestations through
+ *                       POST /api/attest-sms-consent,
  *                       private message-attachments storage (MMS attachments). Outbound SMS/MMS is sent
  *                       ONLY through POST /api/send-message — the worker is the sole
  *                       writer of any sms_* message row; the client inserts nothing
@@ -37,8 +42,8 @@
  *   - All message-state mutations are guarded by activeIdRef so a reply that resolves
  *     after the user switches threads never lands in the wrong thread.
  *   - Toasts go through `@/lib/toast` (Rule 2) — no page-local dispatch path.
- *   - Capacitor suspends the webview; a visibilitychange/focus refetch recovers state
- *     without touching the frozen realtime.js.
+ *   - Capacitor suspends the webview; the shared resume hook silently refreshes the
+ *     active thread and consent decision without touching the frozen realtime.js.
  * ════════════════════════════════════════════════
  */
 
@@ -56,13 +61,19 @@ import {
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SegmentCounter from '@/components/conversations/SegmentCounter';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
-import { toast as emitToast } from '@/lib/toast';
+import { ErrorState } from '@/components/ui';
+import TabLoading from '@/components/TabLoading';
+import useResumeRefetch from '@/hooks/useResumeRefetch';
+import { impact } from '@/lib/nativeHaptics';
+import { toast as emitToast, err as showError } from '@/lib/toast';
 import {
   getDraft,
   setDraft,
   clearDraft,
   parseMediaUrls,
   isRetryableMediaReference,
+  mergeRefreshedMessages,
+  getServiceConsentUiState,
 } from '@/components/conversations/messageUtils';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -187,13 +198,17 @@ export default function Conversations({ replyAssist } = {}) {
   const [compose, setCompose] = useState('');
   const [isNote, setIsNote] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [msgLoading, setMsgLoading] = useState(false);
+  const [messageLoadError, setMessageLoadError] = useState(null);
   const [sending, setSending] = useState(false);
   const [listLimit, setListLimit] = useState(LIST_PAGE);
 
   const [contextMenu, setContextMenu] = useState(null);
   const [showNewConv, setShowNewConv] = useState(false);
   const [contacts, setContacts] = useState([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsLoadError, setContactsLoadError] = useState(null);
   const [contactSearch, setContactSearch] = useState('');
   const [creatingConv, setCreatingConv] = useState(false);
 
@@ -206,8 +221,13 @@ export default function Conversations({ replyAssist } = {}) {
   const [consentPrompt, setConsentPrompt] = useState(null);
   const [serviceConsentStatus, setServiceConsentStatus] = useState({
     contactId: null,
+    phone: null,
     allowed: false,
     loading: false,
+    checked: false,
+    error: null,
+    code: null,
+    source: null,
   });
 
   const [attachments, setAttachments] = useState([]);    // { clientId, name, url, localPreview, uploading, error }
@@ -228,6 +248,7 @@ export default function Conversations({ replyAssist } = {}) {
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
   const prependAnchorRef = useRef(null);   // scrollHeight snapshot for load-earlier anchoring
+  const consentStatusRequestRef = useRef(0);
 
   const attachmentsRef = useRef([]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
@@ -246,14 +267,27 @@ export default function Conversations({ replyAssist } = {}) {
 
   // ─── SECTION: Data fetching ──────────────
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async ({ silent = false } = {}) => {
     try {
       const data = await db.select('conversations',
         'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
       );
-      setConversations(data);
-    } catch (err) { console.error('Load conversations error:', err); }
-    finally { setLoading(false); }
+      setLoadError(null);
+      setConversations(prev => {
+        if (!silent || prev.length === 0) return data;
+        const freshById = new Map(data.map(row => [row.id, row]));
+        const patched = prev.map(row => freshById.has(row.id)
+          ? { ...row, ...freshById.get(row.id) }
+          : row);
+        const existingIds = new Set(prev.map(row => row.id));
+        return [...patched, ...data.filter(row => !existingIds.has(row.id))];
+      });
+    } catch (error) {
+      console.error('Load conversations error:', error);
+      setLoadError('Could not load conversations. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [db]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
@@ -275,19 +309,16 @@ export default function Conversations({ replyAssist } = {}) {
       const rows = await db.select('messages', `conversation_id=eq.${convId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`);
       if (activeIdRef.current !== convId) return;
       const asc = rows.slice().reverse();
-      const serverIds = new Set(asc.map(m => m.id));
       // Match by body+type too: if a send's POST response AND its realtime INSERT were
       // both lost during the webview suspend, the row is on the server but its pending
       // bubble was never reconciled — drop it here so no permanent "Sending…" ghost
       // renders next to the delivered row.
-      const serverBodies = new Set(asc.map(m => `${m.type}::${m.body}`));
-      setMessages(prev => {
-        const optimistic = prev.filter(m => (m._pending || m._failed)
-          && !serverIds.has(m.id) && !serverBodies.has(`${m.type}::${m.body}`));
-        return [...asc, ...optimistic];
-      });
-      setHasMoreMessages(rows.length === PAGE);
-    } catch (err) { console.error('Reload messages error:', err); }
+      setMessages(prev => mergeRefreshedMessages(prev, asc));
+      setMessageLoadError(null);
+    } catch (error) {
+      console.error('Reload messages error:', error);
+      setMessageLoadError('Could not refresh this conversation. Existing messages are still shown.');
+    }
   }, [db]);
 
   // Deep-link: open a conversation for a contact passed via location.state, or via
@@ -338,18 +369,25 @@ export default function Conversations({ replyAssist } = {}) {
           }).sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0))
         );
         if (isActiveVisible && payload.new.unread_count > 0) markActiveRead(payload.new.id);
-      } else if (payload.eventType === 'INSERT') { loadConversations(); }
+      } else if (payload.eventType === 'INSERT') { loadConversations({ silent: true }); }
     });
     return unsubscribe;
   }, [loadConversations, markActiveRead]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
-    if (!activeId) { setMessages([]); setLinkedJob(null); setHasMoreMessages(false); return; }
+    if (!activeId) {
+      setMessages([]);
+      setLinkedJob(null);
+      setHasMoreMessages(false);
+      setMessageLoadError(null);
+      return;
+    }
     let cancelled = false;
     prevLastIdRef.current = undefined;
     justOpenedRef.current = true;
     setMsgLoading(true);
+    setMessageLoadError(null);
     const load = async () => {
       try {
         const rows = await db.select('messages',
@@ -366,7 +404,12 @@ export default function Conversations({ replyAssist } = {}) {
             if (!cancelled) setLinkedJob(jobs.length > 0 ? jobs[0] : null);
           } catch { if (!cancelled) setLinkedJob(null); }
         } else if (!cancelled) setLinkedJob(null);
-      } catch (err) { console.error('Load messages error:', err); }
+      } catch (error) {
+        console.error('Load messages error:', error);
+        if (!cancelled) {
+          setMessageLoadError('Could not load messages for this conversation. Try again.');
+        }
+      }
       finally { if (!cancelled) setMsgLoading(false); }
     };
     load();
@@ -475,31 +518,14 @@ export default function Conversations({ replyAssist } = {}) {
         });
       }
       setHasMoreMessages(rows.length === PAGE);
-    } catch (err) { console.error('Load earlier error:', err); }
+    } catch (error) {
+      console.error('Load earlier error:', error);
+      showError('Could not load earlier messages');
+    }
     finally { setLoadingEarlier(false); }
   }, [db, messages, loadingEarlier, hasMoreMessages]);
 
-  // ─── SECTION: Lifecycle — suspend recovery + keyboard ──────────────
-
-  // Capacitor suspends the webview on background; realtime channels die silently.
-  // Only after a real hidden→visible transition do we refetch the OPEN thread (so a
-  // plain desktop refocus never resets a reader scrolled up in history). A cheap
-  // list refresh runs on any focus. NO edit to realtime.js.
-  const wasHiddenRef = useRef(false);
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === 'hidden') { wasHiddenRef.current = true; return; }
-      loadConversations();
-      if (wasHiddenRef.current) { wasHiddenRef.current = false; reloadActiveMessages(); }
-    };
-    const onFocus = () => { loadConversations(); };
-    document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('focus', onFocus);
-    return () => {
-      document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('focus', onFocus);
-    };
-  }, [loadConversations, reloadActiveMessages]);
+  // ─── SECTION: Lifecycle — keyboard ──────────────
 
   // Lift the composer above the on-screen keyboard using the visual viewport.
   const [kbOpen, setKbOpen] = useState(false);
@@ -534,16 +560,27 @@ export default function Conversations({ replyAssist } = {}) {
     && (employee?.role === 'admin' || employee?.role === 'office')
   ) && employee?.is_external !== true;
   const hasExplicitSmsOptOut = !!activeContact?.opt_out_at;
+  const {
+    matches: statusMatchesActive,
+    checking: serviceConsentChecking,
+    canAttest: serviceConsentCanBeAttested,
+    suppressionCopy: serviceConsentSuppressionCopy,
+  } = getServiceConsentUiState({
+    status: serviceConsentStatus,
+    contact: activeContact,
+  });
   const hasRecordedSmsPermission = activeContact?.opt_in_status === true
     || (
       activeConv?.type === 'direct'
-      && serviceConsentStatus.contactId === activeContact?.id
+      && statusMatchesActive
       && serviceConsentStatus.allowed === true
     );
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadServiceConsentStatus = useCallback(async ({ silent = false } = {}) => {
+    const requestId = consentStatusRequestRef.current + 1;
+    consentStatusRequestRef.current = requestId;
     const contactId = activeContact?.id;
+    const phone = activeContact?.phone || null;
     if (
       !contactId
       || activeConv?.type !== 'direct'
@@ -553,51 +590,93 @@ export default function Conversations({ replyAssist } = {}) {
     ) {
       setServiceConsentStatus({
         contactId: contactId || null,
+        phone,
         allowed: false,
         loading: false,
+        checked: false,
+        error: null,
+        code: null,
+        source: null,
       });
-      return () => { cancelled = true; };
+      return;
     }
 
-    setServiceConsentStatus({
-      contactId,
-      allowed: false,
-      loading: true,
+    setServiceConsentStatus(prev => {
+      const matches = prev.contactId === contactId && prev.phone === phone;
+      if (silent && matches && prev.checked && !prev.error) return prev;
+      return {
+        contactId,
+        phone,
+        allowed: false,
+        loading: true,
+        checked: false,
+        error: null,
+        code: null,
+        source: null,
+      };
     });
-    (async () => {
-      try {
-        const authHeader = await getAuthHeader();
-        const response = await fetch(
-          `/api/attest-sms-consent?contact_id=${encodeURIComponent(contactId)}`,
-          { headers: authHeader },
-        );
-        const data = await response.json().catch(() => ({}));
-        if (!cancelled) {
-          setServiceConsentStatus({
-            contactId,
-            allowed: response.ok && data.status?.allowed === true,
-            loading: false,
-          });
-        }
-      } catch {
-        if (!cancelled) {
-          setServiceConsentStatus({
-            contactId,
-            allowed: false,
-            loading: false,
-          });
-        }
-      }
-    })();
 
-    return () => { cancelled = true; };
+    try {
+      const authHeader = await getAuthHeader();
+      const response = await fetch(
+        `/api/attest-sms-consent?contact_id=${encodeURIComponent(contactId)}`,
+        { headers: authHeader },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not verify SMS permission');
+      }
+      if (consentStatusRequestRef.current !== requestId) return;
+      setServiceConsentStatus({
+        contactId,
+        phone,
+        allowed: data.status?.allowed === true,
+        loading: false,
+        checked: true,
+        error: null,
+        code: data.status?.code || null,
+        source: data.status?.source || null,
+      });
+    } catch (error) {
+      if (consentStatusRequestRef.current !== requestId) return;
+      console.error('Load SMS permission status error:', error);
+      setServiceConsentStatus({
+        contactId,
+        phone,
+        allowed: false,
+        loading: false,
+        checked: false,
+        error: 'Could not verify SMS permission. Try again before recording or sending.',
+        code: 'CONSENT_STATUS_FAILED',
+        source: null,
+      });
+    }
   }, [
     activeContact?.id,
+    activeContact?.phone,
     activeConv?.type,
     activeContact?.dnd,
     activeContact?.opt_out_at,
     activeContact?.opt_in_status,
   ]);
+
+  useEffect(() => {
+    loadServiceConsentStatus();
+    return () => {
+      consentStatusRequestRef.current += 1;
+    };
+  }, [loadServiceConsentStatus]);
+
+  const refreshAfterResume = useCallback(() => {
+    loadConversations({ silent: true });
+    reloadActiveMessages();
+    loadServiceConsentStatus({ silent: true });
+  }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus]);
+
+  useResumeRefetch({
+    onResume: refreshAfterResume,
+    hiddenEdgeOnly: true,
+  });
 
   // Length of server-added company/employee identity and, before any successful
   // outbound in this thread, the required STOP notice. Keep the counter aligned
@@ -707,7 +786,10 @@ export default function Conversations({ replyAssist } = {}) {
       await db.update('conversations', `id=eq.${convId}`, { unread_count: 1 });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 1 } : c));
       emitToast('Marked as unread', 'info');
-    } catch (err) { console.error('Mark unread error:', err); }
+    } catch (error) {
+      console.error('Mark unread error:', error);
+      showError('Could not mark this conversation as unread');
+    }
   };
   const markAsRead = async (convId) => {
     setContextMenu(null);
@@ -715,7 +797,10 @@ export default function Conversations({ replyAssist } = {}) {
       await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 });
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
       emitToast('Marked as read', 'info');
-    } catch (err) { console.error('Mark read error:', err); }
+    } catch (error) {
+      console.error('Mark read error:', error);
+      showError('Could not mark this conversation as read');
+    }
   };
   const readAll = async () => {
     const unread = conversations.filter(c => c.unread_count > 0);
@@ -725,7 +810,10 @@ export default function Conversations({ replyAssist } = {}) {
       await db.update('conversations', `id=in.(${ids})`, { unread_count: 0 });
       setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 })));
       emitToast(`${unread.length} conversations marked as read`, 'success');
-    } catch (err) { console.error('Read all error:', err); }
+    } catch (error) {
+      console.error('Read all error:', error);
+      showError('Could not mark all conversations as read');
+    }
   };
 
   const toggleDnd = async (contactId, currentDnd) => {
@@ -977,11 +1065,16 @@ export default function Conversations({ replyAssist } = {}) {
 
     setServiceConsentStatus({
       contactId: record.contact_id,
+      phone: activeContact?.phone || null,
       allowed: record.service_sms_consent === true,
       loading: false,
+      checked: true,
+      error: null,
+      code: record.service_sms_consent === true ? 'SERVICE_CONSENT' : 'NO_CONSENT',
+      source: null,
     });
     setConsentPrompt(null);
-  }, [consentPrompt]);
+  }, [consentPrompt, activeContact?.phone]);
 
   // ─── SECTION: Event handlers — composer input ──────────────
 
@@ -1010,10 +1103,25 @@ export default function Conversations({ replyAssist } = {}) {
 
   // ─── SECTION: Event handlers — new conversation / templates ──────────────
 
-  const openNewConvModal = async () => {
-    setShowNewConv(true); setContactSearch('');
-    try { const data = await db.select('contacts', 'select=id,name,phone,email,company,role&order=name.asc'); setContacts(data); }
-    catch (err) { console.error('Load contacts error:', err); }
+  const loadContacts = useCallback(async () => {
+    setContactsLoading(true);
+    setContactsLoadError(null);
+    try {
+      const data = await db.select('contacts', 'select=id,name,phone,email,company,role&order=name.asc');
+      setContacts(data);
+    } catch (error) {
+      console.error('Load contacts error:', error);
+      setContactsLoadError('Could not load contacts. Check your connection and try again.');
+      showError('Could not load contacts');
+    } finally {
+      setContactsLoading(false);
+    }
+  }, [db]);
+
+  const openNewConvModal = () => {
+    setShowNewConv(true);
+    setContactSearch('');
+    loadContacts();
   };
   const createNewConversation = async (contact) => {
     if (creatingConv) return;
@@ -1033,7 +1141,10 @@ export default function Conversations({ replyAssist } = {}) {
     setShowTemplates(!showTemplates); setShowSchedule(false);
     if (templates.length === 0) {
       try { const data = await db.select('message_templates', 'is_active=eq.true&order=category.asc,title.asc'); setTemplates(data); }
-      catch (err) { console.error('Load templates error:', err); }
+      catch (error) {
+        console.error('Load templates error:', error);
+        showError('Could not load message templates');
+      }
     }
   };
   const insertTemplate = (tmpl) => {
@@ -1092,45 +1203,67 @@ export default function Conversations({ replyAssist } = {}) {
         <div className="conv-list-items">
           {loading ? (
             <div className="loading-page"><div className="spinner" /></div>
-          ) : filtered.length === 0 ? (
-            <div className="empty-state" style={{ padding: '40px 20px' }}>
-              <div className="empty-state-icon">💬</div>
-              <div className="empty-state-title">No conversations</div>
-              <div className="empty-state-text">{search || filter !== 'all' ? 'Try adjusting your filters' : 'Messages will appear when they come in'}</div>
-            </div>
-          ) : (<>
-            {visibleConvs.map(conv => {
-              const isActive = conv.id === activeId;
-              const hasUnread = conv.unread_count > 0;
-              const si = STATUS_MAP[conv.status] || {};
-              return (
-                <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
-                  onClick={() => selectConversation(conv.id)}
-                  onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
-                  <div className="conv-item-avatar">{getInitials(conv.title)}</div>
-                  <div className="conv-item-content">
-                    <div className="conv-item-top">
-                      <span className="conv-item-name">{cleanName(conv.title)}</span>
-                      <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
-                    </div>
-                    <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
-                    <div className="conv-item-meta">
-                      <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
-                      {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
-                    </div>
-                  </div>
-                  <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
-                    <IconDots style={{ width: 16, height: 16 }} />
-                  </button>
+          ) : loadError && conversations.length === 0 ? (
+            <ErrorState
+              message={loadError}
+              onRetry={() => {
+                impact('light');
+                loadConversations();
+              }}
+            />
+          ) : (
+            <>
+              {loadError && (
+                <ErrorState
+                  className="conv-inline-error"
+                  message={loadError}
+                  onRetry={() => {
+                    impact('light');
+                    loadConversations({ silent: true });
+                  }}
+                />
+              )}
+              {filtered.length === 0 ? (
+                <div className="empty-state" style={{ padding: '40px 20px' }}>
+                  <div className="empty-state-icon">💬</div>
+                  <div className="empty-state-title">No conversations</div>
+                  <div className="empty-state-text">{search || filter !== 'all' ? 'Try adjusting your filters' : 'Messages will appear when they come in'}</div>
                 </div>
-              );
-            })}
-            {filtered.length > visibleConvs.length && (
-              <button className="conv-load-more" onClick={() => setListLimit(n => n + LIST_PAGE)}>
-                Load {Math.min(LIST_PAGE, filtered.length - visibleConvs.length)} more
-              </button>
-            )}
-          </>)}
+              ) : (<>
+                {visibleConvs.map(conv => {
+                  const isActive = conv.id === activeId;
+                  const hasUnread = conv.unread_count > 0;
+                  const si = STATUS_MAP[conv.status] || {};
+                  return (
+                    <div key={conv.id} className={`conv-item${isActive ? ' active' : ''}${hasUnread ? ' unread' : ''}`}
+                      onClick={() => selectConversation(conv.id)}
+                      onContextMenu={(e) => { e.preventDefault(); setContextMenu({ convId: conv.id, x: e.clientX, y: e.clientY }); }}>
+                      <div className="conv-item-avatar">{getInitials(conv.title)}</div>
+                      <div className="conv-item-content">
+                        <div className="conv-item-top">
+                          <span className="conv-item-name">{cleanName(conv.title)}</span>
+                          <span className="conv-item-time">{formatListTime(conv.last_message_at)}</span>
+                        </div>
+                        <div className="conv-item-preview">{conv.last_message_preview || 'No messages yet'}</div>
+                        <div className="conv-item-meta">
+                          <span className={`status-badge ${si.cls || ''}`}>{si.label || conv.status?.replace(/_/g, ' ')}</span>
+                          {hasUnread && <span className="conv-unread-badge">{conv.unread_count}</span>}
+                        </div>
+                      </div>
+                      <button className="conv-item-action" onClick={(e) => { e.stopPropagation(); setContextMenu({ convId: conv.id, x: e.currentTarget.getBoundingClientRect().right, y: e.currentTarget.getBoundingClientRect().top }); }} aria-label="More">
+                        <IconDots style={{ width: 16, height: 16 }} />
+                      </button>
+                    </div>
+                  );
+                })}
+                {filtered.length > visibleConvs.length && (
+                  <button className="conv-load-more" onClick={() => setListLimit(n => n + LIST_PAGE)}>
+                    Load {Math.min(LIST_PAGE, filtered.length - visibleConvs.length)} more
+                  </button>
+                )}
+              </>)}
+            </>
+          )}
         </div>
       </div>
 
@@ -1177,19 +1310,43 @@ export default function Conversations({ replyAssist } = {}) {
 
             <div className="conv-messages" ref={messagesScrollRef} onScroll={handleMessagesScroll}>
               {msgLoading ? (<div className="loading-page"><div className="spinner" /></div>
-              ) : messages.length === 0 ? (
-                <div className="empty-state" style={{ flex: 1 }}><div className="empty-state-text">No messages yet. Send the first one below.</div></div>
-              ) : (<>
-                {hasMoreMessages && (
-                  <button className="conv-load-earlier" onClick={loadEarlier} disabled={loadingEarlier}>
-                    {loadingEarlier ? 'Loading…' : 'Load earlier messages'}
-                  </button>
-                )}
-                {groupedMessages.map((item, i) => {
-                  if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
-                  return <MessageBubble key={item.data.id} msg={item.data} onRetry={retryMessage} />;
-                })}
-              </>)}
+              ) : messageLoadError && messages.length === 0 ? (
+                <ErrorState
+                  message={messageLoadError}
+                  onRetry={() => {
+                    impact('light');
+                    reloadActiveMessages();
+                  }}
+                />
+              ) : (
+                <>
+                  {messageLoadError && (
+                    <ErrorState
+                      className="conv-inline-error"
+                      message={messageLoadError}
+                      onRetry={() => {
+                        impact('light');
+                        reloadActiveMessages();
+                      }}
+                    />
+                  )}
+                  {messages.length === 0 ? (
+                    <div className="empty-state" style={{ flex: 1 }}><div className="empty-state-text">No messages yet. Send the first one below.</div></div>
+                  ) : (<>
+                    {hasMoreMessages && (
+                      <button className="conv-load-earlier" onClick={loadEarlier} disabled={loadingEarlier}>
+                        {loadingEarlier
+                          ? <><span className="spinner" style={{ width: 14, height: 14 }} aria-hidden="true" /> Loading earlier messages…</>
+                          : 'Load earlier messages'}
+                      </button>
+                    )}
+                    {groupedMessages.map((item, i) => {
+                      if (item.type === 'date') return <div key={`d-${i}`} className="conv-date-sep"><span>{item.label}</span></div>;
+                      return <MessageBubble key={item.data.id} msg={item.data} onRetry={retryMessage} />;
+                    })}
+                  </>)}
+                </>
+              )}
               <div ref={messagesEndRef} />
             </div>
 
@@ -1256,31 +1413,59 @@ export default function Conversations({ replyAssist } = {}) {
                   <strong>
                     {hasExplicitSmsOptOut
                       ? 'This contact opted out of SMS'
-                      : serviceConsentStatus.loading
+                      : serviceConsentChecking
                         ? 'Checking SMS permission'
-                        : 'SMS permission is not recorded'}
+                        : statusMatchesActive && serviceConsentStatus.error
+                          ? 'SMS permission status unavailable'
+                          : serviceConsentSuppressionCopy?.title
+                            ? serviceConsentSuppressionCopy.title
+                          : 'SMS permission is not recorded'}
                   </strong>
                   <span>
                     {hasExplicitSmsOptOut
                       ? 'They must text START before staff can send another message.'
-                      : serviceConsentStatus.loading
+                      : serviceConsentChecking
                         ? 'Confirming the current service-message consent record.'
-                        : 'Verify prior service-message permission before texting this contact.'}
+                        : statusMatchesActive && serviceConsentStatus.error
+                          ? serviceConsentStatus.error
+                          : serviceConsentSuppressionCopy?.detail
+                            ? serviceConsentSuppressionCopy.detail
+                          : 'Verify prior service-message permission before texting this contact.'}
                   </span>
                 </div>
-                {!hasExplicitSmsOptOut && canAttestPriorConsent ? (
+                {!hasExplicitSmsOptOut
+                  && statusMatchesActive
+                  && serviceConsentStatus.error ? (
                   <button
                     className="btn btn-sm btn-secondary"
                     type="button"
-                    onClick={() => setConsentPrompt({
-                      contactId: activeContact.id,
-                      convId: activeId,
-                    })}
+                    onClick={() => {
+                      impact('light');
+                      loadServiceConsentStatus();
+                    }}
+                  >
+                    Retry verification
+                  </button>
+                ) : !hasExplicitSmsOptOut
+                  && serviceConsentCanBeAttested
+                  && canAttestPriorConsent ? (
+                  <button
+                    className="btn btn-sm btn-secondary"
+                    type="button"
+                    onClick={() => {
+                      impact('light');
+                      setConsentPrompt({
+                        contactId: activeContact.id,
+                        convId: activeId,
+                      });
+                    }}
                     disabled={serviceConsentStatus.loading}
                   >
                     Record verified permission
                   </button>
-                ) : !hasExplicitSmsOptOut ? (
+                ) : !hasExplicitSmsOptOut
+                  && serviceConsentCanBeAttested
+                  && !serviceConsentStatus.loading ? (
                   <span className="conv-consent-role-note">Office or admin approval required</span>
                 ) : null}
               </div>
@@ -1465,8 +1650,18 @@ export default function Conversations({ replyAssist } = {}) {
               <input className="input" placeholder="Search contacts by name, phone, or company..." value={contactSearch} onChange={e => setContactSearch(e.target.value)} autoFocus />
             </div>
             <div className="conv-modal-list">
-              {filteredContacts.length === 0 ? (
-                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>{contactSearch ? 'No contacts found' : 'Loading contacts...'}</div>
+              {contactsLoading ? (
+                <TabLoading label="Loading contacts…" />
+              ) : contactsLoadError ? (
+                <ErrorState
+                  message={contactsLoadError}
+                  onRetry={() => {
+                    impact('light');
+                    loadContacts();
+                  }}
+                />
+              ) : filteredContacts.length === 0 ? (
+                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>{contactSearch ? 'No contacts found' : 'No contacts available'}</div>
               ) : filteredContacts.map(contact => (
                 <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
                   <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>

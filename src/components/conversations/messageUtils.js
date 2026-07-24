@@ -27,6 +27,8 @@
  *   isLikelyImageUrl(url)    — extension-based guess for <img> vs file-link render.
  *   uiClassForMessage(msg)   — 'blocked'|'carrier'|'unreachable'|'config'|'error'.
  *   failureReason(msg)       — human-readable reason for a failed message.
+ *   mergeRefreshedMessages   — patch a newest-page refresh without losing older history.
+ *   getServiceConsentUiState — fail-closed consent banner/action presentation.
  *   draft get/set/clear      — per-conversation composer persistence.
  *
  * NOTES / GOTCHAS:
@@ -187,6 +189,72 @@ export function failureReason(msg) {
 export function isAmbiguousSend(msg) {
   return typeof msg?.error_code === 'string'
     && msg.error_code.endsWith('_SEND_AMBIGUOUS');
+}
+
+// ─── SECTION: Helpers — thread refresh and consent presentation ──────────────
+
+/** Patch a newest-page refresh into existing ascending history without losing older pages. */
+export function mergeRefreshedMessages(previous = [], refreshed = []) {
+  const refreshedById = new Map(refreshed.map(message => [message.id, message]));
+  const refreshedBodies = new Set(refreshed.map(message => `${message.type}::${message.body}`));
+  const retained = previous
+    .filter(message =>
+      !(message._pending || message._failed)
+      || !refreshedBodies.has(`${message.type}::${message.body}`))
+    .map(message => refreshedById.has(message.id)
+      ? { ...message, ...refreshedById.get(message.id) }
+      : message);
+  const retainedIds = new Set(retained.map(message => message.id));
+  return [...retained, ...refreshed.filter(message => !retainedIds.has(message.id))];
+}
+
+/**
+ * Turn the server's scoped consent decision into fail-closed UI state. Actions stay hidden until
+ * the decision belongs to the active contact and current phone and confirms ordinary NO_CONSENT.
+ */
+export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
+  const matches = !!contact
+    && status.contactId === contact.id
+    && status.phone === (contact.phone || null);
+  const checking = (
+    !matches
+    || status.loading
+    || (!status.checked && !status.error)
+  );
+  const canAttest = (
+    matches
+    && status.checked
+    && !status.allowed
+    && status.code === 'NO_CONSENT'
+    && !status.source
+  );
+
+  let suppressionCopy = null;
+  if (matches && !checking) {
+    if (status.source === 'pending_stop') {
+      suppressionCopy = {
+        title: 'SMS STOP request is still processing',
+        detail: 'Wait for the inbound opt-out to finish processing. Prior permission cannot override STOP.',
+      };
+    } else if (status.source === 'explicit_opt_out') {
+      suppressionCopy = {
+        title: 'This phone number opted out of SMS',
+        detail: 'They must text START before staff can send another message.',
+      };
+    } else if (status.code === 'DND_ACTIVE') {
+      suppressionCopy = {
+        title: 'SMS is blocked by Do Not Disturb',
+        detail: 'Another contact with this phone number has Do Not Disturb enabled.',
+      };
+    } else if (!canAttest && !status.allowed && !status.error) {
+      suppressionCopy = {
+        title: 'SMS permission cannot be recorded',
+        detail: 'Confirm the contact and phone number before trying again.',
+      };
+    }
+  }
+
+  return Object.freeze({ matches, checking, canAttest, suppressionCopy });
 }
 
 // ─── SECTION: Helpers — per-conversation draft persistence ──────────────
