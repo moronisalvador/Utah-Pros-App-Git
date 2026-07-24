@@ -176,6 +176,13 @@ inbox history and retry. This repository slice intentionally retains abandoned p
 safe cleanup needs a durable draft/claim model so deletion cannot race a send or erase message
 history.
 
+Retained CallRail provider events use the existing service-only `message_provider_events` table.
+Migration source `20260724002500_callrail_event_recovery_scheduler.sql` adds no table, column,
+policy, or browser grant: it only seeds a non-secret exact Worker URL, defines a locked-down
+due-work wake helper, and schedules it every five minutes. The migration is repository-authored
+but unapplied; activating it affects the shared production database immediately and therefore
+requires a fresh owner-approved apply window.
+
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 

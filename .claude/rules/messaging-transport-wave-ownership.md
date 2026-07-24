@@ -102,6 +102,20 @@ excluded until a durable draft-to-message claim can prevent races and history lo
 orphans are safer than destructive cleanup. This amendment adds no migration, provider binding,
 automatic RCS fallback, automated CallRail send, or live/provider test authority.
 
+### 2026-07-24 retained CallRail event recovery amendment
+
+The owner authorized completing the repository-side MMS recovery path after live evidence showed a
+retained `retryable` CallRail MMS event and no invocation history for the already-deployed
+`/api/process-callrail-events` worker. This amendment owns one additive scheduler migration,
+rollback, static contract test, and matching canonical documentation.
+
+The migration may store only a non-secret exact worker URL, reuse the existing cron secret, and run
+a five-minute pg_cron/pg_net safety net only when a CallRail SMS/MMS event is received, due for
+retry, or stale-claimed. It must accept only exact dev/production UPR worker URLs, grant no browser
+or service-role execution, preserve provider events and configuration on rollback, and never send
+a customer message. Authoring and deployment do not authorize applying the migration to the shared
+Supabase project; that remains a fresh owner-approved apply window.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:
