@@ -58,7 +58,9 @@
  *     `?secret=` query param (checked against integration_config
  *     'webflow_webhook_secret', with env.WEBFLOW_WEBHOOK_SECRET as a fallback,
  *     mirroring the Turnstile-key pattern in forms.js) is the practical choice.
- *     Set the SAME value on the webhook URL when it's created in Webflow.
+ *     Set the SAME value on the webhook URL when it's created in Webflow. Missing
+ *     server configuration fails closed with 403; an arbitrary supplied value is
+ *     never accepted as a bootstrap fallback.
  *   - Webflow's form_submission payload carries no visitor IP/user-agent, so
  *     p_ip/p_user_agent are always null here (unlike the hosted /f/ embed,
  *     which has both from the real request).
@@ -131,6 +133,9 @@ export function consentFromData(data) {
 }
 
 async function webhookSecret(db, env) {
+  // Authentication bootstrap exception: this exact deny-all config value is the
+  // only service-role read allowed before the webhook secret matches. No form,
+  // lead, RPC, notification, or telemetry access may occur before checkSecret.
   let configValue = '';
   try {
     const rows = await db.select('integration_config', 'key=eq.webflow_webhook_secret&select=value');
@@ -141,12 +146,12 @@ async function webhookSecret(db, env) {
   return pickConfiguredKey(configValue, env.WEBFLOW_WEBHOOK_SECRET);
 }
 
-async function checkSecret(request, db, env) {
+export async function checkSecret(request, db, env) {
   const url = new URL(request.url);
   const provided = url.searchParams.get('secret');
   if (!provided) return false;
   const expected = await webhookSecret(db, env);
-  if (!expected) return true; // not configured yet → don't block delivery before the key exists
+  if (!expected) return false;
   return provided === expected;
 }
 

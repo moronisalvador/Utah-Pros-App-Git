@@ -361,7 +361,7 @@ blocks and re-proven against the current release head and any later Encircle rol
 
 | Order | Lane | Earliest state | Key work | Hard edges |
 |---:|---|---|---|---|
-| 1 | S — Public/data containment | after F3 | highest-risk anon policies, form RPC, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any Encircle contract overlap |
+| 1 | S — Public/data containment | form RPC repository-ready; apply owner-gated, remaining work after F3 | service-only form RPC; then highest-risk anon policies, signing DTO/expiry, job-file privacy | one DB writer; rebase/serialize any Encircle contract overlap |
 | 2 | M — Money correctness | after F3 | QBO role/idempotency/recovery/Denver date; Stripe role/reuse/concurrency | shared auth/http seams owned once; provider sandboxes |
 | 3 | O — Owner/verification tails | anytime after relevant code | App Store Xcode/ASC, Tech Messages bake, Job Hub bake, Web Push, P9 cutover, purge cron, A2P | external/owner gates; no coding slot |
 | 4 | C — Started communications | after F3/F5 | per-thread push link, Omni inbound Phase I, CRM 4b decision, CallRail auth seam | messaging chokepoints serialized; consent auditor |

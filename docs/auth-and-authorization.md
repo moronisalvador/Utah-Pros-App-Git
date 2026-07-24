@@ -80,8 +80,9 @@ The live database has RLS on all 130 public tables, but RLS-enabled does not mea
 - the dated snapshot found `exec_read_sql(text)` executable by authenticated callers; migration
   `20260723205127_exec_read_sql_containment.sql` was applied and verified on 2026-07-23, and now
   denies `PUBLIC`, `anon`, and `authenticated` while preserving only `service_role`;
-- public form and signing RPCs rely on cooperative Worker/UI checks for some abuse, consent and
-  expiration rules.
+- the public form writer still permits direct browser execution around Worker abuse/consent checks;
+  `20260723235900_public_form_rpc_boundary.sql` is authored and reviewed to make it service-only but
+  remains unapplied; signing RPC status/expiration/minimal-payload work is still pending.
 
 The original snapshot is in `docs/audit/2026-07/evidence/live-supabase.md`; the DB-003 apply result
 is in `docs/audit/2026-07/evidence/exec-read-sql-containment-2026-07-23.md`. Other remediation
@@ -95,6 +96,25 @@ Until those findings are fixed:
   authorization;
 - put public anti-abuse, consent and capability-link rules at the server/database boundary, not
   only in a caller.
+
+## Public form submission boundary
+
+The supported unauthenticated path is `POST /api/form-submit`, plus the separately
+shared-secret-authenticated Webflow adapter. Missing Webflow secret configuration fails closed.
+Both use the service-role client and call
+`upsert_lead_from_form` only after their server-side schema, abuse, consent, or webhook checks.
+Browser code does not call that RPC directly.
+
+The Webflow adapter's only pre-authentication service-role access is the exact deny-all
+`integration_config.webflow_webhook_secret` lookup required to compare the supplied credential.
+Missing request credentials skip even that lookup. Mismatch, missing configuration, or lookup
+failure denies before form/lead data, RPCs, writes, notifications, or telemetry.
+
+Migration `20260723235900_public_form_rpc_boundary.sql` preserves the exact function
+signature/body/return shape while revoking `PUBLIC`, `anon`, and `authenticated` execution and
+retaining `service_role`. It is repository-ready but unapplied as of the evidence capture; therefore
+the live bypass remains open until a separately authorized serialized apply and direct role
+verification complete.
 
 ## Authorization review checklist
 

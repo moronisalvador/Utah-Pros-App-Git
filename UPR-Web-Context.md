@@ -356,6 +356,9 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
 -- KEPT anon (§2 allowlist): RPCs get_feature_flags, get_employee_page_access, get_crm_build_progress,
      upsert_lead_from_form, get_sign_request_by_token, get_sign_document_templates; table reads on
      employees / feature_flags / employee_page_access / nav_permissions (login+devLogin bootstrap).
+     Current correction: `20260723235900_public_form_rpc_boundary.sql` is now authored to remove
+     upsert_lead_from_form from this temporary exception because both runtime callers use the
+     service-role Worker path. It remains unapplied until an owner-authorized serialized window.
 -- DEFERRED (manifest §8 — anon LEFT until the owning in-flight phase merges): messages, conversations,
      conversation_participants, email_campaigns/recipients/exclusions, email_suppressions (omni);
      crm_automations, crm_automation_runs, jobs, job_phase_history (5-Ops); appointments, claims,
@@ -6165,6 +6168,10 @@ service-role client — that table is RLS-locked so anon/authenticated never see
 key exists); server-side `validateSubmission` against the PUBLISHED version;
 computes consent server-side from the submitted data; calls `upsert_lead_from_form`; logs a
 `worker_runs` row. Spam-dropped submissions return `200 {ok:true}` (a bot can't tell it was filtered).
+The supported public client posts only to this Worker. Direct browser execution of
+`upsert_lead_from_form` is scheduled for removal by the grant-only
+`20260723235900_public_form_rpc_boundary.sql`; pre-apply evidence confirms the migration is not live
+yet, so the direct ACL bypass remains a current owner-gated closure rather than a shipped claim.
 
 **Hosted page — `functions/f/[public_id].js`** (new; `GET /f/:public_id`): standalone HTML (not the
 SPA) rendered from the published schema; every field label/option/value escaped, labels/description/

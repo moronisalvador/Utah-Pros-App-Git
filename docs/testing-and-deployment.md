@@ -102,6 +102,13 @@ Known July 2026 test/deployment gaps are retained in
 `docs/audit/2026-07/maintainability.md` and `docs/audit/2026-07/remediation-backlog.md`. Update this
 canonical file in the same commit as a test, CI, environment, branch, deployment or release change.
 
+For the public-form RPC boundary, repository tests are static until the owner opens the shared
+apply window. Before apply, refresh the exact function/ACL/caller inventory and prove the migration
+is reachable from `dev`. After apply, run
+`supabase/tests/public_form_rpc_boundary_post_apply.sql`; it must deny `PUBLIC`, `anon`, and
+`authenticated` while preserving `service_role`. A controlled end-to-end form submission is a
+separate live-write authorization, not part of the ACL apply.
+
 For Encircle rotation, release evidence additionally shows resolver parity across Pages and
 `upr-mcp`, failed-candidate/no-write behavior, inactive/wrong-role denial, fallback and explicit
 disable behavior, no-cache disable semantics, and token-free status responses. Deploy compatible

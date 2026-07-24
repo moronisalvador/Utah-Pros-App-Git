@@ -28,6 +28,12 @@ database reviewers when a migration/catalog boundary also changes.
   with the caller's Bearer token (do not spell the service-role env-var name in a worker just to verify a
   token — it trips the secret scanner and isn't needed). Public-by-design endpoints (the
   `database-standard.md` §2 allowlist) are the only exceptions, each with a `// public: <reason>` comment.
+- A non-human webhook may need one minimal service-role credential lookup in order to authenticate
+  the request when the expected secret is stored in a deny-all configuration table. Before
+  authentication succeeds, that lookup is limited to the exact secret key/value; no business
+  select, RPC, write, provider call, notification, or telemetry mutation is allowed. Missing config,
+  lookup failure, missing credential, and mismatch all fail closed. Handler-level negative tests
+  assert the exact lookup and zero downstream side effects.
 
 ## 2. Transport — every outbound call has a timeout
 

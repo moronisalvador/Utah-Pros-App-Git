@@ -72,8 +72,9 @@ is a template):
 - **login / session bootstrap** reads (replace broad table rows with purpose-built minimal bootstrap
   results)
 - **`/status`** public roadmap mirror → `get_crm_build_progress`
-- **public form submit** Workers → `upsert_lead_from_form` *(service-only target state; direct client
-  execution bypasses Worker abuse/consent controls and must be revoked)*
+- **public form submit** Workers → `upsert_lead_from_form` *(service-only target state;
+  `20260723235900_public_form_rpc_boundary.sql` is authored but unapplied; direct client execution
+  remains live until its owner-authorized window)*
 - **public e-sign pages** → purpose-built retrieval constrained by token, status and expiration
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
   URLs)*

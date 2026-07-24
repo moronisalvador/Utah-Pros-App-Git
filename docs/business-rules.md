@@ -61,7 +61,12 @@ Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the cur
 - Automated identity linking is auditable/reversible and follows one normalized phone rule.
 - Public form acceptance flows through the Worker enforcement boundary: abuse controls, published
   schema validation, organization identity, request IP/user agent and consent evidence are
-  server-derived. The underlying transaction RPC is not a second public entry point.
+  server-derived. The underlying transaction RPC must not be a second public entry point.
+  `20260723235900_public_form_rpc_boundary.sql` implements that ACL contract in source but is
+  unapplied as of 2026-07-23; until its serialized apply, direct browser execution remains a known
+  live exception rather than an enforced rule.
+- The Webflow form adapter requires its configured shared secret and fails closed if the expected
+  database/environment value is missing; there is no unauthenticated bootstrap mode.
 
 Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 
