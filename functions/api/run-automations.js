@@ -221,18 +221,27 @@ async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId
   //   • skipped, deferrable (quiet_hours) → NOT terminal → retried when it lifts.
   //   • skipped, durable (dnd/no_consent) → terminal (don't pester).
   //   • failed, transient (429 / 5xx)     → NOT terminal → retried next run.
+  //   • failed, ambiguous acceptance      → terminal reconciliation (no resend).
   //   • failed, permanent (invalid number)→ terminal (stop infinite-retrying).
   const isDeferredSkip = outcome === 'skipped' && DEFERRABLE_SKIP_REASONS.has(result?.reason);
-  const isTransientFail = outcome === 'failed' && !result?.permanent;
+  const isTransientFail = outcome === 'failed' && !result?.permanent && !result?.ambiguous;
   const terminal = !isDeferredSkip && !isTransientFail;
 
   if (terminal) {
+    const reason = result?.reason
+      || (result?.ambiguous ? 'ambiguous_provider_outcome' : null);
     await db.insert('system_events', {
       event_type: eventType,
       entity_type: entityType,
       entity_id: entityId,
       job_id: jobId || null,
-      payload: { automation: key, channel, outcome, reason: result?.reason || null },
+      payload: {
+        automation: key,
+        channel,
+        outcome,
+        reason,
+        reconciliation_required: result?.ambiguous === true,
+      },
     });
   }
   return { outcome, result };

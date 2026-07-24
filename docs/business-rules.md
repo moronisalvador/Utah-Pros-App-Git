@@ -106,6 +106,12 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
   instead records consent already obtained through the approved evidence flow.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
+- Scheduled SMS/MMS must call `sendAutomatedMessage()` rather than a provider primitive. That
+  central boundary rechecks the global `sms_sending_enabled` switch, global opt-in, DND and
+  recipient-local quiet hours immediately before Twilio submission. A disabled switch or quiet
+  hours releases the scheduled claim for a later retry; durable consent failures remain terminal.
+  The HTTP trigger accepts only the scheduler secret or an active internal admin, office or
+  project-manager session; authentication without that role is insufficient.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
@@ -114,7 +120,10 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
   keep only an opaque private reference; provider-specific byte upload or signed fetch exposure
   happens after consent inside the selected adapter.
 - A messaging-provider failure does not fall back to another provider or channel. Ambiguous
-  provider timeouts are reconciled before any retry that could duplicate a customer message.
+  provider timeouts are not automatically resubmitted by scheduled sends, sequences, or CRM
+  automation runs: they enter a terminal or paused reconciliation state at the same action. Fixed
+  automations suppress a later run only after their terminal event persists; automated SMS remains
+  activation-blocked until a pre-send reservation closes that post-send persistence gap.
 - RCS is a channel inside the existing messaging domain, not a new consent or conversation domain.
   Canonical records distinguish the requested channel from the provider-confirmed actual channel.
 - Twilio provider-managed RCS-to-SMS/MMS fallback is prohibited. It may be enabled only by a

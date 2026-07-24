@@ -70,6 +70,16 @@ bindings and provider consoles.
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
   Scheduled and automated SMS call the same suppression-aware status boundary but accept only
   `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
+- `process-scheduled` also submits through `sendAutomatedMessage()` rather than calling Twilio
+  directly. This keeps the automation kill-switch, global-consent/DND decision, recipient-local
+  quiet hours, provider retry policy, delivery callback and worker-owned message row on one
+  structurally shared path. Scheduled media remains Twilio-only; CallRail is not an automated-send
+  fallback. Its HTTP trigger accepts the scheduler secret or an active, non-external
+  admin/office/project-manager session. An ambiguous provider outcome is not automatically
+  resubmitted by scheduled, CRM-automation or sequence consumers; each enters a terminal or paused
+  reconciliation state at the exact send action. Fixed automations suppress a later run after their
+  terminal event persists, but automated SMS stays activation-blocked until a pre-send reservation
+  closes the post-send event-persistence gap.
 - Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
   shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
   facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is

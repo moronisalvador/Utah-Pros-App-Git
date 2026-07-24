@@ -36,9 +36,9 @@ const state = {
 
 vi.mock('./twilio.js', () => ({
   // Behaviour is overridable per-test via state.sendImpl (e.g. to throw a 429).
-  sendMessage: vi.fn(async (_env, { to, body, statusCallback }) => {
-    state.sentTo.push({ to, body, statusCallback });
-    if (state.sendImpl) return state.sendImpl({ to, body, statusCallback });
+  sendMessage: vi.fn(async (_env, { to, body, mediaUrls, statusCallback }) => {
+    state.sentTo.push({ to, body, mediaUrls, statusCallback });
+    if (state.sendImpl) return state.sendImpl({ to, body, mediaUrls, statusCallback });
     return { sid: 'SM_test', status: 'queued' };
   }),
 }));
@@ -53,7 +53,9 @@ vi.mock('./supabase.js', () => ({
       if (table === 'message_templates') return [];
       // No existing thread → the send path find-or-creates one.
       if (table === 'conversation_participants') return [];
-      if (table === 'conversations') return [];
+      if (table === 'conversations') {
+        return state.existingConversation ? [state.existingConversation] : [];
+      }
       return [];
     },
     async insert(table, data) {
@@ -106,6 +108,7 @@ beforeEach(() => {
   state.consentStatus = { allowed: true, code: 'GLOBAL_OPT_IN' };
   state.sendImpl = null;
   state.failThreadWrite = false;
+  state.existingConversation = null;
   sendMessage.mockClear();
 });
 
@@ -199,12 +202,80 @@ describe('sendAutomatedMessage — SMS gate', () => {
     expect(state.sentTo[0].body).toBe('hello there');
   });
 
+  it('preserves scheduled destination, media, thread, sender, and additive messageId', async () => {
+    state.smsEnabled = true;
+    state.existingConversation = { id: 'conv-scheduled' };
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'Employee: customer-facing body',
+      recordBody: 'customer-facing body',
+      now: DAYTIME,
+      destinationPhone: '+13855550100',
+      mediaUrls: ['https://example.test/photo.jpg'],
+      conversationId: 'conv-scheduled',
+      sentBy: 'employee-1',
+      markWaitingOnClient: true,
+    });
+
+    expect(res).toMatchObject({
+      ok: true,
+      skipped: false,
+      sid: 'SM_test',
+      messageId: 'msg-1',
+    });
+    expect(state.sentTo[0]).toMatchObject({
+      to: '+13855550100',
+      body: 'Employee: customer-facing body',
+      mediaUrls: ['https://example.test/photo.jpg'],
+    });
+    expect(state.selects).toContainEqual({
+      table: 'conversations',
+      query: 'id=eq.conv-scheduled&limit=1',
+    });
+    const message = state.inserts.find(({ table }) => table === 'messages');
+    expect(message.data).toMatchObject({
+      conversation_id: 'conv-scheduled',
+      body: 'customer-facing body',
+      channel: 'mms',
+      sent_by: 'employee-1',
+      media_urls: JSON.stringify(['https://example.test/photo.jpg']),
+    });
+    expect(state.updates).toContainEqual(expect.objectContaining({
+      table: 'conversations',
+      data: expect.objectContaining({
+        status: 'waiting_on_client',
+        status_changed_at: expect.any(String),
+      }),
+    }));
+  });
+
   it('DEFERS (does not text) inside TCPA quiet-hours, even when consented + switch ON', async () => {
     state.smsEnabled = true;
     const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi', now: NIGHTTIME });
     expect(res.skipped).toBe(true);
     expect(res.reason).toBe('quiet_hours');
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('surfaces an ambiguous provider result without retrying the customer message', async () => {
+    state.smsEnabled = true;
+    state.sendImpl = () => {
+      const error = new Error('provider timeout after submission');
+      error.ambiguous = true;
+      throw error;
+    };
+
+    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'one submission only',
+      now: DAYTIME,
+    });
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: false,
+      permanent: false,
+      ambiguous: true,
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an unsupported channel', async () => {
@@ -357,6 +428,41 @@ describe('sendSmsWithBackoff', () => {
     const res = await sendSmsWithBackoff({}, { to: '+18014471917', body: 'hi', sleep: noSleep });
     expect(res.sid).toBe('SM_ok');
     expect(calls).toBe(2);
+  });
+  it('passes media through every retry attempt', async () => {
+    let calls = 0;
+    state.sendImpl = ({ mediaUrls }) => {
+      calls++;
+      expect(mediaUrls).toEqual(['https://example.test/photo.jpg']);
+      if (calls === 1) throw new Error('Twilio send failed: 503 Service Unavailable');
+      return { sid: 'SM_media', status: 'queued' };
+    };
+    const res = await sendSmsWithBackoff({}, {
+      to: '+18014471917',
+      body: 'photo',
+      mediaUrls: ['https://example.test/photo.jpg'],
+      sleep: noSleep,
+    });
+    expect(res.sid).toBe('SM_media');
+    expect(calls).toBe(2);
+  });
+  it('never retries an ambiguous provider outcome', async () => {
+    let calls = 0;
+    state.sendImpl = () => {
+      calls++;
+      const error = new Error('Twilio send outcome is ambiguous');
+      error.ambiguous = true;
+      throw error;
+    };
+    await expect(sendSmsWithBackoff({}, {
+      to: '+18014471917',
+      body: 'do not duplicate',
+      sleep: noSleep,
+    })).rejects.toMatchObject({
+      ambiguous: true,
+      permanent: false,
+    });
+    expect(calls).toBe(1);
   });
   it('fails fast on a permanent error (no retry) and marks it permanent', async () => {
     let calls = 0;

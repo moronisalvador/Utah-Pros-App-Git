@@ -834,7 +834,7 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is now **authenticated** (scheduler `x-webhook-secret` via `checkCronSecret`, or a logged-in employee — mirrors `run-automations`; the `scheduled()` cron handler stays auth-free). Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. Writes a `worker_runs` row. `messages` insert carries `channel:'sms'`.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is **authenticated** by scheduler `x-webhook-secret` or an active, non-external admin/office/project-manager session; the `scheduled()` cron handler stays platform-authenticated. Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. **Central-gate repair (Jul 24 2026):** after the worker's defense-in-depth consent check, every scheduled SMS/MMS now calls `sendAutomatedMessage()` instead of Twilio directly, so the global `sms_sending_enabled` kill-switch, global opt-in/DND, recipient-local quiet hours, retry policy, status callback and worker-owned thread row cannot be bypassed. `sms_disabled`/`quiet_hours` release the claim and leave the row pending; durable refusal remains terminal. Provider outcomes marked ambiguous are submitted only once and become terminal reconciliation cases instead of automatic retries. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
@@ -5172,6 +5172,19 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        + the load-bearing `sms_disabled`/`quiet_hours` strings unchanged; new
                        `sid`/`error`/`permanent` are additive; backward-compat tests assert Phase 8's
                        `planStepOutcome` + Phase 5's `planRunOutcome` still HOLD/skip/send correctly.
+                       **Scheduled-send compatibility (Jul 24 2026):** optional additive fields let
+                       the same gate preserve an already-selected destination, conversation, staff
+                       sender, stored body and MMS media. The provider receives the prefixed body,
+                       the existing thread receives the unprefixed body and `sms`/`mms` channel, and
+                       the additive `messageId` lets `process-scheduled` close its claim without a
+                       second `messages` insert. The frozen `{ok,skipped,reason}` vocabulary and
+                       load-bearing defer reasons are unchanged.
+                       **Ambiguous-outcome closure (Jul 24 2026):** scheduled rows fail for
+                       reconciliation, CRM automation runs fail at the same action, and sequence
+                       enrollments pause at the same step with a required reconciliation event.
+                       Fixed automations suppress later runs only after their terminal event
+                       persists; automated SMS remains activation-blocked until a pre-send
+                       reservation closes that post-send persistence gap.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,

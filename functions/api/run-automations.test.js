@@ -275,6 +275,32 @@ describe('permanent-failure terminal (F-10 companion)', () => {
     await runSpeedToLead(ctx);
     expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
   });
+
+  it('writes a terminal reconciliation row on an AMBIGUOUS failure so it is not resubmitted', async () => {
+    const first = makeCtx({
+      leads: [freshCall],
+      sendResult: {
+        ok: false,
+        skipped: false,
+        error: 'Provider response was not received',
+        permanent: false,
+        ambiguous: true,
+      },
+    });
+    await runSpeedToLead(first.ctx);
+    const ev = first.inserts.find((i) => i.table === 'system_events');
+    expect(ev).toBeTruthy();
+    expect(ev.data.payload).toMatchObject({
+      outcome: 'failed',
+      reason: 'ambiguous_provider_outcome',
+      reconciliation_required: true,
+    });
+
+    // A later worker run sees the terminal event and never reaches the provider.
+    const second = makeCtx({ leads: [freshCall], firedEvents: [ev.data] });
+    expect(await runSpeedToLead(second.ctx)).toBe(0);
+    expect(second.sendCalls).toHaveLength(0);
+  });
 });
 
 // ─── Kill-switch: SMS automations are inert while sms_sending_enabled OFF ─────

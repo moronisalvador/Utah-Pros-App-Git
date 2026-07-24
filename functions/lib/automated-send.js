@@ -36,7 +36,9 @@
  *     'email' or 'sms' (both live). Looks up the contact, optionally renders a
  *     message_templates row by title, then calls sendGatedEmail / sendGatedSms.
  *     Pass extra.orgId to scope the SMS kill-switch to a specific org.
- *   sendGatedSms(env, { contact, body, orgId, now }) — the gated SMS send.
+ *   sendGatedSms(env, { contact, body, orgId, now, mediaUrls, conversationId,
+ *                       sentBy, recordBody, markWaitingOnClient })
+ *     — the gated SMS/MMS send.
  *     Checks the automation_settings.sms_sending_enabled kill-switch (default
  *     OFF), then consentAllows() (TCPA), then quiet-hours (per-recipient tz)
  *     before ever reaching twilio; every outcome is audited to sms_consent_log.
@@ -326,14 +328,28 @@ const TRANSIENT_BACKOFF_MS = 300;
 // network) with linear backoff. A PERMANENT failure throws immediately with
 // `.permanent = true` so the caller does not retry it. `sleep` is injectable for
 // tests. Returns the twilio result object on success.
-export async function sendSmsWithBackoff(env, { to, body, statusCallback, sleep, maxAttempts = MAX_SEND_ATTEMPTS } = {}) {
+export async function sendSmsWithBackoff(env, {
+  to,
+  body,
+  mediaUrls,
+  statusCallback,
+  sleep,
+  maxAttempts = MAX_SEND_ATTEMPTS,
+} = {}) {
   const wait = sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await sendMessage(env, { to, body, statusCallback });
+      return await sendMessage(env, { to, body, mediaUrls, statusCallback });
     } catch (e) {
       lastError = e;
+      // The provider may have accepted an ambiguous timeout/network submission.
+      // Retrying that request could deliver the same customer message twice.
+      // Preserve the signal for reconciliation and stop before any backoff retry.
+      if (e?.ambiguous === true) {
+        e.permanent = false;
+        throw e;
+      }
       const cls = classifySendError(e);
       if (!cls.transient) { e.permanent = true; throw e; }
       if (attempt === maxAttempts) { e.permanent = false; throw e; }
@@ -386,15 +402,33 @@ async function findOrCreateAutomatedConversation(db, contact, phone) {
 // status callback will update. Best-effort: a thread-write failure must NEVER
 // turn a delivered text into a reported failure (the send already happened), so
 // everything here is wrapped and swallowed. Worker is the sole writer (omni §7.1).
-async function recordAutomatedSms(db, { contact, phone, body, sid }) {
+async function recordAutomatedSms(db, {
+  contact,
+  phone,
+  body,
+  sid,
+  mediaUrls,
+  conversationId,
+  sentBy,
+  markWaitingOnClient,
+}) {
   try {
-    const conversation = await findOrCreateAutomatedConversation(db, contact, phone);
+    let conversation = null;
+    if (conversationId) {
+      [conversation] = await db.select(
+        'conversations',
+        `id=eq.${conversationId}&limit=1`
+      );
+    } else {
+      conversation = await findOrCreateAutomatedConversation(db, contact, phone);
+    }
     if (!conversation) return null;
+    const normalizedMedia = Array.isArray(mediaUrls) ? mediaUrls : [];
     const [row] = await db.insert('messages', {
       conversation_id: conversation.id,
       type: 'sms_outbound',
       body,
-      channel: 'sms',
+      channel: normalizedMedia.length > 0 ? 'mms' : 'sms',
       direction: 'outbound',
       // Always 'queued' on a real send — mirrors send-message.js. Do NOT store the
       // raw Twilio status: under a Messaging Service the initial status is
@@ -403,22 +437,44 @@ async function recordAutomatedSms(db, { contact, phone, body, sid }) {
       // statusCallback advances this to sent/delivered/failed by twilio_sid.
       status: sid ? 'queued' : 'failed',
       twilio_sid: sid || null,
-      sent_by: null, // automated — no staff sender
+      sent_by: sentBy || null,
+      media_urls: normalizedMedia.length > 0
+        ? JSON.stringify(normalizedMedia)
+        : null,
       // num_segments / price left NULL — Phase A fills them from the status callback.
     });
     const now = new Date().toISOString();
-    await db.update('conversations', `id=eq.${conversation.id}`, {
+    const conversationUpdate = {
       last_message_at: now,
       last_message_preview: String(body || '').substring(0, 100),
       updated_at: now,
-    });
+    };
+    if (markWaitingOnClient) {
+      conversationUpdate.status = 'waiting_on_client';
+      conversationUpdate.status_changed_at = now;
+    }
+    await db.update(
+      'conversations',
+      `id=eq.${conversation.id}`,
+      conversationUpdate,
+    );
     return row || null;
   } catch {
     return null; // visibility is best-effort; the send is the source of truth
   }
 }
 
-export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
+export async function sendGatedSms(env, {
+  contact,
+  body,
+  orgId,
+  now,
+  mediaUrls,
+  conversationId,
+  sentBy,
+  recordBody,
+  markWaitingOnClient,
+} = {}) {
   const db = supabase(env);
   const phone = normalizePhone(contact?.phone);
   const org = orgId || await resolveRealOrgId(db);
@@ -484,16 +540,41 @@ export async function sendGatedSms(env, { contact, body, orgId, now } = {}) {
   // delivery status callback, then mirror the text into its thread (best-effort).
   const statusCallback = buildStatusCallbackUrl(env);
   try {
-    const result = await sendSmsWithBackoff(env, { to: phone, body, statusCallback });
+    const result = await sendSmsWithBackoff(env, {
+      to: phone,
+      body,
+      mediaUrls,
+      statusCallback,
+    });
     await logSmsConsent(db, contact, 'automated_send', `Automated SMS sent (sid ${result.sid})`);
-    await recordAutomatedSms(db, { contact, phone, body, sid: result.sid });
-    return { ok: true, skipped: false, sid: result.sid };
+    const recorded = await recordAutomatedSms(db, {
+      contact,
+      phone,
+      body: recordBody ?? body,
+      sid: result.sid,
+      mediaUrls,
+      conversationId,
+      sentBy,
+      markWaitingOnClient,
+    });
+    return {
+      ok: true,
+      skipped: false,
+      sid: result.sid,
+      messageId: recorded?.id || null,
+    };
   } catch (e) {
     await logSmsConsent(db, contact, 'send_failed', `Automated SMS failed: ${e.message}`);
     // `permanent` (additive to the frozen return) lets run-automations stop
     // retrying an invalid number instead of re-attempting it every cron tick.
     const permanent = e.permanent ?? !classifySendError(e).transient;
-    return { ok: false, skipped: false, error: e.message, permanent };
+    return {
+      ok: false,
+      skipped: false,
+      error: e.message,
+      permanent,
+      ambiguous: e.ambiguous === true,
+    };
   }
 }
 
@@ -524,7 +605,20 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
   const rendered = renderTemplate(body, variables);
 
   if (channel === 'sms') {
-    return sendGatedSms(env, { contact, body: rendered, orgId: extra.orgId, now: extra.now });
+    const smsContact = extra.destinationPhone
+      ? { ...contact, phone: extra.destinationPhone }
+      : contact;
+    return sendGatedSms(env, {
+      contact: smsContact,
+      body: rendered,
+      orgId: extra.orgId,
+      now: extra.now,
+      mediaUrls: extra.mediaUrls,
+      conversationId: extra.conversationId,
+      sentBy: extra.sentBy,
+      recordBody: extra.recordBody,
+      markWaitingOnClient: extra.markWaitingOnClient,
+    });
   }
 
   return sendGatedEmail(env, {
