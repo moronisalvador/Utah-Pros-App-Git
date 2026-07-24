@@ -590,7 +590,6 @@ export default function Conversations({ replyAssist } = {}) {
     activeConv?.type === 'direct'
     && (employee?.role === 'admin' || employee?.role === 'office')
   ) && employee?.is_external !== true;
-  const hasExplicitSmsOptOut = !!activeContact?.opt_out_at;
   const {
     matches: statusMatchesActive,
     checking: serviceConsentChecking,
@@ -600,12 +599,35 @@ export default function Conversations({ replyAssist } = {}) {
     status: serviceConsentStatus,
     contact: activeContact,
   });
+  const hasExplicitSmsOptOut = !!activeContact?.opt_out_at
+    || (statusMatchesActive && serviceConsentStatus.code === 'CONTACT_OPTED_OUT');
   const hasRecordedSmsPermission = activeContact?.opt_in_status === true
     || (
       activeConv?.type === 'direct'
       && statusMatchesActive
       && serviceConsentStatus.allowed === true
     );
+  const hasPendingSmsStop = statusMatchesActive
+    && (serviceConsentStatus.code === 'CONTACT_PENDING_STOP'
+      || serviceConsentStatus.source === 'pending_stop');
+  const hasEffectiveDnd = !!activeContact?.dnd
+    || (statusMatchesActive && serviceConsentStatus.code === 'DND_ACTIVE');
+  const hasGlobalSmsPermission = activeContact?.opt_in_status === true
+    || (statusMatchesActive
+      && serviceConsentStatus.allowed === true
+      && serviceConsentStatus.code === 'GLOBAL_OPT_IN');
+  const hasRequiredSmsPermission = showSchedule
+    ? hasGlobalSmsPermission
+    : hasRecordedSmsPermission;
+  const customerSmsBlocked = !!activeContact && (
+    hasEffectiveDnd
+    || !statusMatchesActive
+    || serviceConsentChecking
+    || !!serviceConsentStatus.error
+    || hasExplicitSmsOptOut
+    || hasPendingSmsStop
+    || !hasRequiredSmsPermission
+  );
 
   const loadServiceConsentStatus = useCallback(async ({ silent = false } = {}) => {
     const requestId = consentStatusRequestRef.current + 1;
@@ -1010,6 +1032,24 @@ export default function Conversations({ replyAssist } = {}) {
     // tick — before React re-renders — sees the box we blank below and no-ops.
     const el = composeRef.current;
     const text = (el ? (el.innerText || '') : compose).trim();
+
+    if (!isNote && customerSmsBlocked) {
+      const reason = showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+        ? 'Scheduled SMS requires the contact’s full SMS opt-in'
+        : serviceConsentStatus.loading
+          ? 'SMS permission is still being verified'
+          : serviceConsentStatus.error
+            ? 'SMS permission could not be verified'
+            : hasExplicitSmsOptOut
+              ? 'Contact opted out of SMS'
+              : hasPendingSmsStop
+                ? 'A STOP request is still being processed'
+                : hasEffectiveDnd
+                  ? 'Contact has Do Not Disturb enabled'
+                  : 'Record verified SMS permission before sending';
+      emitToast(reason, 'error');
+      return;
+    }
 
     // ── Scheduled message path (unchanged; text-only) ──
     if (showSchedule && scheduleDate && scheduleTime) {
@@ -1450,8 +1490,12 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !activeContact.dnd && !hasRecordedSmsPermission && !isNote && (
-              <div className="conv-consent-banner">
+            {activeContact && !hasEffectiveDnd && !hasRequiredSmsPermission && !isNote && (
+              <div
+                className="conv-consent-banner"
+                role={serviceConsentStatus.error ? 'alert' : 'status'}
+                aria-live={serviceConsentStatus.error ? 'assertive' : 'polite'}
+              >
                 <div>
                   <strong>
                     {hasExplicitSmsOptOut
@@ -1460,6 +1504,8 @@ export default function Conversations({ replyAssist } = {}) {
                         ? 'Checking SMS permission'
                         : statusMatchesActive && serviceConsentStatus.error
                           ? 'SMS permission status unavailable'
+                          : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+                            ? 'Scheduled SMS requires full opt-in'
                           : serviceConsentSuppressionCopy?.title
                             ? serviceConsentSuppressionCopy.title
                           : 'SMS permission is not recorded'}
@@ -1471,6 +1517,8 @@ export default function Conversations({ replyAssist } = {}) {
                         ? 'Confirming the current service-message consent record.'
                         : statusMatchesActive && serviceConsentStatus.error
                           ? serviceConsentStatus.error
+                          : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
+                            ? 'Verified service-message permission allows immediate staff replies only. Send now or record full SMS opt-in before scheduling.'
                           : serviceConsentSuppressionCopy?.detail
                             ? serviceConsentSuppressionCopy.detail
                           : 'Verify prior service-message permission before texting this contact.'}
@@ -1491,6 +1539,8 @@ export default function Conversations({ replyAssist } = {}) {
                   </button>
                 ) : !hasExplicitSmsOptOut
                   && serviceConsentCanBeAttested
+                  && !hasPendingSmsStop
+                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
                   && canAttestPriorConsent ? (
                   <button
                     className="btn btn-sm btn-secondary"
@@ -1508,6 +1558,8 @@ export default function Conversations({ replyAssist } = {}) {
                   </button>
                 ) : !hasExplicitSmsOptOut
                   && serviceConsentCanBeAttested
+                  && !hasPendingSmsStop
+                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
                   && !serviceConsentStatus.loading ? (
                   <span className="conv-consent-role-note">Office or admin approval required</span>
                 ) : null}
@@ -1579,7 +1631,7 @@ export default function Conversations({ replyAssist } = {}) {
                 />
                 {!isNote && compose.trim() && <SegmentCounter text={compose} prefixLen={senderPrefixLen} />}
               </div>
-              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (activeContact?.dnd && !isNote) || (sending && showSchedule)} aria-label="Send">
+              <button className={`btn conv-send-btn ${showSchedule && scheduleDate && scheduleTime ? 'btn-schedule' : 'btn-primary'}`} onClick={handleSend} disabled={(!compose.trim() && (isNote || !attachments.some(a => a.url))) || uploadingAttachment || (showSchedule && (!scheduleDate || !scheduleTime || !compose.trim())) || (customerSmsBlocked && !isNote) || (sending && showSchedule)} aria-label="Send">
                 {(sending && showSchedule) ? <div className="spinner" style={{ width: 16, height: 16, borderWidth: '2px' }} /> : showSchedule && scheduleDate && scheduleTime ? <IconClock style={{ width: 16, height: 16 }} /> : <IconSend style={{ width: 16, height: 16 }} />}
               </button>
             </div>

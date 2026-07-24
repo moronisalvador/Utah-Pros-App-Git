@@ -226,6 +226,9 @@ BEGIN
   -- durable STOP that is waiting for projection visible before consent is used.
   PERFORM pg_advisory_xact_lock(hashtextextended('messaging-phone:' || v_phone_key, 0));
 
+  -- Pin the target row after entering the phone serialization boundary. A phone
+  -- change committed while the advisory lock was being acquired must never let
+  -- suppression checks for the old number authorize the new number.
   SELECT *
   INTO v_contact
   FROM public.contacts
