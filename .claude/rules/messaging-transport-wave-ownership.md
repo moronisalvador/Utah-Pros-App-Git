@@ -84,6 +84,24 @@ office `/conversations` list. The follow-up owns the narrow provider-neutral dis
 bell links select the exact office thread at `/conversations?c=<id>`, while Web Push selects the
 same thread inside the field PWA at `/tech/conversations?c=<id>`.
 
+### 2026-07-24 private outbound media amendment
+
+The owner authorized completing the CallRail picture-message path and keeping the same inbox
+contract ready for Twilio MMS/RCS. This amendment owns the authenticated
+`/api/message-media-upload` boundary, provider-neutral private-media helpers, the CallRail
+multipart `media_file` adapter change, message-bound private resolution, the two existing composer
+upload helpers, focused tests, and matching canonical documentation.
+
+Outbound customer images must remain in private `message-attachments`; clients receive only opaque
+`upr-storage://` references. The Worker verifies actual JPEG/PNG/GIF bytes and the five-megabyte
+limit both at upload and before provider dispatch. CallRail receives at most one verified file by
+multipart upload. Twilio may receive only a short-lived signed fetch URL generated inside its
+adapter; no client or message row stores that URL. Sent/failed/ambiguous history retains the
+private reference for rendering and safe retry. Self-service object deletion is deliberately
+excluded until a durable draft-to-message claim can prevent races and history loss; private
+orphans are safer than destructive cleanup. This amendment adds no migration, provider binding,
+automatic RCS fallback, automated CallRail send, or live/provider test authority.
+
 ## 3. Phase 1 exact amendment
 
 Phase 1 may:

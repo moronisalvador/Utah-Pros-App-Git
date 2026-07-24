@@ -167,6 +167,15 @@ and browser roles have no ledger grants. The migration ledger records the founda
 `20260723215926` and its two advisor-driven outbox FK indexes at `20260723220207`.
 Outbound provider selection remains a separate Cloudflare owner gate and is disabled by default.
 
+Outbound MMS needs no new table or migration. Its canonical `messages.media_urls` value is an array
+of opaque `upr-storage://message-attachments/outbound/...` references. MIME type and byte size are
+retained by the private Supabase Storage object metadata and revalidated from the object response
+and bytes before each provider submission. Provider-fetch signed URLs are ephemeral transport
+artifacts and are never persisted. Sent, failed, and ambiguous message objects remain durable for
+inbox history and retry. This repository slice intentionally retains abandoned private uploads:
+safe cleanup needs a durable draft/claim model so deletion cannot race a send or erase message
+history.
+
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 

@@ -78,6 +78,9 @@ be treated as current architecture without re-verification.
   provider request/response details behind a server transport seam. Consent, DND, conversations and
   message ownership remain above that seam; scheduled/automated/campaign paths are not implicitly
   provider-selectable.
+- Message images follow the same boundary: an authenticated Worker writes verified bytes to private
+  Storage and returns an opaque reference; adapters alone translate that object into a direct
+  multipart upload or short-lived provider-fetch URL.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.
