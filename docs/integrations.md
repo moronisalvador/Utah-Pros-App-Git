@@ -173,11 +173,19 @@ missing/null secondary ID but still requires `resource_id`, which remains the du
 message identity and dedupe key. A malformed non-null `id` still fails closed.
 
 The finish-first recapture first found two CallRail attempts (`accepted=1`, `failed=1`) and zero
-provider events. Concurrent recovery then reconciled both outbound attempts to `confirmed`, with
-two processed `text_reconciled` events and two canonical `sent` messages; no resend occurred. These
-are recovery records, not proof that a signed sent/received webhook can directly claim and project
-the live payload. The controlled inbound reply is not represented as a CallRail inbound message in
-the safe aggregate, so direct signed-event/inbound projection remains unverified.
+provider events. Recovery then reconciled both outbound attempts to `confirmed`, with two processed
+`text_reconciled` events and two canonical `sent` messages; no resend occurred.
+
+A separate one-time Preview-only history importer was used after read-only checks proved the exact
+customer phone mapped to one active direct UPR conversation. Its explicit 18.5-minute window
+returned four CallRail records, skipped both outbound records, and projected both missing inbound
+SMS records with their provider identities and original timestamps. The canonical rows were
+verified as `received`, and the refreshed dev inbox displayed both replies in order. The importer
+branch, route alias, and all temporary Preview deployments were deleted and were never merged.
+
+The recovered rows prove live provider-history normalization and canonical inbound projection.
+They do not prove automatic direct ingestion from a fresh post-fix signed received webhook; that
+remains the next Preview proof before broader activation.
 
 The repository also reserves an unused RCS capability vocabulary for Twilio. This does not alter the
 active transport or provider configuration. RCS remains blocked until requested-versus-actual
