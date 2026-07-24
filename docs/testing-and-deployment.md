@@ -155,6 +155,16 @@ fresh received webhook after the compatibility fix. Before broader activation, s
 test and instead require one newly generated signed received event to claim, dedupe and project
 without recovery.
 
+The next live inbound proved direct signed-webhook projection but exposed a separate delivery gap:
+all three `message.inbound` outbox rows remained pending with zero attempts because the protected
+outbox worker had no trigger or schedule. The owner-approved reliability fix uses an after-commit
+pg_net wake-up plus a five-minute pg_cron safety net. Apply verification must prove the exact URL
+and existing secret are present without reading the secret, the trigger/function/cron grants remain
+non-browser, existing backlog reaches a terminal state, a new inbound creates one delivered outbox
+row, and both bell and push evidence reach the intended employee. Because channel delivery is
+at-least-once across a crash between dispatch and outbox finalization, verification must tolerate
+and record a rare duplicate alert rather than claiming exact-once behavior.
+
 The repository-only admin setup panel does not change this sequence. Its
 `GET /api/messaging-setup` status and `action=callrail-options` discovery contracts are read-only,
 require an active internal admin, and add no migration. Before release, test missing/invalid

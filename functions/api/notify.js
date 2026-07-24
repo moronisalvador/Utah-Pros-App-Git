@@ -75,49 +75,74 @@ function uniq(arr) {
   return Array.from(new Set((arr || []).filter(Boolean)));
 }
 
+async function filterActiveInternalEmployeeIds(db, employeeIds) {
+  const wanted = new Set(uniq(employeeIds));
+  if (!wanted.size) return [];
+
+  let employees = [];
+  try {
+    employees = await db.select(
+      'employees',
+      'is_active=eq.true&select=id,is_external',
+    );
+  } catch {
+    return [];
+  }
+
+  return uniq((employees || [])
+    .filter((employee) => wanted.has(employee.id) && employee.is_external !== true)
+    .map((employee) => employee.id));
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
- *  1. explicit body.recipient_ids always win (de-duped);
+ *  1. explicit body.recipient_ids win after active/internal validation;
  *  2. appointment/employee-scoped types resolve from the payload / crew;
  *  3. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {
-    return uniq(body.recipient_ids);
+    return filterActiveInternalEmployeeIds(db, body.recipient_ids);
   }
 
   if (typeKey === 'appointment.assigned' && body.employee_id) {
-    return [body.employee_id];
+    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
   }
   if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
-    return [body.employee_id];
+    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
   }
   if (typeKey === 'clock.abandoned') {
     // Admins (to follow up) PLUS the tech who left the clock running, so they get
     // their own nudge to clock out. The scan carries the tech id in
     // body.payload.employee_id; field_tech role defaults (push/email) are seeded.
     let admins = [];
-    try { admins = await db.select('employees', `role=in.(admin)&select=id`); }
+    try { admins = await db.select('employees', 'role=in.(admin)&is_active=eq.true&select=id,is_external'); }
     catch { admins = []; }
     const tech = body.payload?.employee_id || body.employee_id || null;
-    return uniq([...(admins || []).map((e) => e.id), tech]);
+    return filterActiveInternalEmployeeIds(
+      db,
+      [...(admins || []).filter((e) => e.is_external !== true).map((e) => e.id), tech],
+    );
   }
   if ((typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') && body.appointment_id) {
     let crew = [];
     try {
       crew = await db.select('appointment_crew', `appointment_id=eq.${body.appointment_id}&select=employee_id`);
     } catch { crew = []; }
-    return uniq((crew || []).map((c) => c.employee_id));
+    return filterActiveInternalEmployeeIds(db, (crew || []).map((c) => c.employee_id));
   }
 
   const roles = ROLE_AUDIENCE[typeKey] || ['admin'];
   let emps = [];
   try {
-    emps = await db.select('employees', `role=in.(${roles.join(',')})&select=id,role`);
+    emps = await db.select(
+      'employees',
+      `role=in.(${roles.join(',')})&is_active=eq.true&select=id,role,is_external`,
+    );
   } catch { emps = []; }
-  let ids = (emps || []).map((e) => e.id);
+  let ids = (emps || []).filter((e) => e.is_external !== true).map((e) => e.id);
   if (body.exclude_employee_id) ids = ids.filter((id) => id !== body.exclude_employee_id);
-  return uniq(ids);
+  return filterActiveInternalEmployeeIds(db, ids);
 }
 
 /**

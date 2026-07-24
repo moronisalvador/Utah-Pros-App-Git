@@ -151,6 +151,15 @@ foundation and covering-index migrations are live; repository tests cover the SQ
 isolated PostgreSQL compilation of every later projection/recovery contract remains a separate QA
 requirement.
 
+The notification outbox is dispatched through the protected
+`/api/process-message-notification-outbox` worker. An additive scheduler migration stores only the
+non-secret exact worker URL, reuses the existing scheduler secret, wakes the worker after an outbox
+insert commits, and runs a five-minute due/stale-work safety net. Missing configuration, an
+unrecognized URL, or an empty queue is a fail-closed no-op. The fenced claim token remains the
+delivery concurrency boundary. Bell and push delivery are at-least-once: a worker crash after a
+channel side effect but before durable outbox finalization can produce a duplicate alert when the
+stale lease is reclaimed.
+
 The additive foundation migration and its index follow-up are applied to the shared Supabase
 project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
 ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,

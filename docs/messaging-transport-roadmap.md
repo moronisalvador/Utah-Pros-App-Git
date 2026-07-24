@@ -519,6 +519,14 @@ claims and projects an inbound event without recovery. That direct webhook proof
 provider media fixture remain activation blockers. Production remains unconfigured and fail
 closed.
 
+The first fresh post-fix received webhook subsequently projected directly and atomically enqueued
+`message.inbound`, closing the signed-inbound proof gap. It also exposed that the already-deployed
+notification-outbox worker had no live invoker: three durable jobs remained pending with zero
+attempts even though the type, employee bell/push preferences, web-push flag, worker configuration,
+and device subscriptions were enabled. The owner-approved scheduler slice adds an exact-URL
+after-insert wake-up and a five-minute due/stale-work safety net, tightens all notification
+audiences to active internal employees, and does not change provider behavior.
+
 - verify short-lived MMS ingestion/private resolution and provider-history response shapes against
   official or owner-approved provider test fixtures;
 - compile and execute both transactional projection functions against isolated PostgreSQL and the

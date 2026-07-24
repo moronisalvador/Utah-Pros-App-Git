@@ -152,8 +152,11 @@ the reviewed application code was deployed to `dev` and `main`. It adds:
 - a service-only deduplicated `message_provider_events` inbox containing the minimum normalized
   text facts and UPR-owned private-media metadata needed for later domain recovery, but never raw
   payloads or provider MMS URLs;
-- a service-only `message_notification_outbox` atomically enqueued by inbound projection and
-  claimed through a fenced lease RPC; and
+- a service-only `message_notification_outbox` atomically enqueued by inbound projection, awakened
+  after commit through an exact-URL scheduler-secret pg_net trigger, protected by a five-minute
+  pg_cron due/stale-work safety net, and claimed through a fenced lease RPC. The lease prevents
+  concurrent dispatch but does not make bell/push side effects exactly-once; stale recovery is
+  explicitly at-least-once; and
 - removal of anonymous and authenticated browser writes to `messages`, retaining only
   conversations-capability-gated reads for active non-external employees while service-role
   workers remain the only writers.

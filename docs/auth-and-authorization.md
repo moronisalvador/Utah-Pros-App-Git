@@ -178,6 +178,12 @@ credential or webhook-secret access. These repository changes are not proof of d
 protection. Tests cover missing authentication, denied roles, inactive/external employees, forged
 actors, and allowed callers; deployed role behavior remains a release verification gate.
 
+Inbound notification audience resolution is also fail-closed. Explicit recipient IDs, assigned
+employees, appointment crews, and role-based fallback audiences are all intersected with the
+current active, non-external employee directory before bell, push, or email fan-out. An inactive,
+external, deleted, or unknown employee ID is not trusted merely because it arrived in an internal
+event payload or still has a historical push subscription.
+
 `GET /api/messaging-setup` and its `action=callrail-options` discovery mode use the same strict
 integration-administrator boundary: valid Supabase session, resolved employee, `role='admin'`,
 `is_active=true`, and `is_external=false`. Authorization completes before service-role reads or
