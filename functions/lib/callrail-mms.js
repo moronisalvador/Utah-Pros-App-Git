@@ -229,6 +229,48 @@ function preferredApiAccountId(accountId, accountAliases = []) {
     || accountId;
 }
 
+function validateCallrailConversationRedirect(location, {
+  accountId,
+  accountAliases,
+  providerConversationId,
+  requestedEndpoint,
+}) {
+  const apiAccount = preferredApiAccountId(accountId, accountAliases);
+  const conversation = requireIdentifier(
+    providerConversationId,
+    'CallRail conversation identity',
+  );
+  let parsed;
+  try {
+    parsed = new URL(location, requestedEndpoint);
+  } catch {
+    fail(
+      'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      'CallRail returned an invalid conversation redirect.',
+    );
+  }
+  const exactPath =
+    `/v3/a/${encodeURIComponent(apiAccount)}` +
+    `/text-messages/${encodeURIComponent(conversation)}.json`;
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.hostname !== CALLRAIL_MMS_API_HOST
+    || parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== exactPath
+    || (parsed.search && parsed.search !== '?per_page=250')
+    || parsed.hash
+    || parsed.href.length > 2_048
+  ) {
+    fail(
+      'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      'CallRail returned a conversation redirect outside the verified account.',
+    );
+  }
+  return parsed.href;
+}
+
 function authenticatedMediaEndpoint(validatedUrl, { accountId, accountAliases }) {
   const parsed = new URL(validatedUrl);
 
@@ -601,7 +643,7 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
     try {
       response = await fetchImpl(endpoint, {
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: {
           Authorization: `Token token="${apiKey}"`,
           Accept: 'application/json',
@@ -613,6 +655,33 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
         'Current CallRail MMS media URLs could not be refreshed.',
         { retryable: true },
       );
+    }
+    if (response && response.status >= 300 && response.status < 400) {
+      const redirectedEndpoint = validateCallrailConversationRedirect(
+        response.headers.get('Location'),
+        {
+          accountId,
+          accountAliases,
+          providerConversationId: conversation,
+          requestedEndpoint: endpoint,
+        },
+      );
+      try {
+        response = await fetchImpl(redirectedEndpoint, {
+          method: 'GET',
+          redirect: 'error',
+          headers: {
+            Authorization: `Token token="${apiKey}"`,
+            Accept: 'application/json',
+          },
+        }, options?.timeoutMs || CALLRAIL_MMS_FETCH_TIMEOUT_MS);
+      } catch {
+        fail(
+          'CALLRAIL_MMS_URL_REFRESH_FAILED',
+          'Current CallRail MMS media URLs could not be refreshed.',
+          { retryable: true },
+        );
+      }
     }
     if (!response?.ok) throw providerFailure(response || { status: 0 });
     const payloadBytes = await readBoundedBytes(response, 1_000_000);

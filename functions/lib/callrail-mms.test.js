@@ -617,7 +617,7 @@ describe('CallRail MMS private ingestion', () => {
     );
     expect(h.fetchImpl.mock.calls[0][1]).toMatchObject({
       method: 'GET',
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: 'Token token="server-secret"',
         Accept: 'application/json',
@@ -629,6 +629,93 @@ describe('CallRail MMS private ingestion', () => {
         expect.stringContaining('/v3/a/635117922/'),
       ]),
     );
+  });
+
+  it('follows one exact same-conversation API redirect without leaking credentials', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    const redirectedConversation =
+      'https://api.callrail.com/v3/a/ACC123/text-messages/conv789.json';
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: redirectedConversation },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 12345,
+          content: 'Photo',
+          direction: 'incoming',
+          type: 'MMS',
+          media_urls: [MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      redirectedConversation,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Authorization: 'Token token="server-secret"',
+          Accept: 'application/json',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+  });
+
+  it('rejects a conversation redirect outside the exact masked account path', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    h.fetchImpl.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: {
+        Location: 'https://api.callrail.com/v3/a/635117922/text-messages/conv789.json',
+      },
+    }));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      retryable: false,
+    });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it.each([
