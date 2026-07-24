@@ -19,6 +19,8 @@
  * ════════════════════════════════════════════════
  */
 
+import process from 'node:process';
+
 import { defineConfig } from '@playwright/test';
 
 import { LOCAL_BROWSER_ORIGIN } from './tests/qa/lib/target-policy.mjs';
