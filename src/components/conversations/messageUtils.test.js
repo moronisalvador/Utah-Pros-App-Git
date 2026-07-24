@@ -111,6 +111,9 @@ describe('retryable message media', () => {
     expect(isRetryableMediaReference(
       'upr-storage://message-attachments/callrail/provider/photo.jpg',
     )).toBe(false);
+    expect(isRetryableMediaReference(
+      'upr-storage://message-attachments/outbound/../provider/photo.jpg',
+    )).toBe(false);
     expect(isRetryableMediaReference('javascript:alert(1)')).toBe(false);
   });
 });

@@ -57,17 +57,26 @@ async function twilioMediaUrls(command, db) {
     }
     // Twilio fetches media asynchronously. The canonical object remains private;
     // only this provider-scoped URL is time-limited.
-    return db.signStorage('message-attachments', item.storagePath, 3600);
+    try {
+      return await db.signStorage('message-attachments', item.storagePath, 3600);
+    } catch {
+      const error = new Error('Private message media is unavailable for Twilio');
+      error.code = 'MESSAGE_MEDIA_UNAVAILABLE';
+      throw error;
+    }
   }));
 }
 
 const ADAPTERS = Object.freeze({
-  twilio: async (env, command, { db } = {}) => sendTwilioMessage(env, {
-    to: command.recipient.address,
-    body: command.content.body,
-    mediaUrls: await twilioMediaUrls(command, db),
-    statusCallback: command.statusCallbackUrl,
-  }),
+  twilio: async (env, command, { db } = {}) => {
+    const mediaUrls = await twilioMediaUrls(command, db);
+    return sendTwilioMessage(env, {
+      to: command.recipient.address,
+      body: command.content.body,
+      mediaUrls,
+      statusCallback: command.statusCallbackUrl,
+    });
+  },
   callrail: sendCallRailMessage,
 });
 

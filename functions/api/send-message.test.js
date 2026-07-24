@@ -283,6 +283,87 @@ describe('send-message compliance chain', () => {
     expect(h.db.attempts[0].completed_at).toBeTruthy();
   });
 
+  it('records a signed-URL failure locally without claiming Twilio may have sent', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    h.db.signStorage.mockRejectedValueOnce(new Error('signing unavailable'));
+    const reference =
+      `upr-storage://message-attachments/outbound/${DIRECT.id}/photo.jpg`;
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Photo',
+        sent_by: 'e-1',
+        media_urls: [reference],
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('MESSAGE_MEDIA_UNAVAILABLE');
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'failed',
+      error_code: 'MESSAGE_MEDIA_UNAVAILABLE',
+      reconcile_after: null,
+    });
+    expect(h.db.attempts[0].completed_at).toBeTruthy();
+  });
+
+  it('keeps a raw Twilio helper/network failure ambiguous for reconciliation', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const networkError = new Error('network connection reset');
+    networkError.ambiguous = true;
+    h.twilio.mockRejectedValueOnce(networkError);
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Hello',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('TWILIO_SEND_AMBIGUOUS');
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'ambiguous',
+      error_code: 'TWILIO_SEND_AMBIGUOUS',
+      completed_at: null,
+    });
+    expect(h.db.attempts[0].reconcile_after).toBeTruthy();
+  });
+
+  it('keeps a Twilio credential/config failure local and completed', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const configError = new Error('Twilio credentials are not configured');
+    configError.code = 'TWILIO_NOT_CONFIGURED';
+    h.twilio.mockRejectedValueOnce(configError);
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Hello',
+        sent_by: 'e-1',
+        client_request_id: CLIENT_REQUEST_ID,
+      }),
+      env: ENV,
+    });
+    const payload = await res.json();
+
+    expect(payload.error_code).toBe('TWILIO_NOT_CONFIGURED');
+    expect(h.db.attempts[0]).toMatchObject({
+      state: 'failed',
+      error_code: 'TWILIO_NOT_CONFIGURED',
+      reconcile_after: null,
+    });
+    expect(h.db.attempts[0].completed_at).toBeTruthy();
+  });
+
   // Media-only (caption-less MMS) — the body-required relaxation must NOT skip the gate.
   it('blocks a DND contact on a media-only (no caption) send — the gate runs for MMS too', async () => {
     h.db = makeDb({ conversation: DIRECT, contact: { ...OPTED_IN, dnd: true } });

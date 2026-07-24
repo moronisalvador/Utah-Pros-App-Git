@@ -129,7 +129,6 @@ async function sendToRecipient(db, env, {
 }) {
   let providerResult = null;
   let error = null;
-  let providerDispatchStarted = false;
 
   if (!participant.phone) {
     // No valid SMS destination → refuse (omni §7.3: never cross-channel fallback).
@@ -140,7 +139,6 @@ async function sendToRecipient(db, env, {
         allowLegacyPublic: provider === 'twilio',
         legacyPublicBaseUrl: env.SUPABASE_URL,
       });
-      providerDispatchStarted = true;
       providerResult = await sendMessage(env, {
         purpose: 'staff_p2p',
         recipient: {
@@ -171,14 +169,7 @@ async function sendToRecipient(db, env, {
   const sid = provider === 'twilio' ? providerMessageId : null;
   const errorCode = error?.code != null ? String(error.code) : null;
   const errorMessage = error?.message || null;
-  const ambiguous = !!error && (
-    error?.ambiguous === true
-    || (
-      provider === 'twilio'
-      && providerDispatchStarted
-      && !String(errorMessage).startsWith('Twilio send failed:')
-    )
-  );
+  const ambiguous = error?.ambiguous === true;
   const ambiguousCode = provider === 'callrail'
     ? 'CALLRAIL_SEND_AMBIGUOUS'
     : 'TWILIO_SEND_AMBIGUOUS';
