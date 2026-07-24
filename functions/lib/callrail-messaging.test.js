@@ -52,9 +52,10 @@ const command = {
 };
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x01]);
 
-function response(status, data = {}) {
+function response(status, data = {}, rawBody = JSON.stringify(data)) {
   return {
     status,
+    body: new Response(rawBody).body,
     json: vi.fn().mockResolvedValue(data),
   };
 }
@@ -307,7 +308,7 @@ describe('sendCallRailMessage configuration and submission', () => {
 });
 
 describe('sendCallRailMessage provider failures', () => {
-  it.each([400, 401, 403, 404, 422])(
+  it.each([400, 404, 422])(
     'sanitizes provider rejection %i',
     async (status) => {
       h.fetchWithTimeout.mockResolvedValue(response(status, {
@@ -321,6 +322,71 @@ describe('sendCallRailMessage provider failures', () => {
       );
     }
   );
+
+  it.each([
+    [401, { error: 'secret upstream detail containing customer content' }],
+    [403, { error: 'secret upstream detail containing customer content' }],
+  ])('classifies authorization rejection %i without exposing provider detail', async (status, body) => {
+    h.fetchWithTimeout.mockResolvedValue(response(status, body));
+
+    let error;
+    try {
+      await sendCallRailMessage(env, command);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({
+      code: 'CALLRAIL_FORBIDDEN',
+      message: 'CallRail did not authorize messaging for the configured account or sender.',
+      status,
+      retryable: false,
+      ambiguous: false,
+    });
+    expect(error.message).not.toContain(body.error);
+  });
+
+  it.each([
+    [{ errors: ['Recipient has opted out'] }, 'CALLRAIL_RECIPIENT_OPTED_OUT'],
+    [{ error: '10DLC campaign registration is required' }, 'CALLRAIL_COMPLIANCE_BLOCKED'],
+    [{ message: 'SMS is not enabled for this tracker' }, 'CALLRAIL_SENDER_DISABLED'],
+    [{ errors: { media_file: ['Image file is invalid'] } }, 'CALLRAIL_MEDIA_REJECTED'],
+    [{ errors: { content: ['Message body is too long'] } }, 'CALLRAIL_CONTENT_REJECTED'],
+    [{ error: 'User role does not have permission' }, 'CALLRAIL_FORBIDDEN'],
+  ])('maps a safe category for provider detail %#', async (body, code) => {
+    h.fetchWithTimeout.mockResolvedValue(response(422, body));
+
+    await expectCode(
+      sendCallRailMessage(env, command),
+      code,
+      { status: 422, retryable: false, ambiguous: false },
+    );
+  });
+
+  it.each([
+    [401, { error: 'Recipient has opted out' }],
+    [403, { error: 'Image file is invalid' }],
+  ])('keeps authorization rejection %i authoritative over provider detail', async (status, body) => {
+    h.fetchWithTimeout.mockResolvedValue(response(status, body));
+
+    await expectCode(
+      sendCallRailMessage(env, command),
+      'CALLRAIL_FORBIDDEN',
+      { status, retryable: false, ambiguous: false },
+    );
+  });
+
+  it('ignores provider error detail that exceeds the strict byte limit', async () => {
+    const rawBody = JSON.stringify({
+      error: `Image file is invalid ${'x'.repeat(20 * 1024)}`,
+    });
+    h.fetchWithTimeout.mockResolvedValue(response(422, {}, rawBody));
+
+    await expectCode(
+      sendCallRailMessage(env, command),
+      'CALLRAIL_REJECTED',
+      { status: 422, retryable: false, ambiguous: false },
+    );
+  });
 
   it('classifies 429 without retrying', async () => {
     h.fetchWithTimeout.mockResolvedValue(response(429, { error: 'limit detail' }));

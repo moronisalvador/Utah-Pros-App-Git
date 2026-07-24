@@ -149,7 +149,116 @@ export async function resolveCallRailApiKey(env, db) {
   return apiKey || clean(env?.CALLRAIL_API_KEY);
 }
 
-function classifyProviderFailure(status) {
+const MAX_PROVIDER_ERROR_BYTES = 16 * 1024;
+const MAX_PROVIDER_ERROR_NODES = 40;
+
+async function readProviderFailurePayload(response) {
+  const reader = response?.body?.getReader?.();
+  if (!reader) return null;
+
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value?.byteLength || 0;
+      if (totalBytes > MAX_PROVIDER_ERROR_BYTES) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock?.();
+  }
+
+  try {
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return null;
+  }
+}
+
+function providerFailureCategory(payload) {
+  const fragments = [];
+  let visitedNodes = 0;
+  const visit = (value, depth = 0) => {
+    if (
+      depth > 3
+      || fragments.length >= 20
+      || visitedNodes >= MAX_PROVIDER_ERROR_NODES
+    ) return;
+    visitedNodes += 1;
+    if (typeof value === 'string') {
+      fragments.push(value.slice(0, 500));
+      return;
+    }
+    if (depth === 3) return;
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length && index < 10; index += 1) {
+        visit(value[index], depth + 1);
+      }
+      return;
+    }
+    if (value && typeof value === 'object') {
+      const keys = Object.keys(value);
+      for (let index = 0; index < keys.length && index < 20; index += 1) {
+        visit(value[keys[index]], depth + 1);
+      }
+    }
+  };
+  visit(payload);
+  const detail = fragments.join(' ').toLowerCase();
+
+  if (/(opt(?:ed)?[- ]?out|unsubscrib|recipient.*block|customer.*block)/.test(detail)) {
+    return {
+      code: 'CALLRAIL_RECIPIENT_OPTED_OUT',
+      message: 'CallRail reports that this recipient cannot receive messages.',
+    };
+  }
+  if (/(10dlc|compliance|campaign.*register|registration)/.test(detail)) {
+    return {
+      code: 'CALLRAIL_COMPLIANCE_BLOCKED',
+      message: 'CallRail blocked the message for account compliance.',
+    };
+  }
+  if (/(text|sms|messag).{0,40}(disabled|not enabled|unsupported)|tracker.{0,40}(disabled|not enabled)/.test(detail)) {
+    return {
+      code: 'CALLRAIL_SENDER_DISABLED',
+      message: 'CallRail reports that texting is disabled for the configured sender.',
+    };
+  }
+  if (/(media|attachment|image|file).{0,60}(invalid|unsupported|reject|failed|error|too (large|small))/.test(detail)) {
+    return {
+      code: 'CALLRAIL_MEDIA_REJECTED',
+      message: 'CallRail rejected the message image.',
+    };
+  }
+  if (/(content|message body|140 character).{0,60}(invalid|unsupported|reject|too long|failed|error)/.test(detail)) {
+    return {
+      code: 'CALLRAIL_CONTENT_REJECTED',
+      message: 'CallRail rejected the message content.',
+    };
+  }
+  if (/(authoriz|forbidden|permission|role|account access)/.test(detail)) {
+    return {
+      code: 'CALLRAIL_FORBIDDEN',
+      message: 'CallRail did not authorize messaging for the configured account or sender.',
+    };
+  }
+  return null;
+}
+
+function classifyProviderFailure(status, payload = null) {
   if (status === 429) {
     return new CallRailMessagingError(
       'CALLRAIL_RATE_LIMITED',
@@ -169,6 +278,17 @@ function classifyProviderFailure(status) {
     );
   }
   if (status >= 400 && status < 500) {
+    if (status === 401 || status === 403) {
+      return new CallRailMessagingError(
+        'CALLRAIL_FORBIDDEN',
+        'CallRail did not authorize messaging for the configured account or sender.',
+        { status },
+      );
+    }
+    const category = providerFailureCategory(payload);
+    if (category) {
+      return new CallRailMessagingError(category.code, category.message, { status });
+    }
     return new CallRailMessagingError(
       'CALLRAIL_REJECTED',
       'CallRail rejected the message.',
@@ -290,7 +410,10 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
         },
       );
     }
-    throw classifyProviderFailure(response.status);
+    const providerError = response.status === 401 || response.status === 403
+      ? null
+      : await readProviderFailurePayload(response);
+    throw classifyProviderFailure(response.status, providerError);
   }
 
   const data = await response.json().catch(() => ({}));
