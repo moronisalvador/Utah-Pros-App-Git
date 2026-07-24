@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 372 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-24T00:20:26.125171.
+Snapshot: 374 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-24T01:00:19.073034.
 
 ## Functions
 
@@ -346,6 +346,7 @@ Snapshot: 372 public functions. Source: live catalog (read-only introspection). 
 | trigger_document_events | yes | no | yes |
 | trigger_job_events | no | no | yes |
 | trigger_message_events | yes | no | yes |
+| trigger_message_notification_outbox_worker | yes | no | no |
 | trigger_note_events | no | no | yes |
 | update_appointment | yes | no | yes |
 | update_appointments_updated_at | no | no | yes |
@@ -385,6 +386,7 @@ Snapshot: 372 public functions. Source: live catalog (read-only introspection). 
 | upsert_segment | yes | no | yes |
 | upsert_sequence | yes | no | yes |
 | upsert_time_entry | yes | no | yes |
+| wake_message_notification_outbox_worker | yes | no | no |
 
 ## Functions granting `anon` EXECUTE (review against `database-standard.md` §2 allowlist)
 

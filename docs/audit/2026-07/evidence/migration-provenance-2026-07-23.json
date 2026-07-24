@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-23T22:58:15Z",
+  "capturedAt": "2026-07-24T00:57:59Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "367b4650b5662471bbd627a2c74a343d60009f33",
+  "captureBaseCommit": "6651392961bfd9f620c98a91ba61170d7d6b4294",
   "method": "Supabase migration ledger plus read-only pg_proc catalog queries",
   "ledgerTail": [
     { "version": "20260722222426", "name": "crm_denver_day_bucketing" },
@@ -10,7 +10,8 @@
     { "version": "20260722232222", "name": "crm_caller_name_follows_merge" },
     { "version": "20260723215926", "name": "messaging_transport_foundation" },
     { "version": "20260723220207", "name": "messaging_transport_foundation_indexes" },
-    { "version": "20260723221707", "name": "exec_read_sql_containment" }
+    { "version": "20260723221707", "name": "exec_read_sql_containment" },
+    { "version": "20260724003818", "name": "message_notification_outbox_scheduler" }
   ],
   "functions": [
     { "identity": "get_attribution_rollup(date,date,uuid)", "rawMd5": "1e31e2c53a742ea07d5dc0350ecd4f6f", "semanticMd5": "26d844757e1cfcad697caeb3bba749f1", "language": "plpgsql", "securityDefiner": true, "volatility": "s", "config": ["search_path=public"], "anonExecute": false, "authenticatedExecute": true, "serviceRoleExecute": true, "publicExecute": false },

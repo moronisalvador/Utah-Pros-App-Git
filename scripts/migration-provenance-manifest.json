@@ -44,6 +44,12 @@
       "name": "exec_read_sql_containment",
       "path": "supabase/migrations/20260723205127_exec_read_sql_containment.sql",
       "reviewedOriginCommit": "5cf546b"
+    },
+    {
+      "version": "20260724003818",
+      "name": "message_notification_outbox_scheduler",
+      "path": "supabase/migrations/20260724001500_message_notification_outbox_scheduler.sql",
+      "reviewedOriginCommit": "625ccfd"
     }
   ],
   "selectedFunctions": [

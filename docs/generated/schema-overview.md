@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 133 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-24T00:20:26.125171.
+Snapshot: 133 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-24T01:00:19.073034.
 
 ## Tables
 

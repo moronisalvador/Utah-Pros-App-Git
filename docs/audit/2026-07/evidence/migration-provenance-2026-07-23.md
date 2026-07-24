@@ -93,3 +93,26 @@ Independent results:
 
 Raw sanitized machine evidence:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-23.json`.
+
+## Post-F2 live-ledger addendum — 2026-07-24 UTC
+
+A separately authorized messaging phase applied one later reviewed migration after the original F2
+capture. The 2026-07-24 00:57:59 UTC read-only refresh therefore records an eighth mapped row:
+
+| Live version | Name | Release source | Reviewed origin |
+|---|---|---|---|
+| `20260724003818` | `message_notification_outbox_scheduler` | `20260724001500_message_notification_outbox_scheduler.sql` | `625ccfd` |
+
+The Supabase apply tool assigned the later live version; it did not rename or rewrite the checked-in
+source. The live ledger statement is the reviewed file byte-for-byte after removing only its final
+newline: both are 4,548 bytes with MD5 `c6193971d4a27418f5f08c10cbf655a9`. `HEAD` still equals the
+reviewed `625ccfd` migration blob.
+
+The refresh also rechecked all 11 selected function fingerprints and the selected
+`messages_authenticated_select` policy; every value remains unchanged from the original F2 table.
+The scheduler cron is active at `*/5 * * * *`, its statement trigger exists, and the scheduler
+functions remain outside browser execution. This addendum records a later external live mutation;
+it does not revise the historical fact that F2 itself performed no live write.
+
+`npm run validate:provenance` passed at `3818b22` with eight ledger mappings, 11 functions, one
+policy and the expected comment-only warning. `npm run test:provenance` remained green at 8/8.
