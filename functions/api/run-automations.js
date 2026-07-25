@@ -108,6 +108,12 @@ export const AUTOMATION_CHANNELS = {
 const OVERNIGHT_DEFER_LOOKBACK_MIN = 13 * 60; // covers the overnight quiet block + margin
 const SPEED_TO_LEAD_LOOKBACK_MIN = OVERNIGHT_DEFER_LOOKBACK_MIN; // was 60 — widened for F-10 defer
 const MISSED_CALL_LOOKBACK_MIN = OVERNIGHT_DEFER_LOOKBACK_MIN;   // was 60 — widened for F-10 defer
+// Settling delay before a missed call is eligible. CallRail reports one call
+// across several webhooks; the first carries no 'answered' key at all. Waiting
+// a few minutes means we act on a finalized record instead of racing one, which
+// removes the answered-but-not-yet-final window rather than just shrinking it.
+// Well inside the 13h lookback, so nothing is lost by waiting.
+const MISSED_CALL_SETTLE_MIN = 3;
 const NO_RESPONSE_STALE_DAYS = 3;   // quiet at least this long
 const NO_RESPONSE_MAX_AGE_DAYS = 30; // …but don't chase ancient leads
 const REVIEW_LOOKBACK_HOURS = 48;
@@ -124,6 +130,16 @@ const DEFAULT_SMS_PACE_MS = 250;
 const DAY_MS = 86400000;
 
 // ─── SECTION: Trigger predicates (pure — unit tested) ──────────
+// Has enough time passed since the event for the provider record to be final?
+// Unparseable/absent timestamps are NOT settled (fail safe).
+function hasSettled(ts, now, settleMinutes) {
+  if (!settleMinutes) return true;
+  if (!ts) return false;
+  const t = new Date(ts).getTime();
+  if (!Number.isFinite(t)) return false;
+  return now.getTime() - t >= settleMinutes * 60000;
+}
+
 function withinWindow(ts, now, windowMinutes) {
   if (!ts) return false;
   const t = new Date(ts).getTime();
@@ -144,15 +160,34 @@ export function isFreshInboundLead(lead, now, windowMinutes) {
   return withinWindow(lead.occurred_at || lead.created_at, now, windowMinutes);
 }
 
-// Missed-call text-back: a recent inbound call that went unanswered
-// (0 / null / non-positive duration).
-export function isMissedCall(lead, now, windowMinutes) {
+// Missed-call text-back: a recent inbound call the provider CONFIRMS nobody
+// answered.
+//
+// This keys on `inbound_leads.answered` (true / false / NULL-unknown), never on
+// duration. The old duration proxy was backwards in the one way that matters:
+// Number(null) is 0 and Number(undefined) is NaN, so neither is > 0 — a call
+// with no duration recorded YET was treated as missed. CallRail delivers a call
+// across several webhooks, so an answered call can sit mid-window with its
+// duration not yet populated, and we would text someone we had just spoken to
+// "sorry we missed your call". Absent data must never mean "missed".
+//
+// Strictly `=== false`: true, null, undefined, or any non-boolean is NOT a
+// confirmed miss and sends nothing. Fail safe — we would rather stay silent
+// than text a real person the wrong thing.
+export function isMissedCall(lead, now, windowMinutes, settleMinutes = MISSED_CALL_SETTLE_MIN) {
   if (!lead || !lead.contact_id) return false;
   if (lead.spam_flag) return false;
   if (lead.source_type !== 'call') return false;
   if (lead.direction && lead.direction !== 'inbound') return false;
-  if (Number(lead.duration_sec) > 0) return false; // answered
-  return withinWindow(lead.occurred_at || lead.created_at, now, windowMinutes);
+  if (lead.answered !== false) return false; // authoritative; unknown ⇒ not missed
+  const ts = lead.occurred_at || lead.created_at;
+  // Settling delay: act only on a record the provider has had time to finalize.
+  // This is belt-and-braces, NOT the safety property — the `!== false` test
+  // above is what makes "unknown is never missed" structurally true, at any
+  // point in the delivery lifecycle. The delay just keeps us from acting on a
+  // record still mid-flight.
+  if (!hasSettled(ts, now, settleMinutes)) return false;
+  return withinWindow(ts, now, windowMinutes);
 }
 
 // No-response follow-up: an open lead with no activity for a while, but not so

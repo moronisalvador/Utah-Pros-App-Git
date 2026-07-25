@@ -117,6 +117,7 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
 | **A sale ("won job")** | `jobs.is_real_job = true` — nothing else. Not phase, not stage, not invoices-eyeballed. | `UPR-Web-Context.md` ⭐ section; `20260722_crm_won_jobs_use_canonical_real_job_rule.sql`; test `crm_won_jobs_canonical_real_job_rule.test.js` |
 | **Sale DATE** | `COALESCE(claims.created_at, jobs.created_at)` (matches `get_jobs_closed`). Exception: `get_commissions` deliberately uses `jobs.created_at` (payroll-period stability) — documented, do not "fix". | same migration |
 | **A countable marketing lead** | non-spam AND non-merged AND (form OR answered call). Answered = `crm_call_is_answered(raw_payload, duration_sec)` in SQL; `isCountableLead(lead)` in JS — **twins; change both or neither**. | `20260722_crm_leads_exclude_unanswered_calls.sql`; `crmCharts.js` |
+| **A confirmed missed call (text-back only)** | `inbound_leads.answered = false` — the provider's own flag, string-derived, NULL when unknown. **A third, deliberately separate definition**: the twins above fall back to duration and answer "is this lead countable?", which must never move for reporting; this one answers "may we text this person?", where unknown must fail safe to *no*. Do not merge them. | `20260725160000_inbound_leads_answered.sql`; `run-automations.js` `isMissedCall` |
 | **Speed-to-lead** | HUMAN first move only (`lead_stage_history.moved_by IS NOT NULL`). System moves are not responses. | `20260722_crm_speed_to_lead_human_moves_only.sql` |
 | **CRM-traced business** | `crm_contact_is_traced(contact_id)`: a `lead_attribution` row OR a non-spam lead link. Gates estimates/won-jobs/revenue on CRM pages. When company-wide context is shown on Overview, `get_crm_sales_summary` returns both traced and total won/revenue for the same Denver window; the values stay explicitly labeled. | `20260722_crm_scope_attribution_to_traced_contacts.sql`; `20260722_crm_sales_summary_total_vs_traced.sql` |
 | **Who moved a card** | `lead_stage_history.moved_by`: uuid = a human; **NULL = the system** (auto-stage, AI advance, triggers). | convention, relied on by speed-to-lead |
@@ -205,9 +206,18 @@ dashboards count it. Every arrow in that chain was broken or missing before 2026
   company-wide total from `get_crm_sales_summary`; and the owner-approved payment/signed-work-auth
   adjudication was recorded through `set_job_real_job`. Foundation F2 restored the four reviewed
   migration files to `dev` without replaying them.
-- **Missed-call textback is dead-on-arrival** when A2P flips: `isMissedCall` in
-  `run-automations.js` uses the duration proxy (ring time counts as "answered") AND requires
-  `contact_id` (unanswered calls rarely have one). Consent-sensitive redesign — do not hot-fix.
+- **Missed-call textback — half fixed (2026-07-25).** The duration proxy is GONE: `isMissedCall` in
+  `run-automations.js` now keys on the new `inbound_leads.answered` column (true / false /
+  NULL-unknown, derived from the provider's own flag by string compare) with a strict `!== false`
+  test, so unknown or absent data can never be treated as missed, plus a 3-minute settling delay.
+  **The `contact_id` half is NOT fixed and is still blocking:** measured live 2026-07-25, only
+  **5 of 29** explicitly-unanswered calls carry a `contact_id` — a brand-new caller has no contact
+  row, by the deliberate `crm_lead_no_autocreate_contact` rule (raw calls must not flood `contacts`,
+  and via the QBO customer trigger, QuickBooks). So textback still cannot reach the new callers it
+  exists for. Closing it means deciding whether a confirmed missed call auto-promotes to a contact
+  (`promote_lead_to_contact` is the sanctioned path) — an owner decision with QBO side effects,
+  made harder because an unanswered call has no recording and so can never be AI spam-screened.
+  Consent-sensitive — do not hot-fix.
 - **`mark_job_real` triggers don't watch `job_id`** (§6 lens 3) — the reconciler catches the drift
   daily until fixed.
 - **Won auto-advance has never fired organically** (0 system Won moves ever) — it needs the lead↔
