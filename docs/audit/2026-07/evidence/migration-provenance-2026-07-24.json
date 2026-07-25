@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-24T23:10:00Z",
+  "capturedAt": "2026-07-25T00:35:07Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
@@ -83,6 +83,10 @@
     {
       "version": "20260724230933",
       "name": "payments_qbo_dedup_index"
+    },
+    {
+      "version": "20260725003433",
+      "name": "public_form_rpc_boundary"
     }
   ],
   "functions": [

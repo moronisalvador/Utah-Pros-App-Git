@@ -122,6 +122,12 @@
       "name": "payments_qbo_dedup_index",
       "path": "supabase/migrations/20260724200000_payments_qbo_dedup_index.sql",
       "reviewedOriginCommit": "f46e50f2d650708273e957ed9184d6a457dac475"
+    },
+    {
+      "version": "20260725003433",
+      "name": "public_form_rpc_boundary",
+      "path": "supabase/migrations/20260723235900_public_form_rpc_boundary.sql",
+      "reviewedOriginCommit": "b6d7092a6450440a1971aa99f896abc6615d91c9"
     }
   ],
   "selectedFunctions": [

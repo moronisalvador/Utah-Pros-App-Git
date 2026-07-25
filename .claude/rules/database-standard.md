@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-07-23
+**Last verified:** 2026-07-25
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -72,9 +72,14 @@ is a template):
 - **login / session bootstrap** reads (replace broad table rows with purpose-built minimal bootstrap
   results)
 - **`/status`** public roadmap mirror → `get_crm_build_progress`
-- **public form submit** Workers → `upsert_lead_from_form` *(service-only target state;
-  `20260723235900_public_form_rpc_boundary.sql` is authored but unapplied; direct client execution
-  remains live until its owner-authorized window)*
+- ~~**public form submit** Workers → `upsert_lead_from_form`~~ **CLOSED 2026-07-24.**
+  `20260723235900_public_form_rpc_boundary.sql` applied under owner authorization (ledger
+  `20260725003433`). `upsert_lead_from_form` is now service-role-only — verified live:
+  `anon=false, authenticated=false, public=false, service_role=true`. Safe because both callers
+  (`functions/api/form-submit.js`, `functions/api/webflow-form-webhook.js`) were already deployed in
+  `main` and both build their client through `functions/lib/supabase.js` (the privileged
+  worker-side client); a repo-wide grep found **no browser caller**. This is no longer a public
+  exception — do not re-grant `anon`.
 - **public e-sign pages** → purpose-built retrieval constrained by token, status and expiration
 - **public job-file READ** *(temporary; remove list access and move sensitive files to private/signed
   URLs)*
