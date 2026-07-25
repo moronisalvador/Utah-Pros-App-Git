@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-25T04:59:54Z",
+  "capturedAt": "2026-07-25T06:02:00Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
@@ -91,6 +91,10 @@
     {
       "version": "20260725045914",
       "name": "owner_attested_prior_service_consent"
+    },
+    {
+      "version": "20260725060033",
+      "name": "fixed_automation_claims"
     }
   ],
   "functions": [
