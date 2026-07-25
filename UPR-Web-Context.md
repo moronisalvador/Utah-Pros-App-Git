@@ -8090,6 +8090,58 @@ Fixing it properly means **adding** a reason (e.g. `opted_out`) to the frozen
 `{ok,skipped,reason}` vocabulary — additive and permitted, but a separate reviewed change with
 backward-compat tests for `process-sequences.js` and `process-crm-automations.js`.
 
+## P0 — inbound STOP had NEVER worked (2026-07-25, found by live test)
+
+An owner STOP test at 17:13:47Z proved the opt-out was never recorded. The event
+arrived and parked in `processing_state='retryable'` with:
+
+```
+project_callrail_inbound_event: 400 {"code":"42702",
+ "message":"column reference \"contact_id\" is ambiguous"}
+```
+
+`project_callrail_inbound_event` is `RETURNS TABLE(..., contact_id uuid, ...)`, and a
+`RETURNS TABLE` output column **is also a PL/pgSQL variable**. So the bare `contact_id` in
+`ON CONFLICT (provider_event_id, contact_id, event_type)` was ambiguous against the
+`sms_consent_log` column. PL/pgSQL's default `#variable_conflict` is `error`, so the whole
+projection aborted and retried-and-failed every 5 minutes forever.
+
+**Fix** (`20260725173000`, ledger `20260725171925`): `#variable_conflict use_column` as the first
+line of the body. Because the default is `error`, every ambiguous name aborts today, so
+`use_column` **cannot** change a statement that already works — a working statement had no
+ambiguity to resolve. Body-only; signature, `RETURNS TABLE` shape, `SECURITY INVOKER` and
+`search_path` unchanged. Verified post-apply: live body md5 (LF) `696afa6695e147e727c983b3ce52a18e`
+== the committed file, byte-for-byte.
+
+**Live proof:** event `1407ad82` `retryable → processed` (drained by the existing 5-min recovery
+cron, no manual intervention) · first `stop_keyword` row in `sms_consent_log`'s history ·
+`opt_in_status=false`, `opt_out_reason='stop_keyword'`, `opt_out_at = dnd_at = 17:13:47Z` (the
+**original text time**, not the processing time).
+
+⚠️ **Why reading the SQL was not enough.** The logic was correct; the statement never ran. Both
+sites sit in branches ordinary traffic never enters (`IF v_keyword IS NOT NULL`, and the
+new-contact path), so 14 normal inbound texts projected perfectly. Only a real keyword could
+expose it. `sms_consent_log` having zero stop events was never "untested" — it was **broken**.
+
+⚠️ **A THIRD site of the same bug class** (found by `migration-safety-checker` after the fix, and
+missed in my own analysis): `ON CONFLICT (conversation_id, contact_id)` on the
+`conversation_participants` insert — where **both** arbiter columns collide with OUT-param names.
+That branch runs on any brand-new phone number's **first ever inbound text**, which is more common
+than STOP. The function-wide pragma fixes it too. **No lead was lost:** zero events in
+`message_provider_events` have ever carried a 42702/ambiguous error, and the only unprocessed
+inbound are 3 known MMS media-URL failures — so the site was latent, not yet biting.
+
+**Standing caution:** the pragma is function-scoped (PL/pgSQL has no statement-level granularity),
+so a future edit introducing a new bare `contact_id`/`conversation_id`/`message_id`/`outcome`/
+`inserted`/`requires_staff_reply` in this function will now bind silently to the column instead of
+raising a loud 42702. The safety net is gone for this one function.
+
+**Still owed (disclosed, not done):** a committed regression test asserting (a) a seeded `STOP`
+projects and sets `opt_out_at`/`dnd`, (b) a brand-new number's ordinary first inbound text creates
+its conversation/participant without exception, (c) an existing-conversation text is unchanged.
+The `v_start_stale` START path is alias-qualified and verified unaffected, but is equally
+un-exercised and should get the same coverage.
+
 ## Missed call is now AUTHORITATIVE, not inferred (2026-07-25)
 
 `isMissedCall` in `run-automations.js` inferred "missed" from `Number(lead.duration_sec) > 0`.
