@@ -19,7 +19,8 @@
  *   Internal:  @/lib/realtime (Supabase auth session), @/lib/supabase
  *              (anon bootstrap client), @/lib/stableDb (identity-stable
  *              authenticated client), @/lib/pushNotifications,
- *              @/lib/nativeBiometric, @/lib/registerSW, @/components/tech/v2/nav
+ *              @/lib/nativeBiometric, @/lib/registerSW, @/components/tech/v2/nav,
+ *              @/components/SessionExpiredBanner
  *   Data:      reads  → employees, nav_permissions, feature flags
  *                       (get_feature_flags), employee page access
  *                       (get_employee_page_access)
@@ -34,6 +35,9 @@
  *     background. See src/lib/stableDb.js before changing anything here.
  *   - The anon `db` import is the sanctioned bootstrapping exception to
  *     CLAUDE.md Rule 3 — pre-login reads and DEV devLogin only.
+ *   - recoverSession() is the app's ONLY 401 handler. stableDb.js calls it when
+ *     the database rejects the JWT; it renews once (single-flight) or flips
+ *     `sessionExpired`. Nothing else should hand-roll a 401 branch.
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
@@ -44,6 +48,7 @@ import { registerPushForEmployee, canRegisterPush } from '@/lib/pushNotification
 import { setBiometricEnabled } from '@/lib/nativeBiometric';
 import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
 import { setHubNav } from '@/components/tech/v2/nav';
+import SessionExpiredBanner from '@/components/SessionExpiredBanner';
 
 const AuthContext = createContext(null);
 
@@ -78,16 +83,60 @@ export function AuthProvider({ children }) {
   // new identity would re-run all of them, visibly "resetting" pages right
   // when the app resumes from background (~hourly TOKEN_REFRESHED).
   const [authDb, setAuthDb] = useState(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const tokenRef = useRef(null);
   const stableDbRef = useRef(null);
+  const recoverRef = useRef(null);   // → recoverSession (assigned below; see bindAuthDb)
+  const refreshingRef = useRef(null); // in-flight refresh promise (single-flight)
   const bindAuthDb = (token) => {
     tokenRef.current = token;
     if (!stableDbRef.current) {
-      stableDbRef.current = createTokenBoundClient(() => tokenRef.current);
+      stableDbRef.current = createTokenBoundClient(() => tokenRef.current, {
+        // Indirection through a ref on purpose: recoverSession is defined below
+        // and itself calls bindAuthDb, so naming it directly here would be a
+        // circular reference. The ref is assigned during render, long before any
+        // request can fire from an effect.
+        onAuthError: () => (recoverRef.current ? recoverRef.current() : Promise.resolve(false)),
+      });
     }
     setAuthDb(stableDbRef.current); // same identity after first call — no-op re-render
     return stableDbRef.current;
   };
+
+  // ── Session recovery — the app's ONE 401 handler ──
+  // Called by the db client when PostgREST rejects the JWT. Resolves true once a
+  // fresh token is bound (the caller then retries), false when the session is
+  // genuinely gone — which flips `sessionExpired` so the banner can say so.
+  //
+  // SINGLE-FLIGHT is not optional: a page firing five parallel loaders must not
+  // fire five refreshSession() calls. Supabase rotates refresh tokens, so the
+  // losers of that race fail with "Already Used" and can kill a session that was
+  // still recoverable — a plausible way to reach the dead-session state at all.
+  //
+  // Why this exists: before it, a failed renewal left the expired JWT in
+  // tokenRef forever. Every call 401'd into a silent catch, so the only visible
+  // symptom was the notification bell logging a 401 a minute, all night, with
+  // nothing on screen — while Save/Receive-payment would have failed too.
+  const recoverSession = useCallback(async () => {
+    if (refreshingRef.current) return refreshingRef.current; // join the in-flight attempt
+    refreshingRef.current = (async () => {
+      try {
+        const { data, error: refreshError } = await realtimeClient.auth.refreshSession();
+        const token = data?.session?.access_token;
+        if (refreshError || !token) throw refreshError || new Error('No session returned');
+        bindAuthDb(token);
+        setSessionExpired(false);
+        return true;
+      } catch {
+        setSessionExpired(true);
+        return false;
+      } finally {
+        refreshingRef.current = null;
+      }
+    })();
+    return refreshingRef.current;
+  }, []);
+  recoverRef.current = recoverSession;
 
   // ── Bootstrap: check existing session ──
   useEffect(() => {
@@ -133,12 +182,14 @@ export function AuthProvider({ children }) {
             setLoading(false);
             return;
           }
+          setSessionExpired(false); // a fresh sign-in clears any stale expiry banner
           await handleAuthUser(session.user, session.access_token);
         } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
           // Supabase silently refreshed the JWT — swap the token IN PLACE.
           // Without this, all db calls return 401 after ~1 hour. bindAuthDb
           // keeps the client's identity stable so no [db]-keyed loader re-runs.
           bindAuthDb(session.access_token);
+          setSessionExpired(false); // the session healed itself — drop the banner
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setEmployee(null);
@@ -147,6 +198,7 @@ export function AuthProvider({ children }) {
           setEmployeePageAccess({});
           tokenRef.current = null;
           setAuthDb(null);
+          setSessionExpired(false); // the login screen is the message now, not the banner
         }
       }
     );
@@ -280,6 +332,7 @@ export function AuthProvider({ children }) {
     setEmployeePageAccess({});
     tokenRef.current = null;
     setAuthDb(null);
+    setSessionExpired(false);
   }, []);
 
   // ── Dev login: bypass auth for local development ONLY ──
@@ -368,6 +421,7 @@ export function AuthProvider({ children }) {
     employeePageAccess,   // { dashboard: true, conversations: false, ... } — empty = no overrides
     loading,
     error,
+    sessionExpired,       // true = the JWT was rejected and could not be renewed
     db: authDb || db, // Use authenticated client when available
     login,
     logout,
@@ -382,6 +436,9 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={value}>
       {children}
+      {/* Mounted HERE, not in Layout/TechLayout, so one instance covers every
+          shell (office, tech, CRM) — a dead session is app-wide, not per-shell. */}
+      <SessionExpiredBanner />
     </AuthContext.Provider>
   );
 }
