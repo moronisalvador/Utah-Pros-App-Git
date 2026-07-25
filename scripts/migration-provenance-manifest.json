@@ -134,6 +134,12 @@
       "name": "owner_attested_prior_service_consent",
       "path": "supabase/migrations/20260725010000_owner_attested_prior_service_consent.sql",
       "reviewedOriginCommit": "072630d"
+    },
+    {
+      "version": "20260725060033",
+      "name": "fixed_automation_claims",
+      "path": "supabase/migrations/20260725060000_fixed_automation_claims.sql",
+      "reviewedOriginCommit": "83ccfe4"
     }
   ],
   "selectedFunctions": [

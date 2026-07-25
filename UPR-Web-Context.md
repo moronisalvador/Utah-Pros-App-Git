@@ -8038,16 +8038,57 @@ genuinely changes (admin attestation, or inbound START), so it belongs with `qui
 condition that lifts — not with `dnd`. Still correctly terminal: `dnd` and opt-out-family reasons
 (an explicit refusal by the person) and `no_phone` / `contact_not_found` (cannot self-resolve).
 
-⚠️ **Bounded by an open defect:** `fireAutomation` checks `alreadyFired()` at :213, **sends** at
-:215, and writes the dedup marker only at :233 — check-then-act with the marker *after* the send. A
-crash or failed insert in between means the text went out unmarked and the next cron tick re-sends
-it. This is the "pre-existing fixed-automation post-send event persistence gap" PR #514 cited when
-it left automated SMS off. Making `no_consent` deferrable does **not** widen it (a deferred skip
-never sent anything), but the window must be closed before automated SMS is enabled. Fix with the
-claim-before-send pattern already used by `claim_scheduled_message`, `claim_qbo_event`,
-`claim_stripe_event`, `claim_inbound_email`, `claim_callrail_provider_event`, and CRM Phase 5's
-`UNIQUE(automation_id, triggering_event_id)`: claim → send → finalize, releasing the claim on
-deferrable outcomes exactly as `process-scheduled.js` does.
+✅ **The duplicate-send window this depended on is CLOSED (2026-07-25)** — see the next section.
+
+## Fixed-automation duplicate-send window CLOSED — claim before send (2026-07-25)
+
+`fireAutomation` used to check `alreadyFired()`, **send**, then write its `system_events` dedup
+marker. A crash or failed insert in between meant the text went out unmarked and the next cron tick
+re-sent it. This is the "pre-existing fixed-automation post-send event persistence gap" PR #514
+cited when it left automated SMS off. A duplicate automated text is **per-message** TCPA exposure,
+and missed-call text-back targets people with no prior relationship.
+
+**Migration `20260725060000_fixed_automation_claims.sql`** (applied 2026-07-25 under owner
+authorization, live ledger `20260725060033`): table `fixed_automation_claims` with
+`UNIQUE(automation_key, entity_id)` + three service-role-only RPCs
+(`claim_fixed_automation`, `release_fixed_automation_claim`, `finalize_fixed_automation_claim`).
+Atomicity is the unique constraint — `INSERT … ON CONFLICT DO NOTHING` + `ROW_COUNT`, so exactly one
+caller wins. All three are `SECURITY INVOKER`, `search_path=''`, with an in-body `auth.role()`
+service-role guard and an explicit `REVOKE … FROM PUBLIC, anon` before each `GRANT`.
+**Verified live:** every function `anon=false, authenticated=false, service_role=true`; the table is
+RLS-enabled with **0 policies** and no `anon`/`authenticated` privilege.
+
+**New order:** `alreadyFired()` → **claim** → send → terminal ? (`system_events` + finalize) :
+release. The release/keep decision reuses the *existing* terminal logic, so it needs no second
+policy: anything that may have sent keeps its claim forever; anything that sent nothing (deferrable
+skip, transient failure, or a throw from `send()`) releases and retries.
+
+- **No stale-claim recovery, deliberately.** Unlike `claim_scheduled_message`, a claim left by a
+  crash means "we may already have texted this person"; reclaiming it would reintroduce the exact
+  duplicate this prevents. A stuck claim stops that one automation for that one entity until a human
+  looks — the safe direction. There is no admin surface for stuck claims yet (follow-up).
+- **Fails closed.** If the claim RPC is unavailable the worker refuses to send rather than falling
+  back to the old ordering. ⚠️ **Deploy order is therefore INVERTED** from the usual rule: the
+  migration must be applied *before* the worker deploys, or all four automations (including the two
+  live email ones) go silently dark. It was applied first here.
+- **`system_events` remains the durable "already fired" record** and is still checked first, so
+  entities that fired before this migration can never re-fire, and the rollback (which drops the
+  claim table) cannot resurrect them.
+
+Tests: `functions/api/run-automations.test.js` 32 → **43** (crash-loses-marker cannot resend,
+two-tick race sends exactly once, deferrable release-and-retry, transient-failure release, durable
+`dnd` keeps the claim, ambiguous-outcome keeps the claim, `send()` throw releases, bookkeeping
+failure doesn't abort the batch, claim-RPC-unavailable sends nothing, history checked before claim).
+Plus `supabase/tests/fixed_automation_claims.test.js` (14 source-contract assertions; `db` lane).
+
+⚠️ **Known, pre-existing, NOT fixed here:** `sendGatedSms` returns `reason:'no_consent'` for *both*
+"never consented" and "explicitly opted out", so an opted-out contact takes the deferrable path
+instead of the durable one. In practice the STOP handler sets `dnd=true` *together with*
+`opt_out_at`, so a real STOP hits the durable `dnd` branch; the residual is `pending_stop`. No
+message is ever sent to them either way — `automated-send.js` re-checks consent on every attempt.
+Fixing it properly means **adding** a reason (e.g. `opted_out`) to the frozen
+`{ok,skipped,reason}` vocabulary — additive and permitted, but a separate reviewed change with
+backward-compat tests for `process-sequences.js` and `process-crm-automations.js`.
 
 ## QBO payment webhook — cross-realm read + opaque-error fix (2026-07-24)
 
