@@ -1,5 +1,41 @@
-// Supabase REST client for frontend
-// Uses anon key — matches existing UPR pattern (no SDK for data ops)
+/**
+ * ════════════════════════════════════════════════
+ * FILE: supabase.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The one place the app talks to the database over the web. Every screen's
+ *   read and write goes through the five small functions here (select, insert,
+ *   update, delete, rpc). It attaches the signed-in user's pass to each request,
+ *   gives up on a request that hangs too long, and turns any refusal from the
+ *   database into a clear error the calling screen can react to.
+ *
+ * DEPENDS ON:
+ *   Packages:  none (browser fetch)
+ *   Internal:  none — this is the bottom layer. src/lib/stableDb.js wraps it.
+ *   Data:      every table and RPC the app reads or writes — this is the pipe,
+ *              not a consumer.
+ *
+ * EXPORTS:
+ *   createSupabaseClient(token) → a client bound to one token (one request's worth)
+ *   db                          → unauthenticated singleton, bootstrapping ONLY
+ *                                 (the sanctioned CLAUDE.md Rule 3 exception;
+ *                                 components use `const { db } = useAuth()`)
+ *
+ * NOTES / GOTCHAS:
+ *   - Uses the anon key + REST, never the Supabase JS SDK (that is realtime.js
+ *     only). RLS/grants must assume every internet caller has the anon key.
+ *   - EVERY method THROWS on a non-OK response — including 404. Nothing here
+ *     returns [] on failure, so every caller needs a try/catch.
+ *   - Thrown errors carry `status` and `body` alongside the message. The MESSAGE
+ *     TEXT IS LOAD-BEARING — callers pattern-match it (Layout.jsx looks for
+ *     '23505' to spot a duplicate phone), so do not reformat it.
+ *   - Only `select` retries, and only on a network error or timeout — NEVER a
+ *     write, because a timeout means the server may have processed it anyway.
+ *     (401 retries are a different, safe case handled a layer up in stableDb.js;
+ *     that file explains why.)
+ * ════════════════════════════════════════════════
+ */
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -28,6 +64,21 @@ function fetchWithTimeout(url, options) {
       if (err.name === 'AbortError') throw new Error('Request timed out. Check your connection and try again.');
       throw err;
     });
+}
+
+// Builds the Error thrown for a non-OK response.
+//
+// The MESSAGE FORMAT IS LOAD-BEARING — callers pattern-match on it (Layout.jsx
+// checks for '23505'/'contacts_phone_key' to detect a duplicate phone), so it is
+// byte-identical to what this file has always thrown. `status` and `body` are
+// ADDITIVE: they let a caller branch on the HTTP status without string-matching.
+// stableDb.js keys its 401 session-recovery on `status` — see that file.
+async function responseError(label, res) {
+  const body = await res.text();
+  const error = new Error(`${label}: ${res.status} ${body}`);
+  error.status = res.status;
+  error.body = body;
+  return error;
 }
 
 // Retries a fetch once on network failure or timeout (not on 4xx/5xx).
@@ -59,10 +110,7 @@ export function createSupabaseClient(token) {
   return {
     async select(table, query = '') {
       const res = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`SELECT ${table}: ${res.status} ${text}`);
-      }
+      if (!res.ok) throw await responseError(`SELECT ${table}`, res);
       return res.json();
     },
 
@@ -72,10 +120,7 @@ export function createSupabaseClient(token) {
         headers,
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`INSERT ${table}: ${res.status} ${text}`);
-      }
+      if (!res.ok) throw await responseError(`INSERT ${table}`, res);
       return res.json();
     },
 
@@ -85,10 +130,7 @@ export function createSupabaseClient(token) {
         headers,
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`UPDATE ${table}: ${res.status} ${text}`);
-      }
+      if (!res.ok) throw await responseError(`UPDATE ${table}`, res);
       if (res.status === 204) return null;
       return res.json();
     },
@@ -98,10 +140,7 @@ export function createSupabaseClient(token) {
         method: 'DELETE',
         headers,
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`DELETE ${table}: ${res.status} ${text}`);
-      }
+      if (!res.ok) throw await responseError(`DELETE ${table}`, res);
       // 204 No Content is a valid success response — no body to parse
       if (res.status === 204) return null;
       return res.json();
@@ -113,10 +152,7 @@ export function createSupabaseClient(token) {
         headers,
         body: JSON.stringify(params),
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`RPC ${fn}: ${res.status} ${text}`);
-      }
+      if (!res.ok) throw await responseError(`RPC ${fn}`, res);
       // Some RPCs (e.g. delete functions) return 204 No Content — no body to parse
       if (res.status === 204) return null;
       return res.json();

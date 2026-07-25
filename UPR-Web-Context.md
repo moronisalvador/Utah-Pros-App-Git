@@ -1718,6 +1718,24 @@ doc-category keys unchanged). Two new schema capabilities:
   the ~1h token boundary (previously TechDemoSheet re-hydrated from the last mirror "saved point"
   on desktop resume; ClaimPage/TechAppointment flashed skeletons). `db.apiKey` is a getter (live
   token for storage uploads). Do NOT revert to per-token clients.
+  (1b) **Session recovery / central 401 handling (2026-07-25)** — the identity-stable client above
+  fixed the *happy* path (TOKEN_REFRESHED swaps the JWT in place); it had no *failure* path. When a
+  renewal never fired or failed, `tokenRef` kept the dead JWT forever, every REST call 401'd, and
+  nothing in `src/` handled a 401 — so the app looked normal while every save silently failed.
+  Diagnosed from a console with **686 identical 401s** on `get_unread_notification_count`: the bell's
+  60s poll was the only recurring call, so it was the only thing that noticed (~11h of an open tab).
+  Now: `src/lib/supabase.js` attaches `status`/`body` to every thrown error (message text unchanged —
+  callers pattern-match it); `stableDb.js` `createTokenBoundClient(getToken, { onAuthError })` retries
+  **exactly once** on a 401 after recovery succeeds; `AuthContext.recoverSession()` is the app's ONE
+  401 handler — **single-flight** (`refreshingRef`) so N parallel loaders can't fire N
+  `refreshSession()` calls and lose the refresh-token rotation race. Unrecoverable → `sessionExpired`
+  → `src/components/SessionExpiredBanner.jsx` (mounted inside `AuthProvider`, so one instance covers
+  the office/tech/CRM shells; theme-independent colors because the dark re-tone is scoped to
+  `.tech-layout`, which the banner is outside of). **Only 401 recovers** — 403/42501 is a real
+  permission denial (what DEV anon mode returns) and must surface unchanged. Retrying a *write* after
+  a 401 is safe because PostgREST rejects the JWT before any SQL runs (unlike a timeout, where the
+  write may have landed — that rule still stands in `supabase.js`). Contract pinned by 8 tests in
+  `src/lib/stableDb.test.js`.
   (2) **home-screen-PWA route restoration** — iOS evicts the standalone PWA in the background and
   relaunches at manifest `start_url` (/tech); `src/lib/resumeRestore.js` (pure, tested) +
   `src/components/RouteRestorer.jsx` (in App.jsx inside BrowserRouter) save the last route on every
@@ -2024,9 +2042,16 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 Notification feed surfaced by a **bell** (sidebar/TopNav in the office, top-right in the tech
 shell). Originally org-wide shared-read; **F2 made it per-recipient** (see Notification Center
 → F2). Producers: e-signature completion, feedback, time-entry/clock RPCs, and the F2 dispatcher.
+> ⚠️ **The bell's poll is the app's canary — keep it quiet.** It was the only recurring authenticated
+> call on most screens, so a dead session showed up here as 686 silent 401s and nowhere else
+> (2026-07-25). Its poll now runs through `useResumeRefetch` (hidden-guard + resume edge,
+> `page-lifecycle.md` §2/§4) with a consecutive-failure backoff (60s doubling → 30 min cap; reset on
+> success, on mount/employee change, and when the user opens the bell). Realtime bumps and opening
+> the bell call `loadCount()` directly and bypass the backoff on purpose. Do not restore a bare
+> `setInterval` here.
 - **Table `notifications`:** `id UUID PK, type TEXT, title TEXT, body TEXT, link TEXT (in-app route), entity_type TEXT, entity_id UUID, job_id UUID, payload JSONB, read_at TIMESTAMPTZ (null = unread), created_at TIMESTAMPTZ` **+ `recipient_id UUID NULL` (F2 — NULL = broadcast to all), `type_key TEXT` (catalog key)**. RLS: SELECT to anon/authenticated; **writes only via the SECURITY DEFINER RPC** (plus a narrow `type='__f2test__'` DELETE policy for the F2 test suite). Added to the `supabase_realtime` publication.
 - **RPCs (F2 cutover — DROP+CREATE, recipient-aware):** `create_notification(p_type,p_title,p_body,p_link,p_entity_type,p_entity_id,p_job_id,p_payload,p_recipient_id,p_type_key)` (also `service_role`), `get_notifications(p_limit DEFAULT 30, p_employee_id DEFAULT NULL)`, `get_unread_notification_count(p_employee_id DEFAULT NULL)`, `mark_notification_read(p_id)`, `mark_all_notifications_read(p_employee_id DEFAULT NULL)`. Read/unread/mark-all filter `recipient_id IS NULL OR recipient_id = p_employee_id`; old `{}`/`{p_limit}` call shapes still resolve (see F2 note for the overload-trap avoidance).
-- **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`.
+- **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s **via `useResumeRefetch` — hidden-guarded, with a consecutive-failure backoff (see the ⚠️ note above)** — and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`. A failed list load renders an inline "Couldn't load notifications" + Try again rather than the success empty-state (`loading-error-states.md` §1).
 - **Migrations:** `20260624_notifications.sql` (original) + `20260703_notify_f2_foundation.sql` (per-recipient cutover, applied).
 
 ---
@@ -8323,3 +8348,80 @@ then proved the app host itself returns `401` to the API token, so verified app 
 canonicalized to the equivalent documented API media endpoint before download. The CallRail token
 is stripped before the signed S3 request. Readiness now reports actionable queues separately from
 terminal failure history.
+
+## Ops health alerting (2026-07-25)
+
+Nothing in this system reported its own failures. Evidence at build time: 121 `worker_runs` error
+rows in seven days with no alert raised, and an inbound STOP that failed every five minutes for
+45 minutes unnoticed. There was no alert, monitor, or health worker anywhere in `functions/api/`.
+
+**New — `POST /api/ops-health`** (scheduler-only, `checkCronSecret`). Read-only over everything it
+monitors; it reports and never repairs. Four conditions:
+
+| Condition key | Trips when |
+|---|---|
+| `provider_events_failed` | any `message_provider_events` row in `failed` |
+| `provider_events_stuck` | a `retryable` row is >15 min past `next_attempt_at` (the STOP signature) |
+| `worker_errors` | any `worker_runs` error in the trailing 60 min, grouped by worker |
+| `unfinalized_claims` | a `fixed_automation_claims` row unfinalized >30 min (no stale recovery by design) |
+
+Alert bodies carry the **sender/recipient identity** (`describeParty`), because triage on 2026-07-24
+burned several queries just establishing that three "lost" MMS were the owner's own test number.
+
+Threshold logic is pure and unit-tested in `functions/lib/ops-health.js`
+(`evaluateOpsHealth`, injected fixtures, no clock read); the Worker is a thin shell. Emission goes
+through the existing in-process `dispatchEvent` staff path — no new send route, no SMS, so no
+consent surface is reachable. Dedupe is per condition per Denver day via a `system_events`
+`ops_health_alert` marker, and the marker is written **only after a successful dispatch**, so a
+disabled type or a notify outage does not silently burn the day's slot. The dedupe lookup fails
+**open** (alert twice rather than stay silent through an outage).
+
+Migration `20260725190000_ops_health_alerting.sql` (additive; rollback shipped) seeds the
+`ops.health` notification type (**bell-only** by default — owner's chosen channel; push/email remain
+per-employee opt-ins), seeds the non-secret worker URL, and schedules `wake_ops_health_worker()`
+every 15 minutes. The wake is deliberately **unconditional**: the sibling schedulers guard on "is
+there due work", but this worker's job is to notice that something *stopped* happening, and a SQL
+guard duplicating its thresholds could drift and silently stop alerting — the exact failure being
+fixed.
+
+**⚠️ Migration source is NOT evidence of live grant state — verify the catalog.** Two independent
+reviewers on 2026-07-25 both reported anon exposure by reading a 2026-07-08 migration, and both were
+wrong against live state, because the DB-Foundation P3 anon closure re-scoped those policies without
+rewriting the original source. Verified live 2026-07-25:
+`system_events` is **RLS-enabled with ZERO policies** — browser roles read nothing, `service_role`
+only (this is why it is a safe home for the ops-health dedupe markers). `worker_runs`' three
+policies are still *named* `anon_*` but are scoped `TO {authenticated}`. Always query `pg_policy` +
+`pg_class.relrowsecurity` before concluding anything about exposure.
+
+**Known weakness (pre-existing, not introduced here).** Live catalog check 2026-07-25:
+`notification_types` has RLS enabled with exactly one policy — `notification_types_all`,
+`FOR ALL TO authenticated USING (true) WITH CHECK (true)`. `anon` is therefore **closed** (RLS on,
+no policy applies, so the broad table-level `anon` GRANT yields zero rows — an older migration's
+`TO anon, authenticated` source was since re-scoped by the DB-Foundation P3 anon closure). But any
+**authenticated** employee can `UPDATE`/`DELETE` any row in that catalog, i.e. silently disable the
+`ops.health` type and switch the alerting off for everyone. Scoping that policy to SELECT-only plus
+an admin-gated write is a separate reviewed change.
+
+## CallRail account identity — verified live 2026-07-25
+
+Read-only provider + catalog evidence, no mutation:
+
+- **`api.callrail.com/v3` requires the NUMERIC account id.** `/v3/a/635117922/...` succeeds;
+  `/v3/a/ACCac74130ee99242f0a8c4bde6a74272dc/...` returns **404**. `integration_config
+  .callrail_account_id` = `635117922`; the masked id is an account-discovery alias only.
+- `functions/lib/callrail-mms.js` `preferredApiAccountId()` **prefers the masked `ACC…` form** for
+  every `/v3/` URL it builds (refresh endpoint, redirect validator, canonical media URL), and
+  `ingestVerifiedCallrailEventMms` *rejects* the numeric id unless an `ACC…` alias is proven. That
+  preference is inverted relative to the live API, so every media refresh 404s →
+  `CALLRAIL_MMS_URL_REFRESH_FAILED`. **Not yet fixed** — inverting a deliberate, documented security
+  decision needs its own reviewed change.
+- **The five failed MMS are still recoverable.** All five `provider_message_id`s still return live
+  `media_urls` in the documented numeric API form, so a re-drive after the identity fix recovers
+  them. All five are the owner's own test number (385-314-5700), so no customer media was lost.
+- **`INVALID_CALLRAIL_SIGNATURE` is a duplicate delivery, not dropped inbound.** CallRail's
+  `sms_sent_webhook` and `sms_received_webhook` are each registered with **two** URLs —
+  `dev.utahpros.app` *and* `utahpros.app`. Both environments share one Supabase, so every text
+  produces one `completed` row and one signature-rejected row ~1s later from the environment whose
+  `CALLRAIL_SIGNING_KEY` does not match. Inbound is captured exactly once; the noise is real but
+  benign. `INVALID_CALLRAIL_TEXT_EVENT:id` occurred only **twice**, both on 2026-07-23, and is not
+  recurring.
