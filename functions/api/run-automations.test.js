@@ -50,9 +50,15 @@ function makeCtx({
   contacts = {},
   firedEvents = [],
   sendResult = { ok: true, sid: 'SM_test' },
+  // Simulates the UNIQUE(automation_key, entity_id) claim fence. Shared across
+  // makeCtx calls when a test passes its own Map, which is how we model "a
+  // second cron tick hitting a claim the first tick already took".
+  claims = new Map(),
+  claimThrows = false, // simulates the claim RPC being unavailable (migration not applied)
 } = {}) {
   const inserts = [];
   const sendCalls = [];
+  const rpcCalls = [];
   const db = {
     async select(table, query = '') {
       if (table === 'inbound_leads') return leads;
@@ -69,11 +75,34 @@ function makeCtx({
       return [];
     },
     async insert(table, data) { inserts.push({ table, data }); return [data]; },
+    async rpc(fn, params = {}) {
+      rpcCalls.push({ fn, params });
+      const key = `${params.p_automation_key}|${params.p_entity_id}`;
+      if (fn === 'claim_fixed_automation') {
+        if (claimThrows) throw new Error('function claim_fixed_automation(...) does not exist');
+        if (claims.has(key)) return false; // unique violation → another caller owns the send
+        claims.set(key, { finalized: false });
+        return true;
+      }
+      if (fn === 'release_fixed_automation_claim') {
+        const c = claims.get(key);
+        if (!c || c.finalized) return false; // a finalized claim is never re-opened
+        claims.delete(key);
+        return true;
+      }
+      if (fn === 'finalize_fixed_automation_claim') {
+        const c = claims.get(key);
+        if (!c) return false;
+        c.finalized = true;
+        return true;
+      }
+      throw new Error(`unexpected rpc: ${fn}`);
+    },
   };
   const send = async (...args) => { sendCalls.push(args); return sendResult; };
   // paceMs: 0 keeps the MPS pacer a no-op so tests never sleep.
   const ctx = { db, env: {}, now: NOW, send, orgId: 'org-1', paceMs: 0 };
-  return { ctx, inserts, sendCalls };
+  return { ctx, inserts, sendCalls, rpcCalls, claims };
 }
 
 const freshCall = { id: 'L1', contact_id: 'c1', source_type: 'call', direction: 'inbound', duration_sec: 42, spam_flag: false, occurred_at: minsAgo(5), created_at: minsAgo(5) };
@@ -381,5 +410,157 @@ describe('idempotency', () => {
     expect(await runSpeedToLead(ctx)).toBe(0);
     expect(sendCalls.length).toBe(0);
     expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+});
+
+// ─── Claim fence: the duplicate-send window (closed 2026-07-25) ───────────────
+// The old ordering was check → send → write marker. A crash between the send
+// and the marker meant the text went out unrecorded and the next cron tick sent
+// it AGAIN. A duplicate automated text is per-message TCPA exposure, and
+// missed-call text-back is aimed at people with no prior relationship.
+describe('fixed-automation claim fence', () => {
+  it('claims BEFORE sending, then finalizes — never the reverse order', async () => {
+    const { ctx, rpcCalls, sendCalls } = makeCtx({ leads: [missedCall] });
+    expect(await runMissedCallTextback(ctx)).toBe(1);
+
+    const claimIdx = rpcCalls.findIndex((c) => c.fn === 'claim_fixed_automation');
+    const finalIdx = rpcCalls.findIndex((c) => c.fn === 'finalize_fixed_automation_claim');
+    expect(claimIdx).toBe(0);              // the claim is the first thing that happens
+    expect(sendCalls).toHaveLength(1);     // ...and only then do we send
+    expect(finalIdx).toBeGreaterThan(claimIdx);
+    expect(rpcCalls[claimIdx].params).toMatchObject({
+      p_automation_key: 'missed_call_textback',
+      p_entity_type: 'inbound_lead',
+      p_entity_id: 'L2',
+    });
+  });
+
+  it('THE FIX: a crash that loses the system_events marker cannot cause a resend', async () => {
+    // Tick 1 sends and takes the claim.
+    const claims = new Map();
+    const first = makeCtx({ leads: [missedCall], claims });
+    expect(await runMissedCallTextback(first.ctx)).toBe(1);
+    expect(first.sendCalls).toHaveLength(1);
+
+    // Tick 2: system_events has NO record of it (firedEvents stays empty — this
+    // is the crash/failed-insert the old code could not survive). The surviving
+    // claim must still block the second text.
+    const second = makeCtx({ leads: [missedCall], firedEvents: [], claims });
+    expect(await runMissedCallTextback(second.ctx)).toBe(0);
+    expect(second.sendCalls).toHaveLength(0);
+  });
+
+  it('suppresses a duplicate when two ticks race the same entity', async () => {
+    const claims = new Map();
+    const a = makeCtx({ leads: [freshCall], claims });
+    const b = makeCtx({ leads: [freshCall], claims });
+    const [sentA, sentB] = await Promise.all([runSpeedToLead(a.ctx), runSpeedToLead(b.ctx)]);
+    // Exactly one of the two ticks may send.
+    expect(sentA + sentB).toBe(1);
+    expect(a.sendCalls.length + b.sendCalls.length).toBe(1);
+  });
+
+  it('releases the claim on a deferrable skip so it retries once the condition lifts', async () => {
+    const claims = new Map();
+    // Quiet hours: nothing was sent, so the entity must stay a candidate.
+    const held = makeCtx({
+      leads: [missedCall], claims,
+      sendResult: { ok: false, skipped: true, reason: 'quiet_hours' },
+    });
+    expect(await runMissedCallTextback(held.ctx)).toBe(0);
+    expect(held.rpcCalls.some((c) => c.fn === 'release_fixed_automation_claim')).toBe(true);
+    expect(claims.size).toBe(0); // released — not stuck
+    // No terminal row was written, so it is still eligible.
+    expect(held.inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+
+    // Later tick, quiet hours over → it now sends.
+    const later = makeCtx({ leads: [missedCall], claims });
+    expect(await runMissedCallTextback(later.ctx)).toBe(1);
+    expect(later.sendCalls).toHaveLength(1);
+  });
+
+  it('releases the claim on a transient send failure so it retries', async () => {
+    const claims = new Map();
+    const failed = makeCtx({
+      leads: [missedCall], claims,
+      sendResult: { ok: false, skipped: false, error: 'boom' }, // not permanent, not ambiguous
+    });
+    expect(await runMissedCallTextback(failed.ctx)).toBe(0);
+    expect(claims.size).toBe(0);
+    expect(failed.inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+
+  it('KEEPS the claim on a durable skip (dnd) — no repeat even if the marker is lost', async () => {
+    const claims = new Map();
+    const blocked = makeCtx({
+      leads: [missedCall], claims,
+      sendResult: { ok: false, skipped: true, reason: 'dnd' },
+    });
+    expect(await runMissedCallTextback(blocked.ctx)).toBe(0);
+    expect(claims.size).toBe(1); // durable refusal — do not pester
+    expect(blocked.rpcCalls.some((c) => c.fn === 'release_fixed_automation_claim')).toBe(false);
+
+    const retry = makeCtx({ leads: [missedCall], firedEvents: [], claims });
+    expect(await runMissedCallTextback(retry.ctx)).toBe(0);
+    expect(retry.sendCalls).toHaveLength(0);
+  });
+
+  it('KEEPS the claim on an ambiguous provider outcome (may have sent — never resend)', async () => {
+    const claims = new Map();
+    const amb = makeCtx({
+      leads: [missedCall], claims,
+      sendResult: { ok: false, skipped: false, ambiguous: true, error: 'timeout after accept' },
+    });
+    expect(await runMissedCallTextback(amb.ctx)).toBe(0);
+    expect(claims.size).toBe(1);
+    const ev = amb.inserts.find((i) => i.table === 'system_events');
+    expect(ev.data.payload.reconciliation_required).toBe(true);
+  });
+
+  it('fails CLOSED when the claim RPC is unavailable (worker deployed before its migration)', async () => {
+    const { ctx, sendCalls, inserts } = makeCtx({ leads: [missedCall], claimThrows: true });
+    expect(await runMissedCallTextback(ctx)).toBe(0);
+    expect(sendCalls).toHaveLength(0); // refuses to send unfenced
+    expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+
+  it('releases the claim when send() THROWS, so a network blip cannot strand a lead', async () => {
+    // There is deliberately no stale-claim recovery, so an unreleased claim is
+    // permanent. A throw upstream of the provider (PostgREST 5xx on the contact
+    // or template lookup) sent nothing and must not cost us the lead forever.
+    const claims = new Map();
+    const boom = makeCtx({ leads: [missedCall], claims });
+    boom.ctx.send = async () => { throw new Error('PostgREST 500'); };
+    expect(await runMissedCallTextback(boom.ctx)).toBe(0);
+    expect(claims.size).toBe(0); // released, not stranded
+    expect(boom.inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+
+    // The entity is still a candidate on the next tick.
+    const retry = makeCtx({ leads: [missedCall], claims });
+    expect(await runMissedCallTextback(retry.ctx)).toBe(1);
+  });
+
+  it('does not abort the batch when post-send bookkeeping fails', async () => {
+    // Two leads; the first one's system_events insert blows up. The second must
+    // still be processed, and the first must keep its claim (blocking a resend).
+    const twoLeads = [missedCall, { ...missedCall, id: 'L9' }];
+    const claims = new Map();
+    const c = makeCtx({ leads: twoLeads, claims });
+    c.ctx.db.insert = async (table, data) => {
+      if (table === 'system_events' && data.entity_id === 'L2') throw new Error('insert failed');
+      return [data];
+    };
+    expect(await runMissedCallTextback(c.ctx)).toBe(2);
+    expect(c.sendCalls).toHaveLength(2);
+    expect(claims.has('missed_call_textback|L2')).toBe(true); // still claimed → no resend
+  });
+
+  it('checks the terminal system_events history BEFORE taking a claim', async () => {
+    // Entities that already fired (pre-migration history) must never re-fire,
+    // and must not consume a claim row either.
+    const { ctx, rpcCalls, sendCalls } = makeCtx({ leads: [missedCall], firedEvents: [{ id: 'e1' }] });
+    expect(await runMissedCallTextback(ctx)).toBe(0);
+    expect(sendCalls).toHaveLength(0);
+    expect(rpcCalls).toHaveLength(0);
   });
 });

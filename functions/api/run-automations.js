@@ -32,10 +32,18 @@
  *   Data:      reads  → automation_settings, crm_orgs, inbound_leads,
  *                       job_phase_history, jobs, contacts, system_events
  *              writes → system_events (one row per fired trigger + outcome),
+ *                       fixed_automation_claims (via the claim/release/finalize
+ *                       RPCs — the pre-send duplicate fence),
  *                       worker_runs (one row per run); sms sends also write
  *                       sms_consent_log inside automated-send.js
  *
  * NOTES / GOTCHAS:
+ *   - ⚠️ DEPLOY ORDER: this worker requires migration
+ *     20260725060000_fixed_automation_claims to be APPLIED FIRST. It calls
+ *     claim_fixed_automation before every send and fails CLOSED if that RPC is
+ *     missing, so deploying ahead of the migration silently stops all four
+ *     automations (including the two live email ones) rather than sending
+ *     unfenced. That is deliberate — see the claim block in fireAutomation.
  *   - The SMS automations are gated TWICE. This worker skips them entirely
  *     unless automation_settings.sms_sending_enabled is ON, so while the
  *     kill-switch is OFF they are truly inert (no queries, no audit rows, no
@@ -180,6 +188,21 @@ async function contactName(db, contactId) {
   } catch { return ''; }
 }
 
+// Release a claim taken for a send that never happened. Best-effort: if the
+// release itself fails the claim stays put, which blocks a retry but can never
+// cause a duplicate — the safe direction to fail in.
+async function releaseClaim(db, key, entityId, reason) {
+  try {
+    await db.rpc('release_fixed_automation_claim', {
+      p_automation_key: key,
+      p_entity_id: entityId,
+      p_reason: reason ?? null,
+    });
+  } catch (e) {
+    console.error(`${WORKER_NAME}: claim release failed for ${key}/${entityId}:`, e?.message || e);
+  }
+}
+
 async function alreadyFired(db, eventType, entityId) {
   const rows = await db.select(
     'system_events',
@@ -211,10 +234,10 @@ async function paceSms(ctx) {
 // Still durable (correctly terminal): 'dnd' and 'opt_out'-family reasons are an explicit refusal by
 // the person, and 'no_phone' / 'contact_not_found' cannot resolve on their own. Don't pester.
 //
-// NOTE: deferrable means the entity is re-evaluated on later runs, so the value of this change is
-// bounded by the duplicate-send window in fireAutomation (send at :215, marker at :233). Closing
-// that window with a claim-before-send is tracked separately; this change does not widen it,
-// because a deferred skip never sent anything in the first place.
+// NOTE: deferrable means the entity is re-evaluated on later runs. The duplicate-send window this
+// once depended on (send first, dedup marker after) was CLOSED 2026-07-25 by the claim-before-send
+// fence in fireAutomation — see claim_fixed_automation. A deferrable outcome sent nothing, so it
+// releases its claim and retries; anything that may have sent keeps its claim forever.
 const DEFERRABLE_SKIP_REASONS = new Set(['quiet_hours', 'sms_disabled', 'no_consent']);
 
 // The single place an automation acts: consent-gated send + a durable audit
@@ -226,14 +249,50 @@ async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId
 
   if (await alreadyFired(db, eventType, entityId)) return { outcome: 'already_fired' };
 
-  const result = await send(channel, contactId, templateKey, variables, extra);
+  // ── Atomic claim BEFORE the send (closes the duplicate-send window) ──
+  // Previously this function sent first and wrote its dedup marker after, so a
+  // crash in between let the next cron tick send the same person a second text.
+  // The claim is taken first and is only released when NOTHING was sent, so a
+  // crash after a send leaves the claim standing and the resend cannot happen.
+  //
+  // Fails CLOSED: if the claim RPC is unavailable (e.g. this worker deployed
+  // before its migration applied), we refuse to send rather than fall back to
+  // the old unsafe ordering.
+  let claimed;
+  try {
+    claimed = await db.rpc('claim_fixed_automation', {
+      p_automation_key: key,
+      p_entity_type: entityType,
+      p_entity_id: entityId,
+    });
+  } catch (e) {
+    console.error(`${WORKER_NAME}: claim failed for ${key}/${entityId}:`, e?.message || e);
+    return { outcome: 'claim_error' };
+  }
+  if (claimed !== true) return { outcome: 'claim_lost' };
+
+  let result;
+  try {
+    result = await send(channel, contactId, templateKey, variables, extra);
+  } catch (e) {
+    // A throw from inside send() means we never got a provider verdict. Almost
+    // all of these originate UPSTREAM of any dispatch (a PostgREST 5xx on the
+    // contact/template lookup), so nothing went out — treat it exactly like a
+    // transient failure and release the claim. Without this the claim would
+    // stick forever (there is deliberately no stale-claim recovery), silently
+    // and permanently dropping a legitimate lead on an ordinary network blip.
+    console.error(`${WORKER_NAME}: send threw for ${key}/${entityId}:`, e?.message || e);
+    await releaseClaim(db, key, entityId, 'send_threw');
+    return { outcome: 'failed', result: { ok: false, error: String(e?.message || e) } };
+  }
   const outcome = result?.ok ? 'sent' : result?.skipped ? 'skipped' : 'failed';
 
   // Persist the trigger + outcome only on a TERMINAL result, so the idempotency
   // check can't permanently drop a text that was merely deferred (F-10):
   //   • sent                              → terminal (never repeat).
-  //   • skipped, deferrable (quiet_hours) → NOT terminal → retried when it lifts.
-  //   • skipped, durable (dnd/no_consent) → terminal (don't pester).
+  //   • skipped, deferrable (quiet_hours /
+  //     sms_disabled / no_consent)        → NOT terminal → retried when it lifts.
+  //   • skipped, durable (dnd / opt-out)  → terminal (don't pester).
   //   • failed, transient (429 / 5xx)     → NOT terminal → retried next run.
   //   • failed, ambiguous acceptance      → terminal reconciliation (no resend).
   //   • failed, permanent (invalid number)→ terminal (stop infinite-retrying).
@@ -241,9 +300,20 @@ async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId
   const isTransientFail = outcome === 'failed' && !result?.permanent && !result?.ambiguous;
   const terminal = !isDeferredSkip && !isTransientFail;
 
-  if (terminal) {
-    const reason = result?.reason
-      || (result?.ambiguous ? 'ambiguous_provider_outcome' : null);
+  const reason = result?.reason
+    || (result?.ambiguous ? 'ambiguous_provider_outcome' : null);
+
+  if (!terminal) {
+    // Nothing was sent (deferred skip, or a transient failure). Release the
+    // claim so the entity is a candidate again once the condition lifts.
+    await releaseClaim(db, key, entityId, reason);
+    return { outcome, result };
+  }
+
+  // Bookkeeping below is best-effort per entity: a throw here must not abort
+  // the rest of the batch. Failing to write either record leaves the claim
+  // standing, which blocks a re-send — the safe direction.
+  try {
     await db.insert('system_events', {
       event_type: eventType,
       entity_type: entityType,
@@ -257,7 +327,19 @@ async function fireAutomation(ctx, { key, entityType, entityId, jobId, contactId
         reconciliation_required: result?.ambiguous === true,
       },
     });
+
+    // Keep the claim row (it is the crash-proof block on a re-send); mark it
+    // terminal for observability.
+    await db.rpc('finalize_fixed_automation_claim', {
+      p_automation_key: key,
+      p_entity_id: entityId,
+      p_outcome: outcome,
+      p_reason: reason,
+    });
+  } catch (e) {
+    console.error(`${WORKER_NAME}: post-send bookkeeping failed for ${key}/${entityId}:`, e?.message || e);
   }
+
   return { outcome, result };
 }
 
