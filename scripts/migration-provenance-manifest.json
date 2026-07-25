@@ -128,6 +128,12 @@
       "name": "public_form_rpc_boundary",
       "path": "supabase/migrations/20260723235900_public_form_rpc_boundary.sql",
       "reviewedOriginCommit": "b6d7092a6450440a1971aa99f896abc6615d91c9"
+    },
+    {
+      "version": "20260725045914",
+      "name": "owner_attested_prior_service_consent",
+      "path": "supabase/migrations/20260725010000_owner_attested_prior_service_consent.sql",
+      "reviewedOriginCommit": "072630d"
     }
   ],
   "selectedFunctions": [

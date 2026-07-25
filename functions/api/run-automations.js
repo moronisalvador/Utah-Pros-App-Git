@@ -199,9 +199,23 @@ async function paceSms(ctx) {
 
 // Skip reasons that mean "not now, try again later" rather than "never" — the
 // text is still owed, so we DON'T write a terminal event (F-10). 'quiet_hours'
-// lifts at 8am; 'sms_disabled' lifts when Phase 4b flips the kill-switch. Every
-// other skip reason (dnd / no_consent / no_phone / suppressed) is durable.
-const DEFERRABLE_SKIP_REASONS = new Set(['quiet_hours', 'sms_disabled']);
+// lifts at 8am; 'sms_disabled' lifts when the kill-switch is flipped.
+//
+// 'no_consent' is ALSO deferrable (added 2026-07-25). It was previously terminal, which
+// permanently burned the automation for that entity: a missed call from an unconsented number
+// wrote a terminal system_events row, so alreadyFired() returned true forever and the textback
+// could never fire even after that person later consented. Consent is a state that genuinely
+// changes over time — an admin records a prior-consent attestation, or the customer sends START —
+// so treating it as "never" was wrong. It is the same class as quiet_hours: a condition that lifts.
+//
+// Still durable (correctly terminal): 'dnd' and 'opt_out'-family reasons are an explicit refusal by
+// the person, and 'no_phone' / 'contact_not_found' cannot resolve on their own. Don't pester.
+//
+// NOTE: deferrable means the entity is re-evaluated on later runs, so the value of this change is
+// bounded by the duplicate-send window in fireAutomation (send at :215, marker at :233). Closing
+// that window with a claim-before-send is tracked separately; this change does not widen it,
+// because a deferred skip never sent anything in the first place.
+const DEFERRABLE_SKIP_REASONS = new Set(['quiet_hours', 'sms_disabled', 'no_consent']);
 
 // The single place an automation acts: consent-gated send + a durable audit
 // event. Returns { outcome } where outcome ∈ sent | skipped | failed | already_fired.

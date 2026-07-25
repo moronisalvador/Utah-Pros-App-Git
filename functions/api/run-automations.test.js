@@ -242,6 +242,30 @@ describe('quiet-hours held-retry (F-10)', () => {
     expect(ev.data.payload.reason).toBe('dnd');
   });
 
+  // 2026-07-25: no_consent moved from terminal → deferrable. Previously a missed call from an
+  // unconsented number wrote a terminal row, so alreadyFired() returned true forever and the
+  // textback could never fire even after that person later consented. Consent is a state that
+  // changes (admin attestation, or inbound START), so it belongs with quiet_hours, not with dnd.
+  it('does NOT write a terminal row for no_consent — consent can arrive later', async () => {
+    const { ctx, inserts } = makeCtx({
+      leads: [freshCall],
+      sendResult: { ok: false, skipped: true, reason: 'no_consent' },
+    });
+    await runSpeedToLead(ctx);
+    expect(inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+  });
+
+  it('sends on a later run once consent is recorded, instead of being burned forever', async () => {
+    // Run 1: refused for no_consent → nothing terminal, so the lead stays a candidate.
+    const run1 = makeCtx({ leads: [freshCall], sendResult: { ok: false, skipped: true, reason: 'no_consent' } });
+    await runSpeedToLead(run1.ctx);
+    expect(run1.inserts.find((i) => i.table === 'system_events')).toBeFalsy();
+    // Run 2 (an admin has since attested prior consent): it fires and records terminal.
+    const run2 = makeCtx({ leads: [freshCall], firedEvents: [], sendResult: { ok: true, sid: 'SM_consent' } });
+    expect(await runSpeedToLead(run2.ctx)).toBe(1);
+    expect(run2.inserts.find((i) => i.table === 'system_events')).toBeTruthy();
+  });
+
   it('retries after a defer: the same lead sends on a later run once quiet-hours lift', async () => {
     // Run 1: deferred (quiet_hours) → no event written.
     const run1 = makeCtx({ leads: [freshCall], sendResult: { ok: false, skipped: true, reason: 'quiet_hours' } });
