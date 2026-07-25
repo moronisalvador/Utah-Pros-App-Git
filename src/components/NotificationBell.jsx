@@ -16,7 +16,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (subscribeToNotifications)
+ *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (subscribeToNotifications),
+ *              @/hooks/useResumeRefetch (hidden-guarded poll + resume edge)
  *   Data:      reads  → notifications (via get_notifications / get_unread_notification_count RPCs)
  *              writes → notifications (via mark_notification_read / mark_all_notifications_read RPCs)
  *
@@ -29,6 +30,12 @@
  *     table; a 60s poll is the fallback if the socket drops. A row targeted at a
  *     DIFFERENT employee is ignored (no count bump, no toast) — realtime delivers
  *     every insert, so the client filters. Broadcast/own rows fire a `upr:toast`.
+ *   - The poll runs through useResumeRefetch, which skips it while the tab is
+ *     hidden (page-lifecycle.md §4) and fires once on the hidden→visible edge.
+ *     It also BACKS OFF on repeated failures: this poll was the app's loudest
+ *     failure mode — with a dead session it logged a 401 a minute all night into
+ *     a silent catch. Recovery now lives in stableDb.js/AuthContext; the backoff
+ *     here just stops the noise when the session is truly unrecoverable.
  *   - `triggerClassName` styles the trigger button with a host's own class (the
  *     tech dashboard passes `tv2-dash-header__icon-btn` so the bell matches the
  *     Help/menu buttons sitting beside it). Omit it and the office inline style
@@ -39,6 +46,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToNotifications } from '@/lib/realtime';
+import useResumeRefetch from '@/hooks/useResumeRefetch';
+
+// Poll backoff: after a failure the count is worth far less than the noise of
+// retrying it every minute forever. Doubles per consecutive failure from the
+// base 60s tick, capped at 30 min; any success resets it to zero.
+const POLL_MS = 60000;
+const BACKOFF_CAP_MS = 30 * 60 * 1000;
 
 function IconBell(p) {
   return (
@@ -75,29 +89,65 @@ export default function NotificationBell({ align = 'left', triggerClassName }) {
   const [items, setItems] = useState([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [listError, setListError] = useState(false);
+
+  // Consecutive-failure state for the poll backoff (refs — these change between
+  // renders but nothing on screen depends on them, so they must not re-render).
+  const failStreakRef = useRef(0);
+  const nextAttemptRef = useRef(0);
 
   const loadCount = useCallback(async () => {
     try {
       const n = await dbRef.current.rpc('get_unread_notification_count', { p_employee_id: empRef.current });
       setUnread(typeof n === 'number' ? n : (Array.isArray(n) ? n[0] : 0) || 0);
-    } catch { /* non-fatal — bell just won't show a count */ }
+      failStreakRef.current = 0;
+      nextAttemptRef.current = 0;
+    } catch {
+      // Non-fatal — the bell just won't show a count. A 401 has already been
+      // through AuthContext's recovery by this point (stableDb.js), so reaching
+      // here means it could not be fixed: back off instead of retrying blindly.
+      failStreakRef.current += 1;
+      nextAttemptRef.current = Date.now()
+        + Math.min(POLL_MS * 2 ** failStreakRef.current, BACKOFF_CAP_MS);
+    }
   }, []);
+
+  // The polled entry point — same load, gated by the backoff window.
+  const pollCount = useCallback(() => {
+    if (Date.now() < nextAttemptRef.current) return;
+    loadCount();
+  }, [loadCount]);
 
   const loadList = useCallback(async () => {
     setLoading(true);
+    setListError(false);
     try {
       const rows = await dbRef.current.rpc('get_notifications', { p_limit: 30, p_employee_id: empRef.current });
       setItems(rows || []);
-    } catch { setItems([]); }
+    } catch {
+      // A failed load must NOT fall through to the success empty-state
+      // (loading-error-states.md §1). "No notifications yet" on a dead session
+      // is the exact lie this whole change exists to stop telling.
+      setItems([]);
+      setListError(true);
+    }
     finally { setLoading(false); }
   }, []);
 
-  // Initial count + 60s poll fallback (re-runs once the employee id arrives)
+  // Initial count (re-runs once the employee id arrives). Deliberately NOT gated
+  // by the backoff — a mount or a new employee id is a fresh reason to try.
   useEffect(() => {
+    failStreakRef.current = 0;
+    nextAttemptRef.current = 0;
     loadCount();
-    const t = setInterval(loadCount, 60000);
-    return () => clearInterval(t);
   }, [loadCount, employee?.id]);
+
+  // 60s poll fallback for a dropped realtime socket, plus one refresh when the
+  // tab comes back. useResumeRefetch owns the document.hidden guard and the
+  // hidden→visible edge (page-lifecycle.md §2/§4) — never hand-roll a
+  // visibilitychange listener here. Realtime bumps and opening the bell call
+  // loadCount directly, so they bypass the backoff window on purpose.
+  useResumeRefetch({ pollMs: POLL_MS, onResume: pollCount });
 
   // Realtime: bump count, refresh the open list, and fire a live toast — but
   // ignore rows targeted at a different employee (realtime delivers every insert).
@@ -120,7 +170,14 @@ export default function NotificationBell({ align = 'left', triggerClassName }) {
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    if (next) loadList();
+    if (next) {
+      // A deliberate open is a fresh attempt: clear any backoff window so the
+      // count retries immediately alongside the list.
+      failStreakRef.current = 0;
+      nextAttemptRef.current = 0;
+      loadList();
+      loadCount();
+    }
   };
 
   const openItem = async (item) => {
@@ -198,6 +255,20 @@ export default function NotificationBell({ align = 'left', triggerClassName }) {
             <div style={{ overflowY: 'auto' }}>
               {loading ? (
                 <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>Loading…</div>
+              ) : listError ? (
+                <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
+                  <div style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: 6 }}>Couldn't load notifications</div>
+                  <button
+                    onClick={loadList}
+                    style={{
+                      border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                      padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    Try again
+                  </button>
+                </div>
               ) : items.length === 0 ? (
                 <div style={{ padding: '32px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>
                   No notifications yet
