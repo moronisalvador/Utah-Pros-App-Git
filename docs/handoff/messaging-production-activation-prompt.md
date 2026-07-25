@@ -82,13 +82,33 @@ set. `DND_ACTIVE` and `NO_CONSENT` are refused, and missing/unknown status is tr
 
 **Consequence: flipping the switch alone means staff hit a refusal on ~96% of clients.**
 
-Do not "fix" this by loosening the gate. The sanctioned paths to consent coverage are:
-- **Inbound-first** — anyone who texts UPR first establishes consent through the normal inbound
-  path. Zero effort, legally clean.
+Do not "fix" this by loosening the gate.
+
+> **CORRECTION (2026-07-25, verified against code).** An earlier revision of this document claimed
+> "anyone who texts UPR first establishes consent through the normal inbound path — zero effort,
+> legally clean." **That was wrong.** The inbound path writes **no** consent: there is no
+> `opt_in_status` / `opt_in_at` / `opt_in_source` write anywhere in `callrail-text-webhook.js`,
+> `callrail-message-processor.js`, or `messaging-inbound.js`. Confirmed empirically — three inbound
+> messages arrived on 2026-07-25 and `contacts.opt_in_status = true` stayed at exactly 8. The only
+> inbound consent writer is the affirmative **START/UNSTOP re-subscription** path, which applies to
+> restoring consent after a revocation, not to establishing it the first time.
+
+**Consequence — the operational reality to plan around:** if a brand-new person texts UPR, staff
+**cannot reply**. The gate refuses `NO_CONSENT`. Consent coverage does **not** grow on its own.
+
+The only path to coverage is therefore:
 - **Per-contact prior-consent attestation** — an admin/office employee opens the contact's thread
   in `/conversations`, and where they have genuine verified prior permission, records it through
   the existing attestation modal (`SmsConsentAttestationModal`, backed by
   `POST /api/attest-sms-consent`). One contact at a time, by a human who knows that client.
+  **Technicians cannot do this** (see the technician asymmetry below), so a tech blocked on consent
+  needs an admin/office colleague.
+
+**Open product question for the owner (do not decide it yourself):** should an inbound text from an
+unknown number let staff send a directly-responsive reply? Today it does not. A person who texts
+you first has arguably demonstrated they want to communicate, but turning that into consent is a
+policy decision with TCPA implications, and it would need an explicit logged consent record with
+source and evidence — not a relaxed gate.
 
 **Report the consent-coverage reality to the owner and let them decide scope.** The realistic
 Monday plan is: activate, start with the ~8 consented contacts plus inbound, and let coverage

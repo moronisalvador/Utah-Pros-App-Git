@@ -7979,6 +7979,76 @@ closes the double-insert race between the hourly poller and the real-time webhoo
 write payments. `upr_qbo_payments_sync_hourly` has been live and healthy since 19:17 UTC against the
 already-deployed `/api/qbo-payments-sync` worker in `main`.
 
+## ⭐ Staff messaging LIVE in production (2026-07-25)
+
+Production staff↔client SMS/MMS was activated by an owner-run Codex session with Cloudflare +
+CallRail access. That session made **no repository commits**, so this is the record.
+
+**Verified live evidence (read-only catalog check, 2026-07-25):** 4 outbound messages all
+`status='sent'`, 3 inbound all `status='received'`, every row `provider='callrail'` with a
+`provider_message_id`, **both `sms` and `mms` channels** exercised, zero `error_code`/`error_message`.
+Bidirectional and both channels — a genuine end-to-end activation, not a config assertion.
+
+`MESSAGING_SEND_MODE` is a Cloudflare Pages env var (dashboard-only, Production **and** Preview sets
++ redeploy). Rollback is `MESSAGING_SEND_MODE=disabled` + redeploy — sends short-circuit before any
+provider call, with no database or code change.
+
+**Guardrails held:** `automation_settings.sms_sending_enabled` remains `false` in both org rows (it
+does **not** gate staff P2P sends — `send-message.js` never reads it; it arms *automated* sends, and
+`missed_call_textback_enabled` is already `true` in one row). Consent counts were unchanged by the
+activation — nothing was bulk-recorded.
+
+### ⚠️ Consent coverage is the live constraint — and inbound does NOT grant consent
+
+Measured 2026-07-25: **199 contacts, 198 with a phone, but only 8 with `opt_in_status = true`**;
+`service_sms_consents` = 1, `sms_consent_log` = 27.
+
+**Correcting a claim made earlier the same day:** inbound messages do **not** establish consent.
+There is no `opt_in_status` / `opt_in_at` / `opt_in_source` write anywhere in
+`callrail-text-webhook.js`, `callrail-message-processor.js`, or `messaging-inbound.js` — verified by
+grep and confirmed empirically (three inbound messages arrived and the opted-in count stayed at 8).
+The only inbound consent writer is the affirmative **START/UNSTOP** path, which restores consent
+after revocation rather than establishing it.
+
+So **a brand-new person who texts UPR cannot be replied to** — the gate refuses `NO_CONSENT`
+(`send-message.js` allows only `GLOBAL_OPT_IN`, or staff-only `SERVICE_CONSENT`). Coverage grows
+**only** by per-contact admin/office prior-consent attestation, and **technicians cannot attest**
+(`tech-messages-v2-wave-ownership.md` §8) — a blocked tech needs an admin/office colleague.
+
+**Open owner/policy question:** should an inbound text from an unknown number permit a directly
+responsive staff reply? Today it does not. Resolving it needs an explicit logged consent record with
+source and evidence — not a relaxed gate.
+
+### Missed-call textback — still OFF, one blocker closed
+
+The owner wants it on. `no_consent` is now **deferrable** rather than terminal (below), which was the
+prerequisite that stopped it silently burning leads. Still open before `sms_sending_enabled` may be
+flipped: the `fireAutomation` duplicate-send window, and the owner's consent-policy decision.
+Handoff detail: `docs/handoff/messaging-production-activation-prompt.md` §4a.
+
+## Automation `no_consent` is deferrable, not terminal (2026-07-25)
+
+`run-automations.js` previously treated `no_consent` as a **terminal** outcome: it wrote a
+`system_events` row, so `alreadyFired()` returned true forever and that automation could never fire
+for that entity again — even after the person later consented. A missed call from an unconsented
+number was therefore permanently burned.
+
+`DEFERRABLE_SKIP_REASONS` is now `{quiet_hours, sms_disabled, no_consent}`. Consent is a state that
+genuinely changes (admin attestation, or inbound START), so it belongs with `quiet_hours` — a
+condition that lifts — not with `dnd`. Still correctly terminal: `dnd` and opt-out-family reasons
+(an explicit refusal by the person) and `no_phone` / `contact_not_found` (cannot self-resolve).
+
+⚠️ **Bounded by an open defect:** `fireAutomation` checks `alreadyFired()` at :213, **sends** at
+:215, and writes the dedup marker only at :233 — check-then-act with the marker *after* the send. A
+crash or failed insert in between means the text went out unmarked and the next cron tick re-sends
+it. This is the "pre-existing fixed-automation post-send event persistence gap" PR #514 cited when
+it left automated SMS off. Making `no_consent` deferrable does **not** widen it (a deferred skip
+never sent anything), but the window must be closed before automated SMS is enabled. Fix with the
+claim-before-send pattern already used by `claim_scheduled_message`, `claim_qbo_event`,
+`claim_stripe_event`, `claim_inbound_email`, `claim_callrail_provider_event`, and CRM Phase 5's
+`UNIQUE(automation_id, triggering_event_id)`: claim → send → finalize, releasing the claim on
+deferrable outcomes exactly as `process-scheduled.js` does.
+
 ## QBO payment webhook — cross-realm read + opaque-error fix (2026-07-24)
 
 One live `Payment/Create` event (19:49Z) recorded only `"QBO get payment 400"` and sat
