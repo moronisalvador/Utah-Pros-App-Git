@@ -8323,3 +8323,80 @@ then proved the app host itself returns `401` to the API token, so verified app 
 canonicalized to the equivalent documented API media endpoint before download. The CallRail token
 is stripped before the signed S3 request. Readiness now reports actionable queues separately from
 terminal failure history.
+
+## Ops health alerting (2026-07-25)
+
+Nothing in this system reported its own failures. Evidence at build time: 121 `worker_runs` error
+rows in seven days with no alert raised, and an inbound STOP that failed every five minutes for
+45 minutes unnoticed. There was no alert, monitor, or health worker anywhere in `functions/api/`.
+
+**New — `POST /api/ops-health`** (scheduler-only, `checkCronSecret`). Read-only over everything it
+monitors; it reports and never repairs. Four conditions:
+
+| Condition key | Trips when |
+|---|---|
+| `provider_events_failed` | any `message_provider_events` row in `failed` |
+| `provider_events_stuck` | a `retryable` row is >15 min past `next_attempt_at` (the STOP signature) |
+| `worker_errors` | any `worker_runs` error in the trailing 60 min, grouped by worker |
+| `unfinalized_claims` | a `fixed_automation_claims` row unfinalized >30 min (no stale recovery by design) |
+
+Alert bodies carry the **sender/recipient identity** (`describeParty`), because triage on 2026-07-24
+burned several queries just establishing that three "lost" MMS were the owner's own test number.
+
+Threshold logic is pure and unit-tested in `functions/lib/ops-health.js`
+(`evaluateOpsHealth`, injected fixtures, no clock read); the Worker is a thin shell. Emission goes
+through the existing in-process `dispatchEvent` staff path — no new send route, no SMS, so no
+consent surface is reachable. Dedupe is per condition per Denver day via a `system_events`
+`ops_health_alert` marker, and the marker is written **only after a successful dispatch**, so a
+disabled type or a notify outage does not silently burn the day's slot. The dedupe lookup fails
+**open** (alert twice rather than stay silent through an outage).
+
+Migration `20260725190000_ops_health_alerting.sql` (additive; rollback shipped) seeds the
+`ops.health` notification type (**bell-only** by default — owner's chosen channel; push/email remain
+per-employee opt-ins), seeds the non-secret worker URL, and schedules `wake_ops_health_worker()`
+every 15 minutes. The wake is deliberately **unconditional**: the sibling schedulers guard on "is
+there due work", but this worker's job is to notice that something *stopped* happening, and a SQL
+guard duplicating its thresholds could drift and silently stop alerting — the exact failure being
+fixed.
+
+**⚠️ Migration source is NOT evidence of live grant state — verify the catalog.** Two independent
+reviewers on 2026-07-25 both reported anon exposure by reading a 2026-07-08 migration, and both were
+wrong against live state, because the DB-Foundation P3 anon closure re-scoped those policies without
+rewriting the original source. Verified live 2026-07-25:
+`system_events` is **RLS-enabled with ZERO policies** — browser roles read nothing, `service_role`
+only (this is why it is a safe home for the ops-health dedupe markers). `worker_runs`' three
+policies are still *named* `anon_*` but are scoped `TO {authenticated}`. Always query `pg_policy` +
+`pg_class.relrowsecurity` before concluding anything about exposure.
+
+**Known weakness (pre-existing, not introduced here).** Live catalog check 2026-07-25:
+`notification_types` has RLS enabled with exactly one policy — `notification_types_all`,
+`FOR ALL TO authenticated USING (true) WITH CHECK (true)`. `anon` is therefore **closed** (RLS on,
+no policy applies, so the broad table-level `anon` GRANT yields zero rows — an older migration's
+`TO anon, authenticated` source was since re-scoped by the DB-Foundation P3 anon closure). But any
+**authenticated** employee can `UPDATE`/`DELETE` any row in that catalog, i.e. silently disable the
+`ops.health` type and switch the alerting off for everyone. Scoping that policy to SELECT-only plus
+an admin-gated write is a separate reviewed change.
+
+## CallRail account identity — verified live 2026-07-25
+
+Read-only provider + catalog evidence, no mutation:
+
+- **`api.callrail.com/v3` requires the NUMERIC account id.** `/v3/a/635117922/...` succeeds;
+  `/v3/a/ACCac74130ee99242f0a8c4bde6a74272dc/...` returns **404**. `integration_config
+  .callrail_account_id` = `635117922`; the masked id is an account-discovery alias only.
+- `functions/lib/callrail-mms.js` `preferredApiAccountId()` **prefers the masked `ACC…` form** for
+  every `/v3/` URL it builds (refresh endpoint, redirect validator, canonical media URL), and
+  `ingestVerifiedCallrailEventMms` *rejects* the numeric id unless an `ACC…` alias is proven. That
+  preference is inverted relative to the live API, so every media refresh 404s →
+  `CALLRAIL_MMS_URL_REFRESH_FAILED`. **Not yet fixed** — inverting a deliberate, documented security
+  decision needs its own reviewed change.
+- **The five failed MMS are still recoverable.** All five `provider_message_id`s still return live
+  `media_urls` in the documented numeric API form, so a re-drive after the identity fix recovers
+  them. All five are the owner's own test number (385-314-5700), so no customer media was lost.
+- **`INVALID_CALLRAIL_SIGNATURE` is a duplicate delivery, not dropped inbound.** CallRail's
+  `sms_sent_webhook` and `sms_received_webhook` are each registered with **two** URLs —
+  `dev.utahpros.app` *and* `utahpros.app`. Both environments share one Supabase, so every text
+  produces one `completed` row and one signature-rejected row ~1s later from the environment whose
+  `CALLRAIL_SIGNING_KEY` does not match. Inbound is captured exactly once; the noise is real but
+  benign. `INVALID_CALLRAIL_TEXT_EVENT:id` occurred only **twice**, both on 2026-07-23, and is not
+  recurring.
