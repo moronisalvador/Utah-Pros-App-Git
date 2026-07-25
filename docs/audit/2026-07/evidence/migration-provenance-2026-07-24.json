@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-25T16:09:39Z",
+  "capturedAt": "2026-07-25T17:20:56Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
@@ -99,6 +99,10 @@
     {
       "version": "20260725160749",
       "name": "inbound_leads_answered"
+    },
+    {
+      "version": "20260725171925",
+      "name": "fix_callrail_keyword_consent_ambiguity"
     }
   ],
   "functions": [
