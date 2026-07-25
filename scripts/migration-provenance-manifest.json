@@ -140,6 +140,12 @@
       "name": "fixed_automation_claims",
       "path": "supabase/migrations/20260725060000_fixed_automation_claims.sql",
       "reviewedOriginCommit": "83ccfe4"
+    },
+    {
+      "version": "20260725160749",
+      "name": "inbound_leads_answered",
+      "path": "supabase/migrations/20260725160000_inbound_leads_answered.sql",
+      "reviewedOriginCommit": "a063138"
     }
   ],
   "selectedFunctions": [
