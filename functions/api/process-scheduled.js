@@ -6,8 +6,9 @@
  * WHAT THIS DOES (plain language):
  *   Sends the texts that staff scheduled for later. It runs on a timer (via the
  *   server-side scheduler), looks for scheduled messages whose send time has
- *   arrived, checks the recipient still consents, sends each one through Twilio,
- *   and records the result. Phase A hardened it:
+ *   arrived, checks the recipient still consents, sends each one through the
+ *   central automated-message safety gate, and records the result. Phase A
+ *   hardened it:
  *     1. The public trigger endpoint now requires the scheduler secret (or a
  *        logged-in employee) — it used to be open to anyone.
  *     2. Two copies of the job running at once can no longer both grab the same
@@ -16,17 +17,20 @@
  *     3. Outside legal texting hours (before 8am / after 9pm) it holds the whole
  *        batch and tries again later, instead of texting people overnight.
  *     4. Every run writes a worker_runs row so we can see it ran.
+ *     5. Scheduled sends use the same global SMS kill-switch, consent, DND,
+ *        quiet-hours, retry, and thread-recording path as every automation.
  *
  * WHERE IT LIVES:
  *   ENDPOINT: GET/POST /api/process-scheduled  (authenticated — scheduler secret
- *             or a logged-in employee for a manual trigger)
+ *             or an active internal admin/office/project manager)
  *             Also exports scheduled() for a Cloudflare Cron Trigger (no HTTP).
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  ../lib/supabase.js, ../lib/twilio.js (sendMessage),
- *              ../lib/cors.js, ../lib/automated-send.js (isWithinQuietHours,
- *              DEFAULT_SMS_TIMEZONE), ../lib/google-drive.js (getActorEmployee)
+ *   Internal:  ../lib/supabase.js, ../lib/cors.js,
+ *              ../lib/automated-send.js (sendAutomatedMessage,
+ *              isWithinQuietHours, DEFAULT_SMS_TIMEZONE),
+ *              ../lib/auth.js (checkCronSecret, requireRole)
  *   Data:      reads  → scheduled_messages, conversations,
  *                       conversation_participants, contacts, employees,
  *                       integration_config
@@ -34,6 +38,9 @@
  *                       messages, conversations, sms_consent_log, worker_runs
  *
  * NOTES / GOTCHAS:
+ *   - The HTTP trigger accepts the scheduler secret or an active, non-external
+ *     admin/office/project manager. A valid session alone cannot trigger company
+ *     messaging.
  *   - The claim is F-core's claim_scheduled_message(p_id): an atomic compare-and-set
  *     on scheduled_messages.claimed_at. The old worker wrote status='processing',
  *     which the scheduled_messages status CHECK (pending|sent|cancelled|failed)
@@ -41,7 +48,7 @@
  *     'pending' to a terminal 'sent'/'failed'.
  *   - At-least-once: a claim guarantees exactly-one-winner per claim window, not
  *     exactly-once end-to-end. We write the terminal status IMMEDIATELY after the
- *     Twilio send (before the non-critical conversation bookkeeping) to keep the
+ *     provider send (before any later non-critical bookkeeping) to keep the
  *     crash-and-re-claim window as small as possible.
  *   - Quiet-hours uses the business-default timezone (America/Denver). Per-recipient
  *     timezone is Phase D; here the whole due batch defers together outside the
@@ -50,27 +57,42 @@
  */
 
 import { supabase } from '../lib/supabase.js';
-import { sendMessage } from '../lib/twilio.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { isWithinQuietHours, DEFAULT_SMS_TIMEZONE } from '../lib/automated-send.js';
-import { getActorEmployee } from '../lib/google-drive.js';
+import {
+  sendAutomatedMessage,
+  isWithinQuietHours,
+  DEFAULT_SMS_TIMEZONE,
+} from '../lib/automated-send.js';
+import { checkCronSecret, requireRole } from '../lib/auth.js';
 
 const WORKER_NAME = 'process-scheduled';
 const BATCH_LIMIT = 20;
+const MANUAL_TRIGGER_ROLES = ['admin', 'office', 'project_manager'];
 
 // ─── SECTION: Auth ──────────────
-// A server-side scheduler (Supabase pg_cron + pg_net) authenticates with this
-// header instead of a user session — same shape as run-automations. Needed
-// because Cloudflare PAGES projects expose no Cron Trigger UI.
-export async function checkCronSecret(request, db) {
-  const provided = request.headers.get('x-webhook-secret');
-  if (!provided) return false;
-  try {
-    const [row] = await db.select('integration_config', 'key=eq.cron_worker_secret&select=value&limit=1');
-    return !!row?.value && row.value === provided;
-  } catch {
-    return false;
+export { checkCronSecret };
+
+export async function authorizeRequest(request, env, db) {
+  if (await checkCronSecret(request, db)) {
+    return { authorized: true, actor: 'scheduler' };
   }
+
+  const auth = await requireRole(request, env, db, MANUAL_TRIGGER_ROLES);
+  if (auth.error) {
+    return {
+      authorized: false,
+      error: auth.error,
+      status: auth.status || 403,
+    };
+  }
+  if (auth.employee?.is_external) {
+    return {
+      authorized: false,
+      error: 'External employees cannot trigger scheduled messaging',
+      status: 403,
+    };
+  }
+  return { authorized: true, actor: auth.employee };
 }
 
 // ─── SECTION: worker_runs ──────────────
@@ -85,6 +107,20 @@ async function recordRun(db, { status, processed, errorMessage, startedAt }) {
       completed_at: new Date().toISOString(),
     });
   } catch { /* telemetry is best-effort */ }
+}
+
+async function releaseClaim(db, scheduledId, reason) {
+  await db.update('scheduled_messages', `id=eq.${scheduledId}`, {
+    claimed_at: null,
+    error_message: reason ? String(reason).slice(0, 500) : null,
+  });
+}
+
+function parseMediaUrls(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  const parsed = JSON.parse(value);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 // ─── SECTION: Queue processing ──────────────
@@ -203,46 +239,47 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
 
         const clientBody = senderPrefix + scheduled.body.trim();
 
-        const baseUrl = env.PAGES_URL || env.APP_URL || 'https://dev.utahpros.app';
-        const statusCallback = `${baseUrl}/api/twilio-status`;
-
-        const twilioResult = await sendMessage(env, {
-          to: participants[0].phone,
+        const mediaUrls = parseMediaUrls(scheduled.media_urls);
+        const gatedResult = await sendAutomatedMessage('sms', contact.id, null, {}, env, {
           body: clientBody,
-          mediaUrls: scheduled.media_urls ? JSON.parse(scheduled.media_urls) : undefined,
-          statusCallback,
+          now,
+          destinationPhone: primaryParticipant.phone,
+          mediaUrls,
+          conversationId: scheduled.conversation_id,
+          sentBy: scheduled.created_by,
+          recordBody: scheduled.body.trim(),
+          markWaitingOnClient: true,
         });
 
-        // Insert the actual message record (statusCallback → twilio-status will
-        // carry it to delivered/failed + capture segments/price).
-        const [message] = await db.insert('messages', {
-          conversation_id: scheduled.conversation_id,
-          type: 'sms_outbound',
-          channel: 'sms',
-          body: scheduled.body.trim(),
-          status: twilioResult.sid ? 'queued' : 'failed',
-          twilio_sid: twilioResult.sid || null,
-          sent_by: scheduled.created_by,
-          media_urls: scheduled.media_urls,
-          error_message: twilioResult.error || null,
-        });
+        if (
+          gatedResult?.skipped
+          && ['sms_disabled', 'quiet_hours'].includes(gatedResult.reason)
+        ) {
+          await releaseClaim(db, scheduled.id, `Deferred: ${gatedResult.reason}`);
+          continue;
+        }
+
+        if (!gatedResult?.ok) {
+          const reason = gatedResult?.ambiguous
+            ? `Ambiguous provider outcome; reconcile before retry: ${gatedResult.error || 'unknown'}`
+            : gatedResult?.reason || gatedResult?.error || 'Scheduled send failed';
+          await markFailed(db, scheduled.id, `Blocked: ${reason}`);
+          errors.push({ id: scheduled.id, error: reason });
+          continue;
+        }
 
         // Terminal status FIRST (closes the crash/re-claim double-send window),
         // then the non-critical conversation bookkeeping.
         await db.update('scheduled_messages', `id=eq.${scheduled.id}`, {
           status: 'sent',
-          sent_message_id: message.id,
+          sent_message_id: gatedResult.messageId || null,
+          error_message: null,
         });
 
-        await db.update('conversations', `id=eq.${scheduled.conversation_id}`, {
-          last_message_at: new Date().toISOString(),
-          last_message_preview: scheduled.body.trim().substring(0, 100),
-          status: 'waiting_on_client',
-          status_changed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+        processed.push({
+          id: scheduled.id,
+          message_id: gatedResult.messageId || null,
         });
-
-        processed.push({ id: scheduled.id, message_id: message.id });
 
       } catch (err) {
         console.error(`Error processing scheduled ${scheduled.id}:`, err);
@@ -297,10 +334,15 @@ export async function scheduled(event, env) {
 async function runAuthenticated(context) {
   const { request, env } = context;
   const db = supabase(env);
-  // Either a logged-in employee (manual trigger) or the scheduler secret.
-  const employee = await getActorEmployee(request, env, db);
-  const authorized = employee || await checkCronSecret(request, db);
-  if (!authorized) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  const auth = await authorizeRequest(request, env, db);
+  if (!auth.authorized) {
+    return jsonResponse(
+      { error: auth.error || 'Unauthorized' },
+      auth.status || 401,
+      request,
+      env,
+    );
+  }
   const result = await processQueue(db, env);
   return jsonResponse(result, result.success === false ? 500 : 200, request, env);
 }

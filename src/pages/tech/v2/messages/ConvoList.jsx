@@ -44,13 +44,16 @@ function IconSearch(props) {
 function IconCheckAll(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="9 11 12 14 22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>);
 }
+function IconCompose(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" /></svg>);
+}
 
 // B2: full status filter set (counts from the RPC's status_counts).
 const FILTERS = ['all', 'unread', 'needs_response', 'waiting_on_client', 'resolved'];
 
 export default function ConvoList({
   conversations, statusCounts, isColdStart, error, onOpen, onRefresh,
-  filter, onFilterChange, search, onSearchChange, onSetUnread, onMarkAllRead,
+  filter, onFilterChange, search, onSearchChange, onSetUnread, onMarkAllRead, onNewConversation,
 }) {
   const { t } = useTranslation('msgs');
   const unreadCount = statusCounts?.unread || 0;
@@ -61,12 +64,22 @@ export default function ConvoList({
       <div className="tv2-msgs-list__header">
         <div className="tv2-msgs-list__titlerow">
           <div className="tv2-msgs-list__title">{t('list.title')}</div>
-          {unreadCount > 0 && (
-            <button type="button" className="tv2-msgs-readall" onClick={onMarkAllRead} aria-label={t('list.markAllRead')}>
-              <IconCheckAll width={18} height={18} />
-              <span>{t('list.markAllRead')}</span>
+          <div className="tv2-msgs-list__actions">
+            {unreadCount > 0 && (
+              <button type="button" className="tv2-msgs-readall" onClick={onMarkAllRead} aria-label={t('list.markAllRead')}>
+                <IconCheckAll width={18} height={18} />
+                <span>{t('list.markAllRead')}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="tv2-msgs-new-btn"
+              onClick={onNewConversation}
+              aria-label={t('newConversation.title')}
+            >
+              <IconCompose width={21} height={21} />
             </button>
-          )}
+          </div>
         </div>
         <div className="tv2-msgs-search">
           <IconSearch className="tv2-msgs-search__icon" width={16} height={16} aria-hidden="true" />

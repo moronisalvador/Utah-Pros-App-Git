@@ -38,7 +38,10 @@
 import React, { useRef, useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/contexts/AuthContext';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
+import { getServiceConsentUiState } from '@/components/conversations/messageUtils';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
@@ -50,6 +53,7 @@ import { useThread } from './useThread';
 import { groupMessagesByDay, isMultiConversation, recipientCount } from './msgsSelectors';
 import { dayLabel } from './msgDateUtils';
 import Composer from './Composer';
+import { isServiceSmsBlocked, useServiceSmsConsent } from './useServiceSmsConsent';
 
 function IconBack(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="15 18 9 12 15 6" /></svg>);
@@ -71,10 +75,45 @@ function cleanName(s) { return (s || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); 
 
 export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, scrollRef }) {
   const { t } = useTranslation('msgs');
+  const { employee } = useAuth();
+  const [consentPromptOpen, setConsentPromptOpen] = useState(false);
+  const isMulti = isMultiConversation(conv);
+  const contact = useMemo(() => {
+    const parts = conv?.conversation_participants || [];
+    const p = parts.find((x) => x.role === 'primary') || parts[0];
+    return p?.contacts || null;
+  }, [conv]);
+  const { status: consentStatus, refresh: refreshConsent, recordConsent } = useServiceSmsConsent(
+    contact,
+    { enabled: !isMulti },
+  );
+  const consentUi = getServiceConsentUiState({ status: consentStatus, contact });
+  const canAttestPriorConsent = !isMulti
+    && (employee?.role === 'admin' || employee?.role === 'office')
+    && employee?.is_external !== true;
+  const smsBlocked = isServiceSmsBlocked({
+    status: consentStatus,
+    isMulti,
+    dnd: !!contact?.dnd,
+  });
+  const localizedSuppressionTitle = consentUi.suppressionKey
+    ? t(`consent.suppression.${consentUi.suppressionKey}.title`)
+    : null;
+  const localizedSuppressionDetail = consentUi.suppressionKey
+    ? t(`consent.suppression.${consentUi.suppressionKey}.detail`)
+    : null;
+  const consentBlockMessage = consentStatus.loading
+    ? t('consent.checking')
+    : consentStatus.error
+      ? t('consent.unavailable')
+      : localizedSuppressionTitle || t('consent.missing');
+  const handleConsentRequired = useCallback(() => {
+    refreshConsent();
+  }, [refreshConsent]);
   const {
     messages, isColdStart, hasMore, loadingEarlier, loadEarlier, error, refetch,
     sending, send, retry,
-  } = useThread(convId, { active });
+  } = useThread(convId, { active, onConsentRequired: handleConsentRequired });
 
   const [atBottom, setAtBottom] = useState(true);
   const [newInThread, setNewInThread] = useState(0);
@@ -128,12 +167,6 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  const isMulti = isMultiConversation(conv);
-  const contact = useMemo(() => {
-    const parts = conv?.conversation_participants || [];
-    const p = parts.find((x) => x.role === 'primary') || parts[0];
-    return p?.contacts || null;
-  }, [conv]);
   const contactPhone = contact?.phone || conv?.conversation_participants?.[0]?.phone || '';
 
   const items = useMemo(() => groupMessagesByDay(messages), [messages]);
@@ -348,13 +381,45 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
             {t('thread.newCount', { count: newInThread })}
           </button>
         )}
+        {!isMulti && !contact?.dnd && consentStatus.allowed !== true && (
+          <div className="tv2-msgs-consent-banner" role={consentStatus.error ? 'alert' : 'status'}>
+            <div>
+              <strong>{consentBlockMessage}</strong>
+              <span>
+                {consentStatus.error
+                  ? t('consent.tryAgain')
+                  : localizedSuppressionDetail || t('consent.missingDetail')}
+              </span>
+            </div>
+            {consentStatus.error ? (
+              <button type="button" onClick={refreshConsent}>{t('states.retry')}</button>
+            ) : consentUi.canAttest && canAttestPriorConsent ? (
+              <button type="button" onClick={() => setConsentPromptOpen(true)}>
+                {t('consent.record')}
+              </button>
+            ) : consentUi.canAttest && !consentStatus.loading ? (
+              <span>{t('consent.officeOnly')}</span>
+            ) : null}
+          </div>
+        )}
         <Composer
           convId={convId}
           contact={contact}
           onSend={send}
           sending={sending}
+          smsBlocked={smsBlocked}
         />
       </div>
+      <SmsConsentAttestationModal
+        open={consentPromptOpen}
+        contactId={contact?.id || null}
+        contactName={contact?.name || conv?.title || ''}
+        onClose={() => setConsentPromptOpen(false)}
+        onRecorded={(record) => {
+          recordConsent(record);
+          setConsentPromptOpen(false);
+        }}
+      />
     </div>
   );
 }

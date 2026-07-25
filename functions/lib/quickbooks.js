@@ -410,6 +410,83 @@ export async function sendInvoice(env, qboInvoiceId, sendTo) {
   return data.Invoice;
 }
 
+// ── Attachments (Attachable API) ──────────────────────────────────────────────
+// Attach a file to a QBO Invoice or Estimate. With IncludeOnSend=true the file
+// rides along on the email QuickBooks sends the customer AND shows on the txn in
+// QuickBooks. Uses the accounting API host (apiBase) + the same OAuth bearer as
+// qboFetch, but the "upload" endpoint is multipart/form-data with two named parts:
+//   file_metadata_01 (application/json) — the Attachable + its AttachableRef link
+//   file_content_01  (the file's MIME)  — the raw bytes
+
+// Pure builder (exported for tests): the Attachable metadata JSON that links a file
+// to exactly one transaction, optionally included when QBO emails that transaction.
+export function buildAttachableMetadata({ entityType, qboEntityId, fileName, contentType, includeOnSend = true } = {}) {
+  const type = entityType === 'estimate' ? 'Estimate' : 'Invoice';
+  return {
+    FileName: fileName,
+    ...(contentType ? { ContentType: contentType } : {}),
+    AttachableRef: [{
+      EntityRef: { type, value: String(qboEntityId) },
+      IncludeOnSend: !!includeOnSend,
+    }],
+  };
+}
+
+// Upload `bytes` and link it to the invoice/estimate. Returns the created Attachable
+// ({ Id, FileName, ... }). Throws with e.intuitTid on any QBO fault.
+export async function uploadAttachable(env, { entityType, qboEntityId, bytes, fileName, contentType, includeOnSend = true } = {}) {
+  const { accessToken, realmId, environment } = await getValidAccessToken(env);
+  const metadata = buildAttachableMetadata({ entityType, qboEntityId, fileName, contentType, includeOnSend });
+
+  // FormData sets the multipart boundary itself — do NOT set Content-Type here.
+  const form = new FormData();
+  form.append('file_metadata_01', new Blob([JSON.stringify(metadata)], { type: 'application/json' }), 'metadata.json');
+  form.append('file_content_01', new Blob([bytes], { type: contentType || 'application/octet-stream' }), fileName);
+
+  // Multi-MB upload → a longer explicit timeout than the 15s default (workers-standard.md §2).
+  const res = await fetchWithTimeout(`${apiBase(environment)}/v3/company/${realmId}/upload?minorversion=${MINOR_VERSION}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    body: form,
+  }, 30000);
+  const tid = res.headers.get('intuit_tid') || null;
+  const data = await res.json().catch(() => ({}));
+  // The upload endpoint returns a per-file response array; a file-level Fault can
+  // ride on a 200, so check both the top-level and per-entry Fault.
+  const entry = data?.AttachableResponse?.[0];
+  const fault = entry?.Fault?.Error?.[0] || data?.Fault?.Error?.[0];
+  if (!res.ok || fault || !entry?.Attachable?.Id) {
+    const e = new Error(fault ? `${fault.Message}${fault.Detail ? ' — ' + fault.Detail : ''}` : `QBO attach failed (${res.status})`);
+    e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
+    throw e;
+  }
+  return entry.Attachable;
+}
+
+export async function getAttachable(env, attachableId) {
+  const res = await qboFetch(env, `/attachable/${attachableId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) return null;
+  const data = await res.json().catch(() => ({}));
+  return data?.Attachable || null;
+}
+
+// Remove an attachment from QuickBooks (needs the current SyncToken → GET first).
+// A missing attachable is treated as already-gone, not an error.
+export async function deleteAttachable(env, attachableId) {
+  const existing = await getAttachable(env, attachableId);
+  if (!existing) return { deleted: false, missing: true };
+  const res = await qboFetch(env, `/attachable?operation=delete&minorversion=${MINOR_VERSION}`, {
+    method: 'POST',
+    body: JSON.stringify({ Id: String(existing.Id), SyncToken: String(existing.SyncToken ?? '0') }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const fault = data?.Fault?.Error?.[0];
+    throw new Error(fault ? `${fault.Message}` : `QBO attachable delete ${res.status}`);
+  }
+  return { deleted: true };
+}
+
 // ── Estimates (Phase 2 — mirrors Invoices) ────────────────────────────────────
 // QBO Estimates use the same line shape as Invoices (SalesItemLineDetail + ItemRef
 // + ClassRef). An Estimate can later be linked to an Invoice via the Invoice's

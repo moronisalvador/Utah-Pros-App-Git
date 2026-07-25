@@ -19,7 +19,9 @@ describe('buildMessagingSetupStatus', () => {
         checked: true,
         lastTextWebhookAt: '2026-07-23T20:00:00.000Z',
         pendingEvents: 2,
+        failedEvents: 7,
         ambiguousAttempts: 1,
+        deadLetterNotifications: 3,
       },
     });
 
@@ -37,8 +39,35 @@ describe('buildMessagingSetupStatus', () => {
       { code: 'CALLRAIL_SENDER_DISCOVERY_REQUIRED', scope: 'verification' },
     ]);
     expect(status.capabilities.cross_channel_fallback).toBe(false);
+    expect(status.health).toEqual(expect.objectContaining({
+      pending_events: 2,
+      failed_events: 7,
+      dead_letter_notifications: 3,
+    }));
     expect(JSON.stringify(status)).not.toContain('write-only-secret');
     expect(JSON.stringify(status)).not.toContain('+18015550100');
+  });
+
+  it('reports terminal history without treating it as an activation backlog', () => {
+    const status = buildMessagingSetupStatus(READY_ENV, {
+      credentialConfigured: true,
+      accountResolved: true,
+      health: {
+        checked: true,
+        failedEvents: 7,
+        deadLetterNotifications: 3,
+      },
+    });
+
+    expect(status.health).toEqual(expect.objectContaining({
+      pending_events: 0,
+      failed_events: 7,
+      pending_notifications: 0,
+      dead_letter_notifications: 3,
+    }));
+    expect(status.blockers).toEqual([
+      { code: 'CALLRAIL_SENDER_DISCOVERY_REQUIRED', scope: 'verification' },
+    ]);
   });
 
   it('fails closed for missing and unknown modes with deterministic blockers', () => {

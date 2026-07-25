@@ -170,14 +170,17 @@ and browser roles have no ledger grants. The migration ledger records the founda
 `20260723215926` and its two advisor-driven outbox FK indexes at `20260723220207`.
 Outbound provider selection remains a separate Cloudflare owner gate and is disabled by default.
 
-Outbound MMS needs no new table or migration. Its canonical `messages.media_urls` value is an array
-of opaque `upr-storage://message-attachments/outbound/...` references. MIME type and byte size are
-retained by the private Supabase Storage object metadata and revalidated from the object response
-and bytes before each provider submission. Provider-fetch signed URLs are ephemeral transport
-artifacts and are never persisted. Sent, failed, and ambiguous message objects remain durable for
-inbox history and retry. This repository slice intentionally retains abandoned private uploads:
-safe cleanup needs a durable draft/claim model so deletion cannot race a send or erase message
-history.
+Outbound MMS needs no new table. Its logical `messages.media_urls` value is an array of opaque
+`upr-storage://message-attachments/outbound/...` references. The frozen message writer serializes
+that array once before inserting it into the JSONB column, so historical canonical rows have JSONB
+type `string`; the newer send-attempt ledger stores the equivalent value as a JSONB array.
+Confirmation normalizes either representation before applying the same non-empty private-reference
+checks. MIME type and byte size are retained by the private Supabase Storage object metadata and
+revalidated from the object response and bytes before each provider submission. Provider-fetch
+signed URLs are ephemeral transport artifacts and are never persisted. Sent, failed, and ambiguous
+message objects remain durable for inbox history and retry. This repository slice intentionally
+retains abandoned private uploads: safe cleanup needs a durable draft/claim model so deletion cannot
+race a send or erase message history.
 
 Retained CallRail provider events use the existing service-only `message_provider_events` table.
 Migration source `20260724002500_callrail_event_recovery_scheduler.sql` adds no table, column,
@@ -258,3 +261,75 @@ topology or a cross-domain data relationship changes.
 default-OFF `feature:encircle_managed_credentials` flag. The secret table retains zero RLS policies;
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
+
+## Pending mobile messaging and CallRail reconciliation hardening
+
+`20260724173000_harden_find_or_create_conversation.sql` changes no table shape. It preserves
+`find_or_create_conversation(uuid) -> jsonb`, reuses only an active non-archived direct thread with
+no different contact participant, keeps the advisory transaction lock, and changes the RPC to
+`SECURITY INVOKER` with an in-function service-role assertion plus service-role-only execution.
+
+`20260724174000_fix_callrail_outbound_phone_identity.sql` also changes no table shape or RPC
+signature. It preserves the service-role-only, invoker-mode
+`project_callrail_outbound_event(uuid,uuid)` contract while treating validated NANP ten-digit and
+`+1` E.164 recipients as the same identity. Non-NANP addresses still require exact equality, and
+body, provider-message, provider-conversation, state, and canonical-message checks remain binding.
+Neither migration deletes or rewrites retained provider events.
+
+`20260724193628_bind_callrail_outbound_mms_identity.sql` preserves that signature and adds a
+defense-in-depth confirmation boundary: the provider event channel must equal the attempt channel,
+and an MMS attempt must contain only non-empty private
+`upr-storage://message-attachments/outbound/` references. A mismatch returns a non-success outcome
+using the already-deployed `outbound_unmatched` contract before attempt, message, or provider-event
+state changes. The worker enforces the same boundary before invoking the RPC. It is live under
+ledger version `20260724195329`.
+
+`20260724195802_accept_frozen_callrail_mms_media_shape.sql` keeps that contract and ACL while
+normalizing the historical canonical JSON-string representation before validation. Invalid JSON,
+non-arrays, empty arrays, non-string items, public/non-UPR paths, empty suffixes, traversal and
+backslashes all remain fail-closed. It is live under ledger version `20260724200321`; rollback-only
+live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
+remain unchanged with `outbound_unmatched`.
+
+## QuickBooks Online attachments tracking (2026-07-24)
+
+`20260724180000_qbo_attachments.sql` (**live under ledger version `20260724190829`**) adds one additive table,
+`qbo_attachments`, that records files pushed to QuickBooks as Attachables for an invoice or estimate.
+It stores metadata only — `entity_type`, `invoice_id`/`estimate_id` (exactly one, CHECK-enforced,
+`ON DELETE CASCADE`), the opaque `qbo_attachable_id` (UNIQUE), `file_name`, `content_type`,
+`file_size`, `include_on_send`, a UNIQUE `idempotency_key`, `created_by`, `created_at` — never the
+file bytes (those live only in QuickBooks). RLS is enabled with a single SELECT policy scoped to
+active `admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` + an `employees` role check);
+there is deliberately no INSERT/UPDATE/DELETE policy — the `qbo-attach` worker writes via the
+service role. Rollback: `DROP TABLE IF EXISTS public.qbo_attachments;`.
+
+`20260724180100_qbo_payments_sync_cron.sql` (**live under ledger version `20260724190848`**) changes
+no table shape. It
+seeds a non-secret worker-URL config row, defines the locked-down `qbo_payments_sync_poll()`
+SECURITY DEFINER helper (REVOKEd from every role; exact URL allowlist; reads the existing
+`integration_config.qbo_webhook_secret`), and schedules it hourly via pg_cron to activate the
+QBO→UPR payment-sync safety-net poller (`/api/qbo-payments-sync`). Rollback: `cron.unschedule` +
+`DROP FUNCTION` + delete the config row.
+
+Its `upr_qbo_payments_sync_hourly` job is **running in production now** (`17 * * * *`), reaching the
+already-deployed `https://utahpros.app/api/qbo-payments-sync` worker and returning HTTP 200. Both
+migrations applied ahead of their own source reaching `dev`; that provenance gap is what the
+2026-07-24 reconciliation closed. See `scripts/migration-provenance-manifest.json`.
+
+`20260724200000_payments_qbo_dedup_index.sql` is **live under ledger version `20260724230933`**
+(applied 2026-07-24 under owner authorization). It adds the partial UNIQUE index
+`payments_qbo_payment_invoice_uniq` on `(qbo_payment_id, invoice_id) WHERE qbo_payment_id IS NOT
+NULL`, so one QuickBooks payment cannot be recorded twice against the same invoice while still
+permitting the sanctioned rule-11 multi-invoice split. It mirrors the pre-existing
+`payments_stripe_charge_uniq` precedent on the same table.
+
+Precondition verified before applying: **0** duplicate `(qbo_payment_id, invoice_id)` groups across
+86 payment rows, so the index built cleanly. Verified after: present, `indisvalid AND indisunique`,
+row count unchanged at 86 (no data change). It is written without `CONCURRENTLY` and takes an
+exclusive lock — on an 86-row table that is a sub-millisecond window, but the same DDL against a
+large table would not be safe to apply casually. Rollback:
+`DROP INDEX IF EXISTS public.payments_qbo_payment_invoice_uniq;`.
+
+Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with no constraint
+behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
+poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.

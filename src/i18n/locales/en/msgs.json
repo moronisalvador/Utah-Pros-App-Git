@@ -13,6 +13,17 @@
     "markUnread": "Mark unread",
     "rowActions": "Conversation actions"
   },
+  "newConversation": {
+    "title": "New conversation",
+    "searchPlaceholder": "Search contacts",
+    "typeHint": "Type at least 2 characters to find a contact",
+    "loading": "Loading contacts…",
+    "loadError": "Couldn't load contacts",
+    "startError": "Couldn't start conversation",
+    "empty": "No contacts found",
+    "unnamed": "Unnamed contact",
+    "starting": "Opening…"
+  },
   "filters": {
     "all": "All",
     "unread": "Unread",
@@ -41,6 +52,57 @@
     "viewJob": "View job",
     "enableDnd": "Turn on Do Not Disturb",
     "dndOnState": "Do Not Disturb is on"
+  },
+  "consent": {
+    "checking": "Checking SMS permission…",
+    "unavailable": "SMS permission status is unavailable",
+    "tryAgain": "Try again before sending a text.",
+    "missing": "SMS permission is not recorded",
+    "missingDetail": "Verify prior service-message permission before texting this contact.",
+    "record": "Record verified permission",
+    "officeOnly": "Office or admin approval required",
+    "suppression": {
+      "pendingStop": {
+        "title": "SMS STOP request is still processing",
+        "detail": "Wait for the inbound opt-out to finish processing. Prior permission cannot override STOP."
+      },
+      "optedOut": {
+        "title": "This phone number opted out of SMS",
+        "detail": "They must text START before staff can send another message."
+      },
+      "dnd": {
+        "title": "SMS is blocked by Do Not Disturb",
+        "detail": "Another contact with this phone number has Do Not Disturb enabled."
+      },
+      "unavailable": {
+        "title": "SMS permission cannot be recorded",
+        "detail": "Confirm the contact and phone number before trying again."
+      }
+    }
+  },
+  "consentAttestation": {
+    "title": "Record verified SMS permission",
+    "cancel": "Cancel",
+    "record": "Record permission",
+    "recording": "Recording…",
+    "recorded": "SMS permission recorded",
+    "recordError": "Could not record SMS permission",
+    "intro": "Record this only after verifying {{contact}} gave Utah Pros permission to send service-related texts. Contact existence alone is not permission.",
+    "thisContact": "this contact",
+    "methodLabel": "How was permission provided?",
+    "methodPlaceholder": "Select a source",
+    "methods": {
+      "verbalPermission": "Verbal permission on a call",
+      "signedWorkAuthorization": "Signed work authorization",
+      "otherWrittenPermission": "Other written permission",
+      "customerRequestedTexts": "Customer asked us to text",
+      "otherVerifiedPermission": "Other verified permission"
+    },
+    "dateLabel": "When was permission obtained?",
+    "evidenceLabel": "Evidence note",
+    "evidencePlaceholder": "Example: Recorded call at 2:14 PM, or authorization stored in Job Documents",
+    "evidenceHint": "At least 10 characters ({{count}}/500). The source, consent date, your staff identity, trusted request IP, and server timestamp will be kept in consent history.",
+    "confirm": "I verified this person gave Utah Pros Restoration permission to send service-related texts about their requested work, and has not revoked it. This does not clear STOP or Do Not Disturb."
   },
   "composer": {
     "placeholder": "Message",

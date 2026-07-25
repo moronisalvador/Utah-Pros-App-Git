@@ -35,14 +35,25 @@ async function requireActiveInternalAdmin(request, env, db) {
 }
 
 async function loadHealth(db) {
-  const [lastEvents, pendingEvents, attempts, notifications] = await Promise.all([
+  const [
+    lastEvents,
+    pendingEvents,
+    failedEvents,
+    attempts,
+    notifications,
+    deadLetterNotifications,
+  ] = await Promise.all([
     db.select(
       'message_provider_events',
       'provider=eq.callrail&select=received_at&order=received_at.desc&limit=1',
     ),
     db.select(
       'message_provider_events',
-      'provider=eq.callrail&processing_state=neq.processed&select=id&limit=101',
+      'provider=eq.callrail&processing_state=in.(received,claimed,retryable)&select=id&limit=101',
+    ),
+    db.select(
+      'message_provider_events',
+      'provider=eq.callrail&processing_state=eq.failed&select=id&limit=101',
     ),
     db.select(
       'message_send_attempts',
@@ -50,7 +61,11 @@ async function loadHealth(db) {
     ),
     db.select(
       'message_notification_outbox',
-      'delivery_state=in.(pending,processing,retryable,dead_letter)&select=id&limit=101',
+      'delivery_state=in.(pending,processing,retryable)&select=id&limit=101',
+    ),
+    db.select(
+      'message_notification_outbox',
+      'delivery_state=eq.dead_letter&select=id&limit=101',
     ),
   ]);
   return {
@@ -58,8 +73,10 @@ async function loadHealth(db) {
     scope: 'shared_database',
     lastTextWebhookAt: lastEvents?.[0]?.received_at || null,
     pendingEvents: (pendingEvents || []).length,
+    failedEvents: (failedEvents || []).length,
     ambiguousAttempts: (attempts || []).length,
     pendingNotifications: (notifications || []).length,
+    deadLetterNotifications: (deadLetterNotifications || []).length,
   };
 }
 

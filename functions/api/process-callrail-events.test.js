@@ -1,6 +1,26 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: process-callrail-events.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves retained CallRail texts and images are recovered safely. It checks
+ *   private inbound image capture, outbound confirmation, retries, and access.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  process-callrail-events.js and its mocked messaging helpers
+ *   Data:      reads  → integration_config, message_provider_events
+ *              writes → message_provider_events, worker_runs
+ *
+ * NOTES / GOTCHAS:
+ *   - The tests never contact CallRail or send a message.
+ * ════════════════════════════════════════════════
+ */
+
 import { describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ db: null, process: null }));
+const h = vi.hoisted(() => ({ db: null, process: null, ingestMms: null }));
 vi.mock('../lib/supabase.js', () => ({ supabase: () => h.db }));
 vi.mock('../lib/callrail-message-processor.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -10,7 +30,7 @@ vi.mock('../lib/callrail-message-processor.js', async (importOriginal) => {
   };
 });
 vi.mock('../lib/callrail-mms.js', () => ({
-  ingestVerifiedCallrailEventMms: vi.fn(),
+  ingestVerifiedCallrailEventMms: (...args) => h.ingestMms(...args),
 }));
 vi.mock('../lib/worker-runs.js', () => ({
   recordWorkerRun: vi.fn(async () => undefined),
@@ -95,6 +115,150 @@ describe('CallRail event recovery worker', () => {
       message_id: 'message-1',
     });
     expect(h.db.selectedTables).not.toContain('notification_types');
+  });
+
+  it('confirms retained outbound MMS without downloading UPR-owned media', async () => {
+    h.db = db({
+      rows: [{
+        ...ROW,
+        direction: 'outbound',
+        message_type: 'mms',
+        owned_media: [],
+      }],
+    });
+    h.ingestMms = vi.fn();
+    h.process = vi.fn(async () => ({
+      outcome: 'outbound_confirmed',
+      messageId: 'message-1',
+      attemptId: 'attempt-1',
+    }));
+
+    const result = await processCallrailEventQueue(h.db, {
+      MESSAGING_SCHEMA_MODE: 'foundation',
+      CALLRAIL_COMPANY_ID: 'COM-test',
+    });
+
+    expect(result).toEqual({ success: true, processed: 1, failed: 0, skipped: 0 });
+    expect(h.ingestMms).not.toHaveBeenCalled();
+    expect(h.process).toHaveBeenCalledWith({
+      db: h.db,
+      event: expect.objectContaining({
+        direction: 'outbound',
+        messageType: 'mms',
+      }),
+    });
+  });
+
+  it('stores inbound MMS privately before canonical projection', async () => {
+    h.db = db({
+      rows: [{
+        ...ROW,
+        message_type: 'mms',
+        owned_media: [],
+      }],
+    });
+    const media = [{
+      storageRef: 'upr-storage://message-attachments/callrail/photo.jpg',
+    }];
+    h.ingestMms = vi.fn(async () => ({ media }));
+    h.process = vi.fn(async () => ({
+      outcome: 'inbound_persisted',
+      messageId: 'message-1',
+    }));
+
+    const result = await processCallrailEventQueue(h.db, {
+      MESSAGING_SCHEMA_MODE: 'foundation',
+      CALLRAIL_COMPANY_ID: 'COM-test',
+    });
+
+    expect(result).toEqual({ success: true, processed: 1, failed: 0, skipped: 0 });
+    expect(h.ingestMms).toHaveBeenCalledOnce();
+    expect(h.db.update).toHaveBeenCalledWith(
+      'message_provider_events',
+      'id=eq.event-1',
+      expect.objectContaining({ owned_media: media }),
+    );
+    expect(h.process).toHaveBeenCalledWith({
+      db: h.db,
+      event: expect.objectContaining({ ownedMedia: media }),
+    });
+  });
+
+  it('retains an inbound MMS when private media capture temporarily fails', async () => {
+    h.db = db({
+      rows: [{
+        ...ROW,
+        message_type: 'mms',
+        owned_media: [],
+        processing_attempts: 0,
+      }],
+    });
+    h.ingestMms = vi.fn(async () => {
+      throw Object.assign(new Error('provider media unavailable'), {
+        code: 'CALLRAIL_MMS_DOWNLOAD_FAILED',
+        retryable: true,
+      });
+    });
+    h.process = vi.fn(async ({ consentOnly }) => ({
+      outcome: consentOnly ? 'inbound_consent_checked' : 'unexpected',
+    }));
+
+    const result = await processCallrailEventQueue(h.db, {
+      MESSAGING_SCHEMA_MODE: 'foundation',
+      CALLRAIL_COMPANY_ID: 'COM-test',
+    });
+
+    expect(result).toMatchObject({ success: false, processed: 0, failed: 1 });
+    expect(h.process).toHaveBeenCalledTimes(1);
+    expect(h.process).toHaveBeenCalledWith({
+      db: h.db,
+      event: expect.objectContaining({ messageType: 'mms', ownedMedia: [] }),
+      consentOnly: true,
+    });
+    expect(h.db.updates.at(-1).data).toMatchObject({
+      processing_state: 'retryable',
+      outcome: 'processing_deferred',
+      error_code: 'CALLRAIL_MMS_DOWNLOAD_FAILED',
+    });
+  });
+
+  it('blocks an inbound MMS after a non-retryable private media rejection', async () => {
+    h.db = db({
+      rows: [{
+        ...ROW,
+        message_type: 'mms',
+        owned_media: [],
+        processing_attempts: 0,
+      }],
+    });
+    h.ingestMms = vi.fn(async () => {
+      throw Object.assign(new Error('provider media identity rejected'), {
+        code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+        retryable: false,
+      });
+    });
+    h.process = vi.fn(async ({ consentOnly }) => ({
+      outcome: consentOnly ? 'inbound_consent_checked' : 'unexpected',
+    }));
+
+    const result = await processCallrailEventQueue(h.db, {
+      MESSAGING_SCHEMA_MODE: 'foundation',
+      CALLRAIL_COMPANY_ID: 'COM-test',
+    });
+
+    expect(result).toMatchObject({ success: false, processed: 0, failed: 1 });
+    expect(h.process).toHaveBeenCalledTimes(1);
+    expect(h.process).toHaveBeenCalledWith({
+      db: h.db,
+      event: expect.objectContaining({ messageType: 'mms', ownedMedia: [] }),
+      consentOnly: true,
+    });
+    expect(h.db.updates.at(-1).data).toMatchObject({
+      processing_state: 'failed',
+      next_attempt_at: null,
+      outcome: 'processing_blocked',
+      error_code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+    });
   });
 
   it('skips an event when the atomic claim fence loses a race', async () => {

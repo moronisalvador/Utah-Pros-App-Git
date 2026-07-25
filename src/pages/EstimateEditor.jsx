@@ -46,6 +46,7 @@ import ActionMenu from '@/components/collections/ActionMenu';
 import { IconOpenPage } from '@/components/Icons';
 import { CollCard, GhostButton, PrimaryButton, Pill, MapPin, Skel } from '@/components/collections/collKit';
 import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/collections/collTokens';
+import QboAttachments from '@/components/collections/QboAttachments';
 import usePageTransition from '@/hooks/usePageTransition';
 
 const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
@@ -487,6 +488,8 @@ export default function EstimateEditor() {
           </CollCard>
 
           {editable && <div className="est-no-print" style={{ fontSize: 11.5, color: C.faint }}>Line edits save as you type. Use <b>Save</b> (top) to record the estimate in QuickBooks{synced ? <>, <b>Send</b> to email it, or <b>Convert to invoice</b> once it’s accepted</> : ''}.</div>}
+
+          {canEdit && <QboAttachments entityType="estimate" entityId={est.id} synced={synced} canEdit={canEdit} />}
         </div>
       </div>
 

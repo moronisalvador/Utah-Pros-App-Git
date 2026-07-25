@@ -51,6 +51,29 @@ intent. Resume recovery uses `useResumeRefetch` and merges the refreshed newest 
 loaded history instead of replacing it. The shared anchor/merge policy is in
 `src/components/conversations/threadScroll.js`; no send, webhook, consent, or provider contract changed.
 
+## CallRail outbound MMS projection hardening (2026-07-24)
+
+Outbound `message.sent` MMS events do not download UPR's own attachment back from CallRail. Both
+the immediate webhook and retained-event worker require private media capture only for inbound MMS;
+outbound confirmation instead matches the exact send-attempt ledger entry. The worker requires the
+event channel to equal `requested_channel`, and MMS attempts must contain only non-empty
+`upr-storage://message-attachments/outbound/` references.
+
+Migration `20260724193628_bind_callrail_outbound_mms_identity.sql` preserves
+`project_callrail_outbound_event(uuid,uuid)` and enforces the same checks transactionally before
+any attempt, message, or event state update. A mismatch returns the existing
+`outbound_unmatched` outcome for compatibility with both deployed and updated workers. Its exact
+prior-body rollback is
+`supabase/rollbacks/20260724193628_bind_callrail_outbound_mms_identity.rollback.sql`. It is live as
+ledger version `20260724195329_bind_callrail_outbound_mms_identity`. The compatibility follow-up
+`20260724195802_accept_frozen_callrail_mms_media_shape.sql` accepts both the frozen canonical
+JSON-string media shape and the newer send-attempt array shape without weakening private-reference
+validation; it is live as ledger version
+`20260724200321_accept_frozen_callrail_mms_media_shape`. Post-apply rollback-only tests proved a
+valid historical JSON-string row confirms through the attempt-less fallback, malformed JSON stays
+`outbound_unmatched` with no state mutation, and channel/non-private attempt mismatches also stay
+unchanged. Anonymous and authenticated callers remain denied; only `service_role` can execute.
+
 ---
 
 ## Deployment & Release Workflow
@@ -811,7 +834,7 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is now **authenticated** (scheduler `x-webhook-secret` via `checkCronSecret`, or a logged-in employee — mirrors `run-automations`; the `scheduled()` cron handler stays auth-free). Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. Writes a `worker_runs` row. `messages` insert carries `channel:'sms'`.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is **authenticated** by scheduler `x-webhook-secret` or an active, non-external admin/office/project-manager session; the `scheduled()` cron handler stays platform-authenticated. Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. **Central-gate repair (Jul 24 2026):** after the worker's defense-in-depth consent check, every scheduled SMS/MMS now calls `sendAutomatedMessage()` instead of Twilio directly, so the global `sms_sending_enabled` kill-switch, global opt-in/DND, recipient-local quiet hours, retry policy, status callback and worker-owned thread row cannot be bypassed. `sms_disabled`/`quiet_hours` release the claim and leave the row pending; durable refusal remains terminal. Provider outcomes marked ambiguous are submitted only once and become terminal reconciliation cases instead of automatic retries. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
@@ -2734,6 +2757,14 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
 - **Setup:** Intuit Developer → app → Webhooks → endpoint `https://utahpros.app/api/qbo-webhook`, subscribe **Payment**, copy the Verifier Token → Cloudflare `QBO_WEBHOOK_VERIFIER_TOKEN` (Production + Preview).
+
+**QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` remains **unapplied** and owner-gated.
+
+**Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
+- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])`; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed).
+- **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
+- **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
+- **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
 
 ---
 
@@ -4965,7 +4996,10 @@ demotion adjudication all await owner rulings.
   `authenticated, service_role` only, verified live before/after
   (`.claude/rules/crm-wave-ownership.md` §1 lists this RPC as a Foundation-owned frozen REPLACE —
   this was an owner-directed production fix, not an in-wave session, and stays backward-compatible
-  per that manifest's own REPLACE rule).
+  per that manifest's own REPLACE rule). **⚠️ This bullet describes only the FIRST few arms — the
+  live function has since grown to 24 arms via several more body-only `CREATE OR REPLACE`s. See the
+  dated "Contact-activity timeline — full current shape (2026-07-24)" addendum below for the
+  authoritative live arm list, the `crm_lead_notes` note arm, and the durable all-arms guard.**
 
 **Phase 4a follow-up — manual lead entry** (`supabase/migrations/20260701_crm_manual_lead.sql`):
 the Leads board originally only populated from CallRail ingestion, so with CallRail unconnected
@@ -5149,6 +5183,26 @@ automated-send.js   — sendAutomatedMessage(channel, contactId, templateKey, va
                        + the load-bearing `sms_disabled`/`quiet_hours` strings unchanged; new
                        `sid`/`error`/`permanent` are additive; backward-compat tests assert Phase 8's
                        `planStepOutcome` + Phase 5's `planRunOutcome` still HOLD/skip/send correctly.
+                       **Scheduled-send compatibility (Jul 24 2026):** optional additive fields let
+                       the same gate preserve an already-selected destination, conversation, staff
+                       sender, stored body and MMS media. The provider receives the prefixed body,
+                       the existing thread receives the unprefixed body and `sms`/`mms` channel, and
+                       the additive `messageId` lets `process-scheduled` close its claim without a
+                       second `messages` insert. The frozen `{ok,skipped,reason}` vocabulary and
+                       load-bearing defer reasons are unchanged.
+                       **Ambiguous-outcome closure (Jul 24 2026):** scheduled rows fail for
+                       reconciliation, CRM automation runs fail at the same action, and sequence
+                       enrollments pause at the same step with a required reconciliation event.
+                       Fixed automations suppress later runs only after their terminal event
+                       persists; automated SMS remains activation-blocked until a pre-send
+                       reservation closes that post-send persistence gap.
+                       **CallRail inbound-media host correction (Jul 24 2026):** signed webhooks
+                       currently emit an `app.callrail.com/msg/a/...` media path even though API-key
+                       retrieval belongs on `api.callrail.com/v3/a/...`. After exact numeric/masked
+                       account alias, message and index validation, UPR prefers the current masked
+                       `ACC...` identity and normalizes only that proven identity to the API host. It
+                       never presents the API credential to the app host or relies on a numeric
+                       account redirect.
 email.js             — sendEmail() gained an optional `headers` param (passed through to Resend's own
                        `headers` object untouched) — the only change to this pre-existing
                        transactional-only file; every other caller (esign, demo-sheet, billing-2fa,
@@ -5989,6 +6043,25 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
   `stages` prop. Zero new CSS (all four reuse existing `crm-panel-*`/`crm-task-*`/`crm-input` classes)
   and zero schema changes — `form_data`, `notes`, `crm_tasks`, and `lead_stage_history` all already
   existed with `authenticated`-scoped policies from earlier CRM-wave phases.
+  - **UPDATE (2026-07-24) — the single Notes field became an append-only notes LOG** (migration
+    `20260724180000_crm_lead_notes.sql`; owner-directed standalone). The overwrite-on-save `notes`
+    textarea/`onLeadPatched` model is retired: staff run several follow-ups per lead and need a fresh,
+    dated, attributed note for each. New table **`crm_lead_notes`** (`id, lead_id, org_id, contact_id,
+    body, created_by, created_at`; RLS-enabled with NO browser policy — RPC-only access,
+    `REVOKE ALL FROM PUBLIC, anon`). New RPCs (both `SECURITY DEFINER`, `REVOKE PUBLIC/anon`,
+    `GRANT authenticated, service_role`): **`add_lead_note(p_lead_id, p_body, p_created_by) → json`**
+    (append; resolves org_id+contact_id from the lead; returns the row already carrying `author_name`)
+    and **`get_lead_notes(p_lead_id) → SETOF json`** (newest first, `author_name` joined from
+    `employees`). The panel Notes section is now a list + composer; the board card's quick-note popover
+    appends via `add_lead_note` (no longer `db.update('inbound_leads', { notes })`). The migration
+    **backfills** existing `inbound_leads.notes` into the log (source column copied, NOT cleared —
+    rollback-safe) and does a **function-body-only** `CREATE OR REPLACE` of the frozen
+    `get_lead_activity` / `get_contact_activity` (signatures + `RETURNS TABLE` shape unchanged): adds a
+    `'note'` arm reading `crm_lead_notes` (rendered by `ActivityTimeline`'s existing `note` badge +
+    `meta.author_name`) and drops `il.notes`/`fu.notes` from the lead/follow-up body `COALESCE` so a
+    backfilled note isn't shown twice. `inbound_leads.notes` remains on the table (additive rule) but is
+    no longer written or displayed by the Leads UI. New CSS: `.crm-lead-note*` under a labeled marker at
+    the end of `src/index.css`. Backward-compat test: `supabase/tests/crm_lead_notes.test.js`.
   - Also polished (same date, same panel): the header no longer shows a contact-less lead's phone
     number twice (title falls back to it via `leadLabel()`, and the subtitle used to unconditionally
     repeat it as a `tel:` link — now the title itself becomes the link and the subtitle is skipped);
@@ -6121,6 +6194,57 @@ constraint — NOT `'completed'`; the whole phase uses `'done'`):
     switch remounts cleanly). `.claude/rules/crm-wave-ownership.md` §1 gained a disclosed amendment
     note — this is the second standalone-production-fix body-replace of the nominally Foundation-frozen
     `get_contact_activity`, same precedent as the 2026-07-21 contact-link-and-activity migration.
+  - **Contact-activity timeline — full current shape (2026-07-24), verified live via the Supabase
+    MCP (read-only, project `glsmljpabrwonfiltiqm`).** `get_contact_activity(p_contact_id uuid)` is now
+    a **24-arm** `UNION ALL` (23 distinct `activity_type` values — the two `note` arms both emit
+    `'note'`); signature + return shape (`activity_type, occurred_at, title, body, meta`) unchanged
+    since Phase 1. Authoritative arm list, in source order: `lead, sms, note (job_notes),
+    note (crm_lead_notes), estimate, email, job, task, appointment, invoice, work_authorization,
+    stage_change, follow_up_call, claim, phase_change, payment, document, contact_owner_set,
+    contact_lifecycle_set, work_auth_sent, work_auth_signed, scope_sheet, invoice_sent,
+    estimate_sent`. Grown after the 2026-07-21 contact-link/unlinked-lead work by a chain of
+    function-BODY-only `CREATE OR REPLACE` migrations (all additive, signature frozen):
+    `20260721_crm_contact_activity_payment_document_events.sql` (payment/document/contact_owner_set/
+    contact_lifecycle_set), `20260721_crm_contact_activity_send_events.sql` (work_auth_sent/
+    work_auth_signed/scope_sheet/invoice_sent/estimate_sent), `20260721_crm_activity_actor_names.sql`
+    (actor-name `meta` keys + claim/phase_change/follow_up_call), and `20260724180000_crm_lead_notes.sql`
+    (the second `note` arm). The sibling `get_lead_activity(p_lead_id uuid)` (unlinked leads) is now
+    **5 arms** — `lead, note, task, stage_change, follow_up_call`. Both remain `SECURITY DEFINER`,
+    `REVOKE ... FROM PUBLIC, anon`, `GRANT ... TO authenticated, service_role` (no `anon`).
+  - **Append-only lead notes — `crm_lead_notes` + `add_lead_note`/`get_lead_notes`
+    (`20260724180000_crm_lead_notes.sql`).** Replaces the single overwritable `inbound_leads.notes`
+    box with a real per-lead notes log. Table
+    `crm_lead_notes(id, lead_id NOT NULL, org_id NOT NULL, contact_id, body NOT NULL, created_by,
+    created_at NOT NULL)`, **RLS enabled with NO policies (deny-all — RPC-only)**. Writes go through
+    `add_lead_note(p_lead_id uuid, p_body text, p_created_by uuid)` (append; blank body rejected);
+    reads through `get_lead_notes(p_lead_id uuid)` (newest-first) — both `SECURITY DEFINER`,
+    `authenticated, service_role` only. A one-time additive backfill copied existing
+    `inbound_leads.notes` into the log (not cleared). The note surfaces on both timelines as a `'note'`
+    row, told apart from the `job_notes` `'note'` arm by `meta.note_id`; the `lead`/`follow_up_call`
+    bodies dropped `il.notes`/`fu.notes` from their COALESCE so a backfilled note isn't shown twice.
+    ✅ **Provenance — RESOLVED 2026-07-24.** This migration shipped on commit `44dc519` and was LIVE
+    while its source was unreachable from `dev` or `main`, so no branch reproduced the live function's
+    second (`crm_lead_notes`) `note` arm — the 24th arm existed only because that commit had been
+    applied to the one shared Supabase. PR #515 merged that source into `dev`, and the live
+    `get_contact_activity(uuid)` body was verified semantically identical to it before merging.
+    `dev` now reproduces all 24 arms from its own migration tree. See the "Concurrent-session
+    reconciliation (2026-07-24)" section and
+    `docs/audit/2026-07/evidence/migration-provenance-2026-07-24.md`.
+  - **Durable 24-arm regression guard — `supabase/tests/crm_contact_activity.test.js` (2026-07-24).**
+    A second suite seeds one contact wired to all 24 arms and asserts each returns ≥1 row (a dropped
+    arm names itself in the failure). It exists to catch the recurring failure mode where a body-only
+    `CREATE OR REPLACE` is re-authored from a stale ancestor and silently drops live arms — the exact
+    near-miss review caught on the `crm_lead_notes` migration (a stale 12-arm ancestor would have
+    dropped 11 live arms). Integration test, self-skips without `VITE_SUPABASE` creds; because
+    `get_contact_activity`/`add_lead_note` are `authenticated`/`service_role`-only and `crm_lead_notes`
+    is deny-all, it only truly runs under a privileged harness or the Supabase MCP, not an anon session.
+    The live contract + every fixture column/enum was verified read-only via the Supabase MCP.
+    `migration-safety-checker` flagged this guard as recommended-not-required. **Sibling guard
+    (2026-07-24):** `supabase/tests/crm_lead_activity.test.js` carries the same guard for
+    `get_lead_activity`'s 5 arms, closing the gap where its older suite covered only
+    lead/task/stage_change and left `note` (crm_lead_notes) + `follow_up_call` unguarded. Both
+    guards are keyed to arm lists verified read-only against the live catalog; when a future
+    migration legitimately ADDS an arm, update the corresponding list in the same commit.
 - `src/pages/crm/CrmConversations.jsx` — thin wrapper rendering the existing `src/pages/Conversations`
   inbox inside the CRM shell. **No new send path** — outbound SMS still goes through the existing
   `/api/send-message` worker (call-only, DND/opt-in enforced there); `send-message.js` / `twilio.js` /
@@ -7819,6 +7943,71 @@ blobs, stale/non-ancestor evidence, and policy drift. The gate consumes sanitize
 connects to or writes Supabase. Exact capture and review record:
 `docs/audit/2026-07/evidence/migration-provenance-2026-07-23.md`.
 
+## Concurrent-session reconciliation (2026-07-24; source control only, no apply)
+
+Many parallel Codex/Claude sessions left three migrations **live in shared production with no source
+reachable from `dev` or `main`**: `20260724181945 crm_lead_notes` (PR #515) and
+`20260724190829 qbo_attachments` / `20260724190848 qbo_payments_sync_cron` (PR #516). Both PRs merged
+to `dev`; **no SQL was replayed and no live body was overwritten** — the drift was source missing from
+`dev`, and merging that source was the whole repair. Fingerprints were compared against the live
+catalog first: all five affected functions are semantically identical to the merged source, and
+`get_contact_activity(uuid)` holds its signature and return shape at **24 arms** (`get_lead_activity`
+at 5).
+
+Two things worth remembering, because both defeated a plausible check:
+
+1. **Live-but-unmerged rows can be interleaved, not a tail.** The two newest live rows sorted *above*
+   the three drifted ones, so walking the ledger down from the newest row until source appears finds
+   zero drift. Reachability must be a set comparison over the whole window at/above
+   `ledgerFloorVersion`, matched **by name** — ledger versions are assigned at apply time and do not
+   equal filename prefixes (one file prefix is *later* than its live version).
+2. **A passing `validate:provenance` against stale evidence proves nothing.** The gate reads a static
+   snapshot; its `Unmapped live ledger row` check cannot fire for rows applied after capture. The
+   manifest had drifted five rows behind live. Treat the six-hour evidence window as load-bearing, and
+   refresh evidence *before* trusting a green gate near a release.
+
+Also fixed: `project_callrail_outbound_event(uuid,uuid)` was covered by a hand-pinned
+`expectedFingerprints` that went stale when two later reviewed migrations replaced its body. It now
+uses real source comparison — `extractFunctionBodies` accepts `$$`-quoted bodies as well as
+`$function$`, removing the need for pins (and that whole stale-pin failure mode). Manifest now maps
+all 19 rows at/above the floor, 21 function fingerprints and 5 policies; gate **PASS**. Record:
+`docs/audit/2026-07/evidence/migration-provenance-2026-07-24.md`.
+
+`20260724200000_payments_qbo_dedup_index.sql` was subsequently **applied** under owner authorization
+(ledger `20260724230933`) — 0 pre-existing violations, index valid+unique, 86 rows unchanged. It
+closes the double-insert race between the hourly poller and the real-time webhook, both of which now
+write payments. `upr_qbo_payments_sync_hourly` has been live and healthy since 19:17 UTC against the
+already-deployed `/api/qbo-payments-sync` worker in `main`.
+
+## QBO payment webhook — cross-realm read + opaque-error fix (2026-07-24)
+
+One live `Payment/Create` event (19:49Z) recorded only `"QBO get payment 400"` and sat
+`processed_at=null` with nothing re-driving it. Two defects, both fixed:
+
+- **`qbo-webhook.js` extracted `note.realmId` for the dedup key but never used it to scope the
+  read.** `qboFetch` always builds `/v3/company/{stored connection realm}/…`, so an event from any
+  other company was looked up in OURS — and Intuit answers that with a bare 400. The worker now
+  resolves the connected realm once via `getConnection()` and records a foreign event as terminal
+  `status='ignored'` + `realm_mismatch` instead of issuing a cross-company read. It **fails open**
+  when the connection can't be read, so genuine events are never dropped.
+- **Intuit reports object-not-found as HTTP 400 + Fault code `610`, never 404**, so the existing
+  `res.status === 404` benign-skip branch in `qbo-payment-sync.js` was dead code and a genuinely
+  missing payment threw. Per Intuit's troubleshooting guide, 610 also fires when a txn is *"deleted
+  by one user and accessed by another"* — benign, but we recorded it as a hard error.
+  `readQboFault()` now parses `Fault.Error[0].{code,Message,Detail}`; `610`/`6240` become the
+  intended skip, everything else throws `QboRequestError` carrying the code in its text, with
+  `retryable` true only for 429/5xx.
+
+Status vocabulary is now `processed` / `ignored` / `retry` / `error`. **`qbo_events.status` has no
+CHECK constraint** (verified live) — if one is ever added it must include `ignored` and `retry`.
+Intuit retries a failed delivery only at **20/30/50 minutes and then disables the endpoint**, which
+is why the worker always acks 200 and recovery is ours to own.
+
+⚠️ **Still open:** nothing re-drives a `retry` row — that is registry item `COR-002`'s remaining
+internal half (its external blocker, Intuit sandbox semantics, is unchanged); the hourly poller is
+the only backstop today. `functions/api/qbo-webhook.test.js` is new — the worker previously had
+**no tests at all**, which is how a silent cross-company read reached production.
+
 ## July 23 engineering documentation closure and Figma checkpoint
 
 The end-of-day reconciliation is recorded in
@@ -7901,3 +8090,28 @@ ambiguous references stay durable for history and safe retry. Abandoned private 
 retained until a durable draft/claim cleanup model can prevent deletion races and history loss;
 there is no browser delete route. No database migration, RCS activation, provider fallback, or
 automated CallRail path was added.
+
+## Mobile messaging completion and CallRail readiness (2026-07-24)
+
+Tech Messages v2 now includes a `?new=1` full-screen contact picker backed by
+`GET/POST /api/message-conversations`. The Worker requires the shared Conversations capability,
+returns at most 25 contacts projected to `id/name/phone/company`, and calls the service-role-only
+`find_or_create_conversation(uuid)` RPC. The hardened invoker-mode RPC reuses only active
+non-archived direct threads with no different contact participant. Starting a thread does not send
+or change consent.
+
+Direct mobile threads read `GET /api/attest-sms-consent` and disable customer SMS/MMS while consent
+is loading, unavailable, suppressed, DND, or not allowed. Active internal admin/office users may
+record prior consent through the localized attestation modal; technicians cannot. Notes remain
+available. The server remains the final authority and no attestation auto-sends.
+
+Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
+while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
+`app.callrail.com/msg/.../media/...` endpoint that redirects to CallRail's signed S3 asset under a
+browser-authenticated session. The
+pending migrations/helper changes normalize only equivalent NANP identity and accept only that
+exact account/message/index path plus a validated short-lived redirect. A controlled Preview MMS
+then proved the app host itself returns `401` to the API token, so verified app identities are
+canonicalized to the equivalent documented API media endpoint before download. The CallRail token
+is stripped before the signed S3 request. Readiness now reports actionable queues separately from
+terminal failure history.

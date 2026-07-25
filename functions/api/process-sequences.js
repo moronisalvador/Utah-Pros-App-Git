@@ -123,7 +123,7 @@ export function evaluateExit(sequence, { hasReply, hasConversion } = {}) {
 }
 
 // Decide what to do after a send attempt returns. Pure — the caller applies the
-// patch and writes the event. `action` ∈ sent | held | skipped | retry.
+// patch and writes the event. `action` ∈ sent | held | skipped | reconciliation | retry.
 export function planStepOutcome(enrollment, steps, sendResult, now, opts = {}) {
   const holdRetryHours = opts.holdRetryHours ?? HOLD_RETRY_HOURS;
 
@@ -153,6 +153,21 @@ export function planStepOutcome(enrollment, steps, sendResult, now, opts = {}) {
       action: 'skipped',
       patch: advanceEnrollment(enrollment, steps, now),
       event: { event_type: 'crm_sequence_step_skipped', reason: sendResult.reason || 'skipped' },
+    };
+  }
+
+  // The provider may have accepted an ambiguous timeout/network submission.
+  // Pause the enrollment at this exact step for manual reconciliation. Advancing
+  // could run later steps against an unknown delivery, while retrying could
+  // deliver the same customer message twice.
+  if (sendResult?.ambiguous) {
+    return {
+      action: 'reconciliation',
+      patch: { status: 'paused', next_run_at: null },
+      event: {
+        event_type: 'crm_sequence_step_reconciliation_required',
+        reason: 'ambiguous_provider_outcome',
+      },
     };
   }
 
@@ -206,7 +221,7 @@ async function gatherExitSignals(db, enrollment) {
   return { hasReply, hasConversion };
 }
 
-async function writeEvent(db, eventType, enrollment, extra = {}) {
+async function writeEvent(db, eventType, enrollment, extra = {}, { required = false } = {}) {
   try {
     await db.insert('system_events', {
       event_type: eventType,
@@ -214,11 +229,18 @@ async function writeEvent(db, eventType, enrollment, extra = {}) {
       entity_id: enrollment.id,
       payload: { sequence_id: enrollment.sequence_id, contact_id: enrollment.contact_id, ...extra },
     });
-  } catch { /* audit is best-effort — the enrollment patch already carries state */ }
+  } catch (error) {
+    // Reconciliation events are required and are written only after the
+    // enrollment is durably paused. If the audit write fails, surface a worker
+    // error while leaving the row out of the due queue so no resend can occur.
+    if (required) throw error;
+    // Ordinary lifecycle audit remains best-effort; its row patch is canonical.
+  }
 }
 
 // ─── SECTION: Per-enrollment handler ──────────────
-// Returns the action taken: exited | completed | sent | held | skipped | retry.
+// Returns the action taken:
+// exited | completed | sent | held | skipped | reconciliation | retry.
 export async function processEnrollment(ctx, enrollment) {
   const { db, send, now } = ctx;
   const seq = ctx.sequences[enrollment.sequence_id];
@@ -265,7 +287,7 @@ export async function processEnrollment(ctx, enrollment) {
   if (plan.event) {
     await writeEvent(db, plan.event.event_type, enrollment, {
       step_order: step.step_order, channel: step.channel, reason: plan.event.reason,
-    });
+    }, { required: plan.action === 'reconciliation' });
   }
   return plan.action;
 }
@@ -307,7 +329,15 @@ export async function processSequences(db, env, now = new Date()) {
     );
 
     const ctx = { db, env, now, send, sequences, steps };
-    const counts = { sent: 0, held: 0, skipped: 0, exited: 0, completed: 0, retry: 0 };
+    const counts = {
+      sent: 0,
+      held: 0,
+      skipped: 0,
+      reconciliation: 0,
+      exited: 0,
+      completed: 0,
+      retry: 0,
+    };
     for (const enr of due) {
       if (!sequences[enr.sequence_id]) continue;
       const action = await processEnrollment(ctx, enr);
@@ -315,7 +345,12 @@ export async function processSequences(db, env, now = new Date()) {
     }
 
     // A retry is not "processed work" — it will be tried again next run.
-    processed = counts.sent + counts.held + counts.skipped + counts.exited + counts.completed;
+    processed = counts.sent
+      + counts.held
+      + counts.skipped
+      + counts.reconciliation
+      + counts.exited
+      + counts.completed;
     await db.insert('worker_runs', {
       worker_name: WORKER_NAME, status: 'completed', records_processed: processed,
       started_at: startedAt, completed_at: new Date().toISOString(),

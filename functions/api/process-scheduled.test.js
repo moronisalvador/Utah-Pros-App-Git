@@ -5,9 +5,12 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the Phase A hardening of the scheduled-text worker without touching a
- *   real database or Twilio: the scheduler-secret auth gate, the TCPA quiet-hours
+ *   real database or provider: the scheduler-secret and active-internal-role auth
+ *   gates, the TCPA quiet-hours
  *   deferral (hold the batch overnight, don't text people at 2am), and that a row
- *   another worker already claimed is skipped instead of double-sent.
+ *   another worker already claimed is skipped instead of double-sent. It also
+ *   proves successful sends and global-kill-switch deferrals go through the
+ *   central automated-message safety gate.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -18,8 +21,32 @@
  *     hours are deterministic (America/Denver = UTC-6 in July).
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
-import { checkCronSecret, processQueue } from './process-scheduled.js';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const sendAutomatedMessageMock = vi.hoisted(() => vi.fn());
+const requireRoleMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../lib/automated-send.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    sendAutomatedMessage: sendAutomatedMessageMock,
+  };
+});
+
+vi.mock('../lib/auth.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    requireRole: requireRoleMock,
+  };
+});
+
+import {
+  authorizeRequest,
+  checkCronSecret,
+  processQueue,
+} from './process-scheduled.js';
 
 // Injected clock (America/Denver, MDT = UTC-6 in July):
 const QUIET_NOW = new Date('2026-07-09T08:00:00Z');    // 02:00 MDT → inside quiet hours
@@ -58,6 +85,25 @@ function makeDb({
 }
 
 const req = (secret) => ({ headers: { get: (h) => (h === 'x-webhook-secret' ? secret : null) } });
+
+beforeEach(() => {
+  sendAutomatedMessageMock.mockReset();
+  sendAutomatedMessageMock.mockResolvedValue({
+    ok: true,
+    skipped: false,
+    sid: 'SM_scheduled',
+    messageId: 'message-1',
+  });
+  requireRoleMock.mockReset();
+  requireRoleMock.mockResolvedValue({
+    employee: {
+      id: 'employee-1',
+      role: 'admin',
+      is_active: true,
+      is_external: false,
+    },
+  });
+});
 
 describe('checkCronSecret (auth gate)', () => {
   it('accepts the configured scheduler secret', async () => {
@@ -184,6 +230,165 @@ describe('processQueue — global consent only', () => {
       table: 'sms_consent_log',
       data: expect.objectContaining({
         event_type: 'send_blocked_no_consent',
+      }),
+    }));
+  });
+});
+
+describe('authorizeRequest (manual role gate)', () => {
+  it('lets the scheduler secret bypass session auth', async () => {
+    const { db } = makeDb({ cronSecret: 's3cr3t' });
+
+    const result = await authorizeRequest(req('s3cr3t'), {}, db);
+
+    expect(result).toMatchObject({ authorized: true, actor: 'scheduler' });
+    expect(requireRoleMock).not.toHaveBeenCalled();
+  });
+
+  it('allows an active internal messaging role for a manual trigger', async () => {
+    const { db } = makeDb();
+
+    const result = await authorizeRequest(req(null), {}, db);
+
+    expect(result.authorized).toBe(true);
+    expect(requireRoleMock).toHaveBeenCalledWith(
+      expect.anything(),
+      {},
+      db,
+      ['admin', 'office', 'project_manager'],
+    );
+  });
+
+  it('rejects an external employee even if the role itself is allowed', async () => {
+    requireRoleMock.mockResolvedValue({
+      employee: {
+        id: 'external-1',
+        role: 'admin',
+        is_active: true,
+        is_external: true,
+      },
+    });
+    const { db } = makeDb();
+
+    const result = await authorizeRequest(req(null), {}, db);
+
+    expect(result).toMatchObject({ authorized: false, status: 403 });
+  });
+
+  it('preserves inactive or insufficient-role denial from the shared auth gate', async () => {
+    requireRoleMock.mockResolvedValue({
+      error: 'Inactive employee',
+      status: 403,
+    });
+    const { db } = makeDb();
+
+    const result = await authorizeRequest(req(null), {}, db);
+
+    expect(result).toEqual({
+      authorized: false,
+      error: 'Inactive employee',
+      status: 403,
+    });
+  });
+});
+
+describe('processQueue — canonical automated-send gate', () => {
+  const pending = [{
+    id: 's1',
+    conversation_id: 'c1',
+    body: 'Scheduled update',
+    created_by: 'employee-1',
+    media_urls: JSON.stringify(['https://example.test/photo.jpg']),
+  }];
+  const base = {
+    pending,
+    claim: true,
+    conversation: { id: 'c1' },
+    participants: [{ contact_id: 'contact-1', phone: '+15551110000' }],
+    contact: {
+      id: 'contact-1',
+      phone: '+15551110000',
+      opt_in_status: true,
+      dnd: false,
+    },
+  };
+
+  it('routes the scheduled MMS through the central gate and does not insert a duplicate message', async () => {
+    const { db, calls } = makeDb(base);
+
+    const res = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(res.processed).toBe(1);
+    expect(sendAutomatedMessageMock).toHaveBeenCalledWith(
+      'sms',
+      'contact-1',
+      null,
+      {},
+      {},
+      expect.objectContaining({
+        body: 'Scheduled update',
+        destinationPhone: '+15551110000',
+        mediaUrls: ['https://example.test/photo.jpg'],
+        conversationId: 'c1',
+        sentBy: 'employee-1',
+        recordBody: 'Scheduled update',
+        markWaitingOnClient: true,
+      }),
+    );
+    expect(calls.insert.some((call) => call.table === 'messages')).toBe(false);
+    expect(calls.update).toContainEqual(expect.objectContaining({
+      table: 'scheduled_messages',
+      data: expect.objectContaining({
+        status: 'sent',
+        sent_message_id: 'message-1',
+        error_message: null,
+      }),
+    }));
+  });
+
+  it('releases the claim and keeps the row pending when the global SMS switch is off', async () => {
+    sendAutomatedMessageMock.mockResolvedValue({
+      ok: false,
+      skipped: true,
+      reason: 'sms_disabled',
+    });
+    const { db, calls } = makeDb(base);
+
+    const res = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(res.processed).toBe(0);
+    expect(calls.insert.some((call) => call.table === 'messages')).toBe(false);
+    expect(calls.update).toContainEqual(expect.objectContaining({
+      table: 'scheduled_messages',
+      data: expect.objectContaining({
+        claimed_at: null,
+        error_message: 'Deferred: sms_disabled',
+      }),
+    }));
+    expect(calls.update.some(
+      (call) => call.table === 'scheduled_messages' && call.data?.status
+    )).toBe(false);
+  });
+
+  it('marks an ambiguous provider outcome for reconciliation without a second submission', async () => {
+    sendAutomatedMessageMock.mockResolvedValue({
+      ok: false,
+      skipped: false,
+      error: 'provider timeout after submission',
+      permanent: false,
+      ambiguous: true,
+    });
+    const { db, calls } = makeDb(base);
+
+    const res = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(sendAutomatedMessageMock).toHaveBeenCalledTimes(1);
+    expect(res.processed).toBe(0);
+    expect(calls.update).toContainEqual(expect.objectContaining({
+      table: 'scheduled_messages',
+      data: expect.objectContaining({
+        status: 'failed',
+        error_message: expect.stringContaining('Ambiguous provider outcome'),
       }),
     }));
   });

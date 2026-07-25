@@ -46,6 +46,9 @@ against both and change both in one commit.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
 - Financial dates use the Denver business day, not UTC string slicing.
+- Invoice/estimate attachments are admin/manager-gated and human-selected: a person chooses which
+  file(s) to push to which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch.
+  They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
@@ -106,6 +109,12 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
   instead records consent already obtained through the approved evidence flow.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
+- Scheduled SMS/MMS must call `sendAutomatedMessage()` rather than a provider primitive. That
+  central boundary rechecks the global `sms_sending_enabled` switch, global opt-in, DND and
+  recipient-local quiet hours immediately before Twilio submission. A disabled switch or quiet
+  hours releases the scheduled claim for a later retry; durable consent failures remain terminal.
+  The HTTP trigger accepts only the scheduler secret or an active internal admin, office or
+  project-manager session; authentication without that role is insufficient.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
@@ -114,7 +123,10 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
   keep only an opaque private reference; provider-specific byte upload or signed fetch exposure
   happens after consent inside the selected adapter.
 - A messaging-provider failure does not fall back to another provider or channel. Ambiguous
-  provider timeouts are reconciled before any retry that could duplicate a customer message.
+  provider timeouts are not automatically resubmitted by scheduled sends, sequences, or CRM
+  automation runs: they enter a terminal or paused reconciliation state at the same action. Fixed
+  automations suppress a later run only after their terminal event persists; automated SMS remains
+  activation-blocked until a pre-send reservation closes that post-send persistence gap.
 - RCS is a channel inside the existing messaging domain, not a new consent or conversation domain.
   Canonical records distinguish the requested channel from the provider-confirmed actual channel.
 - Twilio provider-managed RCS-to-SMS/MMS fallback is prohibited. It may be enabled only by a
@@ -180,3 +192,17 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   labels, and verification time, never the credential or raw provider error body.
 - Old credentials are revoked only after every surviving runtime is inventoried, deployed against
   the managed source, and smoke-tested.
+
+## Mobile person-to-person messaging
+
+- Starting a conversation is not consent and never sends a message.
+- A contact's presence in UPR is not consent evidence. Direct SMS/MMS stays blocked until the
+  authoritative consent decision allows it; loading, read failure, DND, STOP, phone mismatch, and
+  missing evidence fail closed.
+- Active internal admin/office employees may attest documented prior service consent. Technicians
+  may view the blocked state but cannot create the evidence record.
+- Recording consent never automatically sends or retries a draft. Staff must explicitly press Send,
+  and the server rechecks the complete consent/DND boundary.
+- Internal notes remain available when customer messaging is blocked because they do not leave UPR.
+- CallRail is person-to-person only. Scheduled, automated, group, bulk, campaign, and broadcast
+  sends never use it.

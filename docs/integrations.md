@@ -70,6 +70,16 @@ bindings and provider consoles.
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
   Scheduled and automated SMS call the same suppression-aware status boundary but accept only
   `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
+- `process-scheduled` also submits through `sendAutomatedMessage()` rather than calling Twilio
+  directly. This keeps the automation kill-switch, global-consent/DND decision, recipient-local
+  quiet hours, provider retry policy, delivery callback and worker-owned message row on one
+  structurally shared path. Scheduled media remains Twilio-only; CallRail is not an automated-send
+  fallback. Its HTTP trigger accepts the scheduler secret or an active, non-external
+  admin/office/project-manager session. An ambiguous provider outcome is not automatically
+  resubmitted by scheduled, CRM-automation or sequence consumers; each enters a terminal or paused
+  reconciliation state at the exact send action. Fixed automations suppress a later run after their
+  terminal event persists, but automated SMS stays activation-blocked until a pre-send reservation
+  closes the post-send event-persistence gap.
 - Future Twilio RCS uses that same domain boundary. RCS Sender IDs, Content SIDs, rich-content
   shapes, channel capability checks, read receipts and action payloads are Twilio adapter/webhook
   facts; conversations and consent remain UPR-owned. Twilio's automatic RCS-to-SMS/MMS fallback is
@@ -132,6 +142,34 @@ request to `demo-sheet.netlify.app` returned HTTP 200 with the Utah Pros Demo Sh
 legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 that it is obsolete and
 unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
 supported Encircle consumer or a credential-rotation dependency.
+
+## QuickBooks Online attachments (2026-07-24)
+
+`POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
+Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
+shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
+Auth is `requireRole(['admin','manager'])` (mirrors `qbo-charge`); it requires the invoice/estimate to
+already carry a `qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as
+base64 (≤20 MB); the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
+`qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
+retry from creating a duplicate Attachable (which would email the customer twice). A `delete` action
+removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row. Outbound calls
+use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
+(`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
+shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
+already-granted **accounting** scope (no Payments-scope reconnect needed).
+
+## QuickBooks Online payment two-way sync activation (2026-07-24)
+
+The QBO→UPR payment path (`qbo-webhook.js` real-time + `qbo-payments-sync.js` hourly safety net,
+`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built and dormant. Migration
+`20260724180100_qbo_payments_sync_cron.sql` (authored; owner-authorized apply pending) wires the
+hourly poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
+`integration_config.qbo_webhook_secret` as `x-webhook-secret` (the value already set in Cloudflare as
+`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). Still owner/dashboard gated for
+the real-time half: set `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy,
+and subscribe the **Payment** webhook in Intuit Developer (production) to
+`https://utahpros.app/api/qbo-webhook`.
 
 ## Messaging transport build state (2026-07-23)
 
@@ -270,3 +308,35 @@ owner-managed and independently verified; the shared Supabase project is never u
 staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
 approved activation window and provider proof. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
+
+### CallRail live MMS endpoint compatibility
+
+Authenticated CallRail history observed on 2026-07-24 returned account-scoped media endpoints under
+`https://app.callrail.com/msg/a/<account>/messages/<message>/media/<index>`, although the public API
+documents the v3 `api.callrail.com` shape. UPR accepts either only when the account, provider message,
+media index, HTTPS scheme, port, credentials, and path exactly match already-proven event identity.
+
+After that exact identity validation, UPR proves the legacy numeric/current masked account aliases
+through authenticated discovery, prefers the current masked `ACC...` identity, and normalizes the
+app-host path to the equivalent documented `api.callrail.com/v3/a/...` endpoint before the CallRail
+API token is attached. A controlled 2026-07-24 Preview MMS proved that the app host returns `401`
+to that API token, so UPR never presents the credential to the browser-session host or relies on a
+numeric-account redirect. Redirects are handled manually. UPR follows
+only a valid short-lived AWS4 signed URL on the exact known CallRail MMS S3 host, strips the
+CallRail token from that request, rejects further redirects, and still verifies image MIME, magic
+bytes, item size, and total size before private Storage ownership. No provider or signed asset URL
+is persisted.
+
+CallRail `message.sent` recipients may omit the `+1` stored on the original UPR attempt. Outbound
+projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
+provider-message, or attempt identity checks.
+
+Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
+provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
+identity without downloading UPR's own attachment back from CallRail. Confirmation requires the
+event channel to match the attempt channel and every MMS attachment to be a non-empty private
+`upr-storage://message-attachments/outbound/` reference. A binding mismatch reuses the deployed
+retryable `outbound_unmatched` outcome so older and newer workers both fail closed while the shared
+database migration rolls out. Inbound MMS remains
+fail-closed: it must download the verified provider media endpoint, validate the response bytes,
+and persist an owned private reference before canonical projection.

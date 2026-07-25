@@ -23,6 +23,15 @@ import {
 
 const MEDIA_URL =
   'https://api.callrail.com/v3/a/ACC123/text-messages/SCIabc/media/0';
+const LIVE_APP_MEDIA_URL =
+  'https://app.callrail.com/msg/a/635117922/messages/SCIabc/media/0';
+const SIGNED_ASSET_URL =
+  'https://calltrk-mms-media-prod1.s3.amazonaws.com/object-key' +
+  '?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+  '&X-Amz-Date=20260724T145146Z' +
+  '&X-Amz-Expires=300' +
+  '&X-Amz-SignedHeaders=host' +
+  '&X-Amz-Signature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const INPUT = {
   apiKey: 'server-secret',
   accountId: 'ACC123',
@@ -68,7 +77,7 @@ describe('CallRail MMS private ingestion', () => {
       MEDIA_URL,
       expect.objectContaining({
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: expect.objectContaining({
           Authorization: 'Token token="server-secret"',
         }),
@@ -94,6 +103,92 @@ describe('CallRail MMS private ingestion', () => {
     });
     expect(JSON.stringify(result)).not.toContain('api.callrail.com');
     expect(JSON.stringify(result)).not.toContain('server-secret');
+  });
+
+  it('normalizes the captured app endpoint to the authenticated API host for a proven alias', async () => {
+    const h = harness();
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: SIGNED_ASSET_URL },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestCallrailMms({
+      ...INPUT,
+      db: h.db,
+      accountAliases: ['635117922'],
+      ephemeralMediaUrls: [LIVE_APP_MEDIA_URL],
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      MEDIA_URL,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'manual',
+        headers: expect.objectContaining({
+          Authorization: 'Token token="server-secret"',
+        }),
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+    expect(h.fetchImpl).not.toHaveBeenCalledWith(
+      LIVE_APP_MEDIA_URL,
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      SIGNED_ASSET_URL,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          Accept: 'image/jpeg, image/png, image/gif',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+  });
+
+  it('follows one signed redirect to the exact CallRail regional S3 bucket', async () => {
+    const h = harness();
+    const regionalAssetUrl = SIGNED_ASSET_URL.replace(
+      '.s3.amazonaws.com',
+      '.s3.us-west-2.amazonaws.com',
+    );
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: SIGNED_ASSET_URL },
+      }))
+      .mockResolvedValueOnce(new Response(null, {
+        status: 307,
+        headers: { Location: regionalAssetUrl },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestCallrailMms({
+      ...INPUT,
+      db: h.db,
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      3,
+      regionalAssetUrl,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'manual',
+        headers: {
+          Accept: 'image/jpeg, image/png, image/gif',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+    expect(h.fetchImpl.mock.calls[2][1].headers.Authorization).toBeUndefined();
   });
 
   it.each([
@@ -135,9 +230,15 @@ describe('CallRail MMS private ingestion', () => {
       index: 1,
       mediaUrl: MEDIA_URL,
     })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
+    expect(() => validateCallrailMediaEndpoint({
+      accountId: 'ACC123',
+      providerMessageId: 'SCIabc',
+      index: 0,
+      mediaUrl: `${MEDIA_URL}?unexpected=value`,
+    })).toThrowError(expect.objectContaining({ code: 'CALLRAIL_MMS_URL_INVALID' }));
   });
 
-  it('refuses redirects and classifies provider rejection without uploading', async () => {
+  it('refuses redirects outside CallRail MMS storage without uploading', async () => {
     const h = harness();
     h.fetchImpl.mockResolvedValue(new Response(null, {
       status: 302,
@@ -147,9 +248,8 @@ describe('CallRail MMS private ingestion', () => {
       { ...INPUT, db: h.db },
       { fetchImpl: h.fetchImpl },
     )).rejects.toMatchObject({
-      code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+      code: 'CALLRAIL_MMS_REDIRECT_REJECTED',
       retryable: false,
-      status: 302,
     });
     expect(h.db.uploadStorage).not.toHaveBeenCalled();
   });
@@ -252,6 +352,24 @@ describe('CallRail MMS private ingestion', () => {
     });
   });
 
+  it.each([404, 410])(
+    'retains an expired media endpoint returning %s for bounded URL refresh',
+    async (status) => {
+      const h = harness();
+      h.fetchImpl.mockResolvedValue(new Response(null, { status }));
+
+      await expect(ingestCallrailMms(
+        { ...INPUT, db: h.db },
+        { fetchImpl: h.fetchImpl },
+      )).rejects.toMatchObject({
+        code: 'CALLRAIL_MMS_DOWNLOAD_REJECTED',
+        retryable: true,
+        status,
+      });
+      expect(h.db.uploadStorage).not.toHaveBeenCalled();
+    },
+  );
+
   it('uses the signed webhook media endpoint immediately without conversation refresh', async () => {
     const h = harness();
     const event = {
@@ -326,7 +444,7 @@ describe('CallRail MMS private ingestion', () => {
         body: '',
       },
     }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
-      code: 'CALLRAIL_MMS_URL_INVALID',
+      code: 'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED',
       retryable: false,
     });
     expect(h.db.uploadStorage).not.toHaveBeenCalled();
@@ -449,6 +567,90 @@ describe('CallRail MMS private ingestion', () => {
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
   });
 
+  it('does not accept a history media URL when direction or media count differs', async () => {
+    const h = harness();
+    h.fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({
+      messages: [{
+        id: 'SCIabc',
+        content: 'Photo',
+        direction: 'outgoing',
+        message_type: 'mms',
+        media_urls: [MEDIA_URL],
+      }, {
+        id: 'SCIabc',
+        content: 'Photo',
+        direction: 'incoming',
+        message_type: 'mms',
+        media_urls: [MEDIA_URL, MEDIA_URL],
+      }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URLS_UNAVAILABLE',
+      retryable: true,
+    });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes an app-host conversation link through the authenticated API host', async () => {
+    const h = harness();
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 12345,
+          content: 'Photo',
+          direction: 'incoming',
+          type: 'MMS',
+          media_urls: [LIVE_APP_MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(resolveCallRailAccountAliases).toHaveBeenCalledWith(
+      'server-secret',
+      'ACC123',
+      { fetcher: h.fetchImpl },
+    );
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+    expect(h.fetchImpl.mock.calls[1][1].headers.Authorization)
+      .toBe('Token token="server-secret"');
+  });
+
   it('refreshes a queue retry across the proven numeric-to-masked account alias', async () => {
     const h = harness();
     resolveCallRailAccountId.mockResolvedValueOnce('635117922');
@@ -489,7 +691,110 @@ describe('CallRail MMS private ingestion', () => {
       { fetcher: h.fetchImpl },
     );
     expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl.mock.calls[0][0]).toBe(
+      'https://api.callrail.com/v3/a/ACC123/text-messages/conv789.json?per_page=250',
+    );
+    expect(h.fetchImpl.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      redirect: 'manual',
+      headers: {
+        Authorization: 'Token token="server-secret"',
+        Accept: 'application/json',
+      },
+    });
     expect(h.fetchImpl.mock.calls[1][0]).toBe(MEDIA_URL);
+    expect(h.fetchImpl.mock.calls.map(([url]) => url)).not.toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('/v3/a/635117922/'),
+      ]),
+    );
+  });
+
+  it('follows one exact same-conversation API redirect without leaking credentials', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    const redirectedConversation =
+      'https://api.callrail.com/v3/a/ACC123/text-messages/conv789.json';
+    h.fetchImpl
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { Location: redirectedConversation },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        messages: [{
+          id: 'SCIabc',
+          content: 'CallRail-normalized attachment text',
+          direction: 'incoming',
+          message_type: 'mms',
+          media_urls: [MEDIA_URL],
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }))
+      .mockResolvedValueOnce(mediaResponse(JPEG, 'image/jpeg'));
+
+    const result = await ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl });
+
+    expect(result.itemCount).toBe(1);
+    expect(h.fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      redirectedConversation,
+      expect.objectContaining({
+        method: 'GET',
+        redirect: 'error',
+        headers: {
+          Authorization: 'Token token="server-secret"',
+          Accept: 'application/json',
+        },
+      }),
+      CALLRAIL_MMS_FETCH_TIMEOUT_MS,
+    );
+  });
+
+  it('rejects a conversation redirect outside the exact masked account path', async () => {
+    const h = harness();
+    resolveCallRailAccountId.mockResolvedValueOnce('635117922');
+    resolveCallRailAccountAliases.mockResolvedValueOnce(['635117922', 'ACC123']);
+    h.fetchImpl.mockResolvedValueOnce(new Response(null, {
+      status: 302,
+      headers: {
+        Location: 'https://api.callrail.com/v3/a/635117922/text-messages/conv789.json',
+      },
+    }));
+
+    await expect(ingestVerifiedCallrailEventMms({
+      db: h.db,
+      env: {},
+      event: {
+        providerConversationId: 'conv789',
+        providerMessageId: 'SCIabc',
+        companyResourceId: 'COM456',
+        mediaCount: 1,
+        ownedMedia: [],
+        direction: 'inbound',
+        messageType: 'mms',
+        body: 'Photo',
+      },
+    }, { fetchImpl: h.fetchImpl })).rejects.toMatchObject({
+      code: 'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      retryable: false,
+    });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it.each([

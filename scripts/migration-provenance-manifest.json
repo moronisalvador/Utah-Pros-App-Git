@@ -74,19 +74,103 @@
       "name": "claim_callrail_provider_event",
       "path": "supabase/migrations/20260724051500_claim_callrail_provider_event.sql",
       "reviewedOriginCommit": "13493f85ea7fa7d299aa837c1e00e3b9c036713e"
+    },
+    {
+      "version": "20260724152530",
+      "name": "harden_find_or_create_conversation",
+      "path": "supabase/migrations/20260724173000_harden_find_or_create_conversation.sql",
+      "reviewedOriginCommit": "5217ae86f1fb6960a4c75ac4bd9023f8f4e4028f"
+    },
+    {
+      "version": "20260724152614",
+      "name": "fix_callrail_outbound_phone_identity",
+      "path": "supabase/migrations/20260724174000_fix_callrail_outbound_phone_identity.sql",
+      "reviewedOriginCommit": "625cb1b5740a50302d5f71b45d2d9b7d7d8c8241"
+    },
+    {
+      "version": "20260724181945",
+      "name": "crm_lead_notes",
+      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql",
+      "reviewedOriginCommit": "0463f3e443ee3b0dd4a0f9077a31bb1470779cd6"
+    },
+    {
+      "version": "20260724190829",
+      "name": "qbo_attachments",
+      "path": "supabase/migrations/20260724180000_qbo_attachments.sql",
+      "reviewedOriginCommit": "f46e50f2d650708273e957ed9184d6a457dac475"
+    },
+    {
+      "version": "20260724190848",
+      "name": "qbo_payments_sync_cron",
+      "path": "supabase/migrations/20260724180100_qbo_payments_sync_cron.sql",
+      "reviewedOriginCommit": "f46e50f2d650708273e957ed9184d6a457dac475"
+    },
+    {
+      "version": "20260724195329",
+      "name": "bind_callrail_outbound_mms_identity",
+      "path": "supabase/migrations/20260724193628_bind_callrail_outbound_mms_identity.sql",
+      "reviewedOriginCommit": "0ff443fa1a9a361928a322ed9b99d7494f8f14a7"
+    },
+    {
+      "version": "20260724200321",
+      "name": "accept_frozen_callrail_mms_media_shape",
+      "path": "supabase/migrations/20260724195802_accept_frozen_callrail_mms_media_shape.sql",
+      "reviewedOriginCommit": "8e761e6031666b76616726354bb61884e54e22f8"
+    },
+    {
+      "version": "20260724230933",
+      "name": "payments_qbo_dedup_index",
+      "path": "supabase/migrations/20260724200000_payments_qbo_dedup_index.sql",
+      "reviewedOriginCommit": "f46e50f2d650708273e957ed9184d6a457dac475"
+    },
+    {
+      "version": "20260725003433",
+      "name": "public_form_rpc_boundary",
+      "path": "supabase/migrations/20260723235900_public_form_rpc_boundary.sql",
+      "reviewedOriginCommit": "b6d7092a6450440a1971aa99f896abc6615d91c9"
     }
   ],
   "selectedFunctions": [
-    { "identity": "get_attribution_rollup(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_call_volume(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_conversion_trend(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_crm_revenue_by_division(date,date)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_estimator_leaderboard(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_jobs_closed(date)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_pipeline_movement(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_speed_to_lead(date,date,uuid)", "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql" },
-    { "identity": "get_crm_sales_summary(date,date)", "path": "supabase/migrations/20260722_crm_sales_summary_total_vs_traced.sql" },
-    { "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)", "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql" },
+    {
+      "identity": "get_attribution_rollup(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_call_volume(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_conversion_trend(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_crm_revenue_by_division(date,date)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_estimator_leaderboard(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_jobs_closed(date)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_pipeline_movement(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_speed_to_lead(date,date,uuid)",
+      "path": "supabase/migrations/20260722_crm_denver_day_bucketing.sql"
+    },
+    {
+      "identity": "get_crm_sales_summary(date,date)",
+      "path": "supabase/migrations/20260722_crm_sales_summary_total_vs_traced.sql"
+    },
+    {
+      "identity": "upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamp with time zone,jsonb,uuid)",
+      "path": "supabase/migrations/20260722_crm_dedup_repeat_caller_leads.sql"
+    },
     {
       "identity": "set_lead_caller_name(uuid,text,boolean)",
       "path": "supabase/migrations/20260722_crm_caller_name_follows_merge.sql",
@@ -101,7 +185,9 @@
       },
       "expected": {
         "securityDefiner": false,
-        "config": ["search_path=\"\""],
+        "config": [
+          "search_path=\"\""
+        ],
         "anonExecute": false,
         "authenticatedExecute": false,
         "serviceRoleExecute": true,
@@ -117,7 +203,9 @@
       },
       "expected": {
         "securityDefiner": false,
-        "config": ["search_path=\"\""],
+        "config": [
+          "search_path=\"\""
+        ],
         "anonExecute": false,
         "authenticatedExecute": false,
         "serviceRoleExecute": true,
@@ -130,10 +218,72 @@
       "allowedRawDrift": "comments_or_whitespace",
       "expected": {
         "securityDefiner": false,
-        "config": ["search_path=\"\""],
+        "config": [
+          "search_path=\"\""
+        ],
         "anonExecute": false,
         "authenticatedExecute": false,
         "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "find_or_create_conversation(uuid)",
+      "path": "supabase/migrations/20260724173000_harden_find_or_create_conversation.sql",
+      "expected": {
+        "securityDefiner": false,
+        "config": [
+          "search_path=pg_catalog, public"
+        ],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "project_callrail_outbound_event(uuid,uuid)",
+      "path": "supabase/migrations/20260724195802_accept_frozen_callrail_mms_media_shape.sql",
+      "expected": {
+        "securityDefiner": false,
+        "config": [
+          "search_path=pg_catalog, public"
+        ],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
+    },
+    {
+      "identity": "add_lead_note(uuid,text,uuid)",
+      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+    },
+    {
+      "identity": "get_lead_notes(uuid)",
+      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+    },
+    {
+      "identity": "get_lead_activity(uuid)",
+      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql"
+    },
+    {
+      "identity": "get_contact_activity(uuid)",
+      "path": "supabase/migrations/20260724180000_crm_lead_notes.sql",
+      "allowedRawDrift": "comments_or_whitespace"
+    },
+    {
+      "identity": "qbo_payments_sync_poll()",
+      "path": "supabase/migrations/20260724180100_qbo_payments_sync_cron.sql",
+      "allowedRawDrift": "comments_or_whitespace",
+      "expected": {
+        "securityDefiner": true,
+        "config": [
+          "search_path=public"
+        ],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": false,
         "publicExecute": false
       }
     }
@@ -143,7 +293,9 @@
       "identity": "public.messages:messages_authenticated_select",
       "sourcePath": "supabase/migrations/20260723215926_messaging_transport_foundation.sql",
       "command": "SELECT",
-      "roles": ["authenticated"],
+      "roles": [
+        "authenticated"
+      ],
       "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
@@ -151,7 +303,9 @@
       "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_insert",
       "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
       "command": "INSERT",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "d41d8cd98f00b204e9800998ecf8427e",
       "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
     },
@@ -159,7 +313,9 @@
       "identity": "public.service_sms_consent_attestations:service_sms_consent_attestations_service_role_select",
       "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
       "command": "SELECT",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "b326b5062b2f0e69046810717534cb09",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
@@ -167,9 +323,21 @@
       "identity": "public.service_sms_consents:service_sms_consents_service_role_manage",
       "sourcePath": "supabase/migrations/20260724014423_attest_prior_sms_consent.sql",
       "command": "ALL",
-      "roles": ["service_role"],
+      "roles": [
+        "service_role"
+      ],
       "usingMd5": "b326b5062b2f0e69046810717534cb09",
       "withCheckMd5": "b326b5062b2f0e69046810717534cb09"
+    },
+    {
+      "identity": "public.qbo_attachments:qbo_attachments_select",
+      "sourcePath": "supabase/migrations/20260724180000_qbo_attachments.sql",
+      "command": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     }
   ]
 }

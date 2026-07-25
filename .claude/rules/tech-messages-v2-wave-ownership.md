@@ -107,3 +107,21 @@ is superseded only by `docs/messaging-transport-roadmap.md` and
 staff-send seam while preserving `/api/send-message`; the tech client remains call-only and
 unchanged in the behavior-neutral first slice. Consent, worker sole-writer, no-fallback, and
 owner-gated live-send rules remain binding.
+
+## 8. Mobile conversation and consent completion amendment (2026-07-24)
+
+The owner reopened the B2-owned Tech Messages v2 files for two missing field-workflow capabilities:
+a `?new=1` full-screen contact picker and authoritative direct-thread prior-consent handling. The
+picker may call only the capability-checked `/api/message-conversations` Worker, and creation must
+replace the URL with the returned `?c=<conversation-id>` without sending a message.
+
+Direct SMS/MMS composition must stay disabled while consent status loads, fails, is suppressed, or
+is not allowed. Admin/office employees may open the existing attestation modal; technicians see the
+suppression but cannot record evidence. Internal notes remain available, and recording consent does
+not auto-send or retry any text. The send still goes exclusively through `/api/send-message`, which
+remains the final consent/DND authority.
+
+This amendment also owns the narrow newest-message scroll correction and the matching v2 CSS,
+locales, and focused tests. It supersedes the prior B2 “new conversation shed” decision only for
+this owner-requested release and does not reopen other stretch items or the global shared-file
+freezes.

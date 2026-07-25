@@ -57,6 +57,11 @@ they never reinterpret missing configuration as permission to use production.
 - Money: cent rounding, stable idempotency, concurrent retry, partial failure and reconciliation.
 - Messaging: consent, DND, STOP/START/HELP, quiet hours, suppression and retry classification.
 - Database: intended and denied roles, RPC signature compatibility, trigger invariants and rollback.
+  For a reporting/timeline function assembled as a stack of `UNION ALL` arms and grown by repeated
+  function-body-only `CREATE OR REPLACE` migrations, add a durable guard that seeds every arm and
+  asserts each still returns at least one row — so a rebuild from a stale ancestor cannot silently
+  drop a live arm. Precedent: `supabase/tests/crm_contact_activity.test.js` guards all 24 arms of
+  `get_contact_activity` (added after a near-miss 2026-07-24 migration would have dropped 11).
 - UI: loading/error/empty states, minimize/resume, 390px mobile, keyboard/focus and stale-cache recovery.
 - Integrations: missing config, invalid signature/state, duplicate event, timeout/429/5xx and redacted logs.
 
@@ -211,6 +216,30 @@ while the fail-closed hardening remains; reopening either race requires a separa
 migration.
 Capture provenance/readback before deploying the dependent Worker/UI.
 
+## QuickBooks Online attachments + payment-sync cron release sequence (2026-07-24)
+
+Two authored, not-yet-applied migrations (`20260724180000_qbo_attachments.sql`,
+`20260724180100_qbo_payments_sync_cron.sql`). Repository proof done: `npm run build`, worker+unit
+vitest lanes green, `npx eslint` clean on changed files, plus a static migration test
+(`functions/api/qbo-attachments-migration.test.js`) and a pure-helper unit test
+(`functions/lib/quickbooks-attachable.test.js`). Reviewer gauntlet:
+`migration-safety-checker` + `anon-grant-auditor` (both migrations), `worker-security-reviewer`
+(`qbo-attach.js`), `upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`
+(the `QboAttachments` UI).
+
+Shared-prod apply is owner-authorized per `database-standard.md` §0/§5 — deploy the `qbo-attach`
+worker/UI first, then apply `20260724180000_qbo_attachments.sql` (additive table; rollback
+`DROP TABLE`), verify the admin/manager SELECT scope and the two UNIQUE constraints, and confirm an
+end-to-end attach → QBO Attachable with `IncludeOnSend` and a QBO-sent email carrying the file.
+Attachments need only the already-granted accounting scope.
+
+The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_payments_sync_cron.sql`
+(rollback = `cron.unschedule` + `DROP FUNCTION` + delete the config row) only after confirming
+`QBO_WEBHOOK_SECRET` is set in Cloudflare; the real-time webhook half additionally needs
+`QBO_WEBHOOK_VERIFIER_TOKEN` set + the Intuit **Payment** webhook subscribed to
+`https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
+extra fire never double-counts.
+
 ### 2026-07-23 Preview messaging proof
 
 The owner-approved CallRail Preview test verified carrier delivery for two staff-authored outbound
@@ -298,3 +327,22 @@ service-role-only execution. The remaining acceptance gate is deployment of the 
 and verification that a stale retained event becomes processed or durably retryable without
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
+
+### Mobile messaging release acceptance
+
+Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
+find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
+admin/office attestation, technician denial, internal-note availability, explicit post-attestation
+send, deep-link replacement, and newest-message anchoring.
+
+Provider health treats only `received`, `claimed`, and `retryable` CallRail events as an actionable
+backlog. Terminal `failed` events and notification `dead_letter` rows remain visible as historical
+counts but do not permanently block an otherwise healthy activation. Ambiguous send attempts and
+pending/processing/retryable notification rows remain blocking.
+
+A production claim requires distinct evidence layers: exact reviewed commit; migration provenance;
+shared-database apply plus grants/source fingerprint; Preview deployment and sender discovery;
+fresh outbound/inbound SMS; fresh outbound/inbound MMS with private object ownership; bell and Push
+link to the exact field-PWA thread; exact-build promotion to `main`; production-only provider
+bindings/webhook/scheduler cutover; and the same controlled Production proofs. A passing build or a
+historical provider row is not a substitute for those layers.

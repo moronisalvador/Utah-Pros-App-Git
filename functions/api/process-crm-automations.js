@@ -270,6 +270,18 @@ export function planRunOutcome(run, actions, sendResult, now, opts = {}) {
     // Transient failure — leave the run untouched so the next cron retries it.
     return { action: 'retry', patch: null };
   }
+  if (plan.action === 'reconciliation') {
+    // Unknown provider acceptance is terminal until a human reconciles it.
+    // Keep the cursor on the exact action and remove it from the due queue.
+    return {
+      action: 'reconciliation',
+      patch: {
+        status: 'failed',
+        next_run_at: null,
+        last_error: 'reconciliation:ambiguous_provider_outcome',
+      },
+    };
+  }
   // sent | skipped → advance the cursor (skipped = don't keep pestering).
   const adv = plan.patch; // { current_step, status, next_run_at, completed_at }
   return {
@@ -390,22 +402,25 @@ async function executeAction(ctx, run, action) {
 
 async function writeRunEvent(db, run, automation, action, outcomeAction, result) {
   try {
+    const reason = result?.reason
+      || (result?.ambiguous ? 'ambiguous_provider_outcome' : null);
     await db.insert('system_events', {
-      event_type: `crm_automation_${outcomeAction}`, // sent | held | skipped
+      event_type: `crm_automation_${outcomeAction}`,
       entity_type: 'crm_automation_run',
       entity_id: run.id,
       payload: {
         automation_id: automation.id,
         action_index: run.current_action,
         action_type: action?.type || null,
-        reason: result?.reason || null,
+        reason,
+        reconciliation_required: result?.ambiguous === true,
       },
     });
   } catch { /* audit best-effort — the run patch already carries state */ }
 }
 
 // Advance a single due run by one action. Returns the action taken:
-// completed | sent | held | skipped | retry | paused | blocked.
+// completed | sent | held | skipped | reconciliation | retry | paused | blocked.
 export async function processRun(ctx, run) {
   const { db, now } = ctx;
   const nowIso = new Date(now).toISOString();
@@ -500,14 +515,29 @@ export async function processCrmAutomations(db, env, now = new Date()) {
       `status=in.(active,held)&next_run_at=lte.${startedAt}&select=*&order=next_run_at.asc&limit=${CANDIDATE_LIMIT}`
     );
     const ctx = { db, env, now, send, orgId, settings, automationsById };
-    const counts = { created, sent: 0, held: 0, skipped: 0, completed: 0, retry: 0, paused: 0, blocked: 0 };
+    const counts = {
+      created,
+      sent: 0,
+      held: 0,
+      skipped: 0,
+      reconciliation: 0,
+      completed: 0,
+      retry: 0,
+      paused: 0,
+      blocked: 0,
+    };
     for (const run of due) {
       const action = await processRun(ctx, run);
       counts[action] = (counts[action] || 0) + 1;
     }
 
     // A retry/paused/blocked run is not "processed work" — it comes back next run.
-    processed = created + counts.sent + counts.held + counts.skipped + counts.completed;
+    processed = created
+      + counts.sent
+      + counts.held
+      + counts.skipped
+      + counts.reconciliation
+      + counts.completed;
     await writeWorkerRun(db, processed, 'completed', startedAt);
     return { ok: true, counts, processed, orgId };
   } catch (e) {

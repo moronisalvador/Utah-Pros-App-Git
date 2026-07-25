@@ -137,6 +137,55 @@ async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
   return { id: inv.id, job_id: inv.job_id, contact_id: inv.contact_id };
 }
 
+// ─── SECTION: Helpers ──────────────
+
+// Intuit reports entity-read failures as HTTP 400 with a Fault body, NOT 404 — including
+// "object not found", which per Intuit's own troubleshooting guide also fires when a txn was
+// "deleted by one user and accessed by another". Reading only res.status therefore loses the
+// one field that says which it was, which is why a real production failure could only be
+// recorded as the uninformative "QBO get payment 400". Parse the Fault so the cause is
+// recoverable from the stored error.
+//
+// Shape: { Fault: { type, Error: [{ code, Message, Detail }] } }
+export async function readQboFault(res) {
+  let body = null;
+  try { body = await res.json(); } catch { /* non-JSON error body */ }
+  const first = body?.Fault?.Error?.[0] || null;
+  return {
+    status: res.status,
+    faultType: body?.Fault?.type || null,
+    code: first?.code ? String(first.code) : null,
+    message: first?.Message || null,
+    detail: first?.Detail || null,
+  };
+}
+
+// 610 "Object Not Found" is a benign terminal outcome, not a failure to retry: the payment
+// either never existed in this company or was deleted before we read it. 6240 is the
+// duplicate-name variant of the same "gone/unusable" family.
+const QBO_NOT_FOUND_CODES = new Set(['610', '6240']);
+
+export function isQboNotFound(fault) {
+  return fault?.status === 400 && QBO_NOT_FOUND_CODES.has(String(fault?.code));
+}
+
+// A QBO read failure carrying the parsed Fault, so callers can classify without re-parsing.
+export class QboRequestError extends Error {
+  constructor(operation, fault) {
+    const parts = [`QBO ${operation} ${fault.status}`];
+    if (fault.code) parts.push(`code=${fault.code}`);
+    if (fault.message) parts.push(fault.message);
+    if (fault.detail && fault.detail !== fault.message) parts.push(`(${fault.detail})`);
+    super(parts.join(' '));
+    this.name = 'QboRequestError';
+    this.status = fault.status;
+    this.faultCode = fault.code;
+    this.faultDetail = fault.detail;
+    // 429 and 5xx are worth another attempt; a 400-family Fault is a permanent refusal.
+    this.retryable = fault.status === 429 || fault.status >= 500;
+  }
+}
+
 // ─── SECTION: Exports ──────────────
 
 // Mirror a single QBO Payment into UPR. Idempotent: re-running is a no-op once recorded.
@@ -144,8 +193,11 @@ async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
 export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
   const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
   if (!res.ok) {
+    // 404 is kept for defensiveness but Intuit does not use it for entity reads.
     if (res.status === 404) return { ok: true, results: [{ skipped: 'payment-not-found' }] };
-    throw new Error(`QBO get payment ${res.status}`);
+    const fault = await readQboFault(res);
+    if (isQboNotFound(fault)) return { ok: true, results: [{ skipped: 'payment-not-found' }] };
+    throw new QboRequestError('get payment', fault);
   }
   const data = await res.json().catch(() => ({}));
   const pmt = data?.Payment;

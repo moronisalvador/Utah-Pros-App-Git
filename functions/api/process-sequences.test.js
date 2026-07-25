@@ -164,6 +164,23 @@ describe('planStepOutcome', () => {
     expect(plan.patch).toBe(null);
     expect(plan.event).toBe(null);
   });
+
+  it('an ambiguous provider outcome pauses at the same step for reconciliation', () => {
+    const plan = planStepOutcome(enrollment, steps, {
+      ok: false,
+      skipped: false,
+      error: 'Provider response was not received',
+      permanent: false,
+      ambiguous: true,
+    }, NOW);
+    expect(plan.action).toBe('reconciliation');
+    expect(plan.patch).toEqual({ status: 'paused', next_run_at: null });
+    expect(plan.patch.current_step).toBeUndefined();
+    expect(plan.event).toEqual({
+      event_type: 'crm_sequence_step_reconciliation_required',
+      reason: 'ambiguous_provider_outcome',
+    });
+  });
 });
 
 // ─── Contracts ───────────────────────────────────────────────────────────────
@@ -208,5 +225,95 @@ describe('gatherExitSignals reply detection (via processEnrollment)', () => {
     const db = fakeDb([{ id: 'm1' }]); // reply present
     const outcome = await processEnrollment(ctx(db), enrollment);
     expect(outcome).toBe('exited');
+  });
+});
+
+describe('ambiguous provider reconciliation persistence', () => {
+  function ambiguousHarness({ failEventWrite = false } = {}) {
+    const updates = [];
+    const inserts = [];
+    const db = {
+      select: async () => [],
+      update: async (table, query, data) => {
+        updates.push({ table, query, data });
+        return null;
+      },
+      insert: async (table, data) => {
+        if (failEventWrite && table === 'system_events') {
+          throw new Error('audit unavailable');
+        }
+        inserts.push({ table, data });
+        return [data];
+      },
+    };
+    const enrollment = {
+      id: 'e-ambiguous',
+      sequence_id: 's1',
+      contact_id: 'c1',
+      enrolled_at: iso(NOW),
+      current_step: 0,
+      contacts: { name: 'Test' },
+    };
+    const context = {
+      db,
+      now: NOW,
+      send: async () => ({
+        ok: false,
+        skipped: false,
+        error: 'Provider response was not received',
+        permanent: false,
+        ambiguous: true,
+      }),
+      sequences: {
+        s1: {
+          id: 's1',
+          org_id: 'o1',
+          exit_on_reply: false,
+          exit_on_conversion: false,
+        },
+      },
+      steps: { s1: [{ step_order: 0, channel: 'sms', body: 'x' }] },
+    };
+    return { context, enrollment, updates, inserts };
+  }
+
+  it('pauses without advancing and durably records the reconciliation reason', async () => {
+    const h = ambiguousHarness();
+    await expect(processEnrollment(h.context, h.enrollment))
+      .resolves.toBe('reconciliation');
+
+    expect(h.updates).toContainEqual(expect.objectContaining({
+      table: 'crm_sequence_enrollments',
+      data: expect.objectContaining({
+        status: 'paused',
+        next_run_at: null,
+      }),
+    }));
+    expect(h.updates[0].data.current_step).toBeUndefined();
+    expect(h.inserts).toContainEqual(expect.objectContaining({
+      table: 'system_events',
+      data: expect.objectContaining({
+        event_type: 'crm_sequence_step_reconciliation_required',
+        payload: expect.objectContaining({
+          reason: 'ambiguous_provider_outcome',
+          step_order: 0,
+        }),
+      }),
+    }));
+  });
+
+  it('leaves the enrollment paused and surfaces an error if the required audit write fails', async () => {
+    const h = ambiguousHarness({ failEventWrite: true });
+    await expect(processEnrollment(h.context, h.enrollment))
+      .rejects.toThrow('audit unavailable');
+
+    expect(h.updates).toContainEqual(expect.objectContaining({
+      table: 'crm_sequence_enrollments',
+      data: expect.objectContaining({
+        status: 'paused',
+        next_run_at: null,
+      }),
+    }));
+    expect(h.updates[0].data.current_step).toBeUndefined();
   });
 });

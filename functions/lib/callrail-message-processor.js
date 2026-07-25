@@ -1,11 +1,25 @@
 /**
- * Projects a claimed CallRail text event into UPR's canonical messaging domain.
+ * ════════════════════════════════════════════════
+ * FILE: callrail-message-processor.js
+ * ════════════════════════════════════════════════
  *
- * This module never calls a provider. In particular, compliance replies are not
- * sent through CallRail because its API is restricted to person-to-person use.
- * Inbound projection is one service-role database transaction keyed by the
- * durable provider-event ID. An immediate webhook without that ID defers to the
- * retained-event worker instead of falling back to a partial multi-write path.
+ * WHAT THIS DOES (plain language):
+ *   Matches verified CallRail events to UPR conversations and send attempts.
+ *   It records inbound texts and confirms outbound texts without sending any
+ *   new provider message.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  callers provide the shared Supabase helper
+ *   Data:      reads  → message_send_attempts, conversations, contacts
+ *              writes → through project_callrail_inbound_event and
+ *                       project_callrail_outbound_event
+ *
+ * NOTES / GOTCHAS:
+ *   - Outbound MMS requires an MMS attempt with private outbound media.
+ *   - Missing durable event identity always defers to retained-event recovery.
+ *   - This module never sends a provider or compliance message.
+ * ════════════════════════════════════════════════
  */
 
 export class CallrailMessageProcessingError extends Error {
@@ -20,6 +34,7 @@ export class CallrailMessageProcessingError extends Error {
 const MAX_PROCESSING_ATTEMPTS = 8;
 const RETRY_BASE_MS = 5 * 60 * 1000;
 const RETRY_MAX_MS = 60 * 60 * 1000;
+const OUTBOUND_MEDIA_PREFIX = 'upr-storage://message-attachments/outbound/';
 
 export function buildCallrailRetryPatch({
   previousAttempts = 0,
@@ -52,7 +67,19 @@ function normalizedPhone(value) {
   return null;
 }
 
-function isExactOutboundAttempt(attempt, event) {
+function hasPrivateOutboundMedia(attempt) {
+  return Array.isArray(attempt.media_urls)
+    && attempt.media_urls.length > 0
+    && attempt.media_urls.every((reference) => (
+      typeof reference === 'string'
+      && reference.startsWith(OUTBOUND_MEDIA_PREFIX)
+      && reference.length > OUTBOUND_MEDIA_PREFIX.length
+      && !reference.slice(OUTBOUND_MEDIA_PREFIX.length).includes('..')
+      && !reference.includes('\\')
+    ));
+}
+
+function outboundAttemptIdentityMatches(attempt, event) {
   const startedAt = new Date(attempt.started_at).getTime();
   const occurredAt = new Date(event.occurredAt).getTime();
   return attempt.provider_conversation_id === event.providerConversationId
@@ -64,12 +91,40 @@ function isExactOutboundAttempt(attempt, event) {
     && occurredAt <= startedAt + (10 * 60 * 1000);
 }
 
+function outboundAttemptBindingMatches(attempt, event) {
+  return attempt.requested_channel === event.messageType
+    && (event.messageType !== 'mms' || hasPrivateOutboundMedia(attempt));
+}
+
+function outboundBindingError(attempt, event) {
+  if (attempt.requested_channel !== event.messageType) {
+    return new CallrailMessageProcessingError(
+      'CALLRAIL_OUTBOUND_CHANNEL_MISMATCH',
+      'CallRail sent-event channel does not match the UPR send attempt',
+    );
+  }
+  return new CallrailMessageProcessingError(
+    'CALLRAIL_OUTBOUND_MEDIA_UNOWNED',
+    'CallRail MMS confirmation requires the send attempt private-media references',
+  );
+}
+
+function isExactOutboundAttempt(attempt, event) {
+  return outboundAttemptIdentityMatches(attempt, event)
+    && outboundAttemptBindingMatches(attempt, event);
+}
+
 async function findOutboundAttempt(db, event) {
   const [byMessageId] = await db.select(
     'message_send_attempts',
     `provider=eq.callrail&provider_message_id=eq.${encodeURIComponent(event.providerMessageId)}&limit=1`,
   );
-  if (byMessageId) return byMessageId;
+  if (byMessageId) {
+    if (!outboundAttemptBindingMatches(byMessageId, event)) {
+      throw outboundBindingError(byMessageId, event);
+    }
+    return byMessageId;
+  }
 
   const candidates = await db.select(
     'message_send_attempts',
@@ -81,6 +136,12 @@ async function findOutboundAttempt(db, event) {
       'CALLRAIL_OUTBOUND_AMBIGUOUS',
       'More than one CallRail send attempt matches the sent event',
     );
+  }
+  if (matches.length === 0) {
+    const identityMatch = candidates.find(
+      (attempt) => outboundAttemptIdentityMatches(attempt, event),
+    );
+    if (identityMatch) throw outboundBindingError(identityMatch, event);
   }
   return matches[0] || null;
 }
@@ -148,7 +209,12 @@ export async function processCallrailTextEvent({ db, event, consentOnly = false 
       'Only CallRail events are accepted',
     );
   }
-  if (!consentOnly && event.messageType === 'mms' && !event.ownedMedia?.length) {
+  if (
+    !consentOnly
+    && event.direction === 'inbound'
+    && event.messageType === 'mms'
+    && !event.ownedMedia?.length
+  ) {
     throw new CallrailMessageProcessingError(
       'CALLRAIL_MMS_NOT_ENABLED',
       'CallRail MMS ingestion is disabled until private media capture is available',

@@ -28,17 +28,18 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/ui';
 import { getAuthHeader } from '@/lib/realtime';
 import { impact, notify } from '@/lib/nativeHaptics';
 import { err, ok } from '@/lib/toast';
 
 const METHODS = [
-  { value: 'verbal_permission', label: 'Verbal permission on a call' },
-  { value: 'signed_work_authorization', label: 'Signed work authorization' },
-  { value: 'other_written_permission', label: 'Other written permission' },
-  { value: 'customer_requested_texts', label: 'Customer asked us to text' },
-  { value: 'other_verified_permission', label: 'Other verified permission' },
+  { value: 'verbal_permission', key: 'verbalPermission' },
+  { value: 'signed_work_authorization', key: 'signedWorkAuthorization' },
+  { value: 'other_written_permission', key: 'otherWrittenPermission' },
+  { value: 'customer_requested_texts', key: 'customerRequestedTexts' },
+  { value: 'other_verified_permission', key: 'otherVerifiedPermission' },
 ];
 
 function denverDateValue(date = new Date()) {
@@ -59,6 +60,7 @@ export default function SmsConsentAttestationModal({
   onClose,
   onRecorded,
 }) {
+  const { t } = useTranslation('msgs');
   const [method, setMethod] = useState('');
   const [consentObtainedOn, setConsentObtainedOn] = useState('');
   const [evidenceNote, setEvidenceNote] = useState('');
@@ -96,14 +98,14 @@ export default function SmsConsentAttestationModal({
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.error || 'Could not record SMS permission');
+        throw new Error(data.error || t('consentAttestation.recordError'));
       }
 
-      ok('SMS permission recorded');
+      ok(t('consentAttestation.recorded'));
       notify('success');
       onRecorded?.(data.consent);
     } catch (error) {
-      err(error.message || 'Could not record SMS permission');
+      err(error.message || t('consentAttestation.recordError'));
     } finally {
       setSubmitting(false);
     }
@@ -119,29 +121,34 @@ export default function SmsConsentAttestationModal({
     <Modal
       open={open}
       onClose={submitting ? undefined : onClose}
-      title="Record verified SMS permission"
+      title={t('consentAttestation.title')}
       size="sm"
       className="sms-consent-attestation-modal"
       closeOnOverlay={!submitting}
       footer={(
         <>
           <button className="btn btn-secondary" type="button" onClick={onClose} disabled={submitting}>
-            Cancel
+            {t('consentAttestation.cancel')}
           </button>
           <button className="btn btn-primary btn-lg" type="submit" form="sms-consent-attestation" disabled={!canSubmit}>
-            {submitting ? 'Recording…' : 'Record permission'}
+            {submitting
+              ? t('consentAttestation.recording')
+              : t('consentAttestation.record')}
           </button>
         </>
       )}
     >
       <form id="sms-consent-attestation" onSubmit={submit}>
         <p className="conv-consent-attest-copy">
-          Record this only after verifying {contactName || 'this contact'} gave Utah Pros permission
-          to send service-related texts. Contact existence alone is not permission.
+          {t('consentAttestation.intro', {
+            contact: contactName || t('consentAttestation.thisContact'),
+          })}
         </p>
 
         <div className="form-group">
-          <label className="label" htmlFor="sms-consent-method">How was permission provided?</label>
+          <label className="label" htmlFor="sms-consent-method">
+            {t('consentAttestation.methodLabel')}
+          </label>
           <select
             id="sms-consent-method"
             className="input"
@@ -150,15 +157,19 @@ export default function SmsConsentAttestationModal({
             disabled={submitting}
             required
           >
-            <option value="">Select a source</option>
+            <option value="">{t('consentAttestation.methodPlaceholder')}</option>
             {METHODS.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
+              <option key={item.value} value={item.value}>
+                {t(`consentAttestation.methods.${item.key}`)}
+              </option>
             ))}
           </select>
         </div>
 
         <div className="form-group">
-          <label className="label" htmlFor="sms-consent-date">When was permission obtained?</label>
+          <label className="label" htmlFor="sms-consent-date">
+            {t('consentAttestation.dateLabel')}
+          </label>
           <input
             id="sms-consent-date"
             className="input"
@@ -172,7 +183,9 @@ export default function SmsConsentAttestationModal({
         </div>
 
         <div className="form-group">
-          <label className="label" htmlFor="sms-consent-evidence">Evidence note</label>
+          <label className="label" htmlFor="sms-consent-evidence">
+            {t('consentAttestation.evidenceLabel')}
+          </label>
           <textarea
             id="sms-consent-evidence"
             className="input textarea"
@@ -180,14 +193,14 @@ export default function SmsConsentAttestationModal({
             onChange={(event) => setEvidenceNote(event.target.value)}
             maxLength={500}
             aria-describedby="sms-consent-evidence-hint"
-            placeholder="Example: Recorded call at 2:14 PM, or authorization stored in Job Documents"
+            placeholder={t('consentAttestation.evidencePlaceholder')}
             disabled={submitting}
             required
           />
           <div className="conv-consent-attest-hint" id="sms-consent-evidence-hint">
-            At least 10 characters ({evidenceNote.trim().length}/500). The source, consent date,
-            your staff identity, trusted request IP, and server timestamp will be kept in consent
-            history.
+            {t('consentAttestation.evidenceHint', {
+              count: evidenceNote.trim().length,
+            })}
           </div>
         </div>
 
@@ -199,9 +212,7 @@ export default function SmsConsentAttestationModal({
             disabled={submitting}
           />
           <span>
-            I verified this person gave Utah Pros Restoration permission to send service-related
-            texts about their requested work, and has not revoked it. This does not clear STOP or
-            Do Not Disturb.
+            {t('consentAttestation.confirm')}
           </span>
         </label>
       </form>

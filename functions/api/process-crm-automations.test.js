@@ -229,6 +229,23 @@ describe('planRunOutcome — send-outcome semantics (imported from Phase 8)', ()
     expect(plan.action).toBe('retry');
     expect(plan.patch).toBe(null);
   });
+
+  it('an ambiguous provider outcome fails the run at the same action for reconciliation', () => {
+    const plan = planRunOutcome(run, actions, {
+      ok: false,
+      skipped: false,
+      error: 'Provider response was not received',
+      permanent: false,
+      ambiguous: true,
+    }, NOW);
+    expect(plan.action).toBe('reconciliation');
+    expect(plan.patch).toEqual({
+      status: 'failed',
+      next_run_at: null,
+      last_error: 'reconciliation:ambiguous_provider_outcome',
+    });
+    expect(plan.patch.current_action).toBeUndefined();
+  });
 });
 
 // ─── 1. Idempotent run-creation — one event, one run per rule ─────────────────

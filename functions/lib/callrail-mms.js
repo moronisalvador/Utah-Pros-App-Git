@@ -20,6 +20,10 @@ export const CALLRAIL_MMS_MAX_ITEMS = 5;
 export const CALLRAIL_MMS_MAX_OBJECT_BYTES = 5_000_000;
 export const CALLRAIL_MMS_MAX_TOTAL_BYTES = 15_000_000;
 export const CALLRAIL_MMS_FETCH_TIMEOUT_MS = 15_000;
+const CALLRAIL_MMS_APP_HOST = 'app.callrail.com';
+const CALLRAIL_MMS_API_HOST = 'api.callrail.com';
+const CALLRAIL_MMS_ASSET_HOST =
+  /^calltrk-mms-media-prod1\.s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/;
 
 const MEDIA_TYPES = Object.freeze({
   'image/jpeg': {
@@ -146,19 +150,141 @@ export function validateCallrailMediaEndpoint({
     `/v3/a/${encodeURIComponent(allowedAccount)}/text-messages/` +
     `${encodeURIComponent(message)}/media/${index}`
   ));
+  const matchedAppAccount = Array.from(allowedAccounts).find((allowedAccount) => (
+    parsed.pathname === (
+      `/msg/a/${encodeURIComponent(allowedAccount)}/messages/` +
+      `${encodeURIComponent(message)}/media/${index}`
+    )
+  ));
+  const isDocumentedApiEndpoint =
+    parsed.hostname === CALLRAIL_MMS_API_HOST
+    && exactPaths.includes(parsed.pathname);
+  // CallRail's live 2026-07-24 webhook/UI emitted this account-scoped endpoint
+  // even though its public docs show the v3 API form. The account identity must
+  // still be one proven by authenticated account discovery. The app endpoint
+  // requires a browser session and rejects the API token, so a verified match
+  // is canonicalized to the equivalent documented API endpoint.
+  const isObservedAppEndpoint =
+    parsed.hostname === CALLRAIL_MMS_APP_HOST
+    && Boolean(matchedAppAccount);
   if (
     parsed.protocol !== 'https:'
-    || parsed.hostname !== 'api.callrail.com'
     || parsed.port
     || parsed.username
     || parsed.password
+    || parsed.search
     || parsed.hash
-    || !exactPaths.includes(parsed.pathname)
+    || (!isDocumentedApiEndpoint && !isObservedAppEndpoint)
     || parsed.href.length > 2_048
   ) {
     fail('CALLRAIL_MMS_URL_INVALID', 'CallRail MMS media URL is outside the expected account.');
   }
+  if (isObservedAppEndpoint) {
+    return (
+      `https://${CALLRAIL_MMS_API_HOST}/v3/a/` +
+      `${encodeURIComponent(matchedAppAccount)}/text-messages/` +
+      `${encodeURIComponent(message)}/media/${index}`
+    );
+  }
   return parsed.href;
+}
+
+function validateCallrailMediaRedirect(location) {
+  let parsed;
+  try {
+    parsed = new URL(location);
+  } catch {
+    fail('CALLRAIL_MMS_REDIRECT_REJECTED', 'CallRail returned an invalid media redirect.');
+  }
+  const expires = Number(parsed.searchParams.get('X-Amz-Expires'));
+  if (
+    parsed.protocol !== 'https:'
+    || !CALLRAIL_MMS_ASSET_HOST.test(parsed.hostname)
+    || parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.hash
+    || parsed.searchParams.get('X-Amz-Algorithm') !== 'AWS4-HMAC-SHA256'
+    || !/^\d{8}T\d{6}Z$/.test(parsed.searchParams.get('X-Amz-Date') || '')
+    || !Number.isSafeInteger(expires)
+    || expires <= 0
+    || expires > 600
+    || !/^[a-f0-9]{64}$/i.test(parsed.searchParams.get('X-Amz-Signature') || '')
+    || parsed.searchParams.get('X-Amz-SignedHeaders') !== 'host'
+    || parsed.href.length > 8_192
+  ) {
+    fail(
+      'CALLRAIL_MMS_REDIRECT_REJECTED',
+      'CallRail returned a media redirect outside the expected storage host.',
+    );
+  }
+  return parsed.href;
+}
+
+function preferredApiAccountId(accountId, accountAliases = []) {
+  return [accountId, ...accountAliases]
+    .map((value) => String(value || '').trim())
+    .find((value) => /^ACC[A-Za-z0-9_-]+$/.test(value))
+    || accountId;
+}
+
+function validateCallrailConversationRedirect(location, {
+  accountId,
+  accountAliases,
+  providerConversationId,
+  requestedEndpoint,
+}) {
+  const apiAccount = preferredApiAccountId(accountId, accountAliases);
+  const conversation = requireIdentifier(
+    providerConversationId,
+    'CallRail conversation identity',
+  );
+  let parsed;
+  try {
+    parsed = new URL(location, requestedEndpoint);
+  } catch {
+    fail(
+      'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      'CallRail returned an invalid conversation redirect.',
+    );
+  }
+  const exactPath =
+    `/v3/a/${encodeURIComponent(apiAccount)}` +
+    `/text-messages/${encodeURIComponent(conversation)}.json`;
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.hostname !== CALLRAIL_MMS_API_HOST
+    || parsed.port
+    || parsed.username
+    || parsed.password
+    || parsed.pathname !== exactPath
+    || (parsed.search && parsed.search !== '?per_page=250')
+    || parsed.hash
+    || parsed.href.length > 2_048
+  ) {
+    fail(
+      'CALLRAIL_MMS_URL_REFRESH_REDIRECT_REJECTED',
+      'CallRail returned a conversation redirect outside the verified account.',
+    );
+  }
+  return parsed.href;
+}
+
+function authenticatedMediaEndpoint(validatedUrl, { accountId, accountAliases }) {
+  const parsed = new URL(validatedUrl);
+
+  // CallRail's live webhook currently emits an app-host route, while its API
+  // contract says media links are retrieved with the API key. After the app
+  // route has passed exact account/message/index validation above, translate
+  // only its proven path identity onto the documented API host and its proven
+  // masked account identity. Never send an API credential to the browser-
+  // session app host or rely on a numeric-account redirect.
+  const [, , , , , message, , index] = parsed.pathname.split('/');
+  const apiAccount = preferredApiAccountId(accountId, accountAliases);
+  return (
+    `https://${CALLRAIL_MMS_API_HOST}/v3/a/${encodeURIComponent(apiAccount)}` +
+    `/text-messages/${encodeURIComponent(message)}/media/${encodeURIComponent(index)}`
+  );
 }
 
 function contentTypeOf(response) {
@@ -237,7 +363,8 @@ async function sha256Hex(bytes) {
 }
 
 function providerFailure(response) {
-  const retryable = response.status === 429 || response.status >= 500;
+  const retryable = [404, 410, 429].includes(response.status)
+    || response.status >= 500;
   return new CallrailMmsError(
     'CALLRAIL_MMS_DOWNLOAD_REJECTED',
     'CallRail did not return the requested MMS media.',
@@ -256,18 +383,22 @@ async function downloadOne({
   fetchImpl,
   timeoutMs,
 }) {
-  const endpoint = validateCallrailMediaEndpoint({
+  const validatedEndpoint = validateCallrailMediaEndpoint({
     accountId,
     accountAliases,
     providerMessageId,
     index,
     mediaUrl,
   });
+  const endpoint = authenticatedMediaEndpoint(validatedEndpoint, {
+    accountId,
+    accountAliases,
+  });
   let response;
   try {
     response = await fetchImpl(endpoint, {
       method: 'GET',
-      redirect: 'error',
+      redirect: 'manual',
       headers: {
         Authorization: `Token token="${apiKey}"`,
         Accept: 'image/jpeg, image/png, image/gif',
@@ -279,6 +410,34 @@ async function downloadOne({
       'CallRail MMS media could not be downloaded.',
       { retryable: true },
     );
+  }
+  if (response && response.status >= 300 && response.status < 400) {
+    let assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
+    for (let redirectCount = 0; redirectCount <= 1; redirectCount += 1) {
+      try {
+        response = await fetchImpl(assetEndpoint, {
+          method: 'GET',
+          redirect: 'manual',
+          headers: {
+            Accept: 'image/jpeg, image/png, image/gif',
+          },
+        }, timeoutMs);
+      } catch {
+        fail(
+          'CALLRAIL_MMS_DOWNLOAD_FAILED',
+          'CallRail MMS media could not be downloaded.',
+          { retryable: true },
+        );
+      }
+      if (!(response.status >= 300 && response.status < 400)) break;
+      if (redirectCount >= 1) {
+        fail(
+          'CALLRAIL_MMS_REDIRECT_REJECTED',
+          'CallRail returned too many media redirects.',
+        );
+      }
+      assetEndpoint = validateCallrailMediaRedirect(response.headers.get('Location'));
+    }
   }
   if (!response?.ok) throw providerFailure(response || { status: 0 });
 
@@ -460,20 +619,40 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
   const fetchImpl = options?.fetchImpl || fetchWithTimeout;
   let ephemeralMediaUrls = event.ephemeralMediaUrls;
   let accountAliases = [];
+  // Current CallRail APIs identify accounts with masked ACC... ids. Older UPR
+  // configuration may still hold the numeric identity, so prove and prefer the
+  // masked alias before any history or media request instead of relying on a
+  // provider redirect that would complicate credential and SSRF boundaries.
+  if (!/^ACC[A-Za-z0-9_-]+$/.test(accountId)) {
+    accountAliases = await resolveProvenAccountAliases({
+      apiKey,
+      configuredAccountId: accountId,
+      fetcher: fetchImpl,
+    });
+    if (!/^ACC[A-Za-z0-9_-]+$/.test(
+      preferredApiAccountId(accountId, accountAliases),
+    )) {
+      fail(
+        'CALLRAIL_MMS_ACCOUNT_ALIAS_REJECTED',
+        'CallRail MMS account identity could not be verified.',
+      );
+    }
+  }
   if (!Array.isArray(ephemeralMediaUrls) || ephemeralMediaUrls.length === 0) {
     const conversation = requireIdentifier(
       event.providerConversationId,
       'CallRail conversation identity',
     );
     const message = requireIdentifier(event.providerMessageId, 'CallRail message identity');
+    const apiAccountId = preferredApiAccountId(accountId, accountAliases);
     const endpoint =
-      `https://api.callrail.com/v3/a/${encodeURIComponent(accountId)}` +
+      `https://api.callrail.com/v3/a/${encodeURIComponent(apiAccountId)}` +
       `/text-messages/${encodeURIComponent(conversation)}.json?per_page=250`;
     let response;
     try {
       response = await fetchImpl(endpoint, {
         method: 'GET',
-        redirect: 'error',
+        redirect: 'manual',
         headers: {
           Authorization: `Token token="${apiKey}"`,
           Accept: 'application/json',
@@ -485,6 +664,33 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
         'Current CallRail MMS media URLs could not be refreshed.',
         { retryable: true },
       );
+    }
+    if (response && response.status >= 300 && response.status < 400) {
+      const redirectedEndpoint = validateCallrailConversationRedirect(
+        response.headers.get('Location'),
+        {
+          accountId,
+          accountAliases,
+          providerConversationId: conversation,
+          requestedEndpoint: endpoint,
+        },
+      );
+      try {
+        response = await fetchImpl(redirectedEndpoint, {
+          method: 'GET',
+          redirect: 'error',
+          headers: {
+            Authorization: `Token token="${apiKey}"`,
+            Accept: 'application/json',
+          },
+        }, options?.timeoutMs || CALLRAIL_MMS_FETCH_TIMEOUT_MS);
+      } catch {
+        fail(
+          'CALLRAIL_MMS_URL_REFRESH_FAILED',
+          'Current CallRail MMS media URLs could not be refreshed.',
+          { retryable: true },
+        );
+      }
     }
     if (!response?.ok) throw providerFailure(response || { status: 0 });
     const payloadBytes = await readBoundedBytes(response, 1_000_000);
@@ -501,10 +707,10 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
     const messages = Array.isArray(payload?.messages) ? payload.messages : [];
     const expectedDirection = event.direction === 'inbound' ? 'incoming' : 'outgoing';
     const possibleMatches = messages.filter((candidate) => {
+      const candidateType = candidate?.type ?? candidate?.message_type;
       if (
         candidate?.direction !== expectedDirection
-        || String(candidate?.type || '').toLowerCase() !== 'mms'
-        || String(candidate?.content || '') !== String(event.body || '')
+        || String(candidateType || '').toLowerCase() !== 'mms'
         || !Array.isArray(candidate?.media_urls)
         || candidate.media_urls.length !== event.mediaCount
       ) {
@@ -519,7 +725,7 @@ export async function ingestVerifiedCallrailEventMms({ db, env, event }, options
         mediaUrls: candidate.media_urls,
       })
     ));
-    if (needsAliasDiscovery) {
+    if (needsAliasDiscovery && accountAliases.length === 0) {
       accountAliases = await resolveProvenAccountAliases({
         apiKey,
         configuredAccountId: accountId,

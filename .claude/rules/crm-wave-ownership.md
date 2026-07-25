@@ -287,3 +287,27 @@ headline and show the company-wide total for the same window beside it.
   The 2026-07-23 read-only catalog check confirmed the signature, JSON shape, stable
   `SECURITY DEFINER` contract, `anon` denial and `authenticated`/`service_role` execution.
 - Everything else in §§1–9 remains frozen.
+
+---
+
+## 11. Lead-notes-log addendum (2026-07-24) — owner-directed standalone
+
+Recorded so §1's frozen list stays truthful. Wave 1 is complete (Phase 6b merged 2026-07-02) and
+standalone post-wave CRM edits are precedented (§§9–10, and the §1 AMENDED 2026-07-21 production-fix
+migrations that body-only-replaced `get_contact_activity`). The **owner directed** replacing the
+lead's single overwritable `inbound_leads.notes` field with an append-only, dated, attributed notes
+LOG (staff run several follow-ups per lead and need one note per follow-up).
+
+- **Migration `20260724180000_crm_lead_notes.sql`** (additive): new table `crm_lead_notes` (RLS-enabled,
+  no browser policy — RPC-only, `REVOKE ALL FROM PUBLIC, anon`); new RPCs `add_lead_note`,
+  `get_lead_notes` (`SECURITY DEFINER`, `REVOKE PUBLIC/anon`, `GRANT authenticated, service_role`);
+  an additive backfill of existing `inbound_leads.notes` (copied, not cleared).
+- **Frozen-RPC touch (precedented, signature-frozen):** function-body-only `CREATE OR REPLACE` of
+  `get_lead_activity` / `get_contact_activity` — same signature + `RETURNS TABLE` shape — adding a
+  `note` arm from `crm_lead_notes` and dropping `il.notes`/`fu.notes` from the lead/follow-up body
+  `COALESCE`. Backward-compat test: `supabase/tests/crm_lead_notes.test.js`.
+- **Authorized files:** `src/pages/crm/CrmLeads.jsx` (Notes section → list + composer; card quick-note
+  popover → append), a new `.crm-lead-note*` marker block appended to `src/index.css`, the migration +
+  test above, and `UPR-Web-Context.md`. `inbound_leads.notes` remains on the table (additive rule) but
+  is no longer written or displayed by the Leads UI.
+- Everything else in §§1–10 remains frozen.

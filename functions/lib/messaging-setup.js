@@ -27,8 +27,10 @@ export function buildMessagingSetupStatus(env, {
   const trackingNumberConfigured = configured(env?.CALLRAIL_TRACKING_NUMBER);
   const signingKeyConfigured = configured(env?.CALLRAIL_SIGNING_KEY);
   const pendingEvents = Number(health.pendingEvents) || 0;
+  const failedEvents = Number(health.failedEvents) || 0;
   const ambiguousAttempts = Number(health.ambiguousAttempts) || 0;
   const pendingNotifications = Number(health.pendingNotifications) || 0;
+  const deadLetterNotifications = Number(health.deadLetterNotifications) || 0;
   const healthChecked = health.checked === true;
   const blockers = [];
 
@@ -87,8 +89,10 @@ export function buildMessagingSetupStatus(env, {
       scope: 'shared_database',
       last_text_webhook_at: health.lastTextWebhookAt || null,
       pending_events: pendingEvents,
+      failed_events: failedEvents,
       ambiguous_attempts: ambiguousAttempts,
       pending_notifications: pendingNotifications,
+      dead_letter_notifications: deadLetterNotifications,
     },
     capabilities: {
       callrail: ['sms', 'mms'],

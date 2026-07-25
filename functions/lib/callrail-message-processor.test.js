@@ -1,3 +1,23 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: callrail-message-processor.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Proves CallRail events are matched and recorded without duplicate sends.
+ *   It covers inbound consent handling, outbound identity, and safe retries.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  callrail-message-processor.js
+ *   Data:      reads  → mocked messaging tables and projection functions
+ *              writes → mocked messaging tables and projection functions
+ *
+ * NOTES / GOTCHAS:
+ *   - Tests never contact CallRail or send a message.
+ * ════════════════════════════════════════════════
+ */
+
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildCallrailRetryPatch,
@@ -264,6 +284,10 @@ describe('CallRail canonical text processor', () => {
         provider_conversation_id: 'provider-conv-1',
         submitted_body: 'Rep: exact outbound',
         recipient_address: '+18015551212',
+        requested_channel: 'mms',
+        media_urls: [
+          'upr-storage://message-attachments/outbound/conv-1/photo.jpg',
+        ],
         started_at: '2026-07-23T17:59:00.000Z',
       },
     });
@@ -272,6 +296,7 @@ describe('CallRail canonical text processor', () => {
       event: {
         ...BASE,
         direction: 'outbound',
+        messageType: 'mms',
         from: '+13853360611',
         to: '+18015551212',
         body: 'Rep: exact outbound',
@@ -297,6 +322,8 @@ describe('CallRail canonical text processor', () => {
       provider_conversation_id: 'provider-conv-1',
       submitted_body: 'Rep: exact outbound',
       recipient_address: '+18015551212',
+      requested_channel: 'sms',
+      media_urls: [],
       started_at: '2026-07-23T17:59:00.000Z',
     };
     const db = createDb({
@@ -349,6 +376,8 @@ describe('CallRail canonical text processor', () => {
       provider_conversation_id: 'provider-conv-1',
       submitted_body: 'Rep: exact outbound',
       recipient_address: '+18015551212',
+      requested_channel: 'sms',
+      media_urls: [],
       started_at: '2026-07-23T17:59:00.000Z',
     };
     const db = createDb();
@@ -372,6 +401,89 @@ describe('CallRail canonical text processor', () => {
       retryable: false,
     });
     expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an MMS webhook that matches an SMS attempt by provider message ID', async () => {
+    const db = createDb({
+      attempt: {
+        id: 'attempt-1',
+        provider_message_id: 'msg-1',
+        provider_conversation_id: 'provider-conv-1',
+        submitted_body: 'Rep: exact outbound',
+        recipient_address: '+18015551212',
+        requested_channel: 'sms',
+        media_urls: [],
+        started_at: '2026-07-23T17:59:00.000Z',
+      },
+    });
+
+    await expect(processCallrailTextEvent({
+      db,
+      event: {
+        ...BASE,
+        direction: 'outbound',
+        messageType: 'mms',
+        from: '+13853360611',
+        to: '+18015551212',
+        body: 'Rep: exact outbound',
+      },
+    })).rejects.toMatchObject({
+      code: 'CALLRAIL_OUTBOUND_CHANNEL_MISMATCH',
+      retryable: false,
+    });
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('keeps the deployed outbound_unmatched RPC contract retryable', async () => {
+    const db = createDb({
+      outboundProjection: {
+        outcome: 'outbound_unmatched',
+        message_id: null,
+        send_attempt_id: null,
+      },
+    });
+    await expect(processCallrailTextEvent({
+      db,
+      event: {
+        ...BASE,
+        direction: 'outbound',
+        from: '+13853360611',
+        to: '+18015551212',
+      },
+    })).rejects.toMatchObject({
+      code: 'CALLRAIL_OUTBOUND_UNMATCHED',
+      retryable: true,
+    });
+  });
+
+  it('rejects an MMS fallback match without a private outbound media reference', async () => {
+    const db = createDb({
+      attempt: {
+        id: 'attempt-1',
+        provider_conversation_id: 'provider-conv-1',
+        submitted_body: 'Rep: exact outbound',
+        recipient_address: '+18015551212',
+        requested_channel: 'mms',
+        media_urls: ['https://api.callrail.com/provider-copy.jpg'],
+        started_at: '2026-07-23T17:59:00.000Z',
+      },
+    });
+
+    await expect(processCallrailTextEvent({
+      db,
+      event: {
+        ...BASE,
+        direction: 'outbound',
+        messageType: 'mms',
+        from: '+13853360611',
+        to: '+18015551212',
+        body: 'Rep: exact outbound',
+      },
+    })).rejects.toMatchObject({
+      code: 'CALLRAIL_OUTBOUND_MEDIA_UNOWNED',
+      retryable: false,
+    });
+    expect(db.rpc).not.toHaveBeenCalled();
   });
 
   it('rejects non-CallRail events', async () => {

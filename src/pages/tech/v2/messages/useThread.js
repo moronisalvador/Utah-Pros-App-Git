@@ -51,6 +51,7 @@ import {
   parseMediaUrls,
 } from '@/components/conversations/messageUtils';
 import { impact } from '@/lib/nativeHaptics';
+import { toast } from '@/lib/toast';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
   appendMessageToPages, mergeNewestPage, patchMessageInPages, markPendingByMatch, dropByClientId,
@@ -59,10 +60,6 @@ import {
 
 const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
 const PAGE = 30;
-
-function emitToast(message, type = 'info') {
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-}
 
 // Human reason for a non-OK /api/send-message response (the four 403 codes + fallback).
 function sendFailureReason(data, status) {
@@ -92,7 +89,7 @@ function clearConvoUnread(queryClient, convId) {
   });
 }
 
-export function useThread(convId, { active = true } = {}) {
+export function useThread(convId, { active = true, onConsentRequired } = {}) {
   const { db, employee } = useAuth();
   const queryClient = useQueryClient();
   const enabled = !!db && !!convId;
@@ -217,7 +214,10 @@ export function useThread(convId, { active = true } = {}) {
             : m)));
         }
         setPages((p) => failByClientId(p, clientId, reason, data.code));   // carrier-retry row, if any
-        emitToast(reason, 'error');
+        if (data.code === 'NO_CONSENT' && data.contact_id) {
+          onConsentRequired?.(data.contact_id);
+        }
+        toast(reason, 'error');
         return;
       }
 
@@ -237,7 +237,7 @@ export function useThread(convId, { active = true } = {}) {
       const summary = summarizeSendResult(data.twilio);
       if (summary.total > 1 && (summary.blocked > 0 || summary.failed > 0)) {
         const missed = summary.blocked + summary.failed;
-        emitToast(`Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`, 'info');
+        toast(`Sent to ${summary.sent} of ${summary.total} — ${missed} not reached`, 'info');
       }
       delete retryStore.current[clientId];
     } catch (err) {
@@ -249,11 +249,11 @@ export function useThread(convId, { active = true } = {}) {
           : m)));
       }
       setPages((p) => failByClientId(p, clientId, reason, null));
-      emitToast(reason, 'error');
+      toast(reason, 'error');
     } finally {
       if (mounted.current) setSending(false);
     }
-  }, [convId, employee, setPages]);
+  }, [convId, employee, onConsentRequired, setPages]);
 
   // Public: send a new message (text and/or media, or an internal note).
   const send = useCallback(({ text, media_urls = [], isNote = false }) => {
@@ -287,7 +287,7 @@ export function useThread(convId, { active = true } = {}) {
       isNote: msg.type === 'internal_note',
     };
     if (!payload.text && !(payload.media_urls && payload.media_urls.length)) {
-      emitToast('Cannot retry this message', 'error');
+      toast('Cannot retry this message', 'error');
       return;
     }
     // Keep the id across a fetch-level retry; a persisted failed provider row
