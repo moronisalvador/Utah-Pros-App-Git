@@ -1718,6 +1718,24 @@ doc-category keys unchanged). Two new schema capabilities:
   the ~1h token boundary (previously TechDemoSheet re-hydrated from the last mirror "saved point"
   on desktop resume; ClaimPage/TechAppointment flashed skeletons). `db.apiKey` is a getter (live
   token for storage uploads). Do NOT revert to per-token clients.
+  (1b) **Session recovery / central 401 handling (2026-07-25)** — the identity-stable client above
+  fixed the *happy* path (TOKEN_REFRESHED swaps the JWT in place); it had no *failure* path. When a
+  renewal never fired or failed, `tokenRef` kept the dead JWT forever, every REST call 401'd, and
+  nothing in `src/` handled a 401 — so the app looked normal while every save silently failed.
+  Diagnosed from a console with **686 identical 401s** on `get_unread_notification_count`: the bell's
+  60s poll was the only recurring call, so it was the only thing that noticed (~11h of an open tab).
+  Now: `src/lib/supabase.js` attaches `status`/`body` to every thrown error (message text unchanged —
+  callers pattern-match it); `stableDb.js` `createTokenBoundClient(getToken, { onAuthError })` retries
+  **exactly once** on a 401 after recovery succeeds; `AuthContext.recoverSession()` is the app's ONE
+  401 handler — **single-flight** (`refreshingRef`) so N parallel loaders can't fire N
+  `refreshSession()` calls and lose the refresh-token rotation race. Unrecoverable → `sessionExpired`
+  → `src/components/SessionExpiredBanner.jsx` (mounted inside `AuthProvider`, so one instance covers
+  the office/tech/CRM shells; theme-independent colors because the dark re-tone is scoped to
+  `.tech-layout`, which the banner is outside of). **Only 401 recovers** — 403/42501 is a real
+  permission denial (what DEV anon mode returns) and must surface unchanged. Retrying a *write* after
+  a 401 is safe because PostgREST rejects the JWT before any SQL runs (unlike a timeout, where the
+  write may have landed — that rule still stands in `supabase.js`). Contract pinned by 8 tests in
+  `src/lib/stableDb.test.js`.
   (2) **home-screen-PWA route restoration** — iOS evicts the standalone PWA in the background and
   relaunches at manifest `start_url` (/tech); `src/lib/resumeRestore.js` (pure, tested) +
   `src/components/RouteRestorer.jsx` (in App.jsx inside BrowserRouter) save the last route on every
@@ -2024,9 +2042,16 @@ Client-only, mirrors the ThemeContext pattern — **no DB, no server** (localSto
 Notification feed surfaced by a **bell** (sidebar/TopNav in the office, top-right in the tech
 shell). Originally org-wide shared-read; **F2 made it per-recipient** (see Notification Center
 → F2). Producers: e-signature completion, feedback, time-entry/clock RPCs, and the F2 dispatcher.
+> ⚠️ **The bell's poll is the app's canary — keep it quiet.** It was the only recurring authenticated
+> call on most screens, so a dead session showed up here as 686 silent 401s and nowhere else
+> (2026-07-25). Its poll now runs through `useResumeRefetch` (hidden-guard + resume edge,
+> `page-lifecycle.md` §2/§4) with a consecutive-failure backoff (60s doubling → 30 min cap; reset on
+> success, on mount/employee change, and when the user opens the bell). Realtime bumps and opening
+> the bell call `loadCount()` directly and bypass the backoff on purpose. Do not restore a bare
+> `setInterval` here.
 - **Table `notifications`:** `id UUID PK, type TEXT, title TEXT, body TEXT, link TEXT (in-app route), entity_type TEXT, entity_id UUID, job_id UUID, payload JSONB, read_at TIMESTAMPTZ (null = unread), created_at TIMESTAMPTZ` **+ `recipient_id UUID NULL` (F2 — NULL = broadcast to all), `type_key TEXT` (catalog key)**. RLS: SELECT to anon/authenticated; **writes only via the SECURITY DEFINER RPC** (plus a narrow `type='__f2test__'` DELETE policy for the F2 test suite). Added to the `supabase_realtime` publication.
 - **RPCs (F2 cutover — DROP+CREATE, recipient-aware):** `create_notification(p_type,p_title,p_body,p_link,p_entity_type,p_entity_id,p_job_id,p_payload,p_recipient_id,p_type_key)` (also `service_role`), `get_notifications(p_limit DEFAULT 30, p_employee_id DEFAULT NULL)`, `get_unread_notification_count(p_employee_id DEFAULT NULL)`, `mark_notification_read(p_id)`, `mark_all_notifications_read(p_employee_id DEFAULT NULL)`. Read/unread/mark-all filter `recipient_id IS NULL OR recipient_id = p_employee_id`; old `{}`/`{p_limit}` call shapes still resolve (see F2 note for the overload-trap avoidance).
-- **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`.
+- **Frontend:** `src/components/NotificationBell.jsx` (office: `Sidebar.jsx`/`TopNav.jsx`; tech: `TechLayout.jsx`) — bell + unread badge + dropdown; passes `employee.id` to the RPCs so each person sees their own feed + read state; polls the count every 60s **via `useResumeRefetch` — hidden-guarded, with a consecutive-failure backoff (see the ⚠️ note above)** — and subscribes to realtime inserts (`subscribeToNotifications` in `lib/realtime.js`), ignoring rows aimed at a different employee, and fires a `upr:toast`. Clicking an item marks it read and navigates to `link`. A failed list load renders an inline "Couldn't load notifications" + Try again rather than the success empty-state (`loading-error-states.md` §1).
 - **Migrations:** `20260624_notifications.sql` (original) + `20260703_notify_f2_foundation.sql` (per-recipient cutover, applied).
 
 ---
