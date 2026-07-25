@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-25T06:02:00Z",
+  "capturedAt": "2026-07-25T15:51:32Z",
   "projectRef": "glsmljpabrwonfiltiqm",
   "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
