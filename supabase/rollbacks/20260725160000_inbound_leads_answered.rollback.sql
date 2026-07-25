@@ -1,0 +1,22 @@
+-- ════════════════════════════════════════════════
+-- ROLLBACK: 20260725160000_inbound_leads_answered
+-- ════════════════════════════════════════════════
+--
+-- PRECONDITION:
+--   Deploy a run-automations.js that does not read `answered` first. If the
+--   claim-era worker is still live when this runs, isMissedCall() simply sees
+--   undefined, which it treats as "not a confirmed miss" — so the missed-call
+--   text-back stops firing. It fails safe (no wrong texts), but it does stop.
+--
+-- BLAST RADIUS:
+--   Drops one generated column. The source of truth (raw_payload.answered) is
+--   untouched, so the column can be recreated at any time with the identical
+--   expression and will re-derive every historical row. No lead, contact,
+--   consent record or reporting number is affected — countable-lead reporting
+--   never read this column (it uses crm_call_is_answered()).
+--
+--   Dropping a STORED generated column is a catalog-only operation, but takes
+--   an ACCESS EXCLUSIVE lock briefly.
+-- ════════════════════════════════════════════════
+
+ALTER TABLE public.inbound_leads DROP COLUMN IF EXISTS answered;

@@ -105,8 +105,8 @@ function makeCtx({
   return { ctx, inserts, sendCalls, rpcCalls, claims };
 }
 
-const freshCall = { id: 'L1', contact_id: 'c1', source_type: 'call', direction: 'inbound', duration_sec: 42, spam_flag: false, occurred_at: minsAgo(5), created_at: minsAgo(5) };
-const missedCall = { id: 'L2', contact_id: 'c1', source_type: 'call', direction: 'inbound', duration_sec: 0, spam_flag: false, occurred_at: minsAgo(5), created_at: minsAgo(5) };
+const freshCall = { id: 'L1', contact_id: 'c1', source_type: 'call', direction: 'inbound', answered: true, duration_sec: 42, spam_flag: false, occurred_at: minsAgo(5), created_at: minsAgo(5) };
+const missedCall = { id: 'L2', contact_id: 'c1', source_type: 'call', direction: 'inbound', answered: false, duration_sec: 0, spam_flag: false, occurred_at: minsAgo(5), created_at: minsAgo(5) };
 const staleLead = { id: 'L3', contact_id: 'c1', lead_status: 'new', updated_at: daysAgo(5), created_at: daysAgo(5) };
 
 // ─── Automation → event-type / channel contracts ──────────────
@@ -169,13 +169,68 @@ describe('isFreshInboundLead', () => {
 
 // ─── isMissedCall — missed-call text-back predicate ───────────
 describe('isMissedCall', () => {
-  it('fires for an unanswered inbound call (0 / null duration)', () => {
+  it('fires ONLY on an explicitly unanswered call', () => {
     expect(isMissedCall(missedCall, NOW, 60)).toBe(true);
-    expect(isMissedCall({ ...missedCall, duration_sec: null }, NOW, 60)).toBe(true);
   });
-  it('does not fire for an answered call or a form', () => {
+
+  it('does not fire for an answered call', () => {
     expect(isMissedCall(freshCall, NOW, 60)).toBe(false);
-    expect(isMissedCall({ contact_id: 'c1', source_type: 'form', occurred_at: minsAgo(5) }, NOW, 60)).toBe(false);
+  });
+
+  it('does not fire when the outcome is UNKNOWN — absent data is never "missed"', () => {
+    // The core defect. Under the old duration proxy every one of these was
+    // treated as a missed call, because Number(null)===0 and Number(undefined)
+    // is NaN, and neither is > 0.
+    const noAnsweredKey = { ...missedCall };
+    delete noAnsweredKey.answered; // the column absent entirely (pre-migration row)
+    expect(isMissedCall(noAnsweredKey, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, answered: null }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, answered: undefined }, NOW, 60)).toBe(false);
+    // A non-boolean is a contract violation, not a confirmed miss.
+    expect(isMissedCall({ ...missedCall, answered: 'false' }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, answered: 0 }, NOW, 60)).toBe(false);
+  });
+
+  it('does not fire for an ANSWERED call whose duration is not populated yet', () => {
+    // The regression that would text someone we had just spoken to. Duration is
+    // absent mid-window, but the provider already said the call was answered.
+    expect(isMissedCall({ ...freshCall, duration_sec: null }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...freshCall, duration_sec: undefined }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...freshCall, duration_sec: 0 }, NOW, 60)).toBe(false);
+  });
+
+  it('ignores duration entirely — answered is the only outcome signal', () => {
+    // A confirmed miss with ring time recorded still fires...
+    expect(isMissedCall({ ...missedCall, duration_sec: 25 }, NOW, 60)).toBe(true);
+    // ...and a confirmed answer never does, whatever the duration says.
+    expect(isMissedCall({ ...freshCall, duration_sec: 0 }, NOW, 60)).toBe(false);
+  });
+
+  it('does not fire for spam', () => {
+    expect(isMissedCall({ ...missedCall, spam_flag: true }, NOW, 60)).toBe(false);
+  });
+
+  it('keeps the other exclusions: form, outbound, no contact, outside the window', () => {
+    expect(isMissedCall({ ...missedCall, source_type: 'form' }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, direction: 'outbound' }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, contact_id: null }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, occurred_at: minsAgo(120), created_at: minsAgo(120) }, NOW, 60)).toBe(false);
+    expect(isMissedCall(null, NOW, 60)).toBe(false);
+  });
+
+  it('waits for the settling delay before acting on a just-ended call', () => {
+    // Still in flight: the provider record is not final yet, so stay silent.
+    const justNow = { ...missedCall, occurred_at: minsAgo(1), created_at: minsAgo(1) };
+    expect(isMissedCall(justNow, NOW, 60)).toBe(false);
+    // Once settled, it fires.
+    expect(isMissedCall({ ...missedCall, occurred_at: minsAgo(4), created_at: minsAgo(4) }, NOW, 60)).toBe(true);
+    // Explicit override is honoured (0 disables the delay).
+    expect(isMissedCall(justNow, NOW, 60, 0)).toBe(true);
+  });
+
+  it('treats an unusable timestamp as not settled', () => {
+    expect(isMissedCall({ ...missedCall, occurred_at: 'not-a-date', created_at: null }, NOW, 60)).toBe(false);
+    expect(isMissedCall({ ...missedCall, occurred_at: null, created_at: null }, NOW, 60)).toBe(false);
   });
 });
 

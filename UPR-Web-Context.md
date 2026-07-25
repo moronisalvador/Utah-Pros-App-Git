@@ -8090,6 +8090,51 @@ Fixing it properly means **adding** a reason (e.g. `opted_out`) to the frozen
 `{ok,skipped,reason}` vocabulary — additive and permitted, but a separate reviewed change with
 backward-compat tests for `process-sequences.js` and `process-crm-automations.js`.
 
+## Missed call is now AUTHORITATIVE, not inferred (2026-07-25)
+
+`isMissedCall` in `run-automations.js` inferred "missed" from `Number(lead.duration_sec) > 0`.
+`Number(null)` is `0` and `Number(undefined)` is `NaN` — neither is `> 0` — so **a call with no
+duration recorded yet was treated as missed**. CallRail delivers one call across several webhooks
+(the first carries no `answered` key at all), so an answered call could be caught mid-window and
+texted *"sorry we missed your call"* to someone we had just spoken to. Absent data must never mean
+missed.
+
+**Migration `20260725160000_inbound_leads_answered.sql`** (applied 2026-07-25, ledger
+`20260725160749`): adds `inbound_leads.answered` — a STORED generated `boolean`, `true` /
+`false` / `NULL`-unknown, derived from `raw_payload->>'answered'` by **string compare, never a
+cast**. Verified live after apply: `is_generated=ALWAYS`, 102 true / 29 false / 16 unknown,
+**0 derivation mismatches** against `raw_payload` in either direction.
+
+- `isMissedCall` now tests `lead.answered !== false` — strictly. `true`, `null`, `undefined`, a
+  string `'false'`, `0`, or a missing property all mean *not a confirmed miss* and send nothing.
+  That strictness, not the settling delay, is what makes "unknown is never missed" structurally
+  true at any point in the delivery lifecycle.
+- New `MISSED_CALL_SETTLE_MIN = 3` — belt-and-braces, so we act on a finalized record rather than
+  one still mid-delivery. Well inside the 13h lookback.
+- **Generated, not stamped-at-ingest.** `docs/crm-lead-lifecycle.md` §8 names a stamped column as
+  the Twilio-era target; generated is the same seam for every *reader* (the worker never touches
+  CallRail's payload shape) and strictly safer today, because it re-derives itself when a later
+  webhook updates `raw_payload` instead of keeping a first, wrong stamp. Conversion later is
+  `ALTER COLUMN answered DROP EXPRESSION` — every reader unchanged.
+- **The countable-lead twins were deliberately NOT repointed.** `crm_call_is_answered()` /
+  `isCountableLead()` still read `raw_payload`; they answer "is this lead countable?" (reporting,
+  must not move). This column answers "may we text this person?" (unknown must fail safe to no).
+  Three definitions, documented in `crm-lead-lifecycle.md` §6 — do not merge them.
+
+Reviewers: `consent-path-auditor` **PASS** (no fixes). `migration-safety-checker`
+changes-requested → all addressed: cited apply-window evidence (147 rows, 1128 kB, 2 writes/24h,
+ACCESS EXCLUSIVE rewrite), the deliberate narrow match set, the stale doc entry, and a missing
+`supabase/tests/inbound_leads_answered.test.js` (10 assertions).
+
+⚠️ **Textback still cannot reach new callers — the `contact_id` half is unfixed.** Measured live:
+**29** confirmed missed calls, but only **5** carry a `contact_id`. A brand-new caller has no
+contact row by the deliberate `crm_lead_no_autocreate_contact` rule (raw calls must not flood
+`contacts` — and via the QBO customer trigger, QuickBooks). Automated sends also require
+`GLOBAL_OPT_IN`, which a new caller cannot have. So the exact leads the owner wants to catch are
+still unreachable. Closing it is an **owner decision** (see the open item in
+`crm-lead-lifecycle.md` §7), made harder because an unanswered call has no recording and therefore
+can never be AI spam-screened.
+
 ## QBO payment webhook — cross-realm read + opaque-error fix (2026-07-24)
 
 One live `Payment/Create` event (19:49Z) recorded only `"QBO get payment 400"` and sat
