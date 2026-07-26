@@ -23,7 +23,8 @@ NOTES / GOTCHAS:
 - Planning branch: `codex/native-ios-plan`
 - Base branch: `origin/dev`
 - Base commit: `90b265ee6f733c8dbcd75786f4e4057dd3355d38`
-- Prepared/reviewed: 2026-07-25; Apple Field Pro direction addendum 2026-07-26
+- Prepared/reviewed: 2026-07-25; Apple Field Pro and current-client-first sequencing addenda
+  2026-07-26
 - Scope: documentation, contract-orientation inventory, ownership rules, and canonical
   cross-references only
 - Application/Capacitor/Worker/SQL/migration/CI/live-system changes: none
@@ -50,11 +51,16 @@ The independent review prevented the following from remaining implicit or contra
 - one canonical evidence vocabulary, with provenance and decision state stored separately;
 - a planning branch that is review-only and a fresh implementation branch based on current
   `origin/dev`;
+- the completed mobile audit is reused rather than restarted, and a finite `NIOS-H` supportable
+  baseline now precedes all committed Swift implementation;
+- planning-only discovery remains a separately authorized exception, while the copy-ready Mac
+  prompt deliberately stops when `NIOS-H` is stale or anything other than `READY`;
 - staged Discovery Session A and Session B instead of one overwhelming owner workshop;
 - non-production design prototype, compiled SwiftUI reference, then device/human acceptance as
   distinct evidence;
-- provisional first-slice implementation may continue while physical-device/human proof is
-  blocked, but acceptance/foundation freeze/scaling may not;
+- after Gate H, Phase 0, and implementation-authority entry conditions pass, provisional
+  first-slice work may continue while physical-device/human proof is blocked, but
+  acceptance/foundation freeze/scaling may not;
 - Dry Logs remains an owner-selected candidate rather than a silently fixed first slice;
 - Phase 2A read/client foundations are separate from externally gated Phase 2B mutation QA;
 - global design foundations plus selected-slice components replace speculative full-library work;
@@ -126,6 +132,46 @@ The Apple Field Pro reviewer reran the complete corrected diff and returned **PA
 actionable findings**. A separate contract/governance review returned pass after one stale roadmap
 review date was corrected.
 
+## 2026-07-26 current-client-first sequencing addendum
+
+The owner chose to finish hardening the operational PWA/Capacitor client before beginning the native
+program on the Mac. This addendum:
+
+- added accepted ADR 0003 and the canonical `NIOS-H` gate;
+- adopted the completed mobile audit and its existing finding IDs as inputs rather than restarting
+  orientation, census, specialist work, tests, governance, or Supabase evidence, and required reuse
+  of any subsequently produced Mac addenda;
+- defined `READY` as audit P0, current-client/shared-contract Critical, and unconditional P1
+  closure; conditional P1 closure or explicit capability exclusion; and safe ownership of
+  lower-risk debt;
+- required current source/deployment identity, supported-capability scope, browser/PWA/Capacitor,
+  Mac/device, rollback/support, independent-review, and owner-acceptance evidence;
+- made Gate H and native Phase 0 separate prerequisites to Phase 1, with distinct implementation
+  authority still required;
+- updated the Mac prompt to fail closed before Discovery A when the hardening record is missing,
+  stale, open, or blocked and to return a continuation prompt for the existing hardening work;
+- kept current-client remediation, production/database/provider changes, deployment, Apple actions,
+  and Swift implementation outside this documentation branch's authority.
+
+The gate intentionally avoids two errors: beginning a rewrite while the fallback is unsafe, and
+waiting for unrelated cosmetic or long-term debt after a supportable baseline is proven.
+
+### Independent sequencing challenge and disposition
+
+An independent read-only reviewer challenged the complete sequencing diff for early-start
+loopholes, stale evidence, unbounded scope, mixed authority, and process cleanup:
+
+| Challenge | Disposition |
+|---|---|
+| Phase 0, contract maturity, or a local scaffold could be mistaken for authority to start Swift | **Corrected:** Gate H, Phase 0, current-base reconciliation, fresh worktree, and separate implementation authority are all required |
+| Completed audit work could be restarted or stale evidence promoted | **Corrected:** reuse existing finding IDs and evidence through a per-artifact provenance/freshness ledger; refresh only affected drift |
+| The Mac prompt could evaluate stale `origin/dev` or pivot into production/current-client changes | **Corrected:** fetch precedes the gate decision; anything other than current `READY` stops; Discovery is strictly read-only |
+| Runtime cleanup or the optional toolchain spike could leave unrelated processes/artifacts | **Corrected:** exact task-owned process cleanup only; temp/untracked/unsigned spike with guaranteed cleanup and no Phase 1 credit |
+| A global High/cleanup requirement could become an indefinite perfection gate | **Corrected:** the gate is scoped to the supported current-client fallback/shared contracts and permits owned safe lower-risk deferrals |
+
+The reviewer then reran the corrected package and returned **PASS — no remaining actionable
+sequencing, authority, evidence-freshness, or runtime-cleanup contradiction**.
+
 ## Static validation
 
 The following planning-package checks were executed with bounded commands:
@@ -137,11 +183,11 @@ The following planning-package checks were executed with bounded commands:
 | Bootstrap uniqueness/count | no duplicate names within categories; 5 Auth operations, 73 RPCs, 20 direct tables, 22 Workers, 2 Storage buckets, 3 Realtime tables |
 | Bootstrap literal coverage | scoped source literals and recorded operation/event lists reconciled after independent review; declared dynamic/out-of-scope limitations retained |
 | Bootstrap semantics | every entry remains `inventory_only`; no live authorization/safety approval is claimed |
-| Local Markdown targets | all local links resolved across 27 native planning Markdown files; new canonical cross-references were checked directly; two known pre-existing placeholder links in the large UPR context remain outside the scan |
-| Documentation headers | all 27 native planning Markdown files include the project documentation header |
-| Credential-like values | none found across the 17 intended changed files |
+| Local Markdown targets | all local links resolved across 29 native planning Markdown files; new canonical cross-references were checked directly; two known pre-existing placeholder links in the large UPR context remain outside the scan |
+| Documentation headers | all 29 native planning Markdown files include the project documentation header |
+| Credential-like values | none found across the 26 intended files in the current sequencing diff |
 | Legacy evidence tokens | no legacy bracketed evidence vocabulary remains |
-| Markdown tables | touched matrix/risk/gate/review tables have consistent column delimiters |
+| Markdown tables | all 29 native planning Markdown files have consistent table delimiters |
 | Tracked whitespace/diff | `git diff --check` passed before staging; the two new files were separately checked for trailing whitespace |
 
 The final staged diff, exact changed-file allowlist, and clean post-commit status are separate
@@ -163,11 +209,15 @@ This plan does **not** claim:
   evolution itself is approved;
 - permission to implement, migrate, deploy, sign, upload, submit, publish, merge, or retire
   Capacitor.
+- a completed or owner-accepted `NIOS-H` current-client hardening baseline.
 
 Those are named later gates rather than hidden omissions.
 
 ## Disposition
 
-The package is ready for owner review and Discovery Session A on the Mac. It is not a production
-readiness attestation and not standing implementation authority. A committed scaffold waits for the
-Phase 0 first-build gate; production and external actions remain separately authorized.
+The package is ready for owner review. The recommended Mac prompt begins Discovery Session A only
+after a current `NIOS-H: READY` handoff; until then it returns to the existing current-client
+hardening initiative without restarting its audit. This is not a production-readiness attestation
+and not standing implementation authority. A committed scaffold waits for Gate H, the Phase 0
+first-build gate, current-base reconciliation, a fresh worktree, and separate implementation
+authority; production and external actions remain separately authorized.

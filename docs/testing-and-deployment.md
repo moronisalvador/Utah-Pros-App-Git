@@ -55,6 +55,9 @@ The current native lane refers to the Capacitor project under `ios/`. The separa
 Swift/SwiftUI client in `docs/native-ios/` will require its own Swift unit/integration/UI,
 accessibility, performance, energy, simulator, device, archive, upgrade and TestFlight evidence.
 Evidence from either client does not automatically prove the other.
+Committed Swift work is additionally blocked until the current PWA/Capacitor supportable baseline
+records `NIOS-H: READY` under `docs/native-ios/17-current-client-hardening-gate.md`; planning docs,
+a web build, or Simulator evidence do not close that gate.
 
 ## Required risk tests
 

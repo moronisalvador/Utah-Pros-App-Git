@@ -35,6 +35,10 @@ NOTES / GOTCHAS:
 
 ## Scope and evidence
 
+- [ ] `NIOS-H: READY` evidence path, exact supported scope, source/deployment boundary, owner
+      acceptance, and material-drift review are recorded.
+- [ ] Phase 0, current-base reconciliation, fresh implementation worktree, and separate
+      implementation authority are recorded.
 - [ ] Goal and user role are stated.
 - [ ] Entry, success, cancellation, and exit paths are named.
 - [ ] Non-goals and intentionally deferred behavior are named.

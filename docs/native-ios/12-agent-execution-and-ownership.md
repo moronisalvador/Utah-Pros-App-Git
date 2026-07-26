@@ -81,7 +81,8 @@ Before starting, every agent receives:
 9. testing commands, five-minute runtime timeout, and cleanup policy;
 10. dependencies, owner gates, and who may edit shared files;
 11. instruction not to create a separate canonical architecture/contract/roadmap;
-12. stop/escalation conditions.
+12. current `NIOS-H` status and the prohibition on Swift implementation while it is open;
+13. stop/escalation conditions.
 
 Any design or workflow brief also receives the exact Apple Field Pro source path/section, source
 maturity, locked anatomy/refinements, current-PWA evidence to compare, and required
@@ -141,29 +142,36 @@ If a task needs a hotspot owned elsewhere, send a structured request to the owne
 - Production Supabase, production services, and production data are strictly read-only during planning and ordinary native development.
 - One contract-discovery owner coordinates live read-only inspection. Do not run multiple broad schema-discovery agents.
 - One database writer owns any separately authorized database implementation. Migrations are reviewed and committed before an owner-authorized apply window.
-- Native agents may create protocol fakes, local fixtures, and isolated-QA tests; they may not infer live RLS from types or UI gates.
+- After `NIOS-H`, Phase 0, and applicable implementation authority pass, native agents may create
+  protocol fakes, local fixtures, and isolated-QA tests; before then, work remains
+  documentation/design/contract orientation. No agent may infer live RLS from types or UI gates.
 - No agent may apply migrations, alter RPCs/functions/triggers/grants/policies/Storage/schema, seed production, or use real production rows as test fixtures without explicit new authority.
 - No service-role key or free-form SQL capability belongs in the iOS app.
-- A database/provider gate is reported as blocked while safe client, documentation, or isolated work continues.
+- A database/provider gate is reported as blocked while safe non-dependent work inside the
+  authorized phase continues. While `NIOS-H` is open, that means documentation/design/contract
+  orientation, not client code.
 
 ## Dependency sequencing
 
 Use this sequence for each major phase:
 
-1. Orient once and record branch/commit/status.
-2. Complete or refresh the relevant workflow/contract census.
-3. Complete first-slice Apple Field Pro source-maturity and preservation/adaptation records, then
+1. Verify whether `NIOS-H` is applicable and record its exact evidence/status; do not infer closure.
+2. Orient once and record branch/commit/status.
+3. Complete or refresh the relevant workflow/contract census.
+4. Complete first-slice Apple Field Pro source-maturity and preservation/adaptation records, then
    resolve remaining prerequisite owner decisions.
-4. Assign bounded, disjoint specialist work.
-5. Run independent work in parallel only where dependencies permit.
-6. Trace important journeys across UI, use case, client adapter, backend, authorization, local/offline state, and tests.
-7. Collect specialist reports.
-8. Run independent adversarial review after evidence exists.
-9. Resolve duplicates, contradictions, unsupported claims, and misclassified gates.
-10. Update canonical documents through their assigned owner.
-11. Run targeted tests, diff review, and phase exit gate.
+5. Assign bounded, disjoint specialist work.
+6. Run independent work in parallel only where dependencies permit.
+7. Trace important journeys across UI, use case, client adapter, backend, authorization, local/offline state, and tests.
+8. Collect specialist reports.
+9. Run independent adversarial review after evidence exists.
+10. Resolve duplicates, contradictions, unsupported claims, and misclassified gates.
+11. Update canonical documents through their assigned owner.
+12. Run targeted tests, diff review, and phase exit gate.
 
-Do not let an optional simulator/browser/provider/device check block Steps 7–11. Mark the layer blocked and continue the safe work.
+Do not let an optional simulator/browser/provider/device check block Steps 8–12. Mark the layer
+blocked and continue safe non-dependent work. If that check is required to close `NIOS-H`, the gate
+remains open rather than blocking unrelated audit closeout.
 
 ## Runtime and subprocess safety
 
@@ -175,7 +183,7 @@ Every development server, simulator helper, browser controller, Xcode command, t
 - clean up in `defer`, `finally`, `trap`, or an equivalent guaranteed cleanup block;
 - terminate and wait for spawned child processes on success, failure, timeout, cancellation, or agent interruption;
 - verify only those recorded processes were terminated;
-- avoid generic `killall`/process-name cleanup when other developer work may exist;
+- never use generic `killall`/process-name cleanup; terminate only verified task-owned processes;
 - cap retries and record each attempt;
 - fail gracefully when authentication, signing, device access, simulator runtime, provider access, or environmental constraints prevent verification.
 
@@ -183,10 +191,11 @@ If a process appears stale, first identify its command, parent, start time, work
 
 ## Fresh-Mac execution
 
-This implementation sequence runs only after Discovery Sessions A and B, the Phase 0 first-build
-gate, and separate owner authorization to implement. It runs in the fresh implementation
-worktree/branch created from the explicitly approved current `origin/dev` commit under
-`14-mac-handoff.md`; never implement on the review-only `codex/native-ios-plan` branch.
+This implementation sequence runs only after `NIOS-H: READY`, Discovery Sessions A and B, the
+Phase 0 first-build gate, current `origin/dev` reconciliation, and separate owner authorization to
+implement. It runs in the fresh implementation worktree/branch created from the explicitly approved
+current `origin/dev` commit under `14-mac-handoff.md`; never implement on the review-only
+`codex/native-ios-plan` branch.
 
 The first authorized implementation session on the Mac uses this order:
 
@@ -261,6 +270,8 @@ Stop the affected workstream and escalate when:
 - an action could send a company message, move money, affect payroll, sign/delete data, or change consent/DND;
 - a proposed App Store action would upload, submit, release, or alter availability;
 - required evidence contradicts canonical project law.
+- a Swift project, package, entitlement, implementation branch, or feature code would begin while
+  `NIOS-H` is open.
 
 Escalation should state the concrete blocker, evidence, safest continued work, and exact owner decision/authority needed.
 

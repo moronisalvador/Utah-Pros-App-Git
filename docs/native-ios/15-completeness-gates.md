@@ -17,11 +17,12 @@ NOTES / GOTCHAS:
 
 # Native iOS Completeness Gates
 
-**Current status:** the planning coverage exists; owner discovery and implementation evidence do
-not. Every row remains open until its named gate records evidence.
+**Current status:** the planning coverage exists; `NIOS-H` current-client readiness, owner discovery,
+and implementation evidence do not. Every row remains open until its named gate records evidence.
 
 Gate abbreviations:
 
+- **H:** current PWA/Capacitor supportable hardening baseline
 - **D:** owner discovery/decision
 - **F:** architecture and design foundation
 - **S:** each vertical slice
@@ -34,6 +35,7 @@ Gate abbreviations:
 
 | Area | Questions/evidence that cannot be skipped | First blocking gate | Detailed owner |
 |---|---|---:|---|
+| Current-client operational continuity | completed-audit reuse, current finding disposition, supported scope, bounded PWA/Capacitor/Mac/device proof, release/rollback/support, owner acceptance | H before any Swift implementation; not before explicitly excepted planning-only D work | `17-current-client-hardening-gate.md` |
 | Product purpose | users, field context, problem, outcome, non-goals, success measures | D | `00-product-charter.md` |
 | Release scope | roles, launch workflows, web-only/future/retired capabilities, parity threshold | D | `04-information-architecture-and-workflow-parity.md` |
 | Owner authority | explicit choices, rejected alternatives, deferrals, revisit triggers | D | `02-owner-decisions-and-discovery.md` |
@@ -83,7 +85,7 @@ Gate abbreviations:
 | App Store | metadata, screenshots, reviewer account, privacy, encryption, age/category, account deletion | R | `10-release-app-store-cutover.md` |
 | Upgrade/cutover | same/new listing decision, web-local-data policy, push/deep-link/Keychain transition | R/C | `10-release-app-store-cutover.md` |
 | Rollback | phased stop, feature containment, hotfix, PWA fallback, server compatibility | R/C | `10-release-app-store-cutover.md` |
-| Capacitor support/retirement | critical fixes, adoption threshold, pending work, owner retirement and cleanup | C | `10-release-app-store-cutover.md` |
+| Capacitor support/retirement | initial supportable baseline, critical fixes, adoption threshold, pending work, owner retirement and cleanup | H/C | `17-current-client-hardening-gate.md`, `10-release-app-store-cutover.md` |
 | Ownership | orchestrator, single writers, disjoint paths/contracts, agent briefs, adversarial review | Every gate | `12-agent-execution-and-ownership.md`, ownership manifest |
 | Documentation | ADRs, contracts, risks, canonical updates, exact evidence, handoff and recurring review dates | Every gate/O | `README.md`, `13-risk-register.md`, templates |
 | Runtime safety | ≤5-minute attempts, bounded logs, guaranteed child cleanup, blocked evidence | Every runtime | `09-testing-and-quality.md`, `12-agent-execution-and-ownership.md` |
@@ -92,14 +94,16 @@ Gate abbreviations:
 
 A gate closes only when:
 
-1. every applicable ledger row has a linked decision or evidence record;
-2. every non-applicable row has a reason and approving owner;
-3. every blocked row names the missing dependency and later blocking gate;
-4. Critical unresolved risks block the dependent release scope;
-5. an independent reviewer challenges the packet;
-6. the orchestrator resolves contradictions and inspects the full diff;
-7. every first-slice Apple Field Pro surface has a recorded preservation/adaptation disposition;
-8. external actions are still performed only under their separate authorization.
+1. before Swift implementation, `NIOS-H: READY` is current for the exact fallback scope; D-only
+   planning artifacts may exist by explicit exception while H is open;
+2. every applicable ledger row has a linked decision or evidence record;
+3. every non-applicable row has a reason and approving owner;
+4. every blocked row names the missing dependency and later blocking gate;
+5. Critical unresolved risks block the dependent release scope;
+6. an independent reviewer challenges the packet;
+7. the orchestrator resolves contradictions and inspects the full diff;
+8. every first-slice Apple Field Pro surface has a recorded preservation/adaptation disposition;
+9. external actions are still performed only under their separate authorization.
 
 This ledger should be copied into each major milestone packet and reduced to the rows applicable to
 that milestone. Deleting a row to make a gate look complete is not an acceptable disposition.

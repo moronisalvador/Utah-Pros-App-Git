@@ -9,6 +9,10 @@ Read scope for any session touching this initiative: `CLAUDE.md` + this file's p
 > planning-only record begins at [`docs/native-ios/README.md`](native-ios/README.md). Existing
 > Capacitor readiness work remains operationally relevant, but bundle/listing migration, upgrade,
 > signing, metadata reuse, and cutover to the future client require new decisions and evidence.
+> On 2026-07-26 the owner made the supportable current-client baseline in
+> [`docs/native-ios/17-current-client-hardening-gate.md`](native-ios/17-current-client-hardening-gate.md)
+> a predecessor to committed Swift implementation. Reuse the completed mobile audit and current
+> hardening evidence; do not restart or treat this older roadmap alone as current readiness proof.
 
 Execution model for this initiative: **run in-session via the Workflow tool** (parallel subagents
 in isolated git worktrees, orchestrated from one Claude Code session), not separate cold sessions —

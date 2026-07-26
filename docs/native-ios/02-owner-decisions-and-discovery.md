@@ -30,7 +30,8 @@ NOTES / GOTCHAS:
 # Native iOS owner decisions and discovery
 
 **Last-verified:** 2026-07-26
-**Document status:** Apple Field Pro evolution direction approved; remaining owner discovery pending
+**Document status:** Apple Field Pro evolution direction and current-client-first sequencing
+approved; current-client hardening and remaining owner discovery pending
 **Implementation status:** Not started
 **Scope:** Product and design decisions required before native feature UI implementation
 
@@ -38,6 +39,11 @@ NOTES / GOTCHAS:
 
 The native app does **not** begin with agents translating React screens into SwiftUI. It begins
 with an owner-led discovery and design-standard phase.
+
+Committed Swift implementation also does not begin until the current PWA/Capacitor client reaches
+`NIOS-H: READY` under `17-current-client-hardening-gate.md`. Planning-only discovery could be
+separately authorized while that gate is open, but the recommended Mac session waits for the
+baseline so hardening remains the owner's single active implementation program.
 
 The objective is to make important decisions when they are inexpensive to change, then freeze
 them at the appropriate level before implementation. The process deliberately distinguishes:
@@ -83,6 +89,7 @@ vocabulary. No agent may present a proposed or inferred choice as a verified own
 | `NIOS-OD-006` | **Source-confirmed · repository** | The existing redesign prioritizes one primary action, large field targets, visible offline/sync state, and distinct loading/empty/error states. | These are behavioral requirements; their native presentation may change. |
 | `NIOS-OD-007` | **Verified · owner · approved 2026-07-26** | Evolve Apple Field Pro as the native blueprint: preserve its refinements, layouts, information hierarchy, and workflow decisions by default, then adapt them for native iOS and field use. | This closes preserve/evolve/replace, but does not approve exact native tokens, controls, typography, tab structure, devices, or unfinished flows. |
 | `NIOS-OD-008` | **Verified as owner report · owner · 2026-07-26** | Technicians have found the current PWA easier on the eyes and easier to use with gloves; native design must learn from those strengths. | The report requires fresh comparative technician/device validation before it becomes direct field evidence. |
+| `NIOS-OD-009` | **Verified · owner · approved 2026-07-26** | Finish a supportable current PWA/Capacitor hardening baseline before committed Swift implementation. | Audit P0, current-client/shared-contract Critical, and unconditional P1 blockers close; conditional P1 is closed or excluded; safe lower-risk debt may be owned and deferred. Planning-only discovery remains possible by exception. |
 
 ## 4. Owner decisions required before native visual design
 
@@ -166,6 +173,7 @@ to identify incomplete areas. Ask only the remaining questions:
 
 The orchestrator prepares a concise evidence pack before asking the owner for visual reactions:
 
+- the `NIOS-H` evidence path, exact status, source/deployment boundary, and any drift since closure;
 - current PWA/Capacitor screen and workflow census;
 - locked tech redesign decisions, prototypes, and unresolved items;
 - the preservation/adaptation classifications in `03a-apple-field-pro-adaptation-matrix.md`;
@@ -180,6 +188,8 @@ The orchestrator prepares a concise evidence pack before asking the owner for vi
 - Existing decisions and open questions are separated.
 - No production data or secrets appear in the pack.
 - The pack includes at least one real data-dense workflow, not only a polished dashboard.
+- If the recommended hardening-first Mac prompt is being used, `NIOS-H` is `READY`; otherwise stop
+  and return the missing current-client gates rather than beginning native discovery.
 
 ### Gate D1 — Field-adaptation workshop
 
@@ -238,10 +248,10 @@ prototype covering:
 
 ### Gate D3 — Compiled SwiftUI reference and first workflow prototype
 
-After the approved nonproduction scaffold exists, the owner-selected slice may be implemented
-provisionally against fakes/isolated QA. Before that slice is accepted, described as field-
-validated, used to freeze the foundation, or copied into additional features, exercise it as one
-complete workflow:
+After `NIOS-H: READY`, Phase 0 closure, separate implementation authority, and the approved
+nonproduction scaffold exist, the owner-selected slice may be implemented provisionally against
+fakes/isolated QA. Before that slice is accepted, described as field-validated, used to freeze the
+foundation, or copied into additional features, exercise it as one complete workflow:
 
 `<entry> → <authorized context> → <draft/action> → <confirmation or recovery>`.
 
@@ -360,8 +370,11 @@ validation lifecycle is complete only when:
 - open decisions have owners and revisit triggers;
 - no proposal is mislabeled as verified.
 
-Until Phase 0 closes, committed feature UI implementation remains **Blocked** by design discovery;
-only an explicitly authorized disposable, uncommitted toolchain spike may precede it. After Phase 0,
-the owner-selected slice may proceed provisionally, but missing physical-device or representative-
-technician evidence blocks slice acceptance, foundation freeze, and scaling—not safe Simulator,
-mock, or isolated-QA work.
+Until both `NIOS-H` and Phase 0 close, committed feature UI implementation remains **Blocked**.
+Planning-only discovery may precede `NIOS-H` only by explicit exception; an explicitly authorized
+disposable toolchain spike may precede Phase 0 but not the hardening gate. It must run outside the
+worktree, leave zero tracked/signed artifacts, clean up deterministically, and never count as Phase
+1 evidence. After both gates close and implementation is separately authorized, the owner-selected
+slice may proceed provisionally, but missing physical-device or representative-technician evidence
+blocks slice acceptance, foundation freeze, and scaling—not safe Simulator, mock, or isolated-QA
+work.

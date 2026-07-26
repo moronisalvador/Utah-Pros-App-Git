@@ -12,6 +12,7 @@ DEPENDS ON:
 
 NOTES / GOTCHAS:
   - Accepted architecture direction does not authorize implementation or release.
+  - ADR 0003 adds the requirement to harden the current client before Swift implementation.
   - This decision can be superseded only by a new decision record.
 -->
 

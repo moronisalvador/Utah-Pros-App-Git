@@ -37,15 +37,21 @@ decision state separately.
 4. One owner edits Xcode project structure/signing/entitlements at a time. One owner writes database artifacts at a time.
 5. Database and provider work are separate initiatives and authorization gates. The shared production Supabase project is read-only during native planning and ordinary QA.
 6. Keep at most two implementation lanes in flight after the foundation unless file and contract ownership are provably disjoint.
-7. A blocked device/provider check does not stop safe contract, unit, UI, or documentation work.
+7. After Gate H and the applicable phase are authorized, a blocked device/provider check does not
+   stop safe non-dependent contract, unit, UI, or documentation work. While Gate H is open, only
+   separately authorized documentation/design/contract orientation continues.
 8. The existing PWA/Capacitor product continues to receive critical fixes until formal retirement.
+9. `NIOS-H` current-client hardening is a hard predecessor to committed Swift implementation.
+   Documentation-only discovery may proceed by explicit exception, but the recommended Mac
+   sequence waits for `READY`.
 
 ## Milestone map
 
 | Phase | Outcome | Depends on | Exit evidence |
 |---|---|---|---|
+| H. Current-client hardening | PWA/Capacitor can safely and supportably carry operations during the native build | Completed audit; separately authorized remediation/release/device work | `NIOS-H: READY`, current finding disposition, supported scope, release/device/rollback/support evidence, owner acceptance |
 | 0. Adopt the plan | Scope, decisions, ownership, evidence model accepted | Documentation package | Owner decisions recorded; no contradictory canonical docs |
-| 1. Fresh-Mac and Xcode foundation | Reproducible nonproduction native shell | Phase 0 first-build gate; Apple/Xcode availability | Clean Simulator build/test on fresh Mac; dependency/environment/CI evidence |
+| 1. Fresh-Mac and Xcode foundation | Reproducible nonproduction native shell | `NIOS-H: READY`; Phase 0 first-build gate; separate implementation authority; Apple/Xcode availability | Clean Simulator build/test on fresh Mac; dependency/environment/CI evidence |
 | 2A. Read-contract and client foundation | Typed Auth/read boundary, environment refusal, fixtures and fakes | Phase 1; reviewed first-slice catalog | Authenticated read fixture/contract proof without production writes |
 | 2B. Isolated mutation QA | Safe synthetic mutation, Storage/Realtime and negative-role proof | Governed local/hosted QA | Isolated environment, lineage, cleanup, idempotency and denial evidence |
 | 3. App shell and minimum design/reliability foundation | Native navigation, auth lifecycle and slice-required reusable foundations | Phases 1 and 2A; may proceed while 2B is externally blocked | Compiled reference target and Simulator evidence; device gate remains explicit |
@@ -54,10 +60,26 @@ decision state separately.
 | 6. Documents and signing | Scan, organize, review, generate, and approved e-sign flow | Phase 3 plus its contracts/privacy/provider gates; not inherently Phase 5 | Demo-account signing/reconciliation; privacy/accessibility proof |
 | 7. Location, notifications, deep links, background | System capabilities add value without becoming correctness dependencies | Phase 3 plus per-capability Apple/server/privacy gates; not inherently Phase 6 | Physical-device APNs, link, background, energy, and denial/fallback proof |
 | 8. Remaining workflow parity | Required production roles and workflows complete | Stable foundations; census/prioritization | Signed parity matrix; no unowned contract gaps |
-| 9. Hardening and TestFlight | Release candidate survives device, security, accessibility, performance, and upgrade testing | Phases 1–8 | Internal TestFlight release gate and adversarial review |
+| 9. Native release-candidate hardening and TestFlight | Release candidate survives device, security, accessibility, performance, and upgrade testing | Phases 1–8 | Internal TestFlight release gate and adversarial review |
 | 10. App Store cutover | Native binary replaces Capacitor binary under controlled release | Phase 9; Apple/owner gates | Approved release, upgrade proof, observation window |
 | 11. Compatibility and retirement | Old client support retired only after evidence threshold | Phase 10 and adoption/support data | Owner-approved retirement record and cleanup plan |
 | 12. Sustained native operations | Ten-year maintenance, support, security and release discipline | Production release | Recurring owners, cadence, SLOs, upgrade/rotation/privacy evidence |
+
+## Gate H — Current-client hardening
+
+Adopt the completed current mobile audit. Under separate owner authorization, perform remediation
+in its own governed worktree/branch. Reuse the audit's orientation, census, specialist reports,
+finding IDs, tests, governance, and Supabase evidence plus any subsequently produced Mac addenda;
+do not restart the audit simply to begin this plan.
+
+Follow `17-current-client-hardening-gate.md`. The gate closes only with a current source/deployment
+boundary, audit P0/current-client or shared-contract Critical/P1 dispositions,
+supported-capability matrix, bounded automated and Mac/device evidence, rollback/support ownership,
+independent review, and explicit owner acceptance.
+A build or documentation-only audit is not closure.
+
+Phase 0 planning artifacts may be prepared by explicit exception while Gate H is open, but Gate H
+and Phase 0 are two independent inputs to Phase 1. Neither unlocks implementation alone.
 
 ## Phase 0 — Decisions and program setup
 
@@ -86,8 +108,13 @@ decision state separately.
 - Every remaining product decision has an owner and due gate.
 - Every proposed production-facing capability has a decision record or is explicitly deferred.
 - The branch/worktree is documentation-only and diff-reviewed.
+- Phase 0 closure is recorded independently from Gate H and cannot unlock Phase 1 while
+  `NIOS-H` remains open.
 
 ## Phase 1 — Fresh-Mac and Xcode foundation
+
+**Entry gate:** `NIOS-H: READY`, Phase 0 closed, current `origin/dev` reconciled, a fresh isolated
+implementation worktree, and explicit owner authorization to implement.
 
 **Work**
 
@@ -272,7 +299,7 @@ implementing the same workflow twice.
 - Every included workflow has contract, role, accessibility, offline, observability, and device evidence.
 - Every excluded workflow has an intentional PWA/Capacitor/web fallback.
 
-## Phases 9–11 — Hardening, cutover, and retirement
+## Phases 9–11 — Native candidate hardening, cutover, and retirement
 
 Follow `docs/native-ios/10-release-app-store-cutover.md`:
 
@@ -329,12 +356,14 @@ To move quickly without accumulating an untestable rewrite:
 - stop and repair the foundation when the first slice exposes a systemic problem;
 - keep work-in-progress low and finish evidence before opening the next slice;
 - defer optional AI, App Intents, background location, widgets, and provider integrations until core field work is stable;
-- treat manual/device gates as a queue, not a reason to block unit/contract/UI work.
+- after Gate H and phase authorization, treat manual/device gates as a queue rather than blocking
+  unrelated unit/contract/UI work; before then, remain within planning-only boundaries.
 
 ## Owner decision register
 
 | Decision | Needed by | Default if unresolved |
 |---|---|---|
+| Current-client hardening acceptance | Before Phase 1 | No Swift scaffold or native implementation branch; planning-only discovery may be separately authorized |
 | Minimum OS and device/iPad scope | Before Phase 1 | Do not create the production target |
 | QA bundle/backend and signing model | Before Phase 1 | Simulator-only foundation |
 | Isolated QA provisioning | Before Phase 2 mutations | Read/fake tests only; mutations blocked |

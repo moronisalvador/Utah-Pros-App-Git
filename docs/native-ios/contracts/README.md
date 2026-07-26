@@ -56,6 +56,12 @@ or unredacted production evidence.
 
 Use only these values:
 
+Contract maturity describes evidence for one contract; it never grants authority to create Swift
+code. Before `NIOS-H: READY`, Phase 0 closure, current-base reconciliation, and separate
+implementation authority, only documentation, contract orientation, and explicitly approved
+non-code design prototypes may use these records. References below to mocks, scaffolding, local
+implementation, or QA apply only inside an already authorized phase.
+
 | Status | Meaning | May native code depend on it? |
 |---|---|---|
 | `inventory_only` | A name/caller was mechanically or manually observed; signature, semantics, authorization, and live state are unverified | No |

@@ -1,8 +1,9 @@
 # Native iOS — Ownership and Isolation Manifest
 
 **Plan of record:** `docs/native-ios/README.md`
-**Prepared:** 2026-07-25
-**Current state:** planning ready; application implementation not started
+**Prepared:** 2026-07-25; sequencing amended 2026-07-26
+**Current state:** planning ready; `NIOS-H` current-client hardening not yet evidenced; application
+implementation not started
 
 This manifest is binding for work performed under the native iOS initiative. It records proposed
 phase ownership; it does not grant standing permission to edit files, apply database changes,
@@ -42,23 +43,35 @@ No lane self-expands into an unlisted shared file.
 ## 3. Sequencing
 
 ```text
-Owner discovery + ADRs
-        |
-        v
-QA/environment gate + contract bootstrap + architecture/design foundations
-        |
-        v
-One thin vertical slice (A + D + C + S + R + Q, serialized at shared seams)
-        |
-        v
-Owner field review and foundation correction
-        |
-        v
-Bounded workflow waves + platform capabilities
-        |
-        v
-Hardening -> TestFlight -> phased release -> separately approved cutover
+NIOS-H current PWA/Capacitor hardening ----+
+                                           |
+Owner discovery + ADRs + Phase 0 ----------+
+                                           v
+                            Separate implementation authority
+                                           |
+                                           v
+              QA/environment gate + contract bootstrap +
+                    architecture/design foundations
+                                           |
+                                           v
+         One thin vertical slice (A + D + C + S + R + Q,
+                       serialized at shared seams)
+                                           |
+                                           v
+              Owner field review and foundation correction
+                                           |
+                                           v
+              Bounded workflow waves + platform capabilities
+                                           |
+                                           v
+       Native candidate hardening -> TestFlight -> phased release
+                         -> separately approved cutover
 ```
+
+`NIOS-H` is defined in `docs/native-ios/17-current-client-hardening-gate.md`. Documentation-only
+owner discovery may be opened by explicit exception while that gate is incomplete, but no committed
+Swift project, package, entitlement, implementation branch, or feature code may begin. Current-
+client remediation runs in its own authorized worktree/branch and never shares this planning diff.
 
 The data-contract lane is singular. Multiple agents must not perform broad, unbounded Supabase
 discovery or independently classify the same RPC/policy. Xcode project files, entitlements,

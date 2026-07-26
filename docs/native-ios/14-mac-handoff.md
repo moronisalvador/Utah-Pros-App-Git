@@ -15,7 +15,8 @@ DEPENDS ON:
 
 NOTES / GOTCHAS:
   - The planning branch must be published or transferred before a different Mac can fetch it.
-  - The first Mac session is a decision/foundation checkpoint, not authorization to ship features.
+  - The copy-ready prompt requires the current-client hardening gate before native discovery.
+  - The first native Mac session is a decision/foundation checkpoint, not authorization to ship.
 -->
 
 # Native iOS Mac Handoff
@@ -30,37 +31,61 @@ NOTES / GOTCHAS:
 - If the branch is still local on the Windows machine, the Mac cannot fetch it. Publishing the
   branch is a separate owner-authorized Git action.
 
+## Sequencing prerequisite — harden the current client first
+
+The owner chose to finish a supportable PWA/Capacitor baseline before starting the native program on
+the Mac. The canonical requirement is `17-current-client-hardening-gate.md`; the accepted decision
+is ADR 0003.
+
+The prompt below therefore runs only after a current-client handoff records `NIOS-H: READY`. If the
+exact status is anything other than `READY`, or the record is stale or unsupported, the Mac session
+stops before Discovery A, summarizes the exact missing findings/evidence, and prepares a
+continuation prompt for the existing hardening initiative. It does not restart completed audit work.
+
+Planning-only native discovery may technically be opened earlier by a separate explicit owner
+exception. It still may not create a Swift project, package, entitlement, implementation branch, or
+feature code. Current-client remediation always runs in its own authorized worktree/branch based on
+an explicitly verified current `origin/dev`; never mix it into this planning branch.
+
 ## What the first Mac session should accomplish
 
-The first session is **Discovery Session A**, not an all-day attempt to settle every future
-capability. It should:
+After `NIOS-H` is verified `READY`, the first native session is **Discovery Session A**, not an
+all-day attempt to settle every future capability. It should:
 
-1. verify the exact branch, commit, clean worktree, Xcode/Swift/macOS versions, available simulators,
+1. verify the hardening record's source/deployment boundary, supported-capability matrix, finding
+   dispositions, device/release evidence, owner acceptance, and material drift;
+2. verify the exact branch, commit, clean worktree, Xcode/Swift/macOS versions, available simulators,
    physical devices, Apple team access, and signing visibility without printing secrets;
-2. fetch current `origin/dev` and record merge base/ahead/behind drift without rebasing or editing
+3. fetch current `origin/dev` and record merge base/ahead/behind drift without rebasing or editing
    the planning snapshot;
-3. read project law and use the plan index as a routed reference rather than making the owner wait
+4. read project law and use the plan index as a routed reference rather than making the owner wait
    while every artifact is narrated;
-4. preserve the approved Apple Field Pro **evolve** direction and load its source/maturity matrix;
+5. preserve the approved Apple Field Pro **evolve** direction and load its source/maturity matrix;
    do not restart or relitigate preserve/evolve/replace, but do design the exact native visual
    system;
-5. decide v1 users/scope, device/accessibility matrix, remaining native/field adaptations, and two
+6. decide v1 users/scope, device/accessibility matrix, remaining native/field adaptations, and two
    or three first-slice candidates using the same realistic content across the current PWA, Apple
    Field Pro, and non-production native-intent design examples;
-6. defer DocuSign, background location, AI, broad notification, release and retirement decisions
+7. defer DocuSign, background location, AI, broad notification, release and retirement decisions
    unless they materially constrain the next phase;
-7. record Session A decisions and prepare a copy-ready **Discovery Session B** prompt for
+8. record Session A decisions and prepare a copy-ready **Discovery Session B** prompt for
    first-slice contracts, technical architecture, QA, offline/privacy and dependency decisions;
-8. stop for owner review. Do not create the production target or feature screens.
+9. stop for owner review. Do not create the production target or feature screens.
 
-Session B selects the first slice and closes the first-build gate. It may create a disposable,
-uncommitted proof-of-toolchain spike only if the owner explicitly opens that phase.
+Session B selects the first slice and closes the native-planning portion of the first-build gate.
+Phase 1 remains blocked until both `NIOS-H` and Phase 0 are closed and the owner separately
+authorizes implementation. Session B may create a disposable, uncommitted proof-of-toolchain spike
+only if `NIOS-H` is `READY` and the owner explicitly opens that phase. The spike runs in a
+temporary directory outside the worktree, creates no tracked project/package/entitlement/generated
+artifact or signed target, is removed through guaranteed cleanup, and never counts as Phase 1
+evidence.
 It must not apply migrations, alter live services, deploy, submit, send, charge, or use production
 data.
 
 ## Transition to an implementation branch
 
-After the owner accepts Sessions A and B and separately authorizes implementation:
+Only after `NIOS-H` is `READY`, the owner accepts Sessions A and B, and the owner separately
+authorizes implementation:
 
 1. fetch and verify the latest clean `origin/dev`;
 2. record the planning commit, current `origin/dev`, merge base and drift;
@@ -87,6 +112,9 @@ Do not recreate the plan and do not begin by coding screens.
 
 Owner decisions already closed — do not ask me to choose these again:
 - Build a separate Swift/SwiftUI client in parallel; keep the PWA/Capacitor clients operational.
+- Finish the current PWA/Capacitor supportable hardening baseline before native discovery under
+  this prompt or any committed Swift implementation. Do not turn lower-risk polish into a
+  perfection gate.
 - Complete design discovery and a reusable native design foundation before scaling feature UI.
 - EVOLVE Apple Field Pro as the native blueprint. Preserve its refinements, layouts, information
   hierarchy, and owner-locked workflows by default.
@@ -96,18 +124,55 @@ Owner decisions already closed — do not ask me to choose these again:
   are not closed; decide them with concrete prototypes and device/field evidence.
 - Do not use a slow screen-by-screen native migration inside Capacitor as the primary strategy.
 
+Runtime law applies from the first command:
+- Every development server, Xcode/Simulator helper, browser controller, test runner, subprocess,
+  and runtime validation attempt has an explicit timeout of at most 300 seconds.
+- Record the parent and spawned child process handles/PIDs plus bounded, secret-scrubbed stdout and
+  stderr.
+- Use finally, defer, trap, or equivalent guaranteed cleanup. On success, failure, timeout,
+  cancellation, or interruption, terminate and wait for the exact spawned process tree and verify
+  its port/processes are gone.
+- Never use generic killall/process-name cleanup. Terminate only exact recorded PIDs/process handles
+  created by this task. Never terminate a pre-existing process or port owner; choose an alternate
+  port or record the check as Blocked.
+- Cap retries and record each attempt. A timeout is evidence, not permission to leave a process
+  running.
+- Record authentication, device, signing, provider, or environment limitations as Blocked. One
+  optional check does not stop non-dependent work, but a required missing check keeps its gate open.
+
 First:
 1. Fetch remote state and check out codex/native-ios-plan in a new isolated worktree.
-2. Fetch origin/dev and record the planning HEAD, current origin/dev, merge base, ahead/behind
-   count, upstream, worktree status, macOS/Xcode/Swift versions, simulator runtimes, connected test
-   device classes, and timestamp. Do not rebase the planning branch.
-3. Confirm the worktree contains only the intended plan changes and no unrelated files.
-4. Treat this planning branch as review-only. Do not begin implementation on it.
-5. Read AGENTS.md and CLAUDE.md completely, then the applicable .claude/rules documents.
-6. Read docs/native-ios/README.md and use its linked documents as the routed source of truth.
-7. Read docs/native-ios/decisions/0002-evolve-apple-field-pro-for-native-ios.md and
+2. Fetch current origin/dev and the remote audit/hardening refs named by the existing handoff.
+   Record planning HEAD, current origin/dev, merge base, ahead/behind count, upstream, worktree
+   status, and timestamp. Do not rebase or edit the planning branch.
+3. Read docs/native-ios/17-current-client-hardening-gate.md and
+   docs/native-ios/decisions/0003-harden-current-client-before-swift-implementation.md.
+4. Locate the existing current-client audit/hardening handoff. Reuse all completed orientation,
+   census, specialist reports, tests, lint, governance, Supabase evidence, Mac/Xcode evidence,
+   finding IDs, and current audit state. Do not restart the audit or renumber findings.
+   Build a per-artifact reuse ledger with source branch/commit, capture time, scope, evidence layer,
+   freshness/material-drift result, and current/stale/superseded disposition. Reuse current evidence
+   and refresh only the affected stale layer.
+5. Verify that handoff records NIOS-H: READY, its exact audit/remediation/source/deployment
+   commits, current origin/dev drift, supported-capability matrix, audit P0/current-client or
+   shared-contract Critical/P1 dispositions, Mac/device/release/rollback/support evidence,
+   independent review, and explicit owner acceptance.
+   A green build, repository-only fix, or Simulator check alone does not close NIOS-H.
+6. If the exact NIOS-H status is anything other than READY, or its evidence is missing or stale,
+   STOP before Discovery A. Summarize work already completed, available specialist results, current
+   hardening step, exact remaining finding IDs and evidence, documentation state, and whether proof
+   is repository-only, device-verified, or deployed/observed. Produce a copy-ready continuation
+   prompt for the existing hardening worktree/branch. Do not create a Swift project or begin
+   current-client remediation here.
+7. If and only if NIOS-H is READY, record macOS/Xcode/Swift versions, simulator runtimes, connected
+   test device classes, and signing visibility without displaying secrets.
+8. Confirm the worktree contains only the intended plan changes and no unrelated files.
+9. Treat this planning branch as review-only. Do not begin implementation on it.
+10. Read AGENTS.md and CLAUDE.md completely, then the applicable .claude/rules documents.
+11. Read docs/native-ios/README.md and use its linked documents as the routed source of truth.
+12. Read docs/native-ios/decisions/0002-evolve-apple-field-pro-for-native-ios.md and
    docs/native-ios/03a-apple-field-pro-adaptation-matrix.md.
-8. Load the durable Apple Field Pro sources:
+13. Load the durable Apple Field Pro sources:
    - docs/tech-redesign/TECH-DESIGN-STANDARD.md
    - docs/tech-redesign/SESSION-STATE.md
    - docs/tech-redesign/UX-FLOWS-BRIEF.md
@@ -123,10 +188,11 @@ First:
    `http://localhost:8899/full-app.html#s-working` in Simulator Safari (or the Mac LAN URL on the
    owner's iPhone), and terminate/wait for that exact child in guaranteed finally/defer cleanup.
    If port 8899 belongs to another process, do not terminate it; use an explicit alternate port.
-9. Read the current canonical architecture, database, authorization, business-rule, integration,
+14. Read the current canonical architecture, database, authorization, business-rule, integration,
    testing/deployment, App Store, QA, design-system, and unfinished-work documents named by the plan.
-10. Treat Supabase, production services, production data, provider consoles, Apple configuration,
-   deployments, signing, and releases as read-only unless I separately authorize an exact change.
+15. Treat Supabase, production services, production data, provider consoles, Apple configuration,
+   deployments, signing, and releases as strictly read-only for this checkpoint. Any later exact
+   change requires a separate owner-authorized task; do not pivot into it inline.
 
 Use one primary orchestrator responsible for scope, dependency ordering, evidence, contradiction
 resolution, and final documentation. Use bounded specialists only where scopes are disjoint.
@@ -166,23 +232,25 @@ After Session A:
 1. Write or update its decision records, including rejected alternatives and explicit deferrals.
 2. Complete the preservation/adaptation records for candidate first-slice screens and define the
    non-production native-intent design prototypes plus representative technician validation needed
-   before foundation freeze. Reserve compiled SwiftUI for D3 or a separately authorized spike.
+   before foundation freeze. Reserve compiled SwiftUI for D3 or a separately authorized,
+   temporary-directory spike with zero tracked artifacts and guaranteed cleanup.
 3. Produce a Session B prompt that will select one thin slice and fill its contract, architecture,
    QA, offline/privacy, test, device, performance and ownership packet.
 4. Explain current origin/dev drift and the later safe implementation-branch transition.
 5. Stop for my review; do not create a Swift project or production identity.
 
-All development servers, simulators controlled by scripts, browser checks, subprocesses, and
-runtime validation commands must have a maximum five-minute timeout per attempt, guaranteed cleanup
-in a finally/defer block, terminate spawned children, and record authentication/device/environment
-limitations as blocked. No optional runtime check may stall the initiative.
-
 Do not modify the existing Capacitor ios/ project, React application, Workers, migrations, live
 database, provider configuration, Apple configuration, deployment, or release during this
-checkpoint. Do not commit, push, merge, open a PR, deploy, or submit unless I explicitly authorize
-that delivery action after reviewing the diff.
+checkpoint. Any later authorization to change a backend, production, provider, Apple, deployment,
+signing, or release boundary ends this checkpoint and moves to a separately scoped task/worktree.
+Do not commit, push, merge, or open a PR unless I explicitly authorize that documentation delivery
+action after reviewing the diff.
 
 End with:
+- NIOS-H evidence path, exact status, audit/remediation/source/deployment commits, current drift,
+  remaining findings, supported scope, owner acceptance, and whether proof is repository-only,
+  device-verified, or deployed/observed;
+- an explicit statement that native Discovery A was allowed or blocked and why;
 - decisions made and still open;
 - exact branch/commit/status and changed files;
 - evidence captured and limitations;
@@ -206,7 +274,7 @@ Record evidence without credentials:
 
 ## Recommended handoff point after the first Mac session
 
-After Session A, stop with the product/design/device decisions, ranked slice candidates,
+After `NIOS-H: READY`, Session A stops with the product/design/device decisions, ranked slice candidates,
 Apple Field Pro preservation/adaptation records, deferrals, current-branch drift, and a copy-ready
 Session B prompt. After Session B, stop again once the selected-slice packet, architecture ADR,
 QA/offline/privacy gates, and design-foundation scope are reviewable. Both checkpoints are

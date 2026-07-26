@@ -29,6 +29,12 @@ The native client may eventually replace Capacitor on iOS, but replacement occur
 measured parity, security, reliability, accessibility, device, TestFlight, and rollback gates. The
 PWA continues to serve web users and may remain the appropriate client for desktop workflows.
 
+On 2026-07-26 the owner decided that committed Swift implementation begins only after the current
+PWA/Capacitor product reaches the supportable maintenance baseline in
+`17-current-client-hardening-gate.md`. The baseline closes audit P0 and unconditional P1 blockers
+plus current-client/shared-contract Critical risks, and scopes or owns lower-risk debt; it does not
+require every cosmetic or long-term refactor to finish.
+
 On 2026-07-26 the owner also chose Apple Field Pro as the native product/experience blueprint. The
 native client preserves its owner-locked layouts, workflow decisions, and refinements by default,
 adapts them for field readability and easier tapping using current-PWA lessons, and implements them
@@ -58,7 +64,8 @@ need to understand the underlying software architecture.
 - A platform foundation for camera/media, documents and signing, location, richer notifications,
   background work where iOS permits it, and future Apple platform capabilities.
 - Incremental value through complete vertical slices rather than a long invisible rewrite.
-- Continued compatibility with the operational PWA/Capacitor clients during the transition.
+- A known, supportable PWA/Capacitor fallback before Swift construction and continued compatibility
+  with that client during the transition.
 
 ## Candidate capability horizon
 
@@ -87,6 +94,8 @@ implementation:
 - Shipping every desktop/admin surface in native v1 without an owner-approved use case.
 - Depending on unreleased Apple capabilities for core workflows.
 - Removing the current clients before a rollback-tested cutover.
+- Treating every current-client polish item as a prerequisite after its blocking hardening gate is
+  safely closed.
 - Calling a build, simulator run, or successful login “production ready.”
 
 ## Users and scope decision
@@ -131,10 +140,14 @@ criteria. At minimum, measure:
 - The current public App Store direction and existing bundle identity are inputs, but final native
   product naming, bundle/version migration, listing, and distribution require an explicit owner
   cutover decision.
+- Current-client hardening, deployment, shared-database changes, signing, and release retain their
+  own authorization and evidence boundaries; this native plan cannot close them by declaration.
 
 ## Governance
 
 Every phase has one accountable orchestrator, bounded owners, exact paths, exit criteria, and an
 evidence record. Product code, database, provider configuration, Apple configuration, deployment,
 and publication are distinct authorization boundaries. Approval of this charter approves planning,
-not any of those external effects.
+not any of those external effects. The current-client hardening owner and native orchestrator must
+handoff `NIOS-H` through an exact branch/commit/evidence record rather than sharing an unbounded
+mixed implementation lane.

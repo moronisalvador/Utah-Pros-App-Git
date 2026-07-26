@@ -486,6 +486,7 @@ For each vertical slice:
 
 Information architecture and parity planning are ready for implementation when:
 
+- the current PWA/Capacitor fallback has a current, owner-accepted `NIOS-H: READY` record;
 - the owner approves top-level navigation and role scope;
 - every current mobile workflow has a classification;
 - every first-slice Apple Field Pro surface has a preservation/adaptation disposition;
@@ -496,3 +497,6 @@ Information architecture and parity planning are ready for implementation when:
 - required states from section 7 are represented in prototypes/tests;
 - PWA/Capacitor compatibility remains explicit;
 - the launch-parity set is defined without claiming pixel or implementation parity.
+
+This planning readiness still requires Phase 0 closure, current-base reconciliation, a fresh
+implementation worktree, and separate implementation authority before Swift code begins.

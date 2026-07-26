@@ -20,7 +20,7 @@ NOTES / GOTCHAS:
 # Native iOS Release, App Store, and Cutover
 
 **Status:** Proposed release contract
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 **Goal:** Keep the PWA and Capacitor app serviceable while a complete native app is built, then release the native binary through a controlled compatibility window.
 
 ## Evidence language
@@ -39,6 +39,23 @@ proposed/approved/deferred/superseded decision state independent from evidence.
 - **Owner gate:** Apple Developer enrollment/team access, certificate/profile strategy, App Store Connect access, credentials, screenshots, reviewer account, archive/device proof, and actual submission remain external.
 
 The metadata in `docs/app-store-connect-metadata.md` describes the current known Capacitor implementation. It must be recaptured for the native candidate; new SDKs, telemetry, location, AI, signing, Storage, or notification behavior can change the answers.
+
+## Pre-native operational baseline
+
+Before a committed Swift project or native implementation branch exists, the current
+PWA/Capacitor product must satisfy `17-current-client-hardening-gate.md` and record
+`NIOS-H: READY`. That gate establishes the client that will carry operations during the rewrite:
+
+- the supported browser/PWA/Capacitor capabilities and explicit exclusions are known;
+- audit P0, current-client/shared-contract Critical, and unconditional P1 blockers are closed;
+- conditional P1 capabilities are closed or removed from the supported promise;
+- current-client Mac, device, release, rollback, observability, and support evidence is retained;
+- lower-risk debt is owned without becoming an indefinite perfection gate.
+
+This prerequisite does not release, deploy, sign, or alter the current product. Those actions still
+require exact separate authorization. After `READY`, a named owner maintains critical
+security/compatibility/release fixes until native cutover; new feature work in the current client is
+owner-gated by urgency.
 
 ## Distribution topology
 
@@ -104,6 +121,8 @@ From the first native TestFlight build until the owner formally retires the Capa
 - Every schema/provider change lists affected PWA, Capacitor, native, worker, test, and automation callers.
 - Minimum-supported-client enforcement, if ever needed, uses an owner-approved server policy and user-visible upgrade path. It cannot be a surprise kill switch.
 - PWA and Capacitor critical security fixes continue during the window. Native development is not permission to abandon the current product.
+- Material drift in an `NIOS-H` security, account-state, mutation, update, release, or device
+  boundary reopens that part of the operational-baseline record.
 
 **Owner gate:** retirement requires adoption evidence, no unresolved offline work, support readiness, and an owner-approved minimum-version policy. Calendar age alone is not sufficient.
 

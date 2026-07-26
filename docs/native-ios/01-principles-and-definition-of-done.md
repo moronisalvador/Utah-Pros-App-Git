@@ -57,11 +57,15 @@ NOTES / GOTCHAS:
     Cloudflare, Apple, APNs, App Store Connect, DocuSign, or provider configuration.
 15. **No silent owner decisions.** Product scope, visual direction, destructive behavior, privacy,
     retention, distribution, device support, and release risk are written decisions.
+16. **Protect the operational fallback.** Committed Swift construction waits for
+    `NIOS-H: READY`. The current PWA/Capacitor client remains owned, releasable, backward compatible,
+    and supported for critical fixes until cutover.
 
 ## Foundation definition of ready
 
 No feature screen begins until its vertical-slice packet contains:
 
+- a current, owner-accepted `NIOS-H: READY` record for the operational fallback;
 - owner-approved problem, user, outcome, and exclusions;
 - approved navigation placement and representative design;
 - completed Apple Field Pro Preserve/Translate/Adapt/Reopen/Verify record for each involved screen,

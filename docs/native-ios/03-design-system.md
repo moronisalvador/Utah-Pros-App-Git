@@ -505,7 +505,8 @@ It is **not** necessary to prebuild every Dry Logs, DocuSign, messaging, camera,
 before the first slice. Those components join the system through section 8 when their real workflow
 is designed.
 
-Provisional implementation of the single owner-selected slice may begin after the Phase 0
-first-build gate using fakes or isolated QA. Missing physical-device or representative-technician
-evidence must be recorded as **Blocked** and prevents acceptance/freeze/scaling; it does not stall
-unrelated Simulator or contract work.
+Provisional implementation of the single owner-selected slice may begin only after
+`NIOS-H: READY`, the Phase 0 first-build gate, current-base reconciliation, and separate
+implementation authority, using fakes or isolated QA. Missing physical-device or representative-
+technician evidence must be recorded as **Blocked** and prevents acceptance/freeze/scaling; it does
+not stall unrelated Simulator or contract work after those entry gates are satisfied.

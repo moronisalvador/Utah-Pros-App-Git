@@ -73,6 +73,10 @@ be treated as current architecture without re-verification.
   planning-only today. It shares governed business/backend contracts, not UI code or client-side
   authorization assumptions, and must use isolated QA plus additive/versioned compatibility while
   Capacitor and the PWA remain deployed.
+- On 2026-07-26 the owner required the supportable current-client baseline in
+  `docs/native-ios/17-current-client-hardening-gate.md` before any committed Swift project or
+  implementation branch. Planning artifacts do not prove that `NIOS-H` is ready or authorize
+  current-client remediation.
 
 ## Design boundaries
 

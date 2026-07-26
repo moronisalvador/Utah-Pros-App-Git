@@ -23,6 +23,8 @@ NOTES / GOTCHAS:
 This document defines a decision framework and a conservative proposed baseline. The Mac
 architecture checkpoint must confirm or replace each proposed choice in an ADR before scaffolding.
 The goal is a modular, testable native client—not a framework showcase and not a second backend.
+No scaffold is created until `NIOS-H: READY`, Phase 0 closure, current-base reconciliation, and
+separate implementation authority under `17-current-client-hardening-gate.md`.
 
 ## Decisions required before project creation
 
@@ -241,6 +243,7 @@ After decisions are approved:
 
 The architecture is ready for the first slice when:
 
+- the current PWA/Capacitor operational fallback has a current `NIOS-H: READY` record;
 - every required decision has an accepted ADR or an explicit deferred trigger;
 - a dependency graph has no feature-to-transport or domain-to-framework violation;
 - environment mismatch and missing configuration fail closed;

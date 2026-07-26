@@ -3334,10 +3334,13 @@ Zero migrations, zero CRM-file edits.
 
 ---
 
-## Native iOS App (Capacitor) — mostly shipped
+## Native iOS App (Capacitor) — substantial source integration; hardening gate open
 
-Camera, push registration, geolocation, biometric gate, and the Capgo OTA updater below are all
-live, not in-progress. Only the privacy-screen plugin (see Deferred below) is genuinely still pending.
+Camera, push registration, geolocation, biometric gate, and Capgo OTA integration exist in source.
+That is not proof that APNs, OTA, signing, privacy, archive/TestFlight, deep links, account lifecycle,
+or physical-device workflows are production-ready. The completed mobile audit and subsequent Mac
+evidence must be reconciled through `docs/native-ios/17-current-client-hardening-gate.md`; privacy
+screen is not the only remaining readiness question.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3359,7 +3362,8 @@ live, not in-progress. Only the privacy-screen plugin (see Deferred below) is ge
   signing secrets, Xcode archive/device proof, and an explicitly dispatched release.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
 - **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
-- **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
+- **Historical task tracker:** `CAPACITOR-TASK.md` was removed after the source-integration phases;
+  that removal is not a production-readiness or device-release attestation.
 
 ---
 
@@ -3369,6 +3373,14 @@ On 2026-07-25 the owner accepted a separate, parallel native iOS direction. The 
 Capacitor clients remain operational while a new Swift/SwiftUI client is designed from the ground
 up. This is not an incremental hybrid-screen migration and it does not authorize retirement of the
 current app.
+
+On 2026-07-26 the owner also required a supportable current PWA/Capacitor hardening baseline before
+any committed Swift scaffold/project or native implementation branch. The finite gate is
+[`docs/native-ios/17-current-client-hardening-gate.md`](docs/native-ios/17-current-client-hardening-gate.md)
+and the decision is ADR 0003. It reuses the completed mobile audit and existing finding IDs rather
+than restarting them: audit P0, current-client/shared-contract Critical, and unconditional P1
+blockers close; conditional P1 capabilities close or are explicitly excluded; safe lower-risk debt
+may be owned and deferred. `NIOS-H` is not yet evidenced by this planning branch.
 
 The plan of record is [`docs/native-ios/README.md`](docs/native-ios/README.md), prepared from
 `origin/dev` commit `90b265ee6f733c8dbcd75786f4e4057dd3355d38`. It includes:
@@ -3385,7 +3397,8 @@ The plan of record is [`docs/native-ios/README.md`](docs/native-ios/README.md), 
 - native design, accessibility, architecture, data-contract, security/privacy, offline/reliability,
   Apple capability, QA, performance, App Store/cutover, risk, and multi-agent ownership gates;
 - a source-derived contract bootstrap that is orientation only, never live authorization proof;
-- a fresh Mac/Xcode handoff that selects one thin vertical slice before scaling.
+- a fresh Mac/Xcode handoff that first verifies `NIOS-H: READY`, then selects one thin vertical
+  slice before scaling.
 
 The native client will reuse governed backend/business contracts while remaining an independently
 versioned caller. It must not embed service-role/provider secrets, treat UI role gates as authority,

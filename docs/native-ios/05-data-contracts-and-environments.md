@@ -457,6 +457,8 @@ spawned children, and record environmental limits as blocked rather than stallin
 The first native vertical slice may connect to a non-mock backend only for layers whose required
 isolation is proved:
 
+- `NIOS-H: READY`, Phase 0 closure, current-base reconciliation, and separate Swift implementation
+  authority are recorded before any native caller is implemented;
 - disposable local isolation passes for every migration, grant, RLS, RPC, direct-data, and
   deterministic database contract the slice exercises;
 - hosted isolated QA passes before the slice claims deployed Auth, Storage, Realtime, Worker,
