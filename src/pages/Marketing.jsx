@@ -1,24 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ErrorState } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 export default function Marketing() {
   const { db } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  // ErrorState only renders on an empty list, so a refresh failure over existing
+  // rows would otherwise show the user nothing at all.
+  const hadRowsRef = useRef(false);
 
   const load = useCallback(async () => {
     try {
       const rows = await db.select('campaigns', 'order=created_at.desc&select=id,name,campaign_type,status,audience_count,total_sent,total_delivered,total_replied,created_at&limit=50');
       setCampaigns(rows || []);
+      hadRowsRef.current = (rows || []).length > 0;
       setLoadError(null);
-    } catch (err) {
+    } catch (loadErr) {
       // Was `.catch(() => setCampaigns([]))` — a failure was actively converted
       // into an empty list, so an outage looked identical to "no campaigns yet"
       // (loading-error-states.md §1).
-      console.error('Marketing load error:', err);
+      console.error('Marketing load error:', loadErr);
       setLoadError('Couldn’t load campaigns. Check your connection and try again.');
+      if (hadRowsRef.current) err('Couldn’t refresh — showing last-loaded campaigns.');
     } finally {
       setLoading(false);
     }
