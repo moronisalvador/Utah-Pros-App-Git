@@ -19,12 +19,17 @@ NOTES / GOTCHAS:
 
 # Native iOS Plan
 
-**Status:** plan ready for owner review; implementation has not started
-**Prepared:** 2026-07-25
+**Status:** plan ready for owner review; Apple Field Pro evolution direction approved;
+implementation has not started
+**Prepared:** 2026-07-25; owner direction amended 2026-07-26
 **Planning branch:** `codex/native-ios-plan`
 **Base:** `origin/dev` at `90b265ee6f733c8dbcd75786f4e4057dd3355d38`
 **Product decision:** build a new Swift/SwiftUI client in parallel while the existing PWA and
 Capacitor app remain the operational clients.
+**Product/experience direction:** evolve Apple Field Pro as the native blueprint, preserving its
+layouts, workflow decisions, and refinements while adapting them for field readability, easier
+tapping, native iOS behavior, and lessons from the current PWA. Exact native colors, typography,
+symbols, materials, controls, and measurements remain design/device gates.
 
 This directory is the canonical starting packet for the new native application. It is designed so
 a fresh Mac session can orient once, ask the owner the consequential questions, establish safe
@@ -51,8 +56,10 @@ large speculative library that must be discarded later.
 
 The first Mac session is Discovery Session A from
 [02-owner-decisions-and-discovery.md](02-owner-decisions-and-discovery.md), not implementation.
-Discovery Session B selects the first slice and closes the applicable first-build gates before
-construction begins.
+The preserve/evolve/replace question is already closed as **evolve**; the session uses
+[03a-apple-field-pro-adaptation-matrix.md](03a-apple-field-pro-adaptation-matrix.md) to decide the
+remaining field, device, visual, and first-slice details. Discovery Session B selects the first
+slice and closes the applicable first-build gates before construction begins.
 
 ## Required reading order
 
@@ -62,25 +69,28 @@ construction begins.
 | 2 | [01-principles-and-definition-of-done.md](01-principles-and-definition-of-done.md) | Non-negotiables and quality gates |
 | 3 | [02-owner-decisions-and-discovery.md](02-owner-decisions-and-discovery.md) | Questions the owner must answer before construction |
 | 4 | [03-design-system.md](03-design-system.md) | Native design foundation and approval sequence |
-| 5 | [04-information-architecture-and-workflow-parity.md](04-information-architecture-and-workflow-parity.md) | Route/workflow scope and parity method |
-| 6 | [technical-architecture.md](technical-architecture.md) | Module, state, dependency, navigation, concurrency, and scaffold blueprint |
-| 7 | [05-data-contracts-and-environments.md](05-data-contracts-and-environments.md) | Swift data layer, contract registry, and environment isolation |
-| 8 | [06-security-privacy-and-compliance.md](06-security-privacy-and-compliance.md) | Authorization, secrets, privacy, and compliance |
-| 9 | [07-offline-sync-and-reliability.md](07-offline-sync-and-reliability.md) | Offline truth, retries, idempotency, and recovery |
-| 10 | [08-platform-capabilities.md](08-platform-capabilities.md) | Camera, location, push, documents, signing, and Apple capabilities |
-| 11 | [09-testing-and-quality.md](09-testing-and-quality.md) | Automated, simulator, accessibility, performance, and device proof |
-| 12 | [10-release-app-store-cutover.md](10-release-app-store-cutover.md) | Signing, TestFlight, App Store, rollout, and rollback |
-| 13 | [11-roadmap.md](11-roadmap.md) | Dependency-ordered implementation phases |
-| 14 | [12-agent-execution-and-ownership.md](12-agent-execution-and-ownership.md) | Multi-agent boundaries, sequencing, and close-out |
-| 15 | [13-risk-register.md](13-risk-register.md) | Known risks, mitigations, gates, and owners |
-| 16 | [14-mac-handoff.md](14-mac-handoff.md) | Exact fresh-session instructions for the Mac |
-| 17 | [15-completeness-gates.md](15-completeness-gates.md) | Single ledger proving no lifecycle category was silently omitted |
-| 18 | [16-plan-validation.md](16-plan-validation.md) | Provenance, independent challenge, validation results, and honest limits |
+| 5 | [03a-apple-field-pro-adaptation-matrix.md](03a-apple-field-pro-adaptation-matrix.md) | What to preserve, translate, adapt, reopen, and verify |
+| 6 | [04-information-architecture-and-workflow-parity.md](04-information-architecture-and-workflow-parity.md) | Route/workflow scope and parity method |
+| 7 | [technical-architecture.md](technical-architecture.md) | Module, state, dependency, navigation, concurrency, and scaffold blueprint |
+| 8 | [05-data-contracts-and-environments.md](05-data-contracts-and-environments.md) | Swift data layer, contract registry, and environment isolation |
+| 9 | [06-security-privacy-and-compliance.md](06-security-privacy-and-compliance.md) | Authorization, secrets, privacy, and compliance |
+| 10 | [07-offline-sync-and-reliability.md](07-offline-sync-and-reliability.md) | Offline truth, retries, idempotency, and recovery |
+| 11 | [08-platform-capabilities.md](08-platform-capabilities.md) | Camera, location, push, documents, signing, and Apple capabilities |
+| 12 | [09-testing-and-quality.md](09-testing-and-quality.md) | Automated, simulator, accessibility, performance, and device proof |
+| 13 | [10-release-app-store-cutover.md](10-release-app-store-cutover.md) | Signing, TestFlight, App Store, rollout, and rollback |
+| 14 | [11-roadmap.md](11-roadmap.md) | Dependency-ordered implementation phases |
+| 15 | [12-agent-execution-and-ownership.md](12-agent-execution-and-ownership.md) | Multi-agent boundaries, sequencing, and close-out |
+| 16 | [13-risk-register.md](13-risk-register.md) | Known risks, mitigations, gates, and owners |
+| 17 | [14-mac-handoff.md](14-mac-handoff.md) | Exact fresh-session instructions for the Mac |
+| 18 | [15-completeness-gates.md](15-completeness-gates.md) | Single ledger proving no lifecycle category was silently omitted |
+| 19 | [16-plan-validation.md](16-plan-validation.md) | Provenance, independent challenge, validation results, and honest limits |
 
 Supporting artifacts:
 
 - [decisions/0001-parallel-native-swift-replacement.md](decisions/0001-parallel-native-swift-replacement.md)
   records the owner-approved parallel-client decision.
+- [decisions/0002-evolve-apple-field-pro-for-native-ios.md](decisions/0002-evolve-apple-field-pro-for-native-ios.md)
+  records the owner-approved Apple Field Pro evolution and field-adaptation decision.
 - [contracts/README.md](contracts/README.md) defines the contract catalog.
 - [contracts/registry-template.yaml](contracts/registry-template.yaml) is the required schema for
   each screen-to-backend contract.
@@ -105,6 +115,19 @@ If a native design wants a different business rule, backend response, or authori
 and open a separately reviewed backend contract change. A mobile UI decision cannot redefine
 server or database authority.
 
+For native product/design/workflow provenance, use this source order:
+
+1. accepted native ADRs and `03a-apple-field-pro-adaptation-matrix.md`;
+2. locked decisions/anatomies in `docs/tech-redesign/TECH-DESIGN-STANDARD.md`;
+3. the normative mockups named by that standard and locked specs under
+   `docs/tech-redesign/specs/`;
+4. locked flow prototypes plus `docs/tech-redesign/SESSION-STATE.md` for maturity and later
+   refinements;
+5. current PWA source/device evidence for runtime and field lessons, not automatic visual authority.
+
+Rejected challengers, unfinished prototypes, and stale progress prose never outrank a locked or
+later accepted decision.
+
 ## Hard stops
 
 Planning and scaffolding grant no authority to:
@@ -123,7 +146,8 @@ Implementation can begin only after all of the following are recorded:
 
 - owner workshop decisions and unresolved items;
 - intended users, v1 workflow boundary, device/OS matrix, and accessibility target;
-- native visual direction and non-production representative design-prototype approval;
+- the approved Apple Field Pro **evolve** direction translated into non-production representative
+  prototypes, with preservation/adaptation classifications and owner approval;
 - module/data architecture decision and dependency policy;
 - contract registry for the first vertical slice with authorization and failure semantics;
 - isolated local/hosted QA strategy with fail-closed project sentinels;

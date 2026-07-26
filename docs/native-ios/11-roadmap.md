@@ -20,7 +20,7 @@ NOTES / GOTCHAS:
 # Native iOS Roadmap
 
 **Status:** Proposed program roadmap
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 **Delivery model:** Build the full native app as a separate product track; keep the current PWA/Capacitor app in service until native cutover.
 
 ## Evidence language
@@ -64,6 +64,8 @@ decision state separately.
 **Work**
 
 - Approve the native product scope and non-goals.
+- Adopt the accepted Apple Field Pro evolution decision and classify first-slice surfaces under
+  the preservation/adaptation matrix; do not restart visual discovery from a blank page.
 - Decide minimum OS, iPhone/iPad support, orientation, QA bundle strategy, signing ownership, distribution path, and initial release roles.
 - Baseline the current Capacitor workflow/contract census and label required, later, and retired behavior.
 - Approve architecture, security, data contracts, offline policy, platform capabilities, testing, and release documents.
@@ -71,10 +73,12 @@ decision state separately.
 
 **Exit criteria**
 
-- The owner workshop records v1 users/scope, device/accessibility matrix, visual direction, and the
-  owner-selected first-slice candidate.
-- Non-production high-fidelity directions for representative states are approved; compiled/device
-  proof belongs to later gates.
+- The owner workshop records v1 users/scope, device/accessibility matrix, remaining native
+  adaptation decisions, and the owner-selected first-slice candidate. Apple Field Pro
+  layout/workflow/refinement continuity is already approved; the exact native visual system is not.
+- Non-production field-adapted Apple Field Pro translations for representative states are
+  approved; compiled/device proof belongs to later gates.
+- Every first-slice screen has a source-maturity and Preserve/Translate/Adapt/Reopen/Verify record.
 - The technical architecture, dependency policy, first-slice acceptance packet and initial contract
   entries are approved or explicitly blocked.
 - Local/hosted QA strategy and production-refusal rules are approved; unavailable mutation QA is a
@@ -152,8 +156,9 @@ contracts. It blocks mutation-capable slice acceptance, not unrelated shell/desi
 **Work**
 
 - Implement SwiftUI navigation, typed routes, deep-link deferral, launch/auth states, role-aware entry points, and account switching.
-- Build the approved global tokens, navigation rules, state vocabulary, accessibility floor and only
-  the reusable components required by the owner-selected first slice.
+- Translate the approved Apple Field Pro product/experience decisions into newly approved native
+  global tokens, navigation rules, state vocabulary, accessibility floor, and only the reusable
+  components required by the owner-selected first slice.
 - Define the selected slice's local cache/draft/storage protection, retention, migration and logout
   rules; do not construct speculative stores for every future domain.
 - Implement only the operation/offline/reconciliation machinery required by that slice, behind the
@@ -180,9 +185,13 @@ Choose a slice with a meaningful read and mutation but without money, payroll, e
 **Work**
 
 - Implement from contract through repository/use case to SwiftUI.
+- Implement against the slice's accepted Apple Field Pro preservation/adaptation records and
+  document every evidence-driven departure.
 - Include loading, empty, stale, offline, forbidden, validation, conflict, and retry behavior.
 - Add unit, isolated-QA contract, snapshot, XCUITest, accessibility, and real-device evidence.
 - Record implementation friction and revise foundations before scaling.
+- Compare the completed slice against the same-content current PWA and Apple Field Pro sources
+  before revising/finalizing the foundation.
 - Conduct a task-based usability session with at least one representative field technician. If no
   participant is available, record a named human-validation gate and do not call the slice
   field-validated.

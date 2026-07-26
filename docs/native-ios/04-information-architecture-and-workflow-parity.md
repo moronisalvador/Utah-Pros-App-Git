@@ -11,6 +11,7 @@ WHAT THIS DOES (plain language):
 DEPENDS ON:
   Internal: docs/native-ios/02-owner-decisions-and-discovery.md ·
             docs/native-ios/03-design-system.md ·
+            docs/native-ios/03a-apple-field-pro-adaptation-matrix.md ·
             docs/tech-redesign/TECH-DESIGN-STANDARD.md ·
             docs/tech-redesign/UX-FLOWS-BRIEF.md · UPR-Web-Context.md
   External: Apple Human Interface Guidelines linked below
@@ -28,8 +29,9 @@ NOTES / GOTCHAS:
 
 # Native iOS information architecture and workflow parity
 
-**Last-verified:** 2026-07-25
-**Document status:** Proposed structure; native navigation and parity release set require owner approval
+**Last-verified:** 2026-07-26
+**Document status:** Apple Field Pro workflow continuity approved; native navigation and parity
+release set require owner approval
 **Implementation status:** Not started
 
 ## 1. Outcome
@@ -49,6 +51,11 @@ Parity is **not** measured by:
 - reproducing CSS layouts;
 - issuing the same database calls directly from a view;
 - retaining an unsafe or obsolete workflow because it exists today.
+
+Apple Field Pro is now the default layout/workflow blueprint, not a pixel contract. Preserve its
+owner-locked information hierarchy and choreography unless a documented field, native-platform,
+accessibility, security, or verified-contract reason supports a departure. The screen-level boundary
+and incomplete-flow ledger live in `03a-apple-field-pro-adaptation-matrix.md`.
 
 Apple recommends concentrating the iPhone interface on primary tasks, limiting onscreen controls,
 adapting to Dynamic Type and appearance, and placing frequent interactions within comfortable reach.
@@ -119,6 +126,13 @@ App
 This is a **PROPOSED** IA, not an approved tab contract. The owner reviews alternatives with real
 workflow prototypes.
 
+The existing Apple Field Pro/TechLayout prototype baseline is
+`Dash | Claims | Schedule | Messages | More`. The proposed tree above explores
+`Today | Jobs | Schedule | Messages | More`; accepting Apple Field Pro as the product/experience
+blueprint does not silently approve replacing Claims with Jobs or changing tab membership.
+`NIOS-DES-004` remains an owner decision, evaluated with the locked screen hierarchy and real
+first-slice entry paths.
+
 Native navigation should begin with `TabView` and separate `NavigationStack` state per tab. Apple's
 tab-bar guidance says tabs represent stable top-level navigation, preserve navigation state, remain
 visible consistently, and use labels. See
@@ -129,8 +143,9 @@ current content or toolbar.
 
 ## 4. Job workspace as the documentation spine
 
-The current owner-approved design evidence supports a job-centric workspace. Native discovery should
-test, not silently assume, this hierarchy:
+The owner has approved preserving Apple Field Pro's job-centric workspace as the native starting
+hierarchy. Native discovery validates its field presentation and exact platform navigation rather
+than relitigating the structure without evidence:
 
 1. A job is the durable working context.
 2. A visit supplies schedule, crew, and clock context.
@@ -142,6 +157,9 @@ test, not silently assume, this hierarchy:
 
 The hierarchy prevents duplicate screens and lost context. A Dry Logs module may expose summary
 information in the job workspace, but data entry belongs in its own focused flow.
+
+A departure from this hierarchy requires the deviation record in
+`03a-apple-field-pro-adaptation-matrix.md`; builder preference is not evidence.
 
 ## 5. Workflow record required before design or implementation
 
@@ -417,6 +435,7 @@ The example is not evidence that a specific RPC or authorization contract is app
 - current provider/compliance boundaries;
 - backward compatibility while Capacitor remains installed;
 - proven workflow decisions unless explicitly superseded;
+- Apple Field Pro's owner-locked layouts, hierarchy, and refinements under the adaptation matrix;
 - user-visible receipts and audit history;
 - field persona and accessibility requirements.
 
@@ -449,17 +468,19 @@ For each vertical slice:
 1. Approve workflow classification and outcome.
 2. Verify current callers and backend contracts.
 3. Record roles and object-level authorization.
-4. Draw the native state/entry/exit map.
-5. Reuse approved design-system components.
-6. Prototype happy, offline, error, permission, and interruption paths.
-7. Run owner design review.
-8. Run accessibility review.
-9. Validate the provisional implementation in Simulator; record physical-iPhone and representative-
+4. Classify each involved Apple Field Pro surface as Preserve, Translate, Adapt, Reopen, and/or
+   Verify; record evidence for every departure.
+5. Draw the native state/entry/exit map.
+6. Reuse approved design-system components.
+7. Prototype happy, offline, error, permission, and interruption paths.
+8. Run owner design review.
+9. Run accessibility review.
+10. Validate the provisional implementation in Simulator; record physical-iPhone and representative-
    technician proof as required gates before slice acceptance, foundation freeze, or scaling.
-10. Connect only to isolated QA after the data-readiness and owner gates pass. A blocked
+11. Connect only to isolated QA after the data-readiness and owner gates pass. A blocked
     physical-device/human gate does not prohibit safe provisional mock/isolated-QA work.
-11. Compare native versus current outcomes using synthetic fixtures.
-12. Record parity, intentional departures, and unresolved release gates.
+12. Compare native, Apple Field Pro, and current PWA outcomes using identical synthetic fixtures.
+13. Record parity, intentional departures, and unresolved release gates.
 
 ## 11. Exit criteria
 
@@ -467,6 +488,7 @@ Information architecture and parity planning are ready for implementation when:
 
 - the owner approves top-level navigation and role scope;
 - every current mobile workflow has a classification;
+- every first-slice Apple Field Pro surface has a preservation/adaptation disposition;
 - every `NATIVE-LAUNCH`/`NATIVE-V1` workflow has an owner and dependency order;
 - each first-slice workflow has a complete record from section 5;
 - no screen contains an unidentified backend or authorization assumption;

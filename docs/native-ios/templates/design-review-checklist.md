@@ -11,6 +11,7 @@ WHAT THIS DOES (plain language):
 DEPENDS ON:
   Internal: docs/native-ios/02-owner-decisions-and-discovery.md ·
             docs/native-ios/03-design-system.md ·
+            docs/native-ios/03a-apple-field-pro-adaptation-matrix.md ·
             docs/native-ios/04-information-architecture-and-workflow-parity.md
   External: Apple Human Interface Guidelines and accessibility guidance
   Data:     reads  → none
@@ -33,6 +34,9 @@ NOTES / GOTCHAS:
 | Review ID | |
 | Feature/workflow | |
 | Screen/state | |
+| Apple Field Pro source/maturity | |
+| Current PWA source/evidence | |
+| Disposition | Preserve / Translate / Adapt / Reopen / Verify |
 | Design-system version | |
 | Workflow-contract version | |
 | Prototype/build commit | |
@@ -65,6 +69,10 @@ Record decision lifecycle separately (`proposed`, `approved`, `deferred`, or `su
 - [ ] The workflow classification and owner are recorded.
 - [ ] Verified facts, proposals, and inferences are labeled separately.
 - [ ] Current behavior was inspected rather than reconstructed from memory.
+- [ ] The exact Apple Field Pro source and maturity are recorded; unfinished/rework work is not
+      mislabeled locked.
+- [ ] Locked anatomy, content priority, workflow refinements, and owner decision IDs are recorded.
+- [ ] Current-PWA field lessons were inspected for the same task/content.
 - [ ] The design does not claim a backend, authorization, offline, or device behavior that has not
       been verified.
 - [ ] No production data, customer identity, credential, or secret appears in the prototype/evidence.
@@ -333,6 +341,14 @@ Evidence:
 ## 12. Parity and departure
 
 - [ ] The current business outcome is preserved or the owner approved its replacement.
+- [ ] Apple Field Pro's locked hierarchy/refinements are preserved or a material departure record
+      contains evidence and owner approval.
+- [ ] Native translation changes web mechanics without silently erasing the approved product
+      structure.
+- [ ] Field adaptation addresses reading, reach, gloves, sunlight, keyboard, all Dynamic Type
+      accessibility sizes, and VoiceOver for the actual task.
+- [ ] The same-content current PWA, Apple Field Pro, and SwiftUI outcomes were compared where the
+      matrix requires it.
 - [ ] Role and object-level authorization expectations are identified.
 - [ ] Current and native entry/exit paths are compared.
 - [ ] Offline, background, notification, and deep-link behavior is compared.
@@ -343,6 +359,12 @@ Evidence:
 - [ ] Unsafe or legacy-only behavior was not copied merely for parity.
 
 Intentional departures:
+
+```text
+
+```
+
+Preserved refinements and native/field adaptations:
 
 ```text
 

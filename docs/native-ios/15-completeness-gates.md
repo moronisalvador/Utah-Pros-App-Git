@@ -43,7 +43,8 @@ Gate abbreviations:
 | Repository/toolchain | repo placement, Xcode/Swift policy, project generation, schemes/configurations | F | `technical-architecture.md`, `14-mac-handoff.md` |
 | Architecture | modules, dependency direction, state, navigation, concurrency, composition root | F | `technical-architecture.md` |
 | Dependency governance | Apple-first posture, SPM admission, pin/update/removal, license/security/privacy | F/S | `technical-architecture.md` |
-| Visual direction | preserve/evolve/replace current field language; concrete owner-approved prototypes | D | `02-owner-decisions-and-discovery.md` |
+| Visual direction | Apple Field Pro product/experience **evolve** decision; exact owner-approved native visual translation | D/F | `02-owner-decisions-and-discovery.md`, `03a-apple-field-pro-adaptation-matrix.md` |
+| Design continuity | per-screen Preserve/Translate/Adapt/Reopen/Verify classification; source maturity and justified departures | F/S | `03a-apple-field-pro-adaptation-matrix.md` |
 | Design foundations | semantic color/material, Dynamic Type, spacing, safe areas, symbols, motion, content | F | `03-design-system.md` |
 | Core components | complete interaction/data/connectivity/auth/permission/mutation/a11y states | F/S | `03-design-system.md` |
 | Accessibility | VoiceOver, Voice Control, Switch Control, Dynamic Type, contrast, reduced settings | F/S/B/R | `03-design-system.md`, `09-testing-and-quality.md` |
@@ -97,7 +98,8 @@ A gate closes only when:
 4. Critical unresolved risks block the dependent release scope;
 5. an independent reviewer challenges the packet;
 6. the orchestrator resolves contradictions and inspects the full diff;
-7. external actions are still performed only under their separate authorization.
+7. every first-slice Apple Field Pro surface has a recorded preservation/adaptation disposition;
+8. external actions are still performed only under their separate authorization.
 
 This ledger should be copied into each major milestone packet and reduced to the rows applicable to
 that milestone. Deleting a row to make a gate look complete is not an acceptable disposition.

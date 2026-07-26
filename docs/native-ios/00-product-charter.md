@@ -7,7 +7,8 @@ WHAT THIS DOES (plain language):
 
 DEPENDS ON:
   Internal: docs/native-ios/README.md, docs/architecture.md, docs/business-rules.md,
-            docs/app-store-readiness-roadmap.md
+            docs/app-store-readiness-roadmap.md,
+            docs/native-ios/03a-apple-field-pro-adaptation-matrix.md
   Data:     reads → owner direction and current repository evidence
             writes → documentation only
 
@@ -28,6 +29,12 @@ The native client may eventually replace Capacitor on iOS, but replacement occur
 measured parity, security, reliability, accessibility, device, TestFlight, and rollback gates. The
 PWA continues to serve web users and may remain the appropriate client for desktop workflows.
 
+On 2026-07-26 the owner also chose Apple Field Pro as the native product/experience blueprint. The
+native client preserves its owner-locked layouts, workflow decisions, and refinements by default,
+adapts them for field readability and easier tapping using current-PWA lessons, and implements them
+through a newly validated native design system. Exact colors, typography, symbols, materials,
+controls, and measurements remain owner/device decisions.
+
 ## Product promise
 
 Create a fast, calm, field-reliable iPhone application that feels designed for iOS, gives a
@@ -43,7 +50,8 @@ need to understand the underlying software architecture.
 
 - Native keyboard, focus, safe-area, navigation, sheet, gesture, animation, haptic, lifecycle, and
   accessibility behavior instead of web emulation inside a native shell.
-- A coherent owner-approved SwiftUI design foundation rather than a screen-by-screen visual port.
+- A coherent field-adapted SwiftUI evolution of Apple Field Pro rather than either a blank-slate
+  redesign or a screen-by-screen CSS port.
 - Explicit typed contracts for every RPC, table, Worker, Storage, Realtime, Auth, and provider seam.
 - Field-safe offline and resume behavior with truthful sync state and recoverable drafts.
 - Lower avoidable CPU/network/battery use through measured native patterns.
@@ -63,13 +71,15 @@ implementation:
 - richer actionable, categorized, deep-linked notifications;
 - media capture, annotation, compression, upload, and recovery;
 - background-safe draft/sync coordination within iOS execution limits;
-- new native information architecture and visual direction;
+- native extension and field adaptation of the Apple Field Pro information architecture and visual
+  direction;
 - Apple intelligence/AI frameworks only after the APIs are public, device/OS support is known, data
   handling is privacy-reviewed, graceful fallback exists, and product value is proven.
 
 ## Non-goals
 
 - A blind pixel-for-pixel or route-for-route port of the React application.
+- A blank-slate redesign that silently discards owner-locked Apple Field Pro refinements.
 - Rewriting the Supabase database, Workers, integrations, or business rules as part of UI work.
 - Introducing separate iOS-only truth for status, billing, consent, authorization, or workflow
   state.

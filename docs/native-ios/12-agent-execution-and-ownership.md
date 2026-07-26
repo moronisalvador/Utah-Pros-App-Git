@@ -20,7 +20,7 @@ NOTES / GOTCHAS:
 # Native iOS Agent Execution and Ownership
 
 **Status:** Proposed execution contract
-**Last reviewed:** 2026-07-25
+**Last reviewed:** 2026-07-26
 
 ## Evidence language
 
@@ -55,7 +55,7 @@ Use approximately six to eight workstreams when the phase is large enough to jus
 
 | Workstream | Bounded scope | Typical outputs | Prerequisites |
 |---|---|---|---|
-| Product/workflow census | Named roles, journeys, states, parity and release scope | Route/screen/workflow matrix | Repository orientation |
+| Product/workflow census | Named roles, journeys, states, parity, Apple Field Pro maturity/disposition, and release scope | Route/screen/workflow and preservation/adaptation matrices | Repository orientation |
 | Contract and authorization | Assigned RPC/table/view/Storage/worker/Realtime IDs and role matrix | Contract entries, fixtures, negative tests | Contract catalog; coordinated Supabase inspection |
 | Swift platform foundation | App shell, environment, auth adapter, local state, networking protocols | Owned Swift modules/tests | Xcode project and environment decisions |
 | Design system/accessibility | Tokens, components, snapshots, accessibility states | Reusable UI and evidence | Layout/device decisions |
@@ -82,6 +82,11 @@ Before starting, every agent receives:
 10. dependencies, owner gates, and who may edit shared files;
 11. instruction not to create a separate canonical architecture/contract/roadmap;
 12. stop/escalation conditions.
+
+Any design or workflow brief also receives the exact Apple Field Pro source path/section, source
+maturity, locked anatomy/refinements, current-PWA evidence to compare, and required
+Preserve/Translate/Adapt/Reopen/Verify disposition. “Native-first” is not permission to reinterpret
+those decisions silently.
 
 The agent reports:
 
@@ -122,6 +127,7 @@ Only one assigned owner may edit each hotspot at a time:
 - schemes, build settings, configuration files, bundle IDs, entitlements, capabilities, and privacy manifest;
 - app entry point, navigation root, auth/session container, environment routing, shared networking, and local-store schema;
 - design tokens and shared component primitives;
+- the Apple Field Pro screen preservation/adaptation matrix and cross-screen deviations;
 - contract catalog and generated client models;
 - database migrations, RLS/grants/functions/triggers, Storage policies, and seed/fixture definitions;
 - CI/release workflows, Fastlane, signing/export configuration, App Store metadata, and release gate;
@@ -146,7 +152,8 @@ Use this sequence for each major phase:
 
 1. Orient once and record branch/commit/status.
 2. Complete or refresh the relevant workflow/contract census.
-3. Resolve prerequisite owner decisions.
+3. Complete first-slice Apple Field Pro source-maturity and preservation/adaptation records, then
+   resolve remaining prerequisite owner decisions.
 4. Assign bounded, disjoint specialist work.
 5. Run independent work in parallel only where dependencies permit.
 6. Trace important journeys across UI, use case, client adapter, backend, authorization, local/offline state, and tests.
@@ -176,18 +183,25 @@ If a process appears stale, first identify its command, parent, start time, work
 
 ## Fresh-Mac execution
 
-The first implementation session on the Mac uses this order:
+This implementation sequence runs only after Discovery Sessions A and B, the Phase 0 first-build
+gate, and separate owner authorization to implement. It runs in the fresh implementation
+worktree/branch created from the explicitly approved current `origin/dev` commit under
+`14-mac-handoff.md`; never implement on the review-only `codex/native-ios-plan` branch.
+
+The first authorized implementation session on the Mac uses this order:
 
 1. Verify the Mac owner’s repository clone/worktree, intended branch/commit, and clean status.
 2. Read repository instructions and native canonical documents.
-3. Record macOS, Xcode, Swift, Git, and simulator runtimes.
-4. Confirm Apple Developer/Xcode account access without printing identifiers beyond what the owner approves and without displaying secrets.
-5. Resolve the minimum OS/device, project path, QA bundle, schemes/configurations, and package decisions.
-6. Build the foundation in Simulator before requiring signing or a physical device.
-7. Prove QA environment routing and production refusal.
-8. Run bounded unit/static checks with guaranteed cleanup.
-9. Add development signing and physical-device proof only when the owner gate is ready.
-10. Record a handoff with branch/commit/status, files, tests, logs, gates, and next dependency.
+3. Load the committed Apple Field Pro prototype, preservation/adaptation matrix, and same-workflow
+   current-PWA evidence before proposing visual changes.
+4. Record macOS, Xcode, Swift, Git, and simulator runtimes.
+5. Confirm Apple Developer/Xcode account access without printing identifiers beyond what the owner approves and without displaying secrets.
+6. Resolve the minimum OS/device, project path, QA bundle, schemes/configurations, and package decisions.
+7. Build the foundation in Simulator before requiring signing or a physical device.
+8. Prove QA environment routing and production refusal.
+9. Run bounded unit/static checks with guaranteed cleanup.
+10. Add development signing and physical-device proof only when the owner gate is ready.
+11. Record a handoff with branch/commit/status, files, tests, logs, gates, and next dependency.
 
 Do not copy signing keys, credentials, `.env` files, provisioning profiles, or Keychain contents into prompts, logs, repository files, or agent notes.
 
@@ -229,6 +243,8 @@ The reviewer challenges:
 - duplicated business rules or parallel ownership violations;
 - outdated App Store/privacy/SDK assumptions;
 - false “complete” status where an owner/external gate remains.
+- blank-slate redesign presented as “native-first” despite locked Apple Field Pro decisions;
+- literal HTML/CSS/WebView copying presented as preservation without field/native evidence;
 
 The orchestrator resolves each issue as accepted, corrected, duplicate, unsupported, deferred with owner, or blocked with evidence. The reviewer does not silently rewrite canonical documents.
 

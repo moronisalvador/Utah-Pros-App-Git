@@ -7,7 +7,9 @@ WHAT THIS DOES (plain language):
 
 DEPENDS ON:
   Internal: docs/native-ios/00-product-charter.md, docs/testing-and-deployment.md,
-            docs/auth-and-authorization.md, .claude/rules/tech-mobile-ux.md
+            docs/auth-and-authorization.md,
+            docs/native-ios/03a-apple-field-pro-adaptation-matrix.md,
+            .claude/rules/tech-mobile-ux.md
   Data:     reads → project rules and approved evidence
             writes → documentation only
 
@@ -32,7 +34,8 @@ NOTES / GOTCHAS:
    Supabase project. Missing or ambiguous environment identity fails closed.
 5. **Native, not web-shaped.** Use platform navigation, keyboard avoidance, focus, sheets,
    presentation, gestures, haptics, lifecycle, accessibility, and system controls unless a proven
-   product reason requires a custom behavior.
+   product reason requires a custom behavior. Native mechanics do not authorize silently erasing
+   Apple Field Pro's approved hierarchy or workflow refinements.
 6. **Field clarity over density.** One dominant action, large targets, visible state, plain language,
    and interruption-safe progress take priority over fitting more controls on screen.
 7. **Offline behavior is explicit.** Every screen declares read cache, draft, mutation, retry,
@@ -61,6 +64,8 @@ No feature screen begins until its vertical-slice packet contains:
 
 - owner-approved problem, user, outcome, and exclusions;
 - approved navigation placement and representative design;
+- completed Apple Field Pro Preserve/Translate/Adapt/Reopen/Verify record for each involved screen,
+  with every departure justified;
 - accessibility annotations and state matrix;
 - source-of-truth and complete contract registry entries;
 - server/database authorization and negative-role expectations;
@@ -89,6 +94,8 @@ No feature screen begins until its vertical-slice packet contains:
 
 ### Screen
 
+- The screen's Apple Field Pro source/maturity, current-PWA lesson, preserved anatomy/refinements,
+  native mapping, field adaptation, and any approved departure are recorded.
 - Loading, refreshing, content, empty, partial, stale, offline, permission-denied, authorization-
   denied, not-found, recoverable-error, and terminal-error states are handled where applicable.
 - Navigation, deep link, back behavior, sheet dismissal, keyboard, rotation policy, safe areas,

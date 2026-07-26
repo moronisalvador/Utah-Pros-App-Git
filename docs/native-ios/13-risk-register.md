@@ -39,7 +39,7 @@ because evidence is missing; label the evidence `Blocked` or `Not tested`.
 | ID | Risk | Severity | Current status | Required mitigation / evidence | Gate / accountable role |
 |---|---|---:|---|---|---|
 | NIOS-001 | A screen-first rewrite hardens wrong architecture or product assumptions | High | Open | owner workshop, ADRs, representative prototypes, first vertical slice before scale | Phase 0 / product owner |
-| NIOS-002 | Existing web design systems are copied without deciding the native visual direction | High | Open | explicit preserve/adapt/replace decision; native tokens and representative owner review | Design foundation / design owner |
+| NIOS-002 | The approved Apple Field Pro product/experience blueprint is copied literally without native/field adaptation, or is treated as preapproval of the exact native visual system | High | Open | bounded **evolve** decision plus adaptation matrix; native tokens, representative prototypes, owner and technician/device review | Design foundation / design owner |
 | NIOS-003 | A speculative “complete” component library delays learning and is later discarded | Medium | Open | complete global foundations and the selected slice's required state matrix; graduate additional workflow-proven components only | Design foundation / design owner |
 | NIOS-004 | Direct Swift queries/RPC calls drift from live signatures, grants, RLS, or failure behavior | Critical | Open | versioned contract registry, source/live read-only verification, generated/fixture decoding tests | Every slice / data-contract owner |
 | NIOS-005 | Client role checks are mistaken for authorization | Critical | Open | trace Auth→employee→Worker/RPC/RLS/Storage/Realtime; direct negative tests | Every sensitive slice / security owner |
@@ -69,6 +69,8 @@ because evidence is missing; label the evidence `Blocked` or `Not tested`.
 | NIOS-029 | Capacitor maintenance stops before native replacement is proven | High | Open | named operational owner, critical-fix policy, independent release path until cutover | Whole initiative / product owner |
 | NIOS-030 | Documentation and contract catalogs drift from code/live state | High | Open | source SHA, generated checks, owner per entry, freshness rules, phase close-out updates | Every phase / documentation owner |
 | NIOS-031 | Owner approval is mistaken for representative technician usability evidence | High | Open | task-based session with at least one representative field technician before first-slice acceptance/foundation freeze; otherwise named human gate | First slice / product + design owners |
+| NIOS-032 | Starting native design from a blank page discards owner-locked Apple Field Pro layouts, workflow decisions, and refinements | High | Open | screen-by-screen preservation matrix; source citations; deviation record and owner approval before departure | Discovery and every slice / orchestrator + design owner |
+| NIOS-033 | Preserving Apple Field Pro polish without learning from the current PWA produces text, density, reach, or targets that fail gloves, sunlight, older users, or stress | High | Open | same-content PWA/Apple Field Pro/SwiftUI comparison; 48-point field-action floor; large text and representative technician/device validation | Foundation and every field slice / design + QA owners |
 
 ## Phase review rule
 

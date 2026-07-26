@@ -10,6 +10,7 @@ WHAT THIS DOES (plain language):
 
 DEPENDS ON:
   Internal: docs/native-ios/02-owner-decisions-and-discovery.md ·
+            docs/native-ios/03a-apple-field-pro-adaptation-matrix.md ·
             UPR-Design-System.md · docs/tech-redesign/TECH-DESIGN-STANDARD.md ·
             docs/tech-redesign/specs/foundations.md ·
             docs/tech-redesign/specs/components-core.md ·
@@ -19,7 +20,8 @@ DEPENDS ON:
             writes → none
 
 NOTES / GOTCHAS:
-  - Values in this file are proposed until the discovery decision register marks them approved.
+  - Apple Field Pro evolution is approved; exact values remain proposed until the discovery
+    decision register marks them approved.
   - Web CSS values are not copied mechanically into Swift points or custom SwiftUI controls.
   - The approved global foundation and selected slice's required component-state matrix are built
     first; domain-specific components evolve through reviewed vertical slices so the team does not
@@ -29,8 +31,8 @@ NOTES / GOTCHAS:
 
 # Native iOS design system
 
-**Last-verified:** 2026-07-25
-**Document status:** Proposed; owner direction and physical-device approval pending
+**Last-verified:** 2026-07-26
+**Document status:** Apple Field Pro evolution approved; native details and device approval pending
 **Foundation status:** Not implemented
 **Applies to:** The new native Swift/SwiftUI client only
 
@@ -56,13 +58,31 @@ It will define:
 
 It will not be called complete merely because a token file and a few buttons exist.
 
-## 2. Verified inheritance versus proposed native choices
+## 2. Approved continuity versus proposed native choices
+
+### 2.0 Approved direction
+
+Apple Field Pro is the native product/experience starting blueprint. The native team preserves its
+owner-locked layouts, information hierarchy, workflow decisions, and refinements by default while
+adapting them for easier field reading and tapping, full accessibility, and native iOS behavior.
+The current PWA is reviewed beside it to retain field strengths rather than discarded as “legacy.”
+This approval does not freeze the exact native palette, typography, symbols, materials, controls,
+or measurements; those are decided through the process in this document.
+
+The binding screen-by-screen boundary is
+`03a-apple-field-pro-adaptation-matrix.md`. It prevents two opposite mistakes:
+
+- starting over and losing hours of owner design decisions; and
+- copying an HTML prototype so literally that the native app inherits web keyboard, safe-area,
+  density, readability, or interaction compromises.
 
 ### 2.1 Preserve as product and usability requirements
 
 These current principles are supported by repository evidence and should survive unless the owner
 explicitly supersedes them:
 
+- Apple Field Pro's owner-locked screen hierarchy and workflow decisions, subject to the
+  preservation/adaptation matrix;
 - the gloved, one-handed, sunlight-exposed field persona;
 - large, forgiving primary targets;
 - one clear primary action per working context;
@@ -76,6 +96,11 @@ explicitly supersedes them:
 - deliberate confirmation for terminal or difficult-to-recover actions;
 - room/job/document context that prevents misfiled field evidence;
 - owner reaction to concrete prototypes as the design-tuning mechanism.
+
+The approved continuity boundary covers layouts, workflow choreography, hierarchy, and refinements.
+Visual traits such as ink-first identity, exact palette, font, symbols, materials, card styling,
+shadows, radii, and button appearance begin as **VERIFY/ADAPT** inputs rather than preapproved native
+tokens.
 
 ### 2.2 Translate, do not copy
 
@@ -122,7 +147,9 @@ The following are PWA-specific or unresolved and require an explicit native deci
    Dynamic Type behavior, and reduced-motion behavior are specified with the visual design.
 4. **Content leads chrome.** Controls remain discoverable but do not overpower job information.
 5. **Field use raises the floor.** Apple's general button guidance calls for at least a 44-by-44
-   point hit region; UPR may retain a larger 48-point field-action floor where evidence supports it.
+   point hit region; UPR uses a 48-point floor for field actions and reserves 44 points for
+   documented secondary utilities. High-frequency whole-row actions should prototype 56 points or
+   more when glove/device evidence supports it.
    See [Apple HIG: Buttons](https://developer.apple.com/design/human-interface-guidelines/buttons).
 6. **System changes are inputs, not automatic redesign orders.** New iOS visual capabilities are
    adopted only after compatibility, accessibility, field readability, performance, and owner
@@ -169,7 +196,8 @@ Each color role must include:
 - No feature-facing API exposes raw hex values.
 - Status meaning survives grayscale.
 - Light, dark, and increased-contrast samples pass review.
-- The owner approves the overall visual direction on device.
+- The owner approves the exact field-adapted native visual system on device; Apple Field Pro
+  layout/workflow/refinement continuity is already approved.
 
 ### F2 — Typography and content sizing
 
@@ -395,6 +423,11 @@ Every primary workflow is reviewed under these conditions:
 | Camera/location denied | Explain impact in context and offer Settings or a manual alternative where valid. |
 | Stress/time pressure | One primary action, plain verbs, no hidden destructive gestures, clear recovery. |
 
+Field evaluation compares the **same task and content** in the current PWA, committed Apple Field
+Pro prototype, and field-adapted SwiftUI prototype. Owner approval and representative-technician
+evidence remain separate. The detailed comparison protocol and per-screen maturity live in
+`03a-apple-field-pro-adaptation-matrix.md`.
+
 ## 7. Prototype and real-device gates
 
 A component is not approved from a static image alone.
@@ -457,6 +490,8 @@ This prevents two failure modes:
 The native design foundation is ready to be frozen and reused broadly when:
 
 - section 2 reuse/departure decisions are owner-approved;
+- every first-slice screen is classified under the Apple Field Pro adaptation matrix, and every
+  departure has a recorded reason and evidence gate;
 - F1–F7 exit criteria pass;
 - the first end-to-end workflow prototype passes owner and physical-device review;
 - navigation, Dynamic Type, symbol, theme, motion, and field-state conventions are frozen at the

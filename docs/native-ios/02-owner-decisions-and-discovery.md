@@ -19,7 +19,9 @@ DEPENDS ON:
 
 NOTES / GOTCHAS:
   - This is a planning contract, not proof that a proposed choice has been approved.
-  - Existing PWA decisions are evidence and a strong starting point, not automatic native decisions.
+  - Apple Field Pro is now the approved product/experience starting blueprint; the exact native
+    visual system and unfinished workflows remain gated.
+  - The current PWA is required comparative field evidence, not an automatic visual specification.
   - The process is intended to prevent avoidable rework. It cannot promise that no learning-driven
     refinement will ever be needed.
 ════════════════════════════════════════════════
@@ -27,8 +29,8 @@ NOTES / GOTCHAS:
 
 # Native iOS owner decisions and discovery
 
-**Last-verified:** 2026-07-25
-**Document status:** Proposed planning contract; owner discovery not yet conducted
+**Last-verified:** 2026-07-26
+**Document status:** Apple Field Pro evolution direction approved; remaining owner discovery pending
 **Implementation status:** Not started
 **Scope:** Product and design decisions required before native feature UI implementation
 
@@ -74,11 +76,13 @@ vocabulary. No agent may present a proposed or inferred choice as a verified own
 | ID | Status | Decision or fact | Boundary |
 |---|---|---|---|
 | `NIOS-OD-001` | **Verified · owner · approved 2026-07-25** | Build a new Swift app from the ground up while keeping the current PWA/Capacitor product operational. | This authorizes planning, not production access, database changes, or Swift implementation on this documentation branch. |
-| `NIOS-OD-002` | **Verified · owner · approved 2026-07-25** | The native plan must include the complete design-discovery and design-system process before feature implementation. | The owner has not yet approved the visual direction or native component choices. |
+| `NIOS-OD-002` | **Verified · owner · approved 2026-07-25** | The native plan must include the complete design-discovery and design-system process before feature implementation. | Apple Field Pro evolution is now approved; exact native component, token, device, and field-adaptation choices remain open. |
 | `NIOS-OD-003` | **Source-confirmed · repository** | The field interface is for a 64-year-old, nontechnical technician using one hand, possibly with gloves, wet fingers, poor connectivity, noise, and direct sunlight. | This persona remains a hard usability constraint unless the owner explicitly expands the user model. |
-| `NIOS-OD-004` | **Source-confirmed · repository** | The existing field redesign has a locked "Apple Field Pro" direction, detailed foundations/components, and owner-approved workflow decisions. | Those artifacts govern the PWA redesign. They are input to native discovery, not automatic SwiftUI specifications. |
+| `NIOS-OD-004` | **Source-confirmed · repository** | The existing field redesign has a locked "Apple Field Pro" direction, detailed foundations/components, and owner-approved workflow decisions. | Those artifacts are now preserve-by-default product/experience evidence, not automatic SwiftUI code, pixels, a frozen native visual system, or proof for unfinished flows. |
 | `NIOS-OD-005` | **Source-confirmed · repository** | Status meaning is currently shape-redundant: color is paired with a word and a recognizable glyph. | Native work must preserve meaning without relying on color alone, even if the palette or symbol artwork changes. |
 | `NIOS-OD-006` | **Source-confirmed · repository** | The existing redesign prioritizes one primary action, large field targets, visible offline/sync state, and distinct loading/empty/error states. | These are behavioral requirements; their native presentation may change. |
+| `NIOS-OD-007` | **Verified · owner · approved 2026-07-26** | Evolve Apple Field Pro as the native blueprint: preserve its refinements, layouts, information hierarchy, and workflow decisions by default, then adapt them for native iOS and field use. | This closes preserve/evolve/replace, but does not approve exact native tokens, controls, typography, tab structure, devices, or unfinished flows. |
+| `NIOS-OD-008` | **Verified as owner report · owner · 2026-07-26** | Technicians have found the current PWA easier on the eyes and easier to use with gloves; native design must learn from those strengths. | The report requires fresh comparative technician/device validation before it becomes direct field evidence. |
 
 ## 4. Owner decisions required before native visual design
 
@@ -88,17 +92,23 @@ two materially different alternatives, including the tradeoff.
 
 ### 4.1 Product identity and design continuity
 
-1. Is native UPR a faithful evolution of the locked "Apple Field Pro" direction, or a new visual
-   identity?
-2. Which existing elements must remain recognizable: ink-first identity, status meanings, palette,
+The first question is closed: native UPR is an **evolution of Apple Field Pro**, not a restart.
+Use `03a-apple-field-pro-adaptation-matrix.md` to preserve its locked workflow/layout decisions and
+to identify incomplete areas. Ask only the remaining questions:
+
+1. Which existing elements must remain visually recognizable beyond the approved layouts and
+   workflow refinements: ink-first identity, status meanings, palette,
    typography, icon character, card shapes, information density, or none?
-3. Should the native app feel closest to:
+2. Should the native app feel closest to:
    - an Apple first-party field tool;
    - a distinct UPR-branded professional instrument;
    - a rugged utility with minimal visual decoration?
-4. What should a technician feel in one word after opening it: calm, certain, fast, capable,
+3. What should a technician feel in one word after opening it: calm, certain, fast, capable,
    guided, or something else?
-5. Which existing screen is closest to the desired quality bar, and which parts should not survive?
+4. On the same real workflow, which current-PWA choices are easier to read, reach, or tap than the
+   Apple Field Pro prototype, and why?
+5. Which Apple Field Pro screen is closest to the desired quality bar, and which visual details
+   still need field adaptation?
 
 ### 4.2 Users and environments
 
@@ -158,6 +168,7 @@ The orchestrator prepares a concise evidence pack before asking the owner for vi
 
 - current PWA/Capacitor screen and workflow census;
 - locked tech redesign decisions, prototypes, and unresolved items;
+- the preservation/adaptation classifications in `03a-apple-field-pro-adaptation-matrix.md`;
 - native platform patterns from current Apple guidance;
 - representative field conditions and supported-device assumptions;
 - accessibility, localization, permissions, and offline constraints;
@@ -170,11 +181,21 @@ The orchestrator prepares a concise evidence pack before asking the owner for vi
 - No production data or secrets appear in the pack.
 - The pack includes at least one real data-dense workflow, not only a polished dashboard.
 
-### Gate D1 — Owner direction workshop
+### Gate D1 — Field-adaptation workshop
 
-The design lead walks through two or three **complete screen directions** for the same real
-owner-selected workflow, using Today plus one data-dense job task where useful. Dry Logs is a
-candidate, not a preselected first slice. Each direction demonstrates:
+The owner has already selected Apple Field Pro as the layout/workflow/refinement blueprint. Do not
+present unrelated blank-slate product directions or ask preserve/evolve/replace again. The exact
+native visual system remains a real design decision. The design lead compares the same realistic
+content and task in:
+
+1. the current PWA/Capacitor experience;
+2. the committed Apple Field Pro prototype; and
+3. one or two field-adapted native-intent design translations of Apple Field Pro.
+
+The Session A translations are non-production design artifacts, not Swift implementation.
+
+Use Today plus one data-dense job task where useful. Dry Logs is a candidate, not a preselected
+first slice. Each field-adapted translation demonstrates:
 
 - light and dark appearance if both are proposed;
 - smallest supported iPhone and a large iPhone;
@@ -188,10 +209,10 @@ record and asks for explicit confirmation.
 
 **Exit criteria**
 
-- Product feeling and continuity-versus-departure are decided.
+- Product feeling and the Apple Field Pro preservation/adaptation boundary are recorded.
 - Font strategy, symbol strategy, theme strategy, and platform-native control posture are decided.
 - Supported form factors and orientation assumptions are recorded.
-- Rejected directions and the reason for rejection remain documented.
+- Rejected field adaptations and the reason for rejection remain documented.
 
 ### Gate D2 — Non-production foundation prototype
 
@@ -310,7 +331,7 @@ necessary learning controlled, evidence-based, and inexpensive.
 
 | ID | Decision | Recommended starting point | Status |
 |---|---|---|---|
-| `NIOS-DES-001` | Existing visual continuity | Evolve the locked field-design principles but recompose through native controls. | **PROPOSED** |
+| `NIOS-DES-001` | Layout/workflow/refinement continuity | Evolve Apple Field Pro as the preserve-by-default product/experience blueprint. | **APPROVED 2026-07-26** |
 | `NIOS-DES-002` | Typography | Compare system Dynamic Type with a carefully scaled Source Sans 3 option on real field screens. | **PROPOSED** |
 | `NIOS-DES-003` | Symbols | SF Symbols for platform actions; custom symbols only for UPR-specific domain concepts. | **PROPOSED** |
 | `NIOS-DES-004` | Navigation | Native tab/navigation containers; do not reproduce WebView shell behavior. | **PROPOSED** |
@@ -318,8 +339,10 @@ necessary learning controlled, evidence-based, and inexpensive.
 | `NIOS-DES-006` | Device family | iPhone-first; iPad support requires a separately approved adaptive IA. | **PROPOSED** |
 | `NIOS-DES-007` | Orientation | Portrait-first; selectively support landscape where documents/media justify it. | **PROPOSED** |
 | `NIOS-DES-008` | Languages | Confirm English/Spanish/Portuguese launch scope before string freeze. | **PROPOSED** |
-| `NIOS-DES-009` | Existing flow decisions | Preserve proven business workflow outcomes; redesign their native presentation. | **PROPOSED** |
+| `NIOS-DES-009` | Existing flow decisions | Preserve owner-locked Apple Field Pro workflow/layout decisions by default; explicitly reopen only unfinished or evidence-invalidated areas. | **APPROVED 2026-07-26** |
 | `NIOS-DES-010` | Current iOS materials | Use system materials where they improve hierarchy; never adopt visual novelty at the cost of field readability or battery. | **PROPOSED** |
+| `NIOS-DES-011` | Current PWA field lessons | Compare the current PWA, Apple Field Pro, and adapted SwiftUI using the same tasks; use PWA strengths for readability, reach, gloves, and clarity. | **APPROVED 2026-07-26; exact adaptations pending evidence** |
+| `NIOS-DES-012` | Exact native visual system | Start from Apple Field Pro's character, compare current-PWA field strengths, and decide colors, typography, symbols, materials, controls, and measurements through native-intent prototypes and device evidence. | **PROPOSED** |
 
 ## 9. Exit criteria for this document
 
@@ -329,7 +352,7 @@ validation lifecycle is complete only when:
 
 - every section 4 decision has an owner-approved record or an explicit deferral;
 - the supported-device, OS, form-factor, orientation, language, and accessibility matrix is known;
-- reuse versus departure from the existing tech redesign is explicit;
+- every first-slice screen has a Preserve/Translate/Adapt/Reopen/Verify classification;
 - the owner has approved a real-screen direction on a physical iPhone;
 - the first vertical workflow prototype has passed owner, accessibility, and field-condition review;
 - a representative technician has completed the primary task, or that missing human evidence is a

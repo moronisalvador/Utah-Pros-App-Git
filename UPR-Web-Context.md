@@ -3373,8 +3373,15 @@ current app.
 The plan of record is [`docs/native-ios/README.md`](docs/native-ios/README.md), prepared from
 `origin/dev` commit `90b265ee6f733c8dbcd75786f4e4057dd3355d38`. It includes:
 
-- an owner workshop before visual or workflow implementation, including an explicit
-  preserve/evolve/replace decision for the current Apple Field Pro/mobile design language;
+- the owner-approved 2026-07-26 decision to **evolve Apple Field Pro** as the native blueprint,
+  preserving its layouts/workflows/refinements while adapting field readability, touch, and native
+  behavior using current-PWA lessons; the preservation boundary is
+  [`docs/native-ios/03a-apple-field-pro-adaptation-matrix.md`](docs/native-ios/03a-apple-field-pro-adaptation-matrix.md);
+- exact native colors, typography, symbols, materials, controls, measurements, and tab membership
+  remain owner/design/device gates;
+- an owner workshop before visual or workflow implementation that closes the remaining field,
+  device, accessibility, typography, navigation, scope, and first-slice decisions without
+  relitigating preserve/evolve/replace;
 - native design, accessibility, architecture, data-contract, security/privacy, offline/reliability,
   Apple capability, QA, performance, App Store/cutover, risk, and multi-agent ownership gates;
 - a source-derived contract bootstrap that is orientation only, never live authorization proof;
