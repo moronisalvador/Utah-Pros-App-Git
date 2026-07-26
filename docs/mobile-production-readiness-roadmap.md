@@ -173,7 +173,9 @@ exact R0 tip and locally contains the remaining QBO Worker identity surface: cus
 retain their scheduler capability but require an active internal admin for browser access, OAuth
 connect is human-only, and charge/attachment mutation reject external employees. Focused tests
 cover negative identities, auth/configuration failure, secret precedence/fallback, both poller HTTP
-methods, direct `scheduled()`, OAuth state writes and exact disconnected response contracts.
+methods, direct `scheduled()`, OAuth state writes and exact disconnected response contracts. This
+is authorization containment, not complete actor auditing: customer-sync and manual payment-sync
+do not persist the resolved human actor in current telemetry.
 
 S1b does not close `MOB-SEC-014`: CallRail recording and notification Workers,
 authenticated-executable definer RPCs, broad direct policies and the external-admin
@@ -181,7 +183,7 @@ authenticated-executable definer RPCs, broad direct policies and the external-ad
 flip was attempted. Cold-offline, exact field-only native route scope, admin-mobile native
 exclusion, push, OTA, account-deletion fulfillment, pilot support, `project_manager` billing
 authority and the QBO server-capability lifecycle remain explicit owner decisions rather than
-inferred approvals.
+inferred approvals. Durable QBO actor audit is also a separate schema/telemetry decision.
 
 The next source session should take only S1c: recapture and contain the CallRail recording and
 notification Worker identity paths, preserving deployed recording/proxy, fan-out, scheduler and
