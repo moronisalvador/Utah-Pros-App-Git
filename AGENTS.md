@@ -77,6 +77,33 @@ branch, preview, or staging deploy does not create a staging database.
 
 Do not infer that a UI role gate protects a worker or RPC. Trace the complete authorization path.
 
+## Mobile PWA and Capacitor production-readiness program
+
+For any task tied to a `MOB-*` finding or `UPRF-MOB-001`, also read:
+
+- `docs/mobile-production-readiness-roadmap.md`
+- `docs/mobile-production-readiness-wave-ownership.md`
+- `docs/mobile-production-readiness-setup.md`
+- `.claude/skills/mobile-readiness-wave/SKILL.md`
+- the complete canonical `docs/mobile/` set
+- the affected files under `docs/audit/mobile-pwa/`
+- `docs/app-store-readiness-roadmap.md` for Apple ownership/release gates
+
+Run `npm run preflight:mobile` before implementation. The 2026-07 audit source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` is historical; record and inspect the current
+`origin/dev` SHA instead of assuming the snapshot remains current.
+
+Use one primary and no more than three simultaneous subagents. The project-scoped Codex roles under
+`.codex/agents/` are generated from canonical `.claude/agents/mobile-readiness-*.md` files; update
+the canonical files, run `npm run generate:mobile-codex`, and never hand-edit generated adapters.
+Follow the ownership manifest's single-writer/shared-hotspot rules.
+
+All mobile waves keep Supabase, Storage, Cloudflare, providers, production, customer data, Apple
+signing, TestFlight, and App Store state read-only unless the user separately authorizes the exact
+external action. Bound server/browser/simulator/Xcode subprocesses to five minutes, guarantee
+owned-child cleanup in `try/finally`, verify cleanup, and report auth/device/signing limitations
+honestly.
+
 ## Conversation boundaries
 
 Continue in the current conversation while the same objective, implementation, verification, or

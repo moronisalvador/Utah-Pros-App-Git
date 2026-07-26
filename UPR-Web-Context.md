@@ -8425,3 +8425,27 @@ Read-only provider + catalog evidence, no mutation:
   `CALLRAIL_SIGNING_KEY` does not match. Inbound is captured exactly once; the noise is real but
   benign. `INVALID_CALLRAIL_TEXT_EVENT:id` occurred only **twice**, both on 2026-07-23, and is not
   recurring.
+
+## Mobile PWA/Capacitor production-readiness program (2026-07-25)
+
+The completed audit at historical application source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` found 37 items: 2 P0, 21 P1, and 14 P2. The P0
+boundaries are bypassable mobile authorization (`MOB-SEC-014`) and public/listable, broadly writable
+`job-files` Storage (`MOB-SEC-015`). The audit and canonical mobile documentation are under
+`docs/audit/mobile-pwa/` and `docs/mobile/`; macOS/Xcode/simulator addendum evidence is under
+`docs/audit/2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md`.
+
+`docs/mobile-production-readiness-roadmap.md` is the active plan of record (`UPRF-MOB-001`).
+`docs/mobile-production-readiness-wave-ownership.md` owns collaboration/hotspots, and
+`docs/mobile-production-readiness-setup.md` owns task prerequisites. The initial promise is an
+online-first PWA with tested warm continuity and a field-route-only Capacitor scope. Cold-offline,
+admin-mobile native inclusion, native push, and OTA remain excluded/disabled until explicit owner
+decisions and their device/release evidence pass.
+
+The project now has one canonical `mobile-readiness-wave` skill and four bounded canonical roles
+under `.claude`; deterministic checked-in adapters expose them to Codex under `.agents`/`.codex`.
+Run `npm run generate:mobile-codex`, `npm run preflight:mobile`, `npm run validate:tooling`, and
+`npm run test:tooling` at session start/close-out. Start implementation with Wave R0 from current
+`origin/dev`; never assume the dated audit is current. Supabase/Storage/production/providers remain
+read-only until a separately authorized apply/deploy/action, and Apple signing/TestFlight/App Store
+work remains owner-gated.

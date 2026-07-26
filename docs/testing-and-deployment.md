@@ -29,12 +29,18 @@ NOTES / GOTCHAS:
 | `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
+| `npm run generate:mobile-codex` | Regenerates the mobile skill and four Codex roles from canonical `.claude` sources | Generated `.agents`/`.codex/agents` files must not be hand-edited |
+| `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
+| `npm run validate:tooling` / `npm run test:tooling` | Validates canonical tooling governance, generated mobile adapters and preflight safety | Does not prove application, production, device or provider behavior |
 | `npm run dev` | Frontend development server | `/api/*` needs a separate Wrangler Pages Functions process |
 | `npm run build:ios` | Native-target build and Capacitor sync | Still does not replace Xcode signing/simulator/device verification |
 
 Never report expected results as executed results. Record command, commit, environment and failures.
 Credential-free lanes scrub hosted/provider environment variables and use deterministic fixtures;
 they never reinterpret missing configuration as permission to use production.
+
+Use Node 22 from `.node-version`, matching CI, and install the lockfile with `npm ci`. Do not replace
+repository dependencies with global Vite, Capacitor, test-runner, or Fastlane installations.
 
 ## Test layers
 
@@ -120,6 +126,31 @@ allowed origins and provider sandboxes.
   signing/reviewer credentials.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
+
+## Mobile PWA/Capacitor readiness workflow
+
+`docs/mobile-production-readiness-roadmap.md` is the plan of record for the 37 findings observed at
+audited application source `ef305f6d6afab4d846eab92fc1b04038d70221f0`. Each wave starts from
+current `origin/dev` in an isolated branch/worktree, records the new base SHA, and recaptures only
+the affected current/live state. The dated audit is not rewritten as later evidence.
+
+Mobile sessions use the checked-in ownership manifest and at most three simultaneous subagents.
+Read-only mapping, security review, contract testing, and release audit can overlap when they do not
+share a live system, port, simulator, generated output, or source file. Supabase/Storage decisions,
+durable account state, shared auth/release/native project files, canonical docs, and other listed
+hotspots remain single-writer/serialized.
+
+Any development server, browser, simulator, Xcode build, or persistent child is limited to five
+minutes per subprocess. The launcher owns the full child tree, cleans it in `try/finally`, verifies
+the port/process is gone, and records the result. Unsigned compilation or simulator launch is not
+signed-device, TestFlight, privacy, entitlement, push, deep-link, OTA, or App Review proof.
+
+The initial release promise stays online-first with tested warm continuity. Cold-offline PWA,
+admin-mobile in the native binary, native push, and OTA are excluded/disabled until their owner
+decisions and roadmap evidence gates are complete. Expanded field use requires zero P0 findings and
+closure or explicit exclusion of every P1 within the promise. Live migration/apply, deploy,
+provider/customer action, signing, distribution, and submission remain separately authorized
+owner gates.
 
 ## Release evidence checklist
 
