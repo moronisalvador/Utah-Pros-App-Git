@@ -1,7 +1,6 @@
 # UPR Web Platform — Context Document
-Last updated: July 23, 2026 (live prior-service SMS consent boundary, release evidence, and
-cross-platform isolated-browser profile containment; see git history for earlier accuracy-audit
-findings)
+Last updated: July 26, 2026 (mobile S1b QBO identity containment; see git history for earlier
+accuracy-audit findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
@@ -2700,13 +2699,19 @@ setup is finished.
 - `get_qbo_sync_stats()` → synced, pending, errored (counts over contacts)
 
 **Workers:**
-- `quickbooks-connect.js` — GET, authed (Supabase Bearer). Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`.
-- `quickbooks-callback.js` — GET. Intuit redirect target; exchanges code→tokens, stores connection + company name, redirects to `/dev-tools?qbo=connected`.
-- `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
+- `quickbooks-connect.js` — GET, active internal-admin Supabase Bearer only. Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`. The shared QBO server secret is intentionally not an OAuth identity.
+- `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
+- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
 **Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact becomes a QBO customer at invoice/estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
 
-**On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
+**On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
+`qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a
+billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client
+first" error only if it is still missing. Migration
+`20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
+trigger body with `RETURN NEW`, so it is deliberately inert; on-demand invoice/estimate sync and
+explicit Settings preview/backfill are the active checked-in customer-sync callers.
 
 ### Settings Overhaul P9 + Encircle — managed credentials
 Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend secrets into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables. The pending, **not applied** `20260723_encircle_managed_credentials.sql` adds Encircle to the same source with an inert default-OFF rollout. Admins manage these on **`/settings/integrations`** instead of editing environment bindings. **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
@@ -2777,7 +2782,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
-- **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. Logs `worker_runs` as `qbo-payments-sync`. **Point an hourly cron at it (same mechanism as `process-scheduled`).**
+- **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
 - **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. Maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Dedup:** skips any QBO payment whose `qbo_payment_id` already exists on a UPR payment — so UPR-originated payments are never double-counted.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
@@ -2786,7 +2791,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 **QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` remains **unapplied** and owner-gated.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
-- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])`; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed).
+- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
 - **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
 - **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
@@ -8294,7 +8299,8 @@ reconciliation remain external/owner gates.
 `functions/api/qbo-charge.js` and `stripe-pay-link.js` now use the shared `requireRole` boundary
 with the UI's `admin`/`manager` billing-role set. Missing sessions, missing/inactive employees, and
 non-billing roles return before provider calls. QBO charge no longer accepts the generic webhook
-secret as a money-moving alternate identity.
+secret as a money-moving alternate identity. The S1b source slice additionally rejects external
+employees before connection, invoice/contact access, telemetry or provider helpers.
 
 The QBO route also requires a stable 16–64-character client `Idempotency-Key` and passes it as
 Intuit's `Request-Id`; validates positive whole-cent amounts against the current outstanding invoice
@@ -8481,11 +8487,19 @@ Negative tests cover missing/expired/config-failed identities, missing/inactive/
 every denied real role, server-secret precedence/fallback, malformed bodies and zero downstream
 provider/domain calls. Shared response/provider contracts remain unchanged.
 
-Neither P0 is closed. QBO customer/payment sync and OAuth connect, QBO charge/attach external
-identity, CallRail recording, notify HTTP, definer RPCs and broad direct policies remain under
-`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current native
-source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product decision.
-Cold-offline, native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot support,
+S1b continues from the exact R0 tip. Customer sync and HTTP payment sync now share the active,
+internal-admin browser boundary while retaining their secret-first capability; direct
+`scheduled()` payment reconciliation is unchanged. OAuth connect uses a human-only variant so the
+server secret cannot replace state. QBO charge/attach remain Bearer-only and reject external
+employees. Seventy-seven focused tests cover denied identities and auth/config failure before
+business/provider helpers, scheduler/OAuth/capability compatibility and exact disconnected
+responses.
+
+Neither P0 is closed. CallRail recording, notify HTTP, definer RPCs, broad direct policies and the
+external-admin `qbo_attachments` metadata SELECT residual remain under `MOB-SEC-014`; private media
+compatibility and live apply remain under `MOB-SEC-015`. Current native source still mounts
+`/tech/admin/*`, so field-only Capacitor scope is an unenforced product decision. Cold-offline,
+native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot support,
 `project_manager` billing authority and the shared QBO capability lifecycle remain owner gates.
 No deploy, migration, secret/provider change, message, push, money movement, signing or distribution
-occurred in R0.
+occurred in S1b.
