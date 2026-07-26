@@ -229,15 +229,31 @@ draft and the mobile-readiness `AGENTS.md` section, both reused rather than rein
 
 ## Opening prompt for session 5
 
-> Continue the agent-instruction alignment initiative. Read
-> `docs/handoff/agent-alignment-session-4-handoff.md` first, then
-> `docs/agent-alignment-l0-coverage.md` §5 and `docs/agent-runtime-reference.md`.
-> `git fetch` and check `origin/dev` before trusting any number.
+> Continue the agent-instruction alignment initiative on the UPR Platform.
 >
-> **Start with the P3 canary, and do it before anything else fills the context:** with real work in
-> the session, run `/compact`, then try to quote the `AGENTS.md` anchor token with zero file reads. If it
-> survives, delete the `CLAUDE.md` non-negotiables duplicate per coverage §5 — deleting only the
-> blocks listed as safe. If it does not survive, record that and stop; the duplicate stays forever.
-> Then move to L2 (`paths:` frontmatter, brace-light, `database-standard.md` stays unscoped).
+> **Before you read anything, answer this from context alone: is there a token in your context
+> matching `UPR-L0-CANARY-<something>`? Quote it, or say plainly that you cannot see one.**
+> Do not open, read, grep or search `AGENTS.md` to answer — that destroys the test. This is the
+> load-verification canary: it lives only in `AGENTS.md`, which `CLAUDE.md` pulls in via an
+> `@AGENTS.md` import on line 1. If you can quote it, the import loaded at session start.
 >
-> Docs and agent-configuration only. Stage by explicit path — another session shares this tree.
+> Then read `docs/handoff/agent-alignment-session-4-handoff.md`, and
+> `docs/agent-alignment-l0-coverage.md` §5. `git fetch` and check `origin/dev` first — the repo moves
+> under you, and several parallel sessions are landing commits.
+>
+> **The gate for P3 is the SECOND half of that test.** Do real work first, run `/compact`, then try
+> to quote the token again with zero file reads. Surviving `/compact` is what proves the import is
+> durable, because `paths:`-scoped and nested instruction files are dropped at compaction.
+> - **If it survives:** delete the duplicated non-negotiables from `CLAUDE.md` per coverage §5 —
+>   only the blocks listed as safe, and anchor on `/^## ⚠️ NON-NEGOTIABLE RULES$/m` because that
+>   string also appears in the redirect prose above it. Run `node scripts/check-l0-bridge.mjs`
+>   before and after; it must stay 14/14.
+> - **If it does not survive:** record that outcome and stop. The duplicate stays in `CLAUDE.md`
+>   permanently and the shared core becomes Codex-only. Do not force it.
+>
+> Then move to L2: `paths:` frontmatter on `.claude/rules/*.md`, brace-light globs (an over-braced
+> pattern silently matches nothing), and `database-standard.md` stays permanently unscoped.
+>
+> Docs and agent-configuration only — no `src/`, `functions/`, `supabase/`, `ios/`, no migration, no
+> live or provider state. Stage by explicit path, never `git add -A`; another session shares this
+> working tree and has ~48 uncommitted files in it.
