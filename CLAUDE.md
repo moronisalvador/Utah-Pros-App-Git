@@ -1,6 +1,41 @@
+@AGENTS.md
+
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 23, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** July 26, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
+
+> **The shared law layer is [`AGENTS.md`](AGENTS.md), imported on line 1 above.** Codex reads it
+> directly; Claude Code reads it through that import. It carries the numbered non-negotiables, the
+> authorization boundary, the document precedence ladder, the depth map and the definition of done.
+> **Rule numbering is frozen** — a reference of the form "CLAUDE.md Rule N" resolves in `AGENTS.md`,
+> where rules 1–12 are reproduced verbatim. This file adds the **Claude-only** routing on top.
+>
+> The `## ⚠️ NON-NEGOTIABLE RULES` block below is a **deliberate duplicate** kept while the import is
+> being proven. It is removed only after a post-compact canary in a fresh session shows the import
+> survives compaction. Until then the rules are enforced twice, never zero times.
+
+### Claude-only mechanisms (silent divergences from Codex if unstated)
+
+- **`.claude/rules/*.md` load unconditionally at launch**, at the same priority as this file. That is
+  why all 23 currently enter every session.
+- **`paths:`-scoped rules and nested `CLAUDE.md` files are dropped at `/compact`** until a matching
+  file is re-read. Cheap-at-startup and survives-compaction are mutually exclusive, so a
+  non-negotiable must never live in either — it stays unscoped at the root.
+- An **over-braced `paths:` glob is used unexpanded and matches nothing**, so the rule loads *never*,
+  with no error. Prefer several brace-free patterns.
+- **`.claude` is a protected path.** Edits prompt for approval and `permissions.allow` cannot
+  pre-approve them — the prompts are correct behaviour, not a misconfiguration.
+- **Skills are `/name` here and `$name` in Codex**, and the slash command comes from the skill's
+  **directory** name, not its frontmatter `name`. `.claude/commands/` and skills share one namespace;
+  the skill wins a collision. Skill precedence is managed > user > **project**, so a personal
+  `~/.claude/skills/<name>` silently shadows the repo copy.
+- **`claude -p --bare` skips `CLAUDE.md`, hooks, skills, plugins, MCP and auto memory.** Any CI gate
+  written that way is bound by no project law unless the core is passed via
+  `--append-system-prompt-file`.
+- **A mid-session edit to this file, `AGENTS.md`, a `SKILL.md` or a settings file does not take effect
+  until `/clear`, `/compact` or restart.** Never report "rule updated and followed" from one session.
+- On win32 Claude Code **cannot sandbox** (WSL2 required, fails open by default) while Codex sandboxes
+  natively. Never list sandboxing as a Claude-side control on this platform.
 
 ## ⚠️ NON-NEGOTIABLE RULES
 
