@@ -296,14 +296,20 @@ rejection. The server-capability caller is unproven for the four newly gated rou
 credential lifecycle with schedulers. `project_manager` inclusion and capability retention/
 rotation are owner decisions.
 
-R0's corrected transitive mobile census found 82 browser-reachable live `SECURITY DEFINER`
-functions, not only the 68 inline route calls in the historical audit. All 82 allow
-`authenticated`; `get_feature_flags` and `get_employee_page_access` also allow `anon` and
-`PUBLIC`. Shared bell, preference, native-device-token, clock-precheck, and destructive
-job/claim-merge functions generally trust caller-supplied employee/object IDs without reconstructing
-the caller. The Web Push upsert/delete pair is the narrow exception in that group: it resolves the
-employee with `employees.auth_user_id = auth.uid()`. These are open containment findings, not
-approved authorization contracts.
+R0's corrected transitive mobile census found 84 client-reachable live `SECURITY DEFINER`
+functions: 82 in the authenticated `/tech` graph plus the two public-signing RPCs mounted by
+`NativeRoutes`, not only the 68 inline calls in the historical audit. All 84 allow
+`authenticated`; four allow `anon`, and three allow `PUBLIC`. Shared bell, preference,
+native-device-token, clock-precheck, and destructive job/claim-merge functions generally trust
+caller-supplied employee/object IDs without reconstructing the caller. The Web Push upsert/delete
+pair is the narrow exception in that group: it resolves the employee with
+`employees.auth_user_id = auth.uid()`.
+
+The public signing pair is intentionally anon-callable but currently checks token equality only;
+status and expiry are enforced later by the UI/submit Worker, not by either read RPC. The exact
+allowlist is `get_sign_document_templates` for `anon` and
+`get_sign_request_by_token` for `PUBLIC`/`anon`, with both also executable by authenticated/service
+roles. These are open containment findings, not approved authorization contracts.
 
 The route/RPC/direct-policy and read-only live evidence is
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. `MOB-SEC-014` remains

@@ -55,9 +55,10 @@ tables/views at the audited source SHA, plus Storage, workers, and Realtime. The
 point-in-time name list is in
 [`../audit/mobile-pwa/08-supabase-and-rpc-contracts.md`](../audit/mobile-pwa/08-supabase-and-rpc-contracts.md).
 
-R0's corrected transitive current-source graph contains 82 browser-reachable RPCs and 22 direct
-PostgREST tables. Realtime subscribes to `conversations`, `messages`, and `notifications`; the first
-two overlap the direct set. Exact direct tables:
+R0's corrected transitive current-source graph contains 84 client-reachable RPCs: 82 from the
+authenticated `/tech` graph plus the two anon-key public-signing RPCs mounted by `NativeRoutes`.
+It also contains 22 direct PostgREST tables. Realtime subscribes to `conversations`, `messages`,
+and `notifications`; the first two overlap the direct set. Exact direct tables:
 
 `appointment_crew`, `appointments`, `claims`, `contact_jobs`, `contacts`,
 `conversation_participants`, `conversations`, `employees`, `estimate_line_items`, `estimates`,
@@ -70,18 +71,21 @@ and regenerate/extend the contract inventory when a caller changes.
 
 ## R0 current boundary recapture
 
-Wave R0 re-extracted the current route tree and its transitive shared helpers, then verified all 82
-browser-reachable mobile RPC identifiers against the live catalog read-only on 2026-07-26 UTC.
-All 82 resolved to exact one-overload `SECURITY DEFINER` functions executable by `authenticated`
-and `service_role`. `get_feature_flags` and `get_employee_page_access` are additionally executable
-by `anon` and `PUBLIC`; the other 80 deny both. A simple definition-needle scan found common
+Wave R0 re-extracted the current route tree and its transitive shared/raw helpers, then verified all
+84 client-reachable mobile RPC identifiers against the live catalog read-only on 2026-07-26 UTC.
+All 84 resolved to exact one-overload `SECURITY DEFINER` functions executable by `authenticated`
+and `service_role`. Four allow `anon`: `get_feature_flags`, `get_employee_page_access`,
+`get_sign_document_templates`, and `get_sign_request_by_token`. The first two and
+`get_sign_request_by_token` also allow `PUBLIC`. A simple definition-needle scan found common
 caller/auth signals in only five; that is a prioritization heuristic, not proof about authorization
 in either direction.
 
 The transitive correction matters: shared auth bootstrap, bell, Web Push, native push, clock
-precheck, notification preferences, and job/claim merge add 14 RPCs that an inline route scan
-missed. Several trust a supplied employee, notification, claim, or job ID inside a definer
-function. Each function still requires role/assignment/object review and direct negative tests.
+precheck, notification preferences, job/claim merge, and public signing add 16 RPCs that the
+historical inline route scan missed. Several trust a supplied employee, notification, claim, or job
+ID inside a definer function. The public signing pair trusts token equality without status/expiry
+in the database predicate. Each function still requires role/assignment/object review and direct
+negative tests.
 
 The same capture confirmed broad direct-table policies and a public `job-files` bucket with
 anonymous/public reads and authenticated bucket-wide insert/delete. The exact route-to-caller map,

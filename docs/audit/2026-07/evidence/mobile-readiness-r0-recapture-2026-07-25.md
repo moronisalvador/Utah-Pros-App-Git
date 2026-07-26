@@ -29,7 +29,7 @@ The slice is covered by negative/failure-path tests.
 
 This does **not** close either P0:
 
-- `MOB-SEC-014` remains open because other Workers, 82 browser-reachable `SECURITY DEFINER` mobile
+- `MOB-SEC-014` remains open because other Workers, 84 client-reachable `SECURITY DEFINER` mobile
   RPCs, broad direct-table/Realtime policies, and shared compatibility callers still require
   containment.
 - `MOB-SEC-015` remains open because `job-files` is still public/listable, authenticated identities
@@ -96,18 +96,21 @@ an object.
 
 The first inline route census found 68 names. A release-audit correction then walked the transitive
 imports used by `AuthContext`, `TechLayout`, shared notification/push/clock helpers, both
-conversation implementations, and the job/claim merge modal. The corrected current census contains
-82 distinct browser-reachable RPC identifiers. It deliberately excludes the unused
+conversation implementations, the public signing helper, and the job/claim merge modal. The
+corrected current census contains 84 distinct client-reachable RPC identifiers. It deliberately
+excludes the unused
 `get_job_financials` export in `claimUtils.js`: the mobile route imports only `fmt$` from that
 module and never invokes the financial helper.
 
-At `2026-07-26 05:35:12 UTC`, all 82 exact names resolved to one live overload each:
+At `2026-07-26 05:52:09 UTC`, all 84 exact names resolved to one live overload each:
 
-- 82/82 are `SECURITY DEFINER`;
-- 82/82 are executable by `authenticated` and `service_role`;
-- 2/82, `get_employee_page_access` and `get_feature_flags`, are also executable by `anon` and
-  `PUBLIC`;
-- the other 80/82 deny `anon` and `PUBLIC` execution.
+- 84/84 are `SECURITY DEFINER`;
+- 84/84 are executable by `authenticated` and `service_role`;
+- 4/84 are executable by `anon`: `get_employee_page_access`, `get_feature_flags`,
+  `get_sign_document_templates`, and `get_sign_request_by_token`;
+- 3/84 are executable by `PUBLIC`: `get_employee_page_access`, `get_feature_flags`, and
+  `get_sign_request_by_token`;
+- the other 80/84 deny `anon`; the other 81/84 deny `PUBLIC`.
 
 Names:
 
@@ -127,8 +130,9 @@ Names:
 `get_job_readings`, `get_job_rooms`, `get_job_task_summary`, `get_jobs_closed`,
 `get_jobs_completed`, `get_my_notification_prefs`, `get_notifications`, `get_oop_quote`,
 `get_open_estimates_summary`, `get_payments_ledger`, `get_payments_received`,
-`get_pipeline_summary`, `get_revenue_by_division`, `get_stalled_materials_for_employee`,
-`get_tech_claims`, `get_tech_conversations`, `get_tech_dashboard`, `get_tech_status_board`,
+`get_pipeline_summary`, `get_revenue_by_division`, `get_sign_document_templates`,
+`get_sign_request_by_token`, `get_stalled_materials_for_employee`, `get_tech_claims`,
+`get_tech_conversations`, `get_tech_dashboard`, `get_tech_status_board`,
 `get_unassigned_tasks`, `get_unread_notification_count`, `insert_job_document`, `insert_reading`,
 `insert_tech_feedback`, `mark_all_notifications_read`, `mark_notification_read`, `merge_claims`,
 `merge_jobs`, `move_photo_to_room`, `place_equipment`, `remove_equipment`, `save_demo_sheet`,
@@ -138,15 +142,16 @@ Names:
 
 A deliberately simple definition scan for `auth.uid()`, request-JWT/current-auth, or literal
 `caller` signals matched only `delete_push_subscription`, `get_appointment_detail`,
-`get_appointments_range`, `insert_tech_feedback`, and `upsert_push_subscription`. This 5/82
-heuristic is a prioritization signal, **not proof** that the other 77 lack authorization or that
+`get_appointments_range`, `insert_tech_feedback`, and `upsert_push_subscription`. This 5/84
+heuristic is a prioritization signal, **not proof** that the other 79 lack authorization or that
 the five are sufficient. Every definer function still needs an object/role/assignment review and
 direct negative tests.
 
-#### Transitive functions missed by the initial inline census
+#### Client functions missed by the initial inline census
 
-The exact live signatures/bodies/ACLs below were recaptured at `2026-07-26 05:34:42 UTC`. `A/S`
-means `authenticated` and `service_role` can execute; every row is `SECURITY DEFINER`.
+The exact live signatures/bodies/ACLs below were recaptured between `2026-07-26 05:34:42 UTC` and
+`05:51:42 UTC`. `A/S` means `authenticated` and `service_role` can execute; every row is
+`SECURITY DEFINER`.
 
 | Caller | Exact live signature/result | Execute grant | Decisive live body/object boundary |
 |---|---|---|---|
@@ -162,6 +167,8 @@ means `authenticated` and `service_role` can execute; every row is `SECURITY DEF
 | job/claim `MergeModal` | `merge_claims(uuid, uuid) → jsonb` | A/S | No caller/role reconstruction; merges/deletes supplied claims, repoints jobs, and writes `system_events` |
 | job `MergeModal` | `merge_jobs(uuid, uuid) → jsonb` | A/S | No caller/role reconstruction; merges/deletes supplied `jobs` and repoints or deletes across `payments`, `invoices`, `estimates`, `job_costs`, `job_supplements`, `vendor_invoices`, `job_documents`, `job_notes`, `job_checklists`, `forms`, `sign_requests`, `document_requests`, `appointments`, `job_assignments`, `job_schedules`, `schedule_blocks`, `job_time_entries`, `job_equipment`, `job_tasks`, `conversations`, `notification_queue`, `selection_dispatches`, `selection_responses`, `sub_confirmations`, `job_phase_history`, `system_events`, `dispatch_board_jobs`, and `contact_jobs` |
 | `NotificationPrefsMatrix` | `set_my_notification_pref(uuid, text, text, boolean) → notification_prefs` | A/S | No caller reconstruction; validates channel, supplied employee existence, and role-default customizability, then upserts that employee's preference |
+| public `SignPage` raw RPC helper | `get_sign_document_templates(text) → SETOF document_templates` | `anon`, A/S | Token equality only; resolves `doc_type` from `sign_requests`, then returns every `document_templates` row of that type; no status/expiry predicate |
+| public `SignPage` raw RPC helper | `get_sign_request_by_token(text) → jsonb` | `PUBLIC`, `anon`, A/S | Token equality only; joins `sign_requests` to `jobs` and returns request/signer/status/path plus job address, claim, policy, adjuster, and division fields; no status/expiry predicate |
 | native post-login `pushNotifications.js` | `upsert_device_token(uuid, text, text) → device_tokens` | A/S | No caller reconstruction; upserts the supplied token and can reassign it to the supplied employee ID |
 | `webPushClient.enablePush` | `upsert_push_subscription(text, text, text, text) → push_subscriptions` | A/S | Resolves employee by `employees.auth_user_id = auth.uid()` and binds the endpoint to that employee; returns null when no employee |
 
@@ -221,8 +228,7 @@ Every `/tech` route is nested under `ProtectedRoute` in `src/App.jsx`; `/tech/jo
 
 Boundary abbreviations used below:
 
-- `RPC`: the live 82-function definer boundary above; two shared bootstrap functions also allow
-  `anon`/`PUBLIC`.
+- `RPC`: the live 84-function definer boundary above; four allow `anon` and three allow `PUBLIC`.
 - `DIR:<table>`: direct PostgREST access under the live table boundary above.
 - `RT:<table>`: Realtime delivery under that table's live SELECT/RLS boundary.
 - `STO`: public `job-files` plus the four live object policies above.
@@ -233,7 +239,7 @@ Boundary abbreviations used below:
 |---|---|---|---|
 | `/login` | `src/pages/Login.jsx` | Supabase Auth session bootstrap | Auth; no MOB-SEC-014/015 domain operation |
 | `/set-password` | `src/pages/SetPassword.jsx` | Supabase recovery session | Auth token contract |
-| `/sign/:token` | `src/pages/SignPage.jsx` | signing RPC/worker → `POST /api/submit-esign` → service upload to `job-files` | token validation Worker/RPC + `STO`; public/signed-delivery compatibility remains |
+| `/sign/:token` | `src/pages/SignPage.jsx` raw anon-key RPC helper | `get_sign_request_by_token(p_token)`; when a doc type exists, `get_sign_document_templates(p_token)`; then `POST /api/submit-esign` → service upload to `job-files` | token-equality definer RPCs expose request/job/template data without a live status/expiry predicate; UI and Worker perform later expiry checks; submit Worker + `STO`; public/signed-delivery compatibility remains |
 | every authenticated `/tech/*` route | `AuthContext.jsx` | Auth identity → `DIR:employees` email lookup; `DIR:nav_permissions` role lookup; `get_feature_flags`; `get_employee_page_access(p_employee_id)` | direct employee/permission policies plus definer `RPC`; flags/page access are also anon/PUBLIC executable and page access trusts the supplied employee ID |
 | every `/tech/*` route while its persistent panes/flags are mounted | `TechLayout.jsx`, persistent `TechDashV2`, `TechScheduleV2`, `TechMessagesV2` | `get_assigned_tasks`; dashboard/schedule/conversation chains below can remain mounted off-route; conversation Realtime remains flag-dependent | shared `RPC`, direct-table and `RT` boundaries apply to more than the visible pathname |
 | every native post-login session | `AuthContext.jsx` → `pushNotifications.js` | native registration token → `upsert_device_token(p_employee_id, p_token, p_platform)` | definer `RPC` trusts the supplied employee ID and can reassign a token; APNs provider/signing proof unavailable |
@@ -241,14 +247,14 @@ Boundary abbreviations used below:
 | `/tech/schedule` | `v2/TechScheduleV2.jsx`, `v2/schedule/useScheduleData.js` | `get_appointments_range` | `RPC` |
 | `/tech/tasks` | `TechTasks.jsx` | `get_assigned_tasks`, `toggle_appointment_task` | `RPC`; client supplies employee ID |
 | `/tech/claims` | `TechClaims.jsx` | UI role chooses `get_tech_claims(p_employee_id)` or `get_claims_list()` | `RPC`; UI choice is not authorization |
-| `/tech/claims/:claimId` | `TechClaimDetail.jsx`, `MergeModal.jsx`, `GenerateReportButton.jsx` | claim/detail/appointment/room/demo/task RPCs; `DIR:job_documents`; `DIR:claims/jobs` update/search/impact; `merge_claims(p_keep_id,p_merge_id)`; `/api/generate-water-loss-report`; Storage POST → `insert_job_document` | `RPC`, broad `DIR:claims/jobs/job_documents`; merge definer has no caller/role check; report `WORKER`; `STO` |
+| `/tech/claims/:claimId` | `TechClaimDetail.jsx`, `MergeModal.jsx` | claim/detail/appointment/room/demo/task RPCs; `DIR:job_documents`; `DIR:claims/jobs` update/search/impact; `merge_claims(p_keep_id,p_merge_id)`; Storage POST → `insert_job_document` | `RPC`, broad `DIR:claims/jobs/job_documents`; merge definer has no caller/role check; `STO` |
 | `/tech/claims/:claimId/photos` | `TechClaimAlbum.jsx`, `usePhotoUpload.js` | Storage POST → `insert_job_document`; public/render URL | `STO` + `RPC`, non-atomic |
 | `/tech/claims/:claimId/rooms/:roomId` | `TechRoomDetail.jsx` | `get_claim_detail`, `get_claim_rooms`; Storage POST → `insert_job_document`; public photo URLs | `RPC` + `STO` |
 | `/tech/jobs/:jobId` | `TechJobDetail.jsx`, `MergeModal.jsx` | `DIR:jobs/claims/job_documents/sign_requests`; contact/appointment RPCs; direct job update; merge impact reads `DIR:jobs/job_documents/payments/job_time_entries`; `merge_jobs(p_keep_id,p_merge_id)`; Storage POST → `insert_job_document` | broad direct policies + scoped-read time entries + `RPC`; merge definer has no caller/role check; `STO` |
-| `/tech/job/:jobId` | `v2/TechJobHub.jsx`, `v2/hub/*`, `TimeTracker.jsx`, `MergeModal.jsx` | hub/appointment/room/task/readings/equipment RPCs including `clock_omw_precheck`; `DIR:job_time_entries`; `AdminJobMenu` soft-delete via `DIR:jobs`; merge impact reads `DIR:jobs/job_documents/payments/job_time_entries` then `merge_jobs`; Storage POST → `insert_job_document` | feature/UI admin gates only; `RPC`, broad job/document/payment policies, scoped-read time entries, `STO`; merge/clock-precheck definers trust supplied IDs |
+| `/tech/job/:jobId` | `v2/TechJobHub.jsx`, `v2/hub/*`, `HubBelowFold.jsx`, `TimeTracker.jsx`, `MergeModal.jsx`, `GenerateReportButton.jsx` | hub/appointment/room/task/readings/equipment RPCs including `clock_omw_precheck`; `DIR:job_time_entries`; `AdminJobMenu` soft-delete via `DIR:jobs`; merge impact reads `DIR:jobs/job_documents/payments/job_time_entries` then `merge_jobs`; `/api/generate-water-loss-report`; Storage POST → `insert_job_document` | feature/UI admin gates only; `RPC`, broad job/document/payment policies, scoped-read time entries, report `WORKER`, `STO`; merge/clock-precheck definers trust supplied IDs |
 | `/tech/jobs/:jobId/photos` | `TechJobAlbum.jsx`, `usePhotoUpload.js` | Storage POST → `insert_job_document`; public/render URL | `STO` + `RPC`, non-atomic |
 | `/tech/jobs/:jobId/documents` | `TechJobDocuments.jsx`, `EsignRequestSheet.jsx` | `DIR:jobs/contact_jobs/contacts/sign_requests`; public `job-files` URL; `/api/send-esign`, `/api/resend-esign`; direct cancel update | broad direct policies + e-sign `WORKER` + `STO` |
-| `/tech/appointment/:id` | `TechAppointment.jsx`, `TimeTracker.jsx`, field sheets | appointment/task/room/readings/equipment RPCs including `clock_omw_precheck`; `DIR:job_time_entries/job_documents/sign_requests`; Storage POST → metadata RPC; direct caption update | `RPC` + scoped-read time-entry/broad document policies + `STO`; precheck trusts supplied employee/appointment IDs |
+| `/tech/appointment/:id` | `TechAppointment.jsx`, `TimeTracker.jsx`, `GenerateReportButton.jsx`, field sheets | appointment/task/room/readings/equipment RPCs including `clock_omw_precheck`; `DIR:job_time_entries/job_documents/sign_requests`; `/api/generate-water-loss-report`; Storage POST → metadata RPC; direct caption update | `RPC` + scoped-read time-entry/broad document policies + report `WORKER` + `STO`; precheck trusts supplied employee/appointment IDs |
 | `/tech/appointment/:id/edit` | `TechEditAppointment.jsx` | appointment/task/range/unassigned RPCs; `DIR:employees/appointments/appointment_crew`; `update_appointment`, `assign_tasks_to_appointment`, `delete_appointment` | `RPC` + broad direct policies; multi-write client transaction |
 | `/tech/new-customer` | `TechNewCustomer.jsx` | `DIR:contacts` insert/search | broad contacts policy; no server role boundary |
 | `/tech/new-job` | `TechNewJob.jsx` | `DIR:contacts`; carrier/search/customer/create RPCs; `/api/sync-claim-to-encircle`; `/api/sync-houzz` | broad contacts + `RPC` + named provider `WORKER`s |
@@ -392,14 +398,17 @@ No row below was decided by this source-work session.
 6. **S1e-2 — notifications and destructive merge.** Bind bell reads/marks to the session employee
    (model broadcast read state separately if needed); require the approved active/internal role
    before `merge_claims`/`merge_jobs` and verify every supplied object before mutation.
-7. **S1e-3 — route-family RPC/direct-table containment.** Review one route/domain family at a time.
+7. **S1e-3 — public signing reads.** Preserve the two token-RPC signatures and deployed caller
+   shape while moving status/expiry enforcement into the database boundary and returning only the
+   minimum unsigned-document DTO; coordinate signed-file delivery with the private-media wave.
+8. **S1e-4 — route-family RPC/direct-table containment.** Review one route/domain family at a time.
    Prefer invoker functions or explicit actor reconstruction; revoke unnecessary ACLs; replace
    unconditional RLS with role/assignment/object policies while preserving signatures/return
    shapes. Treat the current `messages` predicate as a scoped pattern to preserve, not as proof
    that adjacent messaging tables are safe.
-8. **S2a — media delivery compatibility.** Centralize both stored path forms and replace public URL
+9. **S2a — media delivery compatibility.** Centralize both stored path forms and replace public URL
    construction with an authorized delivery helper supporting dual-read.
-9. **S2b — private Storage boundary.** After compatibility code is deployed and observed, apply
+10. **S2b — private Storage boundary.** After compatibility code is deployed and observed, apply
    path/object-scoped policies, MIME/type rules and the private bucket flip in a serialized window.
 
 ## Negative and failure-path matrix
@@ -430,6 +439,7 @@ For each of the four QBO Workers, local tests require:
 | shared identity/device RPCs | own employee profile/page-access/preferences/token; intentionally public flags only if owner-approved | anonymous page-access enumeration, another employee ID, inactive/external identity, token reassignment, account switch/logout, missing Auth mapping |
 | bell RPCs/Realtime | own recipient plus deliberate broadcast semantics | another employee/notification ID, forged mark-all, inactive/external identity, Realtime payload for another recipient, reconnect/dedup failure |
 | destructive merge RPCs | active internal approved role and two authorized objects | anonymous/wrong/inactive/external role, unrelated object IDs, same/missing ID, financial conflict, partial multi-table failure, direct RPC bypassing UI |
+| public signing RPCs | valid pending unexpired token returns the minimum expected request/template DTO | malformed/unknown/expired/signed/cancelled token, direct RPC after expiry, cross-document template lookup, signed-file path or excess job/PII fields |
 | RPC/RLS | each approved role within assigned/object scope | anonymous, wrong role, unrelated job/claim/contact/appointment, forged employee/actor parameter, inactive/external identity, malformed/missing object |
 | `job-files` | approved uploader/reader for assigned object and both legacy path forms | anonymous list/read, unrelated employee read/write/delete, cross-job path, path traversal, wrong MIME/oversize, metadata failure, orphan, signed URL expiry/replay |
 | rollout | compatible old/new web clients and expected service caller | missing runtime binding, stale client, provider outage, failed deploy/apply, forward-fix and emergency rollback rehearsal |
