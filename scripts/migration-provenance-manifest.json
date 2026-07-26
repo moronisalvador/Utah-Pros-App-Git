@@ -152,6 +152,18 @@
       "name": "fix_callrail_keyword_consent_ambiguity",
       "path": "supabase/migrations/20260725173000_fix_callrail_keyword_consent_ambiguity.sql",
       "reviewedOriginCommit": "f81bef7"
+    },
+    {
+      "version": "20260725201238",
+      "name": "ops_health_alerting",
+      "path": "supabase/migrations/20260725190000_ops_health_alerting.sql",
+      "reviewedOriginCommit": "bc6fb01"
+    },
+    {
+      "version": "20260725201303",
+      "name": "ops_health_alerting",
+      "path": "supabase/migrations/20260725190000_ops_health_alerting.sql",
+      "reviewedOriginCommit": "bc6fb01"
     }
   ],
   "selectedFunctions": [
