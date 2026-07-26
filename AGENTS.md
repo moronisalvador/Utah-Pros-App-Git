@@ -89,7 +89,10 @@ For any task tied to a `MOB-*` finding or `UPRF-MOB-001`, also read:
 - the affected files under `docs/audit/mobile-pwa/`
 - `docs/app-store-readiness-roadmap.md` for Apple ownership/release gates
 
-Run `npm run preflight:mobile` before implementation. The 2026-07 audit source
+Until the foundation is integrated into `dev`, create each wave branch/worktree from
+`codex/mobile-pwa-readiness-foundation`, fetch current `origin/dev`, and reconcile drift without
+dropping the foundation. After integration, start from current `origin/dev`. Run
+`npm run preflight:mobile` before implementation. The 2026-07 audit source
 `ef305f6d6afab4d846eab92fc1b04038d70221f0` is historical; record and inspect the current
 `origin/dev` SHA instead of assuming the snapshot remains current.
 

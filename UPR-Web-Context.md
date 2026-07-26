@@ -8445,7 +8445,8 @@ decisions and their device/release evidence pass.
 The project now has one canonical `mobile-readiness-wave` skill and four bounded canonical roles
 under `.claude`; deterministic checked-in adapters expose them to Codex under `.agents`/`.codex`.
 Run `npm run generate:mobile-codex`, `npm run preflight:mobile`, `npm run validate:tooling`, and
-`npm run test:tooling` at session start/close-out. Start implementation with Wave R0 from current
-`origin/dev`; never assume the dated audit is current. Supabase/Storage/production/providers remain
-read-only until a separately authorized apply/deploy/action, and Apple signing/TestFlight/App Store
-work remains owner-gated.
+`npm run test:tooling` at session start/close-out. Until the foundation is integrated, start Wave R0
+from `codex/mobile-pwa-readiness-foundation`, fetch current `origin/dev`, and reconcile drift
+without dropping the foundation; afterward, current `origin/dev` is the base. Never assume the
+dated audit is current. Supabase/Storage/production/providers remain read-only until a separately
+authorized apply/deploy/action, and Apple signing/TestFlight/App Store work remains owner-gated.

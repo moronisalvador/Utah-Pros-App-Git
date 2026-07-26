@@ -130,9 +130,11 @@ allowed origins and provider sandboxes.
 ## Mobile PWA/Capacitor readiness workflow
 
 `docs/mobile-production-readiness-roadmap.md` is the plan of record for the 37 findings observed at
-audited application source `ef305f6d6afab4d846eab92fc1b04038d70221f0`. Each wave starts from
-current `origin/dev` in an isolated branch/worktree, records the new base SHA, and recaptures only
-the affected current/live state. The dated audit is not rewritten as later evidence.
+audited application source `ef305f6d6afab4d846eab92fc1b04038d70221f0`. Until the foundation is
+integrated, each wave starts from `codex/mobile-pwa-readiness-foundation` in a new isolated
+branch/worktree, fetches current `origin/dev`, and reconciles drift without dropping the foundation.
+After integration, current `origin/dev` is the base. Record all relevant SHAs and recapture only the
+affected current/live state. The dated audit is not rewritten as later evidence.
 
 Mobile sessions use the checked-in ownership manifest and at most three simultaneous subagents.
 Read-only mapping, security review, contract testing, and release audit can overlap when they do not
