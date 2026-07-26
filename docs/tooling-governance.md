@@ -107,6 +107,36 @@ Deprecation is evidence-led: mark a capability conditional, unavailable, superse
 candidate; record owner, reason, replacement, and observation date; then obtain owner approval before
 removal. Do not mass-delete optional bundles.
 
+#### AMENDED 2026-07-26 (owner-approved) — the untracked SEO mirrors are removed
+
+**Amends §1's "not copied, promoted, deleted, edited, or validated" for exactly this one set.**
+§1 and §5 did not literally contradict each other — §5 scoped its retirement to the **tracked**
+bundles, and `ff76e01` deleted only those, while §1 protected the **untracked** trees. The conflict
+was on *effect*: the owner's recorded finding that this repository does not need a repository-local
+SEO suite was **unrealised for Codex**, because `.agents/skills` and `.codex/agents` are Codex's real
+discovery roots. Claude loaded 0 SEO capabilities; Codex loaded 49.
+
+- **Owner:** Moroni Salvador · **Approved:** 2026-07-26 · **Observed:** 2026-07-26
+- **Removed:** 31 `.agents/skills/seo*` bundles (232 files, 1,540,210 B) and 18
+  `.codex/agents/seo*.toml` (64,912 B).
+- **Reason:** they are stale mirrors of content this document already retired. Deleting them realises
+  the 2026-07-23 decision for both runtimes instead of one.
+- **Evidence requirement — already satisfied, which is why removal beats quarantine.** §5 above states
+  that "the historical capability review and Git history preserve the evidence and prior
+  implementation." Verified: **93 SEO `SKILL.md` files are recoverable from history**, retired by
+  `ff76e01`. Quarantining would have committed ~1.6 MB to preserve what Git already holds.
+- **Replacement:** none in this repository. Reintroduction belongs in the repository that owns the
+  public website, per §5, and requires fresh dependency, credential, permission and trigger review.
+- **Measured effect:** Codex's skill-description budget drops from **17,439 to 10,671 chars** against
+  a documented **8,000-char cap** — SEO was 38% of the overage. Still over; the remaining gap is the
+  coverage work (7 of 39 capabilities governed), not this deletion. Recorded so the improvement is not
+  mistaken for a fix.
+
+**This amendment does not weaken §1.** Its prohibition stands for every other capability in those
+trees, and "do not mass-delete optional bundles" stands as written. This is a single named set, with
+owner approval, a recorded rationale, and evidence preserved independently — the exact conditions §5's
+deprecation paragraph requires.
+
 ## 6. Validation and known owner gates
 
 Run:
