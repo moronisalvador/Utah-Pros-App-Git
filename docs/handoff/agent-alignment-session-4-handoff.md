@@ -86,6 +86,12 @@ after any tooling touches these files.
    API, File Structure, Workers, Patterns, Task File Protocol, CRM Phase Workflow).
    Also verify the Codex side by canary + `wc -c` only — **Codex exposes no loaded-doc introspection
    and no truncation warning, so any claim of verification parity between the tools is false.**
+
+   **Run `node scripts/check-l0-bridge.mjs` before and after the deletion** — 14 checks, exits 1 on
+   failure, passes in both the pre- and post-P3 shapes. It replaces every gate session 4 ran by hand.
+   **Known trap it exists to catch:** `## ⚠️ NON-NEGOTIABLE RULES` appears **twice** in `CLAUDE.md`
+   — once in the redirect prose, once as the real heading — so a naive find-and-delete removes the
+   `### Claude-only mechanisms` block too. Anchor on `/^## ⚠️ NON-NEGOTIABLE RULES$/m`.
 2. **L2 — on-demand depth.** All 23 `.claude/rules/*.md` still load unconditionally
    (**213,576 B**, `cat .claude/rules/*.md | wc -c`, measured 2026-07-26 — the roadmap and ownership
    §10.4 both say 212,822 B, which is the older "before" figure; the files have grown). Add `paths:`

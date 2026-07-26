@@ -113,6 +113,26 @@ file. They are now loaded, not merely pointed at.
 
 ## 5. CLAUDE.md blocks — what P3 may and may not delete
 
+> **P3 trap, found by testing the guard 2026-07-26.** The string
+> `## ⚠️ NON-NEGOTIABLE RULES` occurs **twice** in `CLAUDE.md` — once inside the redirect prose at
+> the top (which explains that the block below is a deliberate duplicate) and once as the real
+> heading. A naive `indexOf` / find-and-delete matches the **prose** first and deletes the
+> `### Claude-only mechanisms` block along with the rules. Anchor on a line-start heading match
+> (`/^## ⚠️ NON-NEGOTIABLE RULES$/m`), then run `node scripts/check-l0-bridge.mjs` — its
+> over-deletion guard catches exactly this and names the block you lost.
+
+**Run the guard before and after P3:**
+
+```bash
+node scripts/check-l0-bridge.mjs     # 14/14 both pre- and post-P3; exits 1 on any failure
+```
+
+It verifies the import line has no CR, neither file is a symlink or a `120000` index entry, rules
+1–12 are complete and — while both copies exist — byte-identical, the canary is unique to
+`AGENTS.md`, Code Review Rules keeps its exact heading and stays free of style-lint rules, every
+Claude-only block survives, Rule 4's anchors still resolve, and the Codex byte cap still clears the
+real file size. All four failure modes were confirmed to fail the check, not just pass it.
+
 **P3 may delete** (fully carried into `AGENTS.md`, verified above):
 
 | CLAUDE.md block | Lines (pre-P2) | Lands in |
