@@ -408,6 +408,8 @@ Center and desktop Call Log. Direct `inbound_leads` SELECT remains company-wide 
 employees because the current model has no employee organization membership or lead assignment;
 `crm_tasks.assignee_id` is task ownership, not lead visibility. Authenticated direct DML is removed.
 
-Raw provider URLs move to forced-RLS, service-only `inbound_lead_recording_sources`. Browser and
-legacy composite RPC responses see only a truthy opaque marker. The approved CallRail proxy keeps
+Raw provider URLs move to forced-RLS, service-only `inbound_lead_recording_sources`; nested
+recording-source keys are removed from `raw_payload` on backfill and future writes. Browser and
+legacy composite RPC responses see only a truthy opaque marker. Authenticated execution of the
+service ingestion RPC is revoked. The approved CallRail proxy keeps
 the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.

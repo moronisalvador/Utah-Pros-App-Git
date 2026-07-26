@@ -28,9 +28,10 @@
 --
 -- ROLLBACK:
 --   Use supabase/rollbacks/20260726183409_inbound_lead_recording_source_boundary.rollback.sql.
---   It restores raw URLs to inbound_leads, the exact prior RPC, ACL and policy,
+--   It restores scalar raw URLs to inbound_leads, the exact prior RPC, ACL and policy,
 --   then removes the service-only source table. This deliberately reopens the
---   browser-readable recording-source exposure.
+--   browser-readable recording-source exposure. Privacy-safe recording keys
+--   removed from raw_payload are intentionally not reconstructable.
 
 BEGIN;
 

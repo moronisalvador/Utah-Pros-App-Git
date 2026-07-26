@@ -453,7 +453,10 @@ direct/signed audio streaming, private cache header, and JSON error contracts. I
 changes from browser-readable `inbound_leads.recording_url` to service-only
 `inbound_lead_recording_sources`; `transcribe-call` uses the same source. The public lead row keeps
 only `upr-recording://available`, preserving mobile/desktop truthiness without disclosing a
-provider URL. No provider request, playback, credential read, or live setting change occurred.
+provider URL. Both Workers retain a validated legacy-column fallback so compatible code can deploy
+before the table; the marker is never accepted as a source. Ingestion recursively strips
+`recording` and `recording_url` keys from stored `raw_payload`. No provider request, playback,
+credential read, or live setting change occurred.
 
 Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
 provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger

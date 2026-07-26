@@ -8572,13 +8572,15 @@ employee/CRM assignment column names. No row, URL, recording, customer, provider
 secret value was selected.
 
 Unapplied migration `20260726183409_inbound_lead_recording_source_boundary.sql` moves raw URLs to
-forced-RLS service-only `inbound_lead_recording_sources`, uses a deferrable FK plus BEFORE trigger
-for future writes, and leaves `upr-recording://available` in the frozen public shape. It gates
+forced-RLS service-only `inbound_lead_recording_sources`, captures future scalar sources after lead
+IDs exist, recursively strips recording-source keys from `raw_payload` before storage, and leaves
+`upr-recording://available` in the frozen public shape. It gates
 `get_inbound_leads` to active internal admin or `crm_call_log`, removes anonymous privileges and
 authenticated direct DML, and allows active-internal company-wide SELECT because no employee-to-
-CRM-org/lead assignment exists. The approved proxy and `transcribe-call` read the new source table;
-mobile/desktop still send only `lead_id` and test marker truthiness. Exact rollback and
-credential-free contracts accompany it.
+CRM-org/lead assignment exists. The approved proxy and `transcribe-call` read the new source table
+with a validated legacy-column fallback for Worker-first rollout; mobile/desktop still send only
+`lead_id` and test marker truthiness. Exact rollback, value-free apply checks and credential-free
+contracts accompany it. Rollback cannot reconstruct privacy-safe keys removed from `raw_payload`.
 
 S1d apply, `create_notification`, QBO actor telemetry, `qbo_attachments` RLS, private media and
 other mobile/native/release gates remain separate. No apply, deploy, push, provider call, playback,

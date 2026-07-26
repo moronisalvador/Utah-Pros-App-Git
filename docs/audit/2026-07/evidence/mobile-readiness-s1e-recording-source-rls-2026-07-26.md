@@ -55,32 +55,54 @@ insufficient: raw URLs must leave the public row to close response paths without
 ## Authored boundary
 
 The migration creates a forced-RLS, service-only source table, backfills raw URLs without returning
-or logging them, replaces public values with `upr-recording://available`, and installs a
-deferrable-FK BEFORE trigger so future writes are captured before composite `RETURNING` responses.
-It removes anonymous privileges and authenticated DML. Direct SELECT is company-wide for active
+or logging them, replaces public values with `upr-recording://available`, captures future scalar
+sources in an AFTER trigger once lead IDs exist, and recursively removes recording-source keys
+from historical and future `raw_payload`. The ingestion adapter also strips those keys before the
+RPC. It removes anonymous privileges, authenticated DML, and authenticated execution of the
+service ingestion RPC. Direct SELECT is company-wide for active
 non-external employees because the model supports no narrower assignment.
 `get_inbound_leads` preserves signature, JSON keys, order and 1–500 limit while requiring admin or
 effective `crm_call_log` capability.
 
-The proxy and transcription Worker read the service-only source table. Proxy identity,
+The proxy and transcription Worker read the service-only source table and retain a validated
+legacy-column fallback for Worker-first rollout; neither accepts the marker as a source. Proxy identity,
 lead/provider-call binding, URL allowlist, credential ordering, direct/signed audio streaming,
 timeout and JSON error contracts remain unchanged.
 
-Rollback drops the trigger, restores raw URLs and the exact prior RPC body/grants/policy, then
-drops the source table. It deliberately reopens the finding.
+Rollback drops the triggers, restores scalar raw URLs and the exact prior RPC body/grants/policy,
+then drops the source table. It deliberately reopens the finding. Removed `raw_payload` keys are
+not reconstructed because doing so would require duplicating or retaining the sensitive source.
 
 ## Verification and reviews
 
-Initial focused verification passed 46/46 tests. Full build/test/lint and independent
-security/contract/release results are recorded in the final handoff; live role behavior remains
-unproved until an authorized apply.
+The first independent security, contract and release reviews rejected the draft for four reasons:
+recording keys remained in `raw_payload`; Workers required the table before migration; a BEFORE
+trigger could not safely reference a speculative upsert ID; and only static database checks existed.
+The corrected source scrubs mapper/backfill and database payloads, supports both deployment states
+without accepting the marker, captures scalar sources AFTER the row exists, revokes browser ingest,
+adds value-free pre/post-apply SQL, and documents the irreversible privacy scrub.
+
+Actual verification after those corrections:
+
+- focused Worker/migration suite: 77/77;
+- full `npm test`: unit 774/774, Worker 1384/1384, QA 16/16;
+- web and `VITE_BUILD_TARGET=native` builds: passed, 665 modules each; no Capacitor sync/sign/device;
+- changed-file ESLint: passed;
+- full lint: known baseline 206 errors/119 warnings, with no changed-file violation;
+- tooling governance: zero errors/two temporary CAP warnings; provenance tests 13/13 and worktree
+  provenance passed for 27 ledger rows/21 functions/5 policies with four declared semantic warnings.
+
+No isolated PostgreSQL clone was available, so the unapplied migration and apply-window scripts
+were not executed. Live role behavior remains an owner-authorized apply-window gate.
 
 ## Rollout
 
 1. Integrate the reviewed complete foundation→S1e history into the release branch.
-2. Deploy compatible `callrail-recording` and `transcribe-call` source first.
+2. Deploy compatible `callrail-recording` and `transcribe-call` source first; their validated
+   legacy fallback supports the pre-migration schema.
 3. Recapture only target function/table/policy/trigger/source-table metadata; stop on drift.
-4. Apply only S1e in a serialized owner window, separately from S1d.
+4. Because the earlier S1d migration remains pending, apply only the exact reviewed S1e SQL through
+   an owner-controlled single-migration mechanism; do not run a chronological all-pending command.
 5. Verify marker-only browser responses, denied anon/inactive/external/direct DML, allowed active
    internal reads, admin/`crm_call_log` RPC access, and service-only source access without selecting
    URL values.

@@ -440,8 +440,9 @@ bindings/webhook/scheduler cutover; and the same controlled Production proofs. A
 historical provider row is not a substitute for those layers.
 
 The S1e credential-free suite pins the live `get_inbound_leads` signature/body hash, table
-ACL/policy/trigger-free preconditions, forced-RLS service-only source table, deferrable capture
-trigger, opaque marker, active-internal company-wide SELECT policy, call-log capability gate,
-rollback, exact mobile/desktop truthiness callers, and approved proxy audio/error contracts.
-Worker tests exercise the additional service-only lookup. Live apply verification must prove
+ACL/policy/trigger-free preconditions, forced-RLS service-only source table, post-ID capture and
+pre-storage payload-scrub triggers, opaque marker, active-internal company-wide SELECT policy,
+call-log capability gate, rollback, exact mobile/desktop truthiness callers, and approved proxy
+audio/error contracts. Worker tests exercise both deployment states and reject marker fallback.
+Catalog-only pre/post-apply SQL proves ACL, policy and trigger state without reading values. Live apply verification must prove
 browser denial and service access without selecting URL values or invoking a provider.

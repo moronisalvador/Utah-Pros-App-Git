@@ -5,7 +5,8 @@
 -- Restores the exact pre-S1e get_inbound_leads body, grants and broad
 -- authenticated policy, copies raw provider URLs back to inbound_leads, and
 -- removes the service-only source table. Applying this rollback deliberately
--- reopens browser/RPC recording-source exposure.
+-- reopens browser/RPC scalar recording-source exposure. It cannot reconstruct
+-- privacy-safe recording keys removed from raw_payload during forward apply.
 
 BEGIN;
 

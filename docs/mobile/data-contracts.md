@@ -399,4 +399,5 @@ apply it is null or `upr-recording://available`; clients may test presence only.
 to service-only `inbound_lead_recording_sources`. Browsers request playback using only `lead_id`
 through `/api/callrail-recording`; the Worker reconstructs identity, authorization, lead/provider
 binding, URL allowlist and provider access. `get_inbound_leads(integer)` preserves JSON
-shape/order/limit but requires admin or `crm_call_log` capability.
+shape/order/limit but requires admin or `crm_call_log` capability. Stored `raw_payload` recursively
+omits keys named `recording` or `recording_url`.

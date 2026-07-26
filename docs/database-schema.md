@@ -364,12 +364,15 @@ Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is reviewe
 has not been applied. It adds forced-RLS, service-role-only
 `inbound_lead_recording_sources`, keyed one-to-one to `inbound_leads`. Provider URLs move there;
 `inbound_leads.recording_url` remains in its deployed position but contains only the opaque truthy
-marker `upr-recording://available`. A deferrable foreign key lets the BEFORE trigger capture new
-URLs without changing composite-return RPC shapes.
+marker `upr-recording://available`. An AFTER trigger captures new URLs once the lead ID exists and
+immediately replaces the public value; a BEFORE payload trigger recursively removes
+`recording`/`recording_url` keys from `raw_payload`. The ingestion adapter performs the same scrub
+before RPC submission.
 
 The migration removes anonymous privileges and authenticated direct DML, then replaces the broad
 authenticated `ALL` policy with company-wide SELECT for active, non-external employees. That scope
 is explicit because no employee-to-CRM-org or lead assignment relation exists.
 `get_inbound_leads(integer) -> jsonb` keeps its signature/order/limit and adds the existing
 admin-or-`crm_call_log` capability decision. Rollback restores raw URLs, the exact prior RPC,
-grants/policy, and removes the companion table; it deliberately reopens the exposure.
+grants/policy, and removes the companion table; it deliberately reopens scalar URL exposure.
+Privacy-safe removal of recording keys from historical `raw_payload` is not reversible.
