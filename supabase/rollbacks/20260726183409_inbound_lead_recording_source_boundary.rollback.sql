@@ -32,6 +32,8 @@ $preflight$;
 
 DROP TRIGGER protect_inbound_lead_recording_source ON public.inbound_leads;
 DROP FUNCTION public.protect_inbound_lead_recording_source();
+DROP TRIGGER sanitize_inbound_lead_recording_payload ON public.inbound_leads;
+DROP FUNCTION public.sanitize_inbound_lead_recording_payload();
 
 UPDATE public.inbound_leads il
 SET recording_url = src.recording_url
@@ -67,6 +69,11 @@ REVOKE EXECUTE ON FUNCTION public.get_inbound_leads(integer)
 GRANT EXECUTE ON FUNCTION public.get_inbound_leads(integer)
   TO authenticated, service_role;
 
+GRANT EXECUTE ON FUNCTION public.upsert_lead_from_callrail(
+  text, text, text, text, integer, boolean, text, text, text, text, text,
+  jsonb, text, numeric, text, timestamptz, jsonb, uuid
+) TO authenticated, service_role;
+
 DROP POLICY inbound_leads_active_internal_select ON public.inbound_leads;
 CREATE POLICY inbound_leads_all
 ON public.inbound_leads
@@ -77,6 +84,7 @@ WITH CHECK (true);
 
 GRANT ALL ON TABLE public.inbound_leads TO anon, authenticated;
 DROP TABLE public.inbound_lead_recording_sources;
+DROP FUNCTION public.strip_recording_sources(jsonb);
 
 DO $postcondition$
 DECLARE

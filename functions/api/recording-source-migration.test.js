@@ -33,8 +33,12 @@ const rollback = read('supabase/rollbacks/20260726183409_inbound_lead_recording_
 const recordingWorker = read('functions/api/callrail-recording.js');
 const recordingTests = read('functions/api/callrail-recording.test.js');
 const transcriptionWorker = read('functions/api/transcribe-call.js');
+const callrailMapper = read('functions/lib/callrail.js');
+const callrailBackfill = read('functions/api/callrail-backfill.js');
 const mobileConsumer = read('src/components/admin-mobile/leads/LeadRow.jsx');
 const desktopConsumer = read('src/pages/crm/CrmCallLog.jsx');
+const preflightSql = read('supabase/tests/inbound_lead_recording_source_preflight.sql');
+const postApplySql = read('supabase/tests/inbound_lead_recording_source_post_apply.sql');
 
 describe('S1e recording-source database boundary', () => {
   it('pins the exact live RPC, table ACL, policy and trigger-free preconditions', () => {
@@ -48,22 +52,27 @@ describe('S1e recording-source database boundary', () => {
 
   it('moves raw URLs to a forced-RLS service-only table and leaves an opaque marker', () => {
     expect(migration).toContain('CREATE TABLE public.inbound_lead_recording_sources');
-    expect(migration).toContain('DEFERRABLE INITIALLY DEFERRED');
     expect(migration).toContain('ALTER TABLE public.inbound_lead_recording_sources FORCE ROW LEVEL SECURITY');
     expect(migration).toContain('REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated');
     expect(migration).toContain('TO service_role');
     expect(migration).toContain('INSERT INTO public.inbound_lead_recording_sources (lead_id, recording_url, updated_at)');
     expect(migration).toContain("SET recording_url = 'upr-recording://available'");
-    expect(migration).toContain("NEW.recording_url := 'upr-recording://available'");
+    expect(migration).toContain("SET recording_url = 'upr-recording://available'");
     expect(migration).toContain("recording_url <> 'upr-recording://available'");
   });
 
-  it('captures future writes before any composite-return RPC can expose a raw URL', () => {
+  it('captures future writes after IDs exist and scrubs composite payloads before storage', () => {
     expect(migration).toContain('CREATE TRIGGER protect_inbound_lead_recording_source');
-    expect(migration).toContain('BEFORE INSERT OR UPDATE OF recording_url ON public.inbound_leads');
+    expect(migration).toContain('AFTER INSERT OR UPDATE OF recording_url ON public.inbound_leads');
     expect(migration).toContain('ON CONFLICT (lead_id) DO UPDATE');
+    expect(migration).toContain('CREATE FUNCTION public.strip_recording_sources(p_value jsonb)');
+    expect(migration).toContain("WHERE e.key NOT IN ('recording', 'recording_url')");
+    expect(migration).toContain('CREATE TRIGGER sanitize_inbound_lead_recording_payload');
+    expect(migration).toContain('BEFORE INSERT OR UPDATE OF raw_payload ON public.inbound_leads');
     expect(migration).toContain('REVOKE EXECUTE ON FUNCTION public.protect_inbound_lead_recording_source()');
     expect(migration).toContain('FROM PUBLIC, anon, authenticated');
+    expect(callrailMapper).toContain('withoutRecordingSources(body)');
+    expect(callrailBackfill).toContain('withoutRecordingSources(c)');
   });
 
   it('reduces direct access to active internal company-wide reads', () => {
@@ -88,6 +97,8 @@ describe('S1e recording-source database boundary', () => {
     expect(migration).toContain('LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 100), 500))');
     expect(migration).toContain('GRANT EXECUTE ON FUNCTION public.get_inbound_leads(integer)');
     expect(migration).toContain('TO authenticated, service_role');
+    expect(migration).toContain('REVOKE EXECUTE ON FUNCTION public.upsert_lead_from_callrail(');
+    expect(migration).toContain(') FROM PUBLIC, anon, authenticated;');
   });
 
   it('keeps both UIs on lead-id proxy playback and truthy availability only', () => {
@@ -103,6 +114,9 @@ describe('S1e recording-source database boundary', () => {
     expect(recordingWorker).toContain('`lead_id=eq.${leadId}&select=recording_url&limit=1`');
     expect(transcriptionWorker).toContain("'inbound_lead_recording_sources'");
     expect(transcriptionWorker).toContain('select=lead_id,recording_url');
+    expect(recordingWorker).toContain('lead.recording_url');
+    expect(recordingWorker).toContain('isAllowedRecordingUrl(lead.recording_url)');
+    expect(transcriptionWorker).toContain('isAllowedRecordingUrl(lead.recording_url)');
     expect(recordingTests).toContain("if (table === 'inbound_lead_recording_sources')");
   });
 
@@ -125,6 +139,19 @@ describe('S1e recording-source database boundary', () => {
     expect(rollback).toContain('CREATE POLICY inbound_leads_all');
     expect(rollback).toContain('GRANT ALL ON TABLE public.inbound_leads TO anon, authenticated');
     expect(rollback).toContain('DROP TABLE public.inbound_lead_recording_sources');
+    expect(rollback).toContain('DROP FUNCTION public.strip_recording_sources(jsonb)');
+  });
+
+  it('provides value-free apply-window catalog proofs for browser denial and service access', () => {
+    expect(preflightSql).toContain("md5((SELECT prosrc FROM pg_proc WHERE oid = v_get))");
+    expect(preflightSql).toContain("to_regclass('public.inbound_lead_recording_sources') IS NULL");
+    expect(postApplySql).toContain("NOT has_table_privilege('authenticated', 'public.inbound_lead_recording_sources', 'SELECT')");
+    expect(postApplySql).toContain("has_table_privilege('service_role', 'public.inbound_lead_recording_sources', 'SELECT')");
+    expect(postApplySql).toContain("NOT has_function_privilege('authenticated', v_upsert, 'EXECUTE')");
+    for (const sql of [preflightSql, postApplySql]) {
+      expect(sql).not.toMatch(/SELECT\s+(recording_url|raw_payload)/i);
+      expect(sql).not.toContain('integration_credentials');
+    }
   });
 
   it('does not touch the explicitly separate residual boundaries', () => {

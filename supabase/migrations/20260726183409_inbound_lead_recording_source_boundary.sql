@@ -37,6 +37,7 @@ BEGIN;
 DO $preflight$
 DECLARE
   v_oid oid;
+  v_upsert_oid oid;
   v_relacl aclitem[];
 BEGIN
   SELECT p.oid
@@ -57,6 +58,25 @@ BEGIN
      OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE')
   THEN
     RAISE EXCEPTION 'get_inbound_leads drifted from the reviewed S1e precondition';
+  END IF;
+
+  SELECT p.oid
+    INTO v_upsert_oid
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname = 'upsert_lead_from_callrail'
+    AND pg_get_function_identity_arguments(p.oid) =
+      'p_callrail_id text, p_source_type text, p_tracking_number text, p_caller_number text, p_duration_sec integer, p_spam_flag boolean, p_source text, p_medium text, p_campaign text, p_recording_url text, p_transcription text, p_form_data jsonb, p_lead_status text, p_value numeric, p_direction text, p_occurred_at timestamp with time zone, p_raw_payload jsonb, p_org_id uuid';
+
+  IF v_upsert_oid IS NULL
+     OR md5((SELECT p.prosrc FROM pg_proc p WHERE p.oid = v_upsert_oid))
+        <> 'd5abd852ebe5c3dfa2e440f45d40c4b3'
+     OR has_function_privilege('anon', v_upsert_oid, 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', v_upsert_oid, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', v_upsert_oid, 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'upsert_lead_from_callrail drifted from the reviewed S1e precondition';
   END IF;
 
   SELECT c.relacl
@@ -99,8 +119,7 @@ $preflight$;
 
 CREATE TABLE public.inbound_lead_recording_sources (
   lead_id uuid PRIMARY KEY
-    REFERENCES public.inbound_leads(id) ON DELETE CASCADE
-    DEFERRABLE INITIALLY DEFERRED,
+    REFERENCES public.inbound_leads(id) ON DELETE CASCADE,
   recording_url text NOT NULL
     CHECK (btrim(recording_url) <> ''),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -111,6 +130,31 @@ ALTER TABLE public.inbound_lead_recording_sources FORCE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE public.inbound_lead_recording_sources TO service_role;
+
+CREATE FUNCTION public.strip_recording_sources(p_value jsonb)
+RETURNS jsonb
+LANGUAGE sql
+IMMUTABLE
+SET search_path TO 'public'
+AS $function$
+  SELECT CASE jsonb_typeof(p_value)
+    WHEN 'object' THEN COALESCE((
+      SELECT jsonb_object_agg(e.key, public.strip_recording_sources(e.value))
+      FROM jsonb_each(p_value) e
+      WHERE e.key NOT IN ('recording', 'recording_url')
+    ), '{}'::jsonb)
+    WHEN 'array' THEN COALESCE((
+      SELECT jsonb_agg(public.strip_recording_sources(a.value))
+      FROM jsonb_array_elements(p_value) a
+    ), '[]'::jsonb)
+    ELSE p_value
+  END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION public.strip_recording_sources(jsonb)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.strip_recording_sources(jsonb)
+  TO service_role;
 
 INSERT INTO public.inbound_lead_recording_sources (lead_id, recording_url, updated_at)
 SELECT id, recording_url, now()
@@ -125,6 +169,36 @@ WHERE EXISTS (
   FROM public.inbound_lead_recording_sources src
   WHERE src.lead_id = il.id
 );
+
+UPDATE public.inbound_leads
+SET recording_url = NULL
+WHERE recording_url IS NOT NULL
+  AND btrim(recording_url) = '';
+
+UPDATE public.inbound_leads
+SET raw_payload = public.strip_recording_sources(raw_payload);
+
+CREATE FUNCTION public.sanitize_inbound_lead_recording_payload()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+BEGIN
+  NEW.raw_payload := public.strip_recording_sources(NEW.raw_payload);
+  RETURN NEW;
+END;
+$function$;
+
+REVOKE EXECUTE ON FUNCTION public.sanitize_inbound_lead_recording_payload()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.sanitize_inbound_lead_recording_payload()
+  TO service_role;
+
+CREATE TRIGGER sanitize_inbound_lead_recording_payload
+BEFORE INSERT OR UPDATE OF raw_payload ON public.inbound_leads
+FOR EACH ROW
+EXECUTE FUNCTION public.sanitize_inbound_lead_recording_payload();
 
 CREATE FUNCTION public.protect_inbound_lead_recording_source()
 RETURNS trigger
@@ -142,7 +216,10 @@ BEGIN
     ON CONFLICT (lead_id) DO UPDATE
       SET recording_url = EXCLUDED.recording_url,
           updated_at = EXCLUDED.updated_at;
-    NEW.recording_url := 'upr-recording://available';
+    UPDATE public.inbound_leads
+    SET recording_url = 'upr-recording://available'
+    WHERE id = NEW.id
+      AND recording_url IS DISTINCT FROM 'upr-recording://available';
   ELSIF TG_OP = 'UPDATE'
         AND NEW.recording_url IS NULL
         AND OLD.recording_url = 'upr-recording://available'
@@ -160,7 +237,7 @@ GRANT EXECUTE ON FUNCTION public.protect_inbound_lead_recording_source()
   TO service_role;
 
 CREATE TRIGGER protect_inbound_lead_recording_source
-BEFORE INSERT OR UPDATE OF recording_url ON public.inbound_leads
+AFTER INSERT OR UPDATE OF recording_url ON public.inbound_leads
 FOR EACH ROW
 EXECUTE FUNCTION public.protect_inbound_lead_recording_source();
 
@@ -168,6 +245,15 @@ REVOKE ALL ON TABLE public.inbound_leads FROM anon;
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON TABLE public.inbound_leads FROM authenticated;
 GRANT SELECT ON TABLE public.inbound_leads TO authenticated;
+
+REVOKE EXECUTE ON FUNCTION public.upsert_lead_from_callrail(
+  text, text, text, text, integer, boolean, text, text, text, text, text,
+  jsonb, text, numeric, text, timestamptz, jsonb, uuid
+) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.upsert_lead_from_callrail(
+  text, text, text, text, integer, boolean, text, text, text, text, text,
+  jsonb, text, numeric, text, timestamptz, jsonb, uuid
+) TO service_role;
 
 DROP POLICY inbound_leads_all ON public.inbound_leads;
 CREATE POLICY inbound_leads_active_internal_select
@@ -275,11 +361,21 @@ BEGIN
      OR NOT has_table_privilege('authenticated', 'public.inbound_leads', 'SELECT')
      OR has_table_privilege('authenticated', 'public.inbound_lead_recording_sources', 'SELECT')
      OR NOT has_table_privilege('service_role', 'public.inbound_lead_recording_sources', 'SELECT')
+     OR has_function_privilege(
+       'authenticated',
+       'public.upsert_lead_from_callrail(text,text,text,text,integer,boolean,text,text,text,text,text,jsonb,text,numeric,text,timestamptz,jsonb,uuid)',
+       'EXECUTE'
+     )
      OR EXISTS (
        SELECT 1
        FROM public.inbound_leads
        WHERE recording_url IS NOT NULL
          AND recording_url <> 'upr-recording://available'
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.inbound_leads
+       WHERE raw_payload IS DISTINCT FROM public.strip_recording_sources(raw_payload)
      )
   THEN
     RAISE EXCEPTION 'recording-source boundary postcondition failed';
