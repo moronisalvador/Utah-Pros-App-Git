@@ -24,7 +24,7 @@ NOTES / GOTCHAS:
 # L0 coverage — no-weakening proof
 
 **Written:** 2026-07-26 · **Phases:** L0/L1 P1 (author the core) + P2 (the bridge)
-**Base:** `origin/dev` at `1ac8914` · `AGENTS.md` 24,733 B · `CLAUDE.md` 33,780 B
+**Base:** `origin/dev` at `1ac8914` · `AGENTS.md` 25,325 B · `CLAUDE.md` 33,921 B
 
 Verdict vocabulary: **verbatim** (byte-identical), **distilled** (same strength, fewer words),
 **STRICTER** (the new text binds harder than the old). No row reads *weaker*. No row has destination
@@ -167,7 +167,7 @@ real file size. All four failure modes were confirmed to fail the check, not jus
 
 | Gate | Result |
 |---|---|
-| `AGENTS.md` size | 24,733 B — under Codex's raised 65,536 B cap with ~40 KB headroom |
+| `AGENTS.md` size | 25,325 B — under Codex's raised 65,536 B cap with ~40 KB headroom |
 | Heading order, `## Code Review Rules` before Depth map and Repository model | pass |
 | Rules 1–12 verbatim vs `HEAD:CLAUDE.md` | identical |
 | Numbering 1..12, no gaps, no 13+ | pass |

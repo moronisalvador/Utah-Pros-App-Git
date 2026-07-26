@@ -92,7 +92,7 @@ P-1 set 22,000 B / 26,000 B ceiling; the brief for session 4 said 8–12 KB. The
 either limit was real. It is not — the **only** hard mechanism is Codex's `project_doc_max_bytes`,
 whose 32,768 default drops the chain's tail silently, and this phase raised it to 65,536 in the new
 tracked `.codex/config.toml`. Both prose targets were self-imposed. **Write the law complete and
-dense; let the size be an outcome.** Landed at 24,733 B with ~40 KB of headroom. The real cost of a
+dense; let the size be an outcome.** Landed at 25,325 B with ~40 KB of headroom. The real cost of a
 long instruction file is attention dilution, which argues for density — never for compressing law,
 which the initiative's constraints forbid outright.
 

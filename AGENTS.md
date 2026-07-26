@@ -203,6 +203,11 @@ Risk-specific additions:
   `page-behavior-checker`, forced loading/error/empty states, a 390px viewport check, and the
   minimize/resume test. Motion work additionally requires `review-animations`.
 - **Native** — a real Xcode / on-device handoff when this environment cannot compile or sign iOS code.
+- **This file, `CLAUDE.md`, `.gitattributes` or `.codex/config.toml`** — `node scripts/check-l0-bridge.mjs`.
+  Every failure it reports is a mode where the shared law **silently stops loading**: a CR or BOM on
+  the import line, a committed symlink, rules drifting between the two copies, the load canary
+  leaking, or the Codex byte cap dropping below this file's real size. None of them raise an error on
+  their own.
 
 Full checklist: [`.claude/rules/close-out-standard.md`](.claude/rules/close-out-standard.md).
 

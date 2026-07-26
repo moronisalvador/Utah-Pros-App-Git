@@ -59,7 +59,7 @@ asked whether either limit was real. **Neither was.** The only hard mechanism is
 `project_doc_max_bytes` — default 32,768, drops the chain's **tail silently** — and this phase raised
 it to 65,536. Anthropic's "under 200 lines" is style advice with no enforcement. The real cost of a
 long instruction file is **attention dilution**, which argues for density, not for compressing law
-(which the constraints forbid). Landed at **24,903 B** with ~40 KB headroom. *Write the law complete;
+(which the constraints forbid). Landed at **25,325 B** with ~40 KB headroom. *Write the law complete;
 let size be an outcome.*
 
 **`core.autocrlf=true` was about to break the bridge silently.** Git stores LF but wrote
