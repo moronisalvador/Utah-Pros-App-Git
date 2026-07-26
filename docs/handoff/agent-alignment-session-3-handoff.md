@@ -27,6 +27,41 @@ NOTES / GOTCHAS:
 
 **Written:** 2026-07-26 · **Base:** `origin/dev` at `e0d7557` · **Everything below is merged and pushed. No open branch.**
 
+> ### UPDATE 2026-07-26, later the same day — three owner gates closed, numbers changed
+>
+> Landed after this file was first written: `b075007` (CAP-SEC-001 repo half),
+> `d0ca22d` (governance amendment), and the owner-run SEO deletion.
+>
+> | Gate | Outcome |
+> |---|---|
+> | **#8** CI ownership | **Dissolved.** `ci.yml` already runs `validate:tooling` + `test:tooling`, and the validator blocks adapter drift by itself (verified: `ERROR [generated-adapter-drift]`, exit 1). Put future invariants inside `scripts/validate-tooling-governance.mjs`; **do not edit `ci.yml`**. |
+> | **#5** Commit `.agents`/`.codex` | **Answered NO.** Committing ~345 stale hand-copied mirrors would commit the drift problem. Track only renderer output; grow coverage through the neutral source. |
+> | **#4** SEO mirrors | **Deleted** (owner-run — the repo's `Bash(rm -rf:*)` deny correctly blocked the agent). 31 skill bundles + 18 agent entrypoints gone; 93 SEO `SKILL.md` remain recoverable from `ff76e01`. Amendment recorded in `docs/tooling-governance.md` §5. |
+> | **#6** CAP-SEC-001 | **Repo half done** (`b075007`): `settings.local.json` untracked (still on disk — the owner's 121 pre-approvals and overnight autonomy are unaffected), plus `.env` and MCP denies added. **Now blocked on a migration apply, not on the owner rotating.** |
+>
+> **CORRECTED COUNTS — the pre-deletion figures below are stale:**
+>
+> | | this file first said | actual now |
+> |---|---|---|
+> | `.agents/skills/` bundles | 51 | **24** |
+> | `.codex/agents/*.toml` | 33 | **15** |
+> | ungoverned Codex agents inheriting the parent sandbox | 30 of 33 | **12 of 15** |
+> | Codex skill-description budget (cap 8,000) | 19,742 (inherited) | **10,671** — still over by 2,671. The deletion helped; it did **not** fix it. The rest is the coverage work. |
+>
+> `.claude/agents/` (15) and `.codex/agents/` (15) are now at **count parity** for the first time.
+>
+> **CAP-SEC-001's real unblock, corrected.** Rotating the Encircle key first was wrong ordering — there
+> is nowhere sanctioned to put the new key until the credential card renders. The card **is built**
+> (`functions/lib/credentials.js` lists `encircle`; `Integrations.jsx` references it 20×), but
+> `supabase/migrations/20260723_encircle_managed_credentials.sql` is **unapplied**, so
+> `get_managed_credentials_status` returns no row and nothing renders. Correct order: apply that
+> migration (owner-authorized live action, `database-standard.md` §0) → card appears → rotate → paste →
+> the validator's `secret-bearing-permission` warning clears. Verified the hardened guard **allows**
+> that migration (it carries a `ROLLBACK` section), so the new gate will not block the apply.
+>
+> **⚠️ A SESSION IS ALREADY WORKING L0/L1 FROM THIS FILE.** Before starting anything, `git fetch` and
+> check whether the shared core already exists. Do not begin a second L0/L1 attempt.
+
 ---
 
 ## Goal
