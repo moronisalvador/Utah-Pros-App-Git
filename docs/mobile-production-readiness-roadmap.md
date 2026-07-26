@@ -186,12 +186,26 @@ restricted to four appointment/estimate object-derived events with no caller-sel
 copy, payload or link. Focused tests pin denial/configuration/object failures, provider-never-called
 ordering, audio/error/timeout compatibility, secret precedence and the deployed fan-out summary.
 
-S1c still does not close `MOB-SEC-014`. The authenticated-executable
-`notify_emit(text,jsonb)` definer can present the stored Worker secret for caller-controlled JSON;
-`get_inbound_leads` and broad `inbound_leads` policies can expose stored recording URLs without the
-proxy; shared Auth/Web Push fetches remain unbounded; and the wider RPC/direct-policy inventory is
-unchanged. External `crm_partner` users are intentionally denied recording playback although the
-desktop shell still exposes the control, so UI removal/owner policy is a compatibility follow-up.
+S1d continues from exact S1c tip `352be211`, in a fresh
+`codex/mobile-readiness-s1d-notify-rpc` worktree. Current `origin/dev` provenance-only commit
+`d54b6ba` was merged without rewriting S1c; it maps the second already-applied
+`ops_health_alerting` ledger row and changes no product/migration contract.
+
+The bounded read-only live capture at `2026-07-26 16:52:53 UTC` confirmed one exact
+`notify_emit(text,jsonb) -> void` overload, owner `postgres`, `SECURITY DEFINER`,
+`search_path=public`, and current grants to `authenticated` plus `service_role`. Six owner-run
+definer functions contain seven direct calls across appointment/estimate triggers, timesheet RPCs,
+and the abandoned-clock scan/`postgres` cron. No browser/Pages source caller exists.
+`20260726110000_notify_emit_service_boundary.sql`, its exact rollback, catalog-only apply checks,
+and credential-free contracts are authored locally. The patch removes browser EXECUTE, retains
+`service_role`, and changes only the JSON object merge order so `p_body` cannot replace the trusted
+type key; trigger/scheduler URL, secret, header, payload, pg_net, ignored-response, caller and
+schedule contracts remain frozen.
+
+S1d is **ready for an owner apply gate, not applied**. Live `authenticated` execution therefore
+still prevents closure of `MOB-SEC-014`. Direct `get_inbound_leads`/broad `inbound_leads`
+recording-source access, authenticated `create_notification`, shared Auth/Web Push timeouts, the
+wider RPC/direct-policy inventory, and the external-partner playback UI mismatch remain separate.
 No private bucket flip was attempted and `MOB-SEC-015` remains open.
 
 The QBO residuals stay independent: customer/manual-payment sync still lack durable human-actor
@@ -200,9 +214,9 @@ Cold-offline, exact field-only native route scope, admin-mobile native exclusion
 account-deletion fulfillment, pilot support, `project_manager` billing authority and the QBO
 server-capability lifecycle remain explicit owner decisions rather than inferred approvals.
 
-The next source session should take only S1d: recapture the exact live ACL/body/caller graph for
-`notify_emit(text,jsonb)` and, if evidence is sufficient, author a least-privilege service-only
-migration plus rollback and browser-denial/trigger-compatibility tests. Applying it to the shared
-database requires a later owner-authorized window from a reviewed release commit. Do not combine
-that database capability slice with QBO telemetry/RLS, recording-source RLS, shared identity/device
-RPCs, private media, deployment or provider/device work.
+The next source session should take only S1e recording-source authorization: freshly recapture
+`get_inbound_leads`, direct `inbound_leads` grants/policies, exact recording URL consumers, and
+employee/CRM organization-assignment limits; then author the smallest compatible RLS/RPC plan if
+evidence supports it. Do not combine that work with the pending S1d apply, `create_notification`,
+QBO telemetry/RLS, shared identity/device/bell RPCs, private media, deployment or provider/device
+work. The S1d apply remains a separate serialized owner gate from a reviewed release commit.

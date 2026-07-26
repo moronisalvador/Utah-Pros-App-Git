@@ -7082,7 +7082,11 @@ fan-out/summary contract are unchanged. Optional APNs forward was omitted — na
 separate/dormant. Shared Auth and Web Push fetches remain unbounded legacy paths. Critically,
 `notify_emit(text,jsonb)` remains an authenticated-executable `SECURITY DEFINER` confused-deputy
 path that can present the stored secret with caller-controlled JSON; S1c HTTP hardening is partial
-containment until a separate reviewed database migration is applied.
+containment. S1d (`20260726110000_notify_emit_service_boundary.sql`) now provides the separately
+reviewed local migration/rollback/tests: revoke browser execution, retain `service_role`, preserve
+the owner-run trigger/RPC/cron chain, and reverse only the object merge so the trusted type key
+wins. It is **not applied**, so this paragraph still describes the live capability until an
+owner-authorized apply/verification window.
 
 **Emission triggers** (live `20260630` pattern; **doubly inert**): `trg_appointment_crew_notify`
 (appointment_crew INSERT → `appointment.assigned`) and `trg_appointment_notify` (appointments
@@ -8538,15 +8542,25 @@ read.
 The complete source/caller/test/review/rollout record is
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
 
-Neither P0 is closed. Authenticated execution of `notify_emit`, direct
-`get_inbound_leads`/`inbound_leads` recording-URL access, the wider definer/direct-policy census,
+S1d continues from exact S1c tip `352be211` and merges current provenance-only `origin/dev`
+`d54b6ba` without rewriting history. A bounded read-only live capture confirmed the exact
+`notify_emit(text,jsonb) -> void` signature, owner/definer/search-path/ACL/body and its six
+owner-run caller functions/seven call sites, three triggers, and abandoned-clock `postgres` cron.
+The authored migration keeps URL/secret/header/payload/pg_net/ignored-response contracts, removes
+direct `authenticated` execution, retains `service_role`, and makes the trusted top-level type key
+win. Exact rollback, catalog-only pre/post-apply checks, browser-denial/caller/failure/provenance
+contracts and sanitized evidence are in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Nothing was applied.
+
+Neither P0 is closed. The pending S1d apply, direct `get_inbound_leads`/`inbound_leads`
+recording-URL access, authenticated `create_notification`, the wider definer/direct-policy census,
 unbounded shared Auth/Web Push fetches and the external-partner playback UI mismatch remain under
-`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current native
-source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product
+`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current
+native source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product
 decision. Cold-offline, native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot
 support, `project_manager` billing authority and the shared QBO capability lifecycle remain owner
-gates. The QBO human-actor telemetry gap and external-admin `qbo_attachments` metadata policy
-remain separate named residuals; S1c made no QBO source/schema change.
+gates. QBO human-actor telemetry and external-admin `qbo_attachments` RLS remain separate named
+residuals; S1d made no QBO or recording-source schema change.
 
-No deploy, migration, secret/provider change, message, push, money movement, signing or distribution
-occurred in S1c.
+No deploy, migration apply, push, secret/provider change, message, push notification, money
+movement, signing or distribution occurred in S1d.
