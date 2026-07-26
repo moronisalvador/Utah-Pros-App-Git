@@ -63,13 +63,20 @@ function generatedMarkdownNotice(source, hash) {
   return `<!-- ${GENERATED_NOTICE.replace('{source}', source)} Source SHA-256: ${hash}. -->`;
 }
 
-function renderSkill(source, raw) {
+// `modelInvocable: false` in the manifest emits BOTH tools' human-only gates:
+// `disable-model-invocation: true` here and `allow_implicit_invocation: false`
+// in renderOpenAiYaml. Default is invocable — per owner direction (2026-07-26)
+// UPR gates the MUTATION, not the dispatcher, so a red-tier planner like
+// db-migration stays model-invocable and the apply is gated by
+// .claude/hooks/block-destructive-sql.sh instead.
+function renderSkill(source, raw, entry = {}) {
   const { metadata, body } = parseNeutralMarkdown(raw, source);
   const hash = sourceHash(raw);
   return [
     '---',
     `name: ${metadata.name}`,
     `description: ${metadata.description}`,
+    ...(entry.modelInvocable === false ? ['disable-model-invocation: true'] : []),
     '---',
     '',
     generatedMarkdownNotice(source, hash),
@@ -126,7 +133,7 @@ function renderOpenAiYaml(entry) {
     `  short_description: ${quotedYaml(ui.shortDescription)}`,
     `  default_prompt: ${quotedYaml(ui.defaultPrompt)}`,
     'policy:',
-    '  allow_implicit_invocation: true',
+    `  allow_implicit_invocation: ${entry.modelInvocable === false ? 'false' : 'true'}`,
     '',
   ].join('\n');
 }
@@ -145,7 +152,7 @@ export function expectedAdapterFiles(root, manifest = loadCapabilityManifest(roo
     if (parsed.metadata.name !== entry.name) {
       throw new Error(`${entry.source} name does not match manifest entry ${entry.name}.`);
     }
-    const rendered = renderSkill(entry.source, raw);
+    const rendered = renderSkill(entry.source, raw, entry);
     for (const output of entry.outputs || []) outputs.set(normalize(output), rendered);
     const codexSkillRoot = (entry.outputs || []).find((output) => output.startsWith('.agents/skills/'));
     if (codexSkillRoot) {

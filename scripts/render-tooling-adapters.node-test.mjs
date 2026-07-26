@@ -19,6 +19,7 @@ import test from 'node:test';
 import {
   compareAdapterFiles,
   expectedAdapterFiles,
+  loadCapabilityManifest,
   writeAdapterFiles,
 } from './render-tooling-adapters.mjs';
 
@@ -93,4 +94,43 @@ test('detects manual adapter drift without rewriting it', () => {
   assert.deepEqual(compareAdapterFiles(root, expected), [
     { path: '.agents/skills/sample/SKILL.md', reason: 'drift' },
   ]);
+});
+
+// ── modelInvocable: the human-only gate must fire in BOTH runtimes, and must be
+// OFF by default. Added 2026-07-26 with the riskTier/modelInvocable schema.
+// An unexercised gate is not a verified gate: the first version of this feature
+// passed `entry` to renderOpenAiYaml but NOT to renderSkill, so the Claude half
+// was a silent no-op that no drift check could have caught.
+test('modelInvocable: false emits the human-only gate in both runtimes; default emits neither', () => {
+  const root = makeFixture();
+  const manifest = loadCapabilityManifest(root);
+
+  // Default (field absent) — neither gate present, both runtimes invocable.
+  const openByDefault = expectedAdapterFiles(root, manifest);
+  const CLAUDE_SKILL = '.claude/skills/sample/SKILL.md';
+  const CODEX_SKILL = '.agents/skills/sample/SKILL.md';
+  const CODEX_YAML = '.agents/skills/sample/agents/openai.yaml';
+  const claudeDefault = openByDefault.get(CLAUDE_SKILL);
+  const yamlDefault = openByDefault.get(CODEX_YAML);
+  assert.doesNotMatch(claudeDefault, /disable-model-invocation/, 'default must stay model-invocable');
+  assert.match(yamlDefault, /allow_implicit_invocation: true/);
+
+  // modelInvocable: false — BOTH gates appear.
+  manifest.skills[0].modelInvocable = false;
+  const gated = expectedAdapterFiles(root, manifest);
+  const claudeGated = gated.get(CLAUDE_SKILL);
+  const yamlGated = gated.get(CODEX_YAML);
+  assert.match(claudeGated, /^disable-model-invocation: true$/m, 'Claude gate missing');
+  assert.match(yamlGated, /allow_implicit_invocation: false/, 'Codex gate missing');
+
+  // The gate belongs INSIDE the frontmatter block, or Claude Code ignores it.
+  const fm = claudeGated.split('\n---\n')[0];
+  assert.match(fm, /disable-model-invocation: true/, 'gate must sit inside the YAML frontmatter');
+
+  // The two runtimes' skill bodies stay byte-identical — the gate lives in
+  // frontmatter/policy, never in the instruction text.
+  assert.equal(
+    claudeGated.split('\n---\n').slice(1).join('\n---\n'),
+    gated.get(CODEX_SKILL).split('\n---\n').slice(1).join('\n---\n'),
+  );
 });
