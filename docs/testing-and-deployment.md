@@ -155,12 +155,21 @@ provider/customer action, signing, distribution, and submission remain separatel
 owner gates.
 
 R0's current source/live map and first local authorization slice are recorded in
-`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. A mobile security slice
-is not releasable merely because mocked Worker tests pass: verify required runtime binding names
-read-only, deploy only from a reviewed release commit under separate authorization, exercise
-approved allow/deny identities on non-customer fixtures, and monitor 401/403/upstream failures.
-Authorization rollback normally uses a forward fix because reverting a gate deliberately reopens
-the bypass.
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the source-only S1b QBO
+identity slice is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`. S1b tests the
+secret-first customer/payment-sync capability, both payment-sync HTTP methods, the direct
+`scheduled()` entry, human-only OAuth state writes, external-admin denial on charge/attach, and
+auth/configuration failure paths with zero downstream business/provider calls.
+
+A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
+runtime binding **names and presence only**, deploy only from a reviewed release commit under
+separate authorization, exercise approved allow/deny identities on non-customer fixtures, and
+monitor 401/403/5xx/upstream failures. For S1b, canary customer sync and payment polling before
+charge/attachment/OAuth paths; do not rotate the shared capability independently. Authorization
+rollback normally uses a reviewed forward fix because reverting a gate deliberately reopens the
+bypass. A compatibility emergency rollback may revert the exact S1b commits only after disabling
+affected entrypoints and accepting that the prior authorization finding is reopened.
 
 The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
 dual-form path normalization and authorized delivery before a bucket flip; then recapture exact

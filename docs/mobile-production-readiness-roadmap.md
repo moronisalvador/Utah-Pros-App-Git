@@ -168,14 +168,22 @@ Realtime on conversations/messages/notifications. Four RPCs allow `anon` and thr
 `PUBLIC`; shared employee-ID, notification, device-token, clock-precheck, destructive-merge, and
 public signing boundaries are explicitly queued behind the Worker slices.
 
-R0 also contains a locally verified S1a slice for four legacy QBO Workers. It does not close
-`MOB-SEC-014`: QBO customer/payment sync and OAuth connect, notification and recording Workers,
-authenticated-executable definer RPCs and broad direct policies remain. `MOB-SEC-015` remains open
-and no private bucket flip was attempted. Cold-offline, exact field-only native route scope,
-admin-mobile native exclusion, push, OTA, account-deletion fulfillment, pilot support,
-`project_manager` billing authority and the QBO server-capability lifecycle remain explicit owner
-decisions rather than inferred approvals.
+R0 contains the locally verified S1a slice for four legacy QBO Workers. S1b continues from the
+exact R0 tip and locally contains the remaining QBO Worker identity surface: customer/payment sync
+retain their scheduler capability but require an active internal admin for browser access, OAuth
+connect is human-only, and charge/attachment mutation reject external employees. Focused tests
+cover negative identities, auth/configuration failure, secret precedence/fallback, both poller HTTP
+methods, direct `scheduled()`, OAuth state writes and exact disconnected response contracts.
 
-The next source session should take only S1b: recapture and contain the remaining QBO identity
-surface while preserving scheduler/OAuth/provider contracts and adding denied-role/external/
-failure-path tests. It stops before deployment, secret changes, provider calls or live mutation.
+S1b does not close `MOB-SEC-014`: CallRail recording and notification Workers,
+authenticated-executable definer RPCs, broad direct policies and the external-admin
+`qbo_attachments` metadata SELECT residual remain. `MOB-SEC-015` remains open and no private bucket
+flip was attempted. Cold-offline, exact field-only native route scope, admin-mobile native
+exclusion, push, OTA, account-deletion fulfillment, pilot support, `project_manager` billing
+authority and the QBO server-capability lifecycle remain explicit owner decisions rather than
+inferred approvals.
+
+The next source session should take only S1c: recapture and contain the CallRail recording and
+notification Worker identity paths, preserving deployed recording/proxy, fan-out, scheduler and
+response contracts. It must add denied-role/external/failure-path tests, keep providers and live
+systems read-only, and stop before deployment, secret changes, messages, calls or live mutation.

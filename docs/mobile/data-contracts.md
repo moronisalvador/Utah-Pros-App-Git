@@ -96,9 +96,20 @@ Neither `MOB-SEC-014` nor `MOB-SEC-015` is closed.
 
 The first local containment slice gates `/api/qbo-invoice`, `/api/qbo-estimate`,
 `/api/qbo-payment`, and `/api/qbo-query` before privileged work. It preserves the existing server
-capability and permits a browser Bearer only for an active, non-external `admin`. Other QBO,
-notification and recording Workers remain separately open; the shared/mobile/desktop caller
-contract prevents treating this as a route-only fix.
+capability and permits a browser Bearer only for an active, non-external `admin`.
+
+The S1b source slice extends that browser rule to `/api/qbo-sync-customer` and the HTTP GET/POST
+forms of `/api/qbo-payments-sync`, while preserving their exact secret-first server capability and
+the poller's direct `scheduled()` entry. `/api/quickbooks-connect` is active-internal-admin Bearer
+only and does not accept the server capability, so it cannot be used to replace OAuth state.
+`/api/qbo-charge` and `/api/qbo-attach` keep their existing Bearer-only billing contract and now
+reject external employees before privileged work. Their deployed success/error bodies are
+unchanged.
+
+Other notification and recording Workers remain separately open; the shared/mobile/desktop caller
+contract prevents treating this as a route-only fix. Direct reads of `qbo_attachments` metadata
+also remain a separate RLS residual because the role-scoped SELECT policy does not explicitly
+exclude external admins. `MOB-SEC-014` therefore remains open.
 
 ## Workflow contract map
 
