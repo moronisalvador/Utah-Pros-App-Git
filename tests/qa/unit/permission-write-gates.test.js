@@ -139,9 +139,13 @@ describe('permission write gates — both doors', () => {
     }
   });
 
-  it('0e — makes crm_partner read-only without hardcoding the two nav keys', () => {
+  it('0e — makes crm_partner read-only on exactly the two reviewed nav keys', () => {
+    // Scoped deliberately. An unscoped data fix would do MORE than what was
+    // signed off if a new crm_partner edit row appeared between evidence
+    // capture and the apply window — on a shared production database that gap
+    // is real, and a data change must perform exactly the reviewed change.
     expect(sql).toContain('update public.nav_permissions set can_edit = false');
-    expect(sql).toContain("where role = 'crm_partner' and can_edit = true");
+    expect(sql).toContain("where role = 'crm_partner' and can_edit = true and nav_key in ('crm', 'settings')");
   });
 });
 

@@ -232,6 +232,64 @@ describe('combined evaluation', () => {
   });
 });
 
+describe('failed-backlog escalation', () => {
+  const failedAt = (iso) => ({
+    id: `e-${iso}`, error_code: 'CALLRAIL_MMS_URL_INVALID', message_type: 'mms',
+    direction: 'inbound', received_at: iso, media_count: 1, owned_media: [],
+  });
+  const daysAgo = (n) => new Date(Date.parse(NOW) - n * 1440 * 60_000).toISOString();
+  const failed = (r) => keyOf(r, OPS_HEALTH_CONDITIONS.PROVIDER_EVENTS_FAILED);
+
+  it('stays high while the backlog is fresh', () => {
+    const r = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(1))] });
+    expect(failed(r).severity).toBe('high');
+    expect(failed(r).meta.escalated).toBe(false);
+  });
+
+  it('escalates to critical once it has been ignored past the threshold', () => {
+    // Ignoring an unresolved data-loss backlog must get LOUDER, not quieter.
+    const r = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(5))] });
+    expect(failed(r).severity).toBe('critical');
+    expect(failed(r).meta.oldest_days).toBe(5);
+    expect(failed(r).title).toContain('unresolved for 5 days');
+  });
+
+  it('keys escalation off the OLDEST row, not the newest', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [failedAt(daysAgo(0)), failedAt(daysAgo(9))],
+    });
+    expect(failed(r).severity).toBe('critical');
+    expect(failed(r).meta.oldest_days).toBe(9);
+  });
+
+  it('re-alerts when it crosses the threshold instead of being suppressed', () => {
+    // Crossing into critical is genuinely new information, so the fingerprint
+    // must change even though the underlying error codes have not.
+    const fresh = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(1))] });
+    const stale = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(6))] });
+    expect(failed(stale).fingerprint).not.toBe(failed(fresh).fingerprint);
+  });
+
+  it('honours a caller-supplied threshold', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [failedAt(daysAgo(2))],
+      thresholds: { failedBacklogEscalateDays: 1 },
+    });
+    expect(failed(r).severity).toBe('critical');
+  });
+
+  it('does not escalate on a missing or unparseable received_at', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [{ id: 'x', error_code: 'E', received_at: null }],
+    });
+    expect(failed(r).severity).toBe('high');
+    expect(failed(r).meta.oldest_days).toBe(0);
+  });
+});
+
 describe('summarizeWorkerError', () => {
   it('pulls the message out of a JSON array instead of slicing the envelope', () => {
     // The exact live 2026-07-26 shape: the first 80 chars were spent on a UUID,
@@ -351,6 +409,7 @@ describe('thresholds contract', () => {
       workerErrorWindowMinutes: 60,
       workerErrorMinCount: 1,
       claimUnfinalizedMinutes: 30,
+      failedBacklogEscalateDays: 3,
     });
   });
 });
