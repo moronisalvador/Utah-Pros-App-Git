@@ -78,6 +78,9 @@ function makeDb({
       if (table === 'employee_page_access') return override ? [override] : [];
       if (table === 'nav_permissions') return permission ? [permission] : [];
       if (table === 'inbound_leads') return leadRow ? [leadRow] : [];
+      if (table === 'inbound_lead_recording_sources') {
+        return leadRow?.recording_url ? [{ recording_url: leadRow.recording_url }] : [];
+      }
       if (table === 'integration_credentials') return credential ? [credential] : [];
       return [];
     },
@@ -224,6 +227,7 @@ describe('CallRail recording identity containment', () => {
       'employees',
       'employee_page_access',
       'inbound_leads',
+      'inbound_lead_recording_sources',
       'integration_credentials',
     ]);
   });
@@ -248,6 +252,7 @@ describe('CallRail recording identity containment', () => {
       'employee_page_access',
       'nav_permissions',
       'inbound_leads',
+      'inbound_lead_recording_sources',
       'integration_credentials',
     ]);
   });

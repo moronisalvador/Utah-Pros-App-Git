@@ -801,6 +801,21 @@ export async function onRequestPost(context) {
   }
 
   leads = leads || [];
+  if (leads.length) {
+    try {
+      const leadIds = leads.map((lead) => lead.id).filter(Boolean);
+      const sourceRows = leadIds.length
+        ? await db.select(
+            'inbound_lead_recording_sources',
+            `lead_id=in.(${leadIds.join(',')})&select=lead_id,recording_url`,
+          )
+        : [];
+      const sourceByLead = new Map((sourceRows || []).map((row) => [row.lead_id, row.recording_url]));
+      leads = leads.map((lead) => ({ ...lead, recording_url: sourceByLead.get(lead.id) || null }));
+    } catch {
+      return jsonResponse({ error: 'Failed to load recording sources' }, 500, request, env);
+    }
+  }
   let processed = 0;
   let skipped = 0;
   const errors = [];

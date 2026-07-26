@@ -21,14 +21,15 @@
  *   Internal:      ../lib/cors.js, ../lib/supabase.js, ../lib/auth.js,
  *                  ../lib/http.js
  *   External API:  CallRail REST API v3 (the call's recording URL)
- *   Data:          reads → inbound_leads (recording_url), integration_credentials
- *                          (provider='callrail' API key)
+ *   Data:          reads → inbound_leads (call identity + availability marker),
+ *                          inbound_lead_recording_sources (service-only URL),
+ *                          integration_credentials (provider='callrail' API key)
  *
  * NOTES / GOTCHAS:
- *   - Takes a lead_id (NOT a raw URL), requires a call row whose stored
- *     callrail_id matches the call id embedded in recording_url, and only proxies
- *     an allowlisted CallRail-hosted URL. Identity and object checks run before
- *     the credential read or any provider request.
+ *   - Takes a lead_id (NOT a raw URL), requires a call row whose service-only
+ *     source URL contains the same callrail_id, and only proxies an allowlisted
+ *     CallRail-hosted URL. Identity and object checks run before the credential
+ *     read or any provider request.
  *   - The API key is read from integration_credentials and sent as CallRail's
  *     `Authorization: Token token="…"` header; it is never exposed to the client.
  *   - CallRail's recording endpoint may 302 to a signed CDN URL; the platform
@@ -134,10 +135,21 @@ export async function handleCallrailRecording({
   } catch {
     return jsonResponse({ error: 'Lead lookup failed' }, 500, request, env);
   }
-  const recUrl = lead?.recording_url;
-  if (lead?.source_type !== 'call' || !recUrl) {
+  if (lead?.source_type !== 'call' || !lead?.recording_url) {
     return jsonResponse({ error: 'No recording for this lead' }, 404, request, env);
   }
+
+  let source;
+  try {
+    [source] = await db.select(
+      'inbound_lead_recording_sources',
+      `lead_id=eq.${leadId}&select=recording_url&limit=1`,
+    );
+  } catch {
+    return jsonResponse({ error: 'Lead lookup failed' }, 500, request, env);
+  }
+  const recUrl = source?.recording_url;
+  if (!recUrl) return jsonResponse({ error: 'No recording for this lead' }, 404, request, env);
   // SSRF guard: only ever proxy a CallRail-hosted recording URL. Accepts both
   // the api.callrail.com REST form (backfill) AND the app.callrail.com signed
   // redirect the live webhook delivers — see isAllowedRecordingUrl.
