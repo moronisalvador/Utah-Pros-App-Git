@@ -29,6 +29,37 @@ NOTES / GOTCHAS:
 
 # Agent Instruction Alignment — Dispatch blocks
 
+> ## ⚠️ STOP — READ BEFORE LAUNCHING ANY BLOCK
+>
+> **Added 2026-07-26, after these blocks were written.** Several are stale in ways that will send a
+> cold session to build work that already exists or to run a command that does not exist.
+>
+> **Read [`docs/agent-alignment-roadmap.md`](agent-alignment-roadmap.md) §STATUS CORRECTION and
+> [`docs/handoff/agent-alignment-session-3-handoff.md`](handoff/agent-alignment-session-3-handoff.md)
+> first.** Where they and a block below disagree, **they win.**
+>
+> Known-stale in this file:
+> - **`scripts/render-capability-adapters.mjs` never existed.** The real renderer is
+>   `scripts/render-tooling-adapters.mjs`, invoked as `npm run generate:tooling` /
+>   `npm run check:tooling-generated`.
+> - **The L3 mechanism is already built** (`tooling/` + renderer + blocking drift check, landed
+>   `0e27be0`). Any block telling you to build single-sourcing is superseded: the lane is
+>   **extend coverage from 7 of 39 capabilities**, not build.
+> - **`allow_implicit_invocation` is data-driven now** from `tooling/capabilities.json` →
+>   `modelInvocable` (`545645f`). Any block claiming "0 such files exist" is wrong; 4 exist.
+> - **The 3 Codex reviewer twins exist and are sandbox-pinned** (`0e27be0`, `41091bc`).
+> - **"Mark side-effectful capabilities non-model-invocable" is SUPERSEDED** by owner direction:
+>   *gate the mutation, not the dispatcher.* `db-migration` stays model-invocable; its apply is gated
+>   by `.claude/hooks/block-destructive-sql.sh`.
+> - **Do not edit `.github/workflows/ci.yml`.** It already runs `validate:tooling`, which blocks
+>   adapter drift by itself. New invariants go inside `scripts/validate-tooling-governance.mjs`.
+> - **Gates #4, #5 and #8 are closed** (SEO mirrors deleted; the trees are NOT to be committed; CI
+>   ownership dissolved). Do not re-open them.
+>
+> **Before designing anything, run `git branch -a --no-merged dev`.** These blocks were authored
+> without checking unmerged branches, which is exactly how the plan came to reimplement finished work.
+
+
 **Created / last verified:** 2026-07-26 · **Slug:** `agent-alignment`
 **Plan of record:** `docs/agent-alignment-roadmap.md` — the phase block there is authoritative on intent; `docs/agent-alignment-ownership-DRAFT.md` is authoritative on **names and paths** where the two drift.
 
