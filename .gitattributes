@@ -1,2 +1,5 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Guard scripts MUST be LF. A CRLF shebang/script breaks bash silently, and a
+# guard that cannot run is a guard that permits — the fail-open class that
+# .claude/hooks/block-destructive-sql.sh exists to prevent.
+*.sh text eol=lf
+*.mjs text eol=lf

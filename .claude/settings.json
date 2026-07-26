@@ -26,7 +26,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*__apply_migration|mcp__.*__execute_sql",
+        "matcher": "mcp__.*__(apply_migration|execute_sql|exec_read_sql|upr_sql|upr_insert|upr_update|upr_upsert|upr_delete)",
         "hooks": [
           {
             "type": "command",
