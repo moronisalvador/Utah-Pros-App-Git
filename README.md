@@ -13,6 +13,9 @@ scheduling, CRM, billing, and field-tech mobile tools.
 - **[`docs/database/`](docs/database/)** — a plain-English "how the data model works" guide, a
   glossary, and a "how to safely add a table/RPC/policy" checklist, for anyone (human or AI session)
   orienting on the database layer before diving into `UPR-Web-Context.md`.
+- **[`docs/mobile/`](docs/mobile/)** — canonical field-mobile architecture, design, motion, data,
+  PWA/Capacitor, testing, and release boundaries. Read this before changing `/tech/*` or native/PWA
+  behavior.
 - **[`BILLING-CONTEXT.md`](BILLING-CONTEXT.md)** — QuickBooks/invoicing internals.
   **[`UPR-Design-System.md`](UPR-Design-System.md)** — CSS tokens/components.
 
