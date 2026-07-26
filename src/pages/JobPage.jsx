@@ -14,6 +14,7 @@ import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials } from '@/lib/claimUtils';
+import { ErrorState } from '@/components/ui';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -48,7 +49,7 @@ export default function JobPage(){
   const{jobId}=useParams();const navigate=useNavigate();const location=useLocation();const{db,employee:currentUser}=useAuth();
   const isTech=location.pathname.startsWith('/tech/');
   const[job,setJob]=useState(null);const[phases,setPhases]=useState([]);const[employees,setEmployees]=useState([]);
-  const[loading,setLoading]=useState(true);const[activeTab,setActiveTab]=useState('overview');
+  const[loading,setLoading]=useState(true);const[loadError,setLoadError]=useState(null);const[activeTab,setActiveTab]=useState('overview');
   const[documents,setDocuments]=useState([]);const[notes,setNotes]=useState([]);const[history,setHistory]=useState([]);
   const[saving,setSaving]=useState(false);const[showWizard,setShowWizard]=useState(false);const[taskSummary,setTaskSummary]=useState(null);
   const[showEsign,setShowEsign]=useState(false);
@@ -59,9 +60,14 @@ export default function JobPage(){
 
   const jobReqRef=useRef(0);
   useEffect(()=>{loadJob();},[jobId]);
-  const loadJob=async()=>{
+  // `silent` skips the page-level loading gate. Pull-to-refresh must never flip
+  // it: the gate sits above the whole render, so a refresh would blank the
+  // topbar, tabs and content mid-gesture and lose scroll (page-lifecycle.md §1,
+  // loading-error-states.md §6). Cold mount and the error-state Retry DO gate —
+  // nothing is on screen to protect in either case.
+  const loadJob=async({silent=false}={})=>{
     const reqId=++jobReqRef.current;
-    setLoading(true);
+    if(!silent)setLoading(true);
     try{
       const[jobsData,phasesData,empsData,docsData,notesData,histData]=await Promise.all([
         db.select('jobs',`id=eq.${jobId}`),
@@ -73,6 +79,7 @@ export default function JobPage(){
       ]);
       if(jobReqRef.current!==reqId)return;
       if(jobsData.length===0){navigate(isTech?'/tech/claims':'/jobs',{replace:true});return;}
+      setLoadError(null);
       setJob((await withJobFinancials(db,jobsData))[0]);setPhases(phasesData);setEmployees(empsData);
       setDocuments(docsData);setNotes(notesData);setHistory(histData);
       db.rpc('get_job_task_summary',{p_job_id:jobId}).then(d=>setTaskSummary(d)).catch(()=>setTaskSummary(null));
@@ -81,7 +88,13 @@ export default function JobPage(){
           setClaimData(d?.claim||null);setSiblingJobs((d?.jobs||[]).filter(j=>j.id!==jobsData[0].id));
         }).catch(()=>{});
       }
-    }catch(err){console.error('Job load:',err);}finally{if(jobReqRef.current===reqId)setLoading(false);}
+    }catch(err){
+      console.error('Job load:',err);
+      // Was console.error only, so `if(!job)return null` rendered a blank white
+      // page — the highest-impact bug in loading-error-states.md §1. Guarded by
+      // reqId so a slow response for an old jobId cannot post a stale error.
+      if(jobReqRef.current===reqId)setLoadError('Couldn’t load this job. Check your connection and try again.');
+    }finally{if(jobReqRef.current===reqId)setLoading(false);}
   };
 
   const phaseMap=useMemo(()=>{const m={};for(const p of phases)m[p.key]=p;return m;},[phases]);
@@ -128,7 +141,17 @@ export default function JobPage(){
   const fmtDateTime=v=>{if(!v)return'\u2014';return new Date(v).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});};
 
   if(loading)return<div className="loading-page"><div className="spinner"/></div>;
-  if(!job)return null;
+  // justifyContent centers the panel: .job-page is a 100dvh flex column with
+  // overflow:hidden, so a lone child pins to the top with dead space beneath it.
+  if(!job)return(
+    <div className="job-page" style={{justifyContent:'center'}}>
+      <ErrorState
+        message={loadError||'Couldn’t load this job. Check your connection and try again.'}
+        onRetry={loadJob}
+        secondary={<button type="button" className="btn btn-secondary" onClick={()=>navigate(isTech?'/tech/claims':'/jobs')}>Back to jobs</button>}
+      />
+    </div>
+  );
 
   const phaseLabel=phaseMap[job.phase]?.label||job.phase;
   // divEmoji replaced by DivisionIcon component
@@ -202,7 +225,7 @@ export default function JobPage(){
         </button>
       ))}</div>
 
-      <PullToRefresh onRefresh={loadJob} className="job-page-content">
+      <PullToRefresh onRefresh={()=>loadJob({silent:true})} className="job-page-content">
         {activeTab==='checklist'&&showChecklist&&<DocChecklist job={job} employees={employees}/>}
         {activeTab==='overview'&&<OverviewTab job={job} employees={employees} saveBatch={saveBatch} fmtDate={fmtDate} fmt={fmt} onOpenFinancial={()=>setActiveTab('financial')} claimData={claimData} siblingJobs={siblingJobs} onAddRelatedJob={()=>setShowAddRelated(true)} onNavigateJob={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavigateCustomer={id=>navigate(`/customers/${id}`,{viewTransition:true})} onNavigateClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})}/>}
         {activeTab==='schedule'&&<ScheduleTab jobId={job.id} taskSummary={taskSummary} onGenerateClick={()=>setShowWizard(true)} navigate={navigate}/>}
@@ -212,9 +235,9 @@ export default function JobPage(){
       </PullToRefresh>
 
       {showEsign&&<SendEsignModal job={job} currentUser={currentUser} db={db} onClose={()=>setShowEsign(false)} onSent={()=>{setShowEsign(false);db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});setFilesRefreshKey(k=>k+1);}} />}
-      {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob();}}/>}
+      {showWizard&&<ScheduleWizard jobId={job.id} jobName={job.insured_name||job.job_number||'Job'} onClose={()=>setShowWizard(false)} onGenerated={()=>{setShowWizard(false);loadJob({silent:true});}}/>}
       {showAddRelated&&<AddRelatedJobModal sourceJob={job} claimData={claimData} siblingJobs={siblingJobs} employees={employees} db={db} onClose={()=>setShowAddRelated(false)} onCreated={r=>{setShowAddRelated(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});}}/>}
-      {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob();}}/>}
+      {showMerge&&<MergeModal type="job" keepRecord={job} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadJob({silent:true});}}/>}
       {deleteTarget&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:9000,display:'flex',justifyContent:'center',alignItems:'center'}} onClick={()=>{setDeleteTarget(null);setDeleteInput('');}}>
           <div style={{background:'var(--bg-primary)',borderRadius:'var(--radius-xl)',width:'90%',maxWidth:420,padding:24,boxShadow:'0 20px 60px rgba(0,0,0,0.2)',border:'1px solid var(--border-color)'}} onClick={e=>e.stopPropagation()}>

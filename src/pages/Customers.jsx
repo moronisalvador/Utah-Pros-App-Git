@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
+import { ErrorState } from '@/components/ui';
 
 
 const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager: 'Prop. Manager' };
@@ -13,6 +14,7 @@ export default function Customers() {
   const { db } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
 
@@ -22,12 +24,20 @@ export default function Customers() {
     try {
       const data = await db.rpc('get_customers_list', { p_search: searchDebounced || null, p_limit: 200, p_offset: 0 });
       setCustomers(Array.isArray(data) ? data : []);
+      setLoadError(null);
     } catch (err) {
       console.error('Load customers:', err);
       try {
+        // Degraded, not failed: the list still renders, just without job pills.
         const data = await db.select('contacts', 'role=in.(homeowner,tenant,property_manager)&order=created_at.desc&limit=200');
         setCustomers((data || []).map(c => ({ ...c, jobs: [], job_count: 0 })));
-      } catch (err2) { console.error('Fallback:', err2); }
+        setLoadError(null);
+      } catch (err2) {
+        console.error('Fallback:', err2);
+        // Both paths are down. Say so — never fall through to "No customers yet",
+        // which reads as "this company has no clients" (loading-error-states.md §1).
+        setLoadError('Couldn’t load customers. Check your connection and try again.');
+      }
     } finally { setLoading(false); }
   }, [db, searchDebounced]);
 
@@ -70,7 +80,9 @@ export default function Customers() {
       </div>
 
       <PullToRefresh onRefresh={loadCustomers} className="customers-list">
-        {customers.length === 0 ? (
+        {loadError && customers.length === 0 ? (
+          <ErrorState message={loadError} onRetry={loadCustomers} />
+        ) : customers.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">👥</div>
             <div className="empty-state-text">{search ? 'No customers found' : 'No customers yet'}</div>

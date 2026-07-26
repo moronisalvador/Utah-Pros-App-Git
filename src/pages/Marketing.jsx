@@ -1,17 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { ErrorState } from '@/components/ui';
 
 export default function Marketing() {
   const { db } = useAuth();
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
-  useEffect(() => {
-    db.select('campaigns', 'order=created_at.desc&select=id,name,campaign_type,status,audience_count,total_sent,total_delivered,total_replied,created_at&limit=50')
-      .then(setCampaigns)
-      .catch(() => setCampaigns([]))
-      .finally(() => setLoading(false));
+  const load = useCallback(async () => {
+    try {
+      const rows = await db.select('campaigns', 'order=created_at.desc&select=id,name,campaign_type,status,audience_count,total_sent,total_delivered,total_replied,created_at&limit=50');
+      setCampaigns(rows || []);
+      setLoadError(null);
+    } catch (err) {
+      // Was `.catch(() => setCampaigns([]))` — a failure was actively converted
+      // into an empty list, so an outage looked identical to "no campaigns yet"
+      // (loading-error-states.md §1).
+      console.error('Marketing load error:', err);
+      setLoadError('Couldn’t load campaigns. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [db]);
+
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
@@ -27,7 +40,9 @@ export default function Marketing() {
 
       <div className="card">
         <div className="card-body" style={{ padding: 0 }}>
-          {campaigns.length === 0 ? (
+          {loadError && campaigns.length === 0 ? (
+            <ErrorState message={loadError} onRetry={load} />
+          ) : campaigns.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No campaigns yet</p>
               <p className="empty-state-text">Create SMS/MMS campaigns to reach your customer base. Coming in Phase 4b (blocked on Twilio carrier approval). Looking for email campaigns? See CRM &rarr; Campaigns.</p>
