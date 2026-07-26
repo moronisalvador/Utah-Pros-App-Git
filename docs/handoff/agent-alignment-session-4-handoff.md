@@ -24,7 +24,16 @@ NOTES / GOTCHAS:
 
 # Handoff — Agent alignment, session 4
 
-**Written:** 2026-07-26 · **Base:** `origin/dev` at `1ac8914` → **now `9c4ac2e`** · pushed, no open branch.
+> **THIS IS THE CURRENT BATON.** `docs/handoff/agent-alignment-session-2-handoff.md` and
+> `-session-3-handoff.md` are superseded — the routing glob
+> `agent-alignment-session-*-handoff.md` matches all three, so check you opened this one.
+
+**Written:** 2026-07-26 · **Base:** `origin/dev` at `1ac8914`, session-4 work starts at `6505402`.
+Pushed to `dev`, no open branch. For the current tip (this file cannot cite a commit it precedes):
+
+```bash
+git log --oneline 1ac8914..origin/dev
+```
 
 ---
 

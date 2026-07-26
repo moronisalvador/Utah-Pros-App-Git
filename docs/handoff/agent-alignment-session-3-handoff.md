@@ -23,6 +23,13 @@ NOTES / GOTCHAS:
     session, and at least one has been editing the MAIN working tree directly.
 -->
 
+> # ⚠️ SUPERSEDED — do not follow this baton
+>
+> The current baton is [`docs/handoff/agent-alignment-session-4-handoff.md`](agent-alignment-session-4-handoff.md).
+> The routing glob `agent-alignment-session-*-handoff.md` matches this file too, so it is easy to
+> open by mistake. Everything below is a point-in-time record of session 3, kept for history.
+> Its "what is left" list and its owner-decision ledger are both out of date.
+
 # Handoff — Agent alignment, session 3
 
 **Written:** 2026-07-26 · **Base:** `origin/dev` at `e0d7557` · **Everything below is merged and pushed. No open branch.**
