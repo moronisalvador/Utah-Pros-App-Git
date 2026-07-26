@@ -34,8 +34,12 @@
 --     automation_settings is reached only via get_automation_settings /
 --     set_automation_setting (both SECURITY DEFINER, search_path pinned, so
 --     they bypass RLS and are unaffected by this revoke). email_suppressions
---     has zero browser references; every writer is a service-role Worker
---     (resend-webhook, email-unsubscribe, conversation-email, email-consent).
+--     has zero browser references. Its only WRITERS are email-unsubscribe (via
+--     the SECURITY DEFINER email_unsubscribe RPC) and resend-webhook (via
+--     record_email_suppression), both invoked through the service-role Worker
+--     client. conversation-email READS it; email-consent is a pure predicate
+--     with no database access at all. So the customer-facing unsubscribe path
+--     survives this revoke — it never depended on a browser-role table grant.
 --   - Precedent for RLS-on-with-no-policy + explicit revoke:
 --     20260724180000_crm_lead_notes.sql:83-89.
 --
@@ -111,6 +115,7 @@ AS $function$
 DECLARE
   v_org uuid;
   v_row automation_settings;
+  v_actor uuid;
 BEGIN
   IF p_key NOT IN (
     'sms_sending_enabled', 'speed_to_lead_enabled', 'missed_call_textback_enabled',
@@ -154,6 +159,36 @@ BEGIN
   EXECUTE format(
     'UPDATE automation_settings SET %I = $1, updated_at = now() WHERE org_id = $2 RETURNING *', p_key
   ) INTO v_row USING p_value, v_org;
+
+  -- Audit trail. Deliberately INSIDE the transaction and NOT exception-swallowed:
+  -- if we cannot record who armed customer texting, we do not arm it. TCPA
+  -- penalties are per message and incident response starts with "who did this,
+  -- and when".
+  --
+  -- On an sms_sending_enabled -> true transition the whole resulting row is
+  -- captured, because that flip does not just enable one thing: every
+  -- pre-armed automation goes live at that instant. missed_call_textback_enabled
+  -- is already true in one org row today, so the flip has a real blast radius
+  -- that the key/value pair alone would not record.
+  SELECT e.id INTO v_actor FROM employees e WHERE e.auth_user_id = auth.uid();
+
+  INSERT INTO system_events (event_type, entity_type, entity_id, actor_id, payload)
+  VALUES (
+    'automation_setting_changed',
+    'automation_settings',
+    v_org,
+    v_actor,
+    jsonb_build_object(
+      'key', p_key,
+      'value', p_value,
+      'org_id', v_org,
+      'actor_auth_uid', auth.uid(),
+      'armed_state', CASE
+        WHEN p_key = 'sms_sending_enabled' AND p_value THEN to_jsonb(v_row)
+        ELSE NULL
+      END
+    )
+  );
 
   RETURN v_row;
 END;

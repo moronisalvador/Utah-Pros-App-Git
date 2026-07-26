@@ -111,6 +111,29 @@ describe('anon closure tranche (a) — migration source contract', () => {
   it('pins search_path on the replaced definer', () => {
     expect(sql).toContain("set search_path to 'public'");
   });
+
+  it('records WHO changed a setting, in the same transaction', () => {
+    // consent-path-auditor finding #5: without this there is no actor/timestamp
+    // trail for arming customer texting. TCPA penalties are per message and
+    // incident response starts with "who did this".
+    expect(sql).toContain('insert into system_events');
+    expect(sql).toContain("'automation_setting_changed'");
+    expect(sql).toContain('select e.id into v_actor from employees e where e.auth_user_id = auth.uid()');
+  });
+
+  it('captures the full armed state when the kill switch goes ON', () => {
+    // Flipping sms_sending_enabled does not enable one thing - every pre-armed
+    // automation goes live at that instant, and one org already has
+    // missed_call_textback_enabled = true waiting.
+    expect(sql).toContain("when p_key = 'sms_sending_enabled' and p_value then to_jsonb(v_row)");
+  });
+
+  it('does not swallow an audit failure', () => {
+    // No exception handler around the audit write: if we cannot record who armed
+    // texting, the change must not commit.
+    const body = sql.slice(sql.indexOf('create or replace function public.set_automation_setting'));
+    expect(body.slice(0, body.indexOf('$function$;'))).not.toContain('exception when');
+  });
 });
 
 describe('anon closure tranche (a) — rollback source contract', () => {

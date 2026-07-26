@@ -10,6 +10,12 @@
 --   customer texting on or off, and delete the do-not-email list. Only run this
 --   if the closure actually broke something, and treat it as temporary.
 --
+--   It also REMOVES the audit trail: after this, changing an automation setting
+--   — including arming customer texting — records no actor and no timestamp.
+--   Rows already written to system_events are kept; new changes stop being
+--   logged. For a TCPA-relevant switch that is a real loss, so prefer fixing
+--   forward over rolling back if the problem is not the gate itself.
+--
 -- VERIFIED-BEFORE STATE (live catalog, 2026-07-26):
 --   automation_settings_all : ALL / {anon,authenticated} / USING true / WITH CHECK true
 --   email_suppressions_all  : ALL / {anon,authenticated} / USING true / WITH CHECK true
