@@ -117,3 +117,29 @@ backward-compat test that the in-flight caller still succeeds: `messages`/`conve
 (omni), `crm_automations`/`crm_automation_runs`/`jobs`/`job_phase_history` (5-Ops),
 `appointments`/`jobs`/`claims`/`contacts` (schedule A), `automation_settings` (CRM 4b). Everything else
 is uncontested.
+
+### AMENDED 2026-07-26 (owner-approved) — `automation_settings` and `email_suppressions` released
+
+**Released from this bucket** by `20260726200000_anon_closure_tranche_a.sql`, under the §8 "OR ship a
+committed backward-compat test" clause. Recorded here because `migration-safety-checker` correctly
+refused to accept static analysis in a migration comment as satisfying that gate.
+
+- **Why now, not after CRM 4b merges.** Both tables carried `ALL / {anon,authenticated} / USING true`
+  policies plus all 7 table privileges granted to `anon`, and the anon key ships in the browser
+  bundle. So an unauthenticated caller could flip the customer-SMS kill switch
+  (`automation_settings.sms_sending_enabled`) or delete the opt-out list (`email_suppressions`).
+  CRM 4b remains blocked on A2P carrier approval with no merge date, and waiting meant leaving an
+  internet-reachable write on a TCPA/CAN-SPAM control indefinitely. The owner reviewed the
+  consequences and approved the staged closure on 2026-07-26.
+- **The committed tests** the clause requires: `supabase/tests/anon_closure_tranche_a.test.js`
+  (behavioral: anon read/write refused, the public allowlist still reachable) and
+  `tests/qa/unit/anon-closure-tranche-a.test.js` (CI-visible source contract — the db lane does not
+  run in CI, see backlog 6.1).
+- **Why no in-flight caller breaks.** Verified against the live catalog, not inferred:
+  `get_automation_settings` / `set_automation_setting` are `SECURITY DEFINER` with pinned
+  `search_path`, so they bypass RLS; every other reader
+  (`functions/lib/automated-send.js`, `functions/api/run-automations.js`,
+  `functions/api/process-crm-automations.js`) uses the service-role client, which the revoke never
+  names. `email_suppressions` has zero browser references; its only writers are `email_unsubscribe`
+  and `record_email_suppression`, both definers invoked through service-role Workers.
+- **Still deferred:** every other table in the bucket above. This amendment releases exactly two.

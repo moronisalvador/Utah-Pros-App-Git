@@ -51,6 +51,17 @@
 --   policy (used by the pre-login bootstrap, database-standard.md §2), so their
 --   reads are unaffected.
 --
+-- DISCLOSED GAP vs THE APP'S INTENT (accepted, not fixed here):
+--   src/App.jsx:190-196 restricts DevTools — where the feature-flag RPCs are
+--   called — to the owner alone (`isMoroni`), with the comment "Even other admins
+--   can't access this via direct URL." This gate accepts ANY active internal
+--   admin, so a second admin would gain a database-legal path to flip feature
+--   flags that the UI deliberately hides from them. That is still a large
+--   improvement on today's any-employee state, and feature flags are lower
+--   consequence than roles or page access, so it is accepted rather than
+--   narrowed to a single hardcoded identity. Revisit if a second admin is ever
+--   added who should not control rollout.
+--
 -- DISCLOSED BEHAVIOR CHANGE:
 --   The gate excludes is_external. The [Local Dev Test Account] is an external
 --   admin, so it can no longer edit roles, page access, or feature flags. That
@@ -132,10 +143,18 @@ CREATE POLICY feature_flags_admin_write ON public.feature_flags
   WITH CHECK (public.is_active_internal_admin());
 
 -- ─── 5. Gate the six functions ───
--- Body-only CREATE OR REPLACE. Signatures, return types, languages and
--- search_path settings are byte-identical to the live definitions; the ONLY
--- change is the authorization check. service_role is allowed through so a
--- future Worker or seed path is not broken by this gate.
+-- Body-only CREATE OR REPLACE. Signatures, return types and search_path are
+-- byte-identical to the live definitions; the ONLY behavioral change is the
+-- authorization check. service_role is allowed through so a future Worker or
+-- seed path is not broken by this gate.
+--
+-- NOT byte-identical: four of the six move from `LANGUAGE sql` to `plpgsql`
+-- (upsert_employee_page_access, delete_employee_page_access, delete_feature_flag
+-- and both upsert_feature_flag overloads). A pure-SQL function cannot RAISE
+-- conditionally, so the gate requires plpgsql. LANGUAGE is invisible to callers
+-- — the signature, return type and result are unchanged — but it is a real
+-- difference and this header exists so a reviewer can trust it without
+-- re-deriving the diff.
 
 CREATE OR REPLACE FUNCTION public.upsert_permission(
   p_role text, p_nav_key text, p_can_view boolean, p_can_edit boolean
@@ -322,7 +341,13 @@ GRANT EXECUTE ON FUNCTION public.delete_feature_flag(text) TO authenticated, ser
 -- want to." Editing stays possible through the Roles screen (as an admin); this
 -- only corrects today's incorrect state.
 
+-- Scoped to the two keys named in the evidence block. An unscoped UPDATE would
+-- do MORE than what was reviewed: on a shared production database the owner can
+-- change rows between evidence capture and the apply window, and a data fix must
+-- perform exactly the change that was signed off. A crm_partner edit right on
+-- some other nav_key appearing in the interim is a new decision, not this one.
 UPDATE public.nav_permissions
    SET can_edit = false
  WHERE role = 'crm_partner'
-   AND can_edit = true;
+   AND can_edit = true
+   AND nav_key IN ('crm', 'settings');

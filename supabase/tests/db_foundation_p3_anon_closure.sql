@@ -37,11 +37,15 @@ DECLARE
     'employees','feature_flags','employee_page_access','nav_permissions'
   ];
   -- §8 deferred-hardening — TEMPORARY exceptions; delete from this list as each merges.
+  -- 'automation_settings' and 'email_suppressions' REMOVED 2026-07-26: closed by
+  -- 20260726200000_anon_closure_tranche_a.sql (owner-approved amendment recorded
+  -- in .claude/rules/db-foundation-wave-ownership.md §8). Leaving them here would
+  -- keep tolerating an anon grant that no longer exists and should never return.
   v_deferred_tables text[] := ARRAY[
     'messages','conversations','conversation_participants','email_campaigns',
-    'email_campaign_recipients','email_campaign_exclusions','email_suppressions',
+    'email_campaign_recipients','email_campaign_exclusions',
     'crm_automations','crm_automation_runs','jobs','job_phase_history',
-    'appointments','claims','contacts','automation_settings'
+    'appointments','claims','contacts'
   ];
   v_bad_policies int;
   v_bad_fns int;

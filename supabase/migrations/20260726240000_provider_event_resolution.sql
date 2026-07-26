@@ -60,9 +60,20 @@ COMMENT ON COLUMN public.message_provider_events.resolved_at IS
   'check ignores resolved rows, which is what stops a permanent failure alerting '
   'every Denver day forever. NULL means still outstanding.';
 
--- Partial index: the probe asks exactly this question every 15 minutes, and the
--- unresolved set is tiny compared with the table. Index is on a NEW column only,
--- so it cannot conflict with an existing one (database-standard.md §3).
+-- Partial index: the probe asks exactly this question every 15 minutes.
+--
+-- LOCK WINDOW (measured, not assumed): this is a plain CREATE INDEX, which takes
+-- ACCESS EXCLUSIVE for the duration of the build and would block inbound CallRail
+-- webhook writes. Measured live 2026-07-26: message_provider_events holds
+-- 33 rows / 192 kB total. The build is effectively instantaneous at that size, so
+-- CONCURRENTLY (which cannot run inside a transaction and complicates the apply)
+-- is not warranted. Re-measure before applying if that has changed materially.
+--
+-- The indexed COLUMN (received_at) is pre-existing; only the partial predicate
+-- references the new resolved_at. This is still additive under
+-- database-standard.md §3 because it is a new index name and alters no existing
+-- index — not, as an earlier draft of this comment claimed, because the indexed
+-- column is new.
 CREATE INDEX IF NOT EXISTS message_provider_events_unresolved_failures_idx
   ON public.message_provider_events (received_at DESC)
   WHERE processing_state = 'failed' AND resolved_at IS NULL;
