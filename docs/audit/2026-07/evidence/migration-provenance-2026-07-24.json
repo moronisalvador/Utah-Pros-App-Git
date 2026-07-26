@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-25T17:20:56Z",
+  "capturedAt": "2026-07-26T16:21:36Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "d516ccd2883dbeef1999a8c118ae4f6bf5084625",
+  "captureBaseCommit": "90b265ee6f733c8dbcd75786f4e4057dd3355d38",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -103,6 +103,14 @@
     {
       "version": "20260725171925",
       "name": "fix_callrail_keyword_consent_ambiguity"
+    },
+    {
+      "version": "20260725201238",
+      "name": "ops_health_alerting"
+    },
+    {
+      "version": "20260725201303",
+      "name": "ops_health_alerting"
     }
   ],
   "functions": [
