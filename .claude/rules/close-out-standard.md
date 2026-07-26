@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-07-23
+**Last verified:** 2026-07-26
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -32,6 +32,18 @@ bugs that reached techs.
    - `consent-path-auditor` — any send-path change.
    - `worker-security-reviewer` — any changed worker that returns non-public data or causes a side
      effect; SQL/catalog review remains with the database reviewers.
+2b. **A migration ships a CI-VISIBLE test (NEW — 2026-07-26).** Behavioral tests in
+   `supabase/tests/` belong to the **`db` lane, which `npm test` does not run** — it refuses without
+   an isolated database target, and none exists yet (backlog 6.1). On 2026-07-26 that left **75
+   guards dark in CI**, including ones written to be durable, unnoticed for weeks. So a migration
+   PR must ALSO carry a **static contract test in a credential-free lane** (`tests/qa/unit/**`) that
+   reads the migration source and asserts what it claims — policies dropped, roles revoked, gates
+   present, `REVOKE` before `GRANT`, allowlist untouched, rollback file present. Precedent:
+   `tests/qa/unit/anon-closure-tranche-a.test.js`.
+   This proves **intent, not effect** — say so in the PR, and keep the behavioral test in
+   `supabase/tests/` for the apply window. Never present a db-lane test as CI coverage.
+   `tests/qa/unit/db-lane-coverage.test.js` fails if the dark count grows unacknowledged.
+
 3. **Minimize / resume test (NEW — mandatory for any page change).** Background the PWA (or hide the
    browser tab) for 30s+, then resume. **Nothing may happen:** no blank content, no spinner flash, no
    route loss, no scroll loss, no lost form input. (See `page-lifecycle.md`. Note in the PR when a step is

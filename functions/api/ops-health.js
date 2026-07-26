@@ -152,6 +152,53 @@ async function alreadyAlertedToday(db, dedupeKey, denverDate) {
   }
 }
 
+/**
+ * Who should be woken by an ops alert.
+ *
+ * These are internal plumbing failures, not business events — the owner asked
+ * that they reach him alone rather than every admin, and an operational alarm
+ * fanned out to people who cannot act on it is how alarms get muted.
+ *
+ * Configurable (not hardcoded) via the non-secret `integration_config` key
+ * `ops_health_recipient_ids`: a JSON array or comma-separated list of employee
+ * ids. `notify.js` re-filters whatever we pass through
+ * `filterActiveInternalEmployeeIds`, so a stale or wrong id degrades to "fewer
+ * recipients", never to a leak.
+ *
+ * Returns null when unset/unparseable, which leaves the existing role audience
+ * in place. Failing OPEN is deliberate: losing ops alerts entirely is worse
+ * than over-notifying.
+ */
+async function resolveOpsRecipients(db) {
+  let raw = null;
+  try {
+    const rows = await db.select('integration_config', 'key=eq.ops_health_recipient_ids&select=value');
+    raw = rows?.[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  let ids = [];
+  if (Array.isArray(raw)) {
+    ids = raw;
+  } else {
+    const text = String(raw).trim();
+    if (text.startsWith('[')) {
+      try { ids = JSON.parse(text); } catch { ids = []; }
+    } else {
+      ids = text.split(',');
+    }
+  }
+
+  const cleaned = Array.from(new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((v) => (v === null || v === undefined ? '' : String(v).trim()))
+      .filter(Boolean),
+  ));
+  return cleaned.length ? cleaned : null;
+}
+
 async function recordAlertMarker(db, condition, dedupeKey, denverDate) {
   try {
     await db.insert('system_events', {
@@ -182,9 +229,14 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
 
   const raised = [];
   const suppressed = [];
+  const opsRecipients = await resolveOpsRecipients(db);
 
   for (const condition of conditions) {
-    const dedupeKey = buildDedupeKey(condition.key, denverDate);
+    // Fingerprint keys the suppression to the distinct failure CLASSES in play,
+    // so a new worker/error code later the same day still rings. One-time cost:
+    // the first run after deploy re-alerts each live condition once, because
+    // yesterday's markers carry the old un-fingerprinted key shape.
+    const dedupeKey = buildDedupeKey(condition.key, denverDate, condition.fingerprint);
     if (await alreadyAlertedToday(db, dedupeKey, denverDate)) {
       suppressed.push(condition.key);
       continue;
@@ -201,6 +253,9 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
           body: condition.body,
           link: '/devtools',
           entity_type: 'system',
+          // Omitted entirely when unset, so resolveAudience falls back to its
+          // role audience rather than receiving an empty array.
+          ...(opsRecipients ? { recipient_ids: opsRecipients } : {}),
           payload: {
             condition: condition.key,
             severity: condition.severity,
