@@ -8585,3 +8585,19 @@ contracts accompany it. Rollback cannot reconstruct privacy-safe keys removed fr
 S1d apply, `create_notification`, QBO actor telemetry, `qbo_attachments` RLS, private media and
 other mobile/native/release gates remain separate. No apply, deploy, push, provider call, playback,
 secret/live-setting change, message, money movement, signing or distribution occurred in S1e.
+
+S1f continues from exact S1e tip `637ac709` and merges fetched `origin/dev` `65fddb5c` through
+`b7bd45ab` without rewriting history. Catalog-only live capture found one exact
+`create_notification(text,text,text,text,text,uuid,uuid,jsonb,uuid,text) -> notifications`
+overload, owner `postgres`, SQL `SECURITY DEFINER`, `search_path=public`, unchanged body/definition
+hashes, and EXECUTE for `authenticated` plus `service_role`. Its sole direct database-body caller
+is owner-run `apply_midnight_clock_split()`; the sole non-test runtime API caller is the
+service-role notification Worker.
+
+Unapplied migration `20260726194300_create_notification_service_boundary.sql` changes only EXECUTE
+ACLs: browser roles are denied and `service_role` is retained. Signature, defaults, return shape,
+body, recipient/broadcast semantics, tables, rows, policies, triggers, and callers do not change.
+Exact rollback, catalog-only pre/post checks, and a credential-free CI contract accompany it.
+S1d/S1e/S1f applies, notification read/mark recipient binding, QBO telemetry/RLS, private media,
+deployment, providers, and native/device gates remain separate. No live mutation or bell emission
+occurred.

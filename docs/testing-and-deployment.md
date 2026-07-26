@@ -181,6 +181,13 @@ compatibility, trigger/cron metadata, no in-body role assertion, no browser call
 drift checks, catalog-only pre/post-apply checks, and correct unapplied provenance treatment. The
 tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
 
+The S1f direct-bell apply candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
+credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
+authenticated denial, service-role retention, and sole owner-run database caller without invoking
+`create_notification` or reading notification rows. S1d, S1e, and S1f require separate explicit
+apply selections rather than a chronological all-pending command.
+
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
 separate authorization, exercise approved allow/deny identities on non-customer fixtures, and

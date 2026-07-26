@@ -185,6 +185,8 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   current authenticated-executable deployment remains an explicit residual.
 - Direct `create_notification` bell emission and direct recording-source reads are independent
   authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
+  S1f's unapplied bell migration makes direct emission service-only without changing recipient or
+  broadcast semantics; only applied role proof can close that residual.
 
 ## Capability links and public documents
 

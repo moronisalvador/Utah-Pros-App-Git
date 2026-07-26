@@ -324,8 +324,9 @@ the abandoned-clock scanner remains a `postgres` cron caller. The unapplied migr
 the target ACL and object merge order; catalog/URL gates, secret/header names, `net.http_post`,
 ignored response, payload fields, triggers, and schedule remain unchanged. Its intended direct
 grant is `service_role`; the owner-executed database chain must not receive an in-body
-session-role check. Current live authenticated execution remains the higher-priority apply gate,
-while direct `create_notification` remains a separate bell-RPC residual.
+session-role check. Current live authenticated execution remains the higher-priority S1d apply
+gate. Direct `create_notification` has a separate S1f attribute-only apply candidate that retains
+only `service_role`; until applied, the live authenticated bell-emission residual remains.
 
 ## Error semantics
 

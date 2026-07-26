@@ -214,8 +214,9 @@ database-side capability bypass. The S1d section below records the separately au
 caller-compatible migration/rollback/tests, which still require an owner-authorized
 shared-database apply. S1c evidence:
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
-Direct authenticated execution of `create_notification` is also queued with the wider
-notification/RPC containment wave.
+Direct authenticated execution of `create_notification` has a separate S1f attribute-only apply
+candidate. It retains the service-role Worker and owner-run midnight-clock caller and remains live
+exposure until its own reviewed apply/verification window.
 
 ## Notification dispatcher database checkpoint (S1d, 2026-07-26)
 

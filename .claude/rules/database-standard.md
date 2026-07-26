@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-07-25
+**Last verified:** 2026-07-26
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared

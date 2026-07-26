@@ -348,7 +348,8 @@ so an authenticated browser can cause the database to present the valid secret a
 payload to the Worker. Its ACL/body containment requires a separate reviewed migration and live
 apply. S1c neither authors nor applies that migration.
 The authenticated-executable `create_notification` definer is another direct bell-emission path
-outside the HTTP Worker and remains in the later notification/RPC containment inventory.
+outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
+browser execution and retains `service_role`; it is not live until its separate owner apply.
 
 ## Mobile S1d notification dispatcher RPC boundary (2026-07-26)
 

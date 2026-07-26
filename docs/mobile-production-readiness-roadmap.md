@@ -221,6 +221,11 @@ loses anonymous privileges and authenticated DML, with active-internal company-w
 no employee-to-CRM-org/lead assignment field exists. Apply remains a separate serialized owner
 gate after compatible Worker deployment.
 
-The next source session should take only the authenticated `create_notification` bell-emission
-boundary. Do not combine it with S1d/S1e apply, QBO telemetry/RLS, shared identity/device RPCs,
-private media, deployment or provider/device work.
+S1f authenticated `create_notification` bell-emission containment is now authored and locally
+verified, not applied. The attribute-only migration removes browser EXECUTE, retains the
+service-role Worker and owner-run midnight-clock caller, and leaves the function body/signature and
+recipient/broadcast behavior unchanged. S1d, S1e, and S1f apply windows remain separate.
+
+The next source session should take only notification read/mark recipient binding or another
+explicitly selected shared identity/device RPC slice. Do not combine it with S1d/S1e/S1f apply,
+QBO telemetry/RLS, private media, deployment, providers, or native/device work.
