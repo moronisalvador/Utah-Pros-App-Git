@@ -2610,7 +2610,7 @@ QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit De
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
 QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
 QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
-QBO_WEBHOOK_SECRET              — Shared QBO server capability; used by invoice/estimate self-calls and payment scheduler paths; the legacy contact trigger is inert
+QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved QBO server paths, including invoice/estimate customer self-calls and payment scheduling; the legacy contact trigger is inert
 APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
