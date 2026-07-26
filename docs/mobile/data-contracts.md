@@ -107,10 +107,20 @@ reject external employees before privileged work. Approved-caller downstream suc
 are unchanged; the added 403 denials are intentional. Customer-sync and manual payment-sync do not
 yet durably attach the resolved human actor to worker telemetry.
 
-Other notification and recording Workers remain separately open; the shared/mobile/desktop caller
-contract prevents treating this as a route-only fix. Direct reads of `qbo_attachments` metadata
-also remain a separate RLS residual because the role-scoped SELECT policy does not explicitly
-exclude external admins. `MOB-SEC-014` therefore remains open.
+The S1c source slice locally contains the two remaining Worker identity surfaces without claiming
+their adjacent database paths are safe. `/api/callrail-recording` now requires an active internal
+admin or the company-wide `crm_call_log` employee/role capability, then binds an exact UUID call
+row to the provider call ID in its stored allowlisted URL before credential/provider access.
+`/api/notify` preserves exact-secret and in-process service origins; its legacy human Bearer path is
+active-internal-admin only and accepts four server-derived appointment/estimate event shapes.
+Caller-selected recipients, copy, HTML, payload/data, entity/job fields and links are rejected.
+
+Two bypasses remain outside that HTTP source slice. `notify_emit(text,jsonb)` is still an
+authenticated-executable definer function that can forward caller-controlled JSON while presenting
+the stored Worker secret, and `get_inbound_leads` plus broad `inbound_leads` policies can expose
+stored recording URLs without the proxy. Therefore S1c is partial containment, not closure of
+`MOB-SEC-014`. The existing QBO human-actor telemetry gap and external-admin `qbo_attachments`
+metadata SELECT policy remain separate QBO residuals; neither was mixed into S1c.
 
 ## Workflow contract map
 
@@ -276,6 +286,14 @@ Required boundary:
 Any worker that uses service credentials must resolve and authorize the employee before reading or
 acting. A successful `/auth/v1/user` response alone is insufficient.
 
+S1c implements the Worker portion for recording playback: internal admins retain the independently
+admin-gated mobile caller; non-admin desktop staff require `crm_call_log`; the UUID must resolve to
+a call whose stored `callrail_id` matches the ID in its stored CallRail URL. Success remains a
+private 200 audio stream and provider/signed-audio fetches remain timed. External `crm_partner`
+users are intentionally denied even though the current desktop shell still exposes Call Log; hiding
+or disabling that recording control is a separate UI compatibility follow-up. Direct
+`inbound_leads`/`get_inbound_leads` authorization remains an open database slice.
+
 ### Notifications and push
 
 Notification emitters supply a trusted event, not arbitrary end-user content/audience. Required
@@ -289,6 +307,15 @@ contract:
 - per-channel accepted/skipped/failed summary;
 - detach/revoke on logout/account/device lifecycle;
 - no sensitive lock-screen payload beyond approved privacy policy.
+
+S1c implements only the HTTP identity/object portion. An exact stored secret remains first and
+keeps the full deployed trigger payload; trusted Workers continue to call `dispatchEvent`
+in-process. A human Bearer must be an active internal admin and may supply only the IDs for
+appointment assigned/updated/canceled or estimate accepted after exact state/membership lookup.
+The existing response summary, preference resolution, sequential fan-out and per-channel
+best-effort behavior are preserved. Shared Auth and Web Push still use unbounded legacy fetch paths;
+provider timeout completion is therefore an explicit residual rather than a closed contract.
+Authenticated execution of `notify_emit` remains the higher-priority database bypass.
 
 ## Error semantics
 

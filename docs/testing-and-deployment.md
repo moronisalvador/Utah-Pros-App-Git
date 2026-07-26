@@ -162,14 +162,30 @@ secret-first customer/payment-sync capability, both payment-sync HTTP methods, t
 `scheduled()` entry, human-only OAuth state writes, external-admin denial on charge/attach, and
 auth/configuration failure paths with zero downstream business/provider calls.
 
+The source-only S1c CallRail/notification slice is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. Its focused
+contracts cover missing/invalid/config-failed Auth, inactive/external/denied roles, explicit
+`crm_call_log`, exact lead/call-ID binding, missing credentials, direct/signed audio streaming and
+timeout failures. Notification coverage pins secret-first precedence, in-process/secret payload
+compatibility, active-internal-admin Bearer access, allowed object state, forged recipient/body/link
+rejection and zero dispatch/provider fan-out on every denial.
+
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
 separate authorization, exercise approved allow/deny identities on non-customer fixtures, and
 monitor 401/403/5xx/upstream failures. For S1b, canary customer sync and payment polling before
-charge/attachment/OAuth paths; do not rotate the shared capability independently. Authorization
-rollback normally uses a reviewed forward fix because reverting a gate deliberately reopens the
-bypass. A compatibility emergency rollback may revert the exact S1b commits only after disabling
-affected entrypoints and accepting that the prior authorization finding is reopened.
+charge/attachment/OAuth paths; do not rotate the shared capability independently. For S1c, canary
+one non-customer CallRail fixture through the approved admin and explicit-capability identities,
+prove denied internal/external identities, then verify one database-trigger notification fixture
+without sending customer communication. Confirm secret **presence/equality only** through the
+approved deployment process; never copy its value into evidence.
+
+Authorization rollback normally uses a reviewed forward fix because reverting a gate deliberately
+reopens the bypass. An S1c emergency rollback must first disable the affected HTTP entrypoint or
+CallRail playback/notification trigger, then revert only the reviewed S1c source commits while
+explicitly accepting that any-employee recording or arbitrary-Bearer notification access reopens.
+No rollback rotates secrets or changes the shared database by implication. The separate
+authenticated `notify_emit` ACL residual needs its own migration/apply/rollback window.
 
 The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
 dual-form path normalization and authorized delivery before a bucket flip; then recapture exact

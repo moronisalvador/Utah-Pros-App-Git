@@ -177,15 +177,32 @@ methods, direct `scheduled()`, OAuth state writes and exact disconnected respons
 is authorization containment, not complete actor auditing: customer-sync and manual payment-sync
 do not persist the resolved human actor in current telemetry.
 
-S1b does not close `MOB-SEC-014`: CallRail recording and notification Workers,
-authenticated-executable definer RPCs, broad direct policies and the external-admin
-`qbo_attachments` metadata SELECT residual remain. `MOB-SEC-015` remains open and no private bucket
-flip was attempted. Cold-offline, exact field-only native route scope, admin-mobile native
-exclusion, push, OTA, account-deletion fulfillment, pilot support, `project_manager` billing
-authority and the QBO server-capability lifecycle remain explicit owner decisions rather than
-inferred approvals. Durable QBO actor audit is also a separate schema/telemetry decision.
+S1c continues from the exact S1b tip and locally contains the CallRail recording proxy and HTTP
+notification identity surfaces. Recording playback now requires an active internal admin or the
+company-wide `crm_call_log` employee/role capability, then proves the UUID call row and provider
+call-ID/allowlisted-URL binding before credential or provider access. HTTP notify preserves exact
+secret-first and in-process origins; the human Bearer path is active-internal-admin only and is
+restricted to four appointment/estimate object-derived events with no caller-selected audience,
+copy, payload or link. Focused tests pin denial/configuration/object failures, provider-never-called
+ordering, audio/error/timeout compatibility, secret precedence and the deployed fan-out summary.
 
-The next source session should take only S1c: recapture and contain the CallRail recording and
-notification Worker identity paths, preserving deployed recording/proxy, fan-out, scheduler and
-response contracts. It must add denied-role/external/failure-path tests, keep providers and live
-systems read-only, and stop before deployment, secret changes, messages, calls or live mutation.
+S1c still does not close `MOB-SEC-014`. The authenticated-executable
+`notify_emit(text,jsonb)` definer can present the stored Worker secret for caller-controlled JSON;
+`get_inbound_leads` and broad `inbound_leads` policies can expose stored recording URLs without the
+proxy; shared Auth/Web Push fetches remain unbounded; and the wider RPC/direct-policy inventory is
+unchanged. External `crm_partner` users are intentionally denied recording playback although the
+desktop shell still exposes the control, so UI removal/owner policy is a compatibility follow-up.
+No private bucket flip was attempted and `MOB-SEC-015` remains open.
+
+The QBO residuals stay independent: customer/manual-payment sync still lack durable human-actor
+telemetry, and external admins remain within the authored `qbo_attachments` metadata SELECT policy.
+Cold-offline, exact field-only native route scope, admin-mobile native exclusion, push, OTA,
+account-deletion fulfillment, pilot support, `project_manager` billing authority and the QBO
+server-capability lifecycle remain explicit owner decisions rather than inferred approvals.
+
+The next source session should take only S1d: recapture the exact live ACL/body/caller graph for
+`notify_emit(text,jsonb)` and, if evidence is sufficient, author a least-privilege service-only
+migration plus rollback and browser-denial/trigger-compatibility tests. Applying it to the shared
+database requires a later owner-authorized window from a reviewed release commit. Do not combine
+that database capability slice with QBO telemetry/RLS, recording-source RLS, shared identity/device
+RPCs, private media, deployment or provider/device work.
