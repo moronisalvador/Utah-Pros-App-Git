@@ -99,7 +99,8 @@ $preflight$;
 
 CREATE TABLE public.inbound_lead_recording_sources (
   lead_id uuid PRIMARY KEY
-    REFERENCES public.inbound_leads(id) ON DELETE CASCADE,
+    REFERENCES public.inbound_leads(id) ON DELETE CASCADE
+    DEFERRABLE INITIALLY DEFERRED,
   recording_url text NOT NULL
     CHECK (btrim(recording_url) <> ''),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -168,7 +169,7 @@ REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
   ON TABLE public.inbound_leads FROM authenticated;
 GRANT SELECT ON TABLE public.inbound_leads TO authenticated;
 
-DROP POLICY public.inbound_leads_all ON public.inbound_leads;
+DROP POLICY inbound_leads_all ON public.inbound_leads;
 CREATE POLICY inbound_leads_active_internal_select
 ON public.inbound_leads
 FOR SELECT
