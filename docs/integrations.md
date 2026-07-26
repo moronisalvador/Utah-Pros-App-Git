@@ -143,7 +143,7 @@ legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 tha
 unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
 supported Encircle consumer or a credential-rotation dependency.
 
-## QuickBooks Online R0 authorization checkpoint (2026-07-25)
+## QuickBooks Online authorization checkpoints (R0 S1a and S1b, 2026-07-26)
 
 The local R0 containment slice centralizes authorization for `/api/qbo-invoice`,
 `/api/qbo-estimate`, `/api/qbo-payment`, and `/api/qbo-query`. An exact configured
@@ -156,11 +156,21 @@ The capability is not a human role and no checked-in caller was found for its us
 routes. Do not rotate or retire it independently: customer sync and payment sync share its
 lifecycle. Cloudflare binding presence/equality and deployed callers were not inspected.
 
-This is only S1a. QBO customer sync, payment sync and OAuth connect still treat a valid Bearer as
-sufficient; charge and attachment Workers do not explicitly reject external admins. The real role
-is `project_manager`, not `manager`; project-manager billing authority remains owner-gated. Exact
-source/live evidence and the separate rollout/apply plan are in
-`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
+S1b applies the same browser boundary to customer sync and the payment poller's HTTP GET/POST
+handlers while preserving their exact secret-first capability and the poller's separate direct
+`scheduled()` entry. OAuth connect is deliberately human-only: a server secret cannot replace
+`qbo_oauth_state` or `qbo_oauth_user`. Charge and attachment mutation retain their existing
+Bearer-only billing predicate and now explicitly reject external employees before privileged
+work. Request/response shapes, callback redirects, scheduler behavior and provider helpers are
+unchanged.
+
+This remains a source-only slice. Direct `qbo_attachments` metadata SELECT does not yet exclude
+external admins, and the broader mobile Worker/RPC/RLS/Storage boundary remains open. The real role
+is `project_manager`, not `manager`; project-manager billing authority remains owner-gated.
+R0 source/live evidence is in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the S1b source,
+test, rollout and rollback record is
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`.
 
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 
@@ -181,8 +191,9 @@ containment must preserve account-switch/logout behavior plus deployed RPC respo
 Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
 shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
 Auth is the literal `requireRole(['admin','manager'])` predicate (mirrors `qbo-charge`); because
-`manager` is not a current employee role, it is admin-effective and still lacks R0's explicit
-external-admin rejection. It requires the invoice/estimate to already carry a
+`manager` is not a current employee role, it is admin-effective. The Worker explicitly rejects
+external employees after that predicate and before connection or data/provider access. It requires
+the invoice/estimate to already carry a
 `qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as base64 (≤20 MB);
 the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
 `qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
@@ -191,19 +202,21 @@ action removes the Attachable from QuickBooks (GET SyncToken → delete) and the
 Outbound calls use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
 (`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
 shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
-already-granted **accounting** scope (no Payments-scope reconnect needed).
+already-granted **accounting** scope (no Payments-scope reconnect needed). The UI lists metadata
+directly through the table SELECT policy, which is role-scoped but does not yet exclude external
+admins; that RLS residual is tracked separately from Worker mutation containment.
 
 ## QuickBooks Online payment two-way sync activation (2026-07-24)
 
 The QBO→UPR payment path (`qbo-webhook.js` real-time + `qbo-payments-sync.js` hourly safety net,
-`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built and dormant. Migration
-`20260724180100_qbo_payments_sync_cron.sql` (authored; owner-authorized apply pending) wires the
-hourly poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
+`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built. Historical 2026-07-24 evidence
+records migration `20260724180100_qbo_payments_sync_cron.sql` as applied and wiring the hourly
+poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
 `integration_config.qbo_webhook_secret` as `x-webhook-secret` (the value already set in Cloudflare as
-`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). Still owner/dashboard gated for
-the real-time half: set `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy,
-and subscribe the **Payment** webhook in Intuit Developer (production) to
-`https://utahpros.app/api/qbo-webhook`.
+`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). S1b did not re-read current
+runtime values or invoke the schedule. The real-time half remains owner/dashboard gated: set
+`QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
+**Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
 
 ## Messaging transport build state (2026-07-23)
 

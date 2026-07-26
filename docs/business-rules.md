@@ -49,15 +49,19 @@ against both and change both in one commit.
 - Current employee roles contain `project_manager`, not `manager`. The historical
   `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
   authority requires an owner decision and coordinated UI, Worker, RLS and allow/deny tests.
-- The R0 target for browser-initiated QBO provider actions is an active, non-external `admin`.
+- The current S1a/S1b target for browser-initiated QBO provider actions is an active,
+  non-external `admin`.
   Invoice/estimate attachments remain human-selected: a person chooses which file(s) to push to
   which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch. The attachment and
-  card-charge Workers have not yet adopted the explicit external-account rejection, so the target
-  rule is not represented as fully enforced.
+  card-charge Workers explicitly reject external employees before business or provider work.
   They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
-- A server-side QBO capability may support schedulers, but it does not grant a browser role or
-  identify a human actor. Retention, caller binding and rotation/retirement must be decided and
-  rolled out across all dependent workers together.
+- The `qbo_attachments` metadata SELECT policy is still role-scoped without an explicit
+  `is_external=false` predicate. Closing that direct-read residual requires a separately reviewed
+  migration; Worker containment is not a claim that the metadata surface is fully closed.
+- A server-side QBO capability may support the customer-sync and payment-sync scheduler paths, but
+  it does not grant a browser role or identify a human actor. OAuth connect, keyed card charge and
+  attachment mutation remain Bearer-only. Capability retention, caller binding and
+  rotation/retirement must be decided and rolled out across all dependent workers together.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 

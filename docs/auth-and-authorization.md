@@ -268,8 +268,9 @@ consent; technicians cannot. The UI fails closed while status is loading or unav
 `requireRole(['admin','manager'])` server-side — the same literal predicate the UI's
 `canEditBilling` checks — before any QuickBooks or DB side effect; the client `canEdit` prop is
 defense-in-depth only. `manager` is not a current `employee_role` value (`project_manager` is), so
-this is effectively an active-admin gate. The helper does not reject every `is_external=true`
-admin, which remains an R0 residual rather than an approved identity rule.
+this is effectively an active-admin gate. The Worker now explicitly rejects
+`is_external=true` after the role check and before connection, attachment metadata, telemetry or
+provider access.
 The new `qbo_attachments` table is a **new** table, so it does NOT copy the documented-broad
 "any authenticated" read policy of `invoices`/`estimates` (that broad pattern is a known finding to
 fix, per the notes below — not a template). Its only policy is a SELECT scoped to active
@@ -278,9 +279,12 @@ auth.uid() AND is_active AND role IN ('admin','manager')` predicate). It has no 
 INSERT/UPDATE/DELETE policy — the worker writes via the service role (which bypasses RLS). The table
 holds no secret (opaque QuickBooks attachable id + file metadata only). Coverage: the
 `qbo-attachments-migration` test asserts the role-scoped predicate and the absence of a bare
-`USING (true)`; the `worker-security-reviewer` verified the server-side role gate.
+`USING (true)`; the `worker-security-reviewer` verified the server-side role gate. The SELECT
+policy does not yet require `is_external=false`, so a hypothetical external admin can still read
+metadata directly through PostgREST even though the Worker denies attach/remove. That is a
+separately gated RLS migration finding, not closed by the Worker slice.
 
-## Mobile R0 QBO authorization checkpoint (2026-07-25)
+## Mobile QBO authorization checkpoints (R0 S1a and S1b, 2026-07-26)
 
 The local R0 slice routes `/api/qbo-invoice`, `/api/qbo-estimate`, `/api/qbo-payment`, and
 `/api/qbo-query` through `functions/lib/qbo-auth.js` before connection, domain-table, telemetry or
@@ -289,12 +293,21 @@ Bearer access requires a valid session resolving to an active, non-external empl
 `role='admin'`. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract;
 known employees outside that boundary return 403; auth/configuration failures fail closed.
 
-This is not a global QBO authorization claim. `/api/qbo-sync-customer`,
-`/api/qbo-payments-sync`, and `/api/quickbooks-connect` still accept a valid Bearer without the same
-role boundary; `/api/qbo-charge` and `/api/qbo-attach` still lack the explicit external-account
-rejection. The server-capability caller is unproven for the four newly gated routes and shares its
-credential lifecycle with schedulers. `project_manager` inclusion and capability retention/
-rotation are owner decisions.
+S1b extends the same active, non-external `admin` browser boundary to
+`/api/qbo-sync-customer` and the HTTP GET/POST forms of `/api/qbo-payments-sync`, while preserving
+their exact secret-first `QBO_WEBHOOK_SECRET` capability. The poller's direct Cloudflare
+`scheduled()` entry remains a distinct non-HTTP capability. `/api/quickbooks-connect` uses the
+human-only form of the gate: the server secret cannot replace OAuth state. `/api/qbo-charge` and
+`/api/qbo-attach` retain their existing Bearer-only billing-role contract and now explicitly deny
+external employees before connection, domain, telemetry or provider work. Handler-level negative
+and failure-path tests prove those denied paths reach at most Supabase Auth plus the employee
+lookup.
+
+This is still not a global QBO or mobile authorization claim. The direct `qbo_attachments` SELECT
+policy does not exclude external admins; other notification, recording, RPC, direct-table and
+Storage boundaries remain open. The shared QBO capability's deployed binding equality and
+lifecycle were not inspected, and the S1a caller set remains unproven. `project_manager` inclusion
+and capability retention/rotation are owner decisions.
 
 R0's corrected transitive mobile census found 84 client-reachable live `SECURITY DEFINER`
 functions: 82 in the authenticated `/tech` graph plus the two public-signing RPCs mounted by
@@ -313,4 +326,6 @@ roles. These are open containment findings, not approved authorization contracts
 
 The route/RPC/direct-policy and read-only live evidence is
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. `MOB-SEC-014` remains
-open; a React admin route is not a substitute for the remaining Worker, RPC or RLS boundaries.
+open; the source-only S1b addendum is
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`. A React admin route is
+not a substitute for the remaining Worker, RPC or RLS boundaries.
