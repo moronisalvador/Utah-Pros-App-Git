@@ -203,6 +203,12 @@ anonymous/shared `notify_foundation.test.js` was retired; replacement preference
 integration coverage belongs to the separate identity/device/preferences slice. S1g requires a
 fourth distinct apply selection after separate S1d/S1e/S1f decisions.
 
+The checksum-pinned operator sequence for all four independent windows is
+`docs/mobile/s1d-s1g-database-apply-runbook.md`. It forbids `supabase db push` and other
+all-pending sweeps, requires fresh value-free drift capture and a single exact migration per
+window, and keeps catalog proof, synthetic behavior, side-effect approval, rollback consequences,
+and close-out evidence explicit. The runbook is preparation only; it is not apply authorization.
+
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
 separate authorization, exercise approved allow/deny identities on non-customer fixtures, and

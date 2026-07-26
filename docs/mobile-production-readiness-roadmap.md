@@ -237,6 +237,11 @@ the local-only Supabase DB runner; real Auth/PostgREST/Realtime qualification re
 gate. The unsafe historical shared/anonymous notification test is retired, and its unrelated
 preference-resolver coverage moves to the next shared identity/device/preferences QA slice.
 
+The four independent database windows now have one checksum-pinned operator index at
+`docs/mobile/s1d-s1g-database-apply-runbook.md`. It does not authorize or combine the applies:
+each still requires its own reviewed release commit, fresh drift capture, explicit owner go,
+single-migration execution, post-apply/behavior proof, and dated close-out.
+
 The next source session should take only the next shared identity/device/preferences RPC slice.
 Do not combine it with any S1d/S1e/S1f/S1g apply, QBO telemetry/RLS, private media, deployment,
 providers, or native/device work.
