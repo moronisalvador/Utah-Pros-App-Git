@@ -70,6 +70,7 @@ against the current source, Git history and live external state where applicable
 | Testing, CI, deployment or release | `docs/testing-and-deployment.md` and `.claude/rules/close-out-standard.md` |
 | Active roadmap phase or parallel wave | The initiative's current `docs/*-roadmap.md`, dispatch block and active ownership manifest; verify its status before treating a checkbox as fact |
 | Security/reliability remediation | The latest `docs/audit/<year-month>/executive-summary.md`, findings, remediation backlog and evidence addenda; promote lasting decisions into canonical docs |
+| Agent instruction files, hooks, skills, subagents, permissions or anything cross-tool (Claude Code ⇄ Codex) | [`docs/agent-runtime-reference.md`](docs/agent-runtime-reference.md) — how each tool actually loads instructions, which gates really block versus only advise, and the fail-open modes; plus `docs/tooling-governance.md` and the current `docs/handoff/agent-alignment-session-*-handoff.md` |
 
 Before starting a new initiative, inspect existing roadmaps, feature flags, stubs and ownership
 manifests for overlapping or unfinished work. Prefer completing, explicitly blocking, cancelling or

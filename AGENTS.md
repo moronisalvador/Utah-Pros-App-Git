@@ -14,6 +14,11 @@ Before modifying this repository:
 4. Use `UPR-Web-Context.md` for detailed schema/RPC/page/worker history and inventory.
 5. Use focused references when applicable: `BILLING-CONTEXT.md`, the QBO guides,
    `UPR-Design-System.md`, `ENCIRCLE_API_REFERENCE.md`, and active initiative/ownership documents.
+   For work on instruction files, hooks, skills, subagents, permissions, or anything cross-tool, read
+   `docs/agent-runtime-reference.md` — it records how Codex and Claude Code each load instructions,
+   which gates actually block versus only advise, and the fail-open modes (notably: exit 1 is
+   NON-blocking in both tools, and emitting `continue`/`stopReason` from a Codex PreToolUse hook fails
+   the hook, after which Codex continues the tool call).
 6. Treat `.claude/rules/` and `CLAUDE.md` as project law. This file adds Codex-specific routing.
 
 If documents conflict, use this precedence:

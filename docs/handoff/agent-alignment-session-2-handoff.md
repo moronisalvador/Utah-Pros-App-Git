@@ -23,6 +23,11 @@ NOTES / GOTCHAS:
 
 # Handoff — Agent alignment, session 2
 
+> **SUPERSEDED 2026-07-26** — its ordered steps 1–4 are complete and landed
+> (`245c0c4..e0d7557`). Current baton:
+> [`agent-alignment-session-3-handoff.md`](agent-alignment-session-3-handoff.md).
+> Kept for history; do not execute from this file.
+
 **Written:** 2026-07-26 · **Session 1 base:** `dev` at `245c0c4` · **Branch:** `recover/tooling-governance-neutral-sources` (pushed, 2 commits ahead of `dev`)
 
 ---
