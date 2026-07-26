@@ -1,0 +1,410 @@
+# Native iOS contract registry template.
+# This illustrative entry is not a live UPR contract and must never be promoted by copying evidence.
+schema_version: 1
+catalog:
+  title: Native iOS screen-to-backend contracts
+  owning_document: docs/native-ios/contracts/README.md
+  allowed_statuses:
+    - inventory_only
+    - draft
+    - source_reviewed
+    - verified_local
+    - verified_qa
+    - approved_native
+    - blocked
+    - deprecated
+
+contracts:
+  - id: example.workflow.command
+    version: 1.0.0
+    status: draft
+    title: Illustrative typed workflow command
+    summary: Replace every example value before using this entry.
+
+    ownership:
+      product_owner: owner_required
+      ios_owner: owner_required
+      backend_owner: owner_required
+      security_privacy_reviewer: owner_required
+      qa_accessibility_owner: owner_required
+      compliance_or_provider_owner: not_applicable_or_owner_required
+      release_owner: owner_required_for_approved_native
+
+    workflow:
+      persona: example_persona
+      user_intent: example_user_intent
+      native_callers:
+        - module: ExampleFeature
+          type_or_screen: ExampleView
+          operation: submit
+      source_of_truth: example_server_boundary
+      business_invariants:
+        - invariant_to_be_enforced_by_trusted_boundary
+      out_of_scope:
+        - explicitly_excluded_behavior
+
+    compatibility:
+      strategy: additive
+      current_pwa_capacitor_callers:
+        - path: src/example.js
+          symbol_or_line_hint: exampleCaller
+      oldest_supported_clients:
+        pwa_capacitor: owner_to_define
+        native: not_released
+      preserved_legacy_contracts:
+        - example_legacy_name
+      deprecation:
+        owner: not_applicable
+        adoption_signal: not_applicable
+        earliest_removal: not_applicable
+      verification_result: pending
+
+    transport:
+      kind: rpc
+      environment_availability:
+        mock: true
+        local: pending
+        hosted_qa: pending
+        production: pending
+      endpoint_or_object:
+        base_origin: supabase_project_url
+        schema: public
+        name: example_rpc
+        method: POST
+      exact_signature: pending_source_and_catalog_review
+      timeout:
+        client_seconds: 30
+        server_or_provider_seconds: pending
+      request_limits:
+        maximum_bytes: pending
+        maximum_records: pending
+      sdk_or_adapter: purpose_specific_native_adapter
+
+    request:
+      content_type: application/json
+      fields:
+        - name: p_operation_id
+          type: uuid
+          required: true
+          nullable: false
+          format_or_units: stable_idempotency_uuid
+          classification: internal
+          notes: Reused across retries and process restarts.
+      canonicalization: pending
+      example_fixture: fixtures/example-workflow-request.json
+
+    response:
+      cardinality: one
+      fields:
+        - name: operation_id
+          type: uuid
+          required: true
+          nullable: false
+          format_or_units: opaque_uuid
+          classification: internal
+          notes: Server-confirmed receipt identity.
+      enums:
+        - name: example_status
+          allowed_values:
+            - accepted
+            - completed
+          unknown_value_behavior: decode_as_unknown_and_refresh_contract
+      money_semantics: not_applicable
+      timestamp_semantics: ISO-8601 UTC instants unless field says date-only
+      example_fixture: fixtures/example-workflow-response.json
+
+    pagination:
+      applies: false
+      page_size_default: null
+      page_size_maximum: null
+      ordering: null
+      unique_tiebreaker: null
+      continuation_shape: null
+      mutation_during_pagination_behavior: null
+
+    authentication:
+      required: true
+      subject: supabase_auth_user_id
+      active_employee_required: true
+      employee_binding: pending_canonical_decision
+      session_refresh_behavior: centralized_single_refresh_when_pre_effect_is_proved
+      trusted_actor_derivation:
+        boundary: validated_session_plus_server_membership_lookup
+        canonical_subject: server_derived
+        canonical_employee_membership: server_derived
+        authoritative_audit_actor: server_derived
+        client_actor_fields_are_untrusted:
+          - employee_id
+          - actor_id
+          - organization_id
+          - assignment_id
+          - owner_id
+
+    authorization:
+      organization_scope: pending
+      allowed_roles:
+        - pending
+      denied_roles:
+        - pending
+      assignment_or_owner_rule: pending
+      resource_relationship_checks:
+        - pending
+      enforcement_points:
+        ui: usability_only
+        worker: not_applicable_or_pending
+        database_rls: pending
+        database_function: pending
+        storage_policy: not_applicable_or_pending
+        realtime_authorization: not_applicable_or_pending
+      database_evidence:
+        normative_source:
+          reviewed_commit: pending
+          artifacts:
+            - pending_migration_policy_function_or_canonical_invariant
+        deployed_observation:
+          environment_fingerprint: pending
+          captured_at: pending
+          artifact: pending_read_only_catalog_evidence
+        object_privileges:
+          - object_kind: table_or_view
+            schema: public
+            name: pending
+            grantee: pending
+            commands:
+              - SELECT
+            exposed_columns:
+              - pending
+        rls_policies:
+          - schema: public
+            table: pending
+            command: SELECT_INSERT_UPDATE_OR_DELETE
+            roles:
+              - pending
+            mode: permissive_or_restrictive
+            using_expression: pending_or_not_applicable
+            with_check_expression: pending_or_not_applicable
+            referenced_functions:
+              - pending
+        scope_column_mutation:
+          protected_columns:
+            - organization_id
+            - owner_id
+            - assignment_id
+            - parent_id
+          same_row_scope_change_behavior: pending
+          negative_tests:
+            - client_cannot_move_row_to_unauthorized_scope
+        views:
+          - schema: public
+            name: pending_or_not_applicable
+            owner: pending
+            security_invoker: pending
+            underlying_object_enforcement: pending
+        functions:
+          - schema: public
+            exact_signature: example_rpc(p_operation_id uuid)
+            owner: pending
+            execute_roles:
+              - pending
+            security_mode: invoker_or_definer
+            search_path: pending
+            public_execute_revoked: pending
+            internal_subject_membership_checks: pending
+            internal_resource_relationship_checks: pending
+      negative_cases:
+        - anonymous
+        - expired_or_revoked_session
+        - no_employee_membership
+        - inactive_employee
+        - wrong_role
+        - wrong_organization_assignment_or_owner
+        - unrelated_parent_child_identifiers
+        - archived_or_deleted_resource
+        - client_supplied_actor_or_employee_does_not_match_server_identity
+        - client_supplied_scope_identifier_attempts_to_authorize
+        - same_row_scope_column_change
+
+    mutation:
+      applies: true
+      side_effect_class: database_only
+      offline_strategy: pending
+      operation_id_field: p_operation_id
+      idempotency_enforced_at: pending_trusted_server_boundary
+      idempotency_uniqueness_scope:
+        - server_derived_account_or_tenant
+        - contract_id_and_version
+        - operation_id
+      concurrent_claim_behavior: transactional_first_writer_performs_effect
+      payload_hash_behavior: pending
+      precondition_or_version: pending
+      same_id_changed_payload_result: stable_conflict_without_second_effect
+      corrected_payload_behavior: new_operation_id_linked_by_supersedes_operation_id
+      receipt:
+        lookup: pending
+        lookup_authorization: validated_session_plus_current_resource_access
+        response_replay_shape: pending
+        retention_minimum: longer_than_maximum_offline_retry_ambiguity_support_and_rollback_window
+        cleanup_owner: pending
+        cleanup_monitoring: pending
+        after_expiry_behavior: pending_fail_safe_without_duplicate_effect
+      duplicate_delivery_result: pending
+      ambiguous_result_reconciliation: pending
+      cancellation_semantics: pending
+      supersession_semantics: pending
+      provider_mode_and_kill_switch: not_applicable
+      audit_record: pending
+
+    retry:
+      automatic_read_retry: not_applicable
+      automatic_mutation_retry: false_until_idempotency_and_receipt_are_verified
+      retryable_categories:
+        - pending
+      permanent_categories:
+        - authentication_or_authorization_after_refresh_path
+        - validation
+        - incompatible_contract
+      maximum_attempts_or_age: pending
+      backoff_and_jitter: pending
+      retry_after_behavior: pending
+
+    errors:
+      envelope:
+        code: stable_machine_code
+        category: authentication_authorization_validation_conflict_rate_limit_unavailable_timeout_ambiguous_not_found_or_unknown
+        message: redacted_safe_message
+        request_id: non_secret_correlation_id
+      cases:
+        - code: example_conflict
+          http_status: 409
+          retryable: false
+          user_recovery: reconcile_authoritative_state
+      raw_backend_errors_exposed: false
+
+    offline_and_cache:
+      cache_read: not_applicable
+      freshness_and_expiry: not_applicable
+      local_draft: pending
+      durable_command: pending
+      supersedes_operation_id: optional_for_corrected_terminal_operation
+      dependencies: []
+      local_to_server_id_mapping: not_applicable_or_pending
+      conflict_strategy: pending
+      account_environment_scope: required
+      sign_out_or_account_switch: stop_quarantine_or_purge_per_reviewed_policy
+      storage_budget_and_eviction: pending
+
+    storage:
+      applies: false
+      bucket: null
+      privacy: null
+      object_naming: null
+      object_authorization: null
+      upload_mechanism: null
+      signed_access_expiry: null
+      mime_and_byte_limits: null
+      checksum: null
+      metadata_policy: null
+      retention_and_deletion: null
+      orphan_cleanup: null
+
+    realtime:
+      applies: false
+      publication_or_channel: null
+      events_and_filter: null
+      row_or_channel_authorization: null
+      initial_snapshot: null
+      reconnect_and_gap_reconciliation: null
+      duplicate_or_out_of_order_handling: null
+      token_refresh_and_account_switch: null
+      fallback_and_battery_budget: null
+
+    privacy:
+      fields_and_classification:
+        - field_or_object: example_field
+          classification: confidential
+      collection_purpose: pending
+      local_protection: pending
+      backup_behavior: pending
+      log_and_telemetry_redaction:
+        - no_payloads
+        - no_tokens
+        - no_personal_data
+      third_parties: []
+      retention_and_deletion: pending
+      app_store_privacy_mapping: pending
+      permission_or_consent: not_applicable_or_pending
+
+    observability:
+      correlation_id: generated_per_request
+      safe_metrics:
+        - duration
+        - result_category
+        - retry_count
+      prohibited_fields:
+        - credentials
+        - access_tokens
+        - signed_urls
+        - raw_payloads
+        - personal_data
+      alerts_or_budgets: pending
+
+    evidence:
+      source_base_commit: replace_with_full_sha
+      source_paths:
+        - docs/native-ios/contracts/registry-template.yaml
+      migrations_or_functions:
+        - pending
+      generated_type:
+        path: pending
+        cli_version: pending
+        schema_fingerprint: pending
+      fixtures:
+        - path: fixtures/example-workflow-response.json
+          synthetic: true
+          lineage: pending
+      tests:
+        unit:
+          - pending
+        contract:
+          - pending
+        negative_authorization:
+          - pending
+        compatibility:
+          - pending
+        simulator:
+          - pending
+        real_device:
+          - pending
+      local_verification:
+        environment_fingerprint: pending
+        timestamp: pending
+        result: pending
+      hosted_qa_verification:
+        environment_fingerprint: pending
+        timestamp: pending
+        result: pending
+      current_read_only_external_evidence:
+        timestamp: pending
+        location: pending
+        result: pending
+        expires_or_recapture_when: before_approved_native_and_on_contract_or_policy_change
+
+    gates:
+      owner_decisions:
+        - pending
+      blockers:
+        - exact_contract_and_authorization_not_yet_verified
+      approvals:
+        product: pending
+        backend_database: pending
+        security_privacy: pending
+        ios: pending
+        qa_accessibility: pending
+        compliance_provider: not_applicable_or_pending
+        release: pending
+
+    notes:
+      verified_facts: []
+      inferences: []
+      unresolved_questions:
+        - Replace this illustrative entry with source- and evidence-backed facts.

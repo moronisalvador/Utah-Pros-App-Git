@@ -51,6 +51,11 @@ they never reinterpret missing configuration as permission to use production.
 - **Production smoke:** read-only/minimally mutating health, authentication, configuration and critical
   route checks after deployment.
 
+The current native lane refers to the Capacitor project under `ios/`. The separately planned
+Swift/SwiftUI client in `docs/native-ios/` will require its own Swift unit/integration/UI,
+accessibility, performance, energy, simulator, device, archive, upgrade and TestFlight evidence.
+Evidence from either client does not automatically prove the other.
+
 ## Required risk tests
 
 - Sensitive endpoints: missing token, unknown/inactive employee, wrong role and allowed role.
@@ -116,8 +121,9 @@ allowed origins and provider sandboxes.
   production migration must map to reviewed source reachable from the designated release branch,
   unless an owner-authorized emergency exception records the commit, reason and reconciliation.
 - Wait for Cloudflare checks and perform the appropriate deployed smoke test.
-- Native release additionally requires Capgo/Apple/Xcode/TestFlight evidence and owner-controlled
-  signing/reviewer credentials.
+- Capacitor release additionally requires Capgo/Apple/Xcode/TestFlight evidence. A future Swift
+  release has a separate Xcode/TestFlight/App Store and cutover matrix. Both keep signing/reviewer
+  credentials and release actions owner-controlled.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 

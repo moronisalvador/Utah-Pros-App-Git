@@ -4,6 +4,12 @@
 Read scope for any session touching this initiative: `CLAUDE.md` + this file's phase block +
 [`.claude/rules/app-store-readiness-wave-ownership.md`](../.claude/rules/app-store-readiness-wave-ownership.md).
 
+> **Scope note added 2026-07-25:** this roadmap governs the existing Capacitor iOS application.
+> The owner has separately accepted a parallel Swift/SwiftUI replacement direction; its
+> planning-only record begins at [`docs/native-ios/README.md`](native-ios/README.md). Existing
+> Capacitor readiness work remains operationally relevant, but bundle/listing migration, upgrade,
+> signing, metadata reuse, and cutover to the future client require new decisions and evidence.
+
 Execution model for this initiative: **run in-session via the Workflow tool** (parallel subagents
 in isolated git worktrees, orchestrated from one Claude Code session), not separate cold sessions —
 so there is no separate dispatch doc; this file is the single source of truth.

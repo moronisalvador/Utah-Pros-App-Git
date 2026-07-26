@@ -3363,6 +3363,32 @@ live, not in-progress. Only the privacy-screen plugin (see Deferred below) is ge
 
 ---
 
+## Planned Native Swift/SwiftUI Application — plan ready, implementation not started
+
+On 2026-07-25 the owner accepted a separate, parallel native iOS direction. The current PWA and
+Capacitor clients remain operational while a new Swift/SwiftUI client is designed from the ground
+up. This is not an incremental hybrid-screen migration and it does not authorize retirement of the
+current app.
+
+The plan of record is [`docs/native-ios/README.md`](docs/native-ios/README.md), prepared from
+`origin/dev` commit `90b265ee6f733c8dbcd75786f4e4057dd3355d38`. It includes:
+
+- an owner workshop before visual or workflow implementation, including an explicit
+  preserve/evolve/replace decision for the current Apple Field Pro/mobile design language;
+- native design, accessibility, architecture, data-contract, security/privacy, offline/reliability,
+  Apple capability, QA, performance, App Store/cutover, risk, and multi-agent ownership gates;
+- a source-derived contract bootstrap that is orientation only, never live authorization proof;
+- a fresh Mac/Xcode handoff that selects one thin vertical slice before scaling.
+
+The native client will reuse governed backend/business contracts while remaining an independently
+versioned caller. It must not embed service-role/provider secrets, treat UI role gates as authority,
+use the shared Supabase project for mutation-heavy automated testing, or break deployed
+PWA/Capacitor contracts. Bundle/listing migration, signing, provider/Apple configuration,
+TestFlight, deployment, production data, database changes, and release remain separate
+owner-authorized actions.
+
+---
+
 ## PostgREST / Supabase Gotchas
 - New tables need `SECURITY DEFINER` RPCs — REST API schema cache doesn't update immediately
 - RLS anon policies require `TO anon` clause — `USING (true)` alone is insufficient

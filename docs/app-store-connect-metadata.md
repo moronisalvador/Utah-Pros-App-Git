@@ -6,6 +6,11 @@ copy-paste-ready text so the owner isn't starting from a blank form once the App
 Apple Business Manager enrollment completes. **Nothing here has been entered into App Store Connect
 yet** — this is prep only.
 
+> **Scope note added 2026-07-25:** this packet was prepared for the existing Capacitor application.
+> It is useful input for the future Swift/SwiftUI client, but it is not automatically valid for that
+> binary. The native plan requires a fresh bundle/listing, privacy inventory, screenshot, review
+> credential, version migration, and cutover decision before submission.
+
 ## Distribution decision (confirm before submitting — see roadmap §0)
 
 **Owner direction (2026-07-18): public App Store**, with Utah Pros Restoration's own roadmap

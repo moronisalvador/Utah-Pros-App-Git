@@ -33,6 +33,7 @@ be treated as current architecture without re-verification.
 | Privileged/API layer | Cloudflare Pages Functions in `functions/api/`, shared code in `functions/lib/` | Provider secrets, service-role data access, webhooks, scheduled work and company side effects |
 | Database | Supabase Postgres/Auth/Storage/Realtime | Durable data, RLS, RPCs, triggers, constraints and database-owned invariants |
 | Native shell | Capacitor iOS project in `ios/` | Camera, geolocation, biometrics, push, safe areas and OTA/native lifecycle |
+| Planned native iOS client | New Swift/SwiftUI application; implementation not started | Native field experience using governed shared backend contracts; plan of record in `docs/native-ios/` |
 | Owner automation | `upr-mcp/` | Guarded owner-only operations and repository/provider tooling |
 | Delivery | GitHub Actions, Cloudflare Pages, Capgo and Apple systems | Build, staging, production, native delivery and release evidence |
 
@@ -66,8 +67,12 @@ be treated as current architecture without re-verification.
   from the deployed branch.
 - Cloudflare dashboard variables, provider consoles, GitHub protection, Capgo and Apple signing are
   external configuration. Repository files describe intent but do not prove deployed state.
-- The iOS application packages the same web route system and adds native integrations; web success
-  alone is not native verification.
+- The current Capacitor iOS application packages the web route system and adds native integrations;
+  web success alone is not native verification.
+- The owner accepted a parallel Swift/SwiftUI client direction on 2026-07-25. That client is
+  planning-only today. It shares governed business/backend contracts, not UI code or client-side
+  authorization assumptions, and must use isolated QA plus additive/versioned compatibility while
+  Capacitor and the PWA remain deployed.
 
 ## Design boundaries
 
@@ -79,6 +84,9 @@ be treated as current architecture without re-verification.
   integrity, server for provider/secret side effects, client for presentation and interaction.
 - Preserve deployed frontend/RPC/Worker contracts across independently timed client and schema
   releases.
+- Treat the future Swift client as another independently versioned caller. A native presentation
+  decision cannot redefine a database/server invariant, and an iOS-only contract change cannot
+  break older PWA/Capacitor binaries.
 - Reuse shared auth, HTTP, database, telemetry, consent and provider libraries instead of local
   substitutes.
 - Staff-to-customer messaging keeps one browser contract (`POST /api/send-message`) and places

@@ -1,0 +1,203 @@
+# Source-extracted orientation for the first native iOS contract workshop.
+# This file is not a contract approval, live-state report, security assessment, or safety claim.
+schema_version: 1
+
+metadata:
+  title: Native iOS bootstrap backend-name inventory
+  status: inventory_only
+  prepared_at: "2026-07-25"
+  source_base_branch: origin/dev
+  source_base_commit: 90b265ee6f733c8dbcd75786f4e4057dd3355d38
+  extraction_method: explicit string-literal review using rg plus manual normalization
+  source_scope:
+    - src/pages/tech/**
+    - src/components/tech/**
+    - src/components/admin-mobile/**
+    - src/components/conversations/**
+    - src/contexts/AuthContext.jsx
+    - src/hooks/usePhotoUpload.js
+    - src/lib/dispatchers/**
+    - src/lib/messageMedia.js
+    - src/lib/pushNotifications.js
+    - src/lib/realtime.js
+    - src/lib/webPushClient.js
+  exclusions:
+    - Test and specification files were excluded from primary name extraction.
+    - Dynamic endpoint names, aliases, wrapper-expanded paths, feature flags, dead code, and
+      server-only dependencies may be absent.
+    - One representative caller path is recorded for most repeated names; it is not a complete
+      caller census.
+    - Signatures, columns, overloads, grants, RLS, function security mode, Worker authorization,
+      Storage object policies, Realtime authorization, deployment, and provider configuration were
+      not verified by this inventory.
+    - Repository source is not proof that a dependency exists or has the same shape in any live
+      environment.
+  promotion_rule: Each item must be rebuilt using registry-template.yaml and pass the lifecycle in
+    contracts/README.md before native code depends on it.
+  contains_secrets_or_live_payloads: false
+
+auth_operations:
+  - { name: session_restore, status: inventory_only, source_symbol: getSession, source_paths: [src/contexts/AuthContext.jsx, src/lib/realtime.js] }
+  - { name: session_refresh, status: inventory_only, source_symbol: refreshSession, source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: auth_state_subscription, status: inventory_only, source_symbol: onAuthStateChange, source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: password_sign_in, status: inventory_only, source_symbol: signInWithPassword, source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: sign_out, status: inventory_only, source_symbol: signOut, source_paths: [src/contexts/AuthContext.jsx] }
+
+rpc_names:
+  - { name: add_adhoc_job_task, status: inventory_only, source_paths: [src/pages/tech/TechEditAppointment.jsx] }
+  - { name: assign_tasks_to_appointment, status: inventory_only, source_paths: [src/pages/tech/TechEditAppointment.jsx] }
+  - { name: clock_appointment_action, status: inventory_only, source_paths: [src/components/tech/TimeTracker.jsx] }
+  - { name: clock_finish_entry, status: inventory_only, source_paths: [src/pages/tech/v2/dash/AttentionStrip.jsx] }
+  - { name: convert_estimate_to_invoice, status: inventory_only, source_paths: [src/pages/tech/admin/AdminEstimateDetail.jsx] }
+  - { name: create_estimate_for_contact, status: inventory_only, source_paths: [src/components/admin-mobile/estimate/EstimateCreateForm.jsx] }
+  - { name: create_job_with_contact, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: create_room, status: inventory_only, source_paths: [src/lib/dispatchers/roomDispatcher.js] }
+  - { name: create_room_for_claim, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: delete_appointment, status: inventory_only, source_paths: [src/pages/tech/TechEditAppointment.jsx] }
+  - { name: delete_oop_quote, status: inventory_only, source_paths: [src/pages/tech/TechOOPPricing.jsx] }
+  - { name: delete_push_subscription, status: inventory_only, source_paths: [src/lib/webPushClient.js] }
+  - { name: get_active_appointment_geo, status: inventory_only, source_paths: [src/pages/tech/v2/dash/AttentionStrip.jsx] }
+  - { name: get_active_demo_schema, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: get_active_drying_jobs, status: inventory_only, source_paths: [src/components/admin-mobile/dash/OpsCards.jsx] }
+  - { name: get_active_techs, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: get_appointment_detail, status: inventory_only, source_paths: [src/pages/tech/TechAppointment.jsx] }
+  - { name: get_appointment_tasks, status: inventory_only, source_paths: [src/pages/tech/TechAppointment.jsx] }
+  - { name: get_appointments_range, status: inventory_only, source_paths: [src/pages/tech/v2/schedule/useScheduleData.js] }
+  - { name: get_ar_invoices, status: inventory_only, source_paths: [src/components/admin-mobile/collections/InvoicesTab.jsx] }
+  - { name: get_assigned_tasks, status: inventory_only, source_paths: [src/pages/tech/TechMore.jsx] }
+  - { name: get_avg_ticket, status: inventory_only, source_paths: [src/components/admin-mobile/dash/FinancialCards.jsx] }
+  - { name: get_claim_appointments, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: get_claim_demo_sheets, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: get_claim_detail, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: get_claim_jobs, status: inventory_only, source_paths: [src/pages/tech/TechOOPPricing.jsx] }
+  - { name: get_claim_rooms, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: get_claims_list, status: inventory_only, source_paths: [src/pages/tech/TechClaims.jsx] }
+  - { name: get_customer_detail, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: get_dashboard_action_items, status: inventory_only, source_paths: [src/components/admin-mobile/dash/OpsCards.jsx] }
+  - { name: get_demo_schema, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: get_demo_sheet, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: get_demo_sheet_drafts, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: get_employee_page_access, status: inventory_only, source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: get_estimates, status: inventory_only, source_paths: [src/components/admin-mobile/collections/EstimatesTab.jsx] }
+  - { name: get_feature_flags, status: inventory_only, source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: get_inbound_leads, status: inventory_only, source_paths: [src/pages/tech/admin/AdminLeadCenter.jsx] }
+  - { name: get_insurance_carriers, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: get_job_contacts, status: inventory_only, source_paths: [src/pages/tech/TechJobDetail.jsx] }
+  - { name: get_job_equipment, status: inventory_only, source_paths: [src/pages/tech/v2/hub/HubTools.jsx] }
+  - { name: get_job_hub, status: inventory_only, source_paths: [src/pages/tech/v2/TechJobHub.jsx] }
+  - { name: get_job_readings, status: inventory_only, source_paths: [src/pages/tech/v2/hub/HubTools.jsx] }
+  - { name: get_job_rooms, status: inventory_only, source_paths: [src/pages/tech/TechAppointment.jsx] }
+  - { name: get_job_task_summary, status: inventory_only, source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: get_jobs_closed, status: inventory_only, source_paths: [src/components/admin-mobile/dash/WorkCards.jsx] }
+  - { name: get_jobs_completed, status: inventory_only, source_paths: [src/components/admin-mobile/dash/WorkCards.jsx] }
+  - { name: get_oop_quote, status: inventory_only, source_paths: [src/pages/tech/TechOOPPricing.jsx] }
+  - { name: get_open_estimates_summary, status: inventory_only, source_paths: [src/components/admin-mobile/dash/WorkCards.jsx] }
+  - { name: get_payments_ledger, status: inventory_only, source_paths: [src/components/admin-mobile/collections/PaymentsTab.jsx] }
+  - { name: get_payments_received, status: inventory_only, source_paths: [src/components/admin-mobile/collections/ArAgingTab.jsx] }
+  - { name: get_pipeline_summary, status: inventory_only, source_paths: [src/components/admin-mobile/dash/OpsCards.jsx] }
+  - { name: get_revenue_by_division, status: inventory_only, source_paths: [src/components/admin-mobile/dash/FinancialCards.jsx] }
+  - { name: get_stalled_materials_for_employee, status: inventory_only, source_paths: [src/components/tech/StalledWidget.jsx] }
+  - { name: get_tech_claims, status: inventory_only, source_paths: [src/pages/tech/TechClaims.jsx] }
+  - { name: get_tech_conversations, status: inventory_only, source_paths: [src/pages/tech/v2/messages/useTechConversations.js] }
+  - { name: get_tech_dashboard, status: inventory_only, source_paths: [src/pages/tech/v2/TechDashV2.jsx] }
+  - { name: get_tech_status_board, status: inventory_only, source_paths: [src/components/admin-mobile/dash/OpsCards.jsx] }
+  - { name: get_unassigned_tasks, status: inventory_only, source_paths: [src/pages/tech/TechNewAppointment.jsx] }
+  - { name: insert_job_document, status: inventory_only, source_paths: [src/hooks/usePhotoUpload.js] }
+  - { name: insert_reading, status: inventory_only, source_paths: [src/lib/dispatchers/readingDispatcher.js] }
+  - { name: insert_tech_feedback, status: inventory_only, source_paths: [src/pages/tech/TechFeedback.jsx] }
+  - { name: move_photo_to_room, status: inventory_only, source_paths: [src/pages/tech/TechAppointment.jsx] }
+  - { name: place_equipment, status: inventory_only, source_paths: [src/lib/dispatchers/equipmentDispatcher.js] }
+  - { name: remove_equipment, status: inventory_only, source_paths: [src/lib/dispatchers/equipmentDispatcher.js] }
+  - { name: save_demo_sheet, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: search_contacts_for_job, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: toggle_appointment_task, status: inventory_only, source_paths: [src/lib/dispatchers/taskDispatcher.js] }
+  - { name: update_appointment, status: inventory_only, source_paths: [src/pages/tech/TechEditAppointment.jsx] }
+  - { name: update_lead_status, status: inventory_only, source_paths: [src/pages/tech/admin/AdminLeadCenter.jsx] }
+  - { name: upsert_device_token, status: inventory_only, source_paths: [src/lib/pushNotifications.js] }
+  - { name: upsert_insurance_carrier, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: upsert_oop_quote, status: inventory_only, source_paths: [src/pages/tech/TechOOPPricing.jsx] }
+  - { name: upsert_push_subscription, status: inventory_only, source_paths: [src/lib/webPushClient.js] }
+
+direct_table_names:
+  - { name: appointment_crew, status: inventory_only, operations_observed: [insert, delete], source_paths: [src/pages/tech/TechEditAppointment.jsx] }
+  - { name: appointments, status: inventory_only, operations_observed: [insert, update], source_paths: [src/pages/tech/TechNewAppointment.jsx, src/pages/tech/TechEditAppointment.jsx] }
+  - { name: claims, status: inventory_only, operations_observed: [select, update], source_paths: [src/pages/tech/TechClaimDetail.jsx] }
+  - { name: contact_jobs, status: inventory_only, operations_observed: [select], source_paths: [src/pages/tech/TechJobDocuments.jsx] }
+  - { name: contacts, status: inventory_only, operations_observed: [select, insert, update], source_paths: [src/pages/tech/TechNewCustomer.jsx, src/pages/tech/v2/messages/useConvoMutations.js] }
+  - { name: conversations, status: inventory_only, operations_observed: [update], source_paths: [src/pages/tech/v2/messages/useThread.js] }
+  - { name: employees, status: inventory_only, operations_observed: [select], source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: estimate_line_items, status: inventory_only, operations_observed: [select, insert, update, delete], source_paths: [src/pages/tech/admin/AdminEstimateEditor.jsx, src/pages/tech/admin/AdminEstimateDetail.jsx] }
+  - { name: estimates, status: inventory_only, operations_observed: [select], source_paths: [src/components/admin-mobile/estimate/EstimateCreateForm.jsx] }
+  - { name: invoice_line_items, status: inventory_only, operations_observed: [select], source_paths: [src/pages/tech/admin/AdminInvoiceDetail.jsx] }
+  - { name: invoices, status: inventory_only, operations_observed: [select], source_paths: [src/pages/tech/admin/AdminInvoiceDetail.jsx] }
+  - { name: job_documents, status: inventory_only, operations_observed: [select, update], source_paths: [src/pages/tech/TechAppointment.jsx] }
+  - { name: job_time_entries, status: inventory_only, operations_observed: [select], source_paths: [src/components/tech/TimeTracker.jsx] }
+  - { name: jobs, status: inventory_only, operations_observed: [select, update], source_paths: [src/pages/tech/TechJobDetail.jsx] }
+  - { name: message_templates, status: inventory_only, operations_observed: [select], source_paths: [src/pages/tech/v2/messages/useTemplates.js] }
+  - { name: messages, status: inventory_only, operations_observed: [select], source_paths: [src/pages/tech/v2/messages/useThread.js] }
+  - { name: nav_permissions, status: inventory_only, operations_observed: [select], source_paths: [src/contexts/AuthContext.jsx] }
+  - { name: payments, status: inventory_only, operations_observed: [select, insert], source_paths: [src/pages/tech/admin/AdminInvoiceDetail.jsx, src/components/admin-mobile/invoice/recordPayment.js] }
+  - { name: sign_requests, status: inventory_only, operations_observed: [select, update], source_paths: [src/pages/tech/TechJobDocuments.jsx] }
+  - { name: sms_consent_log, status: inventory_only, operations_observed: [insert], source_paths: [src/pages/tech/v2/messages/useConvoMutations.js] }
+
+worker_routes:
+  - { name: /api/attest-sms-consent, status: inventory_only, source_paths: [src/components/conversations/SmsConsentAttestationModal.jsx, src/pages/tech/v2/messages/useServiceSmsConsent.js] }
+  - { name: /api/callrail-recording, status: inventory_only, source_paths: [src/components/admin-mobile/leads/LeadRow.jsx] }
+  - { name: /api/demo-sheet-pdf, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: /api/encircle-rooms, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: /api/encircle-search, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: /api/encircle-upload, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: /api/feedback-notify, status: inventory_only, source_paths: [src/pages/tech/TechFeedback.jsx] }
+  - { name: /api/generate-water-loss-report, status: inventory_only, source_paths: [src/components/tech/GenerateReportButton.jsx] }
+  - { name: /api/message-conversations, status: inventory_only, source_paths: [src/pages/tech/v2/messages/NewConversationView.jsx] }
+  - { name: /api/message-media-upload, status: inventory_only, source_paths: [src/lib/messageMedia.js] }
+  - { name: /api/message-media-url, status: inventory_only, source_paths: [src/components/conversations/MessageBubble.jsx] }
+  - { name: /api/qbo-estimate, status: inventory_only, source_paths: [src/pages/tech/admin/AdminEstimateDetail.jsx] }
+  - { name: /api/qbo-invoice, status: inventory_only, source_paths: [src/pages/tech/admin/AdminInvoiceDetail.jsx] }
+  - { name: /api/qbo-payment, status: inventory_only, source_paths: [src/components/admin-mobile/invoice/recordPayment.js] }
+  - { name: /api/qbo-query, status: inventory_only, source_paths: [src/pages/tech/admin/AdminEstimateEditor.jsx] }
+  - { name: /api/resend-esign, status: inventory_only, source_paths: [src/pages/tech/TechJobDocuments.jsx] }
+  - { name: /api/send-demo-sheet, status: inventory_only, source_paths: [src/pages/tech/TechDemoSheet.jsx] }
+  - { name: /api/send-esign, status: inventory_only, source_paths: [src/components/tech/EsignRequestSheet.jsx] }
+  - { name: /api/send-message, status: inventory_only, source_paths: [src/pages/tech/v2/messages/useThread.js] }
+  - { name: /api/sync-claim-to-encircle, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: /api/sync-houzz, status: inventory_only, source_paths: [src/pages/tech/TechNewJob.jsx] }
+  - { name: /api/vapid-public-key, status: inventory_only, source_paths: [src/lib/webPushClient.js] }
+
+storage_buckets:
+  - name: job-files
+    status: inventory_only
+    operations_observed: [upload, public_url_construction]
+    source_paths:
+      - src/hooks/usePhotoUpload.js
+      - src/lib/dispatchers/photoDispatcher.js
+      - src/pages/tech/TechAppointment.jsx
+    warning: Current source usage is not approval for native use; dated evidence observed this
+      bucket as public/listable and the security plan blocks native job media pending current proof
+      and a private/object-scoped design.
+  - name: message-attachments
+    status: inventory_only
+    operations_observed: [worker_mediated_upload, worker_mediated_read]
+    source_paths:
+      - src/lib/messageMedia.js
+      - src/components/conversations/MessageBubble.jsx
+      - functions/api/message-media-upload.js
+      - functions/api/message-media-url.js
+    warning: Private Worker mediation is source-confirmed only; exact current bucket policies,
+      Worker authorization, retention, and deployed behavior remain unverified here.
+
+realtime_tables:
+  - { name: conversations, status: inventory_only, events_observed: ["*"], source_paths: [src/lib/realtime.js] }
+  - { name: messages, status: inventory_only, events_observed: [INSERT, UPDATE], source_paths: [src/lib/realtime.js] }
+  - { name: notifications, status: inventory_only, events_observed: [INSERT], source_paths: [src/lib/realtime.js] }
+
+source_literal_coverage_check:
+  checked_at: "2026-07-25"
+  method: scoped literal extraction reconciled against every inventory category and representative
+    operation/event list
+  result: passed_after_independent_review_corrections
+  limitations:
+    - Dynamic names, wrapper-expanded paths, aliases, dead code, feature flags, server-only
+      dependencies, and out-of-scope source may still be absent.
+    - Passing this check does not prove signature, authorization, deployment, safety, or completeness
+      outside the declared source scope.

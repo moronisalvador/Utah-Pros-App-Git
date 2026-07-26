@@ -1,0 +1,138 @@
+<!--
+FILE: docs/native-ios/README.md
+
+WHAT THIS DOES (plain language):
+  Indexes the plan for building a new native Swift iOS application alongside the existing
+  PWA/Capacitor client. It defines the reading order, decision gates, and evidence boundary.
+
+DEPENDS ON:
+  Internal: CLAUDE.md, AGENTS.md, docs/architecture.md, UPR-Web-Context.md,
+            docs/upr-agent-qa-access-roadmap.md, docs/app-store-readiness-roadmap.md
+  Data:     reads → repository and dated audit evidence at the recorded base commit
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - This is a plan of record, not an implemented Swift application.
+  - Current Capacitor behavior and production configuration are not inferred from this plan.
+  - Owner decisions are intentional gates; agents must not silently choose product direction.
+-->
+
+# Native iOS Plan
+
+**Status:** plan ready for owner review; implementation has not started
+**Prepared:** 2026-07-25
+**Planning branch:** `codex/native-ios-plan`
+**Base:** `origin/dev` at `90b265ee6f733c8dbcd75786f4e4057dd3355d38`
+**Product decision:** build a new Swift/SwiftUI client in parallel while the existing PWA and
+Capacitor app remain the operational clients.
+
+This directory is the canonical starting packet for the new native application. It is designed so
+a fresh Mac session can orient once, ask the owner the consequential questions, establish safe
+foundations, and then build vertical slices without rediscovering UPR's contracts.
+
+No plan can honestly guarantee a perfect app or zero future rework. This one reduces avoidable
+rework by requiring decisions, prototypes, contract inventories, threat models, isolated QA, and
+exit criteria before dependent implementation begins. Rework caused by user learning is healthy;
+rework caused by skipped foundations is not.
+
+## What “design system first” means here
+
+Before production screens are built, the team completes and owner-approves:
+
+- experience principles, personas, navigation, typography, color, spacing, iconography, motion,
+  accessibility, input, safe-area, keyboard, loading/error/empty/offline, and content foundations;
+- a small set of representative high-fidelity prototypes on real target device sizes;
+- the reusable primitives and components required by the first proven workflows;
+- the token, component, preview, snapshot, and accessibility test harness.
+
+It does **not** mean guessing every component the product may ever need. Components graduate into
+the system from approved workflow prototypes. That preserves consistency without constructing a
+large speculative library that must be discarded later.
+
+The first Mac session is Discovery Session A from
+[02-owner-decisions-and-discovery.md](02-owner-decisions-and-discovery.md), not implementation.
+Discovery Session B selects the first slice and closes the applicable first-build gates before
+construction begins.
+
+## Required reading order
+
+| Order | Document | Purpose |
+|---:|---|---|
+| 1 | [00-product-charter.md](00-product-charter.md) | Product boundary, goals, non-goals, success |
+| 2 | [01-principles-and-definition-of-done.md](01-principles-and-definition-of-done.md) | Non-negotiables and quality gates |
+| 3 | [02-owner-decisions-and-discovery.md](02-owner-decisions-and-discovery.md) | Questions the owner must answer before construction |
+| 4 | [03-design-system.md](03-design-system.md) | Native design foundation and approval sequence |
+| 5 | [04-information-architecture-and-workflow-parity.md](04-information-architecture-and-workflow-parity.md) | Route/workflow scope and parity method |
+| 6 | [technical-architecture.md](technical-architecture.md) | Module, state, dependency, navigation, concurrency, and scaffold blueprint |
+| 7 | [05-data-contracts-and-environments.md](05-data-contracts-and-environments.md) | Swift data layer, contract registry, and environment isolation |
+| 8 | [06-security-privacy-and-compliance.md](06-security-privacy-and-compliance.md) | Authorization, secrets, privacy, and compliance |
+| 9 | [07-offline-sync-and-reliability.md](07-offline-sync-and-reliability.md) | Offline truth, retries, idempotency, and recovery |
+| 10 | [08-platform-capabilities.md](08-platform-capabilities.md) | Camera, location, push, documents, signing, and Apple capabilities |
+| 11 | [09-testing-and-quality.md](09-testing-and-quality.md) | Automated, simulator, accessibility, performance, and device proof |
+| 12 | [10-release-app-store-cutover.md](10-release-app-store-cutover.md) | Signing, TestFlight, App Store, rollout, and rollback |
+| 13 | [11-roadmap.md](11-roadmap.md) | Dependency-ordered implementation phases |
+| 14 | [12-agent-execution-and-ownership.md](12-agent-execution-and-ownership.md) | Multi-agent boundaries, sequencing, and close-out |
+| 15 | [13-risk-register.md](13-risk-register.md) | Known risks, mitigations, gates, and owners |
+| 16 | [14-mac-handoff.md](14-mac-handoff.md) | Exact fresh-session instructions for the Mac |
+| 17 | [15-completeness-gates.md](15-completeness-gates.md) | Single ledger proving no lifecycle category was silently omitted |
+| 18 | [16-plan-validation.md](16-plan-validation.md) | Provenance, independent challenge, validation results, and honest limits |
+
+Supporting artifacts:
+
+- [decisions/0001-parallel-native-swift-replacement.md](decisions/0001-parallel-native-swift-replacement.md)
+  records the owner-approved parallel-client decision.
+- [contracts/README.md](contracts/README.md) defines the contract catalog.
+- [contracts/registry-template.yaml](contracts/registry-template.yaml) is the required schema for
+  each screen-to-backend contract.
+- `contracts/bootstrap-inventory.yaml`, when present, is source-derived orientation only; it is not
+  live-state or authorization proof.
+- [templates/design-review-checklist.md](templates/design-review-checklist.md),
+  [templates/vertical-slice-checklist.md](templates/vertical-slice-checklist.md),
+  [templates/decision-record.md](templates/decision-record.md), and
+  [templates/release-gate.md](templates/release-gate.md) standardize evidence.
+
+## Source-of-truth boundary
+
+The native plan does not replace current project law. For current behavior and backend truth:
+
+1. Follow `CLAUDE.md`, `AGENTS.md`, and applicable `.claude/rules/`.
+2. Use current canonical documents under `docs/`.
+3. Inspect source, migrations, callers, generated reports, and read-only live catalog evidence.
+4. Treat `UPR-Web-Context.md` as detailed historical inventory, not proof of current live state.
+5. Treat dated audits as snapshots at their recorded commits.
+
+If a native design wants a different business rule, backend response, or authorization model, stop
+and open a separately reviewed backend contract change. A mobile UI decision cannot redefine
+server or database authority.
+
+## Hard stops
+
+Planning and scaffolding grant no authority to:
+
+- write to the shared Supabase project, apply a migration, or change RLS/RPCs;
+- send messages, charge money, upload business documents, schedule work, or call production
+  providers;
+- use production identities/data for automated tests;
+- deploy, sign, publish, submit, or alter Apple/provider configuration;
+- remove or degrade the PWA/Capacitor client;
+- begin feature implementation before the applicable owner and readiness gates are recorded.
+
+## First build gate
+
+Implementation can begin only after all of the following are recorded:
+
+- owner workshop decisions and unresolved items;
+- intended users, v1 workflow boundary, device/OS matrix, and accessibility target;
+- native visual direction and non-production representative design-prototype approval;
+- module/data architecture decision and dependency policy;
+- contract registry for the first vertical slice with authorization and failure semantics;
+- isolated local/hosted QA strategy with fail-closed project sentinels;
+- first vertical slice and measurable acceptance criteria;
+- Apple account/signing availability for the selected phase, or an explicit Simulator-only
+  boundary when signing is not needed;
+- exact phase ownership and a clean, isolated worktree.
+
+The correct first deliverable on the Mac is therefore a staged decision record and foundation
+checkpoint, not a large batch of screens. After plan review and separate implementation authority,
+create a fresh implementation worktree from an explicitly approved current `origin/dev` commit and
+carry this reviewed plan forward; do not code by default on the planning snapshot.
