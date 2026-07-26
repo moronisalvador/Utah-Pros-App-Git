@@ -1,16 +1,17 @@
 // POST /api/qbo-sync-customer
 // Creates (or links) a QuickBooks Online customer from a UPR contact.
 //
-// Auth: either the DB trigger's shared secret (x-webhook-secret header matching
-// QBO_WEBHOOK_SECRET) or a logged-in Supabase user (Authorization: Bearer …).
+// Auth: either the existing server capability (x-webhook-secret header matching
+// QBO_WEBHOOK_SECRET) or an active internal admin Supabase session.
 //
 // Body:
-//   { "contact_id": "<uuid>" }                — sync one contact (used by the trigger)
+//   { "contact_id": "<uuid>" }                — sync one contact (used on demand by billing workers)
 //   { "backfill": true, "limit": N }          — sync up to N pending paying-party contacts
 //   { "backfill": true, "dry_run": true }     — preview only: report would-create vs
 //                                               would-link, writing nothing
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import {
@@ -21,19 +22,6 @@ import {
 } from '../lib/quickbooks.js';
 
 const QUALIFYING_ROLES = ['homeowner', 'property_manager', 'tenant'];
-
-async function isAuthorized(request, env) {
-  const secret = request.headers.get('x-webhook-secret');
-  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 function qualifies(c) {
   return !!(c && QUALIFYING_ROLES.includes(c.role) && c.name && c.name.trim() && !c.qbo_customer_id);
@@ -114,19 +102,18 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
-
-  if (!(await isAuthorized(request, env))) {
-    return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
-  }
-
   const db = supabase(env);
+
+  const auth = await authorizeQboRequest(request, env, db);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) {
     return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
   }
 
   let body = {};
-  try { body = await request.json(); } catch (_) { /* empty body */ }
+  try { body = await request.json(); } catch { /* empty body */ }
 
   const dryRun = !!body.dry_run;
 

@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Decides whether a QuickBooks worker request came from an approved server task or an active
- *   internal administrator. It keeps the existing server-secret path while preventing other
- *   logged-in employees from reaching company accounting actions directly.
+ *   internal administrator. It keeps the existing server-secret path on workers that already
+ *   support it, while giving browser-only OAuth workers a separate human-only gate.
  *
  * DEPENDS ON:
  *   Packages:  none
@@ -26,12 +26,7 @@ import { requireRole } from './auth.js';
 
 const QBO_BROWSER_ROLES = ['admin'];
 
-export async function authorizeQboRequest(request, env, db) {
-  const secret = request.headers.get('x-webhook-secret');
-  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) {
-    return { ok: true, via: 'webhook' };
-  }
-
+export async function authorizeQboBrowserRequest(request, env, db) {
   const auth = await requireRole(request, env, db, QBO_BROWSER_ROLES);
   if (auth.error) {
     return {
@@ -49,4 +44,13 @@ export async function authorizeQboRequest(request, env, db) {
   }
 
   return { ok: true, via: 'bearer', user: auth.user, employee: auth.employee };
+}
+
+export async function authorizeQboRequest(request, env, db) {
+  const secret = request.headers.get('x-webhook-secret');
+  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) {
+    return { ok: true, via: 'webhook' };
+  }
+
+  return authorizeQboBrowserRequest(request, env, db);
 }
