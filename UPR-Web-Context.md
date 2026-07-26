@@ -83,7 +83,16 @@ unchanged. Anonymous and authenticated callers remain denied; only `service_role
 - **`main`** → production **https://utahpros.app** (and the Capacitor iOS app loads `/tech/*` from this build).
 
 **How code reaches production (sanctioned path):**
-Automated agents **cannot `git push` to `main`** — the Claude Code safety guardrail blocks direct pushes to the default branch by design, and production needs human review. To release:
+Never push `main` directly, and never infer commit/push/PR/deploy permission from an implementation
+request — those are separate authorizations. **Corrected 2026-07-26:** this line previously claimed
+"automated agents *cannot* `git push` to `main` — the Claude Code safety guardrail blocks direct
+pushes to the default branch by design." **That is false and was load-bearing false.** Claude Code's
+own documentation states that in auto mode, *"pushing to any branch of the repository you're working
+in, including the default branch"* is allowed by default; and this repo has no `permissions.deny`
+entry for a plain `git push origin main` (only `--force`/`-f` are denied). The prohibition is
+**prose, not a mechanism** — treat it as a rule you must follow, not a wall that will stop you.
+Closing that gap with a ref-parsing PreToolUse hook is tracked in
+`docs/agent-alignment-roadmap.md` (P6). To release:
 1. Land the change on **`dev`** (feature branch → `dev`, fast-forward) and test on the dev deploy.
 2. **Open a PR `dev → main`** (ask the user first — repo convention is no PRs unless requested). The **user reviews + merges**; Cloudflare deploys `main`. (Or the user merges `dev → main` locally.)
 3. The agent's last git step on a finished task is "on `dev` + request the `dev → main` merge," never a direct `main` push.
