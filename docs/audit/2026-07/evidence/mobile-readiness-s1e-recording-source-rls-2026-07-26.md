@@ -19,8 +19,13 @@ NOTES / GOTCHAS:
 **Captured:** 2026-07-26 18:43 UTC  
 **Branch:** `codex/mobile-readiness-s1e-recording-source-rls`  
 **Requested base:** `fa58dba49817dd50671c0dbca0e353074dc599e1`  
-**Fetched origin/dev:** `6b5dc802710d78c8f4329ae0f47379f2ecf1a5ee`  
-**Drift merge:** `02ed432a7ff209ac730859c90563d0e08fdb5835`  
+**Initial fetched origin/dev:** `6b5dc802710d78c8f4329ae0f47379f2ecf1a5ee`
+
+**Initial drift merge:** `02ed432a7ff209ac730859c90563d0e08fdb5835`
+
+**Final fetched origin/dev:** `2e8bdbd6d19eeb813b5019fe00500fcd85584186`
+
+**Final drift merge:** `a750c918a02f89faa0e1b4f5dd6fa3eb68a3b4f2`
 **Migration:** `20260726183409_inbound_lead_recording_source_boundary.sql` — not applied
 
 ## Bounded live evidence
@@ -93,6 +98,10 @@ Actual verification after those corrections:
 - full lint: known baseline 206 errors/119 warnings, with no changed-file violation;
 - tooling governance: zero errors/two temporary CAP warnings; provenance tests 13/13 and worktree
   provenance passed for 27 ledger rows/21 functions/5 policies with four declared semantic warnings.
+
+The final upstream merge added the CI-visible migration-test rule. S1e therefore also carries
+`tests/qa/unit/inbound-lead-recording-source-contract.test.js`; it statically proves migration
+intent in the credential-free QA lane while explicitly not claiming database effect.
 
 An executable rollback-only synthetic suite now covers active/inactive/external direct RLS,
 admin/explicit-allow/explicit-deny RPC behavior, authenticated DML denial, source capture, marker
