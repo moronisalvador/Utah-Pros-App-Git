@@ -76,8 +76,28 @@ implementation before designing one** — `CLAUDE.md:74-77` already requires it,
 `masterplan` neutral source states it directly: *"Finish already-started work before inventing a
 replacement."* That text was not on `dev` when this plan was generated.
 
+### L0/L1 status — P1 and P2 LANDED 2026-07-26
+
+`AGENTS.md` is now the shared law core (P1) and `CLAUDE.md` line 1 is `@AGENTS.md` (P2), with the
+`CLAUDE.md` non-negotiables **deliberately still duplicated**. Evidence and the full no-weakening
+coverage table: [`docs/agent-alignment-l0-coverage.md`](agent-alignment-l0-coverage.md).
+
+**P3 (delete the duplicate) is BLOCKED on a post-compact canary in a fresh session** — token
+`UPR-L0-CANARY-7Q4M2X` must still be quotable after `/compact` with zero file reads. A session that
+wrote the import cannot self-certify this; a mid-session edit does not take effect until `/clear`,
+`/compact` or restart.
+
+**Superseded by owner direction (2026-07-26): the byte budget is not a target.** Challenge finding
+P-1 set 22,000 B / 26,000 B ceiling; the brief for session 4 said 8–12 KB. The owner asked whether
+either limit was real. It is not — the **only** hard mechanism is Codex's `project_doc_max_bytes`,
+whose 32,768 default drops the chain's tail silently, and this phase raised it to 65,536 in the new
+tracked `.codex/config.toml`. Both prose targets were self-imposed. **Write the law complete and
+dense; let the size be an outcome.** Landed at 24,733 B with ~40 KB of headroom. The real cost of a
+long instruction file is attention dilution, which argues for density — never for compressing law,
+which the initiative's constraints forbid outright.
+
 Current state and the ordered next steps live in
-[`docs/handoff/agent-alignment-session-2-handoff.md`](handoff/agent-alignment-session-2-handoff.md).
+[`docs/handoff/agent-alignment-session-4-handoff.md`](handoff/agent-alignment-session-4-handoff.md).
 
 ---
 
