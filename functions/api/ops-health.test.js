@@ -19,7 +19,10 @@ const CRON_SECRET = 'cron-secret';
  * A fake PostgREST client. `tables` maps table name → rows; every select is
  * filtered only by the bits these tests actually depend on.
  */
-function makeDb({ tables = {}, secret = CRON_SECRET, failTable = null, opsRecipients = null } = {}) {
+function makeDb({
+  tables = {}, secret = CRON_SECRET, failTable = null, opsRecipients = null,
+  noResolvedAtColumn = false,
+} = {}) {
   const inserts = [];
   return {
     inserts,
@@ -35,6 +38,15 @@ function makeDb({ tables = {}, secret = CRON_SECRET, failTable = null, opsRecipi
       }
       if (table === failTable) throw new Error('probe exploded');
       if (table === 'message_provider_events') {
+        // Emulate PostgREST rejecting a filter on a column that does not exist,
+        // which is exactly what happens if the Worker deploys before the
+        // resolved_at migration applies.
+        if (/resolved_at=is\.null/.test(query)) {
+          if (noResolvedAtColumn) throw new Error('column "resolved_at" does not exist');
+          const st = /processing_state=eq\.(\w+)/.exec(query)?.[1];
+          return (tables.message_provider_events || [])
+            .filter((r) => r.processing_state === st && !r.resolved_at);
+        }
         const state = /processing_state=eq\.(\w+)/.exec(query)?.[1];
         return (tables.message_provider_events || []).filter((r) => r.processing_state === state);
       }
@@ -119,6 +131,45 @@ describe('ops-health run — alerting', () => {
     await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
 
     expect(dispatchImpl.mock.calls[0][0].typeKey).toBe('ops.health');
+  });
+
+  it('ignores failures somebody has already acknowledged', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      tables: {
+        message_provider_events: [{ ...failedEvent, resolved_at: '2026-07-25T00:00:00.000Z' }],
+      },
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).not.toHaveBeenCalled();
+    expect(result.raised).toEqual([]);
+  });
+
+  it('still alerts on an unacknowledged failure', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).toHaveBeenCalled();
+  });
+
+  it('keeps alerting if resolved_at does not exist yet, and says it ran degraded', async () => {
+    // The trap: safeSelect turns a 400 into "probe could not run", so without a
+    // fallback the failed-event alert would go SILENT in the window between
+    // deploying this Worker and applying the migration.
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      tables: { message_provider_events: [failedEvent] },
+      noResolvedAtColumn: true,
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).toHaveBeenCalled();
+    expect(result.probeErrors.join(' ')).toContain('resolved_at unavailable');
   });
 
   it('sends ops alerts only to the configured recipients', async () => {

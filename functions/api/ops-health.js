@@ -80,6 +80,34 @@ async function safeSelect(db, table, query) {
   }
 }
 
+/**
+ * Failed events that nobody has acknowledged yet.
+ *
+ * A failed event is terminal, so without an acknowledgement column this alert
+ * repeats every single day forever and gets tuned out. `resolved_at` gives the
+ * state an exit.
+ *
+ * Deliberately tolerant of the column not existing. `safeSelect` turns a 400
+ * into null, which the caller reads as "probe could not run" — so if this Worker
+ * deployed before the migration applied, the failed-event alert would silently
+ * go quiet. Falling back to the unfiltered query keeps alerting through that
+ * window, in either deploy order, and reports that it ran degraded.
+ */
+async function selectUnresolvedFailures(db, cols) {
+  const base = `processing_state=eq.failed&select=${cols}&order=received_at.desc&limit=${ROW_LIMIT}`;
+
+  const unresolvedOnly = await safeSelect(
+    db,
+    'message_provider_events',
+    `processing_state=eq.failed&resolved_at=is.null&select=${cols}`
+    + `&order=received_at.desc&limit=${ROW_LIMIT}`,
+  );
+  if (unresolvedOnly !== null) return { rows: unresolvedOnly, degraded: false };
+
+  const all = await safeSelect(db, 'message_provider_events', base);
+  return { rows: all, degraded: all !== null };
+}
+
 export async function collectOpsHealthInputs(db, now) {
   const sinceIso = new Date(
     now.getTime() - DEFAULT_OPS_HEALTH_THRESHOLDS.workerErrorWindowMinutes * 60_000,
@@ -89,9 +117,8 @@ export async function collectOpsHealthInputs(db, now) {
     + 'recipient_address,provider_message_id,media_count,owned_media,processing_attempts,'
     + 'next_attempt_at,received_at';
 
-  const [failedEvents, retryableEvents, workerErrors, claims] = await Promise.all([
-    safeSelect(db, 'message_provider_events',
-      `processing_state=eq.failed&select=${eventCols}&order=received_at.desc&limit=${ROW_LIMIT}`),
+  const [failed, retryableEvents, workerErrors, claims] = await Promise.all([
+    selectUnresolvedFailures(db, eventCols),
     safeSelect(db, 'message_provider_events',
       `processing_state=eq.retryable&select=${eventCols}&order=received_at.desc&limit=${ROW_LIMIT}`),
     safeSelect(db, 'worker_runs',
@@ -104,14 +131,17 @@ export async function collectOpsHealthInputs(db, now) {
   ]);
 
   const probeErrors = [
-    failedEvents === null && 'message_provider_events(failed)',
+    failed.rows === null && 'message_provider_events(failed)',
     retryableEvents === null && 'message_provider_events(retryable)',
     workerErrors === null && 'worker_runs',
     claims === null && 'fixed_automation_claims',
+    // Not an error — alerting still works, but it is counting resolved rows too,
+    // so the acknowledgement column is missing or unreadable.
+    failed.degraded && 'message_provider_events(failed): resolved_at unavailable',
   ].filter(Boolean);
 
   return {
-    failedEvents: failedEvents || [],
+    failedEvents: failed.rows || [],
     retryableEvents: retryableEvents || [],
     workerErrors: workerErrors || [],
     claims: claims || [],
