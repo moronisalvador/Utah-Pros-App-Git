@@ -37,7 +37,11 @@ export async function authorizeQboRequest(request, env, db) {
     return {
       ok: false,
       status: auth.status,
-      error: auth.status === 401 ? 'Unauthorized' : 'Forbidden',
+      error: auth.status === 401
+        ? 'Unauthorized'
+        : auth.status === 403
+          ? 'Forbidden'
+          : 'Authorization check failed',
     };
   }
   if (auth.employee.is_external) {
