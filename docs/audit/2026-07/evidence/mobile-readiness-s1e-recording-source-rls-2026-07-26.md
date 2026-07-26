@@ -92,7 +92,7 @@ with format-preserving synthetic identifiers, reserved `.invalid`/555 data and a
 Actual verification after those corrections:
 
 - final focused Worker/migration suite: 78/78;
-- final `npm test`: unit 774/774, Worker 1385/1385, QA 16/16;
+- final `npm test` after current `origin/dev` merge: unit 774/774, Worker 1401/1401, QA 34/34;
 - web and `VITE_BUILD_TARGET=native` builds: passed, 665 modules each; no Capacitor sync/sign/device;
 - changed-file ESLint: passed;
 - full lint: known baseline 206 errors/119 warnings, with no changed-file violation;
