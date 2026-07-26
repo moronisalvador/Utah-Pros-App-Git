@@ -94,13 +94,13 @@ async function safeSelect(db, table, query) {
  * window, in either deploy order, and reports that it ran degraded.
  */
 async function selectUnresolvedFailures(db, cols) {
-  const base = `processing_state=eq.failed&select=${cols}&order=received_at.desc&limit=${ROW_LIMIT}`;
+  const base = `processing_state=eq.failed&select=${cols}&order=received_at.asc&limit=${ROW_LIMIT}`;
 
   const unresolvedOnly = await safeSelect(
     db,
     'message_provider_events',
     `processing_state=eq.failed&resolved_at=is.null&select=${cols}`
-    + `&order=received_at.desc&limit=${ROW_LIMIT}`,
+    + `&order=received_at.asc&limit=${ROW_LIMIT}`,
   );
   if (unresolvedOnly !== null) return { rows: unresolvedOnly, degraded: false };
 
@@ -119,8 +119,13 @@ export async function collectOpsHealthInputs(db, now) {
 
   const [failed, retryableEvents, workerErrors, claims] = await Promise.all([
     selectUnresolvedFailures(db, eventCols),
+    // OLDEST-first, deliberately. Every probe here is capped at ROW_LIMIT, and
+    // the conditions care about the STALEST rows — most overdue, past the
+    // escalation threshold. Newest-first would drop exactly those over the cap,
+    // so a backlog larger than the limit could read as healthy. Matches the
+    // fixed_automation_claims probe below, which had it right already.
     safeSelect(db, 'message_provider_events',
-      `processing_state=eq.retryable&select=${eventCols}&order=received_at.desc&limit=${ROW_LIMIT}`),
+      `processing_state=eq.retryable&select=${eventCols}&order=received_at.asc&limit=${ROW_LIMIT}`),
     safeSelect(db, 'worker_runs',
       `status=eq.error&started_at=gte.${encodeURIComponent(sinceIso)}`
       + `&select=worker_name,status,error_message,started_at`
@@ -287,11 +292,14 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
           // role audience rather than receiving an empty array.
           ...(opsRecipients ? { recipient_ids: opsRecipients } : {}),
           payload: {
+            // meta spreads FIRST so the four fixed keys always win. Spreading
+            // last would let a future meta field named condition/severity/
+            // count/details silently shadow the real one.
+            ...condition.meta,
             condition: condition.key,
             severity: condition.severity,
             count: condition.count,
             details: condition.details,
-            ...condition.meta,
           },
         },
       });

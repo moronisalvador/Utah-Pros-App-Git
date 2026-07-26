@@ -133,6 +133,24 @@ describe('ops-health run — alerting', () => {
     expect(dispatchImpl.mock.calls[0][0].typeKey).toBe('ops.health');
   });
 
+  it('asks for the OLDEST rows, so a large backlog cannot read as healthy', async () => {
+    // Every probe is capped at ROW_LIMIT. The conditions care about the stalest
+    // rows — most overdue, past the escalation threshold — so newest-first
+    // ordering would discard exactly those once a backlog exceeds the cap.
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+    await runOpsHealth(h.db, {}, { now: NOW });
+
+    const eventQueries = h.db.select.mock.calls
+      .filter(([table]) => table === 'message_provider_events')
+      .map(([, query]) => query);
+
+    expect(eventQueries.length).toBeGreaterThan(0);
+    for (const q of eventQueries) {
+      expect(q).toContain('order=received_at.asc');
+      expect(q).not.toContain('order=received_at.desc');
+    }
+  });
+
   it('ignores failures somebody has already acknowledged', async () => {
     const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
     h.db = makeDb({
