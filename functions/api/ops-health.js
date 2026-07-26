@@ -184,7 +184,11 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
   const suppressed = [];
 
   for (const condition of conditions) {
-    const dedupeKey = buildDedupeKey(condition.key, denverDate);
+    // Fingerprint keys the suppression to the distinct failure CLASSES in play,
+    // so a new worker/error code later the same day still rings. One-time cost:
+    // the first run after deploy re-alerts each live condition once, because
+    // yesterday's markers carry the old un-fingerprinted key shape.
+    const dedupeKey = buildDedupeKey(condition.key, denverDate, condition.fingerprint);
     if (await alreadyAlertedToday(db, dedupeKey, denverDate)) {
       suppressed.push(condition.key);
       continue;

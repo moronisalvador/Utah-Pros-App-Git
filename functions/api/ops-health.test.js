@@ -119,15 +119,26 @@ describe('ops-health run — alerting', () => {
 
     const markers = h.db.inserts.filter((i) => i.table === 'system_events');
     expect(markers).toHaveLength(1);
-    expect(markers[0].row.payload.dedupe_key).toBe('provider_events_failed:2026-07-25');
+    // condition:denverDate:fingerprint — the fingerprint keys suppression to the
+    // distinct failure classes, so a NEW failure later the same day still rings.
+    expect(markers[0].row.payload.dedupe_key)
+      .toMatch(/^provider_events_failed:2026-07-25:[0-9a-f]{8}$/);
   });
 
   it('suppresses a condition already alerted today', async () => {
     const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+
+    // Take the key from a real recording run rather than hardcoding it, so this
+    // test proves the reader and the writer agree on the key shape.
+    const seeding = makeDb({ tables: { message_provider_events: [failedEvent] } });
+    await runOpsHealth(seeding, {}, { now: NOW });
+    const recordedKey = seeding.inserts
+      .find((i) => i.table === 'system_events').row.payload.dedupe_key;
+
     h.db = makeDb({
       tables: {
         message_provider_events: [failedEvent],
-        system_events: [{ payload: { dedupe_key: 'provider_events_failed:2026-07-25' } }],
+        system_events: [{ payload: { dedupe_key: recordedKey } }],
       },
     });
 
