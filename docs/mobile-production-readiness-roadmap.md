@@ -24,12 +24,12 @@
 
 # UPR Mobile Production Readiness Roadmap
 
-**Status:** active plan of record  
-**Program ID:** `UPRF-MOB-001`  
-**Foundation branch:** `codex/mobile-pwa-readiness-foundation`  
+**Status:** active plan of record
+**Program ID:** `UPRF-MOB-001`
+**Foundation branch:** `codex/mobile-pwa-readiness-foundation`
 **Audit documentation commits:** `79a9e4edb53b8b57b677e4c4b023a84c2f9c34ee`,
-`079e985`  
-**Audited application source:** `ef305f6d6afab4d846eab92fc1b04038d70221f0`  
+`079e985`
+**Audited application source:** `ef305f6d6afab4d846eab92fc1b04038d70221f0`
 **Audit result:** 37 findings — 2 P0, 21 P1, 14 P2
 
 ## Outcome and product boundary

@@ -21,7 +21,7 @@
 
 # Mobile Production Readiness — Wave Ownership
 
-**Status:** active and binding for `UPRF-MOB-001`  
+**Status:** active and binding for `UPRF-MOB-001`
 **Last verified:** 2026-07-25
 
 ## Team shape
