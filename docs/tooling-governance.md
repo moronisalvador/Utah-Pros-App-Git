@@ -1,7 +1,7 @@
 # UPR Skills, Agents, Plugins, and Tooling Governance
 
 **Status:** owner-approved project law
-**Last verified:** 2026-07-23
+**Last verified:** 2026-07-25
 **Scope:** repository-local instructions, hooks, permissions, validation, and future runtime adapters
 
 This document is the implementation addendum to
@@ -17,13 +17,15 @@ not rewritten here.
 - UPR-authored entrypoints are owned by UPR platform engineering. Vendor-derived entrypoints retain
   their upstream author/license and are advisory within their stated lane; UPR overrides must be
   explicit and narrow.
-- The untracked `.agents/` and `.codex/` candidate ports are not authoritative. They are not copied,
-  promoted, deleted, edited, or validated by this initiative.
-- `.claude/tooling-governance.json` is validation policy and review metadata. It is not a neutral
-  capability source and must not be used to generate adapters yet.
+- `.agents/` and `.codex/` remain non-authoritative runtime formats. The only tracked entries there
+  are the owner-approved mobile-readiness pilot: `.codex/config.toml` plus deterministic adapters
+  generated from the declared `.claude` sources. Generated adapters are never hand-edited.
+- `.claude/tooling-governance.json` remains validation policy and review metadata, not a neutral
+  instruction source. `.claude/mobile-readiness-codex-adapters.json` is the narrow pilot mapping
+  consumed by the deterministic renderer.
 
-Tracked inventory after the owner-approved SEO retirement: **24 skill entrypoints,
-15 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
+Tracked canonical inventory after the owner-approved mobile pilot: **25 skill entrypoints,
+19 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
 requires this inventory stamp to change when tracked capability entrypoints are deliberately added
 or removed.
 
@@ -75,6 +77,10 @@ Blocking reviewers enforce project law:
   workers. A UI gate is never sufficient.
 - `upr-pattern-checker` for applicable non-negotiables and `page-behavior-checker` for lifecycle
   regressions.
+- For `UPRF-MOB-001`, `mobile-readiness-security-reviewer`,
+  `mobile-readiness-contract-tester`, and `mobile-readiness-release-auditor` enforce the program
+  security, claimed-evidence, and close-out boundaries. `mobile-readiness-mapper` is read-only
+  orientation, not an approval.
 
 Design taste, copy quality, SEO ideas, performance suggestions without an accepted budget, and
 provider recommendations are advisory unless an applicable project standard makes a specific
@@ -107,13 +113,17 @@ removal. Do not mass-delete optional bundles.
 Run:
 
 ```text
+npm run generate:mobile-codex
+npm run preflight:mobile
 npm run validate:tooling
 npm run test:tooling
 ```
 
 The validator checks entrypoint metadata, governed local references, broad-dispatcher collisions,
-and dangerous or secret-bearing shared permission patterns. Broken references in governed
-high-risk entrypoints and unsafe shared permissions are blocking. Optional/conditional bundle
+dangerous or secret-bearing shared permission patterns, and deterministic mobile adapter drift.
+The tooling tests cover the canonical validator, adapter generation/safety settings, and mobile
+preflight branch/foundation rules. Broken references in governed high-risk entrypoints, stale
+generated adapters, and unsafe shared permissions are blocking. Optional/conditional bundle
 reference debt is reported as non-blocking so it can be repaired deliberately rather than
 mass-rewritten.
 
@@ -122,7 +132,7 @@ CAP-GOV-001. This initiative does not alter credentials. The temporary validator
 2026-08-06; the owner must rotate/revoke the credential, review history, sanitize/untrack the file,
 and reset local approvals before that date.
 
-## 7. Owner-approved neutral Claude/Codex adapter strategy
+## 7. Owner-approved Claude/Codex adapter strategy
 
 The owner approved this direction on 2026-07-23. Claude Code and Codex can both produce UPR work
 today because `CLAUDE.md` and `AGENTS.md` share the same project law and both route to the tracked
@@ -139,7 +149,19 @@ provenance-preserving package model:
 - adapters containing pointers where the runtime supports them, with content duplication only when
   required and always generated.
 
-Adapter generation remains a separate implementation change. Do not promote generated output until
-the target runtime schemas are verified and cross-runtime fixtures prove equivalent decisions for
-database apply, authorization, secrets, money, messaging, destructive actions, and publication.
-Quality gates and project-law precedence must remain identical in Claude Code and Codex.
+The first narrow implementation is now checked in for `mobile-readiness-wave` and its four bounded
+roles:
+
+- `.claude/mobile-readiness-codex-adapters.json` declares canonical source, generated target,
+  GPT-5.6 Sol/Terra choice, reasoning effort, and sandbox;
+- `scripts/render-mobile-readiness-codex-adapters.mjs` generates project `.codex/agents/*.toml` and
+  `.agents/skills/mobile-readiness-wave/*`, or fails `--check` when they drift;
+- `.codex/config.toml` enables at most three concurrent subagents, excluding the primary;
+- generated headers point back to canonical files and tests assert the read-only/workspace-write
+  boundaries and no-external-mutation instructions.
+
+This is a pilot, not a silent port of all repository tooling and not yet the fully neutral package
+model described above. The canonical `.claude` bodies still contain runtime-shaped metadata, and
+cross-runtime safety decision fixtures are limited to the mobile program. Broader promotion remains
+open under `GOV-001`; quality gates and project-law precedence must stay identical before another
+domain is added.

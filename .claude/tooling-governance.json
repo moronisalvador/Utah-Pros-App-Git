@@ -3,16 +3,16 @@
   "purpose": "Validation policy for the temporary tracked .claude authority; this is not a runtime adapter source.",
   "canonicalSource": ".claude",
   "trackedInventory": {
-    "asOf": "2026-07-23",
-    "skills": 24,
-    "agents": 15,
+    "asOf": "2026-07-25",
+    "skills": 25,
+    "agents": 19,
     "rules": 23,
     "hooks": 2
   },
   "adapterStrategy": {
     "status": "owner-approved",
     "approvedOn": "2026-07-23",
-    "generationStatus": "not-implemented"
+    "generationStatus": "mobile-readiness-pilot-implemented"
   },
   "requiredFrontmatter": {
     "skill": ["name", "description"],
@@ -194,6 +194,56 @@
       "riskTier": "red",
       "reviewPolicy": "blocking",
       "triggerDomain": "settings-auth-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/skills/mobile-readiness-wave/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "mobile-readiness",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-mapper.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "advisory",
+      "triggerDomain": "mobile-readiness-mapping",
+      "triggerRole": "specialist"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-security-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "mobile-readiness-security",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-contract-tester.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-for-claimed-evidence",
+      "triggerDomain": "mobile-readiness-testing",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-release-auditor.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking-for-wave-closeout",
+      "triggerDomain": "mobile-readiness-release",
       "triggerRole": "reviewer"
     },
     {
