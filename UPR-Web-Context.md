@@ -8564,3 +8564,22 @@ residuals; S1d made no QBO or recording-source schema change.
 
 No deploy, migration apply, push, secret/provider change, message, push notification, money
 movement, signing or distribution occurred in S1d.
+
+S1e continues from exact S1d tip `fa58dba` and merges fetched `origin/dev` `6b5dc802` through
+`02ed432a` without rewriting history. Read-only live metadata captured only the exact
+`get_inbound_leads` definition/hash/ACL, `inbound_leads` columns/ACL/policy/trigger metadata, and
+employee/CRM assignment column names. No row, URL, recording, customer, provider, configuration or
+secret value was selected.
+
+Unapplied migration `20260726183409_inbound_lead_recording_source_boundary.sql` moves raw URLs to
+forced-RLS service-only `inbound_lead_recording_sources`, uses a deferrable FK plus BEFORE trigger
+for future writes, and leaves `upr-recording://available` in the frozen public shape. It gates
+`get_inbound_leads` to active internal admin or `crm_call_log`, removes anonymous privileges and
+authenticated direct DML, and allows active-internal company-wide SELECT because no employee-to-
+CRM-org/lead assignment exists. The approved proxy and `transcribe-call` read the new source table;
+mobile/desktop still send only `lead_id` and test marker truthiness. Exact rollback and
+credential-free contracts accompany it.
+
+S1d apply, `create_notification`, QBO actor telemetry, `qbo_attachments` RLS, private media and
+other mobile/native/release gates remain separate. No apply, deploy, push, provider call, playback,
+secret/live-setting change, message, money movement, signing or distribution occurred in S1e.
