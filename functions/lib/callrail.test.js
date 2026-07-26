@@ -105,6 +105,21 @@ describe('mapCallPayload (real webhook fixture)', () => {
     expect(p.p_source).toBe('Google Ads');
     expect(p.p_medium).toBe('CPC');
   });
+
+  it('keeps the source parameter but removes recording capabilities from raw history', () => {
+    expect(p.p_recording_url).toBe(REAL_WEBHOOK_CALL.recording);
+    expect(p.p_raw_payload).not.toHaveProperty('recording');
+    expect(p.p_raw_payload).not.toHaveProperty('recording_url');
+    expect(p.p_raw_payload.resource_id).toBe(REAL_WEBHOOK_CALL.resource_id);
+  });
+
+  it('removes nested recording capability keys without dropping sibling history', () => {
+    const nested = mapCallPayload({
+      ...REAL_WEBHOOK_CALL,
+      call: { recording_url: 'https://example.test/private', disposition: 'answered' },
+    });
+    expect(nested.p_raw_payload.call).toEqual({ disposition: 'answered' });
+  });
   it('nulls empty campaign / value / transcription and defaults lead_status', () => {
     expect(p.p_campaign).toBeNull();
     expect(p.p_value).toBeNull();

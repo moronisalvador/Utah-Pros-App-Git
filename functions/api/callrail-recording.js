@@ -146,9 +146,15 @@ export async function handleCallrailRecording({
       `lead_id=eq.${leadId}&select=recording_url&limit=1`,
     );
   } catch {
-    return jsonResponse({ error: 'Lead lookup failed' }, 500, request, env);
+    // Compatibility phase: before the S1e migration, the source table does not
+    // exist and the real allowlisted URL is still on inbound_leads. After S1e,
+    // the marker is intentionally not an allowed provider URL, so this fallback
+    // cannot turn a post-migration source-table outage into provider access.
+    if (!isAllowedRecordingUrl(lead.recording_url)) {
+      return jsonResponse({ error: 'Lead lookup failed' }, 500, request, env);
+    }
   }
-  const recUrl = source?.recording_url;
+  const recUrl = source?.recording_url || lead.recording_url;
   if (!recUrl) return jsonResponse({ error: 'No recording for this lead' }, 404, request, env);
   // SSRF guard: only ever proxy a CallRail-hosted recording URL. Accepts both
   // the api.callrail.com REST form (backfill) AND the app.callrail.com signed

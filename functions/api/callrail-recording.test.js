@@ -322,6 +322,35 @@ describe('CallRail recording object and configuration scope', () => {
     expectNoProvider(deps);
   });
 
+  it('uses the legacy lead URL when the source table is not deployed yet', async () => {
+    mockAuthUser();
+    const deps = downstream();
+    deps.resolveRecordingImpl.mockResolvedValue({
+      kind: 'stream',
+      response: new Response('audio'),
+      contentType: 'audio/mpeg',
+    });
+    const db = makeDb({ throwTable: 'inbound_lead_recording_sources' });
+    const { response } = await invoke({ db, deps });
+
+    expect(response.status).toBe(200);
+    expect(deps.resolveRecordingImpl).toHaveBeenCalledWith('not-a-real-key', API_RECORDING_URL);
+  });
+
+  it('never treats the post-migration availability marker as a source-table fallback', async () => {
+    mockAuthUser();
+    const deps = downstream();
+    const db = makeDb({
+      leadRow: lead({ recording_url: 'upr-recording://available' }),
+      throwTable: 'inbound_lead_recording_sources',
+    });
+    const { response } = await invoke({ db, deps });
+
+    await expectJson(response, 500, { error: 'Lead lookup failed' });
+    expect(db.calls.some((call) => call.table === 'integration_credentials')).toBe(false);
+    expectNoProvider(deps);
+  });
+
   it('preserves the missing credential response and never calls CallRail', async () => {
     mockAuthUser();
     const deps = downstream();

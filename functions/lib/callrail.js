@@ -63,6 +63,19 @@ export function pickCallId(body) {
     || firstOf(body?.resource || {}, ['id', 'call_id']);
 }
 
+// Provider recording locations are capabilities, not CRM history. Keep every
+// other webhook field while ensuring the persisted diagnostic snapshot cannot
+// become a second browser-readable recording-source channel.
+export function withoutRecordingSources(body) {
+  if (Array.isArray(body)) return body.map(withoutRecordingSources);
+  if (!body || typeof body !== 'object') return body;
+  return Object.fromEntries(
+    Object.entries(body)
+      .filter(([key]) => key !== 'recording' && key !== 'recording_url')
+      .map(([key, value]) => [key, withoutRecordingSources(value)]),
+  );
+}
+
 // Map a CallRail "call" webhook payload → upsert_lead_from_callrail params.
 export function mapCallPayload(body) {
   const duration = firstOf(body, ['duration', 'duration_sec']);
@@ -83,7 +96,7 @@ export function mapCallPayload(body) {
     p_value:           firstOf(body, ['value']),
     p_direction:       firstOf(body, ['direction']),
     p_occurred_at:     firstOf(body, ['start_time', 'created_at', 'occurred_at']) || new Date().toISOString(),
-    p_raw_payload:     body,
+    p_raw_payload:     withoutRecordingSources(body),
   };
 }
 
