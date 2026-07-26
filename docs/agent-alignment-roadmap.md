@@ -44,6 +44,43 @@ NOTES / GOTCHAS:
 
 ---
 
+## ⚠️ STATUS CORRECTION — 2026-07-26, after this plan was written
+
+**This plan was authored before anyone checked unmerged branches, and part of it
+describes work that already existed.** Read this section before executing any phase.
+
+Commit `5694d47` on `chore/tooling-governance-pilot` (2026-07-24, 2 commits ahead of `dev`, 62 behind,
+never merged) had already built the L3 mechanism: `tooling/` as the runtime-neutral source,
+`scripts/render-tooling-adapters.mjs` rendering 18 adapters, and blocking adapter-drift /
+runtime-coupling / reviewer-parity checks in the validator. Recovered and landed as `0e27be0`.
+
+| This plan says | Actually |
+|---|---|
+| **L3 / P13** must *build* single-sourcing | The mechanism exists and passes tests. The lane becomes **extend coverage from 7 of 39 capabilities to 39**. |
+| P13: run `scripts/render-capability-adapters.mjs --check` | That file never existed. It is `npm run check:tooling-generated` (`scripts/render-tooling-adapters.mjs`). |
+| P13: emit `allow_implicit_invocation: false` for gated capabilities; "verified 0 such files exist" | 4 `agents/openai.yaml` files exist, and the flag is now **data-driven** from `capabilities.json` → `modelInvocable` (`545645f`). |
+| P13: port the 3 Codex reviewer twins with `sandbox_mode = "read-only"` | The twins exist (`0e27be0`) and are now **pinned** (`41091bc`). 30 of 33 `.codex/agents/*.toml` remain ungoverned and inherit the parent sandbox. |
+| P13: **generated thin POINTER adapters** | The shipped renderer emits **full generated copies**, not pointers. Pointers remain the stated preference in `tooling-governance.md` §7; changing the renderer is an open choice, not a completed one. |
+| The **maintenance contract** is a new proposal | Its core is implemented: neutral source + renderer + blocking drift check, and the rule *"edit the neutral source and regenerate; never hand-edit a generated adapter"* is back in `CLAUDE.md` and `AGENTS.md`. What remains is a **decision log with durable IDs** and a **cross-tool behavioural fixture** (`tooling/evals/skill-routing.json` is a partial start). |
+
+**Superseded by owner direction (2026-07-26).** L3's *"mark every side-effectful capability
+non-model-invocable"* is replaced by **gate the mutation, not the dispatcher**. `db-migration` is
+red-tier and stays model-invocable; the apply is gated by `.claude/hooks/block-destructive-sql.sh`
+(hardened in `21e0b86`: 8 SQL-reaching tools, fail-closed, node-parsed, `ROLLBACK` section required)
+plus a separate owner authorization. Locking the dispatcher would have cost working overnight
+autonomy while doing nothing about the step that touches production.
+
+**Process lesson, for any future planning brief.** Four adversarial reviewers missed this because
+nothing in the plan looked at unmerged branches. **Search unmerged branches for an existing
+implementation before designing one** — `CLAUDE.md:74-77` already requires it, and the recovered
+`masterplan` neutral source states it directly: *"Finish already-started work before inventing a
+replacement."* That text was not on `dev` when this plan was generated.
+
+Current state and the ordered next steps live in
+[`docs/handoff/agent-alignment-session-2-handoff.md`](handoff/agent-alignment-session-2-handoff.md).
+
+---
+
 ## §0 Outcome and scope
 
 **Target architecture (five layers).**
@@ -449,6 +486,12 @@ Section 8 keeps `AGENTS.md`'s accurate Repository model block and adds the point
 ---
 
 ### Wave 4 — L3: single-source capabilities
+
+> ⚠️ **Read the STATUS CORRECTION at the top of this file first.** The mechanism this wave was
+> written to build already exists (`tooling/` + `scripts/render-tooling-adapters.mjs`, landed
+> `0e27be0`). This wave is now **extend coverage from 7 of 39 capabilities**, not build. P13's
+> renderer filename, its `allow_implicit_invocation` claim, and its reviewer-twin task are all
+> superseded — see the correction table.
 
 #### P11 — Cut and instrument the Claude-side roster (no port, no tree commit, no deletion)
 
