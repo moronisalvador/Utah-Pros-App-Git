@@ -32,6 +32,7 @@ const rollback = read(
 const preflight = read('supabase/tests/create_notification_service_boundary_preflight.sql');
 const postApply = read('supabase/tests/create_notification_service_boundary_post_apply.sql');
 const notifyWorker = read('functions/api/notify.js');
+const workerSupabase = read('functions/lib/supabase.js');
 const executable = (sql) => sql
   .split('\n')
   .filter((line) => !line.trimStart().startsWith('--'))
@@ -65,7 +66,12 @@ describe('S1f create_notification service boundary', () => {
   it('preserves the sole checked-in runtime API caller behind the service client', () => {
     expect(notifyWorker).toContain("await db.rpc('create_notification'");
     expect(notifyWorker).toContain('export async function dispatchToRecipient');
-    expect(notifyWorker).not.toMatch(/createClient\s*\([^)]*anon/i);
+    expect(notifyWorker).toContain(
+      'handleNotify({ request, env, db: supabase(env), fetchImpl: fetch })',
+    );
+    expect(workerSupabase).toContain('const key = env.SUPABASE_SERVICE_ROLE_KEY');
+    expect(workerSupabase).toContain("'apikey': key");
+    expect(workerSupabase).toContain("'Authorization': `Bearer ${key}`");
   });
 
   it('ships catalog-only apply checks and an explicit unsafe rollback', () => {
@@ -81,5 +87,13 @@ describe('S1f create_notification service boundary', () => {
     );
     expect(rollback).toContain('TO authenticated, service_role');
     expect(rollback).toMatch(/reopens arbitrary bell emission/i);
+    expect(rollback).toContain(
+      "v_execute_grantees IS DISTINCT FROM ARRAY['postgres', 'service_role']::text[]",
+    );
+    expect(rollback).toContain(
+      "ARRAY['authenticated', 'postgres', 'service_role']::text[]",
+    );
+    expect(rollback.match(/v_grantable_count IS DISTINCT FROM 0/g)).toHaveLength(2);
+    expect(rollback.match(/29ccd83a067aefbcb27a89e9a9a71bea/g)).toHaveLength(2);
   });
 });

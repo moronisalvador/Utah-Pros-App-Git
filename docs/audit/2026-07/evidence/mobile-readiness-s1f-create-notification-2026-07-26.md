@@ -86,6 +86,14 @@ Observed local verification:
   semantic warnings; and
 - `git diff --check`: passed.
 
+Independent security review initially requested two corrections: the rollback needed to pin the
+full owner/security/search-path/definition and exact ACL/no-grant-option contract, and the CI test
+needed to prove the live notify entrypoint actually receives the shared service-role client. The
+corrected rollback now refuses both metadata and ACL drift before restoring authenticated access
+and asserts the exact prior ACL afterward. The test reads `functions/lib/supabase.js`, pins
+`SUPABASE_SERVICE_ROLE_KEY` in both authorization headers, and pins `supabase(env)` at the live
+notify entrypoint.
+
 ## Rollout
 
 1. Integrate and review the complete foundation→S1f history without dropping either drift parent.
