@@ -20,8 +20,10 @@ NOTES / GOTCHAS:
 **Captured:** 2026-07-26 19:43 UTC
 **Branch:** `codex/mobile-readiness-s1f-create-notification-auth`
 **Requested base:** `637ac7097014f707c42777b58e5008ca01d95d16`
-**Fetched origin/dev:** `65fddb5c58ba8e7f896fda7a837c01f9e614b520`
-**Drift merge:** `b7bd45ab2630b37a090c8e806ecdaac07a765f32`
+**Initial fetched origin/dev:** `65fddb5c58ba8e7f896fda7a837c01f9e614b520`
+**Initial drift merge:** `b7bd45ab2630b37a090c8e806ecdaac07a765f32`
+**Final fetched origin/dev:** `245c0c41437b0b5f780ebab360313e5ecbe971df`
+**Final drift merge:** `d99fce91b07e1595b92be83e69243aaa788efbec`
 **Migration:** `20260726194300_create_notification_service_boundary.sql` — not applied
 
 ## Result
@@ -55,9 +57,10 @@ Repository source has one non-test runtime RPC caller: `functions/api/notify.js`
 rewired to `notify_emit`; the midnight-clock migration is the sole live database caller. No
 browser/mobile/desktop product source calls `create_notification` directly.
 
-The final `origin/dev` merge added notification-catalog and permission hardening migrations. They
-do not revoke authenticated execution of this function and do not conflict with the attribute-only
-S1f patch.
+The origin merges added notification-catalog, permission, provider-event, operations-health, and
+notification-control hardening migrations. They do not revoke authenticated execution of this
+function, do not bind bell read/mark operations to the caller, and do not conflict with the
+attribute-only S1f patch.
 
 ## Migration, rollback, and verification contract
 
@@ -75,7 +78,7 @@ itself and role behavior were not executed.
 Observed local verification:
 
 - focused S1f QA contract: 4/4 passed;
-- full credential-free suite: unit 774/774, Worker 1,401/1,401, QA 74/74;
+- final post-drift credential-free suite: unit 774/774, Worker 1,411/1,411, QA 99/99;
 - web and `VITE_BUILD_TARGET=native` builds: passed, 665 modules each; no Capacitor sync, signing,
   simulator, or device action;
 - changed-file ESLint: passed;

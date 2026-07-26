@@ -8586,8 +8586,9 @@ S1d apply, `create_notification`, QBO actor telemetry, `qbo_attachments` RLS, pr
 other mobile/native/release gates remain separate. No apply, deploy, push, provider call, playback,
 secret/live-setting change, message, money movement, signing or distribution occurred in S1e.
 
-S1f continues from exact S1e tip `637ac709` and merges fetched `origin/dev` `65fddb5c` through
-`b7bd45ab` without rewriting history. Catalog-only live capture found one exact
+S1f continues from exact S1e tip `637ac709`, initially merges fetched `origin/dev` `65fddb5c`
+through `b7bd45ab`, then reconciles final `origin/dev` `245c0c4` through `d99fce91` without
+rewriting history. Catalog-only live capture found one exact
 `create_notification(text,text,text,text,text,uuid,uuid,jsonb,uuid,text) -> notifications`
 overload, owner `postgres`, SQL `SECURITY DEFINER`, `search_path=public`, unchanged body/definition
 hashes, and EXECUTE for `authenticated` plus `service_role`. Its sole direct database-body caller
