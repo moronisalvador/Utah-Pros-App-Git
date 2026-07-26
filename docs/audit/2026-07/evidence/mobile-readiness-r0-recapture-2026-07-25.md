@@ -400,17 +400,32 @@ until all old clients and object references are retired.
 
 ## Verification and limitations
 
-Completed before documentation close-out:
+Completed locally:
 
-- baseline at foundation: 3 Worker files, 34 tests passed;
-- implemented-slice matrix: 4 Worker files, 110 tests passed;
-- independent security review: 3 files, 85 tests passed;
-- independent contract review: 4 files, 110 tests passed;
-- `git diff --check` passed for the source slice;
-- no live write, provider call, message, push, money movement, customer-object access, server,
-  browser, simulator or Xcode subprocess occurred.
+- foundation baseline: 3 Worker files / 34 tests passed;
+- final focused authorization matrix: 4 files / 110 tests passed;
+- independent security review: 3 files / 85 tests passed;
+- independent contract review: 4 files / 110 tests passed;
+- full Worker lane: 92 files / 1,230 tests passed, zero unexpected skips;
+- full credential-free test command: 159 files / 2,020 tests passed, zero unexpected skips;
+- web production build: passed, 665 modules transformed;
+- native-target Vite build: passed, 665 modules transformed; no Capacitor sync or Xcode invocation;
+- changed-file ESLint across the seven changed Worker/helper/test files: passed;
+- full repository lint: failed at the known broad baseline with 327 findings (208 errors,
+  119 warnings); none was in a changed file;
+- tooling governance: 0 errors and two temporary-waiver warnings; adapter check passed;
+- tooling tests: 12/12 passed;
+- mobile preflight: 0 errors and two warnings (local Node v26.5.0 versus CI Node 22; optional GitHub
+  delivery unavailable);
+- provenance fixtures: 13/13 passed;
+- release provenance validation: failed only because the separate migration-provenance evidence is
+  outside its six-hour release window; four documented comment/whitespace drift warnings were also
+  emitted. No migration changed in R0, and release-time recapture remains required;
+- foundation-to-HEAD `git diff --check`: passed after close-out normalization.
 
-Full close-out command results are recorded in the final R0 commit/handoff after they run.
+No live write, provider call, message, push, money movement, customer-object access, server,
+browser, simulator or Xcode subprocess occurred. Consequently no owned child tree or port required
+cleanup.
 
 Unavailable external evidence remains:
 
@@ -422,4 +437,3 @@ Unavailable external evidence remains:
   Connect;
 - native APNs, production Web Push tap proof, Capgo channel/rollback;
 - owner-approved product, compliance, support and pilot decisions.
-
