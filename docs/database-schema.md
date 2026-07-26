@@ -291,6 +291,30 @@ backslashes all remain fail-closed. It is live under ledger version `20260724200
 live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
 remain unchanged with `outbound_unmatched`.
 
+## Pending mobile notification dispatcher boundary (S1d, 2026-07-26)
+
+`20260726110000_notify_emit_service_boundary.sql` is authored and locally tested but **not
+applied**. It changes no table, trigger, schedule, policy, configuration row, URL, secret, header,
+or response shape. It preserves
+`public.notify_emit(p_type_key text,p_body jsonb) RETURNS void`, owner `postgres`,
+`SECURITY DEFINER`, `search_path=public`, the catalog/URL no-op gates, and the existing
+`net.http_post` transport. Its only body change reverses the top-level object merge so the trusted
+`p_type_key` wins over a same-named key in `p_body`.
+
+The ACL transition removes `authenticated` and leaves only the owner plus explicit
+`service_role` execution; `PUBLIC` and `anon` remain denied. Three trigger functions, two timesheet
+RPCs, and `scan_abandoned_clocks` account for the exact six live caller functions/seven call sites.
+They are owner-run `SECURITY DEFINER` functions, and the abandoned-clock cron runs as `postgres`, so
+the migration deliberately adds no in-body `current_user`/`auth.role()` check and rewrites no
+caller. The forward and rollback scripts fail closed on the captured target/caller/trigger/cron
+metadata. The rollback restores the exact prior body and `authenticated` grant and therefore
+re-opens the browser capability.
+
+Because the migration is unapplied, it is intentionally absent from the live provenance manifest.
+Add a ledger mapping and fresh function fingerprint only after an owner-authorized apply from the
+reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
 ## QuickBooks Online attachments tracking (2026-07-24)
 
 `20260724180000_qbo_attachments.sql` (**live under ledger version `20260724190829`**) adds one additive table,

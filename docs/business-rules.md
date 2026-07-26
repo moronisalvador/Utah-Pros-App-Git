@@ -178,8 +178,13 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   forwards browser Range/authentication headers upstream. Existing bounded provider detail/snippet
   error fields and the provider-returned signed URL/content type are compatibility residuals, not
   a claim of complete upstream-response redaction.
-- The authenticated-executable `notify_emit` RPC is a separate database authorization residual.
-  Until its ACL/body is contained, HTTP hardening alone is not complete arbitrary-emission closure.
+- A database-originated notification has one trusted top-level `type_key`; an object payload may
+  not override it. Direct execution of `notify_emit` is a server capability, while its verified
+  owner-run trigger/RPC/cron callers remain database-internal. The S1d migration authors this
+  service-only ACL and trusted-key merge but is not live until a separate authorized apply, so the
+  current authenticated-executable deployment remains an explicit residual.
+- Direct `create_notification` bell emission and direct recording-source reads are independent
+  authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
 
 ## Capability links and public documents
 

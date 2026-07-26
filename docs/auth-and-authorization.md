@@ -350,6 +350,31 @@ apply. S1c neither authors nor applies that migration.
 The authenticated-executable `create_notification` definer is another direct bell-emission path
 outside the HTTP Worker and remains in the later notification/RPC containment inventory.
 
+## Mobile S1d notification dispatcher RPC boundary (2026-07-26)
+
+A fresh read-only catalog capture confirmed one live
+`public.notify_emit(p_type_key text,p_body jsonb) RETURNS void` function owned by `postgres`, with
+`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants to `authenticated` and
+`service_role` while `PUBLIC`/`anon` are denied. No browser or Pages Worker source caller was found.
+The exact database graph is six owner-run definer functions/seven calls: appointment assignment,
+appointment update/cancel, estimate acceptance, timesheet request/review, and the abandoned-clock
+scan reached by its `postgres` cron job.
+
+The reviewed but unapplied `20260726110000_notify_emit_service_boundary.sql` revokes
+`PUBLIC`, `anon`, and `authenticated` after the body replacement and grants only `service_role`.
+Owner-executed trigger/RPC/cron chains remain compatible through PostgreSQL ownership; adding an
+in-body session-role assertion would break those intended database callers and is forbidden for
+this contract. The body replacement changes only JSON object merge order, making the trusted
+`p_type_key` authoritative while retaining URL/secret lookup, headers, `net.http_post`, ignored
+response, no-op gates, signature, result, security mode, and search path.
+
+This is local apply readiness, not live containment: until the shared migration is applied in a
+separate owner-authorized window, `authenticated` can still execute the deployed function.
+`create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
+and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
+evidence are recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.
 
