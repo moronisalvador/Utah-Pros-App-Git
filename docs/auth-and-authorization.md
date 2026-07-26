@@ -311,6 +311,48 @@ Storage boundaries remain open. The shared QBO capability's deployed binding equ
 lifecycle were not inspected, and the S1a caller set remains unproven. `project_manager` inclusion
 and capability retention/rotation are owner decisions.
 
+## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
+
+The local S1c source slice replaces `/api/callrail-recording`'s any-employee boundary with an
+active, non-external employee check followed by either `role='admin'` or the existing
+`crm_call_log` employee/role capability. This preserves the admin-mobile caller and approved
+internal desktop Call Log callers while deliberately denying external identities, including
+`crm_partner`, before the lead row, CallRail credential, account discovery or recording fetch.
+Missing/invalid sessions keep the deployed `401 {"error":"Unauthorized"}` shape.
+
+The recording object boundary validates a UUID, requires an `inbound_leads` call row, requires its
+stored `callrail_id` to match the call ID embedded in its stored allowlisted CallRail URL, and only
+then reads the credential. UPR has no employee-to-CRM-organization assignment model, and
+`get_inbound_leads` itself is company-wide. S1c therefore documents `crm_call_log` as company-wide
+recording authority; it does not claim tenant/assignment scoping that the data model cannot express.
+The non-admin Worker capability does not mirror the desktop rollout/kill flags, and the direct
+authenticated `get_inbound_leads`/`inbound_leads` paths still expose or can mutate the stored
+recording URL outside this proxy. Those are separate operational/database residuals; S1c is not
+end-to-end recording confidentiality.
+
+HTTP `/api/notify` retains two distinct identities:
+
+- an exact stored `x-webhook-secret`, checked first with no Bearer fallback on mismatch, preserves
+  the deployed database-trigger payload and response contract; and
+- a Supabase Bearer must resolve to an active, non-external `admin`, then may request only
+  `appointment.assigned`, `appointment.updated`, `appointment.canceled`, or `estimate.accepted`.
+  The Worker verifies the appointment/crew/estimate state and passes only object IDs to
+  `dispatchEvent`; caller-supplied recipients, title/body/HTML, payload/data, entity/job fields and
+  links are rejected.
+
+There is no checked-in mobile/desktop/browser HTTP Bearer caller. Trusted Workers continue to
+import `dispatchEvent` in-process, and the secret-authenticated database trigger path is unchanged.
+This HTTP-only slice is not complete notification containment: `notify_emit(text,jsonb)` is a
+`SECURITY DEFINER` RPC still executable by `authenticated` in the dated generated/live inventory,
+so an authenticated browser can cause the database to present the valid secret and arbitrary
+payload to the Worker. Its ACL/body containment requires a separate reviewed migration and live
+apply. S1c neither authors nor applies that migration.
+The authenticated-executable `create_notification` definer is another direct bell-emission path
+outside the HTTP Worker and remains in the later notification/RPC containment inventory.
+
+The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
+remain separate residuals. They were not changed or treated as notification/recording work.
+
 R0's corrected transitive mobile census found 84 client-reachable live `SECURITY DEFINER`
 functions: 82 in the authenticated `/tech` graph plus the two public-signing RPCs mounted by
 `NativeRoutes`, not only the 68 inline calls in the historical audit. All 84 allow
@@ -328,6 +370,7 @@ roles. These are open containment findings, not approved authorization contracts
 
 The route/RPC/direct-policy and read-only live evidence is
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. `MOB-SEC-014` remains
-open; the source-only S1b addendum is
-`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`. A React admin route is
-not a substitute for the remaining Worker, RPC or RLS boundaries.
+open; source-only addenda are
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md` and
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. A React admin
+route is not a substitute for the remaining Worker, RPC or RLS boundaries.

@@ -159,6 +159,28 @@ reuse it; reusing it with changed recipient/content/media/provider is a conflict
 ambiguous attempt is returned/reconciled rather than automatically submitted again. Internal notes
 remain provider-free, and group/broadcast sends cannot enter the CallRail adapter.
 
+## Internal notifications and call recordings
+
+- A human HTTP notification request is not trusted notification content. The Worker allowlists the
+  event, proves its appointment/crew/estimate object, derives audience/copy/routes from server data,
+  and rejects client-supplied recipients, body, HTML, payload, entities, jobs and links.
+- Database triggers use a distinct exact secret-first capability, and trusted Workers call the
+  dispatcher in-process. Those two service contracts retain the event-specific payloads needed for
+  existing fan-out; they do not make an arbitrary browser payload trusted.
+- Every final notification audience is intersected with active, non-external employees before bell,
+  push or email. Per-channel failure remains best-effort and is reported in the existing summary.
+- Staff recording playback is company-wide only for an active internal admin or the explicit
+  `crm_call_log` capability. The Worker must bind the UUID to an actual call row, match its stored
+  provider call ID to its stored allowlisted URL, and complete those checks before credential or
+  provider access.
+- Recording responses remain private (`Cache-Control: private`) and the clients require an
+  `audio/*` success type before playback. The proxy never accepts a raw caller-provided URL or
+  forwards browser Range/authentication headers upstream. Existing bounded provider detail/snippet
+  error fields and the provider-returned signed URL/content type are compatibility residuals, not
+  a claim of complete upstream-response redaction.
+- The authenticated-executable `notify_emit` RPC is a separate database authorization residual.
+  Until its ACL/body is contained, HTTP hardening alone is not complete arbitrary-emission closure.
+
 ## Capability links and public documents
 
 - Public signing links are capabilities: unguessable token, explicit status, expiration and

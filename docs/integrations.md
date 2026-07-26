@@ -174,6 +174,48 @@ R0 source/live evidence is in
 test, rollout and rollback record is
 `docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`.
 
+## CallRail recording and notification HTTP checkpoints (S1c, 2026-07-26)
+
+`GET /api/callrail-recording` is shared by mobile `LeadRow` and desktop `CrmCallLog`. It now
+authorizes an active internal admin or the established `crm_call_log` capability before any
+service-role lead/credential read or CallRail request. The exact UUID must name a call row whose
+stored `callrail_id` matches the ID in its stored allowlisted `api.callrail.com` or
+`app.callrail.com` recording URL. There is no employee-to-CRM-organization mapping, so the approved
+capability is explicitly company-wide rather than falsely described as tenant- or assignment-scoped.
+External CRM partners are denied even though their current desktop shell exposes the Call Log UI.
+The non-admin Worker capability does not currently consume the desktop CRM rollout/kill flags.
+Direct authenticated `get_inbound_leads`/`inbound_leads` access remains a separate route around the
+proxy and prevents an end-to-end recording-confidentiality claim.
+
+The proxy preserves the deployed 200 audio stream, `Content-Type`, and
+`Cache-Control: private, max-age=300` contracts, plus its existing JSON error families. Both the
+authenticated CallRail recording fetch and the no-auth signed-audio follow-up are bounded by the
+shared 15-second timeout. Browser `Range` and authorization headers are not forwarded. Account
+discovery/rewrite remains compatible and can persist a discovered account ID only on an approved
+deployed request; no provider or setting was contacted during S1c verification.
+
+HTTP `POST /api/notify` has no checked-in browser/mobile/desktop Bearer caller. Its deployed HTTP
+caller is `notify_emit`, which reads the stored URL/secret and is reached by appointment,
+estimate, timesheet and abandoned-clock trigger/cron origins. The exact secret remains
+header-first and receives the existing full event payload. Direct CallRail/form/feedback/e-sign,
+message/webhook/outbox, health, Meld and payment paths continue to import `dispatchEvent`
+in-process. Fan-out ordering, preferences, type-disabled skips, channel summaries, VAPID behavior,
+dead-subscription pruning and transactional email behavior are unchanged.
+
+The retained legacy Bearer surface now requires an active internal admin and accepts only four
+object-derived events: appointment assigned/updated/canceled and estimate accepted. It rejects all
+caller message copy, recipient, payload and link fields before dispatch. Shared Auth and Web Push
+still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
+slice. Email retains its timed provider request.
+
+S1c does not close the database-side capability bypass: the dated generated/live inventory shows
+`notify_emit(text,jsonb)` remains `SECURITY DEFINER` and executable by `authenticated`. Containing
+that RPC requires a separate migration, caller-compatible trigger verification, rollback SQL and
+an owner-authorized shared-database apply. Evidence:
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
+Direct authenticated execution of `create_notification` is also queued with the wider
+notification/RPC containment wave.
+
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 
 The Web Push subscription RPCs resolve their employee from `auth.uid()` before upsert/delete, but
