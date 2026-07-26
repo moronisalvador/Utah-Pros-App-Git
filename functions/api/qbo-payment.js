@@ -3,27 +3,16 @@
 // UPR is the system of record: a payment is recorded in UPR first, then this mirrors
 // it into QBO as a Payment applied to the invoice (so the QBO invoice shows paid/partial).
 //
-// Auth: x-webhook-secret (server-side) or a Supabase Bearer (admin).
+// Auth: x-webhook-secret (server-side) or an active internal admin Supabase session.
 // Body:
 //   { "payment_id": "<uuid>" }                        — create the QBO payment
 //   { "payment_id": "<uuid>", "action": "delete" }    — delete it from QBO
 //   { "qbo_payment_id": "<id>", "action": "delete" }  — delete by QBO id (row already gone)
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
 import { getConnection, createPayment, deletePayment } from '../lib/quickbooks.js';
-
-async function isAuthorized(request, env) {
-  const secret = request.headers.get('x-webhook-secret');
-  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 async function logRun(db, status, processed, errorMessage, startedAt) {
   try {
@@ -42,9 +31,10 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
 
-  if (!(await isAuthorized(request, env))) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
-
   const db = supabase(env);
+  const auth = await authorizeQboRequest(request, env, db);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
 

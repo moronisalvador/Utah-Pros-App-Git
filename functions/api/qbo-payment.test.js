@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Guards the money worker that pushes a UPR payment into QuickBooks. It checks
- *   three safety properties by reading the worker's source: (1) it refuses a
- *   caller who isn't authorized (no anonymous money moves), (2) it de-duplicates
+ *   three safety properties by reading the worker and shared authorization source:
+ *   (1) it refuses a caller who isn't authorized (no anonymous money moves), (2) it de-duplicates
  *   by a STABLE marker (the existing QBO payment id) so a retry can't double-post,
  *   never by a per-attempt timestamp, and (3) it never writes the payment columns
  *   a database trigger owns (amount_paid / status / paid_at, …).
@@ -17,8 +17,8 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs
- *   Internal:  ./qbo-payment.js (read as text — the worker makes network calls,
- *              so this is a static/source contract test, not a live invocation)
+ *   Internal:  ./qbo-payment.js, ../lib/qbo-auth.js (read as text; behavior is
+ *              exercised separately by qbo-worker-authorization.test.js)
  *
  * NOTES / GOTCHAS:
  *   - Static assertions on source are intentional: they lock the safety INVARIANTS
@@ -31,18 +31,19 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const src = readFileSync(fileURLToPath(new URL('./qbo-payment.js', import.meta.url)), 'utf8');
+const authSrc = readFileSync(fileURLToPath(new URL('../lib/qbo-auth.js', import.meta.url)), 'utf8');
 
 // A DB trigger owns these on the payments/invoices side — a worker must never write them.
 const TRIGGER_OWNED = ['amount_paid', 'insurance_paid', 'homeowner_paid', 'paid_at'];
 
 describe('qbo-payment worker safety (source contract)', () => {
   it('enforces an auth gate before doing any work', () => {
-    expect(src).toMatch(/isAuthorized/);
-    // 401 Unauthorized is returned when the gate fails.
-    expect(src).toMatch(/Unauthorized'?\s*\}?,\s*401/);
-    // The gate accepts the server secret OR a verified Supabase bearer.
-    expect(src).toMatch(/x-webhook-secret/);
-    expect(src).toMatch(/auth\/v1\/user/);
+    expect(src).toMatch(/const auth = await authorizeQboRequest/);
+    expect(src.indexOf('const auth = await authorizeQboRequest'))
+      .toBeLessThan(src.indexOf('const conn = await getConnection'));
+    expect(authSrc).toMatch(/QBO_WEBHOOK_SECRET/);
+    expect(authSrc).toMatch(/requireRole/);
+    expect(authSrc).toMatch(/is_external/);
   });
 
   it('de-duplicates by a stable content marker, never Date.now()', () => {
