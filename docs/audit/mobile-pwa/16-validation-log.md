@@ -258,3 +258,28 @@ No optional runtime check may block audit closure. Any remediation re-audit must
 5. records blocked auth/device/provider conditions without converting them to pass;
 6. preserves build, database, provider, deployment, browser, and real-device evidence as separate
    claims.
+
+## 2026-07-25 macOS/Xcode addendum
+
+A bounded macOS/Xcode/simulator follow-up was performed from documentation commit
+`79a9e4edb53b8b57b677e4c4b023a84c2f9c34ee` while preserving this audit's original application
+source boundary at `ef305f6d6afab4d846eab92fc1b04038d70221f0`.
+
+Xcode successfully parsed the checked-in project and locked SPM graph. The initial unsigned
+simulator build did not reach compilation because the host's Xcode 26.6 required the iOS 26.5
+platform while CoreSimulator exposed only iOS 26.3/26.4 runtimes.
+
+The owner then explicitly authorized installing the missing platform. The iOS 26.5 simulator
+runtime was installed, after which generic and iPhone 17 Pro simulator builds passed. The app
+booted, installed, launched, and retained a resolvable app container after five seconds. The
+produced `.app` did not embed `PrivacyInfo.xcprivacy`, confirming the existing target-membership
+finding. Cleanup terminated and uninstalled the app, shut down the simulator started by the pass,
+and removed temporary build products.
+
+No `cap sync`, dependency update, project mutation, archive, signing, TestFlight action,
+physical-device action, production access, or Supabase access was performed. Authenticated/visual
+workflows, native capabilities, physical devices, archive contents beyond the privacy-manifest
+check, and signing remain open gates.
+
+Full host/toolchain output, command-safety boundary, hashes, and limitations:
+[`../2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md`](../2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md).
