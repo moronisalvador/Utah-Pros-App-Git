@@ -1,0 +1,5 @@
+# GENERATED from .claude/skills/mobile-readiness-wave/agents/openai.yaml; do not edit this adapter by hand.
+interface:
+  display_name: "UPR Mobile Readiness Wave"
+  short_description: "Run a safe UPR mobile remediation wave"
+  default_prompt: "Use $mobile-readiness-wave to execute the next bounded UPR mobile production-readiness phase."
