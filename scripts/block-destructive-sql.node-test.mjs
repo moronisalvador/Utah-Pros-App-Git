@@ -17,9 +17,11 @@
 //   - Exit 2 means BLOCK. Exit 0 means allow. Exit 1 is non-blocking in both
 //     Claude Code and Codex, so exit 1 from this guard would be a defect: a
 //     crash must never read as permission. Cases assert the exact code.
-//   - Requires bash and jq on PATH; without jq the guard degrades to scanning
-//     the raw payload and the tool-specific cases are skipped, so those are
-//     asserted conditionally rather than failing the suite on a thin machine.
+//   - Requires bash and node on PATH. The guard parses payloads with node, NOT
+//     jq: jq is absent from the owner's machine and from most CI images, and
+//     depending on it made the tool-aware layers (rollback requirement,
+//     unfiltered-write refusal, fail-closed-on-unreadable-SQL) silently INERT
+//     while the suite still reported success.
 // ════════════════════════════════════════════════
 
 import { test } from 'node:test'
@@ -32,7 +34,7 @@ const REPO = path.resolve(import.meta.dirname, '..')
 const GUARD = path.join(REPO, '.claude', 'hooks', 'block-destructive-sql.sh')
 
 const hasBash = spawnSync('bash', ['-c', 'exit 0']).status === 0
-const hasJq = spawnSync('bash', ['-c', 'command -v node']).status === 0 // node is the parser now
+const hasNode = spawnSync('bash', ['-c', 'command -v node']).status === 0
 
 function run(payload) {
   const res = spawnSync('bash', [GUARD], {
@@ -44,7 +46,7 @@ function run(payload) {
 
 const sqlCall = (tool, query) => ({ tool_name: tool, tool_input: { query } })
 
-// Each case: [label, payload, expected exit code, needsJq]
+// Each case: [label, payload, expected exit code, needsNode]
 const CASES = [
   // ── fail-closed behaviour ──
   ['empty payload is refused, not permitted', '', 2, false],
@@ -99,8 +101,8 @@ test('database guard: blocks what it must, permits legitimate work, never exits 
   assert.ok(existsSync(GUARD), `canonical guard body missing at ${GUARD}`)
 
   const failures = []
-  for (const [label, payload, expected, needsJq] of CASES) {
-    if (needsJq && !hasJq) continue
+  for (const [label, payload, expected, needsNode] of CASES) {
+    if (needsNode && !hasNode) continue
     const { code, stderr } = run(payload)
     if (code === 1) {
       failures.push(`${label}: exited 1, which is NON-BLOCKING in both tools — a crash must not read as permission`)
