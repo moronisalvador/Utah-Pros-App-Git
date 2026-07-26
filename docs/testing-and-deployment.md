@@ -154,6 +154,20 @@ closure or explicit exclusion of every P1 within the promise. Live migration/app
 provider/customer action, signing, distribution, and submission remain separately authorized
 owner gates.
 
+R0's current source/live map and first local authorization slice are recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. A mobile security slice
+is not releasable merely because mocked Worker tests pass: verify required runtime binding names
+read-only, deploy only from a reviewed release commit under separate authorization, exercise
+approved allow/deny identities on non-customer fixtures, and monitor 401/403/upstream failures.
+Authorization rollback normally uses a forward fix because reverting a gate deliberately reopens
+the bypass.
+
+The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
+dual-form path normalization and authorized delivery before a bucket flip; then recapture exact
+policies/grants/bucket metadata, apply in an owner-approved low-traffic window, prove
+anonymous/unrelated denial plus intended access, and retain exact pre-apply rollback SQL/settings.
+No source-only session authorizes that apply.
+
 ## Release evidence checklist
 
 - Exact commit/branch and changed-file scope.

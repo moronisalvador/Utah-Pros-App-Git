@@ -8450,3 +8450,36 @@ from `codex/mobile-pwa-readiness-foundation`, fetch current `origin/dev`, and re
 without dropping the foundation; afterward, current `origin/dev` is the base. Never assume the
 dated audit is current. Supabase/Storage/production/providers remain read-only until a separately
 authorized apply/deploy/action, and Apple signing/TestFlight/App Store work remains owner-gated.
+
+### Wave R0 recapture and first containment slice (2026-07-25)
+
+R0 started from clean foundation `7aa4b0c6569396b7e7b5524ed052eca279927218` in isolated branch
+`codex/mobile-readiness-wave-r0`. Fetched `origin/dev`
+`90b265ee6f733c8dbcd75786f4e4057dd3355d38` was already an ancestor, so the 14 foundation commits
+were preserved without a merge/rebase. Historical audit source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` remains the comparison anchor.
+
+Read-only live recapture found all 68 current direct mobile RPC identifiers as
+authenticated/service-role-executable `SECURITY DEFINER` functions; the direct-table surface still
+contains broad anonymous/authenticated policies. `job-files` remains public with anonymous/public
+SELECT, authenticated bucket-wide INSERT/DELETE, no MIME allowlist, a 50 MiB limit and aggregate
+77 objects / 58,233,782 recorded bytes. No object name/content was read. Exact capture timestamps,
+routes, callers, function list, policies/grants and complete browser/worker/public-media inventory
+are in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
+
+The first bounded local slice adds `functions/lib/qbo-auth.js` and gates
+`qbo-invoice`, `qbo-estimate`, `qbo-payment` and `qbo-query` before privileged work. The exact
+server capability is preserved; browser access now requires an active, non-external `admin`.
+Negative tests cover missing/expired/config-failed identities, missing/inactive/external employees,
+every denied real role, server-secret precedence/fallback, malformed bodies and zero downstream
+provider/domain calls. Shared response/provider contracts remain unchanged.
+
+Neither P0 is closed. QBO customer/payment sync and OAuth connect, QBO charge/attach external
+identity, CallRail recording, notify HTTP, definer RPCs and broad direct policies remain under
+`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current native
+source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product decision.
+Cold-offline, native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot support,
+`project_manager` billing authority and the shared QBO capability lifecycle remain owner gates.
+No deploy, migration, secret/provider change, message, push, money movement, signing or distribution
+occurred in R0.
