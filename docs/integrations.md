@@ -143,18 +143,39 @@ legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 tha
 unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
 supported Encircle consumer or a credential-rotation dependency.
 
+## QuickBooks Online R0 authorization checkpoint (2026-07-25)
+
+The local R0 containment slice centralizes authorization for `/api/qbo-invoice`,
+`/api/qbo-estimate`, `/api/qbo-payment`, and `/api/qbo-query`. An exact configured
+`x-webhook-secret` preserves the existing server-to-server contract; otherwise a Supabase Bearer
+must resolve to an active, non-external `admin`. Authorization completes before connection,
+service-role domain reads, telemetry and Intuit calls, and the downstream request/response/provider
+contracts are unchanged.
+
+The capability is not a human role and no checked-in caller was found for its use on those four
+routes. Do not rotate or retire it independently: customer sync and payment sync share its
+lifecycle. Cloudflare binding presence/equality and deployed callers were not inspected.
+
+This is only S1a. QBO customer sync, payment sync and OAuth connect still treat a valid Bearer as
+sufficient; charge and attachment Workers do not explicitly reject external admins. The real role
+is `project_manager`, not `manager`; project-manager billing authority remains owner-gated. Exact
+source/live evidence and the separate rollout/apply plan are in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
+
 ## QuickBooks Online attachments (2026-07-24)
 
 `POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
 Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
 shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
-Auth is `requireRole(['admin','manager'])` (mirrors `qbo-charge`); it requires the invoice/estimate to
-already carry a `qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as
-base64 (≤20 MB); the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
+Auth is the literal `requireRole(['admin','manager'])` predicate (mirrors `qbo-charge`); because
+`manager` is not a current employee role, it is admin-effective and still lacks R0's explicit
+external-admin rejection. It requires the invoice/estimate to already carry a
+`qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as base64 (≤20 MB);
+the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
 `qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
-retry from creating a duplicate Attachable (which would email the customer twice). A `delete` action
-removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row. Outbound calls
-use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
+retry from creating a duplicate Attachable (which would email the customer twice). A `delete`
+action removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row.
+Outbound calls use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
 (`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
 shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
 already-granted **accounting** scope (no Payments-scope reconnect needed).

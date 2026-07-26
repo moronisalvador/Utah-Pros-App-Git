@@ -265,14 +265,37 @@ consent; technicians cannot. The UI fails closed while status is loading or unav
 ## QuickBooks Online attachments authorization (2026-07-24)
 
 `POST /api/qbo-attach` (push/remove a file on a QBO invoice/estimate) enforces
-`requireRole(['admin','manager'])` server-side — the same billing role the UI's `canEditBilling`
-checks — before any QuickBooks or DB side effect; the client `canEdit` prop is defense-in-depth only.
+`requireRole(['admin','manager'])` server-side — the same literal predicate the UI's
+`canEditBilling` checks — before any QuickBooks or DB side effect; the client `canEdit` prop is
+defense-in-depth only. `manager` is not a current `employee_role` value (`project_manager` is), so
+this is effectively an active-admin gate. The helper does not reject every `is_external=true`
+admin, which remains an R0 residual rather than an approved identity rule.
 The new `qbo_attachments` table is a **new** table, so it does NOT copy the documented-broad
 "any authenticated" read policy of `invoices`/`estimates` (that broad pattern is a known finding to
 fix, per the notes below — not a template). Its only policy is a SELECT scoped to active
-`admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` plus an `employees.auth_user_id =
+literal `admin`/`manager` roles (`NOT is_crm_partner(auth.uid())` plus an `employees.auth_user_id =
 auth.uid() AND is_active AND role IN ('admin','manager')` predicate). It has no browser
 INSERT/UPDATE/DELETE policy — the worker writes via the service role (which bypasses RLS). The table
 holds no secret (opaque QuickBooks attachable id + file metadata only). Coverage: the
 `qbo-attachments-migration` test asserts the role-scoped predicate and the absence of a bare
 `USING (true)`; the `worker-security-reviewer` verified the server-side role gate.
+
+## Mobile R0 QBO authorization checkpoint (2026-07-25)
+
+The local R0 slice routes `/api/qbo-invoice`, `/api/qbo-estimate`, `/api/qbo-payment`, and
+`/api/qbo-query` through `functions/lib/qbo-auth.js` before connection, domain-table, telemetry or
+provider access. The preserved exact `x-webhook-secret` remains a server capability. Browser
+Bearer access requires a valid session resolving to an active, non-external employee with
+`role='admin'`. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract;
+known employees outside that boundary return 403; auth/configuration failures fail closed.
+
+This is not a global QBO authorization claim. `/api/qbo-sync-customer`,
+`/api/qbo-payments-sync`, and `/api/quickbooks-connect` still accept a valid Bearer without the same
+role boundary; `/api/qbo-charge` and `/api/qbo-attach` still lack the explicit external-account
+rejection. The server-capability caller is unproven for the four newly gated routes and shares its
+credential lifecycle with schedulers. `project_manager` inclusion and capability retention/
+rotation are owner decisions.
+
+The route/RPC/direct-policy and read-only live evidence is
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. `MOB-SEC-014` remains
+open; a React admin route is not a substitute for the remaining Worker, RPC or RLS boundaries.

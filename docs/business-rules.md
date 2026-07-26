@@ -46,9 +46,18 @@ against both and change both in one commit.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
 - Financial dates use the Denver business day, not UTC string slicing.
-- Invoice/estimate attachments are admin/manager-gated and human-selected: a person chooses which
-  file(s) to push to which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch.
+- Current employee roles contain `project_manager`, not `manager`. The historical
+  `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
+  authority requires an owner decision and coordinated UI, Worker, RLS and allow/deny tests.
+- The R0 target for browser-initiated QBO provider actions is an active, non-external `admin`.
+  Invoice/estimate attachments remain human-selected: a person chooses which file(s) to push to
+  which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch. The attachment and
+  card-charge Workers have not yet adopted the explicit external-account rejection, so the target
+  rule is not represented as fully enforced.
   They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
+- A server-side QBO capability may support schedulers, but it does not grant a browser role or
+  identify a human actor. Retention, caller binding and rotation/retirement must be decided and
+  rolled out across all dependent workers together.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
