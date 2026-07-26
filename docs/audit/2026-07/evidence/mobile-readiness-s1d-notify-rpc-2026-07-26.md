@@ -65,7 +65,7 @@ separate owner-authorized apply/verification window. S1d alone does not close `M
 | Integration/testing/mobile data contracts | `86386ef` |
 | Roadmap/registry/master context | `d0a079d` |
 | Live capture | `2026-07-26 16:52:53.369884 UTC` |
-| Evidence refreshed | `2026-07-26 17:12 UTC` |
+| Evidence refreshed | `2026-07-26 17:28 UTC` |
 
 The primary reread `AGENTS.md`, `CLAUDE.md`, the complete `$mobile-readiness-wave` skill, applicable
 database/scope/documentation/close-out rules, the Supabase skill, canonical architecture/schema/
@@ -250,7 +250,7 @@ trigger, schedule, provider, or persistent child process was started.
 | `npm run test:provenance` | 13/13 passed |
 | `npm run validate:provenance -- --worktree` | passed for 27 ledger rows/21 functions/5 policies; four declared raw comment/whitespace drift warnings |
 | read-only live precondition predicates | passed: 6 caller functions, 7 call sites, 3 matching triggers, 1 matching cron; no function invocation or data/config row read |
-| `npm run preflight:mobile` | zero errors; expected dirty-tree warning before commit, local Node 26 vs CI Node 22, optional GitHub delivery unavailable |
+| `npm run preflight:mobile` | zero errors on the committed clean tree; warnings only for local Node 26 vs CI Node 22 and optional GitHub delivery unavailable |
 | `git diff --check` | passed |
 
 SQL was not applied or executed against production. Its static syntax/contract review and
@@ -273,9 +273,13 @@ Independent read-only passes reviewed the integrated diff:
   grantable EXECUTE ACL entries. A second check required the test to distinguish forward preflight
   from forward postcondition; exact occurrence coverage was added. The final re-review reported no
   security findings and independently observed 11/11 focused tests plus clean diff-check.
-- **Release:** performed after the reviewed commits and final clean-tree verification; its verdict
-  is recorded in the final handoff and this section is updated before close-out if it identifies a
-  documentation or gate defect.
+- **Release: ready for owner-gated integration/apply.** At exact clean tip `20f78d8`, it
+  independently confirmed S1c plus `d54b6ba` ancestry through merge `a870812`, coherent commit and
+  artifact scope, complete residual/rollout/rollback gates, focused 11/11 and full 2,159/2,159
+  tests, 13/13 provenance tests plus validator pass, 12/12 tooling tests, build, changed-file
+  ESLint, clean preflight with two expected environment warnings, diff-check, and clean state. Its
+  only finding was the evidence refresh timestamp preceding the recorded 17:18 live predicate
+  check; the timestamp above now reflects this final evidence correction.
 
 Reviewers made no edits or live queries and do not infer live apply, deployment, provider,
 customer, notification, configuration-value, secret-value, or device proof.
