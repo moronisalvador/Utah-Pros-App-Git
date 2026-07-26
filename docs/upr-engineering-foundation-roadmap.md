@@ -352,6 +352,15 @@ remains an owner/external gate.
   plugins are active/conditional/unavailable and cannot broaden task authority. Figma remains
   uninstalled/unconnected until F6 and explicit owner approval.
 
+**Bounded checkpoint — 2026-07-24:** F5b/F5c now have an implemented cross-runtime pilot:
+`tooling/capabilities.json` owns neutral sources for the four interacting UPR dispatchers plus the
+pattern, Worker-security, and DB-Foundation reviewers; deterministic generation produces Claude Code
+and Codex adapters with source hashes; validation blocks path/runtime coupling and adapter drift; and
+routing fixtures cover positive, negative, and dispatcher-collision cases. Fresh-session runtime
+smoke and deliberate migration of the remaining UPR-authored entrypoints remain. Unlisted
+`.agents`/`.codex` candidate files are still non-authoritative. F5a remains owner-blocked on the
+credential and tracked machine-permission cleanup.
+
 ### Phase F6a/F6b — Design-system and Figma operating model
 
 > **Implementation:** internal authority, inventory, permission contract, and capture matrix recorded ·

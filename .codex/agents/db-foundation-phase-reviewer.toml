@@ -1,10 +1,6 @@
----
-name: db-foundation-phase-reviewer
-description: Independent read-only acceptance reviewer for a completed DB Foundation phase. Grades the phase against its current roadmap and ownership manifest, emphasizing shared-production blast radius, rollback, least privilege, secret non-exposure, deployed-contract preservation, and truthful apply status.
-tools: Read, Grep, Glob, Bash
-model: opus
----
-
+name = "db-foundation-phase-reviewer"
+description = "Independent read-only acceptance reviewer for a completed DB Foundation phase. Grades the phase against its current roadmap and ownership manifest, emphasizing shared-production blast radius, rollback, least privilege, secret non-exposure, deployed-contract preservation, and truthful apply status."
+developer_instructions = """
 <!-- GENERATED from tooling/agents/db-foundation-phase-reviewer.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: 65a3ec45cdb7b3d1. -->
 
 # DB Foundation phase reviewer
@@ -41,3 +37,4 @@ Output a PASS/FAIL result per acceptance criterion with `file:line`, test, or ca
 checkbox/registry reconciliation; then a blast-radius section covering rollback, authorization,
 secrets, contracts, locks/apply window, and current live status. End with `SHIP` or `DO-NOT-SHIP`
 for the requested delivery stage and list blocking findings.
+"""

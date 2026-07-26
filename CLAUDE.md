@@ -203,6 +203,9 @@ Installed skills auto-load by description when a task matches; you rarely invoke
 - **React:** `vercel-react-best-practices`, `vercel-composition-patterns` — framework-neutral (we're Vite; **reject Next.js-only advice**).
 - **Data/SQL:** `supabase`, `supabase-postgres-best-practices` — patterns only, **subordinate to `.claude/rules/database-standard.md`** (least-privilege, anon-allowlist, one shared prod DB).
 - **Tests:** `playwright-core`. **UPR-native workflows** (`new-feature`, `db-migration`, `new-crm-module`, `masterplan`) orchestrate the actual work and outrank vendor skills.
+- **Cross-runtime sources:** `new-feature`, `masterplan`, and the reviewer adapters listed in
+  `tooling/capabilities.json` are generated from neutral sources. Edit the neutral source, then run
+  `npm run generate:tooling`; never hand-edit one generated `.claude`/`.agents`/`.codex` copy.
 - **Content & marketing — explicit tasks only:** this repository owns the internal UPR application,
   not the public website, so the repository-local SEO suite was retired 2026-07-23. Retained
   content/marketing references (`product-marketing`, `copywriting`, `cro`, `content-strategy`,

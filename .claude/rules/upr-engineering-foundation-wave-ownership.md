@@ -17,6 +17,8 @@ NOTES / GOTCHAS:
 
 # UPR Engineering Foundation — Proposed Ownership Manifest
 
+**Last-verified: 2026-07-24**
+
 **DRAFT FOR OWNER REVIEW.** This file is a planning artifact, not binding project law until the
 owner explicitly adopts it. It grants no authority to edit code, apply migrations, change live
 systems, commit, push, deploy, or open a PR.
@@ -63,8 +65,12 @@ dependent phases launch.
 | S1 — SQL containment | one new `exec_read_sql` revoke migration, its DB test, rollback evidence | `exec_read_sql` ACL/boundary only | Encircle tables/functions; broad policy cleanup |
 | S2 — Provenance | completed: read-only ledger/Git/fingerprint gate + four exact restored source records | none; no F2 live write occurred | archived regression boundary; never replace live bodies from guesses |
 | Q — QA isolation | F3a environment/refusal; F3b identities/seeds; F3c reset/subsystems; then assigned QA config/fixtures/scripts/CI paths | isolated project/local stack only | shared production data/tests; G-owned checker fixtures |
-| G — Governance | F5a secret/permissions; F5b adapters/paths; F5c triggers/plugins; exact `.claude` paths and evaluation tests | none | application/database/provider actions; Q-owned CI/config |
+| G — Governance | F5a secret/permissions; F5b neutral sources/generated adapters; F5c triggers/plugins; `tooling/`, exact generated `.claude`/`.agents`/`.codex` outputs, governance scripts/tests/docs | none | application/database/provider actions; Q-owned CI/config |
 | D — Design/Figma | design operating docs; later approved tokens/primitives/visual baselines | none | page rewrites before QA/ownership proof |
+
+G’s 2026-07-24 pilot is implemented for the four interacting dispatchers and three reviewer
+adapters. Fresh-runtime smoke and remaining-entrypoint migration are verification/follow-on work;
+unlisted candidate-port files are not part of G’s authoritative output.
 
 ## 4. Post-Foundation product ownership
 

@@ -3,8 +3,6 @@ name: new-crm-module
 description: Implement a currently active UPR CRM roadmap phase within its committed acceptance criteria and ownership manifest. Use only when the requested work is an active CRM phase; route initiative redesign to masterplan and database-primary work through db-migration. Live database apply, tracker/status writes, cleanup, commit, push, PR, and deployment remain separately authorized.
 ---
 
-<!-- GENERATED from tooling/skills/new-crm-module/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: 415b1a3d0440d934. -->
-
 # New CRM module
 
 This dispatcher executes one active CRM phase; it does not invent a new phase or bypass its plan.

@@ -27,6 +27,10 @@ If documents conflict, use this precedence:
 
 Audit snapshots under `docs/audit/<year-month>/` are historical evidence, not current project law.
 
+`tooling/capabilities.json` names the neutral sources and generated Claude Code/Codex adapters for
+migrated repository capabilities. Edit the neutral source and run `npm run generate:tooling`; do not
+hand-edit a generated `.claude`, `.agents`, or `.codex` adapter.
+
 ## Repository knowledge
 
 Before making architectural or cross-cutting changes, read:

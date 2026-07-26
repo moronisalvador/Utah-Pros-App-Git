@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Neutral source registry for UPR-authored Claude Code and Codex capability adapters.",
+  "skills": [
+    {
+      "name": "new-feature",
+      "source": "tooling/skills/new-feature/SKILL.md",
+      "outputs": [
+        ".claude/skills/new-feature/SKILL.md",
+        ".agents/skills/new-feature/SKILL.md"
+      ],
+      "codexInterface": {
+        "displayName": "New UPR Feature",
+        "shortDescription": "Build an ordinary UPR feature safely",
+        "defaultPrompt": "Use $new-feature to implement this UPR feature with the correct risk gates and verification."
+      }
+    },
+    {
+      "name": "masterplan",
+      "source": "tooling/skills/masterplan/SKILL.md",
+      "outputs": [
+        ".claude/skills/masterplan/SKILL.md",
+        ".agents/skills/masterplan/SKILL.md"
+      ],
+      "codexInterface": {
+        "displayName": "UPR Masterplan",
+        "shortDescription": "Plan a complex UPR initiative",
+        "defaultPrompt": "Use $masterplan to produce an evidence-backed, proportionate plan for this UPR initiative."
+      }
+    },
+    {
+      "name": "db-migration",
+      "source": "tooling/skills/db-migration/SKILL.md",
+      "outputs": [
+        ".claude/skills/db-migration/SKILL.md",
+        ".agents/skills/db-migration/SKILL.md"
+      ],
+      "codexInterface": {
+        "displayName": "UPR Database Migration",
+        "shortDescription": "Plan or author safe UPR database changes",
+        "defaultPrompt": "Use $db-migration to plan or author this UPR database change without applying it unless separately authorized."
+      }
+    },
+    {
+      "name": "new-crm-module",
+      "source": "tooling/skills/new-crm-module/SKILL.md",
+      "outputs": [
+        ".claude/skills/new-crm-module/SKILL.md",
+        ".agents/skills/new-crm-module/SKILL.md"
+      ],
+      "codexInterface": {
+        "displayName": "New CRM Module",
+        "shortDescription": "Implement an active UPR CRM phase",
+        "defaultPrompt": "Use $new-crm-module to implement this active CRM phase within its roadmap and ownership manifest."
+      }
+    }
+  ],
+  "agents": [
+    {
+      "name": "upr-pattern-checker",
+      "source": "tooling/agents/upr-pattern-checker.md",
+      "claudeOutput": ".claude/agents/upr-pattern-checker.md",
+      "codexOutput": ".codex/agents/upr-pattern-checker.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob",
+        "model": "sonnet"
+      }
+    },
+    {
+      "name": "worker-security-reviewer",
+      "source": "tooling/agents/worker-security-reviewer.md",
+      "claudeOutput": ".claude/agents/worker-security-reviewer.md",
+      "codexOutput": ".codex/agents/worker-security-reviewer.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob",
+        "model": "sonnet"
+      }
+    },
+    {
+      "name": "db-foundation-phase-reviewer",
+      "source": "tooling/agents/db-foundation-phase-reviewer.md",
+      "claudeOutput": ".claude/agents/db-foundation-phase-reviewer.md",
+      "codexOutput": ".codex/agents/db-foundation-phase-reviewer.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob, Bash",
+        "model": "opus"
+      }
+    }
+  ]
+}

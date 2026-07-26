@@ -1,11 +1,7 @@
 ---
 name: upr-pattern-checker
 description: Read-only project-law reviewer for changed UPR source files. Checks authentication/database access, feedback and confirmation patterns, design tokens, mobile scope, migration boundaries, and required documentation headers. Run for any change under src/ and use alongside the design and page-behavior reviewers for UI work.
-tools: Read, Grep, Glob
-model: sonnet
 ---
-
-<!-- GENERATED from tooling/agents/upr-pattern-checker.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: 3161483a4c859370. -->
 
 # UPR pattern checker
 

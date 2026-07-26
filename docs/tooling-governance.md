@@ -1,8 +1,8 @@
 # UPR Skills, Agents, Plugins, and Tooling Governance
 
 **Status:** owner-approved project law
-**Last verified:** 2026-07-23
-**Scope:** repository-local instructions, hooks, permissions, validation, and future runtime adapters
+**Last verified:** 2026-07-24
+**Scope:** repository-local instructions, hooks, permissions, validation, and runtime adapters
 
 This document is the implementation addendum to
 `docs/audit/2026-07/tooling-capability-review.md`. The audit remains a dated evidence snapshot and is
@@ -10,17 +10,22 @@ not rewritten here.
 
 ## 1. Provenance and canonical ownership
 
-- The tracked `.claude/` tree is the temporary canonical source for repository-local skills,
-  agents, hooks, rules, and shared Claude settings.
+- `tooling/capabilities.json` and its listed neutral sources are canonical for the capabilities
+  migrated into the cross-runtime pilot. Their `.claude/`, `.agents/`, and `.codex/` adapters are
+  generated outputs and must not be edited directly.
+- The tracked `.claude/` tree remains canonical for entrypoints, hooks, rules, and shared Claude
+  settings not yet listed in the neutral capability manifest.
 - `AGENTS.md`, `CLAUDE.md`, and applicable `.claude/rules/` are project law. A skill, agent, vendor
   bundle, plugin prompt, hook, permission allowlist, or generated adapter cannot override them.
 - UPR-authored entrypoints are owned by UPR platform engineering. Vendor-derived entrypoints retain
   their upstream author/license and are advisory within their stated lane; UPR overrides must be
   explicit and narrow.
-- The untracked `.agents/` and `.codex/` candidate ports are not authoritative. They are not copied,
-  promoted, deleted, edited, or validated by this initiative.
-- `.claude/tooling-governance.json` is validation policy and review metadata. It is not a neutral
-  capability source and must not be used to generate adapters yet.
+- Only `.agents/` and `.codex/` files named as outputs in `tooling/capabilities.json` are governed
+  generated adapters. Other files in those candidate trees remain non-authoritative until separately
+  inventoried, reconciled, and added to the manifest.
+- `.claude/tooling-governance.json` is validation policy and review metadata.
+  `tooling/capabilities.json` is the neutral source registry; neither file contains the instruction
+  bodies themselves.
 
 Tracked inventory after the owner-approved SEO retirement: **24 skill entrypoints,
 15 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
@@ -112,34 +117,37 @@ npm run test:tooling
 ```
 
 The validator checks entrypoint metadata, governed local references, broad-dispatcher collisions,
-and dangerous or secret-bearing shared permission patterns. Broken references in governed
-high-risk entrypoints and unsafe shared permissions are blocking. Optional/conditional bundle
-reference debt is reported as non-blocking so it can be repaired deliberately rather than
-mass-rewritten.
+neutral-source portability, generated Claude/Codex adapter drift, reviewer parity for migrated
+capabilities, and dangerous or secret-bearing shared permission patterns. Broken references,
+generated drift, runtime-specific language in a neutral source, and unsafe shared permissions are
+blocking. Optional/conditional bundle reference debt is reported as non-blocking so it can be
+repaired deliberately rather than mass-rewritten.
 
 The tracked `.claude/settings.local.json` remains a known critical owner gate from CAP-SEC-001 and
 CAP-GOV-001. This initiative does not alter credentials. The temporary validator waiver expires on
 2026-08-06; the owner must rotate/revoke the credential, review history, sanitize/untrack the file,
 and reset local approvals before that date.
 
-## 7. Owner-approved neutral Claude/Codex adapter strategy
+## 7. Neutral Claude/Codex adapter model
 
-The owner approved this direction on 2026-07-23. Claude Code and Codex can both produce UPR work
-today because `CLAUDE.md` and `AGENTS.md` share the same project law and both route to the tracked
-`.claude/rules/` standards. Keep that working path authoritative while implementing the neutral,
-provenance-preserving package model:
+The owner approved this direction on 2026-07-23 and authorized the first implementation on
+2026-07-24. Claude Code and Codex share the same project law and both route to the tracked
+`.claude/rules/` standards. The pilot migrates the four interacting UPR dispatchers
+(`new-feature`, `masterplan`, `db-migration`, and `new-crm-module`) plus
+`upr-pattern-checker`, `worker-security-reviewer`, and `db-foundation-phase-reviewer`:
 
-- one capability manifest with stable id, owner, upstream source/version/license, status, risk tier,
-  trigger domain/role, dependencies, permissions, and retirement metadata;
+- one capability manifest naming the neutral source and every generated output;
 - one neutral instruction body using repository-root symbolic references rather than
   runtime-specific `.claude`/`.codex` paths;
 - small deterministic renderers for Claude skill/agent frontmatter and Codex adapter formats;
-- generated-file headers, reproducible snapshots, path validation, and cross-runtime safety
-  decision fixtures;
+- generated-file headers with source hashes, exact drift checks, path validation, and
+  cross-runtime safety/trigger decision fixtures;
 - adapters containing pointers where the runtime supports them, with content duplication only when
   required and always generated.
 
-Adapter generation remains a separate implementation change. Do not promote generated output until
-the target runtime schemas are verified and cross-runtime fixtures prove equivalent decisions for
-database apply, authorization, secrets, money, messaging, destructive actions, and publication.
-Quality gates and project-law precedence must remain identical in Claude Code and Codex.
+Run `npm run generate:tooling` after changing a neutral source, then
+`npm run check:tooling-generated`, `npm run validate:tooling`, and `npm run test:tooling`.
+Do not hand-edit a generated adapter. Expansion beyond the pilot is incremental: inventory the
+candidate, preserve provenance/license, add the neutral source and manifest entry, generate both
+runtimes, and prove equivalent decisions before declaring it authoritative. Quality gates and
+project-law precedence remain identical in Claude Code and Codex.

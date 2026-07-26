@@ -3,8 +3,6 @@ name: masterplan
 description: Produce an evidence-backed, adversarially challenged plan for a complex, cross-cutting, high-risk, or multi-session UPR initiative. Use when the owner explicitly asks for a master plan, invokes /masterplan, needs architecture or sequencing decisions, or the work requires coordinated ownership and external gates. Keep planning read-only unless repository plan authoring is separately requested; live actions and publication always require separate authorization.
 ---
 
-<!-- GENERATED from tooling/skills/masterplan/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: f13e8794d360136b. -->
-
 # UPR masterplan
 
 This skill designs the work; it does not silently start building it. The output must be proportionate

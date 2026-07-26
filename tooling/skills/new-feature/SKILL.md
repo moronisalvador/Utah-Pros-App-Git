@@ -3,8 +3,6 @@ name: new-feature
 description: Implement a non-trivial ordinary UPR feature or behavior change using repository-law discovery, risk-based tests and reviewers, contract preservation, and honest verification. Use for scoped implementation work that is not primarily an initiative plan, a database migration, or an active CRM roadmap phase. Planning, authoring, database apply, publication, deployment, outbound communication, and money movement remain separately authorized actions.
 ---
 
-<!-- GENERATED from tooling/skills/new-feature/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: c3b38e5293f8d7fc. -->
-
 # New UPR feature
 
 Use this workflow for an ordinary feature implementation. It is a dispatcher, not a substitute for

@@ -3,8 +3,6 @@ name: db-migration
 description: Plan or author a safe UPR Supabase migration for schema, RPC, policy, grant, constraint, index, Storage authorization, or bounded data repair. This is the database-change dispatcher. Planning, repository authoring, shared-database apply, cleanup, and publication are separate actions; apply only the exact reviewed migration when the owner explicitly authorizes that live step.
 ---
 
-<!-- GENERATED from tooling/skills/db-migration/SKILL.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: e27b25ae99b4b1c1. -->
-
 # UPR database migration
 
 One Supabase project serves staging and production. A migration becomes a production change when

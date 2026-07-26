@@ -1,10 +1,6 @@
----
-name: worker-security-reviewer
-description: Blocking read-only security reviewer for changed Cloudflare Pages Functions that return non-public data or cause side effects. Verifies session, employee membership, role or capability, public boundaries, PII minimization, timeouts, signatures, deduplication, and idempotency controls.
-tools: Read, Grep, Glob
-model: sonnet
----
-
+name = "worker-security-reviewer"
+description = "Blocking read-only security reviewer for changed Cloudflare Pages Functions that return non-public data or cause side effects. Verifies session, employee membership, role or capability, public boundaries, PII minimization, timeouts, signatures, deduplication, and idempotency controls."
+developer_instructions = """
 <!-- GENERATED from tooling/agents/worker-security-reviewer.md by scripts/render-tooling-adapters.mjs. Do not edit this adapter directly. Source SHA-256: 06a8a029ecd4b778. -->
 
 # Worker security reviewer
@@ -33,3 +29,4 @@ For each changed Worker:
 
 Output `pass`, `changes-requested`, or `blocker`, followed by numbered findings ordered by severity.
 Each finding includes `file:line`, violated rule, exploit/failure consequence, and minimal fix.
+"""
