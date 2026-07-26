@@ -414,3 +414,43 @@ recording-source keys are removed from `raw_payload` on backfill and future writ
 legacy composite RPC responses see only a truthy opaque marker. Authenticated execution of the
 service ingestion RPC is revoked. The approved CallRail proxy keeps
 the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
+
+## Mobile S1g notification read/mark boundary (authored, not applied)
+
+The catalog-only S1g capture found the exact four deployed bell RPCs, each owned by `postgres`,
+SQL `SECURITY DEFINER`, `search_path=public`, executable by `authenticated` and `service_role`,
+with no direct database-body caller:
+
+- `get_notifications(integer DEFAULT 30, uuid DEFAULT NULL) -> SETOF notifications`;
+- `get_unread_notification_count(uuid DEFAULT NULL) -> integer`;
+- `mark_notification_read(uuid) -> void`; and
+- `mark_all_notifications_read(uuid DEFAULT NULL) -> void`.
+
+Their live bodies trust caller-supplied employee/notification IDs. The live
+`notifications_select` policy is authenticated `USING (true)`, so PostgREST and Realtime can expose
+another employee's targeted payload before `NotificationBell` filters it in JavaScript. Broadcasts
+also share one `notifications.read_at`, allowing one caller to clear them for everyone.
+
+Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves all four
+signatures, defaults, results, old `{}`/`{p_limit}` broadcast-only calls, list fields, newest-first
+ordering, and trusted service-role behavior. Authenticated execution instead reconstructs the
+unique active, non-external employee from `auth.uid()` and raises SQLSTATE `42501` for a foreign
+non-null employee parameter or foreign targeted notification. Missing/null mark-one IDs retain the
+deployed void no-op.
+
+Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads`; targeted rows
+retain their existing `read_at`. Already-globally-read legacy broadcasts remain read for every
+employee. `notifications_select` stays the same policy object but becomes active-internal
+own-or-broadcast authorization, authenticated table access becomes SELECT-only for Realtime, and
+the obsolete authenticated sentinel-delete policy is removed. The existing client recipient check
+remains defense in depth.
+
+The unchanged service-role branch retains the exact deployed base-row list/count, mark-one, and
+null/non-null mark-all semantics. Rollback refuses exact forward-state drift and restores the
+captured authenticated behavior, but it deliberately does not restore the historical anonymous
+notification-table grant because no reviewed public use case exists.
+
+This is reviewed source intent, not live proof. S1g requires its own owner-authorized apply,
+catalog post-check, two-session RPC/PostgREST/Realtime negative/positive matrix, advisors, and
+provenance capture. It must not be combined with S1d/S1e/S1f, private media, providers,
+deployment, signing, or device work.

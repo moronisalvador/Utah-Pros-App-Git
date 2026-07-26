@@ -187,6 +187,15 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
   S1f's unapplied bell migration makes direct emission service-only without changing recipient or
   broadcast semantics; only applied role proof can close that residual.
+- Notification list, unread-count, mark-one, and mark-all operations are a separate read-state
+  boundary. S1g's unapplied migration reconstructs one active, non-external employee from
+  `auth.uid()`, rejects a foreign supplied employee/notification ID, and scopes direct
+  `notifications` reads (including Realtime payloads) to broadcasts plus that employee's targeted
+  rows.
+- A targeted notification continues to use its row-level `notifications.read_at`. A broadcast uses
+  a private `(notification_id, employee_id)` receipt so one employee cannot mark it read for
+  everyone. A legacy broadcast whose shared `read_at` is already non-null remains read for
+  everyone; migration must not resurface historical notifications.
 
 ## Capability links and public documents
 

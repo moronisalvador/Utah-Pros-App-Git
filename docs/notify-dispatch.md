@@ -65,6 +65,11 @@ owner merges; do NOT subscribe to, babysit, or wait for review on it.
 
 ## Phase F2 — Data foundation
 
+> **Historical dispatch, superseded 2026-07-26 for database testing:** S1g retired
+> `notify_foundation.test.js`; do not rerun it against any shared project. Bell
+> signature/recipient/read behavior now uses the guarded local-only S1g SQL suite. The old
+> preference-resolver portion requires separate authenticated isolated coverage.
+
 ```
 [Phase F2 — Wave 0.5]
 Branch: session-assigned, cut from origin/dev

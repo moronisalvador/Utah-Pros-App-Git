@@ -226,6 +226,17 @@ verified, not applied. The attribute-only migration removes browser EXECUTE, ret
 service-role Worker and owner-run midnight-clock caller, and leaves the function body/signature and
 recipient/broadcast behavior unchanged. S1d, S1e, and S1f apply windows remain separate.
 
-The next source session should take only notification read/mark recipient binding or another
-explicitly selected shared identity/device RPC slice. Do not combine it with S1d/S1e/S1f apply,
-QBO telemetry/RLS, private media, deployment, providers, or native/device work.
+S1g notification read/mark recipient authorization is now authored and locally verified, not
+applied. It preserves the four deployed RPC identities/results and PWA/Capacitor callers, derives
+the active internal employee from `auth.uid()`, denies foreign selectors, adds private per-employee
+broadcast receipts, and changes the existing Realtime SELECT policy to own-or-broadcast. Historical
+globally-read broadcasts stay read; targeted read state remains row-local. S1d, S1e, S1f, and S1g
+apply windows remain separate. Its exact preflight/forward/post-apply/authenticated+service
+behavior/rollback chain passed a temporary in-memory PostgreSQL-compatible harness and is wired to
+the local-only Supabase DB runner; real Auth/PostgREST/Realtime qualification remains an apply
+gate. The unsafe historical shared/anonymous notification test is retired, and its unrelated
+preference-resolver coverage moves to the next shared identity/device/preferences QA slice.
+
+The next source session should take only the next shared identity/device/preferences RPC slice.
+Do not combine it with any S1d/S1e/S1f/S1g apply, QBO telemetry/RLS, private media, deployment,
+providers, or native/device work.

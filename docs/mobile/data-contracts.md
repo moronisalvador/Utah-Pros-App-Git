@@ -124,6 +124,17 @@ still expose stored recording URLs without the proxy. Therefore neither S1c nor 
 closes `MOB-SEC-014`. The existing QBO human-actor telemetry gap and external-admin
 `qbo_attachments` metadata SELECT policy remain separate QBO residuals.
 
+S1g adds a fourth reviewed but unapplied database slice for the shared PWA/Capacitor bell. It keeps
+the four deployed list/count/mark signatures and result shapes while resolving the authenticated
+employee from `auth.uid()`, denying inactive/external/unmapped and foreign-recipient calls, and
+making direct `notifications` SELECT/Realtime visibility active-internal own-or-broadcast. A
+private forced-RLS receipt table gives broadcasts per-employee read state; targeted rows keep their
+base `read_at`, and existing globally-read broadcasts stay read for everyone. Null/default list
+and count parameters remain broadcast-only. The client-side Realtime filter remains a fallback,
+not authorization. Signed service-role calls retain the exact deployed base-row list/count and
+mark behavior. Live `USING (true)` and shared broadcast state remain open until the distinct S1g
+apply and two-session Realtime proof complete.
+
 ## Workflow contract map
 
 ### Session, profile, permissions, and flags
@@ -327,6 +338,16 @@ grant is `service_role`; the owner-executed database chain must not receive an i
 session-role check. Current live authenticated execution remains the higher-priority S1d apply
 gate. Direct `create_notification` has a separate S1f attribute-only apply candidate that retains
 only `service_role`; until applied, the live authenticated bell-emission residual remains.
+
+S1g freezes the bell read contract without changing client source: active internal callers may
+request broadcast-only with null/default parameters or broadcast-plus-own with their own employee
+ID; a foreign employee/notification selector is forbidden. Broadcast mark-one/mark-all writes an
+idempotent private receipt for that caller and never changes the broadcast base row. Direct
+PostgREST and Realtime use the equivalent own-or-broadcast RLS predicate. The source contract is
+not a release claim until catalog, role, socket, resume/reconnect, token-refresh, and
+account-switch behavior pass after an owner-authorized apply. The guarded behavior matrix is wired
+to the local-only database runner and passed a synthetic in-memory PostgreSQL harness; neither
+result is a live Realtime qualification.
 
 ## Error semantics
 

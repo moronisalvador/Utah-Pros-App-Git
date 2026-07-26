@@ -9,10 +9,11 @@
  *
  *   Every test file under supabase/tests/ belongs to the `db` lane. That lane
  *   deliberately refuses to run unless it is pointed at an isolated database,
- *   and no such database exists yet — so `npm test` skips all of them. On
- *   2026-07-26 that was 75 files, including regression guards written
- *   specifically to be durable. Nobody noticed for weeks, because a whole lane
- *   not running looks exactly like everything passing.
+ *   and no governed compatible target exists yet — so `npm test` skips all of
+ *   them. On 2026-07-26 that was 75 files, including regression guards written
+ *   specifically to be durable. S1g retired one unsafe shared-database test, so
+ *   the current ceiling is 74. Nobody noticed the original debt for weeks,
+ *   because a whole lane not running looks exactly like everything passing.
  *
  *   The lane runner already fails when a test inside a lane is skipped. This is
  *   the same idea one level up: a whole lane going dark should be loud too.
@@ -48,7 +49,7 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
  * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
  * a guard that will not protect anything in CI until the db lane has a target.
  */
-const DARK_BASELINE = 75;
+const DARK_BASELINE = 74;
 
 const dbLaneFiles = () =>
   (existsSync(DB_TESTS) ? readdirSync(DB_TESTS) : []).filter((f) => f.endsWith('.test.js'));

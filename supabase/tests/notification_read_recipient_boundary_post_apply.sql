@@ -1,0 +1,409 @@
+-- S1g notification read/recipient boundary — value-free post-apply proof.
+--
+-- Catalog metadata only. This script never reads notification/receipt rows,
+-- invokes an RPC, writes data, changes grants/policies, or emits an event.
+
+DO $s1g_catalog_post_apply$
+DECLARE
+  v_expected record;
+  v_oid oid;
+  v_overload_count integer;
+  v_execute_grantees text[];
+  v_grantable_count integer;
+  v_receipt_acl_shape_md5 text;
+  v_notifications_acl_shape_md5 text;
+  v_select_policy_md5 text;
+BEGIN
+  IF to_regclass('public.notification_reads') IS NULL
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+       WHERE relation.oid = to_regclass('public.notification_reads')
+         AND owner_role.rolname = 'postgres'
+         AND relation.relrowsecurity
+         AND relation.relforcerowsecurity
+     )
+     OR (
+       SELECT count(*)
+       FROM pg_attribute attribute
+       WHERE attribute.attrelid = to_regclass('public.notification_reads')
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+     ) IS DISTINCT FROM 3
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       LEFT JOIN pg_attrdef default_record
+         ON default_record.adrelid = attribute.attrelid
+        AND default_record.adnum = attribute.attnum
+       WHERE attribute.attrelid = to_regclass('public.notification_reads')
+         AND attribute.attnum = 1
+         AND attribute.attname = 'notification_id'
+         AND format_type(attribute.atttypid, attribute.atttypmod) = 'uuid'
+         AND attribute.attnotnull
+         AND default_record.oid IS NULL
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       LEFT JOIN pg_attrdef default_record
+         ON default_record.adrelid = attribute.attrelid
+        AND default_record.adnum = attribute.attnum
+       WHERE attribute.attrelid = to_regclass('public.notification_reads')
+         AND attribute.attnum = 2
+         AND attribute.attname = 'employee_id'
+         AND format_type(attribute.atttypid, attribute.atttypmod) = 'uuid'
+         AND attribute.attnotnull
+         AND default_record.oid IS NULL
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       JOIN pg_attrdef default_record
+         ON default_record.adrelid = attribute.attrelid
+        AND default_record.adnum = attribute.attnum
+       WHERE attribute.attrelid = to_regclass('public.notification_reads')
+         AND attribute.attnum = 3
+         AND attribute.attname = 'read_at'
+         AND format_type(attribute.atttypid, attribute.atttypmod) =
+               'timestamp with time zone'
+         AND attribute.attnotnull
+         AND pg_get_expr(default_record.adbin, default_record.adrelid) = 'now()'
+     )
+     OR (
+       SELECT count(*)
+       FROM pg_constraint constraint_record
+       WHERE constraint_record.conrelid =
+               to_regclass('public.notification_reads')
+     ) IS DISTINCT FROM 3
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint constraint_record
+       WHERE constraint_record.conrelid =
+               to_regclass('public.notification_reads')
+         AND constraint_record.conname = 'notification_reads_pkey'
+         AND constraint_record.contype = 'p'
+         AND pg_get_constraintdef(constraint_record.oid, true) =
+               'PRIMARY KEY (notification_id, employee_id)'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint constraint_record
+       WHERE constraint_record.conrelid =
+               to_regclass('public.notification_reads')
+         AND constraint_record.conname =
+               'notification_reads_notification_id_fkey'
+         AND constraint_record.contype = 'f'
+         AND pg_get_constraintdef(constraint_record.oid, true) =
+               'FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint constraint_record
+       WHERE constraint_record.conrelid =
+               to_regclass('public.notification_reads')
+         AND constraint_record.conname =
+               'notification_reads_employee_id_fkey'
+         AND constraint_record.contype = 'f'
+         AND pg_get_constraintdef(constraint_record.oid, true) =
+               'FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE'
+     )
+     OR (
+       SELECT count(*)
+       FROM pg_index index_record
+       WHERE index_record.indrelid =
+               to_regclass('public.notification_reads')
+     ) IS DISTINCT FROM 2
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_index index_record
+       WHERE index_record.indrelid =
+               to_regclass('public.notification_reads')
+         AND index_record.indexrelid =
+               to_regclass('public.notification_reads_pkey')
+         AND index_record.indisprimary
+         AND index_record.indisunique
+         AND pg_get_indexdef(index_record.indexrelid) =
+               'CREATE UNIQUE INDEX notification_reads_pkey ON public.notification_reads USING btree (notification_id, employee_id)'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_index index_record
+       WHERE index_record.indrelid =
+               to_regclass('public.notification_reads')
+         AND index_record.indexrelid =
+               to_regclass('public.notification_reads_employee_id_idx')
+         AND NOT index_record.indisprimary
+         AND NOT index_record.indisunique
+         AND pg_get_indexdef(index_record.indexrelid) =
+               'CREATE INDEX notification_reads_employee_id_idx ON public.notification_reads USING btree (employee_id)'
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.notification_reads')
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_publication_rel publication_relation
+       WHERE publication_relation.prrelid =
+               to_regclass('public.notification_reads')
+     ) THEN
+    RAISE EXCEPTION
+      'S1g catalog post-apply notification_reads metadata failed';
+  END IF;
+
+  SELECT md5(
+           string_agg(
+             format(
+               '%s|%s|%s|%s',
+               acl.grantor::regrole::text,
+               CASE
+                 WHEN acl.grantee = 0 THEN 'PUBLIC'
+                 ELSE acl.grantee::regrole::text
+               END,
+               acl.privilege_type,
+               acl.is_grantable
+             ),
+             E'\n'
+             ORDER BY
+               CASE
+                 WHEN acl.grantee = 0 THEN 'PUBLIC'
+                 ELSE acl.grantee::regrole::text
+               END,
+               acl.privilege_type
+           )
+         )
+    INTO v_receipt_acl_shape_md5
+  FROM pg_class relation
+  CROSS JOIN LATERAL
+    aclexplode(
+      COALESCE(
+        relation.relacl,
+        acldefault('r', relation.relowner)
+      )
+    ) acl
+  WHERE relation.oid = to_regclass('public.notification_reads');
+
+  IF v_receipt_acl_shape_md5 IS DISTINCT FROM
+       '5ae62afd8335deffffb81c9aa98f62be' THEN
+    RAISE EXCEPTION
+      'S1g catalog post-apply notification_reads ACL failed: md5=%',
+      v_receipt_acl_shape_md5;
+  END IF;
+
+  IF (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.notifications')
+     ) IS DISTINCT FROM ARRAY['notifications_select']::name[]
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.notifications')
+         AND policy.polname = 'notifications_select'
+         AND policy.polcmd = 'r'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND policy.polwithcheck IS NULL
+         AND md5(COALESCE(
+               pg_get_expr(policy.polqual, policy.polrelid),
+               ''
+             )) = 'f6a4b946f6d65eadf3bf4764e734d5b1'
+     ) THEN
+    RAISE EXCEPTION
+      'S1g catalog post-apply notifications policy failed';
+  END IF;
+
+  SELECT md5(COALESCE(
+           pg_get_expr(policy.polqual, policy.polrelid),
+           ''
+         ))
+    INTO v_select_policy_md5
+  FROM pg_policy policy
+  WHERE policy.polrelid = to_regclass('public.notifications')
+    AND policy.polname = 'notifications_select';
+
+  SELECT md5(
+           string_agg(
+             format(
+               '%s|%s|%s|%s',
+               acl.grantor::regrole::text,
+               CASE
+                 WHEN acl.grantee = 0 THEN 'PUBLIC'
+                 ELSE acl.grantee::regrole::text
+               END,
+               acl.privilege_type,
+               acl.is_grantable
+             ),
+             E'\n'
+             ORDER BY
+               CASE
+                 WHEN acl.grantee = 0 THEN 'PUBLIC'
+                 ELSE acl.grantee::regrole::text
+               END,
+               acl.privilege_type
+           )
+         )
+    INTO v_notifications_acl_shape_md5
+  FROM pg_class relation
+  CROSS JOIN LATERAL
+    aclexplode(
+      COALESCE(
+        relation.relacl,
+        acldefault('r', relation.relowner)
+      )
+    ) acl
+  WHERE relation.oid = to_regclass('public.notifications');
+
+  IF v_select_policy_md5 IS DISTINCT FROM
+       'f6a4b946f6d65eadf3bf4764e734d5b1'
+     OR v_notifications_acl_shape_md5 IS DISTINCT FROM
+       'c821903bc39dd59e6ac6b60d039a731d'
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+       WHERE relation.oid = to_regclass('public.notifications')
+         AND owner_role.rolname = 'postgres'
+         AND relation.relrowsecurity
+         AND NOT relation.relforcerowsecurity
+     )
+     OR (
+       SELECT array_agg(
+                publication.pubname::text
+                ORDER BY publication.pubname::text
+              )
+       FROM pg_publication_rel publication_relation
+       JOIN pg_publication publication
+         ON publication.oid = publication_relation.prpubid
+       WHERE publication_relation.prrelid =
+               to_regclass('public.notifications')
+     ) IS DISTINCT FROM ARRAY['supabase_realtime']::text[] THEN
+    RAISE EXCEPTION
+      'S1g catalog post-apply notifications policy/ACL/Realtime failed: policy=%, ACL=%',
+      v_select_policy_md5,
+      v_notifications_acl_shape_md5;
+  END IF;
+
+  FOR v_expected IN
+    SELECT *
+    FROM (
+      VALUES
+        (
+          'get_notifications',
+          'public.get_notifications(integer,uuid)',
+          'p_limit integer DEFAULT 30, p_employee_id uuid DEFAULT NULL::uuid',
+          'SETOF notifications',
+          'fefa4b58a7cf9faaae6d235c98faa1d6',
+          'a9d0da79befb2d2cb2a3e5452d3c6269'
+        ),
+        (
+          'get_unread_notification_count',
+          'public.get_unread_notification_count(uuid)',
+          'p_employee_id uuid DEFAULT NULL::uuid',
+          'integer',
+          '2b8706a1ff85ab821c44e084f66bc998',
+          '8bd9df112ee1a6a7ff9f5c18789142d8'
+        ),
+        (
+          'mark_all_notifications_read',
+          'public.mark_all_notifications_read(uuid)',
+          'p_employee_id uuid DEFAULT NULL::uuid',
+          'void',
+          '17535104ecaa23b9eb98c9192921cf05',
+          'd954d04ad3e3fe2ead30ec3e9d8bfbf7'
+        ),
+        (
+          'mark_notification_read',
+          'public.mark_notification_read(uuid)',
+          'p_id uuid',
+          'void',
+          'cbe82dd0652029a881944527e99b9091',
+          '868d6fd6e3a5278d152860318753805f'
+        )
+    ) AS expected(
+      function_name,
+      identity,
+      arguments,
+      result_type,
+      body_md5,
+      definition_md5
+    )
+  LOOP
+    SELECT count(*)
+      INTO v_overload_count
+    FROM pg_proc procedure
+    JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+    WHERE namespace.nspname = 'public'
+      AND procedure.proname = v_expected.function_name;
+
+    v_oid := to_regprocedure(v_expected.identity);
+
+    IF v_oid IS NULL
+       OR v_overload_count IS DISTINCT FROM 1
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_proc procedure
+         JOIN pg_language language ON language.oid = procedure.prolang
+         JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+         WHERE procedure.oid = v_oid
+           AND language.lanname = 'plpgsql'
+           AND owner_role.rolname = 'postgres'
+           AND pg_get_function_arguments(procedure.oid) =
+                 v_expected.arguments
+           AND pg_get_function_result(procedure.oid) = v_expected.result_type
+           AND procedure.prosecdef
+           AND NOT procedure.proisstrict
+           AND NOT procedure.proleakproof
+           AND procedure.provolatile = 'v'
+           AND procedure.proparallel = 'u'
+           AND procedure.prokind = 'f'
+           AND procedure.proconfig = ARRAY['search_path=public']::text[]
+           AND md5(procedure.prosrc) = v_expected.body_md5
+           AND md5(pg_get_functiondef(procedure.oid)) =
+                 v_expected.definition_md5
+       ) THEN
+      RAISE EXCEPTION
+        'S1g catalog post-apply % definition/metadata failed',
+        v_expected.identity;
+    END IF;
+
+    SELECT
+      array_agg(
+        COALESCE(grantee_role.rolname, 'PUBLIC')
+        ORDER BY COALESCE(grantee_role.rolname, 'PUBLIC')
+      ),
+      count(*) FILTER (WHERE acl.is_grantable)
+      INTO v_execute_grantees, v_grantable_count
+    FROM pg_proc procedure
+    CROSS JOIN LATERAL
+      aclexplode(
+        COALESCE(
+          procedure.proacl,
+          acldefault('f', procedure.proowner)
+        )
+      ) acl
+    LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+    WHERE procedure.oid = v_oid
+      AND acl.privilege_type = 'EXECUTE';
+
+    IF v_execute_grantees IS DISTINCT FROM
+         ARRAY['authenticated', 'postgres', 'service_role']::text[]
+       OR v_grantable_count IS DISTINCT FROM 0
+       OR has_function_privilege('anon', v_oid, 'EXECUTE')
+       OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
+            IS DISTINCT FROM true
+       OR has_function_privilege('service_role', v_oid, 'EXECUTE')
+            IS DISTINCT FROM true THEN
+      RAISE EXCEPTION
+        'S1g catalog post-apply % ACL failed: grantees=%, grantable=%',
+        v_expected.identity,
+        v_execute_grantees,
+        v_grantable_count;
+    END IF;
+  END LOOP;
+END;
+$s1g_catalog_post_apply$;

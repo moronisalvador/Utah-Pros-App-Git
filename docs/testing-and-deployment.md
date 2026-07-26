@@ -188,6 +188,21 @@ authenticated denial, service-role retention, and sole owner-run database caller
 `create_notification` or reading notification rows. S1d, S1e, and S1f require separate explicit
 apply selections rather than a chronological all-pending command.
 
+The S1g notification read/recipient candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1g-notification-reads-2026-07-26.md`. Credential-free
+CI checks exact RPC signatures/results/defaults, caller reconstruction, foreign-recipient denial,
+private broadcast receipts, legacy read compatibility, Realtime RLS, least-privilege ACLs, drift
+guards, and the owner-gated unsafe rollback. Preflight/post-apply SQL is catalog-only and does not
+read or mark notification rows. The synthetic multi-identity behavior script requires both the
+`UPR_ISOLATED_DB` psql variable and `upr.isolated_test_database=on`, and is
+transaction-rollback-only. `npm run test:db:local` now runs its exact pgTAP wrapper through
+`supabase test db --local` before the DB Vitest lane; the runner never offers `--linked` or
+`--db-url`. A temporary PGlite harness passed forward/post/behavior/rollback compilation, but the
+governed current-live-compatible local Supabase clone remains an execution gate. The obsolete
+anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
+integration coverage belongs to the separate identity/device/preferences slice. S1g requires a
+fourth distinct apply selection after separate S1d/S1e/S1f decisions.
+
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
 separate authorization, exercise approved allow/deny identities on non-customer fixtures, and

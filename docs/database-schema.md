@@ -315,6 +315,35 @@ Add a ledger mapping and fresh function fingerprint only after an owner-authoriz
 reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
+## Pending notification read receipts and recipient RLS (S1g, 2026-07-26)
+
+`20260726260000_notification_read_recipient_boundary.sql` is authored and locally tested but **not
+applied**. It adds `notification_reads(notification_id, employee_id, read_at)` with cascading
+foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, has no
+policies, and grants no direct browser or service-role table access; the owner-run guarded
+`SECURITY DEFINER` bell RPCs are its only access path.
+
+The four existing bell RPC identities and result shapes remain unchanged. For broadcasts they
+project an employee-specific receipt through the existing `notifications.read_at` field; targeted
+rows continue using the base row. A non-null legacy broadcast `read_at` wins over any receipt so
+historical globally-read rows do not reappear. Mark-one and mark-all insert broadcast receipts
+idempotently and update only the authenticated employee's targeted rows.
+
+The existing Realtime table stays published. Its `notifications_select` policy object is altered,
+not dropped, from authenticated `USING (true)` to an active, non-external
+`employees.auth_user_id = auth.uid()` own-or-broadcast predicate. Direct authenticated table access
+becomes SELECT-only; `anon` loses table privileges and the obsolete authenticated
+`notifications_delete_testrows` policy is removed. The apply preflight pins the current employee
+UUID/active/external columns plus authenticated employee SELECT/RLS policy because that table is an
+explicit dependency of the notification predicate.
+
+This schema description is proposed source state until a separate shared-database apply succeeds.
+The generated live schema/RPC reports and provenance ledger must remain unchanged before then.
+Rollback is owner-guarded because it drops receipt history and deliberately restores the prior
+cross-recipient/shared-read exposure. It restores the exact prior functions and authenticated
+policy behavior but intentionally keeps the historical `anon` notification-table grant revoked;
+notifications have no approved public allowlist use case.
+
 ## QuickBooks Online attachments tracking (2026-07-24)
 
 `20260724180000_qbo_attachments.sql` (**live under ledger version `20260724190829`**) adds one additive table,

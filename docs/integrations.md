@@ -241,6 +241,32 @@ from live provenance until an owner-authorized apply records its actual ledger v
 fingerprint. Evidence:
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
+## Notification read/Realtime recipient checkpoint (S1g, 2026-07-26)
+
+PWA and Capacitor share `NotificationBell` and `subscribeToNotifications`; no client source change
+is required for S1g. The deployed list/count/mark call shapes remain exact, and the existing
+JavaScript recipient comparison stays as defense in depth.
+
+The unapplied S1g migration moves the primary boundary into Supabase. Direct table SELECT and
+Postgres Changes authorize only an active, non-external employee's own targeted rows plus
+broadcasts. Because Realtime evaluates table RLS before delivering a Postgres Changes payload, a
+foreign targeted title/body/link/payload must no longer reach the callback after apply.
+`notifications` remains in `supabase_realtime`; the private receipt table is not published. The
+policy's employee lookup depends on authenticated employee SELECT/RLS visibility, which the S1g
+preflight pins explicitly.
+
+Broadcast read state becomes per employee through private receipts while the RPC still returns the
+same `notifications` composite and projected `read_at`. Existing shared non-null `read_at` values
+remain globally read for compatibility. This source checkpoint does not prove a live socket:
+apply qualification requires two authenticated synthetic sessions showing own and broadcast
+INSERT delivery, foreign INSERT non-delivery, mark isolation, reconnect/token-refresh behavior,
+and unchanged PWA/Capacitor call results. It is a separate gate from notification emission,
+providers, native push, OTA, signing, and devices.
+
+The guarded SQL behavior matrix passed in an in-memory PostgreSQL-compatible harness and is wired
+into the local-only Supabase DB runner. That does not substitute for the two-session PostgREST and
+Realtime socket qualification above.
+
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 
 The Web Push subscription RPCs resolve their employee from `auth.uid()` before upsert/delete, but

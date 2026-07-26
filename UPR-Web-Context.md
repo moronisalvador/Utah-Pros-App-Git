@@ -7102,6 +7102,13 @@ skip, VAPID 503-skip, 404/410 prune, auth) + `supabase/tests/notify_foundation.t
 (integration — old bell shapes, targeting, resolver precedence; self-skips without creds, verified
 live via MCP). `feedback-notify.test.js` rewired to assert delegation.
 
+**2026-07-26 S1g supersession:** the legacy `notify_foundation.test.js` was retired because its
+anonymous shared-database client, sentinel DELETE cleanup, and broadcast-mutating mark-all probe
+are unsafe/incompatible with the recipient/read boundary. Bell signature, recipient, RLS, and read
+behavior now live in the two-gate, rollback-only S1g SQL suite wired to the local-only DB runner.
+Full preference-resolver integration coverage remains a separate identity/preferences QA item;
+this note does not rewrite the historical F2 verification claim.
+
 ### Session B (event wiring) — shipped Jul 3 2026
 One emit hook at each event origin, all **additive + fire-and-forget** (a notify failure can never
 throw into a webhook's business path — payment webhooks especially). Every hook calls the frozen
@@ -8602,3 +8609,33 @@ Exact rollback, catalog-only pre/post checks, and a credential-free CI contract 
 S1d/S1e/S1f applies, notification read/mark recipient binding, QBO telemetry/RLS, private media,
 deployment, providers, and native/device gates remain separate. No live mutation or bell emission
 occurred.
+
+S1g starts from reviewed S1f tip `a6b139b`; fetched `origin/dev` remains `245c0c4` and is already
+an ancestor, so no drift merge or history rewrite is required. Catalog-only live capture reads no
+notification/employee/customer row. It pins the exact four bell read/mark overloads and
+body/definition hashes, their authenticated/service ACLs, the 13-column notification shape,
+broad table ACL, authenticated `notifications_select USING (true)`, sentinel-delete policy,
+Realtime publication, the authenticated employee SELECT/RLS dependency, employee Auth uniqueness,
+and zero direct database-body callers.
+
+Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves
+`get_notifications(integer,uuid) -> SETOF notifications`,
+`get_unread_notification_count(uuid) -> integer`, `mark_notification_read(uuid) -> void`, and
+`mark_all_notifications_read(uuid) -> void`, including defaults and old broadcast-only call
+shapes. Authenticated calls derive one active non-external employee from `auth.uid()` and reject
+foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` provides independent
+broadcast receipts while legacy globally-read broadcasts stay read and targeted rows keep base
+`read_at`. The existing notification SELECT policy object becomes active-internal
+own-or-broadcast, authenticated table access becomes SELECT-only for Realtime, and the obsolete
+test-row DELETE policy is removed. The shared PWA/Capacitor `NotificationBell` and Realtime client
+need no source change; the JavaScript recipient filter remains defense in depth.
+
+Exact fail-closed rollback, catalog-only pre/post checks, a two-gate rollback-only multi-identity
+behavior script (including all service compatibility branches), local-only pgTAP runner bridge,
+credential-free QA contract, and dated evidence accompany S1g. A temporary in-memory
+PostgreSQL-compatible harness passed preflight, forward, post-apply, behavior, and rollback; live
+Supabase Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical
+anonymous notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
+private media, shared identity/device/preferences, deployment, providers, native signing/devices,
+and final qualification remain separate. No live mutation, notification read/mark, deploy,
+provider action, signing, or distribution occurred in S1g.

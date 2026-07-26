@@ -5,10 +5,11 @@
  *
  * WHAT THIS DOES (plain language):
  *   Refuses to start database tests unless the caller names the exact approved local database.
- *   After the checks pass, it runs only the separately configured local database test lane.
+ *   After the checks pass, it runs the guarded S1g pgTAP proof against that local stack and then
+ *   runs only the separately configured local database Vitest lane.
  *
  * DEPENDS ON:
- *   Packages:  Node.js built-ins, vitest
+ *   Packages:  Node.js built-ins, Supabase CLI, vitest
  *   Internal:  scripts/qa/safe-child-env.mjs, tests/qa/lib/target-policy.mjs, vitest.config.js
  *   Data:      reads  → local test process settings
  *              writes → local isolated database only through the selected tests
@@ -50,6 +51,33 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
     });
 
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+    const sqlProof = spawnSync(
+      'supabase',
+      [
+        'test',
+        'db',
+        '--local',
+        'supabase/tests/notification_read_recipient_boundary.test.sql',
+      ],
+      {
+        cwd: root,
+        env: safeChildEnv(process.env, {
+          PGOPTIONS: '-cupr.isolated_test_database=on',
+          SUPABASE_TELEMETRY_DISABLED: '1',
+        }),
+        stdio: 'inherit',
+        windowsHide: true,
+      },
+    );
+
+    if (sqlProof.error || sqlProof.status !== 0) {
+      throw new Error(
+        sqlProof.error
+          ? `guarded local SQL proof failed to start: ${sqlProof.error.message}`
+          : `guarded local SQL proof exited ${sqlProof.status}`,
+      );
+    }
+
     const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
     const reportPath = path.join(os.tmpdir(), `upr-vitest-db-${process.pid}.json`);
     const result = spawnSync(

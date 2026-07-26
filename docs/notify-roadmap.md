@@ -216,6 +216,10 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 >       *(The integration suite self-skips without creds like the other CRM suites; its
 >       assertions — bell cutover, targeting, and the full 5-stage resolver precedence —
 >       were verified live against the shared Supabase via MCP this session.)*
+>       **2026-07-26 supersession:** S1g retires that shared/anonymous test because its cleanup and
+>       mark-all path are no longer safe. Guarded local-only S1g SQL supersedes its bell
+>       signature/recipient/read assertions. Preference-resolver integration coverage remains a
+>       separate identity/preferences QA item; this note preserves the historical F2 record.
 > - [x] Acceptance: migration applied + verified live via MCP (ALTER-first ordering,
 >       re-GRANTs, `bust_postgrest_cache()`); live bell verified working (old code, new RPCs);
 >       catalog + conservative seeds live (12 types, only feedback.submitted enabled);
