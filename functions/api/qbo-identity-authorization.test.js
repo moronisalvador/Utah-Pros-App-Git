@@ -365,6 +365,7 @@ describe('qbo-payments-sync scheduler contract', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     getConnection.mockResolvedValue(null);
 
+    expect(syncPaymentsScheduled).toHaveLength(3);
     await syncPaymentsScheduled({}, env, {});
 
     expect(fetchSpy).not.toHaveBeenCalled();
