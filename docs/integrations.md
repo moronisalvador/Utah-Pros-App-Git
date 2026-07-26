@@ -446,6 +446,15 @@ CallRail `message.sent` recipients may omit the `+1` stored on the original UPR 
 projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
 provider-message, or attempt identity checks.
 
+### CallRail recording-source isolation (S1e authored, not applied)
+
+The recording proxy keeps its URL allowlist, lead UUID/provider-call binding, credential ordering,
+direct/signed audio streaming, private cache header, and JSON error contracts. Its source lookup
+changes from browser-readable `inbound_leads.recording_url` to service-only
+`inbound_lead_recording_sources`; `transcribe-call` uses the same source. The public lead row keeps
+only `upr-recording://available`, preserving mobile/desktop truthiness without disclosing a
+provider URL. No provider request, playback, credential read, or live setting change occurred.
+
 Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
 provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
 identity without downloading UPR's own attachment back from CallRail. Confirmation requires the

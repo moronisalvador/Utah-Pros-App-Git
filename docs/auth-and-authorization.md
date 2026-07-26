@@ -399,3 +399,15 @@ open; source-only addenda are
 `docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md` and
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. A React admin
 route is not a substitute for the remaining Worker, RPC or RLS boundaries.
+
+## Mobile S1e recording-source authority (authored, not applied)
+
+`get_inbound_leads` will require an active, non-external employee and either `admin` or the existing
+`crm_call_log` employee/role capability. Its only browser callers remain the mobile Admin Lead
+Center and desktop Call Log. Direct `inbound_leads` SELECT remains company-wide for active internal
+employees because the current model has no employee organization membership or lead assignment;
+`crm_tasks.assignee_id` is task ownership, not lead visibility. Authenticated direct DML is removed.
+
+Raw provider URLs move to forced-RLS, service-only `inbound_lead_recording_sources`. Browser and
+legacy composite RPC responses see only a truthy opaque marker. The approved CallRail proxy keeps
+the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
