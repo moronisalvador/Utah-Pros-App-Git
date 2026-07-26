@@ -8531,10 +8531,12 @@ internal admin or `crm_call_log` employee/role capability, binds the call row/pr
 before secrets, preserves the private audio/error/rewrite contracts and times both fetch paths.
 HTTP notify keeps exact-secret and in-process callers unchanged; a human Bearer is active internal
 admin only and may request four object-derived appointment/estimate events with no caller-supplied
-audience or content. Seventy-nine focused tests cover identity/configuration/object denial,
+audience or content. Eighty-three focused tests cover identity/configuration/object denial,
 provider-never-called ordering, recording success/error/timeout shapes, secret precedence and
 notification object contracts. No provider, notification, customer content or secret value was
 read.
+The complete source/caller/test/review/rollout record is
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
 
 Neither P0 is closed. Authenticated execution of `notify_emit`, direct
 `get_inbound_leads`/`inbound_leads` recording-URL access, the wider definer/direct-policy census,

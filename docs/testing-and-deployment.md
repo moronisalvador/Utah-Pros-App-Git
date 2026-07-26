@@ -169,6 +169,9 @@ contracts cover missing/invalid/config-failed Auth, inactive/external/denied rol
 timeout failures. Notification coverage pins secret-first precedence, in-process/secret payload
 compatibility, active-internal-admin Bearer access, allowed object state, forged recipient/body/link
 rejection and zero dispatch/provider fan-out on every denial.
+The final contract pass also proves a thrown push subscription does not prevent the later
+subscription from succeeding or remove the per-channel summary, and positively exercises all four
+human HTTP event shapes after exact object proof.
 
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
