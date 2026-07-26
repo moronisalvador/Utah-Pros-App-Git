@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "canonicalSource": ".claude",
+  "generatedBy": "scripts/render-mobile-readiness-codex-adapters.mjs",
+  "skill": {
+    "sourceDirectory": ".claude/skills/mobile-readiness-wave",
+    "targetDirectory": ".agents/skills/mobile-readiness-wave"
+  },
+  "agents": [
+    {
+      "source": ".claude/agents/mobile-readiness-mapper.md",
+      "target": ".codex/agents/mobile-readiness-mapper.toml",
+      "model": "gpt-5.6-terra",
+      "modelReasoningEffort": "medium",
+      "sandboxMode": "read-only"
+    },
+    {
+      "source": ".claude/agents/mobile-readiness-security-reviewer.md",
+      "target": ".codex/agents/mobile-readiness-security-reviewer.toml",
+      "model": "gpt-5.6-sol",
+      "modelReasoningEffort": "high",
+      "sandboxMode": "read-only"
+    },
+    {
+      "source": ".claude/agents/mobile-readiness-contract-tester.md",
+      "target": ".codex/agents/mobile-readiness-contract-tester.toml",
+      "model": "gpt-5.6-terra",
+      "modelReasoningEffort": "high",
+      "sandboxMode": "workspace-write"
+    },
+    {
+      "source": ".claude/agents/mobile-readiness-release-auditor.md",
+      "target": ".codex/agents/mobile-readiness-release-auditor.toml",
+      "model": "gpt-5.6-sol",
+      "modelReasoningEffort": "high",
+      "sandboxMode": "read-only"
+    }
+  ]
+}
