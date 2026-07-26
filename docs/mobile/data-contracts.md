@@ -103,8 +103,9 @@ forms of `/api/qbo-payments-sync`, while preserving their exact secret-first ser
 the poller's direct `scheduled()` entry. `/api/quickbooks-connect` is active-internal-admin Bearer
 only and does not accept the server capability, so it cannot be used to replace OAuth state.
 `/api/qbo-charge` and `/api/qbo-attach` keep their existing Bearer-only billing contract and now
-reject external employees before privileged work. Their deployed success/error bodies are
-unchanged.
+reject external employees before privileged work. Approved-caller downstream success/error bodies
+are unchanged; the added 403 denials are intentional. Customer-sync and manual payment-sync do not
+yet durably attach the resolved human actor to worker telemetry.
 
 Other notification and recording Workers remain separately open; the shared/mobile/desktop caller
 contract prevents treating this as a route-only fix. Direct reads of `qbo_attachments` metadata

@@ -161,8 +161,10 @@ handlers while preserving their exact secret-first capability and the poller's s
 `scheduled()` entry. OAuth connect is deliberately human-only: a server secret cannot replace
 `qbo_oauth_state` or `qbo_oauth_user`. Charge and attachment mutation retain their existing
 Bearer-only billing predicate and now explicitly reject external employees before privileged
-work. Request/response shapes, callback redirects, scheduler behavior and provider helpers are
-unchanged.
+work. Approved-caller downstream request/response shapes, callback redirects, scheduler behavior
+and provider helpers are unchanged; new denials are the deliberate authorization transition.
+Customer-sync and manual payment-sync browser authorization resolves the actor but does not
+persist that actor in current worker telemetry, so complete QBO actor auditability remains open.
 
 This remains a source-only slice. Direct `qbo_attachments` metadata SELECT does not yet exclude
 external admins, and the broader mobile Worker/RPC/RLS/Storage boundary remains open. The real role

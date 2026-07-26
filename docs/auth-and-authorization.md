@@ -301,7 +301,9 @@ human-only form of the gate: the server secret cannot replace OAuth state. `/api
 `/api/qbo-attach` retain their existing Bearer-only billing-role contract and now explicitly deny
 external employees before connection, domain, telemetry or provider work. Handler-level negative
 and failure-path tests prove those denied paths reach at most Supabase Auth plus the employee
-lookup.
+lookup. The customer-sync and manual payment-sync gates resolve the human actor but their current
+`worker_runs` records do not durably persist that actor; adding an audit field/write is a separate
+schema/telemetry decision.
 
 This is still not a global QBO or mobile authorization claim. The direct `qbo_attachments` SELECT
 policy does not exclude external admins; other notification, recording, RPC, direct-table and
