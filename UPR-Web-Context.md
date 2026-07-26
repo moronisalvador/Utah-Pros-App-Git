@@ -2610,7 +2610,7 @@ QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit De
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
 QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
 QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
-QBO_WEBHOOK_SECRET              — Shared secret; must equal integration_config.qbo_webhook_secret (DB trigger → worker auth)
+QBO_WEBHOOK_SECRET              — Shared QBO server capability; used by invoice/estimate self-calls and payment scheduler paths; the legacy contact trigger is inert
 APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
@@ -2675,18 +2675,16 @@ record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnosti
 
 ## QuickBooks Online Integration (Jun 18 2026 — Phase 1: customer sync)
 
-One-directional push: when a paying-party contact (`role` in homeowner /
-property_manager / tenant, with a non-empty name) is inserted into `contacts`,
-it is created as a Customer in QuickBooks Online. Same worker + service-role
-pattern as the Encircle sync.
+Customer creation is one-directional UPR→QBO, but it is no longer automatic on contact insert.
+When an invoice or estimate needs a paying-party contact
+(`homeowner`/`property_manager`/`tenant`, with a non-empty name),
+`ensureQboCustomer()` self-posts `{contact_id}` to `/api/qbo-sync-customer` with the existing server
+capability. Settings also exposes explicit preview/backfill. The Worker creates or links the QBO
+Customer and writes `qbo_customer_id`/`qbo_synced_at` back to the contact.
 
-**Data flow:**
-`contacts` INSERT → trigger `trg_qbo_customer_sync` → `notify_qbo_customer_sync()`
-fires `net.http_post` (pg_net, async, non-blocking) to `/api/qbo-sync-customer`
-with `{ contact_id }` + an `x-webhook-secret` header → worker creates the QBO
-customer → writes `qbo_customer_id` / `qbo_synced_at` back on the contact. The
-trigger no-ops unless QuickBooks is connected, so it is safe to ship before
-setup is finished.
+The attached `trg_qbo_customer_sync`/`notify_qbo_customer_sync()` path is deliberately inert after
+`20260701_crm_qbo_phase_b_gate_contact_trigger.sql`; its historical pg_net flow is not a current
+caller.
 
 **Tables (RLS-locked — service-role only; NO anon/authenticated policies):**
 - `integration_credentials` — `provider PK, access_token, refresh_token, realm_id, environment ('sandbox'|'production'), token_expires_at, company_name, connected_by UUID→employees, connected_at, updated_at`. One row per provider (`'quickbooks'`). Access token auto-refreshes (~1h) inside the worker; refresh token rolls forward.
@@ -2733,18 +2731,24 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 **Environments / domains (IMPORTANT):**
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
 - **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
-- `integration_config.qbo_worker_url` is the DB trigger's target; set to the **production** worker `https://utahpros.app/api/qbo-sync-customer`. Env vars must live in the matching Cloudflare environment (Preview for dev, Production for main).
+- `integration_config.qbo_worker_url` is legacy configuration for the now-inert contact trigger; it
+  is not an active caller. On-demand invoice/estimate sync uses the deployment's own origin. QBO
+  bindings must still live in the matching Cloudflare environment (Preview for dev, Production for
+  main).
 - Public EULA/Privacy pages (required by the Intuit production profile) are served at `https://utahpros.app/terms` and `/privacy` (`src/pages/Legal.jsx`). Connecting your own company needs production keys but **no marketplace review**.
 
 **Production setup checklist:**
 1. developer.intuit.com → get **Production** Client ID + Secret. Add redirect URI `https://utahpros.app/api/quickbooks-callback` under the **Production** Redirect URIs tab; set EULA=`/terms`, Privacy=`/privacy`, host domain=`utahpros.app`.
 2. Cloudflare **Production** env vars: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT=production`, `QBO_REDIRECT_URI=https://utahpros.app/api/quickbooks-callback`, `QBO_WEBHOOK_SECRET` (must equal `integration_config.qbo_webhook_secret`). Redeploy.
-3. https://utahpros.app/dev-tools → Integrations → Connect QuickBooks → authorize your real company.
+3. https://utahpros.app/settings/integrations → Connect QuickBooks → authorize your real company.
 4. Preview sync → review → "Sync existing customers" to backfill the existing paying-party contacts.
 
 (Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
 
-**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact (normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Phone-only stubs later given a name+role are NOT caught by the contacts INSERT trigger — use the backfill.
+**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
+(normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
+Customers through invoice/estimate on-demand sync or explicit Settings preview/backfill, regardless
+of when name/role was populated.
 
 ---
 
@@ -2752,7 +2756,9 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **One invoice per job (= per division)** is the norm — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. **A job can have more than one invoice when a supplement is needed** (you can't add lines to an already-paid invoice). The QBO `DocNumber` is unique per invoice: the number QBO already assigned, else `job_number` for the first invoice and `job_number-N` for the Nth (e.g. `R-2604-009`, then `R-2604-009-2`) — see `functions/api/qbo-invoice.js`. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
 
-**Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough (Items/Classes/Invoices); auth via `x-webhook-secret` or Supabase Bearer; tokens stay server-side.
+**Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough
+(Items/Classes/Invoices); auth via the exact server capability or an active internal-admin Supabase
+Bearer; tokens stay server-side.
 
 **Foundation (`migrations/20260618_invoice_qbo_foundation.sql`):** `invoices.qbo_invoice_id/qbo_synced_at/qbo_sync_error`; `generate_invoice_number()` (seq `invoice_number_seq` → `INV-######`); `create_draft_invoice_for_job()` AFTER INSERT trigger on `jobs` (one draft per job), **gated by `integration_config.auto_draft_invoices` (default `'false'` = dormant)**.
 
@@ -8485,7 +8491,8 @@ The first bounded local slice adds `functions/lib/qbo-auth.js` and gates
 server capability is preserved; browser access now requires an active, non-external `admin`.
 Negative tests cover missing/expired/config-failed identities, missing/inactive/external employees,
 every denied real role, server-secret precedence/fallback, malformed bodies and zero downstream
-provider/domain calls. Shared response/provider contracts remain unchanged.
+provider/domain calls. Approved-caller downstream response/provider contracts remain unchanged;
+new denials are the deliberate authorization transition.
 
 S1b continues from the exact R0 tip. Customer sync and HTTP payment sync now share the active,
 internal-admin browser boundary while retaining their secret-first capability; direct
@@ -8493,13 +8500,15 @@ internal-admin browser boundary while retaining their secret-first capability; d
 server secret cannot replace state. QBO charge/attach remain Bearer-only and reject external
 employees. Seventy-seven focused tests cover denied identities and auth/config failure before
 business/provider helpers, scheduler/OAuth/capability compatibility and exact disconnected
-responses.
+responses. Customer-sync and manual payment-sync resolve the human actor for authorization but do
+not persist that actor in current `worker_runs` telemetry; durable actor auditing remains open.
 
 Neither P0 is closed. CallRail recording, notify HTTP, definer RPCs, broad direct policies and the
 external-admin `qbo_attachments` metadata SELECT residual remain under `MOB-SEC-014`; private media
 compatibility and live apply remain under `MOB-SEC-015`. Current native source still mounts
 `/tech/admin/*`, so field-only Capacitor scope is an unenforced product decision. Cold-offline,
 native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot support,
-`project_manager` billing authority and the shared QBO capability lifecycle remain owner gates.
+`project_manager` billing authority, durable QBO actor auditing and the shared QBO capability
+lifecycle remain owner gates.
 No deploy, migration, secret/provider change, message, push, money movement, signing or distribution
 occurred in S1b.
