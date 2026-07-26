@@ -152,8 +152,11 @@ already runs `validate:tooling`, so **do not edit `ci.yml`**; new invariants go 
 `.claude/settings.local.json` is now **untracked** (`b075007`), so the 121 pre-approvals and overnight
 autonomy are intact on disk. The credential rotation needs **two gates in this order** — rotating
 first is wrong because there is nowhere sanctioned to put the new key until the card renders:
-1. apply `supabase/migrations/20260723_encircle_managed_credentials.sql` (reviewed, provenance clean
-   `4799feb`, rollback present, verified **not** in the live ledger, and the hardened guard allows it);
+1. ~~apply `supabase/migrations/20260723_encircle_managed_credentials.sql`~~ **DONE — applied
+   2026-07-26, live ledger version `20260726233416`.** Verified read-only against the live catalog
+   at 2026-07-26 ~18:00 MT. Provenance clean: the source blob is identical on `main` and `dev`
+   (`0a06a21` / `4799feb`), so this was applied from a reviewed commit reachable from the release
+   branch, as `database-standard.md` §5 requires. **Do not re-apply.**
 2. flip `feature:encircle_managed_credentials` (seeded `false`; `Integrations.jsx:1074` gates the card).
 
 Then rotate and paste. The validator's `secret-bearing-permission` warning clearing is the **only**
