@@ -115,12 +115,14 @@ row to the provider call ID in its stored allowlisted URL before credential/prov
 active-internal-admin only and accepts four server-derived appointment/estimate event shapes.
 Caller-selected recipients, copy, HTML, payload/data, entity/job fields and links are rejected.
 
-Two bypasses remain outside that HTTP source slice. `notify_emit(text,jsonb)` is still an
-authenticated-executable definer function that can forward caller-controlled JSON while presenting
-the stored Worker secret, and `get_inbound_leads` plus broad `inbound_leads` policies can expose
-stored recording URLs without the proxy. Therefore S1c is partial containment, not closure of
-`MOB-SEC-014`. The existing QBO human-actor telemetry gap and external-admin `qbo_attachments`
-metadata SELECT policy remain separate QBO residuals; neither was mixed into S1c.
+Two bypasses remain outside that HTTP source slice. S1d now has a reviewed, locally tested but
+unapplied migration that removes authenticated execution of `notify_emit(text,jsonb)`, retains
+only `service_role`, and makes the trusted top-level event type win over the object body. Until its
+separate owner-authorized apply, the live definer can still forward caller-controlled JSON while
+presenting the stored Worker secret. `get_inbound_leads` plus broad `inbound_leads` policies can
+still expose stored recording URLs without the proxy. Therefore neither S1c nor local S1d readiness
+closes `MOB-SEC-014`. The existing QBO human-actor telemetry gap and external-admin
+`qbo_attachments` metadata SELECT policy remain separate QBO residuals.
 
 ## Workflow contract map
 
@@ -315,7 +317,15 @@ appointment assigned/updated/canceled or estimate accepted after exact state/mem
 The existing response summary, preference resolution, sequential fan-out and per-channel
 best-effort behavior are preserved. Shared Auth and Web Push still use unbounded legacy fetch paths;
 provider timeout completion is therefore an explicit residual rather than a closed contract.
-Authenticated execution of `notify_emit` remains the higher-priority database bypass.
+
+S1d freezes the database-origin contract without sending an event: six owner-run definer functions
+contain the seven appointment/estimate/timesheet/abandoned-clock calls, all pass object bodies, and
+the abandoned-clock scanner remains a `postgres` cron caller. The unapplied migration changes only
+the target ACL and object merge order; catalog/URL gates, secret/header names, `net.http_post`,
+ignored response, payload fields, triggers, and schedule remain unchanged. Its intended direct
+grant is `service_role`; the owner-executed database chain must not receive an in-body
+session-role check. Current live authenticated execution remains the higher-priority apply gate,
+while direct `create_notification` remains a separate bell-RPC residual.
 
 ## Error semantics
 

@@ -208,13 +208,37 @@ caller message copy, recipient, payload and link fields before dispatch. Shared 
 still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
 slice. Email retains its timed provider request.
 
-S1c does not close the database-side capability bypass: the dated generated/live inventory shows
-`notify_emit(text,jsonb)` remains `SECURITY DEFINER` and executable by `authenticated`. Containing
-that RPC requires a separate migration, caller-compatible trigger verification, rollback SQL and
-an owner-authorized shared-database apply. Evidence:
+At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
+`SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the
+database-side capability bypass. The S1d section below records the separately authored
+caller-compatible migration/rollback/tests, which still require an owner-authorized
+shared-database apply. S1c evidence:
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
 Direct authenticated execution of `create_notification` is also queued with the wider
 notification/RPC containment wave.
+
+## Notification dispatcher database checkpoint (S1d, 2026-07-26)
+
+The S1d read-only live capture found one exact `notify_emit(text,jsonb) -> void` overload and no
+browser/Pages source caller. It is owned by `postgres`, runs `SECURITY DEFINER` with
+`search_path=public`, and currently grants EXECUTE to `authenticated` and `service_role`.
+Its direct database graph is three notification trigger functions, two timesheet RPCs, and the
+abandoned-clock scanner; those six definer functions contain seven calls, and the scanner is
+scheduled every 30 minutes as `postgres`.
+
+`20260726110000_notify_emit_service_boundary.sql` is a reviewed local apply candidate, not live
+state. It removes direct browser execution and retains `service_role` while leaving the
+owner-executed database chain intact. The HTTP contract is deliberately frozen: the notification
+catalog enabled gate, Worker URL/secret configuration key names, stored values, `Content-Type`,
+`x-webhook-secret`, `net.http_post`, fire-and-forget response behavior, and `/api/notify` payload
+shape do not change. Only the JSON object merge order changes so the trusted `p_type_key` cannot be
+replaced by `p_body`.
+
+Apply and rollback each fail closed on the captured function and caller graph. Apply-window checks
+are catalog-only and do not invoke a notification or provider. The migration must remain absent
+from live provenance until an owner-authorized apply records its actual ledger version and fresh
+fingerprint. Evidence:
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 

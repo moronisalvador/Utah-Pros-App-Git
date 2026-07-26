@@ -173,6 +173,14 @@ The final contract pass also proves a thrown push subscription does not prevent 
 subscription from succeeding or remove the per-channel summary, and positively exercises all four
 human HTTP event shapes after exact object proof.
 
+The S1d database-dispatcher apply candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Its credential-free
+contract suite proves exact live-body rollback, one-expression trusted-key hardening,
+`PUBLIC`/`anon`/`authenticated` denial, `service_role` retention, six-function/seven-call-site
+compatibility, trigger/cron metadata, no in-body role assertion, no browser caller, fail-closed
+drift checks, catalog-only pre/post-apply checks, and correct unapplied provenance treatment. The
+tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
+
 A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
 runtime binding **names and presence only**, deploy only from a reviewed release commit under
 separate authorization, exercise approved allow/deny identities on non-customer fixtures, and
@@ -188,7 +196,16 @@ reopens the bypass. An S1c emergency rollback must first disable the affected HT
 CallRail playback/notification trigger, then revert only the reviewed S1c source commits while
 explicitly accepting that any-employee recording or arbitrary-Bearer notification access reopens.
 No rollback rotates secrets or changes the shared database by implication. The separate
-authenticated `notify_emit` ACL residual needs its own migration/apply/rollback window.
+authenticated `notify_emit` ACL residual now has an authored S1d migration and exact rollback but
+still needs its own owner-authorized apply/verification window. Immediately before apply, run
+`supabase/tests/notify_emit_service_boundary_preflight.sql` and confirm the reviewed hashes, ACL,
+six callers, three triggers, and one cron row. Apply only
+`20260726110000_notify_emit_service_boundary.sql` from the reviewed release commit; then run
+`supabase/tests/notify_emit_service_boundary_post_apply.sql`, representative role-denial checks,
+fresh provenance capture, and database advisors without invoking a real notification. Any
+synthetic trigger/service canary requires separate explicit authorization and non-customer
+fixtures. Rollback uses the paired SQL only after its forward-body drift guard passes and must
+record that authenticated arbitrary-emission capability was re-opened.
 
 The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
 dual-form path normalization and authorized delivery before a bucket flip; then recapture exact
