@@ -37,9 +37,11 @@ docs/database-schema.md, docs/auth-and-authorization.md, docs/business-rules.md,
 docs/integrations.md, docs/testing-and-deployment.md, and UPR-Web-Context.md. Use
 $mobile-readiness-wave.
 
-Work from a fresh isolated worktree and current origin/dev. Preserve the audit history and record
-both the audit source SHA ef305f6d6afab4d846eab92fc1b04038d70221f0 and the new current base
-SHA. Do not assume the dated audit describes current dev.
+Create a fresh isolated worktree and codex/ wave branch from the foundation HEAD. Fetch current
+origin/dev, record its SHA, and reconcile any newer commits without dropping the foundation. After
+the foundation is integrated into dev, current origin/dev becomes the base. Preserve the audit
+history and record the audit source SHA ef305f6d6afab4d846eab92fc1b04038d70221f0, foundation/wave
+base SHA, and current origin/dev SHA. Do not assume the dated audit describes current dev.
 
 Your bounded outcome is:
 1. recapture the current source/configuration/caller state relevant to MOB-SEC-014 and MOB-SEC-015;

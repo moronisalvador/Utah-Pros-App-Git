@@ -30,7 +30,7 @@
 | Git | Current Git with worktree support | Isolated branches and preservation of unrelated work |
 | Node.js | Node 22, matching `.node-version` and `.github/workflows/ci.yml` | Reproducible build/test behavior |
 | npm | Version supplied with Node 22; install with `npm ci` | Exact `package-lock.json` dependency graph |
-| Repository branch | `codex/mobile-pwa-readiness-foundation`, then a fresh `codex/` wave branch from current `origin/dev` | Loads the foundation and avoids `main` |
+| Repository branch | `codex/mobile-pwa-readiness-foundation`, then a fresh `codex/` wave branch from that HEAD | Loads the unmerged foundation and avoids `main`; fetch/reconcile current `origin/dev` before editing |
 
 No additional npm package is required by the foundation. The adapter generator, preflight, and
 governance tests use Node built-ins. Do not globally install Capacitor, Vite, test runners, or
@@ -110,7 +110,8 @@ provider actions, merges, signing, distribution, and owner decisions remain inte
 - project agent/skill adapters pass generation check;
 - Node 22 and lockfile dependencies installed;
 - preflight and tooling tests pass;
-- a fresh wave branch/worktree exists and its base SHA is recorded;
+- a fresh wave branch/worktree exists from the foundation HEAD, and both its base SHA and current
+  `origin/dev` SHA are recorded/reconciled;
 - GPT-5.6 Sol + Ultra selected;
 - Wave 1 prompt copied from `docs/handoff/mobile-production-readiness-wave-1-prompt.md`;
 - external systems remain read-only and limitations are named.

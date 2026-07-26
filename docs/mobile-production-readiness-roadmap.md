@@ -54,8 +54,10 @@ configuration read-only before relying on an audit statement.
 
 ## Non-negotiable controls
 
-1. Work starts from current `origin/dev` in an isolated worktree and a `codex/` branch unless a
-   handoff names a reviewed integration branch.
+1. Until this foundation is integrated into `dev`, work starts from
+   `codex/mobile-pwa-readiness-foundation` in an isolated worktree and a new `codex/` wave branch.
+   Fetch current `origin/dev`, record/reconcile drift, and do not discard the foundation. After
+   integration, start from current `origin/dev`.
 2. The primary orchestrator is GPT-5.6 Sol at Ultra reasoning. It may run at most three concurrent
    subagents in this environment, following the ownership manifest.
 3. Only one writer owns a shared hotspot at a time. Read-only discovery and independent review may
