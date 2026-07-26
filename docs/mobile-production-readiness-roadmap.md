@@ -214,9 +214,13 @@ Cold-offline, exact field-only native route scope, admin-mobile native exclusion
 account-deletion fulfillment, pilot support, `project_manager` billing authority and the QBO
 server-capability lifecycle remain explicit owner decisions rather than inferred approvals.
 
-The next source session should take only S1e recording-source authorization: freshly recapture
-`get_inbound_leads`, direct `inbound_leads` grants/policies, exact recording URL consumers, and
-employee/CRM organization-assignment limits; then author the smallest compatible RLS/RPC plan if
-evidence supports it. Do not combine that work with the pending S1d apply, `create_notification`,
-QBO telemetry/RLS, shared identity/device/bell RPCs, private media, deployment or provider/device
-work. The S1d apply remains a separate serialized owner gate from a reviewed release commit.
+S1e recording-source authorization is now authored and locally verified, not applied. Raw URLs
+move into a forced-RLS service-only table while an opaque truthy marker preserves the frozen
+`inbound_leads` shape. `get_inbound_leads` gains the admin/`crm_call_log` decision; direct access
+loses anonymous privileges and authenticated DML, with active-internal company-wide reads because
+no employee-to-CRM-org/lead assignment field exists. Apply remains a separate serialized owner
+gate after compatible Worker deployment.
+
+The next source session should take only the authenticated `create_notification` bell-emission
+boundary. Do not combine it with S1d/S1e apply, QBO telemetry/RLS, shared identity/device RPCs,
+private media, deployment or provider/device work.

@@ -391,3 +391,12 @@ Before changing a mobile contract:
 6. update this file, affected canonical domain docs, and `UPR-Web-Context.md`;
 7. apply only from a reviewed release commit in an authorized shared-database window;
 8. verify the intended role and live provenance after apply without exposing business data.
+
+## Recording-source contract
+
+`inbound_leads.recording_url` is an availability field, not a provider-source contract. After S1e
+apply it is null or `upr-recording://available`; clients may test presence only. The raw URL belongs
+to service-only `inbound_lead_recording_sources`. Browsers request playback using only `lead_id`
+through `/api/callrail-recording`; the Worker reconstructs identity, authorization, lead/provider
+binding, URL allowlist and provider access. `get_inbound_leads(integer)` preserves JSON
+shape/order/limit but requires admin or `crm_call_log` capability.

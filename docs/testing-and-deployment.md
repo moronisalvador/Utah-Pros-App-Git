@@ -438,3 +438,10 @@ fresh outbound/inbound SMS; fresh outbound/inbound MMS with private object owner
 link to the exact field-PWA thread; exact-build promotion to `main`; production-only provider
 bindings/webhook/scheduler cutover; and the same controlled Production proofs. A passing build or a
 historical provider row is not a substitute for those layers.
+
+The S1e credential-free suite pins the live `get_inbound_leads` signature/body hash, table
+ACL/policy/trigger-free preconditions, forced-RLS service-only source table, deferrable capture
+trigger, opaque marker, active-internal company-wide SELECT policy, call-log capability gate,
+rollback, exact mobile/desktop truthiness callers, and approved proxy audio/error contracts.
+Worker tests exercise the additional service-only lookup. Live apply verification must prove
+browser denial and service access without selecting URL values or invoking a provider.
