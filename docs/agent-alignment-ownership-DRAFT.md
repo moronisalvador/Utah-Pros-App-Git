@@ -262,3 +262,70 @@ An amendment adds a numbered §9.x entry with: the quoted original, the amendmen
 ---
 
 *This DRAFT binds nobody. On promotion to `.claude/rules/agent-alignment-wave-ownership.md`, it becomes binding from that commit forward, and its §§1–8 become the authority on names and paths for every session in this initiative.*
+
+---
+
+## §10 — Resolutions and amendments landed 2026-07-26 (owner-supervised)
+
+Recorded so this manifest stops describing decisions as open. `origin/dev` carried 16 commits for this
+initiative on 2026-07-26; the state below is what a session inherits.
+
+### 10.1 Owner gates closed
+
+| Gate | Resolution |
+|---|---|
+| **#4** SEO trees | **Deleted.** 31 `.agents/skills/seo*` bundles + 18 `.codex/agents/seo*.toml`. Amendment in `docs/tooling-governance.md` §5. Executed by the owner — the repo's `Bash(rm -rf:*)` deny correctly refused the agent. 93 SEO `SKILL.md` remain recoverable via `ff76e01`. |
+| **#5** Commit `.agents`/`.codex` | **NO.** Committing ~345 stale hand-copied mirrors would commit the drift problem this initiative exists to remove. Track renderer output only; coverage grows through `tooling/`. |
+| **#8** CI ownership | **Dissolved.** `ci.yml` already runs `validate:tooling`, which blocks adapter drift by itself (verified: `ERROR [generated-adapter-drift]`, exit 1). New invariants go inside `scripts/validate-tooling-governance.mjs`. **Do not edit `ci.yml`.** |
+| **#15** Rules 4 and 6 | **Unchanged, verbatim.** The owner declined to re-litigate. Their internal tensions remain surfaced, not resolved. |
+| **#20** WSL2 | **No.** Every gap found on 2026-07-26 was inside the tool layer, which `permissions.deny` + PreToolUse hooks cover on native Windows. Codex sandboxes natively here. The standing rule holds: never list sandboxing as a Claude-side control on win32. |
+
+### 10.2 Permission-surface correction — `deny` was wrong for `apply_migration`
+
+The 2026-07-26 hardening put `mcp__*__apply_migration` in `permissions.deny`. That **blocked an
+explicitly owner-authorized apply**, which is stricter than `database-standard.md` §0 intends — §0
+requires fresh task-specific authorization for an apply, it does not forbid one. Corrected to
+`permissions.ask`.
+
+Free-form SQL (`execute_sql`, `exec_read_sql`, `upr_sql`) **stays denied**: `upr_select` / `upr_schema`
+cover legitimate reads, and `apply_migration` is the guarded path — the PreToolUse guard requires a
+`ROLLBACK` section on it and refuses destructive patterns, and it produces a ledger entry. Making the
+guarded path `ask` while the unguarded paths stay `deny` is the intended shape. This supersedes
+challenge finding **S-4**'s "both or neither", which applied when `apply_migration` was both
+pre-approved *and* unguarded.
+
+The wildcard question is now settled empirically: **`mcp__*__<tool>` DOES match the hashed server id.**
+It blocked a real call. Earlier notes recording it as unverified are superseded.
+
+### 10.3 CAP-SEC-001 — repo half done, live half owner-gated
+
+`.claude/settings.local.json` is **untracked** (`b075007`); it stays on disk, so the owner's 121
+pre-approvals and overnight autonomy are unaffected. `.env` denies and the MCP denies above are the
+shared backstop.
+
+The credential rotation is blocked on **two** gates, in this order, and rotating first was wrong
+because there is nowhere sanctioned to put the new key until the card renders:
+
+1. Apply `supabase/migrations/20260723_encircle_managed_credentials.sql` — reviewed, provenance clean
+   (`4799feb`), rollback present at `supabase/rollbacks/`, and the hardened guard **allows** it.
+   Verified NOT in the live ledger.
+2. Flip `feature:encircle_managed_credentials` — the migration seeds it `false`, and
+   `Integrations.jsx:1074` gates the card on it. The Pages-side resolver is deployed on `dev`
+   (`0a06a21`).
+
+Then rotate, paste, and the validator's `secret-bearing-permission` warning clears. That warning
+clearing is the only reliable signal the rotation took.
+
+### 10.4 Still open, and who can close it
+
+- **L0/L1** shared core — in flight by another session; `CLAUDE.md` already opens with `@AGENTS.md`.
+- **L2** depth — unblocked (Claude Code 2.1.220). Still 212,822 B always-loaded.
+- **L3** coverage 7 → 39, which sweeps up the **12 of 15** ungoverned Codex agents that still inherit
+  the parent sandbox.
+- **Gates** — a ref-parsing `never-push-main` hook is the only robust form; the enumerated denies are
+  belt only.
+- **L4** — decision log with durable IDs; cross-tool behavioural fixture.
+- **Open choice** — the renderer emits full copies; `tooling-governance.md` §7 prefers thin pointers.
+- **Owner/CLI only** — the three empirical tests (E1 byte-cap shape, E2 local `codex review` honouring
+  `## Code Review Rules`, E3 unscoped rules in subagents), the Codex sandbox effect test, and a
+  `/context` token baseline. No token claim may be made until that capture exists.

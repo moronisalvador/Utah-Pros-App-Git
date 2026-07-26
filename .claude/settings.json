@@ -106,7 +106,6 @@
       "Bash(git push origin main)",
       "Bash(git push origin main:*)",
       "Bash(git push origin HEAD:main)",
-      "mcp__*__apply_migration",
       "mcp__*__execute_sql",
       "mcp__*__exec_read_sql",
       "mcp__*__upr_sql",
@@ -123,6 +122,9 @@
       "mcp__UPR_MCP__qbo_delete_invoice",
       "mcp__UPR_MCP__qbo_delete_entity",
       "mcp__UPR_MCP__qbo_delete_payment"
+    ],
+    "ask": [
+      "mcp__*__apply_migration"
     ]
   }
 }
