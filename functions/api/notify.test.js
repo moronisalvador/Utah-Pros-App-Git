@@ -244,6 +244,44 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
   });
 
+  it('continues fan-out when one push subscription throws and reports the later success', async () => {
+    const sends = [];
+    const sendWebPushImpl = async (sub) => {
+      sends.push(sub.endpoint);
+      if (sub.endpoint.endsWith('/1')) throw new Error('push unavailable');
+      return { ok: true, status: 201 };
+    };
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
+      subsByEmp: {
+        a1: [
+          { id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' },
+          { id: 's2', endpoint: 'https://push/2', p256dh: 'p', auth: 'a' },
+        ],
+      },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {},
+      sendWebPushImpl,
+    });
+
+    expect(sends).toEqual(['https://push/1', 'https://push/2']);
+    expect(out).toMatchObject({
+      type_key: 'feedback.submitted',
+      recipients: 1,
+      results: [{
+        recipient_id: 'a1',
+        push: { sent: 1, attempted: 2, pruned: 0 },
+      }],
+    });
+  });
+
   it('prunes a 410 (dead) subscription', async () => {
     const sendWebPushImpl = async () => ({ ok: false, status: 410 });
     const db = makeDb({
@@ -708,6 +746,46 @@ describe('handleNotify — auth', () => {
     expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
       typeKey: 'appointment.updated',
       body: { appointment_id: APPOINTMENT_ID },
+    }));
+  });
+
+  it.each([
+    [
+      'assigned appointment',
+      {
+        type_key: 'appointment.assigned',
+        appointment_id: APPOINTMENT_ID,
+        employee_id: EMPLOYEE_ID,
+      },
+      { crewByAppt: { [APPOINTMENT_ID]: [{ appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID }] } },
+      { appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID },
+    ],
+    [
+      'canceled appointment',
+      { type_key: 'appointment.canceled', appointment_id: APPOINTMENT_ID },
+      { apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'cancelled' } } },
+      { appointment_id: APPOINTMENT_ID },
+    ],
+    [
+      'accepted estimate',
+      { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+      { estimatesById: { [ESTIMATE_ID]: { id: ESTIMATE_ID, status: 'approved' } } },
+      { estimate_id: ESTIMATE_ID },
+    ],
+  ])('allows an approved admin %s event after exact object proof', async (_label, body, scope, expectedBody) => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok', body }),
+      env: ENV,
+      db: makeDb({ employees: [admin()], ...scope }),
+      dispatchImpl,
+    });
+
+    expect(res.status).toBe(200);
+    expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
+      typeKey: body.type_key,
+      body: expectedBody,
     }));
   });
 
