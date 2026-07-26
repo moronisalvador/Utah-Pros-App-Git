@@ -59,7 +59,7 @@ asked whether either limit was real. **Neither was.** The only hard mechanism is
 `project_doc_max_bytes` — default 32,768, drops the chain's **tail silently** — and this phase raised
 it to 65,536. Anthropic's "under 200 lines" is style advice with no enforcement. The real cost of a
 long instruction file is **attention dilution**, which argues for density, not for compressing law
-(which the constraints forbid). Landed at **24,733 B** with ~40 KB headroom. *Write the law complete;
+(which the constraints forbid). Landed at **24,903 B** with ~40 KB headroom. *Write the law complete;
 let size be an outcome.*
 
 **`core.autocrlf=true` was about to break the bridge silently.** Git stores LF but wrote
@@ -103,8 +103,10 @@ after any tooling touches these files.
    `InstructionsLoaded` hook + `/context` in a **fresh** session.
 3. **Extend coverage from 7 of 39 capabilities** to all (24 Claude skills + 15 subagents). **Cut the
    roster before porting** — both tools silently truncate discovery lists, so some capabilities are
-   already invisible to implicit matching. 30 of 33 `.codex/agents/*.toml` remain ungoverned and
-   inherit the parent sandbox.
+   already invisible to implicit matching. **12 of 15** `.codex/agents/*.toml` remain ungoverned and
+   inherit the parent sandbox. (Corrected 2026-07-26: the 30-of-33 figure predates the owner-run SEO
+   deletion, which removed 18 `seo*.toml`. Verify with
+   `ls .codex/agents/*.toml | wc -l` and `grep -l sandbox_mode .codex/agents/*.toml | wc -l`.)
 4. **The remaining gates — mostly closed by `76a0dff` while session 4 was running.** `.env` denies
    and the MCP denies are in. `apply_migration` is **`permissions.ask`**, not deny: deny blocked an
    explicitly owner-authorized apply, which is stricter than `database-standard.md` §0 intends.
