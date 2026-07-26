@@ -154,10 +154,22 @@ does not need to cross an external gate to claim useful completion.
 - Final qualification: a fresh independent audit snapshot; the 2026-07 audit is never rewritten to
   represent later code.
 
-## Recommended first build session
+## Current checkpoint and next session
 
-Start with `R0`: recapture current `dev`, lock the product decisions, and produce the exact,
-current-state implementation map for `MOB-SEC-014` and `MOB-SEC-015`. The session may add tests and
-prepare narrowly scoped source changes if current evidence supports them, but it stops before any
-live migration, deploy, provider action, or customer-data access. Use the checked-in prompt at
-`docs/handoff/mobile-production-readiness-wave-1-prompt.md`.
+Wave R0 source/live recapture is complete on `codex/mobile-readiness-wave-r0` from foundation
+`7aa4b0c`, with fetched `origin/dev` `90b265e` confirmed as an ancestor. The exact route/caller,
+Worker/RPC/direct-table, policy/grant/object, owner-decision, test, rollout, rollback and separate
+live-apply record is
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
+
+R0 also contains a locally verified S1a slice for four legacy QBO Workers. It does not close
+`MOB-SEC-014`: QBO customer/payment sync and OAuth connect, notification and recording Workers,
+authenticated-executable definer RPCs and broad direct policies remain. `MOB-SEC-015` remains open
+and no private bucket flip was attempted. Cold-offline, exact field-only native route scope,
+admin-mobile native exclusion, push, OTA, account-deletion fulfillment, pilot support,
+`project_manager` billing authority and the QBO server-capability lifecycle remain explicit owner
+decisions rather than inferred approvals.
+
+The next source session should take only S1b: recapture and contain the remaining QBO identity
+surface while preserving scheduler/OAuth/provider contracts and adding denied-role/external/
+failure-path tests. It stops before deployment, secret changes, provider calls or live mutation.

@@ -66,6 +66,28 @@ Admin-mobile adds `estimates`, `invoices`, `invoice_line_items`, and `payments`.
 Do not treat these hand-maintained counts as generated truth after code changes. Update this document
 and regenerate/extend the contract inventory when a caller changes.
 
+## R0 current boundary recapture
+
+Wave R0 re-extracted the current route tree and verified all 68 direct mobile RPC identifiers
+against the live catalog read-only on 2026-07-26 UTC. All 68 resolved to exact one-overload
+`SECURITY DEFINER` functions executable by `authenticated` and `service_role`, with no `anon` or
+`PUBLIC` execution. A simple definition-needle scan found common caller/auth signals in only three;
+that is a prioritization heuristic, not proof about authorization in either direction. Each
+function still requires role/assignment/object review and direct negative tests.
+
+The same capture confirmed broad direct-table policies and a public `job-files` bucket with
+anonymous/public reads and authenticated bucket-wide insert/delete. The exact route-to-caller map,
+function list, table policy/grant summary, complete media caller inventory, capture timestamps and
+separate apply plan are in
+[`../audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`](../audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md).
+Neither `MOB-SEC-014` nor `MOB-SEC-015` is closed.
+
+The first local containment slice gates `/api/qbo-invoice`, `/api/qbo-estimate`,
+`/api/qbo-payment`, and `/api/qbo-query` before privileged work. It preserves the existing server
+capability and permits a browser Bearer only for an active, non-external `admin`. Other QBO,
+notification and recording Workers remain separately open; the shared/mobile/desktop caller
+contract prevents treating this as a route-only fix.
+
 ## Workflow contract map
 
 ### Session, profile, permissions, and flags
