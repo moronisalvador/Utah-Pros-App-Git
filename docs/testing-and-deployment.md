@@ -446,3 +446,7 @@ call-log capability gate, rollback, exact mobile/desktop truthiness callers, and
 audio/error contracts. Worker tests exercise both deployment states and reject marker fallback.
 Catalog-only pre/post-apply SQL proves ACL, policy and trigger state without reading values. Live apply verification must prove
 browser denial and service access without selecting URL values or invoking a provider.
+`supabase/tests/inbound_lead_recording_source_isolated.sql` is an executable, rollback-only suite
+for a disposable post-migration clone. It refuses to run unless both the psql opt-in and
+`upr.isolated_test_database=on` guard are present; its synthetic fixtures exercise marker/source
+capture, recursive scrub, direct RLS, RPC allow/deny variants and authenticated DML denial.

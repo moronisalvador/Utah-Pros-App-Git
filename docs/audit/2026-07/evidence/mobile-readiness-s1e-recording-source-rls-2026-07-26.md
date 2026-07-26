@@ -81,6 +81,8 @@ trigger could not safely reference a speculative upsert ID; and only static data
 The corrected source scrubs mapper/backfill and database payloads, supports both deployment states
 without accepting the marker, captures scalar sources AFTER the row exists, revokes browser ingest,
 adds value-free pre/post-apply SQL, and documents the irreversible privacy scrub.
+The final security pass also identified a production-derived CallRail test fixture; it was replaced
+with format-preserving synthetic identifiers, reserved `.invalid`/555 data and a fake access key.
 
 Actual verification after those corrections:
 
@@ -92,8 +94,11 @@ Actual verification after those corrections:
 - tooling governance: zero errors/two temporary CAP warnings; provenance tests 13/13 and worktree
   provenance passed for 27 ledger rows/21 functions/5 policies with four declared semantic warnings.
 
-No isolated PostgreSQL clone was available, so the unapplied migration and apply-window scripts
-were not executed. Live role behavior remains an owner-authorized apply-window gate.
+An executable rollback-only synthetic suite now covers active/inactive/external direct RLS,
+admin/explicit-allow/explicit-deny RPC behavior, authenticated DML denial, source capture, marker
+replacement and recursive scrub. No isolated PostgreSQL clone was available, so that suite, the
+unapplied migration and apply-window scripts were not executed. Live role behavior remains an
+owner-authorized apply-window gate.
 
 ## Rollout
 

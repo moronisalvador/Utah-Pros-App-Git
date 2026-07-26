@@ -39,6 +39,7 @@ const mobileConsumer = read('src/components/admin-mobile/leads/LeadRow.jsx');
 const desktopConsumer = read('src/pages/crm/CrmCallLog.jsx');
 const preflightSql = read('supabase/tests/inbound_lead_recording_source_preflight.sql');
 const postApplySql = read('supabase/tests/inbound_lead_recording_source_post_apply.sql');
+const isolatedSql = read('supabase/tests/inbound_lead_recording_source_isolated.sql');
 
 describe('S1e recording-source database boundary', () => {
   it('pins the exact live RPC, table ACL, policy and trigger-free preconditions', () => {
@@ -152,6 +153,18 @@ describe('S1e recording-source database boundary', () => {
       expect(sql).not.toMatch(/SELECT\s+(recording_url|raw_payload)/i);
       expect(sql).not.toContain('integration_credentials');
     }
+  });
+
+  it('provides a rollback-only synthetic isolated database behavior suite', () => {
+    expect(isolatedSql).toContain("current_setting('upr.isolated_test_database', true) = 'on'");
+    expect(isolatedSql).toContain('BEGIN;');
+    expect(isolatedSql).toContain('ROLLBACK;');
+    expect(isolatedSql).toContain('synthetic');
+    expect(isolatedSql).toContain('upr-recording://available');
+    expect(isolatedSql).toContain('pg_temp.assert_rpc_denied');
+    expect(isolatedSql).toContain('inactive_direct');
+    expect(isolatedSql).toContain('external_direct');
+    expect(isolatedSql).toContain('authenticated_dml_denied');
   });
 
   it('does not touch the explicitly separate residual boundaries', () => {
