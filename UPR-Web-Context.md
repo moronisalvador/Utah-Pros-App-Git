@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 26, 2026 (mobile S1b QBO identity containment; see git history for earlier
+Last updated: July 26, 2026 (mobile S1c CallRail/notify HTTP containment; see git history for earlier
 accuracy-audit findings)
 
 ## Project Overview
@@ -4099,14 +4099,22 @@ callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). 
                          confirm before Phase 1 starts"). Does NOT affect live form leads — those
                          arrive the same way calls do, through callrail-webhook.js's
                          mapFormPayload(), once CallRail is connected.
-callrail-recording.js — GET, authenticated. Streams a call recording INLINE so staff never leave
+callrail-recording.js — GET, active internal admin or company-wide `crm_call_log` employee/role
+                         capability. Streams a call recording INLINE so staff never leave
                          the Call Log. `inbound_leads.recording_url` is CallRail's authenticated API
                          endpoint (opening it directly in a browser → "HTTP Token: Access denied"),
-                         so this proxy takes a `lead_id`, reads that lead's recording_url + the
+                         so this proxy takes a UUID `lead_id`, proves it is a call row and that its
+                         stored `callrail_id` matches the ID embedded in its stored allowlisted
+                         recording URL, then reads the
                          CallRail API key from integration_credentials, fetches with the
                          `Authorization: Token token="…"` header, and streams the audio back. SSRF
                          guard (`isAllowedRecordingUrl`, functions/lib/callrail.js): proxies only a
-                         CallRail-hosted URL stored on that lead. **app→api rewrite (critical):** the
+                         CallRail-hosted URL stored on that lead. Identity/object denial happens
+                         before credential/provider access. External identities, including current
+                         desktop `crm_partner` Call Log users, are deliberately denied; hiding that
+                         playback control is a separate UI compatibility follow-up. There is no
+                         employee→CRM-org assignment model, so this is explicitly company-wide
+                         capability scope. **app→api rewrite (critical):** the
                          LIVE webhook delivers `app.callrail.com/calls/{id}/recording/redirect?access_key=…`,
                          which THROWS when fetched server-side → the Worker crashed and Cloudflare
                          returned a raw **502 (text/html)**, so live-call recordings would not play or
@@ -4117,10 +4125,16 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          `callrail-webhook.js` also normalizes recording_url to the api form AT INGEST,
                          so all consumers (this proxy + `transcribe-call`) get a working URL.
                          `resolveCallRecording` now try/catches the fetch so a throw returns a clean
-                         error shape instead of 502-ing the Worker. The key never reaches the client. Robust to CallRail's response shape: streams
+                         error shape instead of 502-ing the Worker. Both provider and signed-audio
+                         fetch paths are timed. The key never reaches the client. Robust to CallRail's response shape: streams
                          audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
                          streams that, else returns a 502 with the upstream status + body snippet so
-                         a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
+                         a bad shape is diagnosable. That raw bounded upstream diagnostic and the
+                         trusted provider-returned signed URL/content type are preserved deployed
+                         contracts and remain P2 redaction/validation residuals. Direct
+                         `get_inbound_leads`/`inbound_leads` access can still expose stored recording
+                         URLs and is a separate database authorization residual.
+                         `CrmCallLog.jsx` fetches it as a blob (an
                          `<audio src>` can't carry the Supabase Bearer) and plays it in a compact
                          **custom** player (`RecordingPlayer` — a hidden `<audio>` engine + CRM-styled
                          play/pause, seek, and time), not the browser's default control chrome. Each
@@ -7055,11 +7069,20 @@ roadmap — `migration-safety-checker` enforces). Session C: `get_my_notificatio
 `get_effective_notification_prefs` per recipient → per-recipient `create_notification` (bell) →
 Web Push per subscription (`webPush.js`; 503-skip when VAPID unset, prune 404/410) →
 transactional email via `sendEmail` (from `UPR - Notifications <restoration@utahpros.app>`;
-NULL-address skip reported). Auth accepts a matching `x-webhook-secret` (DB triggers) OR a valid
-Bearer user token. Disabled types are inert (`{skipped}`). `dispatchEvent` is the reusable core
+NULL-address skip reported). Auth checks a supplied `x-webhook-secret` first with no Bearer fallback
+on mismatch; matching secret callers retain the full deployed server payload. The legacy human
+Bearer path now requires an active internal admin and accepts only object-proven
+`appointment.assigned|updated|canceled` or `estimate.accepted` IDs; caller recipients, copy, HTML,
+payload/data, entity/job fields and links are rejected. No checked-in browser/mobile/desktop Bearer
+caller exists. Disabled types are inert (`{skipped}`). `dispatchEvent` is the reusable core
 imported in-process by `feedback-notify.js`, which F2 **rewired** to replace F1's hardcoded
 bell+APNs+webpush block with one `dispatchEvent('feedback.submitted', …)` call (still
-fire-and-forget). Optional APNs forward was omitted — native push stays separate/dormant.
+fire-and-forget). All other trusted in-process callers and the sequential best-effort
+fan-out/summary contract are unchanged. Optional APNs forward was omitted — native push stays
+separate/dormant. Shared Auth and Web Push fetches remain unbounded legacy paths. Critically,
+`notify_emit(text,jsonb)` remains an authenticated-executable `SECURITY DEFINER` confused-deputy
+path that can present the stored secret with caller-controlled JSON; S1c HTTP hardening is partial
+containment until a separate reviewed database migration is applied.
 
 **Emission triggers** (live `20260630` pattern; **doubly inert**): `trg_appointment_crew_notify`
 (appointment_crew INSERT → `appointment.assigned`) and `trg_appointment_notify` (appointments
@@ -8503,12 +8526,25 @@ business/provider helpers, scheduler/OAuth/capability compatibility and exact di
 responses. Customer-sync and manual payment-sync resolve the human actor for authorization but do
 not persist that actor in current `worker_runs` telemetry; durable actor auditing remains open.
 
-Neither P0 is closed. CallRail recording, notify HTTP, definer RPCs, broad direct policies and the
-external-admin `qbo_attachments` metadata SELECT residual remain under `MOB-SEC-014`; private media
-compatibility and live apply remain under `MOB-SEC-015`. Current native source still mounts
-`/tech/admin/*`, so field-only Capacitor scope is an unenforced product decision. Cold-offline,
-native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot support,
-`project_manager` billing authority, durable QBO actor auditing and the shared QBO capability
-lifecycle remain owner gates.
+S1c continues from the exact S1b tip. The CallRail recording proxy now admits only an active
+internal admin or `crm_call_log` employee/role capability, binds the call row/provider ID/URL
+before secrets, preserves the private audio/error/rewrite contracts and times both fetch paths.
+HTTP notify keeps exact-secret and in-process callers unchanged; a human Bearer is active internal
+admin only and may request four object-derived appointment/estimate events with no caller-supplied
+audience or content. Seventy-nine focused tests cover identity/configuration/object denial,
+provider-never-called ordering, recording success/error/timeout shapes, secret precedence and
+notification object contracts. No provider, notification, customer content or secret value was
+read.
+
+Neither P0 is closed. Authenticated execution of `notify_emit`, direct
+`get_inbound_leads`/`inbound_leads` recording-URL access, the wider definer/direct-policy census,
+unbounded shared Auth/Web Push fetches and the external-partner playback UI mismatch remain under
+`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current native
+source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product
+decision. Cold-offline, native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot
+support, `project_manager` billing authority and the shared QBO capability lifecycle remain owner
+gates. The QBO human-actor telemetry gap and external-admin `qbo_attachments` metadata policy
+remain separate named residuals; S1c made no QBO source/schema change.
+
 No deploy, migration, secret/provider change, message, push, money movement, signing or distribution
-occurred in S1b.
+occurred in S1c.
