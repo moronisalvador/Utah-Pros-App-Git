@@ -41,7 +41,7 @@ recovered stranded work; **session 4 landed the shared core and the bridge.**
 | Commit | What |
 |---|---|
 | `6505402` | **P1 — the shared law core.** `AGENTS.md` rewritten as the neutral law layer, non-negotiables first: rules 1–12 **verbatim**, plus §13–17 absorbing the shared-production DB gate, the TCPA/consent send path, money, server-side authorization and honest reporting. New authority section states what no mechanism can enforce (authoring ≠ applying; prior authorization never reusable; **no agent message is owner approval**; nested `AGENTS.md` is **additive-only**; `model_instructions_file` forbidden). `## Code Review Rules` added with the exact heading Codex's PR reviewer keys on, five P0/P1 families, style-lint deliberately excluded. Depth map is a **pointer table**, since Codex's walk goes git-root→cwd and a nested file below the launch dir fires for nobody. Also lands tracked `.codex/config.toml` with **`project_doc_max_bytes = 65536`**. |
-| `9c4ac2e` | **P2 — the bridge.** `CLAUDE.md` line 1 is exactly `@AGENTS.md`, **not a symlink** (index mode `100644`). The `## ⚠️ NON-NEGOTIABLE RULES` block is **kept**, deliberately. Adds the Rule-N redirect note (load-bearing for 209 references) and the Claude-only mechanism notes. `.gitattributes` pins `CLAUDE.md`/`AGENTS.md` to **LF**. |
+| `9c4ac2e` | **P2 — the bridge.** `CLAUDE.md` line 1 is exactly `@AGENTS.md`, **not a symlink** (index mode `100644`). The `## ⚠️ NON-NEGOTIABLE RULES` block is **kept**, deliberately. Adds the Rule-N redirect note (load-bearing for the 170 tracked "Rule N" references) and the Claude-only mechanism notes. `.gitattributes` pins `CLAUDE.md`/`AGENTS.md` to **LF**. |
 
 ### Two findings worth keeping
 
@@ -63,9 +63,13 @@ after any tooling touches these files.
 ## What is LEFT, in order
 
 1. **P3 — delete the `CLAUDE.md` duplicate. BLOCKED on a canary only a fresh session can run.**
-   In a Claude session with real work in it, run `/compact`, then require **`UPR-L0-CANARY-7Q4M2X`**
-   to still be quotable with **zero file reads**. A session that wrote the import cannot
-   self-certify — a mid-session edit does not take effect until `/clear`, `/compact` or restart.
+   In a Claude session with real work in it, run `/compact`, then require **the anchor token in
+   `AGENTS.md` §Authority** to still be quotable with **zero file reads**. A session that wrote the
+   import cannot self-certify — a mid-session edit does not take effect until `/clear`, `/compact` or
+   restart. **The literal token appears in exactly one file on purpose.** Do not paste it into this
+   handoff, the roadmap or the coverage doc: a session told to read the handoff first would then be
+   able to quote it without the import ever loading, which silently turns a failing canary into a
+   passing one. Session 4 made that mistake and reverted it.
    **If the import does not survive compaction, P3 does not proceed:** the non-negotiables stay in
    `CLAUDE.md` permanently, the core becomes Codex-only, and that is recorded rather than forced.
    `docs/agent-alignment-l0-coverage.md` §5 lists exactly which blocks P3 may delete **and which it
@@ -74,7 +78,9 @@ after any tooling touches these files.
    Also verify the Codex side by canary + `wc -c` only — **Codex exposes no loaded-doc introspection
    and no truncation warning, so any claim of verification parity between the tools is false.**
 2. **L2 — on-demand depth.** All 23 `.claude/rules/*.md` still load unconditionally
-   (**213,576 B** measured 2026-07-26). Add `paths:` frontmatter — **brace-light** globs; an
+   (**213,576 B**, `cat .claude/rules/*.md | wc -c`, measured 2026-07-26 — the roadmap and ownership
+   §10.4 both say 212,822 B, which is the older "before" figure; the files have grown). Add `paths:`
+   frontmatter — **brace-light** globs; an
    over-braced pattern is used unexpanded and silently matches nothing. Keep `database-standard.md`
    permanently **unscoped**: `paths:`-scoped rules are dropped at `/compact`, and that file carries
    the shared-production apply gate. Codex has **no** conditional-markdown mechanism — its depth is
@@ -84,11 +90,15 @@ after any tooling touches these files.
    roster before porting** — both tools silently truncate discovery lists, so some capabilities are
    already invisible to implicit matching. 30 of 33 `.codex/agents/*.toml` remain ungoverned and
    inherit the parent sandbox.
-4. **The remaining gates.** A ref-parsing `never-push-main` PreToolUse hook (enumerated denies cannot
-   carry exceptions, and a bare `["git","push"]` Codex prefix rule never matches `git push $BRANCH`);
-   `.env` `Read`/`Edit` denies; `apply_migration` deny-or-ask — **both `execute_sql` and
-   `apply_migration` together or neither**, since denying one leaves the survivor allowed *and*
-   hook-permitted.
+4. **The remaining gates — mostly closed by `76a0dff` while session 4 was running.** `.env` denies
+   and the MCP denies are in. `apply_migration` is **`permissions.ask`**, not deny: deny blocked an
+   explicitly owner-authorized apply, which is stricter than `database-standard.md` §0 intends.
+   Free-form SQL (`execute_sql`, `exec_read_sql`, `upr_sql`) **stays denied** — guarded path asks,
+   unguarded paths deny. **This supersedes challenge finding S-4's "both or neither"**, which only
+   applied while `apply_migration` was both pre-approved *and* unguarded; it is now neither.
+   **Still open:** a ref-parsing `never-push-main` PreToolUse hook — the enumerated denies are belt
+   only (they cannot carry exceptions, and a bare `["git","push"]` Codex prefix rule never matches
+   `git push $BRANCH`).
 5. **The maintenance contract's remainder:** a decision log with durable IDs that law files cite, and
    a cross-tool behavioural fixture (`claude -p` vs `codex exec --output-schema`) asserting equivalent
    refusals. `tooling/evals/skill-routing.json` is a partial start. Note `claude -p --bare` skips
@@ -102,7 +112,10 @@ after any tooling touches these files.
   authored or applied. No live or provider state.
 - Never weaken a non-negotiable or a `.claude/rules/` standard while harmonising. Where the tools
   disagree the **stricter** side wins and the conflict goes to the owner.
-- Do not renumber rules 1–12 (209 live references). They are now verbatim in **both** files.
+- Do not renumber rules 1–12. They are now verbatim in **both** files. **The long-quoted "209 live
+  references" is wrong** — re-measured 2026-07-26 as **170 across 56 tracked files**
+  (`git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). Earlier counts were inflated by full repo
+  copies under `.claude/worktrees/`; use `git grep`, which respects the index, not `grep -r`.
 - Rules changes are **disclosed amendments** — strike in place with `superseded-by:`.
 - `CLAUDE.md` Rules 4 and 6 stay **as written**.
 - Commit/push is authorized for this initiative's own docs/config on `dev`. Migration apply,
@@ -110,17 +123,29 @@ after any tooling touches these files.
 
 ## Owner decisions still open
 
-Full ledger: `docs/agent-alignment-roadmap.md` §10. **Still blocking:**
+**Read `docs/agent-alignment-ownership-DRAFT.md` §10 — it is now the live ledger.** A parallel session
+(`76a0dff`) closed five gates on 2026-07-26; the session-3 baton's list is stale. **Closed:** #4 (SEO
+trees **deleted**, not quarantined — 31 `.agents/skills/seo*` + 18 `.codex/agents/seo*.toml`,
+recoverable via `ff76e01`); #5 (**do NOT commit the mirrors** — tracking ~345 stale hand-copies would
+commit the drift problem; track renderer output only); #8 (CI ownership **dissolved** — `ci.yml`
+already runs `validate:tooling`, so **do not edit `ci.yml`**; new invariants go inside
+`scripts/validate-tooling-governance.mjs`); #15 (Rules 4/6 unchanged); #20 (no WSL2).
 
-- **CAP-SEC-001 — dated.** Tracked `.claude/settings.local.json`: 121 allow entries, no `deny` key,
-  plus a live cleartext Encircle bearer token. Validator waiver **expires 2026-08-06**. The 121
-  pre-approvals are a deliberate, valuable overnight-autonomy capability — **preserve them**; move
-  them out of the tracked file and make the backstops real. Rotating the credential is owner-only.
-- **#4** SEO trees — 31 skills + 18 agents live for Codex, retired for Claude. Recommendation:
-  tracked quarantine outside every discovery root.
-- **#5** authorize committing `.agents/` / `.codex/` (584 files). **Fix then track** — never track
-  first. *Partially advanced:* `.codex/config.toml` is now tracked (4 → 5 tracked `.codex` files).
-- **#8** CI ownership for the invariant guard.
+**Still blocking — CAP-SEC-001, repo half done, live half owner-gated.**
+`.claude/settings.local.json` is now **untracked** (`b075007`), so the 121 pre-approvals and overnight
+autonomy are intact on disk. The credential rotation needs **two gates in this order** — rotating
+first is wrong because there is nowhere sanctioned to put the new key until the card renders:
+1. apply `supabase/migrations/20260723_encircle_managed_credentials.sql` (reviewed, provenance clean
+   `4799feb`, rollback present, verified **not** in the live ledger, and the hardened guard allows it);
+2. flip `feature:encircle_managed_credentials` (seeded `false`; `Integrations.jsx:1074` gates the card).
+
+Then rotate and paste. The validator's `secret-bearing-permission` warning clearing is the **only**
+reliable signal the rotation took. Waiver expires **2026-08-06**. Owner-only.
+
+**Owner/CLI-only empirical tests still uncaptured:** E1 byte-cap shape, E2 whether a local
+`codex review` honours `## Code Review Rules`, E3 unscoped rules inside subagents, the Codex sandbox
+effect test, and a `/context` token baseline. **No token-cost claim may be made until that capture
+exists.** E2 now has something real to test against — this session shipped the section.
 
 ## Verification
 
@@ -128,7 +153,7 @@ Full ledger: `docs/agent-alignment-roadmap.md` §10. **Still blocking:**
 git fetch && git log --oneline origin/dev -5     # the repo moves; rebase first
 head -1 CLAUDE.md | cat -A                       # expect: @AGENTS.md$   (NO ^M)
 test -L CLAUDE.md; git ls-files -s CLAUDE.md     # expect: not a symlink, mode 100644
-grep -ro "UPR-L0-CANARY-7Q4M2X" . | wc -l        # expect: 1
+git grep -c UPR-L0-CANARY -- "*.md"          # expect: AGENTS.md:1 and nothing else
 npm run check:tooling-generated                  # expect: 18 generated file(s) current
 npm run validate:tooling                         # expect: 0 errors, 2 warnings (CAP-SEC-001/GOV-001)
 npm run test:tooling                             # expect: 15/15
@@ -156,8 +181,12 @@ unfiltered `upr_update`/`upr_delete`/`upr_upsert` refused; `GRANT … TO anon`, 
   map.
 - **Two Claude Code installations exist.** Resolve the binary explicitly for any version assertion.
 - `jq` is **not installed.** Parse hook payloads with node.
-- Live MCP server ids are hashed UUIDs, so every `mcp__UPR_MCP__*` / `mcp__Supabase__*` permission
-  rule — allow **and** deny — matches nothing. Regex hook matchers are the only gate that fires.
+- **SUPERSEDED 2026-07-26 (`76a0dff`), settled empirically:** the long-repeated claim that permission
+  rules cannot reach the MCP tools is **wrong for the wildcard form**. **`mcp__*__<tool>` DOES match
+  the hashed server id — it blocked a real call.** What remains true is that a rule naming a
+  *literal* server (`mcp__UPR_MCP__*`, `mcp__Supabase__*`) matches nothing, because the live ids are
+  hashed UUIDs. Write `mcp__*__<tool>`, never the literal server name. Any note still saying
+  permission rules are useless against MCP tools is stale — fix it where you find it.
 
 ## Standing facts worth not rediscovering
 
@@ -191,7 +220,7 @@ draft and the mobile-readiness `AGENTS.md` section, both reused rather than rein
 > `git fetch` and check `origin/dev` before trusting any number.
 >
 > **Start with the P3 canary, and do it before anything else fills the context:** with real work in
-> the session, run `/compact`, then try to quote `UPR-L0-CANARY-7Q4M2X` with zero file reads. If it
+> the session, run `/compact`, then try to quote the `AGENTS.md` anchor token with zero file reads. If it
 > survives, delete the `CLAUDE.md` non-negotiables duplicate per coverage §5 — deleting only the
 > blocks listed as safe. If it does not survive, record that and stop; the duplicate stays forever.
 > Then move to L2 (`paths:` frontmatter, brace-light, `database-standard.md` stays unscoped).

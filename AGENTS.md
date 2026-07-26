@@ -69,8 +69,13 @@ adapters. **Edit the neutral source and run `npm run generate:tooling`; never ha
 
 ## Non-negotiable rules
 
-Rules 1–12 are reproduced verbatim from `CLAUDE.md`. **Numbering is frozen** — 209 live references
-point at these numbers. A reference of the form "CLAUDE.md Rule N" resolves here.
+Rules 1–12 are reproduced verbatim from `CLAUDE.md`. **Numbering is frozen** — a reference of the
+form "CLAUDE.md Rule N" resolves here. Renumbering would silently break every one of them; derive the
+current count rather than trusting this sentence:
+
+```bash
+git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l   # 170 across 56 files, 2026-07-26
+```
 
 1. **Read files from disk before editing.** Never assume file contents from memory.
 2. **No `alert()`/`confirm()`** (eslint-enforced, error-level). Feedback goes through **`src/lib/toast.js`** (`toast`/`ok`/`err`) — the ONLY toast entry point; never dispatch `upr:toast` raw or copy a local `errToast` (eslint-`warn`, ratcheting to error). Destructive actions use inline two-click confirm, never a modal. Patterns: `UPR-Design-System.md`; states law: [`.claude/rules/loading-error-states.md`](.claude/rules/loading-error-states.md).

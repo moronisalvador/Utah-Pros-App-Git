@@ -83,7 +83,7 @@ replacement."* That text was not on `dev` when this plan was generated.
 coverage table: [`docs/agent-alignment-l0-coverage.md`](agent-alignment-l0-coverage.md).
 
 **P3 (delete the duplicate) is BLOCKED on a post-compact canary in a fresh session** — token
-`UPR-L0-CANARY-7Q4M2X` must still be quotable after `/compact` with zero file reads. A session that
+the `AGENTS.md` anchor token must still be quotable after `/compact` with zero file reads. A session that
 wrote the import cannot self-certify this; a mid-session edit does not take effect until `/clear`,
 `/compact` or restart.
 

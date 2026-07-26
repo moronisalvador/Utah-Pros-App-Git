@@ -152,7 +152,7 @@ file. They are now loaded, not merely pointed at.
 | Rules 1–12 verbatim vs `HEAD:CLAUDE.md` | identical |
 | Numbering 1..12, no gaps, no 13+ | pass |
 | Code-Review-Rules purity (`alert(`, `confirm(`, `toast.js`, `390px`, `motion-`, `max-width: 768px`) | 0 / 0 / 0 / 0 / 0 / 0 |
-| Canary `UPR-L0-CANARY-7Q4M2X` repo-wide count | 1 |
+| Anchor-token repo-wide count (`git grep -c 'UPR-L0-CANARY' -- '*.md'`) | 1 — `AGENTS.md` only |
 | `head -1 CLAUDE.md` | `@AGENTS.md` with a bare LF, no `\r` |
 | `test -L CLAUDE.md` / `test -L AGENTS.md` | both false |
 | git index mode, `CLAUDE.md` and `AGENTS.md` | `100644` (not `120000`) |
@@ -162,7 +162,15 @@ file. They are now loaded, not merely pointed at.
 ## 7. Open — what P3 needs before it may run
 
 The **post-compact canary in a fresh session**. In a Claude session with real work in it, run
-`/compact`, then require `UPR-L0-CANARY-7Q4M2X` to still be quotable with **zero file reads**.
+`/compact`, then require the `AGENTS.md` anchor token to still be quotable with **zero file reads**.
+
+**The token is deliberately written down in exactly one place — `AGENTS.md` §Authority — and must stay
+that way.** Session 4 briefly spelled it out in this file, the roadmap and the handoff, which would
+have invalidated the test: the handoff instructs the next session to read the handoff first, so it
+could have quoted the token from the doc without the import ever loading. Every other file now refers
+to it indirectly. **Never paste the literal token into a document a session is told to read.** To
+check the value yourself, open `AGENTS.md` — but a session that does so has spent its canary and must
+hand the test to a fresh one.
 
 If the import does not survive compaction, **P3 does not proceed**: the non-negotiables stay in
 `CLAUDE.md` permanently, the L0 core becomes Codex-only, and that outcome gets recorded rather than

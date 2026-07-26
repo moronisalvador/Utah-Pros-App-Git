@@ -8,7 +8,9 @@
 > directly; Claude Code reads it through that import. It carries the numbered non-negotiables, the
 > authorization boundary, the document precedence ladder, the depth map and the definition of done.
 > **Rule numbering is frozen** — a reference of the form "CLAUDE.md Rule N" resolves in `AGENTS.md`,
-> where rules 1–12 are reproduced verbatim. This file adds the **Claude-only** routing on top.
+> where rules 1–12 are reproduced verbatim (170 such references across 56 tracked files, measured
+> 2026-07-26; derive it with `git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). This file adds
+> the **Claude-only** routing on top.
 >
 > The `## ⚠️ NON-NEGOTIABLE RULES` block below is a **deliberate duplicate** kept while the import is
 > being proven. It is removed only after a post-compact canary in a fresh session shows the import
