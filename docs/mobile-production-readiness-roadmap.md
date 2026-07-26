@@ -162,6 +162,11 @@ Worker/RPC/direct-table, policy/grant/object, owner-decision, test, rollout, rol
 live-apply record is
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
 
+The corrected transitive census is 82 browser-reachable `SECURITY DEFINER` RPCs and 22 direct
+PostgREST tables, plus Realtime on conversations/messages/notifications. Two shared bootstrap RPCs
+also allow `anon`/`PUBLIC`; shared employee-ID, notification, device-token, clock-precheck, and
+destructive-merge boundaries are explicitly queued behind the Worker slices.
+
 R0 also contains a locally verified S1a slice for four legacy QBO Workers. It does not close
 `MOB-SEC-014`: QBO customer/payment sync and OAuth connect, notification and recording Workers,
 authenticated-executable definer RPCs and broad direct policies remain. `MOB-SEC-015` remains open

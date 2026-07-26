@@ -8459,13 +8459,17 @@ R0 started from clean foundation `7aa4b0c6569396b7e7b5524ed052eca279927218` in i
 were preserved without a merge/rebase. Historical audit source
 `ef305f6d6afab4d846eab92fc1b04038d70221f0` remains the comparison anchor.
 
-Read-only live recapture found all 68 current direct mobile RPC identifiers as
-authenticated/service-role-executable `SECURITY DEFINER` functions; the direct-table surface still
-contains broad anonymous/authenticated policies. `job-files` remains public with anonymous/public
+Read-only live recapture corrected the historical inline count to 82 current transitive,
+browser-reachable mobile RPC identifiers. All are authenticated/service-role-executable
+`SECURITY DEFINER`; `get_feature_flags` and `get_employee_page_access` also allow `anon`/`PUBLIC`.
+The correction includes shared auth, bell, Web Push, native push, clock-precheck, preference, and
+job/claim-merge callers. The current graph also has 22 direct PostgREST tables plus Realtime on
+`conversations`, `messages`, and `notifications`; `messages` retains the scoped capability policy,
+while several adjacent policies remain broad. `job-files` remains public with anonymous/public
 SELECT, authenticated bucket-wide INSERT/DELETE, no MIME allowlist, a 50 MiB limit and aggregate
 77 objects / 58,233,782 recorded bytes. No object name/content was read. Exact capture timestamps,
-routes, callers, function list, policies/grants and complete browser/worker/public-media inventory
-are in
+routes, callers, function signatures/bodies, policies/grants and complete
+browser/worker/public-media inventory are in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
 
 The first bounded local slice adds `functions/lib/qbo-auth.js` and gates

@@ -50,30 +50,38 @@ do not authorize a direct REST/RPC/worker request.
 
 ## Current mobile data surface
 
-The July 2026 static census found 68 distinct RPC identifiers and 17 directly accessed tables/views
-across the field and admin-mobile route graph, plus Storage, workers, and Realtime. The complete
+The historical July 2026 static census found 68 inline RPC identifiers and 17 directly accessed
+tables/views at the audited source SHA, plus Storage, workers, and Realtime. The complete historical
 point-in-time name list is in
 [`../audit/mobile-pwa/08-supabase-and-rpc-contracts.md`](../audit/mobile-pwa/08-supabase-and-rpc-contracts.md).
 
-Direct field tables/views:
+R0's corrected transitive current-source graph contains 82 browser-reachable RPCs and 22 direct
+PostgREST tables. Realtime subscribes to `conversations`, `messages`, and `notifications`; the first
+two overlap the direct set. Exact direct tables:
 
-`appointment_crew`, `appointments`, `claims`, `contact_jobs`, `contacts`, `conversations`,
-`employees`, `estimate_line_items`, `job_documents`, `jobs`, `message_templates`, `sign_requests`,
-and `sms_consent_log`.
-
-Admin-mobile adds `estimates`, `invoices`, `invoice_line_items`, and `payments`.
+`appointment_crew`, `appointments`, `claims`, `contact_jobs`, `contacts`,
+`conversation_participants`, `conversations`, `employees`, `estimate_line_items`, `estimates`,
+`invoice_line_items`, `invoices`, `job_documents`, `job_time_entries`, `jobs`,
+`message_templates`, `messages`, `nav_permissions`, `payments`, `scheduled_messages`,
+`sign_requests`, and `sms_consent_log`.
 
 Do not treat these hand-maintained counts as generated truth after code changes. Update this document
 and regenerate/extend the contract inventory when a caller changes.
 
 ## R0 current boundary recapture
 
-Wave R0 re-extracted the current route tree and verified all 68 direct mobile RPC identifiers
-against the live catalog read-only on 2026-07-26 UTC. All 68 resolved to exact one-overload
-`SECURITY DEFINER` functions executable by `authenticated` and `service_role`, with no `anon` or
-`PUBLIC` execution. A simple definition-needle scan found common caller/auth signals in only three;
-that is a prioritization heuristic, not proof about authorization in either direction. Each
-function still requires role/assignment/object review and direct negative tests.
+Wave R0 re-extracted the current route tree and its transitive shared helpers, then verified all 82
+browser-reachable mobile RPC identifiers against the live catalog read-only on 2026-07-26 UTC.
+All 82 resolved to exact one-overload `SECURITY DEFINER` functions executable by `authenticated`
+and `service_role`. `get_feature_flags` and `get_employee_page_access` are additionally executable
+by `anon` and `PUBLIC`; the other 80 deny both. A simple definition-needle scan found common
+caller/auth signals in only five; that is a prioritization heuristic, not proof about authorization
+in either direction.
+
+The transitive correction matters: shared auth bootstrap, bell, Web Push, native push, clock
+precheck, notification preferences, and job/claim merge add 14 RPCs that an inline route scan
+missed. Several trust a supplied employee, notification, claim, or job ID inside a definer
+function. Each function still requires role/assignment/object review and direct negative tests.
 
 The same capture confirmed broad direct-table policies and a public `job-files` bucket with
 anonymous/public reads and authenticated bucket-wide insert/delete. The exact route-to-caller map,

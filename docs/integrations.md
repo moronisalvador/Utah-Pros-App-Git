@@ -162,6 +162,19 @@ is `project_manager`, not `manager`; project-manager billing authority remains o
 source/live evidence and the separate rollout/apply plan are in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
 
+## Mobile push R0 authorization checkpoint (2026-07-25)
+
+The Web Push subscription RPCs resolve their employee from `auth.uid()` before upsert/delete, but
+native post-login `upsert_device_token(p_employee_id, ...)` trusts the browser-supplied employee ID
+inside a live `SECURITY DEFINER` function and can reassign an existing token. Notification
+preference and bell RPCs similarly accept employee/notification IDs without reconstructing the
+caller. These are open `MOB-SEC-014` boundaries; UI visibility and client-side recipient filtering
+are not authorization.
+
+No APNs/Web Push provider action, entitlement/signing check, physical-device test, binding change,
+or push delivery occurred in R0. Product inclusion and rollout remain owner-gated, and any
+containment must preserve account-switch/logout behavior plus deployed RPC response shapes.
+
 ## QuickBooks Online attachments (2026-07-24)
 
 `POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
