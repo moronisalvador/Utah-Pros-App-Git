@@ -79,7 +79,10 @@
       },
       "riskTier": "green",
       "riskRationale": "Read-only reviewer; reports findings and never edits, applies or publishes.",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "codex": {
+        "sandboxMode": "read-only"
+      }
     },
     {
       "name": "worker-security-reviewer",
@@ -92,7 +95,10 @@
       },
       "riskTier": "green",
       "riskRationale": "Read-only reviewer; reports findings and never edits, applies or publishes.",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "codex": {
+        "sandboxMode": "read-only"
+      }
     },
     {
       "name": "db-foundation-phase-reviewer",
@@ -105,7 +111,10 @@
       },
       "riskTier": "green",
       "riskRationale": "Read-only reviewer; reports findings and never edits, applies or publishes.",
-      "modelInvocable": true
+      "modelInvocable": true,
+      "codex": {
+        "sandboxMode": "read-only"
+      }
     }
   ],
   "riskTierContract": "riskTier follows docs/tooling-governance.md section 3 (green|amber|red) and records BLAST RADIUS, not invocability. modelInvocable drives the human-only gates the renderer emits: disable-model-invocation (Claude) and policy.allow_implicit_invocation (Codex). Owner direction 2026-07-26: UPR gates the MUTATION, not the dispatcher, so a red-tier planner stays invocable and its live step is gated by .claude/hooks/block-destructive-sql.sh plus a separate owner authorization."

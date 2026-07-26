@@ -115,9 +115,17 @@ function renderCodexAgent(entry, raw) {
   if (instructions.includes('"""')) {
     throw new Error(`${entry.source} contains a TOML multiline-string delimiter.`);
   }
+  // A Codex agent file is a full config LAYER, not a manifest: when it OMITS
+  // sandbox_mode it INHERITS the parent's, and subagents also inherit the
+  // composer's permission mode. So a read-only reviewer spawned from a
+  // write-enabled session is write-enabled unless it pins otherwise. Presence is
+  // not proof of effect (a user-layer `sandbox = "elevated"` exists on this
+  // machine) — but an explicit pin is the only thing that can win at all.
+  const sandboxMode = entry.codex?.sandboxMode;
   return [
     `name = ${tomlString(metadata.name)}`,
     `description = ${tomlString(metadata.description)}`,
+    ...(sandboxMode ? [`sandbox_mode = ${tomlString(sandboxMode)}`] : []),
     'developer_instructions = """',
     instructions,
     '"""',
