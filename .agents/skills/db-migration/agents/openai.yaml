@@ -1,0 +1,6 @@
+interface:
+  display_name: "UPR Database Migration"
+  short_description: "Plan or author safe UPR database changes"
+  default_prompt: "Use $db-migration to plan or author this UPR database change without applying it unless separately authorized."
+policy:
+  allow_implicit_invocation: true

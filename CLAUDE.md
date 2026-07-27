@@ -1,6 +1,43 @@
+@AGENTS.md
+
 # UPR Platform — Claude Code Project Context
-**Last updated:** July 23, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
+**Last updated:** July 26, 2026 · **Project:** Utah Pros Restoration — Internal Business Management Platform
 **Developer:** Moroni Salvador · **Repo:** moronisalvador/Utah-Pros-App-Git
+
+> **The shared law layer is [`AGENTS.md`](AGENTS.md), imported on line 1 above.** Codex reads it
+> directly; Claude Code reads it through that import. It carries the numbered non-negotiables, the
+> authorization boundary, the document precedence ladder, the depth map and the definition of done.
+> **Rule numbering is frozen** — a reference of the form "CLAUDE.md Rule N" resolves in `AGENTS.md`,
+> where rules 1–12 are reproduced verbatim (170 such references across 56 tracked files, measured
+> 2026-07-26; derive it with `git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). This file adds
+> the **Claude-only** routing on top.
+>
+> The `## ⚠️ NON-NEGOTIABLE RULES` block below is a **deliberate duplicate** kept while the import is
+> being proven. It is removed only after a post-compact canary in a fresh session shows the import
+> survives compaction. Until then the rules are enforced twice, never zero times.
+
+### Claude-only mechanisms (silent divergences from Codex if unstated)
+
+- **`.claude/rules/*.md` load unconditionally at launch**, at the same priority as this file. That is
+  why all 23 currently enter every session.
+- **`paths:`-scoped rules and nested `CLAUDE.md` files are dropped at `/compact`** until a matching
+  file is re-read. Cheap-at-startup and survives-compaction are mutually exclusive, so a
+  non-negotiable must never live in either — it stays unscoped at the root.
+- An **over-braced `paths:` glob is used unexpanded and matches nothing**, so the rule loads *never*,
+  with no error. Prefer several brace-free patterns.
+- **`.claude` is a protected path.** Edits prompt for approval and `permissions.allow` cannot
+  pre-approve them — the prompts are correct behaviour, not a misconfiguration.
+- **Skills are `/name` here and `$name` in Codex**, and the slash command comes from the skill's
+  **directory** name, not its frontmatter `name`. `.claude/commands/` and skills share one namespace;
+  the skill wins a collision. Skill precedence is managed > user > **project**, so a personal
+  `~/.claude/skills/<name>` silently shadows the repo copy.
+- **`claude -p --bare` skips `CLAUDE.md`, hooks, skills, plugins, MCP and auto memory.** Any CI gate
+  written that way is bound by no project law unless the core is passed via
+  `--append-system-prompt-file`.
+- **A mid-session edit to this file, `AGENTS.md`, a `SKILL.md` or a settings file does not take effect
+  until `/clear`, `/compact` or restart.** Never report "rule updated and followed" from one session.
+- On win32 Claude Code **cannot sandbox** (WSL2 required, fails open by default) while Codex sandboxes
+  natively. Never list sandboxing as a Claude-side control on this platform.
 
 ## ⚠️ NON-NEGOTIABLE RULES
 
@@ -70,6 +107,7 @@ against the current source, Git history and live external state where applicable
 | Testing, CI, deployment or release | `docs/testing-and-deployment.md` and `.claude/rules/close-out-standard.md` |
 | Active roadmap phase or parallel wave | The initiative's current `docs/*-roadmap.md`, dispatch block and active ownership manifest; verify its status before treating a checkbox as fact |
 | Security/reliability remediation | The latest `docs/audit/<year-month>/executive-summary.md`, findings, remediation backlog and evidence addenda; promote lasting decisions into canonical docs |
+| Agent instruction files, hooks, skills, subagents, permissions or anything cross-tool (Claude Code ⇄ Codex) | [`docs/agent-runtime-reference.md`](docs/agent-runtime-reference.md) — how each tool actually loads instructions, which gates really block versus only advise, and the fail-open modes; plus `docs/tooling-governance.md` and the current `docs/handoff/agent-alignment-session-*-handoff.md` |
 
 Before starting a new initiative, inspect existing roadmaps, feature flags, stubs and ownership
 manifests for overlapping or unfinished work. Prefer completing, explicitly blocking, cancelling or
@@ -203,6 +241,9 @@ Installed skills auto-load by description when a task matches; you rarely invoke
 - **React:** `vercel-react-best-practices`, `vercel-composition-patterns` — framework-neutral (we're Vite; **reject Next.js-only advice**).
 - **Data/SQL:** `supabase`, `supabase-postgres-best-practices` — patterns only, **subordinate to `.claude/rules/database-standard.md`** (least-privilege, anon-allowlist, one shared prod DB).
 - **Tests:** `playwright-core`. **UPR-native workflows** (`new-feature`, `db-migration`, `new-crm-module`, `masterplan`) orchestrate the actual work and outrank vendor skills.
+- **Cross-runtime sources:** `new-feature`, `masterplan`, and the reviewer adapters listed in
+  `tooling/capabilities.json` are generated from neutral sources. Edit the neutral source, then run
+  `npm run generate:tooling`; never hand-edit one generated `.claude`/`.agents`/`.codex` copy.
 - **Content & marketing — explicit tasks only:** this repository owns the internal UPR application,
   not the public website, so the repository-local SEO suite was retired 2026-07-23. Retained
   content/marketing references (`product-marketing`, `copywriting`, `cro`, `content-strategy`,

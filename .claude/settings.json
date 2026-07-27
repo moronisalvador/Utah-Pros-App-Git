@@ -26,7 +26,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*__apply_migration|mcp__.*__execute_sql",
+        "matcher": "mcp__.*__(apply_migration|execute_sql|exec_read_sql|upr_sql|upr_insert|upr_update|upr_upsert|upr_delete)",
         "hooks": [
           {
             "type": "command",
@@ -100,6 +100,15 @@
       "mcp__github__actions_list"
     ],
     "deny": [
+      "Read(.env)",
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin HEAD:main)",
+      "mcp__*__execute_sql",
+      "mcp__*__exec_read_sql",
+      "mcp__*__upr_sql",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git reset --hard:*)",
@@ -113,6 +122,9 @@
       "mcp__UPR_MCP__qbo_delete_invoice",
       "mcp__UPR_MCP__qbo_delete_entity",
       "mcp__UPR_MCP__qbo_delete_payment"
+    ],
+    "ask": [
+      "mcp__*__apply_migration"
     ]
   }
 }

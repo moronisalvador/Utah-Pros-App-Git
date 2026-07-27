@@ -24,6 +24,7 @@ import {
   extractLocalReferences,
   parseFrontmatter,
   validateInventoryCounts,
+  validateGeneratedAdapters,
   validatePermissionObject,
   validateRepository,
   validateTriggerRegistry,
@@ -92,6 +93,39 @@ test('detects stale tracked inventory counts', () => {
   );
   assert.equal(issues.length, 1);
   assert.equal(issues[0].rule, 'inventory-count-mismatch');
+});
+
+test('blocks drift and runtime-coupled language in generated capability sources', () => {
+  const root = makeRepository();
+  fs.mkdirSync(path.join(root, 'tooling', 'skills', 'safe-skill'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'tooling', 'skills', 'safe-skill', 'SKILL.md'),
+    '---\nname: safe-skill\ndescription: Handles one bounded task.\n---\n\nUse `.Codex/rules/example.md`.\n',
+  );
+  fs.writeFileSync(
+    path.join(root, 'tooling', 'capabilities.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      skills: [
+        {
+          name: 'safe-skill',
+          source: 'tooling/skills/safe-skill/SKILL.md',
+          outputs: ['.claude/skills/safe-skill/SKILL.md', '.agents/skills/safe-skill/SKILL.md'],
+          codexInterface: {
+            displayName: 'Safe skill',
+            shortDescription: 'Handles one bounded task',
+            defaultPrompt: 'Use $safe-skill for the bounded task.',
+          },
+        },
+      ],
+      agents: [],
+    }),
+  );
+  const issues = validateGeneratedAdapters(root, {
+    adapterStrategy: { manifest: 'tooling/capabilities.json' },
+  });
+  assert.ok(issues.some((issue) => issue.rule === 'legacy-codex-path'));
+  assert.ok(issues.some((issue) => issue.rule === 'generated-adapter-drift'));
 });
 
 test('blocks mutation and secret-bearing shared permissions without printing content', () => {

@@ -1,6 +1,6 @@
 # UPR Platform — Design System Reference
-**Last updated:** July 23, 2026 (Figma-readiness inventory reverified the four-kit boundary, shared primitives and token sources; no visual standard or runtime component changed). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
-**For:** Claude Code — read this before building any new page, component, or modal.
+**Last updated:** July 24, 2026 (reconciled touch-target, motion-frequency, toast, and cross-runtime guidance with the specialized project standards). **Prior material update:** July 13, 2026 UX-Quality F-S2 minted the semantic token family and motion catalog, added `@/components/ui`, the Kit Registry and dark-theme contract, and deleted the contradictory inline-hex Status Color Palette recipe.
+**For:** Claude Code and Codex — read this before building any new page, component, or modal.
 
 This document reflects the actual UI patterns extracted from the live codebase. Follow these patterns exactly. Do not invent new layouts, colors, or component structures — match what already exists.
 
@@ -26,7 +26,9 @@ Building in one of those areas? Use that section, not the tokens below. Building
 - **Mobile-first.** Every page must work on iPhone. Field techs use this on-site.
 - **Consistent.** Every page follows the same header → filters → content → empty state pattern.
 - **CSS variables only.** Never hardcode colors or spacing. Always use `var(--token)`.
-- **Touch-friendly.** Minimum 44px tap targets. 36px is acceptable for secondary actions.
+- **Touch-friendly.** Interactive hit areas are at least 44px on touch/mobile surfaces. Technician
+  primary actions are at least 48px; the documented technician-secondary exception is 44px. Compact
+  desktop controls may render smaller only when they are not the touch target.
 
 ---
 
@@ -248,7 +250,7 @@ review failure).
 |---|---|---|---|
 | **Page transition** | content region slides; sticky shell stays put | `--motion-duration-base` · `--motion-ease-standard` | Native View Transitions API — `@view-transition { navigation: auto }` is shipped in `index.css`; a routed link opts in with the router's `viewTransition` prop (shell-owner wiring). Degrades gracefully (unsupported browsers navigate instantly). Never re-runs `load()`. |
 | **Button press** | `scale(0.97)` on `:active`, springs back | `--motion-duration-fast` · `--motion-ease-standard` | Built into `.btn` (+ `touch-action:manipulation`). Native also fires `impact('light')`. |
-| **Selection / tabs / segments / chips** | animated indicator (slide/cross-fade), never a snap | `--motion-duration-fast` | `.ui-seg` + `.ui-seg-indicator` primitive; native fires `nativeHaptics.selection()`. |
+| **Selection / tabs / segments / chips** | Low-frequency selections use an indicator; high-frequency field controls may change instantly or within the fast token | `--motion-duration-fast` when animated | `.ui-seg` + `.ui-seg-indicator` for low-frequency selection. Follow `motion-standard.md` §3’s frequency tiers; native may fire `nativeHaptics.selection()`. |
 | **Modal (desktop)** | enter: overlay fades, panel fades + **springs** up. exit: panel fades + scales down, overlay fades | enter `--motion-duration-base` · `--motion-spring-in` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` — enter `uiModalIn`, exit `uiModalOut` + overlay `uiFadeOut`; `Modal.jsx` adds `--closing` then unmounts on `animationend` (safety-timeout fallback). |
 | **Sheet (mobile)** | enter: slides up from the bottom edge. dismiss: slides **down** off-screen | enter `--motion-duration-base` · `--motion-ease-decelerate` · exit `calc(base × .75)` · `--motion-ease-accelerate` | `<Modal>` at ≤768px — enter `uiSheetUp`, exit `uiSheetDown`. Spring is kept **OFF** the sheet (it would fight the slide). |
 | **Chat — sent** | bubble rises from the composer edge + fades | `--motion-duration-base` · `--motion-ease-decelerate` | `.ui-chat-bubble-sent` (wired at the sms-experience W6 fold-in). |
@@ -274,7 +276,9 @@ a control must be fully usable and visually animated with haptics off.
 <button className="btn btn-sm">Small (30px)</button>
 <button className="btn btn-lg">Large (44px)</button>
 ```
-- Default height: 36px. Small: 30px. Large: 44px.
+- Default height: 36px. Small: 30px. Large: 44px. These are visual desktop sizes, not permission
+  to create an undersized mobile hit area; touch/mobile controls still meet the applicable 44px or
+  technician 48px/44px standard.
 - Always include `disabled` attribute when loading — never just `opacity`.
 
 ### Inputs
@@ -856,7 +860,8 @@ W3 migrates the 26 hand-rolled two-click reimplementations onto this hook.
 - Width: 240px desktop, 280px mobile (slide-over)
 - Active link: `sidebar-active` class (blue tint + blue text)
 - Section labels: uppercase, 11px, 0.6 opacity
-- Minimum touch target: 40px height per link
+- Desktop row height may be 40px. On touch/mobile navigation, the interactive hit area is at least
+  44px.
 
 ### Bottom Bar (mobile only)
 4 tabs + "More" opens sidebar. Shown only on `@media (max-width: 768px)`.
@@ -890,7 +895,8 @@ dispatches, then flips the eslint rule to error.
 
 3. **Modals become bottom sheets** on mobile. Add the CSS pattern from the Modal section above.
 
-4. **Tap targets: 44px minimum** for primary actions. 36px for secondary. Never below 32px.
+4. **Tap targets:** all touch/mobile interactive hit areas are at least 44px. Technician primary
+   actions are at least 48px; only the documented technician-secondary exception may be 44px.
 
 5. **No hover-only interactions** — mobile has no hover. Show important actions visibly. Use `onBlur` to cancel two-click confirm states.
 
@@ -1140,7 +1146,7 @@ it must never out-shout status.
 
 ## Anti-Patterns (do not do these)
 
-- ❌ `alert()` or `confirm()` — use toast events + two-click confirm
+- ❌ `alert()` or `confirm()` — use `src/lib/toast.js` + two-click confirm
 - ❌ Import `db` directly — always `const { db } = useAuth()`
 - ❌ Hardcoded colors (`#2563eb`) in new code — use `var(--accent)`
 - ❌ Hardcoded spacing (`16px`) in new code — use `var(--space-4)`

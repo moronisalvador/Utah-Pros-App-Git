@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Human-readable trigger and collision fixtures for UPR dispatcher skills. These are decision contracts, not a claim that a string matcher can replace runtime evaluation.",
+  "cases": [
+    {
+      "id": "ordinary-ui-feature",
+      "prompt": "Add saved filters to the Jobs page and cover loading, errors, and mobile behavior.",
+      "expectedPrimary": "new-feature",
+      "expectedSupporting": []
+    },
+    {
+      "id": "ordinary-worker-feature",
+      "prompt": "Implement an authenticated endpoint that exports one job summary.",
+      "expectedPrimary": "new-feature",
+      "expectedSupporting": ["worker-security-reviewer"]
+    },
+    {
+      "id": "initiative-plan",
+      "prompt": "Create a master plan for replacing the scheduling experience across office and technician apps.",
+      "expectedPrimary": "masterplan",
+      "expectedSupporting": []
+    },
+    {
+      "id": "explicit-masterplan",
+      "prompt": "/masterplan customer document lifecycle",
+      "expectedPrimary": "masterplan",
+      "expectedSupporting": []
+    },
+    {
+      "id": "database-primary",
+      "prompt": "Author a migration that adds the assignment policy and a backward-compatible RPC.",
+      "expectedPrimary": "db-migration",
+      "expectedSupporting": ["migration-safety-checker", "anon-grant-auditor"]
+    },
+    {
+      "id": "crm-phase-primary",
+      "prompt": "Implement the currently active CRM roadmap phase 6b within its manifest.",
+      "expectedPrimary": "new-crm-module",
+      "expectedSupporting": []
+    },
+    {
+      "id": "feature-with-database-part",
+      "prompt": "Build a customer preference feature that also needs one additive table.",
+      "expectedPrimary": "new-feature",
+      "expectedSupporting": ["db-migration"]
+    },
+    {
+      "id": "plan-with-database-risk",
+      "prompt": "Plan the multi-quarter authorization overhaul, including RLS and Worker gates.",
+      "expectedPrimary": "masterplan",
+      "expectedSupporting": ["db-migration"]
+    },
+    {
+      "id": "diagnosis-only",
+      "prompt": "Explain why this page refetches after resume; do not fix it.",
+      "expectedPrimary": null,
+      "expectedSupporting": []
+    },
+    {
+      "id": "review-only",
+      "prompt": "Review this Worker diff for authorization problems without editing it.",
+      "expectedPrimary": null,
+      "expectedSupporting": ["worker-security-reviewer"]
+    },
+    {
+      "id": "trivial-copy-edit",
+      "prompt": "Fix the typo in this button label and nothing else.",
+      "expectedPrimary": null,
+      "expectedSupporting": []
+    },
+    {
+      "id": "planning-without-authoring",
+      "prompt": "Give me an inline implementation plan for this bounded component extraction; do not edit files.",
+      "expectedPrimary": null,
+      "expectedSupporting": []
+    }
+  ]
+}

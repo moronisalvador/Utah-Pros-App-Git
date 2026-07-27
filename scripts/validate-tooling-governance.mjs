@@ -8,10 +8,12 @@
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins only
- *   Internal:  .claude/tooling-governance.json and tracked .claude entrypoints/settings
+ *   Internal:  .claude/tooling-governance.json, tooling/capabilities.json, neutral sources,
+ *              generated adapters, and tracked .claude entrypoints/settings
  *
  * NOTES / GOTCHAS:
- *   - This validates the tracked .claude authority only. It intentionally ignores candidate ports.
+ *   - It validates only the .agents/.codex outputs named in the neutral manifest; unrelated
+ *     candidate-port files remain outside the governed surface.
  *   - Known findings are temporary, dated waivers; their matched content is never printed.
  */
 
@@ -21,13 +23,22 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+import {
+  compareAdapterFiles,
+  expectedAdapterFiles,
+  loadCapabilityManifest,
+} from './render-tooling-adapters.mjs';
+
 const LOCAL_ROOT_PREFIXES = [
+  '.agents/',
   '.claude/',
+  '.codex/',
   '.github/',
   'docs/',
   'functions/',
   'src/',
   'supabase/',
+  'tooling/',
 ];
 
 const BROAD_TRIGGER_PATTERN = /\b(any task|any non-trivial|anything involving|use for any|any schema|any feature)\b/i;
@@ -35,6 +46,14 @@ const SECRET_PERMISSION_PATTERN =
   /authorization\s*:\s*bearer\s+(?!\$\{|<|\[|example|placeholder)[^\s"'\\]{12,}|(?:sk|rk)_live_[0-9a-z]{10,}|xox[baprs]-[0-9a-z-]{10,}/i;
 const MUTATION_PERMISSION_PATTERN =
   /apply_migration|execute_sql|git (?:add|commit|push|checkout|switch|restore|rm)(?::|\s)|create_pull_request|update_pull_request|create_branch|merge_pull_request|qbo_(?:delete|create|update)|run_payroll/i;
+const RUNTIME_COUPLING_PATTERNS = [
+  ['legacy-codex-path', /\.Codex\//],
+  ['runtime-mode-name', /\bultracode\b/i],
+  ['hardcoded-model-name', /\b(?:Opus|Sonnet|Haiku)\b/],
+  ['parallelism-as-goal', /\bmaximum parallelism\b/i],
+  ['obsolete-toast-guidance', /\buse\s+`?upr:toast`?/i],
+  ['imaginary-database-environment', /\bSupabase dev branch\b/i],
+];
 
 function normalizeRepoPath(value) {
   return value.replaceAll('\\', '/').replace(/^\.\//, '');
@@ -166,6 +185,130 @@ function addIssue(collection, level, rule, repoPath, message, details = {}) {
   collection.push({ level, rule, path: repoPath, message, ...details });
 }
 
+export function validateGeneratedAdapters(root, policy) {
+  const issues = [];
+  const configuredManifest = policy.adapterStrategy?.manifest;
+  if (!configuredManifest) return issues;
+  const manifestPath = path.join(root, configuredManifest);
+  if (!fs.existsSync(manifestPath)) {
+    addIssue(
+      issues,
+      'error',
+      'missing-capability-manifest',
+      configuredManifest,
+      'The configured neutral capability manifest does not exist.',
+    );
+    return issues;
+  }
+
+  let manifest;
+  let expected;
+  try {
+    manifest = loadCapabilityManifest(root, configuredManifest);
+    expected = expectedAdapterFiles(root, manifest);
+  } catch (error) {
+    addIssue(
+      issues,
+      'error',
+      'invalid-capability-manifest',
+      configuredManifest,
+      error instanceof Error ? error.message : 'Unable to render neutral capabilities.',
+    );
+    return issues;
+  }
+
+  const names = new Set();
+  const outputOwners = new Map();
+  const entries = [...(manifest.skills || []), ...(manifest.agents || [])];
+  for (const entry of entries) {
+    if (!entry.name || !entry.source) {
+      addIssue(
+        issues,
+        'error',
+        'missing-capability-metadata',
+        configuredManifest,
+        'Every neutral capability requires a name and source.',
+      );
+      continue;
+    }
+    if (names.has(entry.name)) {
+      addIssue(
+        issues,
+        'error',
+        'duplicate-capability-name',
+        entry.source,
+        `Neutral capability name "${entry.name}" is duplicated.`,
+      );
+    }
+    names.add(entry.name);
+
+    const sourcePath = path.join(root, entry.source);
+    if (!fs.existsSync(sourcePath)) continue;
+    const raw = fs.readFileSync(sourcePath, 'utf8');
+    const metadata = parseFrontmatter(raw);
+    const frontmatterKeys = Object.keys(metadata);
+    if (frontmatterKeys.some((key) => !['name', 'description'].includes(key))) {
+      addIssue(
+        issues,
+        'error',
+        'nonportable-source-frontmatter',
+        entry.source,
+        'Neutral sources may contain only name and description frontmatter.',
+      );
+    }
+    for (const [rule, pattern] of RUNTIME_COUPLING_PATTERNS) {
+      if (pattern.test(raw)) {
+        addIssue(
+          issues,
+          'error',
+          rule,
+          entry.source,
+          'Neutral instructions contain runtime-specific, obsolete, or unnecessarily limiting language.',
+        );
+      }
+    }
+    for (const reference of extractLocalReferences(raw)) {
+      const resolved = resolveReference(root, sourcePath, reference);
+      if (resolved && !fs.existsSync(resolved)) {
+        addIssue(
+          issues,
+          'error',
+          'missing-neutral-reference',
+          entry.source,
+          `Missing local reference: ${cleanReference(reference)}`,
+        );
+      }
+    }
+
+    const outputs = entry.outputs || [entry.claudeOutput, entry.codexOutput].filter(Boolean);
+    for (const output of outputs) {
+      const normalized = normalizeRepoPath(output);
+      if (outputOwners.has(normalized)) {
+        addIssue(
+          issues,
+          'error',
+          'duplicate-generated-output',
+          normalized,
+          `Generated output is owned by both ${outputOwners.get(normalized)} and ${entry.name}.`,
+        );
+      }
+      outputOwners.set(normalized, entry.name);
+    }
+  }
+
+  for (const drift of compareAdapterFiles(root, expected)) {
+    addIssue(
+      issues,
+      'error',
+      'generated-adapter-drift',
+      drift.path,
+      `Generated adapter is ${drift.reason}; run npm run generate:tooling.`,
+    );
+  }
+
+  return issues;
+}
+
 export function validatePermissionObject(permissionObject, repoPath, policy, now = new Date()) {
   const issues = [];
   const emittedWaivers = new Set();
@@ -287,6 +430,7 @@ export function validateRepository(root, policy, now = new Date()) {
 
   issues.push(...validateTriggerRegistry(policy.governedEntrypoints || []));
   issues.push(...validateInventoryCounts(readTrackedInventory(root), policy.trackedInventory));
+  issues.push(...validateGeneratedAdapters(root, policy));
 
   for (const entrypoint of walkEntrypoints(root, [...governed.keys()])) {
     const repoPath = normalizeRepoPath(path.relative(root, entrypoint.absolute));
