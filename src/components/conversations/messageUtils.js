@@ -44,46 +44,61 @@ import { classifyTwilioError } from '../../../functions/lib/twilio-errors.js';
 
 // ─── SECTION: Helpers — SMS segment counting ──────────────
 
-// GSM 03.38 basic charset (each counts as 1 unit). Includes \n and \r.
-const GSM_BASIC = new Set(
-  ('@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡' +
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà').split('')
-);
-// GSM extension charset (each counts as 2 units — an escape + the char).
-const GSM_EXT = new Set('^{}\\[~]|€'.split(''));
+// Moved to functions/lib/sms-segments.js on 2026-07-26 so the composer and the send
+// path share ONE implementation — the send path now enforces a segment cap, and two
+// copies of this math drifting apart would let a message pass the composer and be
+// refused by the worker. Re-exported here: this module's export surface is unchanged
+// (tech-messages-v2 imports `computeSmsSegments` from here as a frozen contract).
+export { computeSmsSegments, maxCharsForSegments } from '../../../functions/lib/sms-segments.js';
 
-const GSM_SINGLE = 160, GSM_MULTI = 153;
-const UCS2_SINGLE = 70, UCS2_MULTI = 67;
+// ─── SECTION: Helpers — superseded failures ──────────────
+
+const OUTBOUND_TYPES = new Set(['sms_outbound', 'email_outbound']);
+// 'queued' counts: the worker only writes it once the provider accepted the send.
+const DELIVERED_ENOUGH = new Set(['queued', 'sent', 'delivered', 'read']);
 
 /**
- * Count characters and SMS segments for `text`, picking GSM-7 or UCS-2 the same way
- * a carrier would. Returns { encoding, units, chars, segments, remaining }.
- *   - units: billable units (GSM extension chars cost 2; UCS-2 counts code points)
- *   - chars: visible character count (code points)
- *   - segments: how many SMS parts this becomes
- *   - remaining: characters left before the count tips into the next segment
+ * Drop failed outbound rows that a later successful send has already replaced.
+ *
+ * Retrying does NOT update the failed row — the worker is the sole writer and it
+ * inserts a NEW row per attempt (omni §7.1). So a successful retry leaves the
+ * thread holding both: the original, `failed` forever, and the new one, `sent`.
+ * Shown as-is that is two bubbles for one message, and the dead one keeps a live
+ * Retry button whose next tap sends the customer a third copy.
+ *
+ * Every chat people actually use — iMessage, WhatsApp, Google Messages — treats a
+ * retry as the SAME message: one bubble whose status changes. So the replaced row
+ * is removed from the thread entirely, not merely de-emphasized. The failure is
+ * still on the row in the database for audit; the chat shows the conversation,
+ * not the plumbing.
+ *
+ * Limitation, deliberate: matching is on identical body text, so a staff member
+ * who genuinely sends the same words twice will have the earlier failure hidden
+ * once the later one succeeds. That is the safe direction to be wrong in — the
+ * text did reach the customer, and the row is still in the database.
  */
-export function computeSmsSegments(text = '') {
-  const chars = [...text].length;
-  let isGsm = true;
-  let gsmUnits = 0;
-  for (const ch of text) {
-    if (GSM_EXT.has(ch)) gsmUnits += 2;
-    else if (GSM_BASIC.has(ch)) gsmUnits += 1;
-    else { isGsm = false; break; }
-  }
+export function withoutSupersededFailures(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
 
-  if (isGsm) {
-    const units = gsmUnits;
-    const segments = units === 0 ? 0 : units <= GSM_SINGLE ? 1 : Math.ceil(units / GSM_MULTI);
-    const cap = segments <= 1 ? GSM_SINGLE : GSM_MULTI * segments;
-    return { encoding: 'GSM-7', units, chars, segments, remaining: Math.max(0, cap - units) };
-  }
+  // Earliest index at which each body text was successfully sent outbound.
+  const firstSuccessAt = new Map();
+  messages.forEach((m, i) => {
+    if (!OUTBOUND_TYPES.has(m?.type)) return;
+    if (!DELIVERED_ENOUGH.has(m?.status)) return;
+    const key = (m.body || '').trim();
+    if (!key) return;
+    if (!firstSuccessAt.has(key)) firstSuccessAt.set(key, i);
+  });
+  if (firstSuccessAt.size === 0) return messages;
 
-  const units = chars;
-  const segments = units === 0 ? 0 : units <= UCS2_SINGLE ? 1 : Math.ceil(units / UCS2_MULTI);
-  const cap = segments <= 1 ? UCS2_SINGLE : UCS2_MULTI * segments;
-  return { encoding: 'UCS-2', units, chars, segments, remaining: Math.max(0, cap - units) };
+  const out = messages.filter((m, i) => {
+    const failed = m?._failed || m?.status === 'failed' || m?.status === 'undelivered';
+    if (!failed || !OUTBOUND_TYPES.has(m?.type)) return true;
+    const at = firstSuccessAt.get((m.body || '').trim());
+    return at === undefined || at <= i;
+  });
+  // Preserve identity when nothing was dropped so React sees no spurious change.
+  return out.length === messages.length ? messages : out;
 }
 
 // ─── SECTION: Helpers — linkify (scheme-whitelisted, no raw HTML) ──────────────

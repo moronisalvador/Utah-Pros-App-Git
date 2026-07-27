@@ -15,6 +15,16 @@
         ]
       }
     ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/record-instructions-loaded.mjs\""
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit",
@@ -26,11 +36,20 @@
         ]
       },
       {
-        "matcher": "mcp__.*__apply_migration|mcp__.*__execute_sql",
+        "matcher": "mcp__.*__(apply_migration|execute_sql|exec_read_sql|upr_sql|upr_insert|upr_update|upr_upsert|upr_delete)",
         "hooks": [
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-destructive-sql.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/block-main-push.sh\""
           }
         ]
       }
@@ -100,19 +119,36 @@
       "mcp__github__actions_list"
     ],
     "deny": [
+      "Read(.env)",
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Bash(git push origin main)",
+      "Bash(git push origin main:*)",
+      "Bash(git push origin HEAD:main)",
+      "mcp__*__execute_sql",
+      "mcp__*__exec_read_sql",
+      "mcp__*__upr_sql",
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git reset --hard:*)",
       "Bash(git clean:*)",
       "Bash(rm -rf:*)",
-      "mcp__github__merge_pull_request",
-      "mcp__UPR_MCP__upr_sql",
-      "mcp__UPR_MCP__upr_delete",
-      "mcp__UPR_MCP__upr_update",
-      "mcp__Gusto__run_payroll",
-      "mcp__UPR_MCP__qbo_delete_invoice",
-      "mcp__UPR_MCP__qbo_delete_entity",
-      "mcp__UPR_MCP__qbo_delete_payment"
+      "mcp__*__upr_delete",
+      "mcp__*__upr_update",
+      "mcp__*__run_payroll",
+      "mcp__*__qbo_delete_invoice",
+      "mcp__*__qbo_delete_entity",
+      "mcp__*__qbo_delete_payment",
+      "mcp__*__qbo_sales_delete_invoice",
+      "mcp__*__qbo_sales_delete_estimate",
+      "mcp__*__qbo_sales_delete_recurring_invoice"
+    ],
+    "ask": [
+      "mcp__*__apply_migration",
+      "mcp__*__merge_pull_request",
+      "mcp__*__github_merge_pr",
+      "mcp__*__stripe_create_payout",
+      "mcp__*__twilio_send_sms"
     ]
   }
 }

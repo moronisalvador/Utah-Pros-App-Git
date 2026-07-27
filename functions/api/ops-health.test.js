@@ -19,14 +19,34 @@ const CRON_SECRET = 'cron-secret';
  * A fake PostgREST client. `tables` maps table name → rows; every select is
  * filtered only by the bits these tests actually depend on.
  */
-function makeDb({ tables = {}, secret = CRON_SECRET, failTable = null } = {}) {
+function makeDb({
+  tables = {}, secret = CRON_SECRET, failTable = null, opsRecipients = null,
+  noResolvedAtColumn = false,
+} = {}) {
   const inserts = [];
   return {
     inserts,
     select: vi.fn(async (table, query = '') => {
-      if (table === 'integration_config') return secret ? [{ value: secret }] : [];
+      if (table === 'integration_config') {
+        // Key-aware: the worker reads BOTH the cron secret and the ops recipient
+        // list from this table. A blanket return hands the secret back as a
+        // recipient id, which would silently reduce the audience to nobody.
+        if (/key=eq\.ops_health_recipient_ids/.test(query)) {
+          return opsRecipients === null ? [] : [{ value: opsRecipients }];
+        }
+        return secret ? [{ value: secret }] : [];
+      }
       if (table === failTable) throw new Error('probe exploded');
       if (table === 'message_provider_events') {
+        // Emulate PostgREST rejecting a filter on a column that does not exist,
+        // which is exactly what happens if the Worker deploys before the
+        // resolved_at migration applies.
+        if (/resolved_at=is\.null/.test(query)) {
+          if (noResolvedAtColumn) throw new Error('column "resolved_at" does not exist');
+          const st = /processing_state=eq\.(\w+)/.exec(query)?.[1];
+          return (tables.message_provider_events || [])
+            .filter((r) => r.processing_state === st && !r.resolved_at);
+        }
         const state = /processing_state=eq\.(\w+)/.exec(query)?.[1];
         return (tables.message_provider_events || []).filter((r) => r.processing_state === state);
       }
@@ -113,21 +133,134 @@ describe('ops-health run — alerting', () => {
     expect(dispatchImpl.mock.calls[0][0].typeKey).toBe('ops.health');
   });
 
+  it('asks for the OLDEST rows, so a large backlog cannot read as healthy', async () => {
+    // Every probe is capped at ROW_LIMIT. The conditions care about the stalest
+    // rows — most overdue, past the escalation threshold — so newest-first
+    // ordering would discard exactly those once a backlog exceeds the cap.
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+    await runOpsHealth(h.db, {}, { now: NOW });
+
+    const eventQueries = h.db.select.mock.calls
+      .filter(([table]) => table === 'message_provider_events')
+      .map(([, query]) => query);
+
+    expect(eventQueries.length).toBeGreaterThan(0);
+    for (const q of eventQueries) {
+      expect(q).toContain('order=received_at.asc');
+      expect(q).not.toContain('order=received_at.desc');
+    }
+  });
+
+  it('ignores failures somebody has already acknowledged', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      tables: {
+        message_provider_events: [{ ...failedEvent, resolved_at: '2026-07-25T00:00:00.000Z' }],
+      },
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).not.toHaveBeenCalled();
+    expect(result.raised).toEqual([]);
+  });
+
+  it('still alerts on an unacknowledged failure', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).toHaveBeenCalled();
+  });
+
+  it('keeps alerting if resolved_at does not exist yet, and says it ran degraded', async () => {
+    // The trap: safeSelect turns a 400 into "probe could not run", so without a
+    // fallback the failed-event alert would go SILENT in the window between
+    // deploying this Worker and applying the migration.
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      tables: { message_provider_events: [failedEvent] },
+      noResolvedAtColumn: true,
+    });
+
+    const result = await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl).toHaveBeenCalled();
+    expect(result.probeErrors.join(' ')).toContain('resolved_at unavailable');
+  });
+
+  it('sends ops alerts only to the configured recipients', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    const OWNER = 'd1d37f3c-2de5-4d8c-b5a8-f7b87e93d2da';
+    h.db = makeDb({
+      tables: { message_provider_events: [failedEvent] },
+      opsRecipients: `["${OWNER}"]`,
+    });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl.mock.calls[0][0].body.recipient_ids).toEqual([OWNER]);
+  });
+
+  it('accepts a comma-separated recipient list and de-duplicates it', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({
+      tables: { message_provider_events: [failedEvent] },
+      opsRecipients: ' aaa , bbb ,aaa ',
+    });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl.mock.calls[0][0].body.recipient_ids).toEqual(['aaa', 'bbb']);
+  });
+
+  it('omits recipient_ids entirely when unconfigured, keeping the role audience', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    // Absent, not empty — an empty array would fall through resolveAudience's
+    // length check anyway, but omitting is the unambiguous contract.
+    expect('recipient_ids' in dispatchImpl.mock.calls[0][0].body).toBe(false);
+  });
+
+  it('never treats the cron secret as a recipient id', async () => {
+    const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+    h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
+
+    await runOpsHealth(h.db, {}, { now: NOW, dispatchImpl });
+
+    expect(dispatchImpl.mock.calls[0][0].body.recipient_ids).toBeUndefined();
+  });
+
   it('records a dedupe marker after a successful dispatch', async () => {
     h.db = makeDb({ tables: { message_provider_events: [failedEvent] } });
     await runOpsHealth(h.db, {}, { now: NOW });
 
     const markers = h.db.inserts.filter((i) => i.table === 'system_events');
     expect(markers).toHaveLength(1);
-    expect(markers[0].row.payload.dedupe_key).toBe('provider_events_failed:2026-07-25');
+    // condition:denverDate:fingerprint — the fingerprint keys suppression to the
+    // distinct failure classes, so a NEW failure later the same day still rings.
+    expect(markers[0].row.payload.dedupe_key)
+      .toMatch(/^provider_events_failed:2026-07-25:[0-9a-f]{8}$/);
   });
 
   it('suppresses a condition already alerted today', async () => {
     const dispatchImpl = vi.fn(async () => ({ recipients: 1 }));
+
+    // Take the key from a real recording run rather than hardcoding it, so this
+    // test proves the reader and the writer agree on the key shape.
+    const seeding = makeDb({ tables: { message_provider_events: [failedEvent] } });
+    await runOpsHealth(seeding, {}, { now: NOW });
+    const recordedKey = seeding.inserts
+      .find((i) => i.table === 'system_events').row.payload.dedupe_key;
+
     h.db = makeDb({
       tables: {
         message_provider_events: [failedEvent],
-        system_events: [{ payload: { dedupe_key: 'provider_events_failed:2026-07-25' } }],
+        system_events: [{ payload: { dedupe_key: recordedKey } }],
       },
     });
 

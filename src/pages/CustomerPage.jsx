@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,6 +10,7 @@ import MergeModal from '@/components/MergeModal';
 import ClaimBilling from '@/components/ClaimBilling';
 import NewInvoiceModal from '@/components/NewInvoiceModal';
 import { canEditBilling } from '@/lib/claimUtils';
+import { ErrorState } from '@/components/ui';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
@@ -62,7 +63,7 @@ function TileHeader({title,editing,onEdit,onSave,onCancel,saving,children}){
 
 export default function CustomerPage(){
   const{contactId}=useParams();const navigate=useNavigate();const{db,employee:currentUser,isFeatureEnabled}=useAuth();
-  const[data,setData]=useState(null);const[loading,setLoading]=useState(true);
+  const[data,setData]=useState(null);const[loading,setLoading]=useState(true);const[loadError,setLoadError]=useState(null);
   const[activeTab,setActiveTab]=useState('overview');const[carriers,setCarriers]=useState([]);const[employees,setEmployees]=useState([]);
   const[addRelatedSource,setAddRelatedSource]=useState(null);
   const[showCreateJob,setShowCreateJob]=useState(false);
@@ -71,19 +72,34 @@ export default function CustomerPage(){
   const[showMore,setShowMore]=useState(false);
   const[activity,setActivity]=useState([]);
 
+  const dataReqRef=useRef(0);
   useEffect(()=>{loadData();},[contactId]);
-  const loadData=async()=>{
-    setLoading(true);
+  // `silent` skips the page-level loading gate — pull-to-refresh and modal-save
+  // callbacks must never flip it, or the whole page blanks to a spinner and loses
+  // scroll (page-lifecycle.md §1/§3). Cold mount and Retry DO gate: nothing is on
+  // screen to protect. dataReqRef mirrors JobPage's guard so a slow response for a
+  // previous contactId cannot overwrite newer data or post a stale error.
+  const loadData=async({silent=false}={})=>{
+    const reqId=++dataReqRef.current;
+    if(!silent)setLoading(true);
     try{
       const result=await db.rpc('get_customer_detail',{p_contact_id:contactId});
+      if(dataReqRef.current!==reqId)return;
       if(!result?.contact){navigate('/customers',{replace:true});return;}
+      setLoadError(null);
       setData(result);
       db.select('insurance_carriers','order=name.asc&select=id,name,short_name').then(setCarriers).catch(()=>{});
       db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(setEmployees).catch(()=>{});
       // Same feed the CRM contact drawer uses — richer than get_customer_detail's
       // job_notes/phase_history-only activity (adds claims, SMS, tasks, invoices, etc).
       db.rpc('get_contact_activity',{p_contact_id:contactId}).then(setActivity).catch(()=>setActivity([]));
-    }catch(err){console.error('Customer load:',err);}finally{setLoading(false);}
+    }catch(err){
+      console.error('Customer load:',err);
+      // Was console.error only, so `if(!data)return null` rendered a blank white
+      // page (loading-error-states.md §1). A missing contact still redirects
+      // above — that is not-found, which is a different thing from failed.
+      if(dataReqRef.current===reqId)setLoadError('Couldn’t load this customer. Check your connection and try again.');
+    }finally{if(dataReqRef.current===reqId)setLoading(false);}
   };
 
   const fmtDate=v=>{if(!v)return'\u2014';return new Date(v+(v.includes('T')?'':'T00:00:00')).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});};
@@ -91,7 +107,20 @@ export default function CustomerPage(){
   const fmtC2=v=>{if(v==null)return'\u2014';return`$${Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`;};
 
   if(loading)return<div className="loading-page"><div className="spinner"/></div>;
-  if(!data)return null;
+  // `job-page`, not `customer-page` — this page reuses JobPage's entire CSS family
+  // (see the loaded-state wrapper below). `customer-page` has no rules anywhere.
+  // justifyContent centers the panel: .job-page is a 100dvh flex column with
+  // overflow:hidden, so a lone child would otherwise pin to the top with dead
+  // space beneath it and no way to scroll.
+  if(!data)return(
+    <div className="job-page" style={{justifyContent:'center'}}>
+      <ErrorState
+        message={loadError||'Couldn’t load this customer. Check your connection and try again.'}
+        onRetry={loadData}
+        secondary={<button type="button" className="btn btn-secondary" onClick={()=>navigate('/customers')}>Back to customers</button>}
+      />
+    </div>
+  );
 
   const c=data.contact;const claims=data.claims||[];const fin=data.financials||{};const files=data.files||[];
   const addresses=data.addresses||[];
@@ -140,7 +169,7 @@ export default function CustomerPage(){
           {tab.label}{tab.count>0&&<span className="job-page-tab-count">{tab.count}</span>}
         </button>
       ))}</div>
-      <PullToRefresh onRefresh={loadData} className="job-page-content">
+      <PullToRefresh onRefresh={()=>loadData({silent:true})} className="job-page-content">
         {activeTab==='overview'&&<OverviewTab contact={c} fmtDate={fmtDate} carriers={carriers} addresses={addresses} db={db} contactId={contactId} onReload={loadData}/>}
         {activeTab==='claims'&&<ClaimsTab claims={claims} fmtDate={fmtDate} fmtC={fmtC} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} onNavClaim={id=>navigate(`/claims/${id}`,{viewTransition:true})} onAddRelated={(j,cl,s)=>setAddRelatedSource({job:j,claimData:{...cl,contact_id:contactId,contact_name:c.name},siblings:s})} db={db} onReload={loadData} isAdmin={currentUser?.role==='admin'}/>}
         {activeTab==='financial'&&<FinancialTab fin={fin} claims={claims} fmtC2={fmtC2} onNav={id=>navigate(`/jobs/${id}`,{viewTransition:true})} db={db} canEdit={canEditBill} billingOn={billingOn}/>}
@@ -150,7 +179,7 @@ export default function CustomerPage(){
       {addRelatedSource&&<AddRelatedJobModal sourceJob={addRelatedSource.job} claimData={addRelatedSource.claimData} siblingJobs={addRelatedSource.siblings} employees={employees} db={db} onClose={()=>setAddRelatedSource(null)} onCreated={r=>{setAddRelatedSource(null);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});}}/>}
       {showCreateJob&&<CreateJobModal db={db} onClose={()=>setShowCreateJob(false)} prefillContact={c} onCreated={r=>{setShowCreateJob(false);if(r?.job?.id)navigate(`/jobs/${r.job.id}`,{viewTransition:true});else loadData();}}/>}
       {showNewInvoice&&<NewInvoiceModal db={db} contact={c} claims={claims} onClose={()=>setShowNewInvoice(false)}/>}
-      {showMerge&&<MergeModal type="contact" keepRecord={c} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadData();}}/>}
+      {showMerge&&<MergeModal type="contact" keepRecord={c} onClose={()=>setShowMerge(false)} onMerged={()=>{setShowMerge(false);loadData({silent:true});}}/>}
     </div>
   );
 }

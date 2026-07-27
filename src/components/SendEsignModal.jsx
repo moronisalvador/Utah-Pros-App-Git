@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { createPortal } from 'react-dom';
 import { getAuthHeader } from '@/lib/realtime';
+import { ok, err } from '@/lib/toast';
 
 const DOC_TYPES = [
   { key: 'coc',              label: 'Certificate of Completion' },
@@ -38,6 +39,7 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
   const [divisions,      setDivisions]      = useState([]);
   const [error,          setError]          = useState('');
   const [done,           setDone]           = useState(false);
+  const [sentVia,        setSentVia]        = useState('email');
   const [signingUrl,     setSigningUrl]     = useState('');
   const [loadingContact, setLoadingContact] = useState(true);
   const [copied,         setCopied]         = useState(false);
@@ -98,6 +100,10 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
       if (!signerEmail.trim()) { setError('Signer email is required.'); return; }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) { setError('Enter a valid email address.'); return; }
     }
+    if (mode === 'sms' && !contactId) {
+      setError('This job has no linked contact, so the link cannot be texted.');
+      return;
+    }
 
     // iOS Safari blocks window.open() after any await — must open synchronously
     // in the user-gesture context, before the first await
@@ -116,7 +122,8 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
           job_id:       job.id,
           contact_id:   contactId || null,
           signer_name:  signerName.trim(),
-          signer_email: signerEmail.trim() || `collect-${Date.now()}@noemail.local`,
+          // Genuinely optional now — no placeholder. Blank means blank.
+          signer_email: signerEmail.trim() || null,
           sent_by:      currentUser?.id,
           doc_type:     docType,
           divisions:    docType === 'coc' ? divisions : undefined,
@@ -134,18 +141,25 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
         } else {
           window.open(json.signing_url, '_blank'); // fallback (non-Safari)
         }
-        window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
-          type: 'success', message: 'Signature page opened — hand device to client.',
-        }}));
+        ok('Signature page opened — hand device to client.');
         onClose();
         onSent?.(json);
+      } else if (mode === 'sms' && json.sms_error) {
+        // Consent/DND refusal is an expected outcome, not a crash. Stay on the
+        // form, say why, and keep the link reachable so the user can switch to
+        // email or copy it — the sign request already exists either way.
+        setError(json.message || 'The text could not be sent.');
+        setSigningUrl(json.signing_url || '');
+        onSent?.(json);
       } else {
-        window.dispatchEvent(new CustomEvent('upr:toast', { detail: {
-          type:    json.email_error ? 'error' : 'success',
-          message: json.email_error
-            ? `Email failed (${json.email_status || '?'}): ${json.email_error_detail || 'unknown error'}`
-            : `Signing link sent to ${signerEmail.trim()}.`,
-        }}));
+        if (json.email_error) {
+          err(`Email failed: ${json.email_error_detail || 'unknown error'}`);
+        } else {
+          ok(mode === 'sms'
+            ? 'Signing link texted to the client.'
+            : `Signing link sent to ${signerEmail.trim()}.`);
+        }
+        setSentVia(mode);
         setSigningUrl(json.signing_url || '');
         setDone(true);
         onSent?.(json);
@@ -180,9 +194,9 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
           </div>
 
           <div style={{ padding: '32px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: 44, marginBottom: 12 }}>✉️</div>
+            <div style={{ fontSize: 44, marginBottom: 12 }}>{sentVia === 'sms' ? '💬' : '✉️'}</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-              Link sent to {signerEmail}
+              {sentVia === 'sms' ? `Link texted to ${signerName}` : `Link sent to ${signerEmail}`}
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 24 }}>
               The signed PDF will appear in the Files tab automatically once they sign.
@@ -335,8 +349,10 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
               </div>
               <div>
                 <label style={fieldLabel}>
-                  Email <span style={{ color: '#ef4444' }}>*</span>
-                  {loadingContact && <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>fetching…</span>}
+                  Email
+                  <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 6 }}>
+                    {loadingContact ? 'fetching…' : 'only needed to email the link'}
+                  </span>
                 </label>
                 <input className="input" type="email" value={signerEmail}
                   onChange={e => { setSignerEmail(e.target.value); setError(''); }}
@@ -361,6 +377,20 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
               fontSize: 13, color: '#dc2626', marginBottom: 4,
             }}>
               ⚠ {error}
+              {/* A refused text still produced a sign request — surface its link
+                  here so the work is recoverable without re-creating it. */}
+              {signingUrl && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+                  <a href={signingUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ flex: 1, fontSize: 11, color: 'var(--brand-primary)', wordBreak: 'break-all', textDecoration: 'none' }}>
+                    {signingUrl}
+                  </a>
+                  <button className="btn btn-secondary btn-sm" onClick={copyUrl}
+                    style={{ flexShrink: 0, fontSize: 11, height: 28 }}>
+                    {copied ? 'Copied!' : 'Copy'}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -377,6 +407,17 @@ export default function SendEsignModal({ job, currentUser, db, onClose, onSent }
             {sending === 'collect'
               ? <><div className="spinner" style={{ width: 14, height: 14, borderColor: 'rgba(255,255,255,0.3)', borderTopColor: '#fff' }}/> Opening…</>
               : <><span style={{ fontSize: 15 }}>✍️</span> Collect Signature Now</>}
+          </button>
+
+          {/* Secondary: text the link. Needs a linked contact — the number comes
+              from that contact's conversation, never from this form. */}
+          <button className="btn btn-secondary" onClick={() => handleSend('sms')}
+            disabled={!!sending || loadingContact || !contactId}
+            title={contactId ? undefined : 'No contact linked to this job'}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, opacity: contactId ? 1 : 0.5 }}>
+            {sending === 'sms'
+              ? <><div className="spinner" style={{ width: 14, height: 14 }}/> Sending…</>
+              : <><span style={{ fontSize: 15 }}>💬</span> Send Link via Text</>}
           </button>
 
           {/* Secondary: send by email */}

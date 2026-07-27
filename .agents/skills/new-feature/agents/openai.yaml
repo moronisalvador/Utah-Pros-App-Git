@@ -1,0 +1,6 @@
+interface:
+  display_name: "New UPR Feature"
+  short_description: "Build an ordinary UPR feature safely"
+  default_prompt: "Use $new-feature to implement this UPR feature with the correct risk gates and verification."
+policy:
+  allow_implicit_invocation: true

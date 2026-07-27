@@ -1,23 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { ErrorState } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 export default function Leads() {
   const { db } = useAuth();
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  // ErrorState only renders on an empty list, so a refresh failure over existing
+  // rows would otherwise show the user nothing at all.
+  const hadRowsRef = useRef(false);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     // Leads = jobs in the 'lead' phase — not a contacts role
-    db.select(
-      'jobs',
-      'phase=eq.lead&status=eq.active&order=created_at.desc&select=id,job_number,insured_name,address,city,state,division,type_of_loss,insurance_company,created_at,priority,lead_source'
-    )
-      .then(setLeads)
-      .catch(err => console.error('Leads load error:', err))
-      .finally(() => setLoading(false));
+    try {
+      const rows = await db.select(
+        'jobs',
+        'phase=eq.lead&status=eq.active&order=created_at.desc&select=id,job_number,insured_name,address,city,state,division,type_of_loss,insurance_company,created_at,priority,lead_source'
+      );
+      setLeads(rows || []);
+      hadRowsRef.current = (rows || []).length > 0;
+      setLoadError(null);
+    } catch (loadErr) {
+      // Was console.error only, so a failed load rendered "No leads yet" —
+      // indistinguishable from a genuinely empty pipeline (loading-error-states.md §1).
+      console.error('Leads load error:', loadErr);
+      setLoadError('Couldn’t load leads. Check your connection and try again.');
+      if (hadRowsRef.current) err('Couldn’t refresh — showing last-loaded leads.');
+    } finally {
+      setLoading(false);
+    }
   }, [db]);
+
+  useEffect(() => { load(); }, [load]);
 
   if (loading) return <div className="loading-page"><div className="spinner" /></div>;
 
@@ -32,7 +50,9 @@ export default function Leads() {
 
       <div className="card">
         <div className="card-body" style={{ padding: 0 }}>
-          {leads.length === 0 ? (
+          {loadError && leads.length === 0 ? (
+            <ErrorState message={loadError} onRetry={load} />
+          ) : leads.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No leads yet</p>
               <p className="empty-state-text">Jobs in the Lead phase will appear here.</p>

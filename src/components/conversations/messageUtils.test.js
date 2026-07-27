@@ -25,6 +25,7 @@ import {
   mergeRefreshedMessages,
   getServiceConsentUiState,
   getDraft, setDraft, clearDraft,
+  withoutSupersededFailures,
 } from './messageUtils';
 
 describe('computeSmsSegments', () => {
@@ -254,5 +255,81 @@ describe('draft persistence', () => {
     setDraft('conv-2', 'x');
     setDraft('conv-2', '   ');
     expect(getDraft('conv-2')).toBe('');
+  });
+});
+
+// ─── withoutSupersededFailures ──────────────
+// A successful retry does not update the failed row — the worker inserts a new
+// one — so the thread would hold two bubbles for one message, the dead one still
+// offering Retry. Every chat people use shows a retry as the SAME message.
+describe('withoutSupersededFailures', () => {
+  const failed = (body, id = 'f1') => ({ id, type: 'sms_outbound', status: 'failed', body });
+  const sent = (body, id = 's1') => ({ id, type: 'sms_outbound', status: 'sent', body });
+
+  it('removes a failure that a later identical send replaced', () => {
+    const out = withoutSupersededFailures([failed('Hi Deana'), sent('Hi Deana')]);
+    expect(out).toHaveLength(1);
+    expect(out[0].status).toBe('sent');
+  });
+
+  it('keeps a failure that nothing replaced', () => {
+    const rows = [failed('Hi Deana'), sent('something else')];
+    const out = withoutSupersededFailures(rows);
+    expect(out).toHaveLength(2);
+    // Identity preserved when nothing was dropped, so React sees no change.
+    expect(out).toBe(rows);
+  });
+
+  it('does not let an EARLIER success excuse a LATER failure', () => {
+    // Sent, then the same text failed. That failure is real and still retryable.
+    const out = withoutSupersededFailures([sent('Ping'), failed('Ping')]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('treats queued as sent — the worker only writes it after provider acceptance', () => {
+    const out = withoutSupersededFailures([
+      failed('Hi'), { id: 'q', type: 'sms_outbound', status: 'queued', body: 'Hi' },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('q');
+  });
+
+  it('ignores inbound and internal notes that happen to share the text', () => {
+    const rows = [
+      failed('Thanks'),
+      { id: 'in', type: 'sms_inbound', status: 'received', body: 'Thanks' },
+      { id: 'n', type: 'internal_note', status: 'sent', body: 'Thanks' },
+    ];
+    expect(withoutSupersededFailures(rows)).toHaveLength(3);
+  });
+
+  it('covers undelivered, not just failed', () => {
+    const out = withoutSupersededFailures([
+      { id: 'u', type: 'sms_outbound', status: 'undelivered', body: 'Hi' }, sent('Hi'),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('s1');
+  });
+
+  it('drops every earlier attempt, not just the last one', () => {
+    const out = withoutSupersededFailures([
+      failed('Hi', 'f1'), failed('Hi', 'f2'), sent('Hi'),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('s1');
+  });
+
+  it('never matches on an empty body', () => {
+    const rows = [
+      { id: 'a', type: 'sms_outbound', status: 'failed', body: '' },
+      { id: 'b', type: 'sms_outbound', status: 'sent', body: '' },
+    ];
+    expect(withoutSupersededFailures(rows)).toHaveLength(2);
+  });
+
+  it('handles an empty or missing input without throwing', () => {
+    expect(withoutSupersededFailures([])).toEqual([]);
+    expect(withoutSupersededFailures()).toEqual([]);
+    expect(withoutSupersededFailures(null)).toBeNull();
   });
 });

@@ -29,7 +29,12 @@ that row first and uses the environment binding only in explicit fallback state.
 on 2026-07-23 that the historical Netlify Demo Sheet is obsolete and unsupported. It is not part of
 the credential cutover; its deployment and any remaining secret binding should be retired separately.
 
-Candidate keys are validated with `GET /v1/organizations?limit=1` before activation. A saved key is
+Candidate keys are validated with `GET /v1/organizations` before activation — **no query parameter.**
+Measured live 2026-07-26: `GET /v1/organizations` returns `200 {"list":[{"id":"<uuid>"}]}`, while
+`GET /v1/organizations?limit=1` returns `400 Unknown query parameter: \`limit\``. This line previously
+documented the `?limit=1` form, which made the validator reject every candidate key. It was
+documenting the code rather than the API — the endpoint list below is the measured contract. A saved
+key is
 write-only to the browser; status exposes only safe lifecycle and verification metadata.
 
 ---

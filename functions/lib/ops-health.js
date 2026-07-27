@@ -26,8 +26,9 @@
  *   OPS_HEALTH_CONDITIONS          — the four stable condition keys
  *   DEFAULT_OPS_HEALTH_THRESHOLDS  — tunable minute/count thresholds
  *   describeParty(row)             — "385-314-5700 → 385-360-4121" identity line
+ *   summarizeWorkerError(raw)      — readable one-liner from a JSON/plain error
  *   evaluateOpsHealth(input)       — → { checkedAt, conditions: [...] }
- *   buildDedupeKey(conditionKey, denverDate) — per-condition daily dedupe key
+ *   buildDedupeKey(conditionKey, denverDate, fingerprint?) — daily dedupe key
  *
  * NOTES / GOTCHAS:
  *   - Severity is advisory ordering only; it is NOT a paging tier.
@@ -38,6 +39,11 @@
  *     notification body too large for a bell row or a push payload.
  *   - Every timestamp comparison is done in UTC milliseconds. The Denver day is
  *     only used for the dedupe key, supplied by the caller.
+ *   - Each condition carries a `fingerprint` over its DISTINCT failure CLASSES
+ *     (error codes / worker names / automation keys) — never over raw error
+ *     text, which contains UUIDs and would make every run look novel. The
+ *     dedupe key mixes it in so a genuinely new failure later the same day is
+ *     not swallowed by the day's first alert.
  * ════════════════════════════════════════════════
  */
 
@@ -61,10 +67,21 @@ export const DEFAULT_OPS_HEALTH_THRESHOLDS = Object.freeze({
   workerErrorMinCount: 1,
   // A claim with no finalized_at older than this means a worker died mid-run.
   claimUnfinalizedMinutes: 30,
+  // An unresolved failed-event backlog older than this escalates from high to
+  // critical. Failures are terminal, so without this the alert would repeat at
+  // the same volume forever and be tuned out; ignoring it should get LOUDER,
+  // not quieter. Pairs with resolved_at — acknowledge and it stops entirely.
+  failedBacklogEscalateDays: 3,
 });
 
 // Cap how many individual rows are named in a notification body.
 const DETAIL_CAP = 5;
+
+// Cap a single worker's error summary AFTER the useful part is extracted.
+const ERROR_SUMMARY_CAP = 120;
+
+// Hard bound on what we hand to JSON.parse, independent of who wrote the row.
+const PARSE_INPUT_CAP = 2000;
 
 // ─── SECTION: Helpers ──────────────
 
@@ -101,7 +118,70 @@ function capDetails(lines) {
   return shown;
 }
 
-function condition({ key, severity, count, title, details, meta }) {
+/**
+ * Turn a worker's raw `error_message` into something a human can read at a
+ * glance. Workers frequently store a JSON array or object rather than a
+ * sentence, and blindly slicing that produced bodies cut mid-token — the live
+ * 2026-07-26 alert read "…returned an empt", because the first 80 characters
+ * were spent on a UUID and a JSON envelope.
+ *
+ * So: extract FIRST, truncate AFTER. Anything unparseable falls back to the old
+ * behavior rather than throwing — an ugly alert beats a missing one.
+ */
+export function summarizeWorkerError(raw) {
+  if (raw === null || raw === undefined) return null;
+  // Bound the input before parsing. recordWorkerRun caps error_message at 500
+  // chars, but some workers still hand-roll their worker_runs insert and skip
+  // that, so this function cannot assume a bounded writer.
+  const text = String(raw).slice(0, PARSE_INPUT_CAP);
+  if (!text.trim()) return null;
+
+  let extracted = null;
+  try {
+    const parsed = JSON.parse(text);
+    const list = Array.isArray(parsed) ? parsed : [parsed];
+    const messages = list
+      .map((entry) => {
+        if (entry === null || entry === undefined) return null;
+        if (typeof entry === 'string') return entry;
+        if (typeof entry !== 'object') return String(entry);
+        return entry.error || entry.message || entry.detail || null;
+      })
+      .map((m) => (m === null || m === undefined ? null : String(m).trim()))
+      .filter((m) => m);
+
+    if (messages.length) {
+      const extra = messages.length - 1;
+      extracted = extra > 0 ? `${messages[0]} (+${extra} more)` : messages[0];
+    }
+  } catch {
+    // Not JSON — fall through to the raw text.
+  }
+
+  return (extracted ?? text).slice(0, ERROR_SUMMARY_CAP);
+}
+
+/**
+ * Stable 32-bit FNV-1a over a sorted set of low-cardinality class identifiers
+ * (worker names, error codes, automation keys). Deliberately NOT hashed over
+ * raw error text: those carry UUIDs and timestamps, so every occurrence would
+ * look distinct and the bell would ring every single run.
+ */
+function fingerprintOf(values) {
+  const distinct = Array.from(
+    new Set((values || []).map((v) => (v === null || v === undefined ? '' : String(v))).filter(Boolean)),
+  ).sort();
+  if (!distinct.length) return 'none';
+  const joined = distinct.join(' ');
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < joined.length; i += 1) {
+    hash ^= joined.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function condition({ key, severity, count, title, details, meta, classes }) {
   return {
     key,
     severity,
@@ -110,16 +190,29 @@ function condition({ key, severity, count, title, details, meta }) {
     details: capDetails(details),
     body: capDetails(details).join('\n'),
     meta: meta || {},
+    fingerprint: fingerprintOf(classes),
   };
 }
 
-export function buildDedupeKey(conditionKey, denverDate) {
-  return `${conditionKey}:${denverDate}`;
+/**
+ * Per-condition daily dedupe key.
+ *
+ * `fingerprint` identifies WHICH distinct failures are in play. Without it the
+ * key was `condition:date`, so the first alert of a Denver day claimed the slot
+ * and a genuinely NEW failure later the same day was silently swallowed
+ * (verified: transcribe-call errored at 06:20 MT on 2026-07-26, after the 00:30
+ * alert had already taken the key).
+ *
+ * Omitting `fingerprint` preserves the original key shape.
+ */
+export function buildDedupeKey(conditionKey, denverDate, fingerprint) {
+  const base = `${conditionKey}:${denverDate}`;
+  return fingerprint ? `${base}:${fingerprint}` : base;
 }
 
 // ─── SECTION: The four checks ──────────────
 
-function checkFailedProviderEvents(rows) {
+function checkFailedProviderEvents(rows, nowMs, escalateAfterDays) {
   if (!rows.length) return null;
   const details = rows.map((row) => {
     const media = row.media_count > 0 && (!row.owned_media || row.owned_media.length === 0)
@@ -128,13 +221,30 @@ function checkFailedProviderEvents(rows) {
     return `${row.error_code || 'unknown error'} · ${describeParty(row)}`
       + ` · ${row.message_type || 'message'}${media}`;
   });
+
+  // Oldest unresolved failure drives escalation. A failed event is terminal, so
+  // this backlog only shrinks when a human resolves it or a retry succeeds.
+  const ages = rows
+    .map((r) => minutesBetween(nowMs, toMs(r.received_at)))
+    .filter((m) => m !== null && m >= 0);
+  const oldestDays = ages.length ? Math.floor(Math.max(...ages) / 1440) : 0;
+  const escalated = escalateAfterDays !== null
+    && escalateAfterDays !== undefined
+    && oldestDays >= escalateAfterDays;
+
+  const noun = `message event${rows.length === 1 ? '' : 's'}`;
   return condition({
     key: OPS_HEALTH_CONDITIONS.PROVIDER_EVENTS_FAILED,
-    severity: 'high',
+    severity: escalated ? 'critical' : 'high',
     count: rows.length,
-    title: `${rows.length} inbound/outbound message event${rows.length === 1 ? '' : 's'} failed`,
+    title: escalated
+      ? `${rows.length} ${noun} failed and unresolved for ${oldestDays} day${oldestDays === 1 ? '' : 's'}`
+      : `${rows.length} inbound/outbound ${noun} failed`,
     details,
-    meta: { ids: rows.map((r) => r.id).filter(Boolean) },
+    meta: { ids: rows.map((r) => r.id).filter(Boolean), oldest_days: oldestDays, escalated },
+    // Escalation is part of the identity: crossing the threshold is genuinely
+    // new information, so it must re-alert rather than be suppressed as a repeat.
+    classes: [...rows.map((r) => r.error_code || 'unknown'), escalated ? 'escalated' : 'normal'],
   });
 }
 
@@ -158,6 +268,7 @@ function checkStuckProviderEvents(rows, nowMs, thresholdMinutes) {
     title: `${stuck.length} message event${stuck.length === 1 ? '' : 's'} stuck past retry time`,
     details,
     meta: { ids: stuck.map((r) => r.id).filter(Boolean) },
+    classes: stuck.map((r) => r.error_code || r.message_type || 'stuck'),
   });
 }
 
@@ -181,8 +292,10 @@ function checkWorkerErrors(rows, nowMs, { windowMinutes, minCount }) {
 
   const details = Array.from(byWorker.entries())
     .sort((a, b) => b[1].count - a[1].count)
-    .map(([name, entry]) => `${name} ×${entry.count}`
-      + (entry.sample ? ` · ${String(entry.sample).slice(0, 80)}` : ''));
+    .map(([name, entry]) => {
+      const summary = summarizeWorkerError(entry.sample);
+      return `${name} ×${entry.count}` + (summary ? ` · ${summary}` : '');
+    });
 
   return condition({
     key: OPS_HEALTH_CONDITIONS.WORKER_ERRORS,
@@ -191,6 +304,7 @@ function checkWorkerErrors(rows, nowMs, { windowMinutes, minCount }) {
     title: `${recent.length} worker error${recent.length === 1 ? '' : 's'} in the last ${windowMinutes} min`,
     details,
     meta: { workers: Object.fromEntries(Array.from(byWorker, ([k, v]) => [k, v.count])) },
+    classes: Array.from(byWorker.keys()),
   });
 }
 
@@ -215,6 +329,7 @@ function checkUnfinalizedClaims(rows, nowMs, thresholdMinutes) {
     title: `${stale.length} automation claim${stale.length === 1 ? '' : 's'} never finalized`,
     details,
     meta: { ids: stale.map((r) => r.id).filter(Boolean) },
+    classes: stale.map((r) => r.automation_key || 'unknown automation'),
   });
 }
 
@@ -246,7 +361,7 @@ export function evaluateOpsHealth({
   const nowMs = toMs(now) ?? Date.now();
 
   const conditions = [
-    checkFailedProviderEvents(failedEvents || []),
+    checkFailedProviderEvents(failedEvents || [], nowMs, t.failedBacklogEscalateDays),
     checkStuckProviderEvents(retryableEvents || [], nowMs, t.stuckRetryableMinutes),
     checkWorkerErrors(workerErrors || [], nowMs, {
       windowMinutes: t.workerErrorWindowMinutes,

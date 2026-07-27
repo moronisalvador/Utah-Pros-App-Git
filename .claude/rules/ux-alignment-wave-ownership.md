@@ -77,3 +77,48 @@ scroll loss) → **390px mobile viewport check** on any touched page → **perf 
 → update `UPR-Web-Context.md` (Rule 9) → **re-measure this session's slice of the roadmap baseline
 metrics** → reconcile roadmap checkboxes (both directions) → delete TEST rows → push `-u` → open a PR
 into `dev` as a handoff → **STOP** (owner/orchestrator merges; do not subscribe/babysit/click-merge).
+
+---
+
+## 6. Addendum (2026-07-26, owner-authorized) — `paths:` frontmatter on the five standards docs
+
+Recorded so §1's frozen list stays truthful. §1 freezes "the five `.claude/rules/` standards docs, the
+checker agents" against the W1–W5 sessions. The **agent-instruction alignment initiative**
+(`docs/agent-alignment-roadmap.md`) needs to add conditional-load frontmatter to those same files, which
+is roadmap **ledger #9**. The owner authorized option (a), a dated addendum, on **2026-07-26**.
+
+**Authorized by this addendum — and nothing else:**
+
+- **Frontmatter-only `paths:` additions** to `page-lifecycle.md`, `loading-error-states.md`,
+  `perf-budget.md`, `workers-standard.md` and `close-out-standard.md`, plus each file's
+  `**Last verified:**` stamp.
+- The **two additive lines** on the checker agents named in the alignment roadmap's P11 block.
+- The dated `close-out-standard.md` amendment that block describes.
+
+**Explicitly NOT authorized:** any edit to this manifest's §2 ownership matrix, any change to the
+*substance* of the five standards, any change to a W-phase's owned files, and any reordering of §5.
+Adding `paths:` changes **when a file loads, not what it says** — which is why this is not a matrix
+edit, and why the diff must stay visibly frontmatter + stamp only. A reviewer who sees prose change in
+those five files inside an alignment-initiative commit should reject it.
+
+**Two constraints the converting session inherits:**
+
+1. **`database-standard.md` is permanently unscoped** (owner-confirmed 2026-07-26; alignment ledger
+   #11). `paths:`-scoped rules are **dropped at `/compact`**, and that file carries the shared-production
+   apply gate. The same reasoning is why no money, consent/TCPA or server-authorization law may sit
+   behind a glob.
+2. **No `paths:` conversion may be claimed unverified.** *(Corrected 2026-07-26 by measurement — this
+   item previously said "brace groups match nothing", which is **false**.)* Globs use gitignore
+   semantics on repo-relative paths. Brace groups **work** at realistic sizes; what fails is a pattern
+   whose expansion count exceeds the ~1,000-pattern budget, measured to break between **512 (loads)**
+   and **1024 (does not load)**. Past it the pattern is used unexpanded and the rule loads *never*,
+   silently, with no error. Nested groups multiply, so `{a,b}{c,d}{e,f}…` is the hazard — `{js,jsx}` is
+   fine. Bracket classes work. Evidence: `docs/agent-alignment-l2-evidence.md` §4c. Prove each
+   conversion's load behaviour with the alignment initiative's P7 instrument before claiming it.
+
+**Initiative status, recorded because it changes how to read this file.** Asked on 2026-07-26 whether
+W1–W5 are stalled or live (no commits since 2026-07-18 while F-S1 shipped), the owner said the
+initiative is **a work in progress but not fixed** — they may **restart it from scratch once the new
+rules and standards are in place**. So: treat §§1–5 as a live contract *today*, but do not invest in
+elaborate compatibility with it. A session picking W1–W5 up should first ask the owner whether it is
+resuming this plan or replacing it.

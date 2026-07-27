@@ -120,17 +120,47 @@ describe('sendCallRailMessage restrictions', () => {
     );
   });
 
-  it('accepts 140 final characters and rejects 141', async () => {
+  // The cap is 10 SMS segments, not a character count. CallRail's documented 140-char
+  // limit is not enforced by their API — 2026-07-26 probes at 200/630/1591 characters
+  // were all accepted and delivered intact to a real handset.
+  it('accepts a long multi-segment GSM-7 body that the old 140 rule would have refused', async () => {
     await sendCallRailMessage(env, {
       ...command,
-      content: { body: '🙂'.repeat(140), media: [] },
+      content: { body: 'a'.repeat(600), media: [] },
+    });
+    expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts exactly 10 GSM-7 segments and rejects 11', async () => {
+    await sendCallRailMessage(env, {
+      ...command,
+      content: { body: 'a'.repeat(1530), media: [] }, // 153 * 10
     });
     expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
 
     await expectCode(
       sendCallRailMessage(env, {
         ...command,
-        content: { body: '🙂'.repeat(141), media: [] },
+        content: { body: 'a'.repeat(1531), media: [] },
+      }),
+      'CALLRAIL_CONTENT_TOO_LONG'
+    );
+    expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  // One non-GSM character flips the whole message to UCS-2, where a segment holds 67
+  // instead of 153 — the flat character count could not see this at all.
+  it('applies the UCS-2 segment size when the body leaves the GSM-7 alphabet', async () => {
+    await sendCallRailMessage(env, {
+      ...command,
+      content: { body: '中'.repeat(670), media: [] }, // 67 * 10
+    });
+    expect(h.fetchWithTimeout).toHaveBeenCalledTimes(1);
+
+    await expectCode(
+      sendCallRailMessage(env, {
+        ...command,
+        content: { body: '中'.repeat(671), media: [] },
       }),
       'CALLRAIL_CONTENT_TOO_LONG'
     );

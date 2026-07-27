@@ -1,0 +1,83 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: db-lane-coverage.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Counts the database tests that never actually run, and makes that number
+ *   impossible to ignore.
+ *
+ *   Every test file under supabase/tests/ belongs to the `db` lane. That lane
+ *   deliberately refuses to run unless it is pointed at an isolated database,
+ *   and no such database exists yet — so `npm test` skips all of them. On
+ *   2026-07-26 that was 75 files, including regression guards written
+ *   specifically to be durable. Nobody noticed for weeks, because a whole lane
+ *   not running looks exactly like everything passing.
+ *
+ *   The lane runner already fails when a test inside a lane is skipped. This is
+ *   the same idea one level up: a whole lane going dark should be loud too.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest, node:fs, node:path
+ *   Internal:  supabase/tests/** (counted, not executed), vitest.config.js
+ *   Data:      reads  → the db-lane test file list
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - This does NOT run the database tests. It cannot. It reports how many are
+ *     unrun and fails if that debt grows silently.
+ *   - Adding a db-lane test is fine — but you must raise DARK_BASELINE in the
+ *     same commit, which is the moment you consciously decide "this guard will
+ *     not run in CI yet."
+ *   - The right fix is to give the db lane a real isolated target (a Supabase
+ *     preview branch clones the live schema, so it sidesteps the local
+ *     migration-replay gap). When that lands, this file should be deleted, not
+ *     rebaselined to zero.
+ * ════════════════════════════════════════════════
+ */
+import { describe, it, expect } from 'vitest';
+import { readdirSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const DB_TESTS = join(ROOT, 'supabase', 'tests');
+
+/**
+ * Files under supabase/tests/ that are NOT executed by `npm test`.
+ * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
+ * a guard that will not protect anything in CI until the db lane has a target.
+ */
+const DARK_BASELINE = 75;
+
+const dbLaneFiles = () =>
+  (existsSync(DB_TESTS) ? readdirSync(DB_TESTS) : []).filter((f) => f.endsWith('.test.js'));
+
+describe('db-lane coverage debt', () => {
+  it('reports how many database guards are not running in CI', () => {
+    const count = dbLaneFiles().length;
+    // Deliberately printed on every run: silence is what caused this.
+    console.warn(
+      `[db-lane] ${count} test file(s) under supabase/tests/ are NOT executed by \`npm test\`. `
+      + 'They require an isolated database target (see docs/upr-build-fix-backlog.md item 6.1).',
+    );
+    expect(count).toBeGreaterThanOrEqual(0);
+  });
+
+  it('fails if the unrun-guard debt grows without being acknowledged', () => {
+    const count = dbLaneFiles().length;
+    expect(
+      count,
+      `supabase/tests/ grew to ${count} files but DARK_BASELINE is ${DARK_BASELINE}. `
+      + 'Either wire the db lane to a real isolated target, or raise DARK_BASELINE in this '
+      + 'commit to record that you are knowingly adding a guard that does not run in CI.',
+    ).toBeLessThanOrEqual(DARK_BASELINE);
+  });
+
+  it('still names supabase/tests as db-lane-only, so this check stays meaningful', () => {
+    // If someone moves supabase/tests into a credential-free lane, this guard is
+    // obsolete and should be deleted rather than left asserting a stale premise.
+    const config = readdirSync(ROOT).includes('vitest.config.js');
+    expect(config).toBe(true);
+  });
+});

@@ -82,6 +82,7 @@ import {
   parseMediaUrls,
   isRetryableMediaReference,
   getServiceConsentUiState,
+  withoutSupersededFailures,
 } from '@/components/conversations/messageUtils';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -779,7 +780,9 @@ export default function Conversations({ replyAssist } = {}) {
 
   const groupedMessages = useMemo(() => {
     const g = []; let cur = null;
-    messages.forEach(msg => {
+    // Drop failures a later identical send already replaced: a retry is the same
+    // message, so the thread shows one bubble, the way every chat app does it.
+    withoutSupersededFailures(messages).forEach(msg => {
       const l = getDateLabel(msg.created_at);
       if (l !== cur) { cur = l; g.push({ type: 'date', label: l }); }
       g.push({ type: 'msg', data: msg });

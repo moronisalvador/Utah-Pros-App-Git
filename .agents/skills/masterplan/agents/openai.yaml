@@ -1,0 +1,6 @@
+interface:
+  display_name: "UPR Masterplan"
+  short_description: "Plan a complex UPR initiative"
+  default_prompt: "Use $masterplan to produce an evidence-backed, proportionate plan for this UPR initiative."
+policy:
+  allow_implicit_invocation: true

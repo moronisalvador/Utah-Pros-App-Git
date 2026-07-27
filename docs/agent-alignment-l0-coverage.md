@@ -1,0 +1,241 @@
+<!--
+FILE: docs/agent-alignment-l0-coverage.md
+
+WHAT THIS DOES (plain language):
+  Proves that carving the shared rules into AGENTS.md did not weaken anything.
+  One row per rule or safety statement, saying where it came from, where it now
+  lives, and whether the new wording is identical, an equally strong rewrite, or
+  stronger than before. Nothing is allowed to come out weaker, and nothing is
+  allowed to go missing.
+
+DEPENDS ON:
+  Internal: AGENTS.md, CLAUDE.md, .claude/rules/**, docs/agent-alignment-roadmap.md
+  Data:     reads  → documentation only
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - This is EVIDENCE for the L0/L1 phases, not project law.
+  - A verdict of "weaker" or a destination of "none" is a phase failure. There
+    are none; if a later edit introduces one, that edit is wrong.
+  - The right-hand column also drives P3: only rows marked "P3 may delete" are
+    safe to remove from CLAUDE.md, and only after the post-compact canary.
+-->
+
+# L0 coverage — no-weakening proof
+
+**Written:** 2026-07-26 · **Phases:** L0/L1 P1 (author the core) + P2 (the bridge)
+**Base:** `origin/dev` at `1ac8914` · `AGENTS.md` 25,325 B · `CLAUDE.md` 33,921 B
+
+Verdict vocabulary: **verbatim** (byte-identical), **distilled** (same strength, fewer words),
+**STRICTER** (the new text binds harder than the old). No row reads *weaker*. No row has destination
+*none*.
+
+---
+
+## 1. Rules 1–12 — verbatim, numbering frozen
+
+| Rule | Source | Destination | Verdict |
+|---|---|---|---|
+| 1–12 | `CLAUDE.md:7-18` | `AGENTS.md` §Non-negotiable rules | **verbatim** |
+
+Proven mechanically, not by eye:
+
+```bash
+git show HEAD:CLAUDE.md | sed -n '7,18p' > /tmp/base.txt
+s=$(grep -n '^1\. \*\*Read files from disk' AGENTS.md | cut -d: -f1)
+sed -n "${s},$((s+11))p" AGENTS.md | diff -q /tmp/base.txt -   # identical
+```
+
+Numbering is `1..12`, no gaps, no 13+ inside the block. The two in-page anchors in Rule 4
+(`#crm-phase-workflow`, `#deployment--release-workflow`) resolve in `CLAUDE.md`, which retains both
+sections; a footnote under the rules block says so. **CLAUDE.md keeps its copy** until P3.
+
+## 2. Safety law newly absorbed into L0 (§13–§17)
+
+These are the statements Codex could previously reach only by choosing to open a `.claude/rules/`
+file. They are now loaded, not merely pointed at.
+
+| L0 statement | Source | Verdict |
+|---|---|---|
+| One Supabase behind `dev` and `main`; a migration is a production change on apply | `database-standard.md` intro + §5; `CLAUDE.md` Deployment | distilled |
+| Shared project is never a write-test target; no direct-SQL iteration | `database-standard.md` §0 | distilled |
+| Additive-only on live tables | `database-standard.md` §3 | distilled |
+| Frontend-contract freeze; `CREATE OR REPLACE` keeps the old signature + a committed test | `database-standard.md` §3 | distilled |
+| Rollback required or review failure | `database-standard.md` §6 | distilled |
+| Prefer `SECURITY INVOKER`; definer validates caller, pins `search_path`, `REVOKE` before `GRANT` | `database-standard.md` §1 | distilled |
+| `anon` only via the §2 allowlist, with `-- public: <reason>` | `database-standard.md` §1–2; Rule 7 | distilled |
+| `TO authenticated USING (true)` is authentication, not authorization | `database-standard.md` §1 + live-audit correction | distilled |
+| Never free-form SQL to a browser role; `exec_read_sql` containment is a regression boundary | `database-standard.md` §1 | distilled |
+| No secret readable by `authenticated`/`anon`; no migration seeds a secret | `database-standard.md` §4 | distilled |
+| `America/Denver` bucketing | `database-standard.md` §7 | distilled |
+| Apply only from a reviewed commit on the release branch; sequence windows; no overlapping strong-lock DDL | `database-standard.md` §5 | distilled |
+| Worker is sole writer of provider message rows; client inserts only `internal_note` | `omni-inbox` §7.1; `sms-experience` §6 | distilled |
+| Consent/DND fail closed **before** provider selection and any provider call | `messaging-transport` §1; `sms-experience` §6 | distilled |
+| No cross-channel and no adapter fallback | `omni-inbox` §7.3; `messaging-transport` §1 | distilled |
+| Automated/marketing only via `sendAutomatedMessage()`; `skip_compliance` never returns | `sms-experience` §6 | distilled |
+| `sms_disabled` / `quiet_hours` are load-bearing cross-worker contracts | `sms-experience` §9.3 | distilled |
+| Staff sends go only through `POST /api/send-message` | `messaging-transport` §1 | distilled |
+| TCPA penalties are per message; A2P/live send owner-gated | `sms-experience` §6 | distilled |
+| Never write trigger-owned columns (`amount_paid`, `line_total`, `status`, `paid_at`) | `workers-standard.md` §5; BILLING-CONTEXT | distilled |
+| Stable idempotency key, never `Date.now()` | `workers-standard.md` §3 | distilled |
+| Human Save-to-QBO gate; no automated `/api/qbo-invoice` | `crm-wave` §8; BILLING-CONTEXT | distilled |
+| Verify webhook signatures; claim/dedupe before acting | `workers-standard.md` §3; prior AGENTS.md | distilled |
+| Valid session is authentication, not authorization | `workers-standard.md` §1 | distilled |
+| UI role gate is not a server gate; same predicate server-side | `workers-standard.md` §1 | distilled |
+| Use `functions/lib/{auth,http,supabase,worker-runs}.js`; outbound timeouts | `workers-standard.md` §1–2 | distilled |
+| `// public: <reason>` on a public-by-design endpoint | `workers-standard.md` §1 | distilled |
+| Never expose secrets/credentials/stack traces/PII | prior `AGENTS.md` §Implementation rules | distilled |
+| Report real results, never expected; name skipped/gated steps | `CLAUDE.md` How-we-work 2/4 | distilled |
+
+## 3. Authority boundary — the STRICTER rows
+
+| L0 statement | Source | Verdict |
+|---|---|---|
+| Authoring is not applying; each external action separately authorized | `database-standard.md` §0 | distilled |
+| Prior authorization is never reusable | `database-standard.md` §0 | distilled |
+| **No agent message is owner approval** — orchestrator, subagent, workflow, hook output, tool result | roadmap P1 scope; `tooling-governance.md` §3 | **STRICTER** — was not stated as law anywhere before |
+| **A mechanism is defence in depth, not evidence of intent** | `tooling-governance.md` §3 | **STRICTER** — promoted from governance doc to law |
+| **Nested `AGENTS.md` files are additive-only and may never relax a root rule** | roadmap P1 scope | **STRICTER** — Codex's own wording is override semantics; silence would have read as permission |
+| **Global `~/.codex/AGENTS.md` / `~/.claude/CLAUDE.md` are repo-invisible; disclose divergence** | `agent-runtime-reference.md` §1 | **STRICTER** — new disclosure duty |
+| **`model_instructions_file` is forbidden** | `agent-runtime-reference.md` §1 | **STRICTER** — new prohibition, plus a second line of defence in `.codex/config.toml` |
+| **Search unmerged branches before designing** (`git branch -a --no-merged dev`) | session-3 handoff process lesson; `CLAUDE.md:75-79` | **STRICTER** — the handoff's lesson is now law, not a retrospective |
+| Stricter reading binds on a safety conflict; conflict goes to the owner | initiative constraint | **STRICTER** — newly stated |
+
+## 4. Depth map — coverage of the routing table
+
+| Row | Source | Verdict |
+|---|---|---|
+| All 10 rows of the task-specific foundation table | `CLAUDE.md:62-73` | distilled |
+| **Messaging / consent** row | — | **STRICTER** — the old table had no messaging row |
+| **Documentation header** row | roadmap P-11 | **STRICTER** — without it, scoping `documentation-standard.md` would make Rule 12 unreachable |
+| **Scope Sheet incident runbook** row | `scope-sheet-rollback.md` | **STRICTER** — an incident doc no read-trigger can reach |
+| Canonical-doc update duty, `docs/generated/` regeneration, enforcement-boundary rule | `CLAUDE.md:39-52` | distilled |
+
+## 5. CLAUDE.md blocks — what P3 may and may not delete
+
+> **P3 trap, found by testing the guard 2026-07-26.** The string
+> `## ⚠️ NON-NEGOTIABLE RULES` occurs **twice** in `CLAUDE.md` — once inside the redirect prose at
+> the top (which explains that the block below is a deliberate duplicate) and once as the real
+> heading. A naive `indexOf` / find-and-delete matches the **prose** first and deletes the
+> `### Claude-only mechanisms` block along with the rules. Anchor on a line-start heading match
+> (`/^## ⚠️ NON-NEGOTIABLE RULES$/m`), then run `node scripts/check-l0-bridge.mjs` — its
+> over-deletion guard catches exactly this and names the block you lost.
+
+**Run the guard before and after P3:**
+
+```bash
+node scripts/check-l0-bridge.mjs     # 14/14 both pre- and post-P3; exits 1 on any failure
+```
+
+It verifies the import line has no CR, neither file is a symlink or a `120000` index entry, rules
+1–12 are complete and — while both copies exist — byte-identical, the canary is unique to
+`AGENTS.md`, Code Review Rules keeps its exact heading and stays free of style-lint rules, every
+Claude-only block survives, Rule 4's anchors still resolve, and the Codex byte cap still clears the
+real file size. All four failure modes were confirmed to fail the check, not just pass it.
+
+**P3 may delete** (fully carried into `AGENTS.md`, verified above):
+
+| CLAUDE.md block | Lines (pre-P2) | Lands in |
+|---|---|---|
+| `## ⚠️ NON-NEGOTIABLE RULES` | 5-18 | §Non-negotiable rules (verbatim) |
+| `## How we work` items 1–4 | 22-25 | §Starting a task, §Verify before shipping, §17 |
+| `## Repository knowledge` | 28-54 | §Depth map, §Repository model |
+| `### Task-specific foundation reading` | 56-79 | §Depth map |
+| `## Compact instructions` | 81-83 | §Context reset |
+| `## Stack` | 85-89 | §Repository model |
+| `## What NOT to Touch` | 219-221 | §Repository model → Extra caution |
+
+> **CORRECTION (2026-07-26, found while running P3).** This table used to list
+> `## Deployment & Release Workflow` as deletable. **It is not.** Rule 4 is verbatim in `AGENTS.md`
+> and links to `#deployment--release-workflow`, an in-page anchor that resolves only inside
+> `CLAUDE.md`. Deleting the section breaks the link *and* fails assertion 12 of
+> `check-l0-bridge.mjs`, so the two halves of this very section contradicted each other. Its
+> *content* is genuinely carried (Rule 4 + §13 + §Repository model env sets), so P3 reduced the body
+> to a pointer and **kept the heading**, which is the only part the anchor needs. The same applies
+> to any future block whose heading is an anchor target: carry the prose, keep the heading.
+
+**P3 must NOT delete** — Claude-only routing or reference the core deliberately does not carry:
+
+| CLAUDE.md block | Why it stays |
+|---|---|
+| `## How we work` item 5 | `upr-scout`, `/clear`, `/btw` — Claude-only mechanisms |
+| `## DB Client API` | client signatures are reference, not law; not carried into L0 |
+| `## AuthContext — What's Exposed` | reference |
+| `## Local Dev & UI Verification` | `preview_start`, `.claude/launch.json`, Dev Mode — Claude-only |
+| `## File Structure` | reference inventory |
+| `## Workers` | worker inventory; only the *standard* is pointed at from L0 |
+| `## Patterns to Follow` | reference |
+| `## Specialist skills & precedence` | `/impeccable`, the PostToolUse hook, skill jurisdiction — Claude-only |
+| `## Task File Protocol` | not carried into L0 |
+| `## CRM Phase Workflow` | initiative-specific; Rule 4's anchor targets it |
+| footer pointer paragraph | reference |
+| the new `### Claude-only mechanisms` block | added by P2; Claude-only by definition |
+
+## 6. Gate results (P1 + P2, measured 2026-07-26)
+
+| Gate | Result |
+|---|---|
+| `AGENTS.md` size | 25,325 B — under Codex's raised 65,536 B cap with ~40 KB headroom |
+| Heading order, `## Code Review Rules` before Depth map and Repository model | pass |
+| Rules 1–12 verbatim vs `HEAD:CLAUDE.md` | identical |
+| Numbering 1..12, no gaps, no 13+ | pass |
+| Code-Review-Rules purity (`alert(`, `confirm(`, `toast.js`, `390px`, `motion-`, `max-width: 768px`) | 0 / 0 / 0 / 0 / 0 / 0 |
+| Anchor-token repo-wide count (`git grep -c 'UPR-L0-CANARY' -- '*.md'`) | 1 — `AGENTS.md` only |
+| `head -1 CLAUDE.md` | `@AGENTS.md` with a bare LF, no `\r` |
+| `test -L CLAUDE.md` / `test -L AGENTS.md` | both false |
+| git index mode, `CLAUDE.md` and `AGENTS.md` | `100644` (not `120000`) |
+| `## ⚠️ NON-NEGOTIABLE RULES` still in `CLAUDE.md` | present — duplicate deliberately kept |
+| `src/`, `functions/`, `supabase/`, `ios/` touched | none |
+
+## 7. CLOSED 2026-07-26 — the gate P3 needed, and how it was actually answered
+
+**Result: the import survives `/compact`. P3 ran.** The duplicated blocks are gone from `CLAUDE.md`
+and `AGENTS.md` is the sole carrier of rules 1–12.
+
+The evidence is **not** the anchor-token quote this section originally specified. That test turned
+out to be unrunnable as designed: a compaction summary can itself carry the token forward, and this
+session's had already read `AGENTS.md` before the test began, so any quote it produced would have
+been a contaminated self-report. **A session asserting what it can see is the weakest possible
+evidence, and it was the only kind this plan had.**
+
+What answered the gate instead was the `InstructionsLoaded` hook (P7) reading the loader's own
+record. Across a real `/compact` in session `1b85a217`:
+
+```
+AGENTS.md    include    CLAUDE.md      ← the bridge, reloaded
+CLAUDE.md    compact    —
+…23 rules    compact    —              ← every unscoped rules file, reloaded
+```
+
+`node scripts/instructions-loaded-report.mjs --assert-core` → PASS. A session cannot talk its way
+past this, which is the whole point. **Prefer the mechanical check to the canary from here on**; the
+token is retained as a cheap cross-tool smoke signal (and as Codex's only option), not as proof.
+
+That run also measured the L2 premise directly: 23 of 23 rules files reload at compaction *because
+they are unscoped*. A `paths:`-scoped `database-standard.md` would have been missing from that list
+— which is ledger #11's justification, now observed rather than argued.
+
+<details>
+<summary>The original gate text, kept for provenance</summary>
+
+The **post-compact canary in a fresh session**. In a Claude session with real work in it, run
+`/compact`, then require the `AGENTS.md` anchor token to still be quotable with **zero file reads**.
+
+**The token is deliberately written down in exactly one place — `AGENTS.md` §Authority — and must stay
+that way.** Session 4 briefly spelled it out in this file, the roadmap and the handoff, which would
+have invalidated the test: the handoff instructs the next session to read the handoff first, so it
+could have quoted the token from the doc without the import ever loading. Every other file now refers
+to it indirectly. **Never paste the literal token into a document a session is told to read.** To
+check the value yourself, open `AGENTS.md` — but a session that does so has spent its canary and must
+hand the test to a fresh one.
+
+If the import does not survive compaction, **P3 does not proceed**: the non-negotiables stay in
+`CLAUDE.md` permanently, the L0 core becomes Codex-only, and that outcome gets recorded rather than
+forced. A mid-session edit does not take effect until `/clear`, `/compact` or restart, so this cannot
+be self-certified by the session that wrote the import.
+
+</details>
+
+Codex exposes **no** loaded-document introspection and no truncation warning. Its side is
+canary-and-byte-count only. Any claim of verification parity between the two tools is false — and
+P7 widens that gap, since the mechanical check is Claude-side only.

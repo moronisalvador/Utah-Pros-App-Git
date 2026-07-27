@@ -1,0 +1,38 @@
+# ════════════════════════════════════════════════
+# FILE: .codex/config.toml
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Project-level settings for OpenAI Codex when it runs in this repository.
+#   Its most important job is making sure Codex reads ALL of the shared rules
+#   file (AGENTS.md) instead of silently cutting off the end of it.
+#
+# NOTES / GOTCHAS:
+#   - Codex config layers: defaults -> system -> user -> profile -> PROJECT
+#     (this file) -> CLI `-c`. Managed layers override the CLI.
+#   - Do NOT add `model_instructions_file` here or in any other layer. It
+#     REPLACES the AGENTS.md path rather than layering, which silently bypasses
+#     every shared rule. AGENTS.md says so too; this is the second line of
+#     defence.
+#   - Hooks live in .codex/hooks.json, not here, so the two stay independent.
+#     Codex will not run a repo hook until a human trusts its hash via /hooks,
+#     and editing the hook re-arms that gate.
+# ════════════════════════════════════════════════
+
+# Codex reads the AGENTS.md chain up to this many bytes and then drops the TAIL
+# SILENTLY -- no warning, no error, the rules just stop existing. The default is
+# 32768. AGENTS.md alone measured 25,325 B on 2026-07-26, so the default left
+# under 8 KB of headroom for the whole chain, and the two vendor pages disagree
+# about whether the budget is per-file or combined (we assume combined, the
+# stricter reading). 65536 removes the cliff with real room to grow.
+#
+# Re-check after any large AGENTS.md change:  wc -c AGENTS.md
+project_doc_max_bytes = 65536
+
+[agents]
+enabled = true
+# Bounded concurrency: this repo has one shared production Supabase behind both
+# dev and main, so uncoordinated parallel writers are a real hazard.
+max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-5.6-terra"
+default_subagent_reasoning_effort = "medium"

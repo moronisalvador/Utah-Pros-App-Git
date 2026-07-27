@@ -80,6 +80,34 @@ async function safeSelect(db, table, query) {
   }
 }
 
+/**
+ * Failed events that nobody has acknowledged yet.
+ *
+ * A failed event is terminal, so without an acknowledgement column this alert
+ * repeats every single day forever and gets tuned out. `resolved_at` gives the
+ * state an exit.
+ *
+ * Deliberately tolerant of the column not existing. `safeSelect` turns a 400
+ * into null, which the caller reads as "probe could not run" — so if this Worker
+ * deployed before the migration applied, the failed-event alert would silently
+ * go quiet. Falling back to the unfiltered query keeps alerting through that
+ * window, in either deploy order, and reports that it ran degraded.
+ */
+async function selectUnresolvedFailures(db, cols) {
+  const base = `processing_state=eq.failed&select=${cols}&order=received_at.asc&limit=${ROW_LIMIT}`;
+
+  const unresolvedOnly = await safeSelect(
+    db,
+    'message_provider_events',
+    `processing_state=eq.failed&resolved_at=is.null&select=${cols}`
+    + `&order=received_at.asc&limit=${ROW_LIMIT}`,
+  );
+  if (unresolvedOnly !== null) return { rows: unresolvedOnly, degraded: false };
+
+  const all = await safeSelect(db, 'message_provider_events', base);
+  return { rows: all, degraded: all !== null };
+}
+
 export async function collectOpsHealthInputs(db, now) {
   const sinceIso = new Date(
     now.getTime() - DEFAULT_OPS_HEALTH_THRESHOLDS.workerErrorWindowMinutes * 60_000,
@@ -89,11 +117,15 @@ export async function collectOpsHealthInputs(db, now) {
     + 'recipient_address,provider_message_id,media_count,owned_media,processing_attempts,'
     + 'next_attempt_at,received_at';
 
-  const [failedEvents, retryableEvents, workerErrors, claims] = await Promise.all([
+  const [failed, retryableEvents, workerErrors, claims] = await Promise.all([
+    selectUnresolvedFailures(db, eventCols),
+    // OLDEST-first, deliberately. Every probe here is capped at ROW_LIMIT, and
+    // the conditions care about the STALEST rows — most overdue, past the
+    // escalation threshold. Newest-first would drop exactly those over the cap,
+    // so a backlog larger than the limit could read as healthy. Matches the
+    // fixed_automation_claims probe below, which had it right already.
     safeSelect(db, 'message_provider_events',
-      `processing_state=eq.failed&select=${eventCols}&order=received_at.desc&limit=${ROW_LIMIT}`),
-    safeSelect(db, 'message_provider_events',
-      `processing_state=eq.retryable&select=${eventCols}&order=received_at.desc&limit=${ROW_LIMIT}`),
+      `processing_state=eq.retryable&select=${eventCols}&order=received_at.asc&limit=${ROW_LIMIT}`),
     safeSelect(db, 'worker_runs',
       `status=eq.error&started_at=gte.${encodeURIComponent(sinceIso)}`
       + `&select=worker_name,status,error_message,started_at`
@@ -104,14 +136,17 @@ export async function collectOpsHealthInputs(db, now) {
   ]);
 
   const probeErrors = [
-    failedEvents === null && 'message_provider_events(failed)',
+    failed.rows === null && 'message_provider_events(failed)',
     retryableEvents === null && 'message_provider_events(retryable)',
     workerErrors === null && 'worker_runs',
     claims === null && 'fixed_automation_claims',
+    // Not an error — alerting still works, but it is counting resolved rows too,
+    // so the acknowledgement column is missing or unreadable.
+    failed.degraded && 'message_provider_events(failed): resolved_at unavailable',
   ].filter(Boolean);
 
   return {
-    failedEvents: failedEvents || [],
+    failedEvents: failed.rows || [],
     retryableEvents: retryableEvents || [],
     workerErrors: workerErrors || [],
     claims: claims || [],
@@ -152,6 +187,53 @@ async function alreadyAlertedToday(db, dedupeKey, denverDate) {
   }
 }
 
+/**
+ * Who should be woken by an ops alert.
+ *
+ * These are internal plumbing failures, not business events — the owner asked
+ * that they reach him alone rather than every admin, and an operational alarm
+ * fanned out to people who cannot act on it is how alarms get muted.
+ *
+ * Configurable (not hardcoded) via the non-secret `integration_config` key
+ * `ops_health_recipient_ids`: a JSON array or comma-separated list of employee
+ * ids. `notify.js` re-filters whatever we pass through
+ * `filterActiveInternalEmployeeIds`, so a stale or wrong id degrades to "fewer
+ * recipients", never to a leak.
+ *
+ * Returns null when unset/unparseable, which leaves the existing role audience
+ * in place. Failing OPEN is deliberate: losing ops alerts entirely is worse
+ * than over-notifying.
+ */
+async function resolveOpsRecipients(db) {
+  let raw = null;
+  try {
+    const rows = await db.select('integration_config', 'key=eq.ops_health_recipient_ids&select=value');
+    raw = rows?.[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  let ids = [];
+  if (Array.isArray(raw)) {
+    ids = raw;
+  } else {
+    const text = String(raw).trim();
+    if (text.startsWith('[')) {
+      try { ids = JSON.parse(text); } catch { ids = []; }
+    } else {
+      ids = text.split(',');
+    }
+  }
+
+  const cleaned = Array.from(new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map((v) => (v === null || v === undefined ? '' : String(v).trim()))
+      .filter(Boolean),
+  ));
+  return cleaned.length ? cleaned : null;
+}
+
 async function recordAlertMarker(db, condition, dedupeKey, denverDate) {
   try {
     await db.insert('system_events', {
@@ -182,9 +264,14 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
 
   const raised = [];
   const suppressed = [];
+  const opsRecipients = await resolveOpsRecipients(db);
 
   for (const condition of conditions) {
-    const dedupeKey = buildDedupeKey(condition.key, denverDate);
+    // Fingerprint keys the suppression to the distinct failure CLASSES in play,
+    // so a new worker/error code later the same day still rings. One-time cost:
+    // the first run after deploy re-alerts each live condition once, because
+    // yesterday's markers carry the old un-fingerprinted key shape.
+    const dedupeKey = buildDedupeKey(condition.key, denverDate, condition.fingerprint);
     if (await alreadyAlertedToday(db, dedupeKey, denverDate)) {
       suppressed.push(condition.key);
       continue;
@@ -201,12 +288,18 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
           body: condition.body,
           link: '/devtools',
           entity_type: 'system',
+          // Omitted entirely when unset, so resolveAudience falls back to its
+          // role audience rather than receiving an empty array.
+          ...(opsRecipients ? { recipient_ids: opsRecipients } : {}),
           payload: {
+            // meta spreads FIRST so the four fixed keys always win. Spreading
+            // last would let a future meta field named condition/severity/
+            // count/details silently shadow the real one.
+            ...condition.meta,
             condition: condition.key,
             severity: condition.severity,
             count: condition.count,
             details: condition.details,
-            ...condition.meta,
           },
         },
       });

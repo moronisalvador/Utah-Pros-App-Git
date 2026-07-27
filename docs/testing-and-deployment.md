@@ -7,7 +7,8 @@ WHAT THIS DOES (plain language):
 
 DEPENDS ON:
   Internal: package.json, vite.config.js, .github/workflows/, CLAUDE.md,
-            .claude/rules/close-out-standard.md
+            .claude/rules/close-out-standard.md, docs/tooling-governance.md,
+            tooling/capabilities.json
   Data:     reads → build/test/configuration evidence
             writes → documentation only
 
@@ -29,6 +30,10 @@ NOTES / GOTCHAS:
 | `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
+| `npm run generate:tooling` | Regenerates governed Claude Code/Codex adapters from the neutral sources in `tooling/` | Repository write only; inspect the generated diff and never hand-edit an adapter |
+| `npm run check:tooling-generated` | Fails when a governed adapter is missing or differs from its neutral source | Covers only capabilities listed in `tooling/capabilities.json` — 7 of 39 today |
+| `npm run validate:tooling` | Checks capability metadata, references, triggers, portability, adapter parity and shared permissions | Known findings stay warnings until their dated waiver expires (CAP-SEC-001/GOV-001 expire 2026-08-06) |
+| `npm run test:tooling` | Exercises renderer drift, routing contracts and governance failures | Decision fixtures are contracts; fresh runtime evaluation is still required before expanding the pilot |
 | `npm run dev` | Frontend development server | `/api/*` needs a separate Wrangler Pages Functions process |
 | `npm run build:ios` | Native-target build and Capacitor sync | Still does not replace Xcode signing/simulator/device verification |
 

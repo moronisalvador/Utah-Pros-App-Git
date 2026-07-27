@@ -9,8 +9,9 @@
  *   Certificate of Completion), confirms who is signing (pre-filled from the
  *   job's customer), then either collects the signature on the spot — it opens
  *   the signing screen right here so the customer can sign on the tech's phone —
- *   or emails the customer a signing link. It does not store anything itself; it
- *   asks the server to create the request and hands back a signing link.
+ *   or sends the customer a signing link by text or email. It does not store
+ *   anything itself; it asks the server to create the request and hands back a
+ *   signing link.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (bottom sheet, opened from the Documents hub)
@@ -29,14 +30,21 @@
  *     popup problem. The tech hands over the phone, the customer signs, taps back.
  *   - Curated to two doc types on purpose (work_auth, coc); the other desktop
  *     types stay office-only. CoC needs ≥1 division (scope of work).
- *   - signer_email is optional for collect mode (a placeholder is sent so the
- *     worker is satisfied); it is required + validated for email mode.
+ *   - signer_email is required + validated only for email mode. It is genuinely
+ *     optional elsewhere — the old `collect-<ts>@noemail.local` placeholder is
+ *     gone (2026-07-26); the column was always nullable.
+ *   - Texting needs a linked contact, because the number comes from that
+ *     contact's conversation and consent is checked against it. No contact, no
+ *     text button — never fall back to typing a number in by hand.
+ *   - A text can be refused for consent/DND reasons. That is a normal outcome,
+ *     not an error: the request still exists and the sheet keeps the link.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
+import { ok, err } from '@/lib/toast';
 
 // ─── SECTION: Constants ──────────────
 const DOC_TYPES = [
@@ -54,9 +62,6 @@ const DIVISIONS = [
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const fireToast = (message, type = 'success') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-
 export default function EsignRequestSheet({ open, onClose, job, signerPrefill, employeeId, initialDocType = 'work_auth', onSent }) {
   // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
@@ -71,6 +76,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
   // re-render (signerPrefill is a fresh object each time) and clobber edits.
   const prefillName = signerPrefill?.name || '';
   const prefillEmail = signerPrefill?.email || '';
+  const contactId = signerPrefill?.contactId || null;
   const jobDivision = job?.division || null;
 
   // Reset + prefill each time the sheet opens
@@ -103,6 +109,7 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
       if (!signerEmail.trim()) { setError('Signer email is required to send a link.'); return; }
       if (!EMAIL_RE.test(signerEmail.trim())) { setError('Enter a valid email address.'); return; }
     }
+    if (mode === 'sms' && !contactId) { setError('This job has no linked customer, so the link cannot be texted.'); return; }
     setSending(mode);
     try {
       const auth = await getAuthHeader();
@@ -111,9 +118,10 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({
           job_id: job.id,
-          contact_id: signerPrefill?.contactId || null,
+          contact_id: contactId,
           signer_name: signerName.trim(),
-          signer_email: signerEmail.trim() || `collect-${Date.now()}@noemail.local`,
+          // Genuinely optional now — no placeholder. Blank means blank.
+          signer_email: signerEmail.trim() || null,
           sent_by: employeeId,
           doc_type: docType,
           divisions: docType === 'coc' ? divisions : undefined,
@@ -130,18 +138,28 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
         // phone to the customer. onSent first so the hub refreshes on return.
         onSent?.();
         navigate(`/sign/${json.token}`);
-      } else {
-        fireToast(
-          json.email_error
-            ? `Email failed (${json.email_status || '?'}): ${json.email_error_detail || 'unknown error'}`
-            : `Signing link sent to ${signerEmail.trim()}.`,
-          json.email_error ? 'error' : 'success',
-        );
-        onSent?.();
-        onClose?.();
+        return;
       }
-    } catch (err) {
-      setError(err.message || 'Failed to send request.');
+
+      // A refused text (no consent / DND) is an expected outcome. Keep the sheet
+      // open and say so plainly, so the tech can switch to email or hand over
+      // the phone instead of thinking the app broke.
+      if (mode === 'sms' && json.sms_error) {
+        setError(json.message || 'The text could not be sent.');
+        onSent?.();
+        return;
+      }
+      if (mode === 'email' && json.email_error) {
+        err(`Email failed: ${json.email_error_detail || 'unknown error'}`);
+      } else {
+        ok(mode === 'sms'
+          ? 'Signing link texted to the customer.'
+          : `Signing link sent to ${signerEmail.trim()}.`);
+      }
+      onSent?.();
+      onClose?.();
+    } catch (e) {
+      setError(e.message || 'Failed to send request.');
     } finally {
       setSending(null);
     }
@@ -265,9 +283,14 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
           <input
             className="input" type="email" inputMode="email" value={signerEmail}
             onChange={(e) => { setSignerEmail(e.target.value); setError(''); }}
-            placeholder="Email (required to send a link)"
+            placeholder="Email (only needed to email the link)"
             style={{ fontSize: 16, width: '100%', minHeight: 48, boxSizing: 'border-box' }}
           />
+          {!contactId && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 6, lineHeight: 1.5 }}>
+              No customer linked to this job, so the link can’t be texted. Collect on-site or email it.
+            </div>
+          )}
 
           {error && (
             <div style={{
@@ -286,6 +309,14 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
             style={{ width: '100%', minHeight: 48, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
           >
             {sending === 'collect' ? 'Opening…' : '✍️ Collect signature on-site'}
+          </button>
+          {/* Text before email: in the field the customer is holding a phone. */}
+          <button
+            type="button" className="btn btn-secondary" onClick={() => send('sms')}
+            disabled={!!sending || !contactId}
+            style={{ width: '100%', minHeight: 48, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, opacity: contactId ? 1 : 0.5 }}
+          >
+            {sending === 'sms' ? 'Sending…' : '💬 Text link to sign'}
           </button>
           <button
             type="button" className="btn btn-secondary" onClick={() => send('email')} disabled={!!sending}

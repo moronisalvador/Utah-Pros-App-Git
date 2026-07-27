@@ -1,6 +1,8 @@
 # Documentation Standard
 
-Linked from `CLAUDE.md` rule 14. When asked to document a file, apply this format exactly and
+**Last-verified: 2026-07-24**
+
+Linked from `CLAUDE.md` Rule 12. When asked to document a file, apply this format exactly and
 identically across every file. Consistency is the priority — the labels below are used as search
 anchors by humans and AI tools, so do not reword them.
 

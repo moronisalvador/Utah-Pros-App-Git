@@ -14,7 +14,9 @@ files.
 
 - Plan of record: `docs/admin-mobile-roadmap.md` (the phase's block: close-out checklist +
   scope line + findings F-1 / F-2).
-- Ownership + call-only seams: `.claude/rules/admin-mobile-wave-ownership.md` (authoritative
+- Ownership + call-only seams: `docs/archive/rules/admin-mobile-wave-ownership.md` — the full
+  manifest. The `.claude/rules/` path is now only a tombstone redirect. Historical record of a
+  closed initiative, not live law (authoritative
   on paths and frozen files).
 - The initiative brings admin screens **into the tech PWA** (`/tech/*`), admin-gated
   (`role==='admin'`) behind the dark flag `page:admin_mobile`. **Zero new schema, zero new

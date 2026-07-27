@@ -17,6 +17,14 @@ NOTES / GOTCHAS:
 
 # UPR Engineering Foundation — Proposed Ownership Manifest
 
+**Last-verified: 2026-07-24**
+
+> **EXCEPTION TO THE DISCLAIMER BELOW — §6's "Active writer register" is operational fact, not
+> draft planning, and it binds.** It records which sessions hold write leases and whether `dev` may
+> be promoted. A blanket "this file grants no authority" over a live promotion hold is a defect: a
+> session is entitled to read the hold as non-binding and promote anyway. Everything *else* here
+> remains a draft. (Recorded 2026-07-26 — alignment ledger #10.)
+
 **DRAFT FOR OWNER REVIEW.** This file is a planning artifact, not binding project law until the
 owner explicitly adopts it. It grants no authority to edit code, apply migrations, change live
 systems, commit, push, deploy, or open a PR.
@@ -63,8 +71,12 @@ dependent phases launch.
 | S1 — SQL containment | one new `exec_read_sql` revoke migration, its DB test, rollback evidence | `exec_read_sql` ACL/boundary only | Encircle tables/functions; broad policy cleanup |
 | S2 — Provenance | completed: read-only ledger/Git/fingerprint gate + four exact restored source records | none; no F2 live write occurred | archived regression boundary; never replace live bodies from guesses |
 | Q — QA isolation | F3a environment/refusal; F3b identities/seeds; F3c reset/subsystems; then assigned QA config/fixtures/scripts/CI paths | isolated project/local stack only | shared production data/tests; G-owned checker fixtures |
-| G — Governance | F5a secret/permissions; F5b adapters/paths; F5c triggers/plugins; exact `.claude` paths and evaluation tests | none | application/database/provider actions; Q-owned CI/config |
+| G — Governance | F5a secret/permissions; F5b neutral sources/generated adapters; F5c triggers/plugins; `tooling/`, exact generated `.claude`/`.agents`/`.codex` outputs, governance scripts/tests/docs | none | application/database/provider actions; Q-owned CI/config |
 | D — Design/Figma | design operating docs; later approved tokens/primitives/visual baselines | none | page rewrites before QA/ownership proof |
+
+G’s 2026-07-24 pilot is implemented for the four interacting dispatchers and three reviewer
+adapters. Fresh-runtime smoke and remaining-entrypoint migration are verification/follow-on work;
+unlisted candidate-port files are not part of G’s authoritative output.
 
 ## 4. Post-Foundation product ownership
 
@@ -100,7 +112,8 @@ dependent phases launch.
 
 - A writer lease names owner, files, schema/functions, external systems, start, expected handoff, and
   rollback.
-- Current state: zero app/database writers; E is a landed rollout tail.
+- ~~Current state: zero app/database writers; E is a landed rollout tail.~~
+  **Superseded 2026-07-26 — see the active register below.**
 - Future initial cap: one DB writer, at most two proven-disjoint app writers, and one independent
   reviewer per implementation. Fewer writers is the default when proof is incomplete.
 - A lease expires only by explicit handoff; silence or a stale branch does not release it.
@@ -108,6 +121,80 @@ dependent phases launch.
   start, expected handoff, review date, rollback, and extend/pause/transfer decision.
 - Owner/external gates have no writer lease and may not retain shared files.
 - Any hidden overlap stops the later phase; move the seam to Foundation or serialize.
+
+### Active writer register — opened 2026-07-26
+
+Three Claude Code sessions are live on this repo at once, which is at the cap above
+(one DB writer + two app writers) with zero margin. Recorded here because the line
+this replaces claimed "zero writers", and a session that trusted it would collide.
+
+**Read this before authoring a migration, touching a permission/notification
+surface, or promoting `dev` to `main`.**
+
+| Lease | Owner | Scope | State |
+|---|---|---|---|
+| ~~**DB-1 — security tightening batch**~~ | ~~`claude/parked-sessions-recovery-4fdbb7`~~ | 8 migrations | **RELEASED 2026-07-26 — owner reports all 8 applied and verified.** The release condition below is met. |
+| APP-2, APP-3 | agent-alignment / tooling-governance sessions (incl. "session 5", started 2026-07-26) | `.claude/**`, `AGENTS.md`, `CLAUDE.md`, `tooling/**`, `docs/agent-alignment-*` | active |
+
+**DB-1 owns these database objects. Do not author a migration touching any of them
+until this lease releases:**
+
+- Tables: `automation_settings`, `email_suppressions`, `notification_types`,
+  `notification_role_defaults`, `nav_permissions`, `employee_page_access`,
+  `feature_flags`, `message_provider_events`
+- Functions replaced (body-only, signatures frozen): `set_automation_setting`,
+  `upsert_permission`, `upsert_employee_page_access`, `delete_employee_page_access`,
+  `upsert_feature_flag` (both overloads), `delete_feature_flag`,
+  `set_notification_default`, `set_employee_notification_override`,
+  `delete_employee_notification_override`
+- Functions created: `is_active_internal_admin()`, `rearm_callrail_provider_event()`,
+  `resolve_provider_event()`
+- Columns added: `message_provider_events.resolved_at` / `.resolved_by`
+
+`is_active_internal_admin()` is intended as the shared admin predicate that backlog
+item 3.2 rolls out in place of 342 individual function reviews — build on it rather
+than adding a second one.
+
+**Verified disjoint as of 2026-07-26:** no session other than DB-1 has touched
+`supabase/` in the `main..dev` range, and `database-standard.md` is unmodified.
+The overlap that DOES exist is `CLAUDE.md` / `close-out-standard.md`, both edited by
+the app sessions while DB-1 was running — DB-1 must re-read them before its close-out
+rather than working from a cached copy.
+
+**Promotion hold:** `dev` is **not** to be promoted to `main` while APP-2/APP-3 are
+live. `dev` moved four times in thirty minutes on 2026-07-26; CI green is computed
+against a SHA and is stale on arrival, and the agent-alignment commits are
+mid-sequence ("session-5 opening prompt", "session 4 baton"). Promote from a quiet
+`dev`, not a moving one.
+
+**Rollback for DB-1:** every migration ships a paired file in `supabase/rollbacks/`.
+~~Nothing is applied, so the current rollback is `git revert` alone.~~ **All 8 are now applied
+(owner, 2026-07-26), so `git revert` alone no longer undoes them** — an undo means running the
+paired rollback file against the shared project, which is a fresh owner-authorized apply.
+
+**Release condition:** DB-1 releases after its 8 migrations are applied and verified,
+or on explicit owner handoff. **MET 2026-07-26 — DB-1 is released.** The database objects it
+reserved (the 8 tables, 12 replaced/created functions and 2 added columns listed above) are no
+longer leased; a new migration touching them needs only the normal review, not this lease.
+
+`is_active_internal_admin()` is now live. Backlog item 3.2 should build on it rather than adding a
+second admin predicate.
+
+**What DB-1's release does NOT close** (added 2026-07-27 by the DB-1 session itself, so the
+release is not mistaken for "everything is settled"):
+
+- **The promotion hold above still stands.** It is keyed to the app sessions, not to DB-1, and
+  releasing the database lease does not release it.
+- **The provenance gate is RED.** Two independent causes: live evidence needs re-capturing (it
+  predates the applies, and there is no capture script — see `7580f93d` for the required shape), and
+  the applied source lives on `dev`, so the gate cannot pass against `main` until promotion. The
+  apply-ahead-of-promotion is a recorded **owner-authorized `database-standard.md` §5 exception**;
+  the reconciliation §5 asks for *is* that promotion.
+- **Ledger row `20260726233416 encircle_managed_credentials` is still unmapped.** Applied by another
+  session; DB-1 deliberately did not map source it had not reviewed. Its owner needs to, or the next
+  fresh evidence capture will report it as an unmapped live ledger row.
+
+**Still open:** APP-2/APP-3 and therefore the promotion hold. Delete this register when they close.
 
 ## 7. Close-out for every future phase
 

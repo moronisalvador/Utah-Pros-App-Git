@@ -1,0 +1,6 @@
+interface:
+  display_name: "New CRM Module"
+  short_description: "Implement an active UPR CRM phase"
+  default_prompt: "Use $new-crm-module to implement this active CRM phase within its roadmap and ownership manifest."
+policy:
+  allow_implicit_invocation: true

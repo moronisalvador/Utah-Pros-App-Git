@@ -313,6 +313,8 @@ function NativeRoutes() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignPage />} />
+        {/* Short form. /sign/:token stays forever — links already sent live 30 days. */}
+        <Route path="/s/:code" element={<SignPage />} />
         <Route path="/set-password" element={<SetPassword />} />
         {TechRoutes()}
         <Route path="/" element={<Navigate to="/tech" replace />} />
@@ -330,6 +332,8 @@ function WebRoutes() {
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/sign/:token" element={<SignPage />} />
+      {/* Short form. /sign/:token stays forever — links already sent live 30 days. */}
+      <Route path="/s/:code" element={<SignPage />} />
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />

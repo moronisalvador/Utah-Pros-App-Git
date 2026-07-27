@@ -1,2 +1,13 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Guard scripts MUST be LF. A CRLF shebang/script breaks bash silently, and a
+# guard that cannot run is a guard that permits — the fail-open class that
+# .claude/hooks/block-destructive-sql.sh exists to prevent.
+*.sh text eol=lf
+*.mjs text eol=lf
+
+# Instruction files MUST be LF for the same reason. Claude Code parses the
+# WORKING COPY, and core.autocrlf=true was writing `@AGENTS.md\r` as line 1 of
+# CLAUDE.md — an import path with a trailing carriage return resolves to
+# nothing, so the shared law layer would silently not load. Same failure class
+# as a CRLF guard script: no error, no warning, the rules just stop applying.
+CLAUDE.md text eol=lf
+AGENTS.md text eol=lf

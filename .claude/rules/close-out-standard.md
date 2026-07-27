@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-07-23
+**Last verified:** 2026-07-26
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -12,7 +12,10 @@ bugs that reached techs.
 
 1. **Build + test + lint.** `npm run build` (clean) · `npm run test` (green) · `npx eslint <changed
    files>` (zero NEW findings beyond the recorded baseline — the changed-files ratchet in
-   `eslint.config.js` enforces this).
+   `eslint.config.js` enforces this). A tooling-capability change also runs
+   `npm run check:tooling-generated`, `npm run validate:tooling`, and `npm run test:tooling` — the
+   drift check is what makes the neutral-source rule (edit `tooling/`, regenerate; never hand-edit a
+   generated `.claude`/`.agents`/`.codex` adapter) mechanically enforced rather than advisory.
 2. **Reviewer gauntlet** (run the ones relevant to the diff; a manifest may add more):
    - `upr-pattern-checker` — CLAUDE.md non-negotiables (always, on any `src` change).
    - `design-consistency-checker` — tokens/kits/components (any `src/pages`|`src/components` change).
@@ -32,9 +35,21 @@ bugs that reached techs.
    - `consent-path-auditor` — any send-path change.
    - `worker-security-reviewer` — any changed worker that returns non-public data or causes a side
      effect; SQL/catalog review remains with the database reviewers.
+2b. **A migration ships a CI-VISIBLE test (NEW — 2026-07-26).** Behavioral tests in
+   `supabase/tests/` belong to the **`db` lane, which `npm test` does not run** — it refuses without
+   an isolated database target, and none exists yet (backlog 6.1). On 2026-07-26 that left **75
+   guards dark in CI**, including ones written to be durable, unnoticed for weeks. So a migration
+   PR must ALSO carry a **static contract test in a credential-free lane** (`tests/qa/unit/**`) that
+   reads the migration source and asserts what it claims — policies dropped, roles revoked, gates
+   present, `REVOKE` before `GRANT`, allowlist untouched, rollback file present. Precedent:
+   `tests/qa/unit/anon-closure-tranche-a.test.js`.
+   This proves **intent, not effect** — say so in the handoff or authorized PR, and keep the behavioral test in
+   `supabase/tests/` for the apply window. Never present a db-lane test as CI coverage.
+   `tests/qa/unit/db-lane-coverage.test.js` fails if the dark count grows unacknowledged.
+
 3. **Minimize / resume test (NEW — mandatory for any page change).** Background the PWA (or hide the
    browser tab) for 30s+, then resume. **Nothing may happen:** no blank content, no spinner flash, no
-   route loss, no scroll loss, no lost form input. (See `page-lifecycle.md`. Note in the PR when a step is
+   route loss, no scroll loss, no lost form input. (See `page-lifecycle.md`. Note in the handoff or authorized PR when a step is
    owner-device-gated because it needs a real installed iPhone.)
 4. **390px mobile viewport check (NEW).** Every touched page, in both shells, at a 390px-wide viewport —
    no horizontal scroll, tap targets ≥ 48px on tech surfaces, no clipped content.
@@ -42,7 +57,7 @@ bugs that reached techs.
    touched — confirm `ErrorState`/`EmptyState` render correctly (never a blank page or the success
    empty-state on failure — `loading-error-states.md`).
 6. **Perf delta (NEW).** Compare `npm run build` output against `perf-budget.md`; record the top-5 chunk
-   deltas in the PR; flag any new render-blocking asset.
+   deltas in the handoff or authorized PR; flag any new render-blocking asset.
 7. **Motion verification (NEW — motion PRs only).** For any PR touching motion / transitions / animation,
    run the Playwright motion harness (`playwright-core`) as a close-out expectation, on three CI-runnable
    axes: an **rAF FPS-under-throttle** probe (≥ 55fps under 4× CPU throttle) on the **route push + one
@@ -50,10 +65,10 @@ bugs that reached techs.
    collapses to instant, the end-state still lands, focus-trap / `aria-live` intact); and **visual / token
    regression** (`toHaveScreenshot({ animations: 'disabled' })` + `toHaveCSS` pinning
    `transition-duration` / easing / color). Mock the Supabase RPCs (`page.route`) and freeze `page.clock`
-   for determinism. **Honest caveat — state it in the PR:** Playwright runs **Chromium**, so it verifies
+   for determinism. **Honest caveat — state it in the handoff or authorized PR:** Playwright runs **Chromium**, so it verifies
    *behavior and regressions*, **NOT true iOS-Safari / WKWebView feel** — the gesture fling, real Taptic
    haptics, and the 60fps-scroll-under-`backdrop-filter` question stay an **owner on-device iPhone check**
-   (note it in the PR like the minimize test).
+   (note it in the handoff like the minimize test).
 8. **Docs.** Update `UPR-Web-Context.md` (Rule 9). Bump the `Last-verified` stamp on any standard/design
    section the session relied on or changed. Refresh any hand-counted number you touched.
 9. **Re-measure your slice** of the initiative's baseline metrics table (if the initiative has one) and

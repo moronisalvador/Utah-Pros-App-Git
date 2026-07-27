@@ -3,6 +3,7 @@ import {
   OPS_HEALTH_CONDITIONS,
   DEFAULT_OPS_HEALTH_THRESHOLDS,
   describeParty,
+  summarizeWorkerError,
   evaluateOpsHealth,
   buildDedupeKey,
 } from './ops-health.js';
@@ -231,6 +232,110 @@ describe('combined evaluation', () => {
   });
 });
 
+describe('failed-backlog escalation', () => {
+  const failedAt = (iso) => ({
+    id: `e-${iso}`, error_code: 'CALLRAIL_MMS_URL_INVALID', message_type: 'mms',
+    direction: 'inbound', received_at: iso, media_count: 1, owned_media: [],
+  });
+  const daysAgo = (n) => new Date(Date.parse(NOW) - n * 1440 * 60_000).toISOString();
+  const failed = (r) => keyOf(r, OPS_HEALTH_CONDITIONS.PROVIDER_EVENTS_FAILED);
+
+  it('stays high while the backlog is fresh', () => {
+    const r = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(1))] });
+    expect(failed(r).severity).toBe('high');
+    expect(failed(r).meta.escalated).toBe(false);
+  });
+
+  it('escalates to critical once it has been ignored past the threshold', () => {
+    // Ignoring an unresolved data-loss backlog must get LOUDER, not quieter.
+    const r = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(5))] });
+    expect(failed(r).severity).toBe('critical');
+    expect(failed(r).meta.oldest_days).toBe(5);
+    expect(failed(r).title).toContain('unresolved for 5 days');
+  });
+
+  it('keys escalation off the OLDEST row, not the newest', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [failedAt(daysAgo(0)), failedAt(daysAgo(9))],
+    });
+    expect(failed(r).severity).toBe('critical');
+    expect(failed(r).meta.oldest_days).toBe(9);
+  });
+
+  it('re-alerts when it crosses the threshold instead of being suppressed', () => {
+    // Crossing into critical is genuinely new information, so the fingerprint
+    // must change even though the underlying error codes have not.
+    const fresh = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(1))] });
+    const stale = evaluateOpsHealth({ now: NOW, failedEvents: [failedAt(daysAgo(6))] });
+    expect(failed(stale).fingerprint).not.toBe(failed(fresh).fingerprint);
+  });
+
+  it('honours a caller-supplied threshold', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [failedAt(daysAgo(2))],
+      thresholds: { failedBacklogEscalateDays: 1 },
+    });
+    expect(failed(r).severity).toBe('critical');
+  });
+
+  it('does not escalate on a missing or unparseable received_at', () => {
+    const r = evaluateOpsHealth({
+      now: NOW,
+      failedEvents: [{ id: 'x', error_code: 'E', received_at: null }],
+    });
+    expect(failed(r).severity).toBe('high');
+    expect(failed(r).meta.oldest_days).toBe(0);
+  });
+});
+
+describe('summarizeWorkerError', () => {
+  it('pulls the message out of a JSON array instead of slicing the envelope', () => {
+    // The exact live 2026-07-26 shape: the first 80 chars were spent on a UUID,
+    // so the old slice produced "…returned an empt".
+    const raw = JSON.stringify([
+      { id: '0f3a5b2c-1d4e-4f6a-8b9c-0d1e2f3a4b5c', error: 'transcribe-call returned an empty transcript' },
+    ]);
+    expect(summarizeWorkerError(raw)).toBe('transcribe-call returned an empty transcript');
+  });
+
+  it('counts the remaining entries when several failed', () => {
+    const raw = JSON.stringify([
+      { error: 'first failure' },
+      { error: 'second failure' },
+      { error: 'third failure' },
+    ]);
+    expect(summarizeWorkerError(raw)).toBe('first failure (+2 more)');
+  });
+
+  it('handles a bare JSON object and the message alias', () => {
+    expect(summarizeWorkerError(JSON.stringify({ message: 'timeout talking to CallRail' })))
+      .toBe('timeout talking to CallRail');
+  });
+
+  it('falls back to the raw text when the payload is not JSON', () => {
+    expect(summarizeWorkerError('plain old failure text')).toBe('plain old failure text');
+  });
+
+  it('falls back rather than throwing on malformed JSON', () => {
+    const raw = '[{"error": "truncated';
+    expect(summarizeWorkerError(raw)).toBe(raw);
+  });
+
+  it('returns null for empty input', () => {
+    expect(summarizeWorkerError(null)).toBeNull();
+    expect(summarizeWorkerError('   ')).toBeNull();
+  });
+
+  it('truncates AFTER extraction, not before', () => {
+    const long = 'x'.repeat(400);
+    const out = summarizeWorkerError(JSON.stringify([{ error: long }]));
+    expect(out.length).toBe(120);
+    expect(out.startsWith('xxxx')).toBe(true);
+  });
+});
+
 describe('buildDedupeKey', () => {
   it('is stable per condition per Denver day', () => {
     expect(buildDedupeKey(OPS_HEALTH_CONDITIONS.WORKER_ERRORS, '2026-07-25'))
@@ -241,6 +346,60 @@ describe('buildDedupeKey', () => {
     expect(buildDedupeKey('worker_errors', '2026-07-25'))
       .not.toBe(buildDedupeKey('worker_errors', '2026-07-26'));
   });
+
+  it('keeps the original shape when no fingerprint is supplied', () => {
+    expect(buildDedupeKey('worker_errors', '2026-07-25', undefined))
+      .toBe('worker_errors:2026-07-25');
+  });
+
+  it('separates two distinct failure sets on the same day', () => {
+    expect(buildDedupeKey('worker_errors', '2026-07-25', 'aaaa1111'))
+      .not.toBe(buildDedupeKey('worker_errors', '2026-07-25', 'bbbb2222'));
+  });
+});
+
+describe('condition fingerprints', () => {
+  const errorAt = (worker, minutes) => ({
+    worker_name: worker, status: 'error', error_message: 'boom', started_at: minutesAgo(minutes),
+  });
+
+  it('suppresses a repeat of the same worker set but re-alerts on a new worker', () => {
+    const first = evaluateOpsHealth({ now: NOW, workerErrors: [errorAt('sync-encircle', 10)] });
+    const repeat = evaluateOpsHealth({ now: NOW, workerErrors: [errorAt('sync-encircle', 5)] });
+    const novel = evaluateOpsHealth({
+      now: NOW,
+      workerErrors: [errorAt('sync-encircle', 10), errorAt('transcribe-call', 5)],
+    });
+
+    const fp = (r) => keyOf(r, OPS_HEALTH_CONDITIONS.WORKER_ERRORS).fingerprint;
+    expect(fp(repeat)).toBe(fp(first));
+    expect(fp(novel)).not.toBe(fp(first));
+  });
+
+  it('is order-independent', () => {
+    const a = evaluateOpsHealth({
+      now: NOW, workerErrors: [errorAt('alpha', 5), errorAt('beta', 6)],
+    });
+    const b = evaluateOpsHealth({
+      now: NOW, workerErrors: [errorAt('beta', 6), errorAt('alpha', 5)],
+    });
+    expect(keyOf(a, OPS_HEALTH_CONDITIONS.WORKER_ERRORS).fingerprint)
+      .toBe(keyOf(b, OPS_HEALTH_CONDITIONS.WORKER_ERRORS).fingerprint);
+  });
+
+  it('does not shift when only the raw error text changes (UUIDs must not leak in)', () => {
+    const withUuid = (uuid) => evaluateOpsHealth({
+      now: NOW,
+      workerErrors: [{
+        worker_name: 'sync-encircle',
+        status: 'error',
+        error_message: JSON.stringify([{ id: uuid, error: 'boom' }]),
+        started_at: minutesAgo(5),
+      }],
+    });
+    expect(keyOf(withUuid('aaa'), OPS_HEALTH_CONDITIONS.WORKER_ERRORS).fingerprint)
+      .toBe(keyOf(withUuid('zzz'), OPS_HEALTH_CONDITIONS.WORKER_ERRORS).fingerprint);
+  });
 });
 
 describe('thresholds contract', () => {
@@ -250,6 +409,7 @@ describe('thresholds contract', () => {
       workerErrorWindowMinutes: 60,
       workerErrorMinCount: 1,
       claimUnfinalizedMinutes: 30,
+      failedBacklogEscalateDays: 3,
     });
   });
 });
