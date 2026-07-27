@@ -1,6 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
-import { jobHref } from '@/components/tech/v2/nav';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { officeToTechPath } from '@/lib/techShellRoutes';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
@@ -255,12 +255,14 @@ function HomeRedirect() {
 // all legitimately use these pages, and trapping them in the tech shell would be
 // a worse bug than the one being fixed. Query string and hash are preserved
 // because the message links carry `?c=<conversationId>`.
-function TechShellRedirect({ resolve, children }) {
+// The office->field mapping lives in @/lib/techShellRoutes so this and
+// NotificationBell cannot drift apart. Adding an escape route is one line there.
+function TechShellRedirect({ children }) {
   const { employee } = useAuth();
   const location = useLocation();
-  const params = useParams();
   if (employee?.role === 'field_tech') {
-    return <Navigate to={`${resolve(params)}${location.search}${location.hash}`} replace />;
+    const techPath = officeToTechPath(location.pathname);
+    if (techPath) return <Navigate to={`${techPath}${location.search}${location.hash}`} replace />;
   }
   return children;
 }
@@ -388,7 +390,7 @@ function WebRoutes() {
         <Route index element={<HomeRedirect />} />
         {/* Bell message notifications point here; techs belong in the field inbox. */}
         <Route path="conversations" element={
-          <TechShellRedirect resolve={() => '/tech/conversations'}>
+          <TechShellRedirect>
             <ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>
           </TechShellRedirect>
         } />
@@ -396,7 +398,7 @@ function WebRoutes() {
         <Route path="claims">
           <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
           <Route path=":claimId" element={
-            <TechShellRedirect resolve={(p) => `/tech/claims/${p.claimId}`}>
+            <TechShellRedirect>
               <ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>
             </TechShellRedirect>
           } />
@@ -409,7 +411,7 @@ function WebRoutes() {
           {/* Job notifications point here. jobHref() (not a hardcoded path) so this
               follows the Job Hub flag when it opens, per the tech-v2 manifest. */}
           <Route path=":jobId" element={
-            <TechShellRedirect resolve={(p) => jobHref(p.jobId)}>
+            <TechShellRedirect>
               <ErrorBoundary section="Job"><JobPage /></ErrorBoundary>
             </TechShellRedirect>
           } />
@@ -435,7 +437,7 @@ function WebRoutes() {
             schedule any other way (a shared link, a stale bookmark) belongs in the
             field schedule, which is the screen built for a phone. */}
         <Route path="schedule" element={
-          <TechShellRedirect resolve={() => '/tech/schedule'}>
+          <TechShellRedirect>
             <ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>
           </TechShellRedirect>
         } />
