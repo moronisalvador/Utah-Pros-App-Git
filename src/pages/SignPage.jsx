@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
+import { resolveSignToken } from '../../functions/lib/short-link.js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -129,7 +130,11 @@ function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
 }
 
 export default function SignPage() {
-  const { token } = useParams();
+  // Two routes land here: /sign/:token (the original, still live for every link
+  // already sent) and /s/:code (the short form). Both resolve to the same UUID —
+  // the short code is a denser spelling of it, not a different secret.
+  const { token: routeToken, code } = useParams();
+  const token = resolveSignToken(routeToken || code);
 
   const [data,       setData]       = useState(null);
   const [templates,  setTemplates]  = useState([]);

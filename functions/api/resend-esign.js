@@ -8,6 +8,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
+import { buildSigningUrl } from '../lib/short-link.js';
 
 // Same rule as send-esign: APP_URL wins, otherwise derive from the host this
 // request arrived on. A hardcoded dev fallback meant a missing Production
@@ -76,7 +77,7 @@ export async function onRequestPost(context) {
     const job        = sr.job || {};
     const token      = sr.token;
     const APP_URL    = getAppUrl(env, request);
-    const signingUrl = `${APP_URL}/sign/${token}`;
+    const signingUrl = buildSigningUrl(APP_URL, token);
     const docLabel   = DOC_LABELS[sr.doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
 
