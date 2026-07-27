@@ -843,7 +843,35 @@ CREATE POLICY employees_self_identity_read
 REVOKE ALL PRIVILEGES ON TABLE public.employees
   FROM PUBLIC, anon, authenticated;
 
-GRANT SELECT (id, auth_user_id, role, is_active)
+-- `is_external` is a NAMED CARVE-OUT, not a widening of the identity set.
+-- Do not remove it, and do not treat it as licence to add more.
+--
+-- WHY IT IS REQUIRED: the sibling migrations 20260726183409 (inbound_leads) and
+-- 20260726260000 (notifications) add ROW-LEVEL POLICIES whose predicates read
+-- `employees.is_external`. A policy predicate is evaluated with the CALLING
+-- role's privileges, so with the column ungranted every authenticated SELECT on
+-- those tables fails with "permission denied for table employees" — taking out
+-- the CRM Leads board, the task link-picker, the forecast widget and Realtime
+-- notification delivery, for every user.
+--
+-- WHY IT IS SAFE: the self-identity policy immediately above restricts rows to
+-- `auth_user_id = auth.uid()`. A caller can therefore only read their OWN
+-- external flag. Unlike full_name/email/phone/hourly_rate, this leaks nothing
+-- about anyone else, which is why it is separable from the sensitive set that
+-- tests/qa/unit/mobile-employee-identity-authority.test.js still forbids.
+--
+-- WHY NOTHING CAUGHT IT: both sibling migrations preflight that the column
+-- EXISTS with the right type (e.g. 20260726260000:237-245). Existence is not
+-- access. Nothing asserted the GRANT, and the failure only appears once this
+-- migration and one of them are BOTH live — i.e. it would have detonated after
+-- the production promotion, not during it. Found in review 2026-07-27, unshipped.
+--
+-- THE STRUCTURAL FIX IS DEFERRED, NOT DONE: routing those policies through a
+-- SECURITY DEFINER helper (the pattern can_current_employee_access_settings()
+-- already establishes in this same migration) would keep is_external ungranted
+-- entirely. Tracked in docs/mobile-production-readiness-roadmap.md. When that
+-- lands, this carve-out should be removed.
+GRANT SELECT (id, auth_user_id, role, is_active, is_external)
   ON TABLE public.employees
   TO authenticated;
 
@@ -948,7 +976,9 @@ BEGIN
            'id',
            'auth_user_id',
            'role',
-           'is_active'
+           'is_active',
+           -- Named carve-out; see the GRANT above.
+           'is_external'
          )
          OR acl.is_grantable
     )
@@ -982,7 +1012,7 @@ BEGIN
      OR v_public_privilege_count <> 0
      OR v_unexpected_table_acl_count <> 0
      OR v_authenticated_columns IS DISTINCT FROM
-       ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]
+       ARRAY['auth_user_id', 'id', 'is_active', 'is_external', 'role']::text[]
      OR v_unexpected_column_acl_count <> 0
      OR has_table_privilege(
           'authenticated',
