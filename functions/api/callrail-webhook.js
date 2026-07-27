@@ -52,6 +52,7 @@ import { firstOf, mapCallPayload, mapFormPayload, extractCallId, callrailApiReco
 import { resolveCallRailAccountId } from '../lib/callrail-api.js';
 import { transcribeLead } from './transcribe-call.js';
 import { dispatchEvent } from './notify.js';
+import { formatPhone } from '../lib/phone.js';
 
 // ── lead.new notification hook (Notification Center, Session B) ──
 // Additive + fire-and-forget: announces a genuinely-new inbound lead to admins.
@@ -61,10 +62,42 @@ import { dispatchEvent } from './notify.js';
 // hook lives ONLY in the webhook, never in the shared upsert RPC, so the
 // callrail-backfill worker (which reuses that RPC) can never fire it. Obvious
 // spam is skipped. INERT until the catalog type is enabled.
+/**
+ * Who to call this lead in the alert, best name first.
+ *
+ * Order matters and is not arbitrary:
+ *   1. The linked contact's name. We own that record, so it is authoritative.
+ *   2. CallRail's caller_name — only a guess from carrier data, and demonstrably
+ *      wrong in real rows ("Haley Gelfi" for Haley Ghelfi, "Alexander Gruha" for
+ *      Alexzander Gruhot). Better than a bare number, worse than our own record.
+ *   3. A formatted phone number, so it at least reads like a phone number.
+ *
+ * Before this, the alert used caller_number unconditionally, so a call from a
+ * known customer — full name, address and email on file — announced itself as
+ * "+13855551589" (reported 2026-07-27).
+ */
+export async function resolveLeadCallerLabel({ db, lead }) {
+  if (lead?.contact_id && db) {
+    try {
+      const [contact] = await db.select(
+        'contacts',
+        `id=eq.${lead.contact_id}&select=name&limit=1`,
+      );
+      const name = (contact?.name || '').trim();
+      if (name) return name;
+    } catch { /* fall through to the next-best label */ }
+  }
+  const callRailName = (lead?.caller_name || '').trim();
+  if (callRailName) return callRailName;
+  const formatted = formatPhone(lead?.caller_number);
+  if (formatted) return formatted;
+  return lead?.caller_number || 'Unknown caller';
+}
+
 export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEvent }) {
   try {
     if (!lead || lead.spam_flag) return;   // never alert on flagged spam
-    const caller = lead.caller_number || 'Unknown caller';
+    const caller = await resolveLeadCallerLabel({ db, lead });
     const src = lead.source ? ` · ${lead.source}` : '';
     const leadsLink = lead.id ? `/crm/leads?lead=${lead.id}` : '/crm/leads';
     await dispatchImpl({

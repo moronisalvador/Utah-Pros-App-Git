@@ -45,8 +45,57 @@ describe('notifyNewLead (callrail lead.new)', () => {
     expect(calls[0].body.entity_id).toBe('lead-1');
     expect(calls[0].body.link).toBe('/crm/leads?lead=lead-1');
     expect(calls[0].body.data.route).toBe('/crm/leads?lead=lead-1');
-    expect(calls[0].body.body).toContain('+15551234567');
+    // Formatted for humans now, not raw E.164.
+    expect(calls[0].body.body).toContain('(555) 123-4567');
     expect(calls[0].body.body).toContain('Google');
+  });
+
+  // A known customer's call announced itself as a bare phone number (reported
+  // 2026-07-27: the lead was linked to a contact with a full name on file).
+  it('uses the linked contact name — we own that record, so it wins', async () => {
+    const calls = [];
+    const db = { select: async () => [{ name: 'Haley Ghelfi' }] };
+    await notifyNewLead({
+      db, env: ENV, dispatchImpl: async (e) => { calls.push(e); },
+      lead: {
+        id: 'lead-9', contact_id: 'c-1', caller_number: '+13855551589',
+        // CallRail's own guess is wrong here, which is exactly why it loses.
+        caller_name: 'Haley Gelfi', source_type: 'call', spam_flag: false,
+      },
+    });
+    expect(calls[0].body.body).toContain('Haley Ghelfi');
+    expect(calls[0].body.body).not.toContain('3855551589');
+    expect(calls[0].body.body).not.toContain('Haley Gelfi');
+  });
+
+  it("falls back to CallRail's caller_name when no contact is linked", async () => {
+    const calls = [];
+    await notifyNewLead({
+      db: {}, env: ENV, dispatchImpl: async (e) => { calls.push(e); },
+      lead: { id: 'lead-10', caller_number: '+13855551589', caller_name: 'Jane Doe', spam_flag: false },
+    });
+    expect(calls[0].body.body).toContain('Jane Doe');
+  });
+
+  it('still alerts with a readable number when the contact lookup fails', async () => {
+    const calls = [];
+    const db = { select: async () => { throw new Error('down'); } };
+    await notifyNewLead({
+      db, env: ENV, dispatchImpl: async (e) => { calls.push(e); },
+      lead: { id: 'lead-11', contact_id: 'c-2', caller_number: '+13855551589', spam_flag: false },
+    });
+    // A failed lookup must never swallow the alert — a missed lead costs money.
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.body).toContain('(385) 555-1589');
+  });
+
+  it('leaves a non-US number alone rather than mangling it', async () => {
+    const calls = [];
+    await notifyNewLead({
+      db: {}, env: ENV, dispatchImpl: async (e) => { calls.push(e); },
+      lead: { id: 'lead-12', caller_number: '+442071234567', spam_flag: false },
+    });
+    expect(calls[0].body.body).toContain('+442071234567');
   });
 
   it('falls back to the plain board link when the lead has no id yet', async () => {
