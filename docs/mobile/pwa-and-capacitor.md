@@ -151,7 +151,7 @@ Historical completed-photo cleanup is never sent and uses bounded retry-limited,
 key-only owner maintenance. Hidden documents neither poll nor run maintenance.
 
 Focused zero-replay tests pass 58/58. In the current-origin integration worktree, the complete unit
-lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 24 files/197 tests, and
+lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206 tests, and
 web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet is tracked
 separately. Independent review found no actionable offline P0/P1. Real multi-tab/upgrade and
 representative device proof remain additional gates.

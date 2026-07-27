@@ -437,7 +437,7 @@ existing `SECURITY DEFINER` bodies.
 IndexedDB v3 publishes bounded typed blocked/timeout/version-change recovery state. Blocking and
 version-change callbacks close only the captured connection generation; an inspection failure
 blocks rollout. Focused tests pass 58/58. In the current-origin integration worktree, the complete
-unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 24 files/197
+unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206
 tests, and web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet
 is tracked separately. Independent review found no actionable offline P0/P1. Browser/device
 qualification and the separate live RPC authorization boundary remain.

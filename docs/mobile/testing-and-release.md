@@ -154,8 +154,8 @@ The remediation tests pin zero admission/dispatch, online-only field UI, v3 coun
 blocking legacy rollout state, exact-confirmation all-store discard, bounded typed open/
 version-change recovery, generation isolation, and retry-limited time-rotating historical-photo
 cleanup. The focused six-file lane passes 58/58. In the current-origin integration worktree, the
-complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 24
-files/197 tests, and web/native builds pass. Full lint reports 310 baseline findings, and preflight
+complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25
+files/206 tests, and web/native builds pass. Full lint reports 310 baseline findings, and preflight
 reports 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
 unavailable). Independent review found no actionable offline P0/P1. The changed-file lint ratchet,
 real browser multi-tab/upgrade, and physical-device execution remain additional release gates.
@@ -370,9 +370,10 @@ The reconciled mobile source now includes:
   quote/pricing data, and fail-closed archive/IPA verification source.
 
 This is still a source checkpoint, not production readiness. S1h and the other database lanes are
-unapplied; the reviewed current-`origin/dev` no-rewrite integration remains an uncommitted merge,
-not a release commit; Capacitor sync and the Ruby lockfile remain open; and no deployment, provider,
-signed archive, TestFlight, or physical-device qualification is implied. The identified Auth source
+unapplied; the reviewed current-`origin/dev` no-rewrite integration is local source history prepared
+for draft-PR review, not a `dev` or production release; Capacitor sync and the Ruby lockfile remain
+open; and no deployment, provider, signed archive, TestFlight, or physical-device qualification is
+implied. The identified Auth source
 defects are fixed: rejected
 bootstrap strictly proves cleanup/sign-out before Login, bootstrap authorization values are typed,
 and password recovery is cleanup-gated without losing its session. Observer-only expired-session

@@ -91,7 +91,10 @@ export default function TechClaimAlbum() {
         setDocs(docList || []);
       }
     } catch (e) {
-      setLoadError(e.message || 'Failed to load album');
+      // Raw failures stay in the console for diagnosis and never reach the screen:
+      // a tech in a flooded basement must not be shown PostgREST JSON.
+      console.error('TechClaimAlbum load failed:', e?.message || e);
+      setLoadError('Failed to load album');
       toast('Failed to load album', 'error');
     } finally {
       setLoading(false);

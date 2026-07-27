@@ -161,14 +161,15 @@ does not need to cross an external gate to claim useful completion.
 
 ## Current checkpoint and remaining gates
 
-The current integration-review topology is intentionally uncommitted:
-`codex/mobile-readiness-current-origin-review` has `HEAD` and fetched `origin/dev` at
-`4583f0a65bb7a2ccd99fe0a14c5a3fa47ce414d4`, `MERGE_HEAD` at
-`e2b7585fd0c168f831570c3f15e377e7fef30baa`, and merge base
-`6019b6675f2cd85e4216367c1a70d946a835acbe`. This proves only the no-rewrite review topology; no
-resulting merge commit exists and the tree is not promotable. Refresh the SHAs if `origin/dev`
-moves before resolution/review. The R0→S1h sequence below is provenance, not a request to restart
-from the foundation.
+The current integration-review topology preserves every history without rebase or rewrite.
+`codex/mobile-readiness-current-origin-review` first records merge `4688ed64` with direct parents
+`4583f0a6` and mobile tip `e2b7585f`. A 2026-07-27 08:02 MDT pre-publish fetch advanced
+`origin/dev` to `983b8ca4`; the follow-up merge has direct parents `4688ed64` and `983b8ca4`, with
+common base `4583f0a6`. The only content conflict was `src/App.jsx`; its resolution preserves both
+target-specific web/native registries and the latest field-tech redirects. This is local source
+integration prepared for draft-PR review, not a `dev`/production release. Fetch again before push
+or resolution and merge any further drift normally. The R0→S1h sequence below is provenance, not a
+request to restart from the foundation.
 
 Wave R0 source/live recapture is complete on `codex/mobile-readiness-wave-r0` from foundation
 `7aa4b0c`, with fetched `origin/dev` `90b265e` confirmed as an ancestor. The exact route/caller,
@@ -319,7 +320,7 @@ inspection failure blocks rollout, bounded typed open/version-change callbacks a
 scoped, exact-confirmation two-click cleanup discards all device-local offline stores, and
 historical completed-photo maintenance is key-only, retry-limited, time-rotating, and never sends.
 Focused verification passes 58/58. In the current-origin integration worktree, the complete unit
-lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 24 files/197 tests, and
+lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206 tests, and
 web/native builds pass. Independent review found no actionable offline P0/P1. Full lint retains a
 310-problem repository baseline, and preflight reports 0 errors/2 expected warnings (dirty
 integration tree and optional GitHub delivery unavailable). Real multi-tab/upgrade and
@@ -338,7 +339,9 @@ existing `/settings/lists` route referring to an unbound `ListsAndValues` page. 
 contract now requires every declared browser lazy page to be exported by the web registry and every
 web-registry export to be destructured by `App`; the two sets are equal at 90 entries. Independent
 cross-platform review found no P0/P1 in that three-file repair, and native graph isolation remains
-intact.
+intact. The final `dev` reconciliation also preserves field-tech redirects from office
+conversation/job/claim/schedule detail routes into their PWA equivalents while leaving list routes
+available; the redirect/registry continuity lane passes 27/27.
 
 The mounted native navigation bridge validates custom/Universal Links and Push actions through one
 allowlist, retains protected links only until the verified account lease is ready, drops stale
@@ -349,8 +352,9 @@ checkpoint.
 These source changes do not make the product production-ready. Before native release,
 `@capacitor/app` still needs a reviewed `cap sync ios` (the managed SPM package is unsynchronized),
 and `ios/Gemfile.lock` must be generated/reviewed with Ruby 3.3.12 and Bundler 4.0.16. The
-current-`origin/dev` no-rewrite integration has been reviewed but remains an uncommitted merge, not
-a release commit. Authenticated/installed web/native regression, S1d/S1e/S1f/S1g and S1h database
+current-`origin/dev` no-rewrite integration is committed as local source history prepared for a
+draft PR; it is not merged into `dev` or released. Authenticated/installed web/native regression,
+S1d/S1e/S1f/S1g and S1h database
 windows, QBO telemetry/RLS, private media, public-signing/route-family containment,
 deployment/providers, Apple signing/TestFlight, and installed PWA/physical-device qualification
 remain independent gates. No one gate authorizes another.

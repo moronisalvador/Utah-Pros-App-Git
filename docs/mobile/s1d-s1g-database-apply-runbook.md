@@ -18,9 +18,10 @@ NOTES / GOTCHAS:
 
 # Mobile S1d-S1g database apply runbook
 
-**Prepared from current uncommitted integration review:** `origin/dev`
-`4583f0a65bb7a2ccd99fe0a14c5a3fa47ce414d4` plus mobile `MERGE_HEAD`
-`e2b7585fd0c168f831570c3f15e377e7fef30baa`. No reviewed release commit exists yet.
+**Prepared from current source integration review:** local merge `4688ed64` preserves direct
+parents `4583f0a6` and mobile tip `e2b7585f`; its follow-up merge incorporates fetched
+`origin/dev` `983b8ca4` without rewriting history. This draft-PR source history is not a designated
+database release/apply commit.
 
 This is the operator index for four already authored source changes. It does not combine them.
 Each row requires its own owner approval, fresh drift capture, apply record, verification record,

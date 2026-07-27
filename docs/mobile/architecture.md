@@ -189,7 +189,7 @@ separate live database boundary.
 
 The focused zero-replay/legacy-maintenance lane passes 58/58. In the current-origin integration
 worktree, the complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA
-passes 24 files/197 tests, and web/native builds pass. Full lint retains 310 baseline findings, and
+passes 25 files/206 tests, and web/native builds pass. Full lint retains 310 baseline findings, and
 preflight reports 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
 unavailable). Independent review found no actionable offline P0/P1. Real multi-tab and
 representative browser/PWA/native device proof remain separate, as do the live definer-RPC

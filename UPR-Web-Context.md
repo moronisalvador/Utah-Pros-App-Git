@@ -8762,15 +8762,14 @@ parents `f6554ad4` and `e9bf8f2`; subsequent history through `e2b7585` keeps the
 normal `origin/dev` merge at `6019b667` without rebase or rewrite. The owner transferred the DB-1
 and APP-2/APP-3 coordination surfaces to this mobile-readiness session.
 
-The final review worktree is
-`codex/mobile-readiness-current-origin-review`. A read-only fetch completed
-2026-07-27 03:04 MDT; the recorded `origin/dev` and `HEAD` are
-`4583f0a65bb7a2ccd99fe0a14c5a3fa47ce414d4`; `MERGE_HEAD` is
-`e2b7585fd0c168f831570c3f15e377e7fef30baa`; the merge base is
-`6019b6675f2cd85e4216367c1a70d946a835acbe`. This deliberate no-commit merge preserves both real
-histories. The current-origin Work Authorization messaging bridge, conversation retry
-deduplication, in-app tech messaging links, agent governance, and other concurrent additions are
-retained rather than overwritten.
+The final review worktree is `codex/mobile-readiness-current-origin-review`. Local integration merge
+`4688ed64` preserves direct parents `4583f0a6` and `e2b7585f`. A read-only pre-publish fetch completed
+2026-07-27 08:02 MDT and advanced `origin/dev` to `983b8ca4`; the follow-up merge has direct parents
+`4688ed64` and `983b8ca4`, with common base `4583f0a6`. Its sole content conflict in `src/App.jsx`
+was resolved by retaining both target-specific web/native registries and the latest field-tech
+conversation/job/claim/schedule redirects. Work Authorization messaging, conversation retry
+deduplication, friendly field error states, provenance updates, agent governance, and other
+concurrent additions are retained rather than overwritten.
 
 Authentication source is now selector-free and fail-closed. A genuine Supabase session resolves
 `get_my_employee_profile()`; malformed profile/role/feature/page-access responses do not publish an
@@ -8789,7 +8788,7 @@ IndexedDB rows are payload-free quarantine only; exact two-click local discard m
 accounts' offline stores, and bounded owner-scoped completed-photo cleanup never sends. Independent
 offline review found no P0/P1; the focused zero-replay lane passes 58/58. Under Node 22.23.1, the
 integrated unit lane passes 90 files/1,079 tests, Worker passes 99 files/1,476 tests, and QA passes
-24 files/197 tests, with zero unexpected skips. Targeted lint and web/native builds pass; full lint
+25 files/206 tests, with zero unexpected skips. Targeted lint and web/native builds pass; full lint
 retains the known 310-problem baseline.
 
 Credential-free local browser smoke at 390px and 1440px caught a current-origin route-registry
@@ -8830,6 +8829,6 @@ Connect acceptance, or real-device behavior.
 
 S1d, S1e, S1f, S1g, the four S1h windows, QBO telemetry/RLS, private media, public signing,
 deployment, providers, Apple signing/TestFlight, browser/PWA/device qualification, and eventual
-`dev → main` promotion remain separate owner/external gates. No commit, push, PR, database apply,
-deployment, provider call, notification, money movement, signing, or device action occurred in
-this reconciliation.
+`dev → main` promotion remain separate owner/external gates. Local source-integration commits and a
+draft PR do not authorize any of them. No database apply, deployment, provider call, notification,
+money movement, signing, or device action occurred in this reconciliation.
