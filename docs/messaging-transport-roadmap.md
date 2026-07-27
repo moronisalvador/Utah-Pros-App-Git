@@ -90,7 +90,12 @@ Current official [CallRail API v3 documentation](https://apidocs.callrail.com/) 
 
 - `POST /v3/a/{account_id}/text-messages.json` is only for person-to-person communication inside the
   customer's own application; automated, bulk, and blast messaging is prohibited.
-- Content is limited to 140 characters.
+- Content is documented as limited to 140 characters. **This is not enforced — corrected
+  2026-07-26.** Controlled probes to an owner handset at 200, 630 and 1591 characters were all
+  accepted by the API (full content echoed, no truncation) and delivered intact as single
+  reassembled messages. The adapter now caps at 10 SMS segments, matching Twilio's ceiling.
+  Evidence: `docs/audit/2026-07/evidence/callrail-content-length-2026-07-26.md`. The
+  person-to-person restriction below is a **policy** term and is unaffected by this finding.
 - The request identifies `company_id`, customer phone, and the CallRail tracking number. MMS accepts
   either one public `media_url` or one uploaded `media_file`, not both; JPEG, PNG, and GIF are
   supported up to 5 MB.

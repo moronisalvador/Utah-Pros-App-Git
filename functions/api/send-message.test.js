@@ -70,6 +70,7 @@ function makeDb({
   contactsById,
   serviceConsentsById = {},
   priorOutbound = [],
+  employeeName = 'Rep',
 } = {}) {
   const inserts = [];
   const attempts = [];
@@ -90,7 +91,7 @@ function makeDb({
       if (table === 'employees') {
         return [{
           id: 'e-1',
-          full_name: 'Rep',
+          full_name: employeeName,
           role: 'office',
           is_active: true,
           is_external: false,
@@ -521,11 +522,37 @@ describe('send-message compliance chain', () => {
     );
   });
 
-  it('keeps company identification but does not repeat STOP instructions in a continuing thread', async () => {
+  it('names the company and the short sender on the first message of a thread', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: OPTED_IN,
+      employeeName: 'Moroni Salvador',
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'We are on our way.',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio.mock.calls[0][1].body).toBe(
+      'Utah Pros Restoration - Moroni S.: We are on our way. Reply STOP to unsubscribe.',
+    );
+  });
+
+  // Character budget: CallRail caps content at 140. Once the thread is established the
+  // recipient knows who they are talking to, so the company string is dropped to buy
+  // back 30 characters. STOP instructions are not repeated (they ran on message one).
+  it('drops to the short sender prefix in a continuing thread', async () => {
     h.db = makeDb({
       conversation: DIRECT,
       contact: OPTED_IN,
       priorOutbound: [{ id: 'prior-message' }],
+      employeeName: 'Moroni Salvador',
     });
 
     const res = await onRequestPost({
@@ -539,8 +566,44 @@ describe('send-message compliance chain', () => {
 
     expect(res.status).toBe(201);
     expect(h.twilio.mock.calls[0][1].body).toBe(
-      'Utah Pros Restoration - Rep: The drying check is complete.',
+      'Moroni S.: The drying check is complete.',
     );
+  });
+
+  // A two-surname name uses the FIRST surname's initial, matching how the owner
+  // specified it ("first name and first last name initial", 2026-07-26).
+  it('uses the first surname initial for a two-surname employee name', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: OPTED_IN,
+      priorOutbound: [{ id: 'prior-message' }],
+      employeeName: 'Moroni Salvador Perez',
+    });
+
+    await onRequestPost({
+      request: req({ conversation_id: DIRECT.id, body: 'Done.', sent_by: 'e-1' }),
+      env: ENV,
+    });
+
+    expect(h.twilio.mock.calls[0][1].body).toBe('Moroni S.: Done.');
+  });
+
+  // Never emit an anonymous prefix: a blank/one-word name falls back to the company,
+  // which is the identification the consent remediation actually requires.
+  it('falls back to the company name when the employee has no surname', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: OPTED_IN,
+      priorOutbound: [{ id: 'prior-message' }],
+      employeeName: '   ',
+    });
+
+    await onRequestPost({
+      request: req({ conversation_id: DIRECT.id, body: 'Done.', sent_by: 'e-1' }),
+      env: ENV,
+    });
+
+    expect(h.twilio.mock.calls[0][1].body).toBe('Utah Pros Restoration: Done.');
   });
 
   // Media-only (caption-less MMS) — the body-required relaxation must NOT skip the gate.

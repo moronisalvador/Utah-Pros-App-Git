@@ -30,10 +30,20 @@
 import { resolveCallRailAccountId } from './callrail-api.js';
 import { fetchWithTimeout } from './http.js';
 import { validateMessageImage } from './message-media.js';
+import { computeSmsSegments, maxCharsForSegments } from './sms-segments.js';
 import { supabase } from './supabase.js';
 
 const CALLRAIL_API_BASE = 'https://api.callrail.com/v3/a';
-const MAX_CONTENT_CHARACTERS = 140;
+// Cap by SEGMENTS, not characters. CallRail's published docs claim a flat 140-character
+// content limit; controlled probes to an owner handset on 2026-07-26 (200, 630 and 1591
+// characters) were all accepted by the API AND delivered intact as single reassembled
+// messages, so the documented limit is not enforced and never was. See
+// docs/audit/2026-07/evidence/callrail-content-length-2026-07-26.md.
+// 10 segments matches Twilio's own ceiling, so the number survives the migration off
+// CallRail; it sits inside proven territory (the 1591-char probe was 11 segments).
+// A flat character count was doubly wrong: it blocked ordinary messages, and it could
+// not see that one emoji flips the message to UCS-2 and halves what fits per segment.
+const MAX_CONTENT_SEGMENTS = 10;
 const MAX_MEDIA_BYTES = 5_000_000;
 const SUPPORTED_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif']);
 
@@ -327,10 +337,13 @@ export async function sendCallRailMessage(env, command, { db = null } = {}) {
   if (!body.trim()) {
     fail('CALLRAIL_CONTENT_REQUIRED', 'CallRail requires message content.');
   }
-  if (Array.from(body).length > MAX_CONTENT_CHARACTERS) {
+  const { segments, encoding } = computeSmsSegments(body);
+  if (segments > MAX_CONTENT_SEGMENTS) {
+    const fits = maxCharsForSegments(MAX_CONTENT_SEGMENTS, { encoding });
     fail(
       'CALLRAIL_CONTENT_TOO_LONG',
-      `CallRail message content cannot exceed ${MAX_CONTENT_CHARACTERS} characters.`
+      `Message is ${segments} SMS segments; the limit is ${MAX_CONTENT_SEGMENTS}. `
+      + `At ${encoding} encoding that is about ${fits} characters.`
     );
   }
   const media = validateMedia(command?.content?.media);
