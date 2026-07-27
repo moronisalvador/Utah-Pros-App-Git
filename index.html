@@ -21,6 +21,81 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      BOOT GUARD — must stay ABOVE the module script, and must stay classic
+      (no type="module"), so it runs even when the module graph cannot.
+
+      The failure it exists for: a hashed /assets/*.js answered with index.html
+      at HTTP 200 and cached `immutable` (see public/_redirects). A browser
+      refuses text/html for a module script, so the ENTRY GRAPH never
+      instantiates — main.jsx never executes, React never attaches, and no
+      exception is raised. The page is blank forever with nothing in the
+      console to act on.
+
+      Every other recovery path in this app (routes/lazyRetry, ErrorBoundary,
+      AuthContext, SettingsHome, main.jsx) lives INSIDE the running app, so in
+      this exact failure none of them can fire. This is the only layer that
+      can. That gap is what made 2026-07-27 unrecoverable without a dashboard
+      cache purge.
+
+      index.html is served no-store, so this guard is always fresh even when
+      every hashed asset in the browser's cache is poisoned — which is what
+      lets it repair a client that is already broken.
+    -->
+    <script>
+      (function () {
+        var ONCE = 'upr:boot-recovered';
+        function recover() {
+          // One attempt per tab session. A reload loop would be worse than a
+          // blank page: /reset clears the cache, so a second pass cannot help.
+          try {
+            if (sessionStorage.getItem(ONCE)) return;
+            sessionStorage.setItem(ONCE, '1');
+          } catch (e) { /* private mode / blocked storage: still worth one try */ }
+          window.location.replace(
+            '/reset?to=' + encodeURIComponent(window.location.pathname + window.location.search)
+          );
+        }
+
+        // Loud path: the module script fails to load at all.
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === 'SCRIPT' && t.src && t.src.indexOf('/assets/') !== -1) recover();
+        }, true);
+
+        // Silent path: every request returns 200 but one is HTML, so the graph
+        // never instantiates and nothing throws. Confirm a real content-type
+        // fault before acting — a slow connection must NEVER be mistaken for a
+        // poisoned cache, least of all on a field tech's LTE.
+        window.setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+
+          var urls = [];
+          var entry = document.querySelector('script[type=module][src]');
+          if (entry) urls.push(entry.src);
+          var pre = document.querySelectorAll('link[rel=modulepreload][href]');
+          for (var i = 0; i < pre.length; i++) urls.push(pre[i].href);
+          if (!urls.length) return;
+
+          var done = 0;
+          var poisoned = false;
+          for (var j = 0; j < urls.length; j++) {
+            (function (url) {
+              // No cache option: read exactly what the module loader would.
+              fetch(url).then(function (r) {
+                var ct = r.headers.get('content-type') || '';
+                if (ct.indexOf('javascript') === -1) poisoned = true;
+              })['catch'](function () {
+                poisoned = true;
+              }).then(function () {
+                if (++done === urls.length && poisoned) recover();
+              });
+            })(urls[j]);
+          }
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

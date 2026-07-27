@@ -1,1 +1,22 @@
+# A MISSING hashed asset must 404. It must never fall through to the SPA rule
+# below and be answered with index.html + HTTP 200.
+#
+# That combination is what took dev.utahpros.app down on 2026-07-27. During a
+# deployment swap a Cloudflare PoP requested a chunk that was not uploaded yet,
+# the catch-all answered with index.html at status 200, and the `/assets/*`
+# rule in public/_headers stamped it `immutable, max-age=31536000`. Both the
+# edge and the browser then cached HTML under a .js URL for a year. A browser
+# refuses text/html for <script type="module">, so the entry graph never
+# instantiates: main.jsx never runs, React never mounts, and NOTHING throws.
+# A permanently blank page with no error and no in-app way out.
+#
+# Static files take precedence over these rules (proven live: the catch-all
+# below has always existed, yet real /assets/*.js are served as themselves), so
+# this only affects assets that genuinely are not there.
+#
+# A clean 404 is recoverable — the module fails loudly, the boot guard in
+# index.html sees it and bounces through /reset. A poisoned 200 is not.
+/assets/* /asset-missing.html 404
+
+# SPA routing. Every non-file path renders the app shell.
 /* /index.html 200
