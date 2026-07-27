@@ -1,28 +1,30 @@
-# A MISSING hashed asset must 404. It must never fall through to the SPA rule
-# below and be answered with index.html + HTTP 200.
-#
-# That combination is what took dev.utahpros.app down on 2026-07-27. During a
-# deployment swap a Cloudflare PoP requested a chunk that was not uploaded yet,
-# the catch-all answered with index.html at status 200, and the `/assets/*`
-# rule in public/_headers stamped it `immutable, max-age=31536000`. Both the
-# edge and the browser then cached HTML under a .js URL for a year. A browser
-# refuses text/html for <script type="module">, so the entry graph never
-# instantiates: main.jsx never runs, React never mounts, and NOTHING throws.
-# A permanently blank page with no error and no in-app way out.
-#
-# Static files take precedence over these rules (proven live: the catch-all
-# below has always existed, yet real /assets/*.js are served as themselves), so
-# this only affects assets that genuinely are not there.
-#
-# A clean 404 is recoverable — the module fails loudly, the boot guard in
-# index.html sees it and bounces through /reset. A poisoned 200 is not.
-# Destination is EXTENSIONLESS on purpose. Cloudflare Pages auto-normalizes
-# .html URLs with a 308 to the extensionless path, and a destination that
-# itself redirects makes Pages ignore the rule — verified on a preview
-# deployment 2026-07-27, where /asset-missing.html returned 308 and a missing
-# asset still came back as index.html with 200.
-/app-assets/* /asset-missing 404
-/assets/*     /asset-missing 404
-
 # SPA routing. Every non-file path renders the app shell.
+#
+# ⚠️ KNOWN HAZARD, deliberately left in place because Cloudflare Pages gives us
+# no way to close it here.
+#
+# This rule also answers a MISSING /app-assets/*.js with index.html at HTTP 200.
+# Combined with the immutable caching in _headers, that is what took
+# dev.utahpros.app down on 2026-07-27: during a deployment swap an edge node
+# requested a chunk that had not uploaded yet, cached the HTML answer under a
+# .js URL for a year, and every client that touched that PoP got a permanently
+# blank page — browsers refuse text/html for <script type="module">, so the
+# entry graph never instantiates and nothing throws.
+#
+# Two attempts to make a missing asset 404 here BOTH FAILED on a real preview
+# deployment (2026-07-27):
+#   /app-assets/* /asset-missing.html 404   -> ignored; Pages 308-normalizes
+#                                              .html, and a redirecting target
+#                                              makes the rule fall through
+#   /app-assets/* /asset-missing 404        -> also ignored; a missing asset
+#                                              still returned index.html + 200
+# Do not re-add a variant of these without verifying it on a preview build
+# first. A rule that looks protective but is inert is worse than none.
+#
+# What actually protects users is therefore NOT prevention but recovery:
+#   - the boot guard in index.html repairs poisoned cache entries with
+#     fetch(url, {cache:'reload'}) and reloads, which works on Safari where
+#     /reset's Clear-Site-Data does not;
+#   - build.assetsDir (vite.config.js) can be moved to retire a poisoned URL
+#     namespace outright, as was done once on 2026-07-27.
 /* /index.html 200

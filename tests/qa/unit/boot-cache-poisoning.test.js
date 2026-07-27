@@ -18,12 +18,12 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  public/_redirects, public/asset-missing.html, index.html (read as source)
+ *   Internal:  public/_redirects, public/_headers, index.html, vite.config.js (read as source)
  *
  * NOTES / GOTCHAS:
- *   - This proves the guards are PRESENT, not that Cloudflare behaves as
- *     intended. The edge behaviour of the 404 rule can only be proven on a real
- *     preview deployment — do that before promoting to production.
+ *   - This proves the guards are PRESENT in source. Cloudflare edge behaviour
+ *     is NOT provable from here; two _redirects 404 variants were tried and
+ *     both were ignored on a real preview. See public/_redirects.
  *   - The boot guard must stay a CLASSIC script above the module script. If it
  *     is ever converted to type="module" it inherits the exact failure it
  *     exists to catch and becomes decorative.
@@ -43,36 +43,28 @@ const headers = read('public/_headers');
 const indexHtml = read('index.html');
 const viteConfig = read('vite.config.js');
 
-describe('a missing asset must 404, never become a poisoned 200', () => {
-  it('routes both asset dirs to a 404 before the SPA catch-all', () => {
-    const live = redirects.indexOf('/app-assets/* /asset-missing 404');
-    const legacy = redirects.indexOf('/assets/*     /asset-missing 404');
-    const catchAll = redirects.indexOf('/* /index.html 200');
-    expect(live).toBeGreaterThan(-1);
-    expect(legacy).toBeGreaterThan(-1);
-    expect(catchAll).toBeGreaterThan(-1);
-    // Order is load-bearing: the catch-all would otherwise swallow both.
-    expect(live).toBeLessThan(catchAll);
-    expect(legacy).toBeLessThan(catchAll);
+describe('the SPA catch-all hazard stays documented, not silently forgotten', () => {
+  // There is deliberately NO test asserting that a missing asset 404s. Two
+  // _redirects variants were tried and BOTH were ignored by Cloudflare Pages on
+  // a real preview deployment (2026-07-27) — a missing asset still returned
+  // index.html with HTTP 200. Asserting a rule that does not work would be
+  // worse than having none: it manufactures confidence in a dead control.
+  // Prevention is not available to us here; recovery is what protects users.
+  it('keeps the hazard explained where the next person will edit it', () => {
+    expect(redirects).toContain('/* /index.html 200');
+    expect(redirects).toMatch(/KNOWN HAZARD/);
+    expect(redirects).toMatch(/BOTH FAILED/);
   });
 
-  it('keeps the build output dir and the routing/caching globs in step', () => {
-    // If assetsDir and these globs ever drift, assets silently lose immutable
-    // caching AND fall outside the 404 rule — reopening the exact hole.
+  it('keeps the build output dir and the caching glob in step', () => {
+    // If assetsDir and this glob ever drift, every asset silently loses
+    // immutable caching — a real perf regression on an LTE field device.
     expect(viteConfig).toContain("assetsDir: 'app-assets'");
     expect(headers).toContain('/app-assets/*');
-    expect(redirects).toContain('/app-assets/*');
-  });
-
-  it('ships the 404 body, and it is NOT the app shell', () => {
-    const body = read('public/asset-missing.html');
-    expect(body).toContain('Asset not found');
-    expect(body).not.toContain('<div id="root">');
-    expect(body).not.toContain('type="module"');
   });
 
   it('still marks real assets immutable — the perf budget depends on it', () => {
-    expect(headers).toMatch(/\/assets\/\*\n\s*Cache-Control: public, max-age=31536000, immutable/);
+    expect(headers).toMatch(/\/app-assets\/\*\n\s*Cache-Control: public, max-age=31536000, immutable/);
   });
 });
 
