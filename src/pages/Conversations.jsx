@@ -82,7 +82,7 @@ import {
   parseMediaUrls,
   isRetryableMediaReference,
   getServiceConsentUiState,
-  annotateSupersededFailures,
+  withoutSupersededFailures,
 } from '@/components/conversations/messageUtils';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -780,9 +780,9 @@ export default function Conversations({ replyAssist } = {}) {
 
   const groupedMessages = useMemo(() => {
     const g = []; let cur = null;
-    // Flag failures a later identical send already replaced, so the stale bubble
-    // loses its Retry button instead of offering to send a third copy.
-    annotateSupersededFailures(messages).forEach(msg => {
+    // Drop failures a later identical send already replaced: a retry is the same
+    // message, so the thread shows one bubble, the way every chat app does it.
+    withoutSupersededFailures(messages).forEach(msg => {
       const l = getDateLabel(msg.created_at);
       if (l !== cur) { cur = l; g.push({ type: 'date', label: l }); }
       g.push({ type: 'msg', data: msg });
