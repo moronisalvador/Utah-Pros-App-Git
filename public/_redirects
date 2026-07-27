@@ -16,7 +16,8 @@
 #
 # A clean 404 is recoverable — the module fails loudly, the boot guard in
 # index.html sees it and bounces through /reset. A poisoned 200 is not.
-/assets/* /asset-missing.html 404
+/app-assets/* /asset-missing.html 404
+/assets/*     /asset-missing.html 404
 
 # SPA routing. Every non-file path renders the app shell.
 /* /index.html 200

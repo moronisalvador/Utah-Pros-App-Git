@@ -41,15 +41,27 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8').replace(/\r\n/g, '\n');
 const redirects = read('public/_redirects');
 const headers = read('public/_headers');
 const indexHtml = read('index.html');
+const viteConfig = read('vite.config.js');
 
 describe('a missing asset must 404, never become a poisoned 200', () => {
-  it('routes /assets/* to a 404 before the SPA catch-all', () => {
-    const assetRule = redirects.indexOf('/assets/* /asset-missing.html 404');
+  it('routes both asset dirs to a 404 before the SPA catch-all', () => {
+    const live = redirects.indexOf('/app-assets/* /asset-missing.html 404');
+    const legacy = redirects.indexOf('/assets/*     /asset-missing.html 404');
     const catchAll = redirects.indexOf('/* /index.html 200');
-    expect(assetRule).toBeGreaterThan(-1);
+    expect(live).toBeGreaterThan(-1);
+    expect(legacy).toBeGreaterThan(-1);
     expect(catchAll).toBeGreaterThan(-1);
-    // Order is load-bearing: the catch-all would otherwise swallow /assets/*.
-    expect(assetRule).toBeLessThan(catchAll);
+    // Order is load-bearing: the catch-all would otherwise swallow both.
+    expect(live).toBeLessThan(catchAll);
+    expect(legacy).toBeLessThan(catchAll);
+  });
+
+  it('keeps the build output dir and the routing/caching globs in step', () => {
+    // If assetsDir and these globs ever drift, assets silently lose immutable
+    // caching AND fall outside the 404 rule — reopening the exact hole.
+    expect(viteConfig).toContain("assetsDir: 'app-assets'");
+    expect(headers).toContain('/app-assets/*');
+    expect(redirects).toContain('/app-assets/*');
   });
 
   it('ships the 404 body, and it is NOT the app shell', () => {
@@ -92,9 +104,24 @@ describe('boot guard can run when the app cannot', () => {
     expect(indexHtml.slice(openTag, guardStart)).not.toContain('async');
   });
 
-  it('recovers through /reset, which is the only thing that clears the cache', () => {
-    expect(indexHtml).toContain("'/reset?to='");
-    expect(headers).toMatch(/\/reset\n\s*Clear-Site-Data: "cache"/);
+  it('repairs the cache itself and does NOT route recovery through /reset', () => {
+    // The single most important property of this guard. /reset relies on
+    // Clear-Site-Data, which Safari does not implement — verified on a real
+    // iPhone on 2026-07-27, where /reset changed nothing for a poisoned device.
+    // Every field technician is on iOS, so a Safari-ineffective recovery is no
+    // recovery at all. fetch(url, {cache:'reload'}) rewrites the cache entry
+    // and works everywhere; it is what repaired a poisoned browser by hand
+    // during the incident.
+    expect(indexHtml).toContain("{ cache: 'reload' }");
+    expect(indexHtml).toContain('window.location.reload()');
+    expect(indexHtml).not.toContain("'/reset?to='");
+  });
+
+  it('repairs the specific bad URLs, not just the first one it noticed', () => {
+    // Three chunks were poisoned simultaneously in the real incident.
+    // Repairing one and reloading would fail on the next.
+    expect(indexHtml).toContain('repairAndReload(bad)');
+    expect(indexHtml).toContain('bad.push(url)');
   });
 
   it('fires at most once per tab, so it can never loop', () => {
