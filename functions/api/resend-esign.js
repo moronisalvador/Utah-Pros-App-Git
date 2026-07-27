@@ -9,7 +9,13 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 
-const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
+// Same rule as send-esign: APP_URL wins, otherwise derive from the host this
+// request arrived on. A hardcoded dev fallback meant a missing Production
+// APP_URL resent customers dev links without anything looking broken.
+const getAppUrl = (env, request) => {
+  if (env.APP_URL) return env.APP_URL;
+  try { return new URL(request.url).origin; } catch { return 'https://utahpros.app'; }
+};
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -69,7 +75,7 @@ export async function onRequestPost(context) {
 
     const job        = sr.job || {};
     const token      = sr.token;
-    const APP_URL    = getAppUrl(env);
+    const APP_URL    = getAppUrl(env, request);
     const signingUrl = `${APP_URL}/sign/${token}`;
     const docLabel   = DOC_LABELS[sr.doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
@@ -79,7 +85,7 @@ export async function onRequestPost(context) {
       to:      { email: sr.signer_email, name: sr.signer_name },
       subject: `Reminder: Please sign your ${docLabel} – Job #${job.job_number || sign_request_id.slice(0, 8)}`,
       text:    buildEmailText({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
-      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }),
+      html:    buildEmailHtml({ signer_name: sr.signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, appUrl: APP_URL }),
     });
 
     if (!emailRes.ok) {
@@ -114,7 +120,7 @@ export async function onRequestPost(context) {
   }
 }
 
-function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, env }) {
+function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, appUrl }) {
   const first = escHtml(signer_name.split(' ')[0]);
   return `<!DOCTYPE html>
 <html>
@@ -151,7 +157,7 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
           </p>
         </td></tr>
       </table>
-      <img src="${getAppUrl(env)}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
+      <img src="${appUrl}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
     </td></tr>
   </table>
 </body>

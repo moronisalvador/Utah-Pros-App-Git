@@ -20,9 +20,18 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
 
-// APP_URL: set APP_URL env var in Cloudflare Pages for each environment
-// (dev branch → https://dev.utahpros.app, main branch → https://utahpros.app)
-const getAppUrl = (env) => env.APP_URL || 'https://dev.utahpros.app';
+// Signing-link origin. APP_URL wins when set (Cloudflare Pages, per environment),
+// otherwise derive it from the host this request actually arrived on.
+//
+// This used to fall back to a hardcoded 'https://dev.utahpros.app'. Cloudflare
+// keeps Production and Preview variables as SEPARATE sets, so an APP_URL missing
+// from Production meant production quietly texted customers dev links — and
+// because one Supabase backs both, those links resolve, so nothing looked broken.
+// Deriving from the request cannot pick the wrong environment.
+const getAppUrl = (env, request) => {
+  if (env.APP_URL) return env.APP_URL;
+  try { return new URL(request.url).origin; } catch { return 'https://utahpros.app'; }
+};
 
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -149,7 +158,7 @@ export async function onRequestPost(context) {
     if (!signReq || signReq.error) throw new Error(signReq?.error || 'Failed to create sign request');
 
     const { token, id: sign_request_id } = signReq;
-    const APP_URL     = getAppUrl(env);
+    const APP_URL     = getAppUrl(env, request);
     const signingUrl  = `${APP_URL}/sign/${token}`;
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
@@ -231,7 +240,7 @@ export async function onRequestPost(context) {
       to:      { email: signer_email, name: signer_name },
       subject: `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
       text:    buildEmailText({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl }),
-      html:    buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, env }),
+      html:    buildEmailHtml({ signer_name, doc_label: docLabel, job_number: job.job_number, location_str: locationStr, signing_url: signingUrl, token, appUrl: APP_URL }),
     });
 
     if (!emailRes.ok) {
@@ -255,7 +264,7 @@ export async function onRequestPost(context) {
   }
 }
 
-function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, env }) {
+function buildEmailHtml({ signer_name, doc_label, job_number, location_str, signing_url, token, appUrl }) {
   const first = escHtml(signer_name.split(' ')[0]);
   return `<!DOCTYPE html>
 <html>
@@ -292,7 +301,7 @@ function buildEmailHtml({ signer_name, doc_label, job_number, location_str, sign
         </td></tr>
       </table>
       <!-- Tracking pixel -->
-      <img src="${getAppUrl(env)}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
+      <img src="${appUrl}/api/track-open?t=${token}" width="1" height="1" style="display:block;width:1px;height:1px;border:0;" alt="" />
     </td></tr>
   </table>
 </body>
