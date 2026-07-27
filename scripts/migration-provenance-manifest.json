@@ -224,6 +224,30 @@
       "name": "upr_work_authorization_sms_consent",
       "path": "supabase/migrations/20260727005212_upr_work_authorization_sms_consent.sql",
       "reviewedOriginCommit": "9e79d287"
+    },
+    {
+      "version": "20260727154506",
+      "name": "mobile_employee_identity_authority",
+      "path": "supabase/migrations/20260726180000_mobile_employee_identity_authority.sql",
+      "reviewedOriginCommit": "4688ed64"
+    },
+    {
+      "version": "20260727203720",
+      "name": "anon_closure_tranche_b",
+      "path": "supabase/migrations/20260727143000_anon_closure_tranche_b.sql",
+      "reviewedOriginCommit": "b142424f"
+    },
+    {
+      "version": "20260727203849",
+      "name": "notification_role_defaults_rpc_only",
+      "path": "supabase/migrations/20260727144500_notification_role_defaults_rpc_only.sql",
+      "reviewedOriginCommit": "7e5b53a0"
+    },
+    {
+      "version": "20260727224804",
+      "name": "dorothy_killian_downstairs_reconstruction_repair",
+      "path": "supabase/migrations/20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql",
+      "reviewedOriginCommit": "97b81c82"
     }
   ],
   "selectedFunctions": [
