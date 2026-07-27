@@ -1,7 +1,20 @@
 // POST /api/send-esign
-// Creates a sign request and emails the client a signing link.
+// Creates a sign request and delivers the signing link by email or text.
 //
-// Body: { job_id, contact_id, signer_name, signer_email, sent_by, doc_type?, divisions?, mode? }
+// Body: { job_id, contact_id, signer_name, signer_email, sent_by,
+//         doc_type?, divisions?, mode? }
+//
+// mode: 'email'   — Resend the link (default; requires signer_email)
+//       'sms'     — text the link through POST /api/send-message (requires
+//                   contact_id; consent/DND are enforced there, not here).
+//                   The destination number comes from the conversation's
+//                   participant, never from the client — a caller cannot
+//                   redirect a signing link to an arbitrary phone.
+//       'collect' — create the request only, staff hands over the device
+//
+// The sign request is created BEFORE delivery in every mode, so a blocked or
+// failed send still returns a usable signing_url for manual delivery rather
+// than losing the request.
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
@@ -39,9 +52,8 @@ export async function onRequestPost(context) {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     return jsonResponse({ error: `Supabase env vars missing. Add SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Cloudflare Pages → Settings → Variables and Secrets` }, 500, request, env);
   }
-  if (!env.RESEND_API_KEY) {
-    return jsonResponse({ error: 'RESEND_API_KEY missing in Cloudflare Pages env vars' }, 500, request, env);
-  }
+  // RESEND_API_KEY is checked inside the email branch — an SMS or collect send
+  // must not 500 just because email delivery happens to be unconfigured.
 
   const sbHeaders = {
     'apikey':        SUPABASE_KEY,
@@ -71,12 +83,46 @@ export async function onRequestPost(context) {
       mode = 'email',
     } = await request.json();
 
-    if (!job_id)       return jsonResponse({ error: 'job_id is required' },       400, request, env);
-    if (!signer_name)  return jsonResponse({ error: 'signer_name is required' },  400, request, env);
-    if (!signer_email) return jsonResponse({ error: 'signer_email is required' }, 400, request, env);
-    if (!sent_by)      return jsonResponse({ error: 'sent_by is required' },      400, request, env);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signer_email)) {
-      return jsonResponse({ error: 'Invalid email address' }, 400, request, env);
+    if (!job_id)      return jsonResponse({ error: 'job_id is required' },      400, request, env);
+    if (!signer_name) return jsonResponse({ error: 'signer_name is required' }, 400, request, env);
+    if (!sent_by)     return jsonResponse({ error: 'sent_by is required' },     400, request, env);
+    if (!['email', 'sms', 'collect'].includes(mode)) {
+      return jsonResponse({ error: `Unknown mode "${mode}"` }, 400, request, env);
+    }
+
+    // Email is required only for the mode that actually sends one. sign_requests
+    // .signer_email is nullable, so the other modes store NULL rather than the
+    // `collect-<ts>@noemail.local` placeholder the clients used to invent purely
+    // to satisfy this check.
+    if (mode === 'email') {
+      if (!signer_email) return jsonResponse({ error: 'signer_email is required to send by email' }, 400, request, env);
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signer_email)) {
+        return jsonResponse({ error: 'Invalid email address' }, 400, request, env);
+      }
+    }
+
+    // A text is an outbound customer message: it needs a contact so the consent
+    // gate in /api/send-message has an identity to check. No contact, no text.
+    if (mode === 'sms' && !contact_id) {
+      return jsonResponse({
+        error: 'This job has no linked contact, so the link cannot be texted. Send by email, or link a contact to the job first.',
+        code: 'ESIGN_SMS_NO_CONTACT',
+      }, 400, request, env);
+    }
+
+    // Older clients invent `collect-<ts>@noemail.local` to satisfy the check that
+    // used to be unconditional. Browsers run cached JS, so neutralize it here
+    // rather than trusting every client to have updated — otherwise the fake
+    // address keeps landing in a column that has always accepted NULL.
+    const isPlaceholderEmail = (v) => /@noemail\.local$/i.test(String(v || ''));
+    const realEmail = (signer_email && !isPlaceholderEmail(signer_email)
+      && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signer_email))
+      ? signer_email
+      : null;
+    const storedEmail = realEmail;
+
+    if (mode === 'email' && !realEmail) {
+      return jsonResponse({ error: 'signer_email is required to send by email' }, 400, request, env);
     }
 
     // ── Fetch job ──
@@ -95,7 +141,7 @@ export async function onRequestPost(context) {
       p_contact_id:   contact_id || null,
       p_doc_type:     doc_type,
       p_signer_name:  signer_name,
-      p_signer_email: signer_email,
+      p_signer_email: storedEmail,
       p_sent_by:      sent_by,
       p_divisions:    resolvedDivisions,
     });
@@ -108,12 +154,79 @@ export async function onRequestPost(context) {
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
 
-    // ── Skip email for on-site collection mode ──
+    // ── Skip delivery for on-site collection mode ──
     if (mode === 'collect') {
       return jsonResponse({ success: true, sign_request_id, token, signing_url: signingUrl, mode: 'collect' }, 200, request, env);
     }
 
+    // ── Text the link via the staff send chokepoint ──
+    // Deliberately an HTTP call to /api/send-message rather than a second send
+    // path: consent, DND, opt-out, provider selection, idempotency and the
+    // conversation row all live in that handler (AGENTS.md Rule 14 — staff
+    // person-to-person sends go through it and nothing else). It also means the
+    // customer's thread shows the link was sent, which a direct provider call
+    // would not. No company prefix or STOP notice here — send-message adds both.
+    if (mode === 'sms') {
+      const conversation = await rpc('find_or_create_conversation', { p_contact_id: contact_id });
+      const conversationId = typeof conversation === 'string'
+        ? conversation
+        : (conversation?.id || conversation?.conversation_id || null);
+
+      if (!conversationId) {
+        return jsonResponse({
+          success: true, sms_error: true,
+          sign_request_id, token, signing_url: signingUrl, mode: 'sms',
+          message: 'Sign request created, but no conversation could be opened for this contact. Copy the link below and send it manually.',
+        }, 200, request, env);
+      }
+
+      const smsBody = `Your ${docLabel} is ready to sign: ${signingUrl}`;
+      const sendRes = await fetch(`${new URL(request.url).origin}/api/send-message`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: request.headers.get('Authorization'),
+        },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          body: smsBody,
+          sent_by,
+        }),
+      });
+
+      let sendJson = null;
+      try { sendJson = await sendRes.json(); } catch { /* non-JSON body handled below */ }
+
+      if (!sendRes.ok) {
+        // A consent/DND block is an expected outcome, not a server fault: the
+        // request still exists and staff can deliver the link another way.
+        return jsonResponse({
+          success: true, sms_error: true,
+          sign_request_id, token, signing_url: signingUrl, mode: 'sms',
+          sms_status: sendRes.status,
+          sms_error_code: sendJson?.code || null,
+          sms_error_detail: sendJson?.error || `HTTP ${sendRes.status}`,
+          message: sendJson?.code === 'DND_ACTIVE' || sendJson?.code === 'NO_CONSENT'
+            ? 'This contact has not consented to texts (or has Do Not Disturb on), so the link was not sent. Copy it below or send by email.'
+            : 'Sign request created but the text failed to send. Copy the signing link below and send it manually.',
+        }, 200, request, env);
+      }
+
+      return jsonResponse({
+        success: true, sign_request_id, token, signing_url: signingUrl,
+        mode: 'sms', conversation_id: conversationId,
+      }, 200, request, env);
+    }
+
     // ── Send email via Resend ──
+    if (!env.RESEND_API_KEY) {
+      return jsonResponse({
+        success: true, email_error: true,
+        sign_request_id, token, signing_url: signingUrl,
+        email_error_detail: 'Email delivery is not configured on this environment.',
+        message: 'Sign request created but email is not configured here. Copy the signing link below and send it manually.',
+      }, 200, request, env);
+    }
     const emailRes = await sendEmail(env, {
       to:      { email: signer_email, name: signer_name },
       subject: `Please sign: ${docLabel} – Job #${job.job_number || job_id.slice(0, 8)}`,
