@@ -44,47 +44,12 @@ import { classifyTwilioError } from '../../../functions/lib/twilio-errors.js';
 
 // ─── SECTION: Helpers — SMS segment counting ──────────────
 
-// GSM 03.38 basic charset (each counts as 1 unit). Includes \n and \r.
-const GSM_BASIC = new Set(
-  ('@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ ÆæßÉ !"#¤%&\'()*+,-./0123456789:;<=>?¡' +
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà').split('')
-);
-// GSM extension charset (each counts as 2 units — an escape + the char).
-const GSM_EXT = new Set('^{}\\[~]|€'.split(''));
-
-const GSM_SINGLE = 160, GSM_MULTI = 153;
-const UCS2_SINGLE = 70, UCS2_MULTI = 67;
-
-/**
- * Count characters and SMS segments for `text`, picking GSM-7 or UCS-2 the same way
- * a carrier would. Returns { encoding, units, chars, segments, remaining }.
- *   - units: billable units (GSM extension chars cost 2; UCS-2 counts code points)
- *   - chars: visible character count (code points)
- *   - segments: how many SMS parts this becomes
- *   - remaining: characters left before the count tips into the next segment
- */
-export function computeSmsSegments(text = '') {
-  const chars = [...text].length;
-  let isGsm = true;
-  let gsmUnits = 0;
-  for (const ch of text) {
-    if (GSM_EXT.has(ch)) gsmUnits += 2;
-    else if (GSM_BASIC.has(ch)) gsmUnits += 1;
-    else { isGsm = false; break; }
-  }
-
-  if (isGsm) {
-    const units = gsmUnits;
-    const segments = units === 0 ? 0 : units <= GSM_SINGLE ? 1 : Math.ceil(units / GSM_MULTI);
-    const cap = segments <= 1 ? GSM_SINGLE : GSM_MULTI * segments;
-    return { encoding: 'GSM-7', units, chars, segments, remaining: Math.max(0, cap - units) };
-  }
-
-  const units = chars;
-  const segments = units === 0 ? 0 : units <= UCS2_SINGLE ? 1 : Math.ceil(units / UCS2_MULTI);
-  const cap = segments <= 1 ? UCS2_SINGLE : UCS2_MULTI * segments;
-  return { encoding: 'UCS-2', units, chars, segments, remaining: Math.max(0, cap - units) };
-}
+// Moved to functions/lib/sms-segments.js on 2026-07-26 so the composer and the send
+// path share ONE implementation — the send path now enforces a segment cap, and two
+// copies of this math drifting apart would let a message pass the composer and be
+// refused by the worker. Re-exported here: this module's export surface is unchanged
+// (tech-messages-v2 imports `computeSmsSegments` from here as a frozen contract).
+export { computeSmsSegments, maxCharsForSegments } from '../../../functions/lib/sms-segments.js';
 
 // ─── SECTION: Helpers — linkify (scheme-whitelisted, no raw HTML) ──────────────
 
