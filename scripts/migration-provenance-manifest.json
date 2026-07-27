@@ -164,6 +164,54 @@
       "name": "ops_health_alerting",
       "path": "supabase/migrations/20260725190000_ops_health_alerting.sql",
       "reviewedOriginCommit": "bc6fb01"
+    },
+    {
+      "version": "20260727012536",
+      "name": "ops_health_recipients",
+      "path": "supabase/migrations/20260726193000_ops_health_recipients.sql",
+      "reviewedOriginCommit": "6ce055b9"
+    },
+    {
+      "version": "20260727012551",
+      "name": "rearm_callrail_provider_event",
+      "path": "supabase/migrations/20260726230000_rearm_callrail_provider_event.sql",
+      "reviewedOriginCommit": "65fddb5c"
+    },
+    {
+      "version": "20260727012633",
+      "name": "anon_closure_tranche_a",
+      "path": "supabase/migrations/20260726200000_anon_closure_tranche_a.sql",
+      "reviewedOriginCommit": "a5ef85c9"
+    },
+    {
+      "version": "20260727012700",
+      "name": "notification_types_rpc_only",
+      "path": "supabase/migrations/20260726210000_notification_types_rpc_only.sql",
+      "reviewedOriginCommit": "46562260"
+    },
+    {
+      "version": "20260727012708",
+      "name": "message_inbound_email_not_an_option",
+      "path": "supabase/migrations/20260726211000_message_inbound_email_not_an_option.sql",
+      "reviewedOriginCommit": "46562260"
+    },
+    {
+      "version": "20260727012825",
+      "name": "permission_write_gates",
+      "path": "supabase/migrations/20260726220000_permission_write_gates.sql",
+      "reviewedOriginCommit": "245c0c41"
+    },
+    {
+      "version": "20260727012907",
+      "name": "provider_event_resolution",
+      "path": "supabase/migrations/20260726240000_provider_event_resolution.sql",
+      "reviewedOriginCommit": "245c0c41"
+    },
+    {
+      "version": "20260727012929",
+      "name": "notification_control_gates",
+      "path": "supabase/migrations/20260726250000_notification_control_gates.sql",
+      "reviewedOriginCommit": "245c0c41"
     }
   ],
   "selectedFunctions": [
