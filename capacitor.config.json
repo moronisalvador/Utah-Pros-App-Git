@@ -20,11 +20,10 @@
       "showSpinner": false
     },
     "CapacitorUpdater": {
-      "autoUpdate": true,
-      "defaultChannel": "production",
+      "autoUpdate": false,
       "autoDeleteFailed": true,
       "autoDeletePrevious": true,
-      "resetWhenUpdate": false,
+      "resetWhenUpdate": true,
       "directUpdate": false,
       "appId": "com.utahprosrestoration.upr"
     },

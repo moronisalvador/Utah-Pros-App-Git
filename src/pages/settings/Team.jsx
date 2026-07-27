@@ -20,7 +20,7 @@
  *              getAuthHeader), @/components/PullToRefresh,
  *              @/components/settings/SettingsPageHeader, @/lib/navKeys (ROLES,
  *              roleLabel)
- *   Data:      reads  → get_all_employees (RPC; falls back to select employees)
+ *   Data:      reads  → get_all_employees (admin-gated RPC)
  *              writes → employees + Supabase Auth accounts (via /api/admin-users:
  *              POST create, PATCH update, PUT toggle-active, DELETE hard-delete;
  *              welcome email via supabase auth resetPasswordForEmail)
@@ -93,13 +93,7 @@ export default function Team() {
       setEmployees(data || []);
     } catch (err) {
       console.error('Load employees error:', err);
-      // Fallback: direct select
-      try {
-        const data = await db.select('employees', 'order=full_name.asc');
-        setEmployees(data || []);
-      } catch {
-        toast('Failed to load employees', 'error');
-      }
+      toast('Failed to load employees', 'error');
     } finally {
       setLoading(false);
     }

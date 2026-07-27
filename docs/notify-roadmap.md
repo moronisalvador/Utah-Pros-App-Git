@@ -216,6 +216,10 @@ fire-and-forget block in `functions/api/feedback-notify.js`, `feature:web_push` 
 >       *(The integration suite self-skips without creds like the other CRM suites; its
 >       assertions — bell cutover, targeting, and the full 5-stage resolver precedence —
 >       were verified live against the shared Supabase via MCP this session.)*
+>       **2026-07-26 supersession:** S1g retires that shared/anonymous test because its cleanup and
+>       mark-all path are no longer safe. Guarded local-only S1g SQL supersedes its bell
+>       signature/recipient/read assertions. Preference-resolver integration coverage remains a
+>       separate identity/preferences QA item; this note preserves the historical F2 record.
 > - [x] Acceptance: migration applied + verified live via MCP (ALTER-first ordering,
 >       re-GRANTs, `bust_postgrest_cache()`); live bell verified working (old code, new RPCs);
 >       catalog + conservative seeds live (12 types, only feedback.submitted enabled);
@@ -457,3 +461,25 @@ resolved by F2 shipping it fully implemented and frozen. ⑥ Legacy google-calen
 email couples `appointment.assigned` email to Session B's dedupe seam — accepted (single
 owner). ⑦ Push delivery, email coverage (5 NULL emails), and APNs remain owner-gated external
 actions — all built degrade-graceful so nothing in-wave waits on them.
+
+## 2026-07-26 mobile-readiness supersession
+
+The completed Notification Center wave remains historical implementation provenance, not current
+authorization proof. Mobile S1h now authors active-internal/session ownership for
+`get_effective_notification_prefs`, the three Session C personal RPCs, and the Web Push
+upsert/delete pair without changing their deployed identities or successful shapes.
+
+The historical anonymous shared-database `notify_c_my_prefs.test.js` is retired. Its
+round-trip/lock/redaction intent is represented in a guarded, synthetic, rollback-only identity
+matrix. The revised ordered S1h source and its negative contracts cover the employee
+self-promotion and cross-owner Web Push/native-token takeover exploit cases. The exact checked-in
+forward, catalog, isolated, and rollback chain has not executed in a retained governed Supabase
+target. No notification type/default/preference row was changed during the S1h source session.
+
+S1h is source-hardened but not database-behavior-verified or `ready_for_apply`, so its ordered
+migrations must not be applied. It depends on the separately reviewed live permission-write gate,
+the additive employee identity authority, compatible deployed clients, schema-last identity
+containment, and page-access provenance reconciliation. Session D notification
+defaults/employee overrides remain S1i; that separate work requires a fresh scoped ownership and
+authorization decision after the ordered S1h database chain is qualified. This addendum does not
+reopen or silently rewrite the historical wave.

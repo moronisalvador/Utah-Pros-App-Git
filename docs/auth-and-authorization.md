@@ -285,14 +285,245 @@ consent; technicians cannot. The UI fails closed while status is loading or unav
 ## QuickBooks Online attachments authorization (2026-07-24)
 
 `POST /api/qbo-attach` (push/remove a file on a QBO invoice/estimate) enforces
-`requireRole(['admin','manager'])` server-side — the same billing role the UI's `canEditBilling`
-checks — before any QuickBooks or DB side effect; the client `canEdit` prop is defense-in-depth only.
+`requireRole(['admin','manager'])` server-side — the same literal predicate the UI's
+`canEditBilling` checks — before any QuickBooks or DB side effect; the client `canEdit` prop is
+defense-in-depth only. `manager` is not a current `employee_role` value (`project_manager` is), so
+this is effectively an active-admin gate. The Worker now explicitly rejects
+`is_external=true` after the role check and before connection, attachment metadata, telemetry or
+provider access.
 The new `qbo_attachments` table is a **new** table, so it does NOT copy the documented-broad
 "any authenticated" read policy of `invoices`/`estimates` (that broad pattern is a known finding to
 fix, per the notes below — not a template). Its only policy is a SELECT scoped to active
-`admin`/`manager` employees (`NOT is_crm_partner(auth.uid())` plus an `employees.auth_user_id =
+literal `admin`/`manager` roles (`NOT is_crm_partner(auth.uid())` plus an `employees.auth_user_id =
 auth.uid() AND is_active AND role IN ('admin','manager')` predicate). It has no browser
 INSERT/UPDATE/DELETE policy — the worker writes via the service role (which bypasses RLS). The table
 holds no secret (opaque QuickBooks attachable id + file metadata only). Coverage: the
 `qbo-attachments-migration` test asserts the role-scoped predicate and the absence of a bare
-`USING (true)`; the `worker-security-reviewer` verified the server-side role gate.
+`USING (true)`; the `worker-security-reviewer` verified the server-side role gate. The SELECT
+policy does not yet require `is_external=false`, so a hypothetical external admin can still read
+metadata directly through PostgREST even though the Worker denies attach/remove. That is a
+separately gated RLS migration finding, not closed by the Worker slice.
+
+## Mobile QBO authorization checkpoints (R0 S1a and S1b, 2026-07-26)
+
+The local R0 slice routes `/api/qbo-invoice`, `/api/qbo-estimate`, `/api/qbo-payment`, and
+`/api/qbo-query` through `functions/lib/qbo-auth.js` before connection, domain-table, telemetry or
+provider access. The preserved exact `x-webhook-secret` remains a server capability. Browser
+Bearer access requires a valid session resolving to an active, non-external employee with
+`role='admin'`. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract;
+known employees outside that boundary return 403; auth/configuration failures fail closed.
+
+S1b extends the same active, non-external `admin` browser boundary to
+`/api/qbo-sync-customer` and the HTTP GET/POST forms of `/api/qbo-payments-sync`, while preserving
+their exact secret-first `QBO_WEBHOOK_SECRET` capability. The poller's direct Cloudflare
+`scheduled()` entry remains a distinct non-HTTP capability. `/api/quickbooks-connect` uses the
+human-only form of the gate: the server secret cannot replace OAuth state. `/api/qbo-charge` and
+`/api/qbo-attach` retain their existing Bearer-only billing-role contract and now explicitly deny
+external employees before connection, domain, telemetry or provider work. Handler-level negative
+and failure-path tests prove those denied paths reach at most Supabase Auth plus the employee
+lookup. The customer-sync and manual payment-sync gates resolve the human actor but their current
+`worker_runs` records do not durably persist that actor; adding an audit field/write is a separate
+schema/telemetry decision.
+
+This is still not a global QBO or mobile authorization claim. The direct `qbo_attachments` SELECT
+policy does not exclude external admins; other notification, recording, RPC, direct-table and
+Storage boundaries remain open. The shared QBO capability's deployed binding equality and
+lifecycle were not inspected, and the S1a caller set remains unproven. `project_manager` inclusion
+and capability retention/rotation are owner decisions.
+
+## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
+
+The local S1c source slice replaces `/api/callrail-recording`'s any-employee boundary with an
+active, non-external employee check followed by either `role='admin'` or the existing
+`crm_call_log` employee/role capability. This preserves the admin-mobile caller and approved
+internal desktop Call Log callers while deliberately denying external identities, including
+`crm_partner`, before the lead row, CallRail credential, account discovery or recording fetch.
+Missing/invalid sessions keep the deployed `401 {"error":"Unauthorized"}` shape.
+
+The recording object boundary validates a UUID, requires an `inbound_leads` call row, requires its
+stored `callrail_id` to match the call ID embedded in its stored allowlisted CallRail URL, and only
+then reads the credential. UPR has no employee-to-CRM-organization assignment model, and
+`get_inbound_leads` itself is company-wide. S1c therefore documents `crm_call_log` as company-wide
+recording authority; it does not claim tenant/assignment scoping that the data model cannot express.
+The non-admin Worker capability does not mirror the desktop rollout/kill flags, and the direct
+authenticated `get_inbound_leads`/`inbound_leads` paths still expose or can mutate the stored
+recording URL outside this proxy. Those are separate operational/database residuals; S1c is not
+end-to-end recording confidentiality.
+
+HTTP `/api/notify` retains two distinct identities:
+
+- an exact stored `x-webhook-secret`, checked first with no Bearer fallback on mismatch, preserves
+  the deployed database-trigger payload and response contract; and
+- a Supabase Bearer must resolve to an active, non-external `admin`, then may request only
+  `appointment.assigned`, `appointment.updated`, `appointment.canceled`, or `estimate.accepted`.
+  The Worker verifies the appointment/crew/estimate state and passes only object IDs to
+  `dispatchEvent`; caller-supplied recipients, title/body/HTML, payload/data, entity/job fields and
+  links are rejected.
+
+There is no checked-in mobile/desktop/browser HTTP Bearer caller. Trusted Workers continue to
+import `dispatchEvent` in-process, and the secret-authenticated database trigger path is unchanged.
+This HTTP-only slice is not complete notification containment: `notify_emit(text,jsonb)` is a
+`SECURITY DEFINER` RPC still executable by `authenticated` in the dated generated/live inventory,
+so an authenticated browser can cause the database to present the valid secret and arbitrary
+payload to the Worker. Its ACL/body containment requires a separate reviewed migration and live
+apply. S1c neither authors nor applies that migration.
+The authenticated-executable `create_notification` definer is another direct bell-emission path
+outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
+browser execution and retains `service_role`; it is not live until its separate owner apply.
+
+## Mobile S1d notification dispatcher RPC boundary (2026-07-26)
+
+A fresh read-only catalog capture confirmed one live
+`public.notify_emit(p_type_key text,p_body jsonb) RETURNS void` function owned by `postgres`, with
+`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants to `authenticated` and
+`service_role` while `PUBLIC`/`anon` are denied. No browser or Pages Worker source caller was found.
+The exact database graph is six owner-run definer functions/seven calls: appointment assignment,
+appointment update/cancel, estimate acceptance, timesheet request/review, and the abandoned-clock
+scan reached by its `postgres` cron job.
+
+The reviewed but unapplied `20260726110000_notify_emit_service_boundary.sql` revokes
+`PUBLIC`, `anon`, and `authenticated` after the body replacement and grants only `service_role`.
+Owner-executed trigger/RPC/cron chains remain compatible through PostgreSQL ownership; adding an
+in-body session-role assertion would break those intended database callers and is forbidden for
+this contract. The body replacement changes only JSON object merge order, making the trusted
+`p_type_key` authoritative while retaining URL/secret lookup, headers, `net.http_post`, ignored
+response, no-op gates, signature, result, security mode, and search path.
+
+This is local apply readiness, not live containment: until the shared migration is applied in a
+separate owner-authorized window, `authenticated` can still execute the deployed function.
+`create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
+and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
+evidence are recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
+The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
+remain separate residuals. They were not changed or treated as notification/recording work.
+
+R0's corrected transitive mobile census found 84 client-reachable live `SECURITY DEFINER`
+functions: 82 in the authenticated `/tech` graph plus the two public-signing RPCs mounted by
+`NativeRoutes`, not only the 68 inline calls in the historical audit. All 84 allow
+`authenticated`; four allow `anon`, and three allow `PUBLIC`. Shared bell, preference,
+native-device-token, clock-precheck, and destructive job/claim-merge functions generally trust
+caller-supplied employee/object IDs without reconstructing the caller. The Web Push upsert/delete
+pair is the narrow exception in that group: it resolves the employee with
+`employees.auth_user_id = auth.uid()`.
+
+The public signing pair is intentionally anon-callable but currently checks token equality only;
+status and expiry are enforced later by the UI/submit Worker, not by either read RPC. The exact
+allowlist is `get_sign_document_templates` for `anon` and
+`get_sign_request_by_token` for `PUBLIC`/`anon`, with both also executable by authenticated/service
+roles. These are open containment findings, not approved authorization contracts.
+
+The route/RPC/direct-policy and read-only live evidence is
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`. `MOB-SEC-014` remains
+open; source-only addenda are
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md` and
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. A React admin
+route is not a substitute for the remaining Worker, RPC or RLS boundaries.
+
+## Mobile S1e recording-source authority (authored, not applied)
+
+`get_inbound_leads` will require an active, non-external employee and either `admin` or the existing
+`crm_call_log` employee/role capability. Its only browser callers remain the mobile Admin Lead
+Center and desktop Call Log. Direct `inbound_leads` SELECT remains company-wide for active internal
+employees because the current model has no employee organization membership or lead assignment;
+`crm_tasks.assignee_id` is task ownership, not lead visibility. Authenticated direct DML is removed.
+
+Raw provider URLs move to forced-RLS, service-only `inbound_lead_recording_sources`; nested
+recording-source keys are removed from `raw_payload` on backfill and future writes. Browser and
+legacy composite RPC responses see only a truthy opaque marker. Authenticated execution of the
+service ingestion RPC is revoked. The approved CallRail proxy keeps
+the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
+
+## Mobile S1g notification read/mark boundary (authored, not applied)
+
+The catalog-only S1g capture found the exact four deployed bell RPCs, each owned by `postgres`,
+SQL `SECURITY DEFINER`, `search_path=public`, executable by `authenticated` and `service_role`,
+with no direct database-body caller:
+
+- `get_notifications(integer DEFAULT 30, uuid DEFAULT NULL) -> SETOF notifications`;
+- `get_unread_notification_count(uuid DEFAULT NULL) -> integer`;
+- `mark_notification_read(uuid) -> void`; and
+- `mark_all_notifications_read(uuid DEFAULT NULL) -> void`.
+
+Their live bodies trust caller-supplied employee/notification IDs. The live
+`notifications_select` policy is authenticated `USING (true)`, so PostgREST and Realtime can expose
+another employee's targeted payload before `NotificationBell` filters it in JavaScript. Broadcasts
+also share one `notifications.read_at`, allowing one caller to clear them for everyone.
+
+Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves all four
+signatures, defaults, results, old `{}`/`{p_limit}` broadcast-only calls, list fields, newest-first
+ordering, and trusted service-role behavior. Authenticated execution instead reconstructs the
+unique active, non-external employee from `auth.uid()` and raises SQLSTATE `42501` for a foreign
+non-null employee parameter or foreign targeted notification. Missing/null mark-one IDs retain the
+deployed void no-op.
+
+Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads`; targeted rows
+retain their existing `read_at`. Already-globally-read legacy broadcasts remain read for every
+employee. `notifications_select` stays the same policy object but becomes active-internal
+own-or-broadcast authorization, authenticated table access becomes SELECT-only for Realtime, and
+the obsolete authenticated sentinel-delete policy is removed. The existing client recipient check
+remains defense in depth.
+
+The unchanged service-role branch retains the exact deployed base-row list/count, mark-one, and
+null/non-null mark-all semantics. Rollback refuses exact forward-state drift and restores the
+captured authenticated behavior, but it deliberately does not restore the historical anonymous
+notification-table grant because no reviewed public use case exists.
+
+This is reviewed source intent, not live proof. S1g requires its own owner-authorized apply,
+catalog post-check, two-session RPC/PostgREST/Realtime negative/positive matrix, advisors, and
+provenance capture. It must not be combined with S1d/S1e/S1f, private media, providers,
+deployment, signing, or device work.
+
+**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
+verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
+browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
+then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
+S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
+ledger row exists and its browser-read-only employee contract still matches. Recapture that
+catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
+S1e or S1g; each remains its own owner-approved window.
+
+## Mobile S1h identity and personal ownership source (authored, not applied)
+
+The browser authentication path is selector-free. `AuthContext` starts from a genuine Supabase
+session, resolves the caller through `get_my_employee_profile()`, validates profile/role/feature and
+page-access response types, and publishes an internal employee only after the required permission
+bootstrap succeeds. The former anonymous employee picker and `devLogin` bypass are removed.
+Account transitions suspend old-account work immediately and keep the app in a cleanup/error lock
+when local session or device detachment cannot be confirmed.
+
+S1h is an ordered four-migration source sequence, not one apply:
+
+1. `20260726180000_mobile_employee_identity_authority.sql` adds selector-free profile and employee
+   directory RPCs without revoking the deployed table contract.
+2. `20260726182000_mobile_employee_identity_containment.sql` is schema-last. Only after compatible
+   PWA/Capacitor/browser code is deployed and old-client risk is resolved does it remove browser
+   employee writes, narrow direct identity reads, and gate roster/commission RPCs.
+3. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` normalizes the
+   already-live permission-writer body fingerprint without changing behavior.
+4. `20260727022920_mobile_personal_ownership_boundary.sql` replaces the nine existing personal
+   RPC bodies while preserving identities, defaults, return types, successful authorized fields,
+   ordering, and reviewed service compatibility.
+
+Authenticated personal selectors must map to the one active, non-external employee bound to
+`auth.uid()`. The only foreign selector exception is the Page Access read used by an active
+internal admin. `employee_page_access`, `notification_prefs`, `push_subscriptions`, and
+`device_tokens` become forced-RLS, policy-free, browser-RPC-only tables; direct owner and
+`service_role` access remains. Browser Web Push and native registration may refresh an existing
+token only for the same employee. A token already owned by another employee is rejected with
+`42501`; possession is not transfer authority. Trusted service code retains the reviewed
+cross-owner maintenance path.
+
+This revised source removes the rejected artifact's two escalation paths: browser roles cannot
+write employee authority fields after containment, and they cannot enumerate or rebind another
+employee's raw Web/native token. The rejected filename and reasoning are retained only as dated
+evidence under `docs/audit/2026-07/evidence/rejected-sql/`.
+
+None of the four migrations is applied. Credential-free source tests and negative auth/account
+transition tests pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain
+has not run in a retained governed local database, and live GoTrue/PostgREST/RLS behavior is
+unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. Use
+`docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
+test, rollback, provider action, signing step, and device qualification remains a separate
+owner-authorized gate.

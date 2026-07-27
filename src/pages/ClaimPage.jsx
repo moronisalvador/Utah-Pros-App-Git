@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import '@/claim-ops-page.css';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -92,7 +93,7 @@ export default function ClaimPage() {
   }, [db, claimId, isFeatureEnabled]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
+  useEffect(() => { loadEmployeeDirectory(db).then(d => setEmployees(d || [])).catch(() => {}); }, [db]);
 
   // ── Lazy load appointments ──
   const loadAppointments = useCallback(async () => {

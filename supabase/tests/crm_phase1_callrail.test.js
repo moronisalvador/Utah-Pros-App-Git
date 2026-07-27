@@ -180,7 +180,12 @@ describe.skipIf(!hasCreds)('CRM Phase 1 — upsert_lead_from_callrail (integrati
     });
 
     // Merged in from the second delivery
-    expect(updated.recording_url).toBe('https://app.callrail.com/recordings/test.mp3');
+    // Pre-S1e returns the legacy source; post-S1e preserves the same composite
+    // key as an opaque truthy availability marker.
+    expect([
+      'https://app.callrail.com/recordings/test.mp3',
+      'upr-recording://available',
+    ]).toContain(updated.recording_url);
     expect(updated.transcription).toBe('Hello, I have a water leak.');
     // Preserved from the first delivery, not clobbered
     expect(updated.campaign).toBe('test-campaign');

@@ -115,6 +115,13 @@ export default function TechClaimAlbum() {
     if (!file || !jobId) return;
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
+      return;
+    }
     setUploading(true);
     try {
       const ts = Date.now();

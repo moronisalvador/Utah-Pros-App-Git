@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
 
 /* ── Toast helpers ── */
@@ -481,8 +482,8 @@ function HealthTab() {
         const r = await db.select('contacts', 'select=id&limit=1');
         return `${r?.length ?? 0} row(s) returned`;
       }),
-      runCheck('get_all_employees RPC', async () => {
-        const r = await db.rpc('get_all_employees');
+      runCheck('Employee directory RPC', async () => {
+        const r = await loadEmployeeDirectory(db);
         return `${r?.length ?? 0} employees`;
       }),
       runCheck('get_feature_flags RPC', async () => {
@@ -1526,7 +1527,7 @@ const RPC_LIST = [
 
 const TABLE_LIST = [
   'jobs', 'contacts', 'claims', 'conversations', 'messages',
-  'scheduled_messages', 'employees', 'feature_flags', 'worker_runs',
+  'scheduled_messages', 'feature_flags', 'worker_runs',
   'sign_requests', 'job_tasks', 'appointments', 'job_documents',
   'system_events', 'sms_consent_log',
 ];

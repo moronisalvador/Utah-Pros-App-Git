@@ -4,10 +4,8 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the two new offline-queue handlers send the right thing to the server:
- *   a queued field note becomes an insert_job_document call (category 'note'),
- *   and a queued task checkbox becomes a toggle_appointment_task call. Both are
- *   what the online screens do — so work captured with no signal syncs identically.
+ *   Preserves contract tests for dormant historical dispatch helpers without
+ *   claiming that any helper is imported, admitted, or replayed in production.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
@@ -15,54 +13,217 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  ./noteDispatcher, ./taskDispatcher (a fake db.rpc is injected)
+ *   Internal:  photo/reading/equipment dispatchers (fake db/rpc injected)
  *
  * NOTES / GOTCHAS:
- *   - No IndexedDB is touched: a note with no roomId short-circuits resolveIdSwap.
+ *   - No real IndexedDB, Storage, or Supabase project is touched.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, vi } from 'vitest';
-import { dispatchNote } from './noteDispatcher';
-import { dispatchTaskToggle } from './taskDispatcher';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const offlineFakes = vi.hoisted(() => ({
+  QUEUE_CLAIM_TTL_MS: 120_000,
+  deletePhoto: vi.fn(async () => true),
+  getPhotoBlob: vi.fn(async () => ({
+    blob: new Blob(['photo'], { type: 'image/jpeg' }),
+    mimeType: 'image/jpeg',
+    uploadedBy: 'emp-1',
+    jobId: 'job-1',
+    name: '../field photo.jpg',
+  })),
+  recordIdSwap: vi.fn(async () => true),
+  resolveIdSwap: vi.fn(async (value) => value),
+  isStableQueueOperationId: vi.fn(() => true),
+}));
+
+vi.mock('../offlineDb', () => offlineFakes);
+
+import {
+  PHOTO_UPLOAD_TIMEOUT_MS,
+  dispatchPhoto,
+} from './photoDispatcher';
+import { dispatchReading } from './readingDispatcher';
+import {
+  dispatchEquipmentPlace,
+  dispatchEquipmentRemove,
+} from './equipmentDispatcher';
 
 const employee = { id: 'emp-1' };
+const ownerLease = {
+  owner: 'v1.aaaaaaaaaaaa',
+  epoch: 'e1.session-a',
+};
 
-describe('offline note.insert dispatcher', () => {
-  it('calls insert_job_document with category note + description', async () => {
-    const rpc = vi.fn().mockResolvedValue({ id: 'doc-9' });
-    const db = { rpc };
-    const res = await dispatchNote(db, employee, {
-      clientId: 'c1', jobId: 'job-1', appointmentId: 'appt-1', description: '  hi  ',
-    });
-    expect(rpc).toHaveBeenCalledWith('insert_job_document', expect.objectContaining({
-      p_job_id: 'job-1', p_category: 'note', p_description: 'hi',
-      p_appointment_id: 'appt-1', p_uploaded_by: 'emp-1',
-    }));
-    expect(res.serverId).toBe('doc-9');
-  });
+function queueItem(clientId, type) {
+  return {
+    clientId,
+    operationId: clientId,
+    owner: ownerLease.owner,
+    type,
+  };
+}
 
-  it('rejects a blank note', async () => {
-    const db = { rpc: vi.fn() };
-    await expect(dispatchNote(db, employee, { clientId: 'c1', jobId: 'j', description: '   ' }))
-      .rejects.toThrow();
-    expect(db.rpc).not.toHaveBeenCalled();
-  });
+beforeEach(() => {
+  for (const fake of Object.values(offlineFakes)) {
+    if (typeof fake?.mockClear === 'function') fake.mockClear();
+  }
 });
 
-describe('offline task.toggle dispatcher', () => {
-  it('calls toggle_appointment_task with the task + employee', async () => {
-    const rpc = vi.fn().mockResolvedValue(null);
-    const db = { rpc };
-    const res = await dispatchTaskToggle(db, employee, { clientId: 'c2', taskId: 'task-3' });
-    expect(rpc).toHaveBeenCalledWith('toggle_appointment_task', {
-      p_task_id: 'task-3', p_employee_id: 'emp-1',
-    });
-    expect(res.serverId).toBeUndefined();
+describe('stable operation identity and owned auxiliary reads', () => {
+  it('keeps the dormant reading helper bound to its immutable operation ID', async () => {
+    const rpc = vi.fn().mockResolvedValue({ id: 'server-reading' });
+    const item = {
+      ...queueItem('reading-operation', 'reading.insert'),
+      createdAt: Date.parse('2026-07-26T12:00:00.000Z'),
+    };
+    await dispatchReading(
+      { rpc },
+      employee,
+      {
+        clientId: item.operationId,
+        jobId: 'job-1',
+        material: 'drywall',
+        isAffected: true,
+      },
+      item,
+      ownerLease,
+    );
+
+    expect(rpc).toHaveBeenCalledWith('insert_reading', expect.objectContaining({
+      p_client_id: 'reading-operation',
+      p_taken_at: '2026-07-26T12:00:00.000Z',
+    }));
   });
 
-  it('rejects a toggle with no taskId', async () => {
-    const db = { rpc: vi.fn() };
-    await expect(dispatchTaskToggle(db, employee, { clientId: 'c2' })).rejects.toThrow();
-    expect(db.rpc).not.toHaveBeenCalled();
+  it('keeps the dormant placement helper bound to its immutable operation ID', async () => {
+    const rpc = vi.fn().mockResolvedValue({ id: 'server-equipment' });
+    const item = queueItem('equipment-operation', 'equipment.place');
+    await dispatchEquipmentPlace(
+      { rpc },
+      employee,
+      {
+        clientId: item.operationId,
+        jobId: 'job-1',
+        equipmentType: 'dehumidifier',
+      },
+      item,
+      ownerLease,
+    );
+
+    expect(rpc).toHaveBeenCalledWith('place_equipment', expect.objectContaining({
+      p_client_id: 'equipment-operation',
+      p_equipment_type: 'dehumidifier',
+    }));
+    expect(offlineFakes.recordIdSwap).toHaveBeenCalledWith(
+      'equipment-operation',
+      'server-equipment',
+      ownerLease,
+    );
+  });
+
+  it('keeps the dormant removal helper outside any replay guarantee', async () => {
+    const rpc = vi.fn().mockResolvedValue({ id: 'equipment-1' });
+    const item = queueItem('remove-operation', 'equipment.remove');
+    await dispatchEquipmentRemove(
+      { rpc },
+      employee,
+      {
+        equipmentId: 'equipment-1',
+        removedBy: 'emp-1',
+      },
+      item,
+      ownerLease,
+    );
+
+    expect(rpc).toHaveBeenCalledWith('remove_equipment', {
+      p_equipment_id: 'equipment-1',
+      p_removed_by: 'emp-1',
+    });
+  });
+
+  it('reads/deletes a photo through its owner and uses a stable object path', async () => {
+    const rpc = vi.fn().mockResolvedValue({ id: 'server-photo' });
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      text: async () => '',
+    }));
+    vi.stubGlobal('fetch', fetchImpl);
+    const item = queueItem('photo-operation', 'photo.upload');
+
+    const result = await dispatchPhoto(
+      {
+        apiKey: 'public-test-key',
+        baseUrl: 'https://example.test',
+        rpc,
+      },
+      employee,
+      {
+        clientId: item.operationId,
+        jobId: 'job-1',
+        name: '../field photo.jpg',
+      },
+      item,
+      ownerLease,
+    );
+
+    expect(offlineFakes.getPhotoBlob).toHaveBeenCalledWith(
+      'photo-operation',
+      ownerLease,
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://example.test/storage/v1/object/job-files/job-1/offline/photo-operation-field_photo.jpg',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ 'x-upsert': 'false' }),
+      }),
+    );
+    expect(offlineFakes.deletePhoto).not.toHaveBeenCalled();
+    await result.cleanup();
+    expect(offlineFakes.deletePhoto).toHaveBeenCalledWith(
+      'photo-operation',
+      ownerLease,
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it('aborts a hung photo upload before the queue claim can expire', async () => {
+    const item = queueItem('photo-operation', 'photo.upload');
+    const clearTimeoutImpl = vi.fn();
+    const fetchImpl = vi.fn(async (_url, { signal }) => {
+      if (signal.aborted) {
+        const error = new Error('aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
+      return { ok: true };
+    });
+
+    await expect(dispatchPhoto(
+      {
+        apiKey: 'public-test-key',
+        baseUrl: 'https://example.test',
+        rpc: vi.fn(),
+      },
+      employee,
+      {
+        clientId: item.operationId,
+        jobId: 'job-1',
+        name: '../field photo.jpg',
+      },
+      item,
+      ownerLease,
+      {
+        fetchImpl,
+        setTimeoutImpl: (callback) => {
+          callback();
+          return 9;
+        },
+        clearTimeoutImpl,
+      },
+    )).rejects.toThrow(/timed out before queue claim expiry/i);
+    expect(PHOTO_UPLOAD_TIMEOUT_MS).toBeLessThan(
+      offlineFakes.QUEUE_CLAIM_TTL_MS,
+    );
+    expect(clearTimeoutImpl).toHaveBeenCalledWith(9);
   });
 });

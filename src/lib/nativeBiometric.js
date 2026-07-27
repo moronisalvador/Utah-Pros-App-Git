@@ -1,8 +1,27 @@
-// Biometric auth wrapper. No-op on web.
-// V1 scope: biometric "gate" on top of the existing localStorage-based
-// Supabase session. Token stays where it is today; Face ID just unlocks
-// access to the UI on cold-launch. Future hardening: move the refresh
-// token into iOS Keychain with a custom Supabase storage adapter.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: nativeBiometric.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Wraps the native biometric bridge and stores whether this installation
+ *   opted into launch-time Face ID, Touch ID, or device-passcode verification.
+ *   Browser builds remain passive.
+ *
+ * DEPENDS ON:
+ *   Packages:  @capacitor/core, @aparajita/capacitor-biometric-auth
+ *   Internal:  nativeBiometricGate.js consumes the tri-state preference
+ *   Data:      reads/writes → localStorage key upr.biometric.enabled
+ *
+ * NOTES / GOTCHAS:
+ *   - This gate sits on top of the existing Supabase session; it does not move
+ *     refresh tokens into Keychain.
+ *   - An unreadable preference is distinct from "disabled" so an enrolled
+ *     native session can fail closed instead of exposing the app.
+ *   - The iOS app-switcher privacy shield is native AppDelegate code. This
+ *     module makes no screenshot-prevention claim.
+ * ════════════════════════════════════════════════
+ */
 
 import { Capacitor } from '@capacitor/core';
 import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
@@ -21,14 +40,35 @@ export async function checkBiometricAvailable() {
 }
 
 export function isBiometricEnabled() {
-  try { return localStorage.getItem(KEY) === 'true'; } catch { return false; }
+  return readBiometricPreference().enabled;
+}
+
+/**
+ * Read enrollment without collapsing blocked/corrupt storage into "disabled".
+ * An unreadable policy must fail closed when a stored native session exists.
+ */
+export function readBiometricPreference(storage) {
+  try {
+    const target = storage === undefined ? globalThis.localStorage : storage;
+    return {
+      enabled: target?.getItem(KEY) === 'true',
+      readable: !!target,
+    };
+  } catch {
+    return { enabled: false, readable: false };
+  }
 }
 
 export function setBiometricEnabled(enabled) {
   try {
     if (enabled) localStorage.setItem(KEY, 'true');
     else localStorage.removeItem(KEY);
-  } catch { /* storage may be disabled in some contexts */ }
+    return true;
+  } catch {
+    // Storage may be disabled in some contexts. Callers that own an account
+    // transition can now distinguish this from a completed preference clear.
+    return false;
+  }
 }
 
 // Ceiling on how long a hung native authenticate() call can block the app's
@@ -63,8 +103,3 @@ export async function verifyBiometric(reason = 'Unlock UPR') {
     return false;
   }
 }
-
-// Privacy screen (background blur / screenshot prevention) is deferred —
-// @capacitor-community/privacy-screen isn't updated for Capacitor 8 yet.
-// Keeping the export as a no-op so callers don't need a conditional.
-export async function enablePrivacyScreen() { /* pending compatible plugin */ }

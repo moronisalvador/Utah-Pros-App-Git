@@ -1,8 +1,29 @@
-// Dispatchers for equipment lifecycle — place_equipment + remove_equipment.
-// place is idempotent on client_id. remove targets a server id (no queued removes
-// against temp ids in v1 — remove always happens after place has synced).
+/**
+ * ════════════════════════════════════════════════
+ * FILE: equipmentDispatcher.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Retains dormant equipment placement/removal helpers. Placement carries a
+ *   stable operation ID; removal has no such server key.
+ *
+ * DEPENDS ON:
+ *   Internal:  offlineDb
+ *   Data:      reads/writes → owner-bound IndexedDB ID swaps; equipment RPCs
+ *
+ * NOTES / GOTCHAS:
+ *   - DORMANT: production command admission/replay is empty and the sync runner
+ *     does not import these helpers.
+ *   - place_equipment is replay-safe only while p_client_id deduplicates.
+ *   - remove_equipment requires manual reconciliation after ambiguity.
+ * ════════════════════════════════════════════════
+ */
 
-import { resolveIdSwap } from '../offlineDb';
+import {
+  isStableQueueOperationId,
+  recordIdSwap,
+  resolveIdSwap,
+} from '../offlineDb';
 
 /**
  * Place an equipment unit.
@@ -15,12 +36,27 @@ import { resolveIdSwap } from '../offlineDb';
  * }} payload
  * @returns {Promise<{serverId:string|undefined}>}
  */
-export async function dispatchEquipmentPlace(db, employee, payload /*, queueItem */) {
-  if (!payload?.clientId || !payload?.jobId || !payload?.equipmentType) {
-    throw new Error('dispatchEquipmentPlace requires clientId, jobId, equipmentType');
+export async function dispatchEquipmentPlace(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
+  const operationId = queueItem?.operationId;
+  if (
+    !payload?.jobId
+    || !payload?.equipmentType
+    || !isStableQueueOperationId(operationId)
+    || payload.clientId !== operationId
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchEquipmentPlace requires an owner-bound stable operation ID',
+    );
   }
 
-  const resolvedRoomId = await resolveIdSwap(payload.roomId);
+  const resolvedRoomId = await resolveIdSwap(payload.roomId, ownerLease);
 
   const row = await db.rpc('place_equipment', {
     p_job_id:         payload.jobId,
@@ -29,11 +65,14 @@ export async function dispatchEquipmentPlace(db, employee, payload /*, queueItem
     p_nickname:       payload.nickname || null,
     p_serial:         payload.serialNumber || null,
     p_placed_by:      payload.placedBy || employee?.id || null,
-    p_client_id:      payload.clientId,
+    p_client_id:      operationId,
     p_notes:          payload.notes || null,
   });
 
   const result = Array.isArray(row) ? row[0] : row;
+  if (result?.id && result.id !== operationId) {
+    await recordIdSwap(operationId, result.id, ownerLease);
+  }
   return { serverId: result?.id };
 }
 
@@ -45,9 +84,21 @@ export async function dispatchEquipmentPlace(db, employee, payload /*, queueItem
  * @param {object} employee
  * @param {{equipmentId:string, removedBy?:string}} payload
  */
-export async function dispatchEquipmentRemove(db, employee, payload /*, queueItem */) {
-  if (!payload?.equipmentId) {
-    throw new Error('dispatchEquipmentRemove requires equipmentId');
+export async function dispatchEquipmentRemove(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
+  if (
+    !payload?.equipmentId
+    || !isStableQueueOperationId(queueItem?.operationId)
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchEquipmentRemove requires an owner-bound operation',
+    );
   }
   const row = await db.rpc('remove_equipment', {
     p_equipment_id: payload.equipmentId,

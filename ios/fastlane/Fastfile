@@ -1,123 +1,186 @@
 # ════════════════════════════════════════════════
-# FILE: Fastfile
+# FILE: ios/fastlane/Fastfile
 # ════════════════════════════════════════════════
-#
-# ⚠️ SIGNING CREDENTIALS DO NOT EXIST YET — this scaffold is INERT until the
-# owner completes Apple Developer Program enrollment and CI secrets
-# (APPLE_TEAM_ID, a signing certificate/profile — or an App Store Connect
-# API key — plus APPLE_ID / ASC_KEY_* as applicable) are added to both the
-# repo's GitHub Actions secrets and this file's referenced ENV vars. Until
-# then, every lane below will fail fast on a missing environment variable
-# the moment it runs — that is the intended, safe failure mode. Nothing here
-# can accidentally ship an unsigned or mis-signed build.
 #
 # WHAT THIS DOES (plain language):
-#   This is the build robot's instruction sheet for turning the iOS app into
-#   a signed package and sending it to Apple's TestFlight (Apple's internal
-#   beta-testing service), so the team can install it on real iPhones before
-#   it goes to the public App Store. It does not run automatically — someone
-#   has to trigger it by hand, and only after Apple credentials exist.
-#
-# SIGNING APPROACH (documented decision — manual/API-key signing, not `match`):
-#   This scaffold uses manual code signing via environment-provided signing
-#   identity + provisioning profile (or an App Store Connect API key for
-#   authentication), rather than fastlane `match` (which needs its own
-#   encrypted git repo + passphrase to bootstrap). Manual signing is the
-#   simpler scaffold to stand up before a distribution model is even chosen
-#   (see docs/app-store-readiness-roadmap.md §0). If the owner later prefers
-#   `match`, swap the `sync_code_signing`/manual env vars below for a
-#   `match(type: "appstore")` call — everything downstream (archive, upload)
-#   stays the same.
+#   Creates a manually signed App Store archive from the checked-in Xcode
+#   project, then exposes a separate lane that can upload an already verified
+#   IPA to TestFlight. Archive creation never contacts App Store Connect.
 #
 # DEPENDS ON:
-#   Packages:  fastlane (Ruby gem, installed via Gemfile/bundler in CI)
-#   Internal:  ios/App/App.xcodeproj (the Xcode project), ios/fastlane/Appfile
-#
-# REQUIRED ENV VARS (none of these exist as CI secrets yet):
-#   APPLE_TEAM_ID              — Apple Developer Program team ID
-#   APPLE_ID                   — App Store Connect account email (manual-signing path)
-#   APPLE_CERTIFICATE_BASE64   — base64-encoded .p12 signing certificate
-#   APPLE_CERTIFICATE_PASSWORD — password for the .p12 above
-#   APPLE_PROVISIONING_PROFILE_BASE64 — base64-encoded .mobileprovision
-#   ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT — App Store Connect API key
-#     (alternative to APPLE_ID + 2FA for `upload_to_testflight` auth; either
-#     this trio OR APPLE_ID-based auth is needed, not necessarily both)
+#   Packages:  fastlane 2.237.0 (ios/Gemfile + reviewed Gemfile.lock)
+#   Internal:  ios/App/App.xcodeproj, ios/fastlane/Appfile
+#   Data:      reads  → explicit CI environment variables and signing files
+#              writes → ios/build/ plus one temporary CI keychain
 #
 # NOTES / GOTCHAS:
-#   - This file cannot be run or syntax-checked in this environment (no Ruby/
-#     fastlane/Xcode here) — it follows standard fastlane conventions from
-#     fastlane's own docs/templates; the owner should do a first dry run
-#     once secrets exist.
-#   - The workflow that calls these lanes (.github/workflows/ios-release.yml)
-#     is workflow_dispatch-only (manual trigger), so nobody runs this by
-#     accident before it's ready.
+#   - The GitHub workflow is manual-only and refuses non-main refs.
+#   - Signing assets must already exist as runner-temporary files.
+#   - TestFlight authentication is accepted only by the upload lane.
+#   - A real signed archive/device run remains an external release gate.
 # ════════════════════════════════════════════════
+
+require "fileutils"
+require "shellwords"
 
 default_platform(:ios)
 
-WORKSPACE_SCHEME = "App"
-XCODE_PROJECT = "App.xcodeproj"
+APP_IDENTIFIER = "com.utahprosrestoration.upr"
+SCHEME = "App"
+IOS_ROOT = File.expand_path("..", __dir__)
+XCODE_PROJECT = File.join(IOS_ROOT, "App", "App.xcodeproj")
+BUILD_DIRECTORY = File.join(IOS_ROOT, "build")
+ARCHIVE_PATH = File.join(BUILD_DIRECTORY, "UPR.xcarchive")
+IPA_PATH = File.join(BUILD_DIRECTORY, "UPR.ipa")
+
+def required_environment!(name)
+  value = ENV[name].to_s.strip
+  UI.user_error!("Missing required environment variable: #{name}") if value.empty?
+  value
+end
+
+def required_file!(name)
+  path = File.expand_path(required_environment!(name))
+  UI.user_error!("#{name} does not point to a readable file") unless File.file?(path)
+  path
+end
+
+def xcode_assignment(name, value)
+  "#{name}=#{Shellwords.escape(value)}"
+end
 
 platform :ios do
-  desc "Import the CI signing certificate + provisioning profile from env vars"
-  private_lane :install_signing_assets do
-    # Inert until APPLE_CERTIFICATE_BASE64 / APPLE_PROVISIONING_PROFILE_BASE64
-    # secrets exist — create_keychain + import_certificate +
-    # install_provisioning_profile is the standard fastlane trio for manual
-    # signing in CI (no `match` git repo required).
-    create_keychain(
-      name: "ios-release.keychain",
-      password: ENV["KEYCHAIN_PASSWORD"] || SecureRandom.hex,
-      default_keychain: true,
-      unlock: true,
-      timeout: 3600
-    )
+  desc "Create a manually signed App Store archive without contacting App Store Connect"
+  lane :archive do
+    team_id = required_environment!("APPLE_TEAM_ID")
+    certificate_path = required_file!("APPLE_CERTIFICATE_PATH")
+    certificate_password = required_environment!("APPLE_CERTIFICATE_PASSWORD")
+    provisioning_profile_path = required_file!("APPLE_PROVISIONING_PROFILE_PATH")
+    provisioning_profile_name = required_environment!("APPLE_PROVISIONING_PROFILE_NAME")
+    keychain_password = required_environment!("KEYCHAIN_PASSWORD")
+    build_number = required_environment!("BUILD_NUMBER")
 
-    import_certificate(
-      certificate_path: ENV["APPLE_CERTIFICATE_PATH"] || "signing_certificate.p12",
-      certificate_password: ENV["APPLE_CERTIFICATE_PASSWORD"],
-      keychain_name: "ios-release.keychain"
-    )
+    run_id = ENV["GITHUB_RUN_ID"].to_s.gsub(/[^0-9A-Za-z_-]/, "")
+    run_id = "local" if run_id.empty?
+    keychain_name = "upr-ios-release-#{run_id}.keychain-db"
+    keychain_created = false
+    installed_profile_path = nil
+    archive_error = nil
 
-    install_provisioning_profile(
-      path: ENV["APPLE_PROVISIONING_PROFILE_PATH"] || "signing_profile.mobileprovision"
-    )
-  end
+    FileUtils.mkdir_p(BUILD_DIRECTORY)
+    FileUtils.rm_f(IPA_PATH)
 
-  desc "Build and archive the App scheme (Release configuration)"
-  lane :build do
-    install_signing_assets
+    signing_settings = [
+      xcode_assignment("DEVELOPMENT_TEAM", team_id),
+      xcode_assignment("CODE_SIGN_STYLE", "Manual"),
+      xcode_assignment("CODE_SIGN_IDENTITY", "Apple Distribution"),
+      xcode_assignment("PROVISIONING_PROFILE_SPECIFIER", provisioning_profile_name),
+      xcode_assignment("CURRENT_PROJECT_VERSION", build_number),
+    ].join(" ")
 
-    increment_build_number(
-      xcodeproj: XCODE_PROJECT,
-      build_number: ENV["BUILD_NUMBER"] || latest_testflight_build_number(
-        app_identifier: CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier)
-      ) + 1
-    )
+    begin
+      create_keychain(
+        name: keychain_name,
+        password: keychain_password,
+        default_keychain: false,
+        unlock: true,
+        timeout: 3600,
+        lock_when_sleeps: true,
+        add_to_search_list: true
+      )
+      keychain_created = true
 
-    build_app(
-      workspace: "App.xcworkspace",
-      scheme: WORKSPACE_SCHEME,
-      configuration: "Release",
-      export_method: "app-store",
-      output_directory: "./build",
-      export_options: {
-        provisioningProfiles: {
-          CredentialsManager::AppfileConfig.try_fetch_value(:app_identifier) =>
-            ENV["APPLE_PROVISIONING_PROFILE_NAME"]
+      import_certificate(
+        certificate_path: certificate_path,
+        certificate_password: certificate_password,
+        keychain_name: keychain_name,
+        keychain_password: keychain_password
+      )
+
+      installed_profile_path = install_provisioning_profile(
+        path: provisioning_profile_path
+      )
+
+      build_app(
+        project: XCODE_PROJECT,
+        scheme: SCHEME,
+        configuration: "Release",
+        clean: true,
+        destination: "generic/platform=iOS",
+        archive_path: ARCHIVE_PATH,
+        derived_data_path: File.join(BUILD_DIRECTORY, "DerivedData"),
+        output_directory: BUILD_DIRECTORY,
+        output_name: File.basename(IPA_PATH),
+        export_method: "app-store",
+        export_team_id: team_id,
+        codesigning_identity: "Apple Distribution",
+        skip_profile_detection: true,
+        disable_package_automatic_updates: true,
+        skip_package_repository_fetches: true,
+        include_symbols: true,
+        xcargs: signing_settings,
+        export_options: {
+          signingStyle: "manual",
+          teamID: team_id,
+          signingCertificate: "Apple Distribution",
+          provisioningProfiles: {
+            APP_IDENTIFIER => provisioning_profile_name
+          }
         }
-      }
-    )
+      )
+
+      UI.user_error!("Expected IPA was not created at #{IPA_PATH}") unless File.file?(IPA_PATH)
+    rescue StandardError => error
+      archive_error = error
+      raise
+    ensure
+      cleanup_error = nil
+
+      if installed_profile_path
+        begin
+          FileUtils.rm_f(installed_profile_path)
+        rescue StandardError => profile_cleanup_error
+          cleanup_error ||= profile_cleanup_error
+          UI.error(
+            "Failed to delete the installed provisioning profile " \
+            "(#{profile_cleanup_error.class})"
+          )
+        end
+      end
+
+      if keychain_created
+        begin
+          delete_keychain(name: keychain_name)
+        rescue StandardError => keychain_cleanup_error
+          cleanup_error ||= keychain_cleanup_error
+          UI.error(
+            "Failed to delete the temporary release keychain " \
+            "(#{keychain_cleanup_error.class})"
+          )
+        end
+      end
+
+      raise cleanup_error if archive_error.nil? && cleanup_error
+    end
   end
 
-  desc "Build, archive, and upload a new build to TestFlight"
-  lane :beta do
-    build
+  desc "Upload an already verified IPA to internal TestFlight"
+  lane :upload do
+    ipa_path = required_file!("IPA_PATH")
+    api_key = app_store_connect_api_key(
+      key_id: required_environment!("ASC_KEY_ID"),
+      issuer_id: required_environment!("ASC_ISSUER_ID"),
+      key_content: required_environment!("ASC_KEY_CONTENT_BASE64"),
+      is_key_content_base64: true,
+      in_house: false
+    )
 
     upload_to_testflight(
-      api_key_path: ENV["ASC_API_KEY_PATH"], # nil is fine — falls back to apple_id/2FA auth
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      ipa: ipa_path,
       skip_waiting_for_build_processing: true,
-      distribute_external: false # internal testers only until distribution model is decided
+      distribute_external: false
     )
   end
 end

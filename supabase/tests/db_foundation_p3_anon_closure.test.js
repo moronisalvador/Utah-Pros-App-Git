@@ -85,8 +85,9 @@ describe.skipIf(!hasCreds)('P3 — allowlisted unauthenticated surfaces stay rea
     expect(Array.isArray(flags)).toBe(true);
   });
 
-  it('login bootstrap: employees lookup is anon-readable (devLogin path)', async () => {
-    // Kept per database-standard §2 ("employee lookup"); dev devLogin reads this
+  it('legacy bootstrap compatibility: employees lookup remains anon-readable', async () => {
+    // Kept per the historical database-standard §2 employee lookup exception;
+    // current application auth no longer exposes an anonymous employee selector.
     // via the anon key against the shared project.
     const rows = await db.select('employees', 'select=id,email,role&limit=1');
     expect(Array.isArray(rows)).toBe(true);

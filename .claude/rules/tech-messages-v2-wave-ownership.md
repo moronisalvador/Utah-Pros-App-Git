@@ -76,8 +76,8 @@ split protects the design budget, not reviewer bandwidth.
 - **Floating release PRs** (e.g. #382): may promote merged flag-off code to prod anytime —
   never merge a phase with the flag seed or EXPLICIT_FLAGS entry missing.
 - **F-red** (sms anon closure): verified — the pane runs authenticated end-to-end
-  (REST + realtime JWT). devLogin realtime testing falsely breaks post-F-red; use a real
-  login. One live re-verify after F-red applies.
+  (REST + realtime JWT). The retired anonymous employee selector is not a valid
+  Realtime test path; use a real authenticated login. Re-verify once after F-red applies.
 
 ## 5. Consent / send seams (reviewer-weighted)
 
@@ -125,3 +125,30 @@ This amendment also owns the narrow newest-message scroll correction and the mat
 locales, and focused tests. It supersedes the prior B2 “new conversation shed” decision only for
 this owner-requested release and does not reopen other stretch items or the global shared-file
 freezes.
+
+## 9. Current-origin mobile-readiness reconciliation amendment (2026-07-27)
+
+The completed initiative's shared-file freeze is superseded only for the active
+`codex/mobile-readiness-current-origin-review` integration and only for these contracts:
+
+- `src/pages/Conversations.jsx`: replace the browser-trusted employee embed with the
+  selector-safe directory contract while preserving the current-origin superseded-failure filter,
+  send path, retry semantics, Realtime reconciliation, and response shapes;
+- `src/App.jsx`, `src/contexts/AuthContext.jsx`, `src/components/TechLayout.jsx`,
+  `src/lib/techQueryPersister.js`, `package.json`, and `package-lock.json`: integrate the bounded
+  PWA/Capacitor route, authenticated account lifecycle, truthful zero-replay UI, owner-scoped
+  persistence, and build/test boundaries without changing Tech Messages consent, send, unread, or
+  pane behavior;
+- `src/pages/tech/v2/messages/useTechConversations.js` and `useThread.js`: consume the
+  selector-safe directory/account contracts while preserving authenticated REST/Realtime,
+  deduplication, consent, and `/api/send-message` behavior; and
+- the checksum-pinned mobile-readiness migrations and tests named in
+  `docs/mobile/s1d-s1g-database-apply-runbook.md` and
+  `docs/mobile/s1h-database-apply-runbook.md`; these are not Tech Messages schema work and every
+  apply remains separately owner-gated.
+
+The mobile integration primary is the sole writer for this amendment. Other Tech Messages or
+mobile sessions must treat these files as frozen until the current-origin review is handed back.
+This amendment does not reopen `functions/api/send-message.js`, the provider/webhook path,
+`src/lib/realtime.js`, consent rules, live sends, feature-flag changes, deployment, or database
+apply.

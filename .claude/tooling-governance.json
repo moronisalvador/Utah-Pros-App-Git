@@ -7,8 +7,8 @@
   },
   "trackedInventory": {
     "asOf": "2026-07-26",
-    "skills": 24,
-    "agents": 15,
+    "skills": 25,
+    "agents": 19,
     "rules": 23,
     "hooks": 4
   },
@@ -16,7 +16,7 @@
     "status": "owner-approved",
     "approvedOn": "2026-07-23",
     "implementedOn": "2026-07-24",
-    "generationStatus": "pilot-active",
+    "generationStatus": "incremental-active",
     "manifest": "tooling/capabilities.json",
     "renderer": "scripts/render-tooling-adapters.mjs",
     "scope": [
@@ -26,7 +26,12 @@
       "new-crm-module",
       "upr-pattern-checker",
       "worker-security-reviewer",
-      "db-foundation-phase-reviewer"
+      "db-foundation-phase-reviewer",
+      "mobile-readiness-wave",
+      "mobile-readiness-mapper",
+      "mobile-readiness-security-reviewer",
+      "mobile-readiness-contract-tester",
+      "mobile-readiness-release-auditor"
     ]
   },
   "requiredFrontmatter": {
@@ -226,6 +231,61 @@
       "riskTier": "red",
       "reviewPolicy": "blocking",
       "triggerDomain": "settings-auth-review",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/skills/mobile-readiness-wave/SKILL.md",
+      "neutralSource": "tooling/skills/mobile-readiness-wave/SKILL.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "red",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "mobile-readiness",
+      "triggerRole": "dispatcher"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-mapper.md",
+      "neutralSource": "tooling/agents/mobile-readiness-mapper.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "advisory",
+      "triggerDomain": "mobile-readiness-mapping",
+      "triggerRole": "specialist"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-security-reviewer.md",
+      "neutralSource": "tooling/agents/mobile-readiness-security-reviewer.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "blocking",
+      "triggerDomain": "mobile-readiness-security",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-contract-tester.md",
+      "neutralSource": "tooling/agents/mobile-readiness-contract-tester.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "amber",
+      "reviewPolicy": "blocking-for-claimed-evidence",
+      "triggerDomain": "mobile-readiness-testing",
+      "triggerRole": "reviewer"
+    },
+    {
+      "path": ".claude/agents/mobile-readiness-release-auditor.md",
+      "neutralSource": "tooling/agents/mobile-readiness-release-auditor.md",
+      "owner": "UPR platform engineering",
+      "provenance": "UPR-authored",
+      "status": "active",
+      "riskTier": "green",
+      "reviewPolicy": "blocking-for-wave-closeout",
+      "triggerDomain": "mobile-readiness-release",
       "triggerRole": "reviewer"
     },
     {

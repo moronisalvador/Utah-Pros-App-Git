@@ -21,16 +21,14 @@
  *   Internal:  @/contexts/AuthContext, @/components/tech/Lightbox,
  *              @/components/tech/PhotoNoteSheet, @/lib/techQuery (techKeys),
  *              @/lib/techDateUtils (fileUrl), @/lib/toast,
- *              @/lib/syncRunnerSingleton, ./hubHelpers (buildDocsQuery)
+ *              ./hubHelpers (buildDocsQuery)
  *   Data:      reads  → job_documents (job-wide, via buildDocsQuery)
  *              writes → job_documents (insert_job_document note; description
  *                        update + move_photo_to_room via PhotoNoteSheet)
  *
  * NOTES / GOTCHAS:
- *   - Docs cache under the ['tech','hub',jobId] prefix so any photo/doc mutation
- *     (or a synced offline photo) repaints them via invalidateTech.
- *   - A sync:item-done listener (photo.upload, keyed to this job) refreshes the
- *     gallery the moment a queued photo finishes uploading — parity with the dock.
+ *   - Docs cache under the ['tech','hub',jobId] prefix so photo/doc mutations
+ *     repaint them via invalidateTech.
  *   - The Lightbox is a frozen shared component with no action slot, so the
  *     "Add note / room" button is rendered as a sibling overlay above it.
  *   - Inline notes tag the SELECTED visit (appointmentId) so they group with it.
@@ -46,7 +44,6 @@ import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { techKeys } from '@/lib/techQuery';
 import { fileUrl } from '@/lib/techDateUtils';
 import { toast } from '@/lib/toast';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 import { buildDocsQuery } from './hubHelpers.js';
 
 const PHOTO_CAP = 12;
@@ -113,17 +110,6 @@ export default function PhotosNotes({ jobId, appointmentId, rooms, onCreateRoom,
     enabled: !!jobId,
   });
   const docs = Array.isArray(docsQuery.data) ? docsQuery.data : [];
-
-  // Reload the gallery when a queued photo for THIS job finishes syncing.
-  useEffect(() => {
-    const runner = getSyncRunner();
-    if (!runner) return undefined;
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (item?.payload?.jobId && item.payload.jobId !== jobId) return;
-      onMutation?.('photo');
-    });
-  }, [jobId, onMutation]);
 
   // Photos: selected-visit first, then the rest, each newest-first (spec order).
   const photos = docs

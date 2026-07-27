@@ -20,7 +20,7 @@
  *   - Pure unit test. No creds needed; runs everywhere.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   resolveAudience,
   dispatchEvent,
@@ -40,19 +40,25 @@ function makeDb(opts = {}) {
   const {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
-    contactsById = {}, webhookSecret = null,
+    contactsById = {}, webhookSecret = null, selectErrorTable = null,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
   return {
     rpcCalls, deletes,
     async select(table, query = '') {
+      if (table === selectErrorTable) throw new Error('read failed');
       if (table === 'notification_types') {
         const m = /type_key=eq\.([^&]+)/.exec(query);
         const t = m && types[m[1]];
         return t ? [t] : [];
       }
       if (table === 'employees') {
+        const authm = /auth_user_id=eq\.([^&]+)/.exec(query);
+        if (authm) {
+          const e = employees.find(x => x.auth_user_id === authm[1]);
+          return e ? [e] : [];
+        }
         const idm = /id=eq\.([^&]+)/.exec(query);
         if (idm) {
           const e = employees.find(x => x.id === idm[1]);
@@ -68,7 +74,9 @@ function makeDb(opts = {}) {
       }
       if (table === 'appointment_crew') {
         const m = /appointment_id=eq\.([^&]+)/.exec(query);
-        return (m && crewByAppt[m[1]]) || [];
+        const employee = /employee_id=eq\.([^&]+)/.exec(query);
+        const crew = (m && crewByAppt[m[1]]) || [];
+        return employee ? crew.filter((row) => row.employee_id === employee[1]) : crew;
       }
       if (table === 'push_subscriptions') {
         const m = /employee_id=eq\.([^&]+)/.exec(query);
@@ -234,6 +242,44 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     const out = await dispatchEvent({ db, env: ENV, typeKey: 'feedback.submitted', body: {}, sendWebPushImpl });
     expect(sends).toEqual(['https://push/1']);
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
+  });
+
+  it('continues fan-out when one push subscription throws and reports the later success', async () => {
+    const sends = [];
+    const sendWebPushImpl = async (sub) => {
+      sends.push(sub.endpoint);
+      if (sub.endpoint.endsWith('/1')) throw new Error('push unavailable');
+      return { ok: true, status: 201 };
+    };
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
+      subsByEmp: {
+        a1: [
+          { id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' },
+          { id: 's2', endpoint: 'https://push/2', p256dh: 'p', auth: 'a' },
+        ],
+      },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {},
+      sendWebPushImpl,
+    });
+
+    expect(sends).toEqual(['https://push/1', 'https://push/2']);
+    expect(out).toMatchObject({
+      type_key: 'feedback.submitted',
+      recipients: 1,
+      results: [{
+        recipient_id: 'a1',
+        push: { sent: 1, attempted: 2, pruned: 0 },
+      }],
+    });
   });
 
   it('prunes a 410 (dead) subscription', async () => {
@@ -442,35 +488,429 @@ describe('enrichEstimateBody', () => {
 });
 
 describe('handleNotify — auth', () => {
-  function req({ auth, secret, body = { type_key: 'feedback.submitted' } } = {}) {
+  const APPOINTMENT_ID = '22222222-2222-4222-8222-222222222222';
+  const EMPLOYEE_ID = '33333333-3333-4333-8333-333333333333';
+  const ESTIMATE_ID = '44444444-4444-4444-8444-444444444444';
+
+  function req({
+    auth,
+    secret,
+    body = { type_key: 'appointment.updated', appointment_id: APPOINTMENT_ID },
+    rawBody,
+  } = {}) {
     const headers = { 'Content-Type': 'application/json' };
     if (auth) headers.Authorization = auth;
-    if (secret) headers['x-webhook-secret'] = secret;
-    return new Request('https://app.test/api/notify', { method: 'POST', headers, body: JSON.stringify(body) });
+    if (secret !== undefined) headers['x-webhook-secret'] = secret;
+    return new Request('https://app.test/api/notify', {
+      method: 'POST',
+      headers,
+      body: rawBody ?? JSON.stringify(body),
+    });
   }
-  const goodFetch = async (url) => String(url).includes('/auth/v1/user') ? { ok: true, status: 200 } : { ok: false, status: 404 };
 
-  it('401 without any credential', async () => {
+  function admin(overrides = {}) {
+    return {
+      id: 'admin-1',
+      auth_user_id: 'user-1',
+      role: 'admin',
+      is_active: true,
+      is_external: false,
+      ...overrides,
+    };
+  }
+
+  function mockAuth({ status = 200 } = {}) {
+    return vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(status === 200 ? JSON.stringify({ id: 'user-1' }) : '', { status }),
+    );
+  }
+
+  function dispatcher(result = { type_key: 'appointment.updated', recipients: 0, results: [] }) {
+    return vi.fn().mockResolvedValue(result);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('preserves 401 without any credential and never dispatches', async () => {
     const db = makeDb({});
-    const res = await handleNotify({ request: req({}), env: ENV, db, fetchImpl: goodFetch });
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({ request: req({}), env: ENV, db, dispatchImpl });
+
     expect(res.status).toBe(401);
+    expect(res.data).toEqual({ error: 'Missing Authorization header' });
+    expect(dispatchImpl).not.toHaveBeenCalled();
   });
 
-  it('accepts a matching x-webhook-secret (trigger call)', async () => {
-    const db = makeDb({ webhookSecret: 'sekret', types: { 'feedback.submitted': { type_key: 'feedback.submitted', label: 'F', enabled: true } }, employees: [] });
-    const res = await handleNotify({ request: req({ secret: 'sekret' }), env: ENV, db, fetchImpl: goodFetch });
-    expect(res.status).toBe(200);
+  it('fails closed when Auth configuration is absent', async () => {
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: {},
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 500, data: { error: 'Auth not configured' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
   });
 
-  it('rejects a wrong x-webhook-secret', async () => {
+  it('fails closed when the Auth service is unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'));
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 502, data: { error: 'Auth check failed' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('preserves invalid-session 401 and never dispatches', async () => {
+    mockAuth({ status: 401 });
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 401, data: { error: 'Invalid or expired token' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing employee', []],
+    ['inactive admin', [admin({ is_active: false })]],
+    ['external admin', [admin({ is_external: true })]],
+    ['denied office role', [admin({ role: 'office' })]],
+  ])('denies a %s before dispatch or provider fan-out', async (_label, employees) => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db: makeDb({ employees }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 403, data: { error: 'Forbidden' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the employee lookup fails', async () => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db: makeDb({ employees: [admin()], selectErrorTable: 'employees' }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 500, data: { error: 'Employee lookup failed' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('accepts the exact webhook secret and preserves its full deployed payload', async () => {
+    const body = {
+      type_key: 'timesheet.change_requested',
+      recipient_ids: ['employee-9'],
+      title: 'Server-derived title',
+      body: 'Server-derived body',
+      link: '/time-tracking',
+    };
+    const dispatchImpl = dispatcher({ type_key: body.type_key, recipients: 1, results: [] });
     const db = makeDb({ webhookSecret: 'sekret' });
-    const res = await handleNotify({ request: req({ secret: 'nope' }), env: ENV, db, fetchImpl: goodFetch });
-    expect(res.status).toBe(401);
+    const res = await handleNotify({
+      request: req({ secret: 'sekret', body }),
+      env: ENV,
+      db,
+      dispatchImpl,
+    });
+
+    expect(res.status).toBe(200);
+    expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
+      typeKey: body.type_key,
+      body,
+    }));
   });
 
-  it('accepts a valid Bearer token', async () => {
-    const db = makeDb({ types: { 'feedback.submitted': { type_key: 'feedback.submitted', label: 'F', enabled: true } }, employees: [] });
-    const res = await handleNotify({ request: req({ auth: 'Bearer tok' }), env: ENV, db, fetchImpl: goodFetch });
+  it('lets a matching secret bypass an expired Bearer without an Auth request', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ secret: 'sekret', auth: 'Bearer expired' }),
+      env: ENV,
+      db: makeDb({ webhookSecret: 'sekret' }),
+      dispatchImpl,
+    });
+
     expect(res.status).toBe(200);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(dispatchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a wrong webhook secret before a valid admin Bearer can fall through', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const db = makeDb({ webhookSecret: 'sekret' });
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ secret: 'nope', auth: 'Bearer tok' }),
+      env: ENV,
+      db,
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 401, data: { error: 'Invalid webhook secret' } });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty webhook secret before a valid admin Bearer can fall through', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const db = makeDb({ webhookSecret: 'sekret' });
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ secret: '', auth: 'Bearer tok' }),
+      env: ENV,
+      db,
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 401, data: { error: 'Invalid webhook secret' } });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('keeps a supplied secret fail-closed when its expected configuration is absent', async () => {
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ secret: 'sekret' }),
+      env: ENV,
+      db: makeDb({}),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 401, data: { error: 'Invalid webhook secret' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('preserves invalid JSON and missing type_key responses for an approved admin', async () => {
+    mockAuth();
+    const db = makeDb({ employees: [admin()] });
+    const invalidDispatch = dispatcher();
+    const invalid = await handleNotify({
+      request: req({ auth: 'Bearer tok', rawBody: '{' }),
+      env: ENV,
+      db,
+      dispatchImpl: invalidDispatch,
+    });
+    expect(invalid).toEqual({ status: 400, data: { error: 'Invalid JSON body' } });
+    expect(invalidDispatch).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+    mockAuth();
+    const missingDispatch = dispatcher();
+    const missing = await handleNotify({
+      request: req({ auth: 'Bearer tok', body: {} }),
+      env: ENV,
+      db,
+      dispatchImpl: missingDispatch,
+    });
+    expect(missing).toEqual({ status: 400, data: { error: 'type_key is required' } });
+    expect(missingDispatch).not.toHaveBeenCalled();
+  });
+
+  it('allows an approved admin event and passes only its server-derived object scope', async () => {
+    mockAuth();
+    const expected = { type_key: 'appointment.updated', recipients: 2, results: [] };
+    const dispatchImpl = dispatcher(expected);
+    const db = makeDb({
+      employees: [admin()],
+      apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
+    });
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db,
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 200, data: expected });
+    expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
+      typeKey: 'appointment.updated',
+      body: { appointment_id: APPOINTMENT_ID },
+    }));
+  });
+
+  it.each([
+    [
+      'assigned appointment',
+      {
+        type_key: 'appointment.assigned',
+        appointment_id: APPOINTMENT_ID,
+        employee_id: EMPLOYEE_ID,
+      },
+      { crewByAppt: { [APPOINTMENT_ID]: [{ appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID }] } },
+      { appointment_id: APPOINTMENT_ID, employee_id: EMPLOYEE_ID },
+    ],
+    [
+      'canceled appointment',
+      { type_key: 'appointment.canceled', appointment_id: APPOINTMENT_ID },
+      { apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'cancelled' } } },
+      { appointment_id: APPOINTMENT_ID },
+    ],
+    [
+      'accepted estimate',
+      { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+      { estimatesById: { [ESTIMATE_ID]: { id: ESTIMATE_ID, status: 'approved' } } },
+      { estimate_id: ESTIMATE_ID },
+    ],
+  ])('allows an approved admin %s event after exact object proof', async (_label, body, scope, expectedBody) => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok', body }),
+      env: ENV,
+      db: makeDb({ employees: [admin()], ...scope }),
+      dispatchImpl,
+    });
+
+    expect(res.status).toBe(200);
+    expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({
+      typeKey: body.type_key,
+      body: expectedBody,
+    }));
+  });
+
+  it('rejects unsupported human event types before dispatch', async () => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: 'payment.received', payment_id: ESTIMATE_ID },
+      }),
+      env: ENV,
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({
+      status: 400,
+      data: { error: 'Unsupported type_key for Bearer dispatch' },
+    });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects forged recipients, message copy and links before dispatch', async () => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: {
+          type_key: 'appointment.updated',
+          appointment_id: APPOINTMENT_ID,
+          recipient_ids: [EMPLOYEE_ID],
+          title: 'Forged',
+          body: 'Forged',
+          link: 'https://example.test',
+        },
+      }),
+      env: ENV,
+      db: makeDb({ employees: [admin()] }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({
+      status: 400,
+      data: { error: 'Unsupported fields for Bearer dispatch' },
+    });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('requires appointment assignment membership before dispatch', async () => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: {
+          type_key: 'appointment.assigned',
+          appointment_id: APPOINTMENT_ID,
+          employee_id: EMPLOYEE_ID,
+        },
+      }),
+      env: ENV,
+      db: makeDb({ employees: [admin()], crewByAppt: { [APPOINTMENT_ID]: [] } }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({ status: 404, data: { error: 'Notification object not found' } });
+    expect(dispatchImpl).not.toHaveBeenCalled();
+  });
+
+  it('requires the deployed object state for canceled appointments and accepted estimates', async () => {
+    mockAuth();
+    const canceledDispatch = dispatcher();
+    const canceled = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: 'appointment.canceled', appointment_id: APPOINTMENT_ID },
+      }),
+      env: ENV,
+      db: makeDb({
+        employees: [admin()],
+        apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
+      }),
+      dispatchImpl: canceledDispatch,
+    });
+    expect(canceled).toEqual({ status: 404, data: { error: 'Notification object not found' } });
+    expect(canceledDispatch).not.toHaveBeenCalled();
+
+    vi.restoreAllMocks();
+    mockAuth();
+    const estimateDispatch = dispatcher();
+    const estimate = await handleNotify({
+      request: req({
+        auth: 'Bearer tok',
+        body: { type_key: 'estimate.accepted', estimate_id: ESTIMATE_ID },
+      }),
+      env: ENV,
+      db: makeDb({
+        employees: [admin()],
+        estimatesById: { [ESTIMATE_ID]: { id: ESTIMATE_ID, status: 'draft' } },
+      }),
+      dispatchImpl: estimateDispatch,
+    });
+    expect(estimate).toEqual({ status: 404, data: { error: 'Notification object not found' } });
+    expect(estimateDispatch).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on an object-scope lookup error before dispatch', async () => {
+    mockAuth();
+    const dispatchImpl = dispatcher();
+    const res = await handleNotify({
+      request: req({ auth: 'Bearer tok' }),
+      env: ENV,
+      db: makeDb({
+        employees: [admin()],
+        selectErrorTable: 'appointments',
+      }),
+      dispatchImpl,
+    });
+
+    expect(res).toEqual({
+      status: 500,
+      data: { error: 'Notification object lookup failed' },
+    });
+    expect(dispatchImpl).not.toHaveBeenCalled();
   });
 });

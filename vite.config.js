@@ -16,7 +16,9 @@
  *
  * DEPENDS ON:
  *   Packages:  vite, @vitejs/plugin-react, node:child_process, node:path, node:fs
- *   Internal:  ../.env.local of the MAIN checkout (read, never written)
+ *   Internal:  ../.env.local of the MAIN checkout (read, never written),
+ *              scripts/native-bundle-boundary.mjs, src/routes/buildTargetPages.*,
+ *              src/routes/nativeAdminMobileShim.js
  *
  * NOTES / GOTCHAS:
  *   - `/api/*` proxies to :8788, which is only alive if the separate
@@ -24,14 +26,22 @@
  *     worker call silently network-errors (documented in CLAUDE.md).
  *   - The envDir lookup is best-effort: if git is unavailable or this is not a
  *     worktree it falls back to this directory, i.e. Vite's default behavior.
+ *   - Native builds resolve a separate page registry and fail if their completed
+ *     module graph contains a web-only page or implementation subtree.
  * ════════════════════════════════════════════════
  */
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import fs from 'fs'
+import process from 'node:process'
 import { execFileSync } from 'child_process'
 import { fileURLToPath } from 'url'
+
+import {
+  assertNativeBundleBoundary,
+  resolveBuildTarget,
+} from './scripts/native-bundle-boundary.mjs'
 
 // This config is ESM, so `__dirname` does not exist at runtime — it only worked
 // before because Vite transpiles the config file. Deriving it from import.meta
@@ -75,24 +85,93 @@ function resolveEnvDir(here) {
   return here
 }
 
-export default defineConfig({
-  envDir: resolveEnvDir(rootDir),
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(rootDir, './src'),
+function nativeBundleBoundaryPlugin(repositoryRoot) {
+  return {
+    name: 'upr-native-bundle-boundary',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const moduleRecords = []
+      for (const [chunk, output] of Object.entries(bundle)) {
+        if (output.type !== 'chunk') continue
+        for (const id of Object.keys(output.modules)) {
+          moduleRecords.push({ id, chunk })
+        }
+      }
+      assertNativeBundleBoundary(moduleRecords, repositoryRoot)
     },
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: false,
-  },
-  server: {
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8788',
-        changeOrigin: true,
+  }
+}
+
+export default defineConfig(({ command, mode }) => {
+  const envDir = resolveEnvDir(rootDir)
+  const loadedEnv = loadEnv(mode, envDir, '')
+  const buildTarget = resolveBuildTarget(
+    process.env.VITE_BUILD_TARGET || loadedEnv.VITE_BUILD_TARGET,
+  )
+  const releaseSha = process.env.VITE_RELEASE_SHA
+    || process.env.CF_PAGES_COMMIT_SHA
+    || process.env.GITHUB_SHA
+    || loadedEnv.VITE_RELEASE_SHA
+    || ''
+  const governedRelease = command === 'build' && (
+    process.env.GITHUB_ACTIONS === 'true'
+    || process.env.CF_PAGES === '1'
+    || process.env.CI === 'true'
+  )
+
+  if (governedRelease && !releaseSha) {
+    throw new Error(
+      'Governed release build refused: inject VITE_RELEASE_SHA, '
+      + 'CF_PAGES_COMMIT_SHA, or GITHUB_SHA.',
+    )
+  }
+
+  return {
+    envDir,
+    define: {
+      'import.meta.env.VITE_BUILD_TARGET': JSON.stringify(buildTarget),
+      ...(releaseSha
+        ? {
+          'import.meta.env.VITE_RELEASE_SHA': JSON.stringify(releaseSha),
+        }
+        : {}),
+    },
+    plugins: [
+      react(),
+      ...(buildTarget === 'native' ? [nativeBundleBoundaryPlugin(rootDir)] : []),
+    ],
+    resolve: {
+      alias: [
+        {
+          find: '@/routes/buildTargetPages',
+          replacement: path.resolve(
+            rootDir,
+            `./src/routes/buildTargetPages.${buildTarget}.jsx`,
+          ),
+        },
+        ...(buildTarget === 'native'
+          ? [{
+            find: /^@\/components\/admin-mobile(?:\/href)?$/,
+            replacement: path.resolve(rootDir, './src/routes/nativeAdminMobileShim.js'),
+          }]
+          : []),
+        {
+          find: '@',
+          replacement: path.resolve(rootDir, './src'),
+        },
+      ],
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: false,
+    },
+    server: {
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8788',
+          changeOrigin: true,
+        },
       },
     },
-  },
+  }
 })

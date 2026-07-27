@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { getAuthHeader } from '@/lib/realtime';
 import CarrierSelect, { OOP_VALUE } from '@/components/CarrierSelect';
 import PullToRefresh from '@/components/PullToRefresh';
@@ -72,7 +73,7 @@ export default function JobPage(){
       const[jobsData,phasesData,empsData,docsData,notesData,histData]=await Promise.all([
         db.select('jobs',`id=eq.${jobId}`),
         db.select('job_phases','is_active=eq.true&order=display_order.asc'),
-        db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,display_name,role'),
+        loadEmployeeDirectory(db),
         db.select('job_documents',`job_id=eq.${jobId}&order=created_at.desc`).catch(()=>[]),
         db.select('job_notes',`job_id=eq.${jobId}&order=created_at.desc`).catch(()=>[]),
         db.select('job_phase_history',`job_id=eq.${jobId}&order=changed_at.desc&limit=50`).catch(()=>[]),

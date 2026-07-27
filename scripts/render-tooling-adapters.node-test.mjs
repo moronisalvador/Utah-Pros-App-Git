@@ -3,7 +3,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves neutral capability sources generate repeatable Claude Code and Codex adapter files and
- *   that a manual adapter edit is detected as drift.
+ *   that a manual adapter edit is detected as drift. It also preserves deliberately different
+ *   runtime model, effort, turn-cap, and sandbox settings without putting them in shared prose.
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins only
@@ -58,7 +59,17 @@ function makeFixture() {
           source: 'tooling/agents/reviewer.md',
           claudeOutput: '.claude/agents/reviewer.md',
           codexOutput: '.codex/agents/reviewer.toml',
-          claude: { tools: 'Read', model: 'inherit' },
+          claude: {
+            tools: 'Read',
+            model: 'inherit',
+            effort: 'medium',
+            maxTurns: 12,
+          },
+          codex: {
+            model: 'fixture-model',
+            modelReasoningEffort: 'high',
+            sandboxMode: 'read-only',
+          },
         },
       ],
     }),
@@ -83,6 +94,21 @@ test('renders equivalent discoverable adapters and Codex UI metadata', () => {
     'utf8',
   );
   assert.match(ui, /default_prompt: "Use \$sample/);
+
+  const claudeAgent = fs.readFileSync(
+    path.join(root, '.claude', 'agents', 'reviewer.md'),
+    'utf8',
+  );
+  assert.match(claudeAgent, /^effort: medium$/m);
+  assert.match(claudeAgent, /^maxTurns: 12$/m);
+
+  const codexAgent = fs.readFileSync(
+    path.join(root, '.codex', 'agents', 'reviewer.toml'),
+    'utf8',
+  );
+  assert.match(codexAgent, /^model = "fixture-model"$/m);
+  assert.match(codexAgent, /^model_reasoning_effort = "high"$/m);
+  assert.match(codexAgent, /^sandbox_mode = "read-only"$/m);
 });
 
 test('detects manual adapter drift without rewriting it', () => {
@@ -133,4 +159,70 @@ test('modelInvocable: false emits the human-only gate in both runtimes; default 
     claudeGated.split('\n---\n').slice(1).join('\n---\n'),
     gated.get(CODEX_SKILL).split('\n---\n').slice(1).join('\n---\n'),
   );
+});
+
+test('rejects a non-positive Claude turn cap instead of generating ambiguous metadata', () => {
+  const root = makeFixture();
+  const manifest = loadCapabilityManifest(root);
+  manifest.agents[0].claude.maxTurns = 0;
+  assert.throws(
+    () => expectedAdapterFiles(root, manifest),
+    /claude\.maxTurns must be a positive integer/,
+  );
+});
+
+test('mobile readiness uses the neutral pipeline with preserved models, effort, and sandboxes', () => {
+  const root = path.resolve('.');
+  const manifest = loadCapabilityManifest(root);
+  const expected = expectedAdapterFiles(root, manifest);
+  const skill = manifest.skills.find((entry) => entry.name === 'mobile-readiness-wave');
+  const agents = new Map(
+    manifest.agents
+      .filter((entry) => entry.name.startsWith('mobile-readiness-'))
+      .map((entry) => [entry.name, entry]),
+  );
+
+  assert.equal(skill.source, 'tooling/skills/mobile-readiness-wave/SKILL.md');
+  assert.equal(skill.riskTier, 'red');
+  assert.equal(skill.modelInvocable, true);
+  assert.equal(agents.size, 4);
+  assert.equal(agents.get('mobile-readiness-mapper').riskTier, 'green');
+  assert.equal(agents.get('mobile-readiness-security-reviewer').riskTier, 'green');
+  assert.equal(agents.get('mobile-readiness-contract-tester').riskTier, 'amber');
+  assert.equal(agents.get('mobile-readiness-release-auditor').riskTier, 'green');
+
+  const mapperClaude = expected.get('.claude/agents/mobile-readiness-mapper.md');
+  const mapperCodex = expected.get('.codex/agents/mobile-readiness-mapper.toml');
+  const securityCodex = expected.get(
+    '.codex/agents/mobile-readiness-security-reviewer.toml',
+  );
+  const testerCodex = expected.get('.codex/agents/mobile-readiness-contract-tester.toml');
+  const releaseCodex = expected.get('.codex/agents/mobile-readiness-release-auditor.toml');
+  const skillUi = expected.get(
+    '.agents/skills/mobile-readiness-wave/agents/openai.yaml',
+  );
+
+  assert.match(mapperClaude, /^model: haiku$/m);
+  assert.match(mapperClaude, /^effort: medium$/m);
+  assert.match(mapperClaude, /^maxTurns: 14$/m);
+  assert.match(mapperCodex, /^model = "gpt-5\.6-terra"$/m);
+  assert.match(mapperCodex, /^model_reasoning_effort = "medium"$/m);
+  assert.match(mapperCodex, /^sandbox_mode = "read-only"$/m);
+  assert.match(securityCodex, /^model = "gpt-5\.6-sol"$/m);
+  assert.match(securityCodex, /^sandbox_mode = "read-only"$/m);
+  assert.match(testerCodex, /^model = "gpt-5\.6-terra"$/m);
+  assert.match(testerCodex, /^sandbox_mode = "workspace-write"$/m);
+  assert.match(releaseCodex, /^model = "gpt-5\.6-sol"$/m);
+  assert.match(releaseCodex, /^sandbox_mode = "read-only"$/m);
+  assert.match(releaseCodex, /Never edit, deploy, apply/);
+  assert.match(skillUi, /allow_implicit_invocation: true/);
+
+  for (const entry of agents.values()) {
+    const claude = expected.get(entry.claudeOutput);
+    const codex = expected.get(entry.codexOutput);
+    assert.match(claude, new RegExp(`^maxTurns: ${entry.claude.maxTurns}$`, 'm'));
+    assert.doesNotMatch(codex, /^max_turns\s*=/m);
+    assert.match(claude, /GENERATED from tooling\/agents\/mobile-readiness-/);
+    assert.match(codex, /GENERATED from tooling\/agents\/mobile-readiness-/);
+  }
 });

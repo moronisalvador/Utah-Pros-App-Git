@@ -22,8 +22,8 @@
  *              @/lib/psychrometric (calcGPP, calcDewPoint)
  *   Data:      reads  → none
  *              writes → none directly — the parent's onSave callback performs
- *                        the insert_reading RPC (writes moisture_readings), or
- *                        queues it offline; onCreateRoom performs the room RPC
+ *                        the insert_reading RPC (writes moisture_readings) only
+ *                        while online; onCreateRoom performs the room RPC
  *
  * NOTES / GOTCHAS:
  *   - When defaultRoomId is provided, step 1 (room picker) is skipped and the

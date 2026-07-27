@@ -4,13 +4,10 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the pure CallRail helpers turn a REAL webhook delivery into the
- *   right database fields. This fixture is the actual payload CallRail POSTed
- *   for a live call (captured from inbound_leads.raw_payload) — the exact thing
- *   that was missing when the webhook mapping was first written by guesswork.
- *   It locks in the two facts a live delivery taught us: CallRail's webhook is
- *   FORM-ENCODED (so every value is a string) and the call id lives under
- *   `resource_id` (there is no top-level `id`).
+ *   Proves the pure CallRail helpers turn a synthetic, format-preserving
+ *   webhook delivery into the right database fields. It locks in the expected
+ *   form-encoded string values and the `resource_id` call identity shape
+ *   without retaining provider or customer data.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -33,19 +30,19 @@ import {
   shouldAutoTranscribe,
 } from './callrail.js';
 
-// The real, form-decoded payload for a live inbound call (subset of the ~110
-// keys CallRail sends — the ones the mapper reads). Every value is a string
-// because the body was `application/x-www-form-urlencoded`.
-const REAL_WEBHOOK_CALL = {
-  resource_id: 'CAL019f1f8307a974abb2d5698dbb3b2eb5',
-  customer_phone_number: '+13853145700',
-  tracking_phone_number: '+13854557025',
+// Synthetic, form-decoded payload matching the CallRail field formats the
+// mapper reads. Every value is a string because the body is
+// `application/x-www-form-urlencoded`.
+const SYNTHETIC_WEBHOOK_CALL = {
+  resource_id: 'CAL0000000000000000000000000000FAKE',
+  customer_phone_number: '+12025550101',
+  tracking_phone_number: '+12025550102',
   duration: '20',
-  start_time: '2026-07-01T15:08:28.637-06:00',
+  start_time: '2026-01-15T10:30:00.000-07:00',
   recording:
-    'https://app.callrail.com/calls/CAL019f1f8307a974abb2d5698dbb3b2eb5/recording/redirect?access_key=08abe68183326850345e',
-  source: 'Google Ads',
-  medium: 'CPC',
+    'https://app.callrail.com/calls/CAL0000000000000000000000000000FAKE/recording/redirect?access_key=fake',
+  source: 'Synthetic Source',
+  medium: 'Synthetic Medium',
   campaign: '',
   direction: 'inbound',
   lead_status: '',
@@ -55,8 +52,8 @@ const REAL_WEBHOOK_CALL = {
 };
 
 describe('pickCallId', () => {
-  it('uses resource_id when there is no top-level id (real CallRail webhook)', () => {
-    expect(pickCallId(REAL_WEBHOOK_CALL)).toBe('CAL019f1f8307a974abb2d5698dbb3b2eb5');
+  it('uses resource_id when there is no top-level id', () => {
+    expect(pickCallId(SYNTHETIC_WEBHOOK_CALL)).toBe('CAL0000000000000000000000000000FAKE');
   });
 
   it('prefers an explicit id when present', () => {
@@ -85,15 +82,15 @@ describe('boolish', () => {
   });
 });
 
-describe('mapCallPayload (real webhook fixture)', () => {
-  const p = mapCallPayload(REAL_WEBHOOK_CALL);
+describe('mapCallPayload (synthetic webhook fixture)', () => {
+  const p = mapCallPayload(SYNTHETIC_WEBHOOK_CALL);
 
   it('extracts the call id from resource_id', () => {
-    expect(p.p_callrail_id).toBe('CAL019f1f8307a974abb2d5698dbb3b2eb5');
+    expect(p.p_callrail_id).toBe('CAL0000000000000000000000000000FAKE');
   });
   it('maps caller and tracking numbers', () => {
-    expect(p.p_caller_number).toBe('+13853145700');
-    expect(p.p_tracking_number).toBe('+13854557025');
+    expect(p.p_caller_number).toBe('+12025550101');
+    expect(p.p_tracking_number).toBe('+12025550102');
   });
   it('coerces duration to a number', () => {
     expect(p.p_duration_sec).toBe(20);
@@ -102,8 +99,23 @@ describe('mapCallPayload (real webhook fixture)', () => {
     expect(p.p_spam_flag).toBe(false);
   });
   it('maps source and medium', () => {
-    expect(p.p_source).toBe('Google Ads');
-    expect(p.p_medium).toBe('CPC');
+    expect(p.p_source).toBe('Synthetic Source');
+    expect(p.p_medium).toBe('Synthetic Medium');
+  });
+
+  it('keeps the source parameter but removes recording capabilities from raw history', () => {
+    expect(p.p_recording_url).toBe(SYNTHETIC_WEBHOOK_CALL.recording);
+    expect(p.p_raw_payload).not.toHaveProperty('recording');
+    expect(p.p_raw_payload).not.toHaveProperty('recording_url');
+    expect(p.p_raw_payload.resource_id).toBe(SYNTHETIC_WEBHOOK_CALL.resource_id);
+  });
+
+  it('removes nested recording capability keys without dropping sibling history', () => {
+    const nested = mapCallPayload({
+      ...SYNTHETIC_WEBHOOK_CALL,
+      call: { recording_url: 'https://example.test/private', disposition: 'answered' },
+    });
+    expect(nested.p_raw_payload.call).toEqual({ disposition: 'answered' });
   });
   it('nulls empty campaign / value / transcription and defaults lead_status', () => {
     expect(p.p_campaign).toBeNull();
@@ -112,8 +124,8 @@ describe('mapCallPayload (real webhook fixture)', () => {
     expect(p.p_lead_status).toBe('new');
   });
   it('carries the recording URL and occurred_at through', () => {
-    expect(p.p_recording_url).toBe(REAL_WEBHOOK_CALL.recording);
-    expect(p.p_occurred_at).toBe('2026-07-01T15:08:28.637-06:00');
+    expect(p.p_recording_url).toBe(SYNTHETIC_WEBHOOK_CALL.recording);
+    expect(p.p_occurred_at).toBe('2026-01-15T10:30:00.000-07:00');
     expect(p.p_source_type).toBe('call');
   });
 });

@@ -20,7 +20,7 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db)
  *   Data:      reads  → contacts (export), crm_import_batches (recent imports),
- *                       employees (owner picker, via get_all_employees) ·
+ *                       employees (owner picker, via get_employee_directory) ·
  *              writes → contacts + crm_import_batches (via import_contacts RPC)
  *
  * NOTES / GOTCHAS:
@@ -33,6 +33,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
@@ -139,7 +140,7 @@ export default function ImportExportPanel() {
 
   const loadEmployees = useCallback(async () => {
     try {
-      const rows = await db.rpc('get_all_employees');
+      const rows = await loadEmployeeDirectory(db);
       setEmployees((rows || []).filter(e => e.is_active !== false));
     } catch { /* owner picker just stays empty */ }
   }, [db]);

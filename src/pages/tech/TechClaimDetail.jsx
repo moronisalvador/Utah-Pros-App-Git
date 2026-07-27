@@ -24,8 +24,7 @@
  *              @/components/tech/ActionBar, @/components/tech/NowNextTile,
  *              @/components/tech/PhotosGroup, @/components/tech/Lightbox,
  *              @/components/tech/DetailRow, @/components/tech/RoomCard,
- *              @/components/tech/AddRoomSheet, @/lib/techDateUtils,
- *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *              @/components/tech/AddRoomSheet, @/lib/techDateUtils
  *   Data:      All access goes through the db client from useAuth (RPC + REST),
  *              never raw .from(). Tables below come from the RPC Data-Flow
  *              Reference in UPR-Web-Context.md (not guessed):
@@ -41,14 +40,10 @@
  *                        'deleted'); job-files storage bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
- *   - Photos have two upload paths: an offline-queue path (gated by the
- *     'offline:queue' feature flag — stores the blob in IndexedDB and enqueues
- *     a sync job) and the default inline path (uploads to Storage, then records
- *     it via insert_job_document). Snap-first: never blocks the camera flow.
+ *   - Photo upload is online-only because Storage plus document metadata has no
+ *     idempotent replay fence. No photo bytes are persisted to the offline queue.
  *   - The Rooms grid is feature-gated behind the 'page:tech_rooms' flag; when
  *     off, get_claim_rooms is skipped entirely.
- *   - When the offline queue is on, a sync listener reloads the page once a
- *     queued photo for one of THIS claim's jobs finishes uploading.
  *   - "Delete claim" is a soft delete (status → 'deleted'), gated to admins /
  *     managers, and requires typing the word DELETE to confirm.
  *   - JobTile is a sub-component defined in this same file (claim-specific —
@@ -76,9 +71,7 @@ import DetailRow from '@/components/tech/DetailRow';
 import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { savePhotoBlob } from '@/lib/offlineDb';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
+import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -202,8 +195,6 @@ export default function TechClaimDetail() {
   const { claimId } = useParams();
   const navigate = useNavigate();
   const { db, employee, isFeatureEnabled } = useAuth();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
 
   const [detail, setDetail] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -294,7 +285,7 @@ export default function TechClaimDetail() {
       p_claim_id: claimId,
       p_name: name,
       p_created_by: employee?.id || null,
-      p_client_id: crypto?.randomUUID?.() || null,
+      p_client_id: createOfflineOperationId(),
     });
     const r = await db.rpc('get_claim_rooms', { p_claim_id: claimId });
     setRooms(r || []);
@@ -320,45 +311,14 @@ export default function TechClaimDetail() {
     if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
     if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
-    // ── Offline-queue path (gated) ────────────────────────────────────────
-    if (offlineQueueEnabled) {
-      try {
-        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
-        await savePhotoBlob(clientId, {
-          blob: file,
-          mimeType: file.type,
-          name: file.name,
-          jobId,
-          appointmentId: null,
-          uploadedBy: employee?.id || null,
-          roomId: null,
-          description: null,
-        });
-        await enqueue({
-          type: 'photo.upload',
-          clientId,
-          payload: {
-            clientId,
-            jobId,
-            appointmentId: null,
-            roomId: null,
-            description: null,
-            name: file.name,
-          },
-        });
-        impact('light');
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast(t('tech:toast.photoQueued'), 'success');
-        } else {
-          toast(t('tech:toast.photoUploading'));
-        }
-      } catch (err) {
-        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
-      }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
       return;
     }
 
-    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -386,20 +346,7 @@ export default function TechClaimDetail() {
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, load, offlineQueueEnabled, enqueue, t]);
-
-  // Reload when a queued photo for one of this claim's jobs finishes syncing.
-  useEffect(() => {
-    if (!offlineQueueEnabled) return;
-    const runner = getSyncRunner();
-    if (!runner) return;
-    const jobIds = new Set((detail?.jobs || []).map(j => j.id));
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (!jobIds.has(item?.payload?.jobId)) return;
-      load();
-    });
-  }, [offlineQueueEnabled, detail?.jobs, load]);
+  }, [db, employee?.id, load, t]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];

@@ -39,6 +39,27 @@
       "expectedSupporting": []
     },
     {
+      "id": "mobile-readiness-primary",
+      "prompt": "Continue UPR Mobile Production Readiness with the next bounded PWA and Capacitor authorization wave.",
+      "expectedPrimary": "mobile-readiness-wave",
+      "expectedSupporting": [
+        "mobile-readiness-mapper",
+        "mobile-readiness-security-reviewer",
+        "mobile-readiness-contract-tester",
+        "mobile-readiness-release-auditor"
+      ]
+    },
+    {
+      "id": "mobile-readiness-database-slice",
+      "prompt": "Contain the next MOB-SEC authorization finding with a compatibility-safe migration and mobile caller proof.",
+      "expectedPrimary": "mobile-readiness-wave",
+      "expectedSupporting": [
+        "db-migration",
+        "migration-safety-checker",
+        "anon-grant-auditor"
+      ]
+    },
+    {
       "id": "feature-with-database-part",
       "prompt": "Build a customer preference feature that also needs one additive table.",
       "expectedPrimary": "new-feature",
@@ -66,6 +87,12 @@
       "id": "trivial-copy-edit",
       "prompt": "Fix the typo in this button label and nothing else.",
       "expectedPrimary": null,
+      "expectedSupporting": []
+    },
+    {
+      "id": "ordinary-responsive-feature",
+      "prompt": "Improve the Jobs filter layout at 390px; this is not part of the mobile-readiness audit.",
+      "expectedPrimary": "new-feature",
       "expectedSupporting": []
     },
     {

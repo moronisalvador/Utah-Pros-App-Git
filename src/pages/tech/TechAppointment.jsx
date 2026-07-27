@@ -27,8 +27,7 @@
  *              @/components/tech/MaterialIcon,
  *              @/components/tech/GenerateReportButton, ./techConstants,
  *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/lib/nativeAppearance, @/hooks/useOfflineQueue, @/lib/offlineDb,
- *              @/lib/syncRunnerSingleton
+ *              @/lib/nativeAppearance, @/lib/offlineOperationId
  *   Data:      All access goes through the db client from useAuth (RPC + REST),
  *              never raw .from(). Tables below were resolved from each RPC's
  *              SQL definition (not guessed):
@@ -47,19 +46,16 @@
  *                        bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
- *   - Photos have two upload paths: an offline-queue path (gated by the
- *     'offline:queue' feature flag — stores the blob in IndexedDB and enqueues a
- *     sync job) and the default inline path (uploads to Storage, then records it
- *     via insert_job_document). Snap-first: never blocks the camera flow.
+ *   - Photo upload is online-only because Storage plus document metadata has no
+ *     idempotent replay fence. No photo bytes are persisted to the offline queue.
  *   - The doc gallery is fetched by appointment_id OR job_id so older photos and
  *     notes saved before appointment tagging existed still show up.
  *   - Whole Moisture/Equipment/Report sections are feature-gated
  *     ('page:tech_moisture', 'page:tech_equipment', plus 'page:tech_rooms' for
  *     room tagging). The reading/equipment sheets are mounted unconditionally so
  *     flipping a flag on does not require a remount; they self-gate on `open`.
- *   - When the offline queue is on, save handlers enqueue work instead of calling
- *     the RPC directly, and a sync:item-done listener reloads the matching
- *     section when that queued item finishes uploading.
+ *   - Reading insertion, equipment placement, and equipment removal are
+ *     online-only for the initial production release.
  *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
  *     after 3s) — no modal or native confirm dialog.
  *   - The hero banner uses light text, so the screen forces a light status bar on
@@ -86,9 +82,7 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { savePhotoBlob } from '@/lib/offlineDb';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
+import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 export default function TechAppointment() {
   // ─── SECTION: State & hooks ──────────────
@@ -96,8 +90,6 @@ export default function TechAppointment() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { employee, db, isFeatureEnabled } = useAuth();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const [appt, setAppt] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -188,46 +180,14 @@ export default function TechAppointment() {
     if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
     const job = appt.jobs;
 
-    // ── Offline-queue path (gated by offline:queue flag) ─────────────────
-    // Store the blob in IDB + enqueue. The sync runner drains immediately
-    // when online; otherwise it waits for the next connectivity event.
-    // A sync:item-done listener below reloads the gallery on success.
-    if (offlineQueueEnabled) {
-      try {
-        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
-        await savePhotoBlob(clientId, {
-          blob: file,
-          mimeType: file.type,
-          name: file.name,
-          jobId: job.id,
-          appointmentId: id,
-          uploadedBy: employee?.id || null,
-          roomId: null,
-          description: null,
-        });
-        await enqueue({
-          type: 'photo.upload',
-          clientId,
-          payload: {
-            clientId,
-            jobId: job.id,
-            appointmentId: id,
-            roomId: null,
-            description: null,
-            name: file.name,
-          },
-        });
-        impact('light');
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast(t('tech:toast.photoQueued'), 'success');
-        }
-      } catch (err) {
-        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
-      }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
       return;
     }
 
-    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -259,19 +219,6 @@ export default function TechAppointment() {
       setUploading(false);
     }
   };
-
-  // Reload gallery when a queued photo for this appointment finishes syncing.
-  // Only active when offline:queue is on — otherwise load() runs inline.
-  useEffect(() => {
-    if (!offlineQueueEnabled) return;
-    const runner = getSyncRunner();
-    if (!runner) return;
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (item?.payload?.appointmentId !== id) return;
-      load();
-    });
-  }, [offlineQueueEnabled, id, load]);
 
   // Web path: triggered by hidden <input type=file capture>
   const handlePhotoCaptured = async (e) => {
@@ -344,7 +291,7 @@ export default function TechAppointment() {
       p_job_id: jobIdForRooms,
       p_name: name,
       p_created_by: employee?.id,
-      p_client_id: crypto?.randomUUID?.() || null,
+      p_client_id: createOfflineOperationId(),
     });
     const r = await db.rpc('get_job_rooms', { p_job_id: jobIdForRooms });
     setRooms(r || []);
@@ -372,23 +319,20 @@ export default function TechAppointment() {
 
   useEffect(() => { loadHydro(); }, [loadHydro]);
 
-  // Refresh when a queued reading or equipment change for THIS job syncs.
-  useEffect(() => {
-    if (!offlineQueueEnabled) return;
-    if (!jobIdForRooms) return;
-    const runner = getSyncRunner();
-    if (!runner) return;
-    return runner.on('sync:item-done', ({ item }) => {
-      const t = item?.type;
-      if (t !== 'reading.insert' && t !== 'equipment.place' && t !== 'equipment.remove') return;
-      if (item?.payload?.jobId && item.payload.jobId !== jobIdForRooms) return;
-      loadHydro();
-    });
-  }, [offlineQueueEnabled, jobIdForRooms, loadHydro]);
-
   const handleSaveReading = async (payload) => {
     if (!jobIdForRooms) throw new Error('Appointment not loaded');
-    const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+    // THROW, never return. ReadingEntrySheet awaits this and treats resolution as
+    // success — it fires "Reading saved" and closes the sheet. A bare return here
+    // resolved the promise, so the tech saw an error toast INSTANTLY overwritten by
+    // a success toast, the sheet closed, and the typed reading was gone. Throwing
+    // lands in the sheet's catch: "Failed to save reading: …", sheet stays open,
+    // form intact.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error(
+        'Moisture readings require an internet connection. Reconnect and try again.',
+      );
+    }
+    const clientId = createOfflineOperationId();
     const queuePayload = {
       clientId,
       jobId: jobIdForRooms,
@@ -406,38 +350,36 @@ export default function TechAppointment() {
       takenBy: employee?.id || null,
       takenAt: new Date().toISOString(),
     };
-    if (offlineQueueEnabled) {
-      await enqueue({ type: 'reading.insert', clientId, payload: queuePayload });
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        toast(t('toastReadingQueued'), 'success');
-      } else {
-        toast(t('toastReadingSaved'));
-      }
-    } else {
-      await db.rpc('insert_reading', {
-        p_job_id:       queuePayload.jobId,
-        p_room_id:      queuePayload.roomId,
-        p_material:     queuePayload.material,
-        p_location:     queuePayload.location,
-        p_mc:           queuePayload.mc,
-        p_rh:           queuePayload.rh,
-        p_temp_f:       queuePayload.tempF,
-        p_gpp:          queuePayload.gpp,
-        p_dew_point:    queuePayload.dewPoint,
-        p_is_affected:  queuePayload.isAffected,
-        p_equipment_id: queuePayload.equipmentId,
-        p_taken_by:     queuePayload.takenBy,
-        p_notes:        queuePayload.notes,
-        p_client_id:    clientId,
-      });
-      toast(t('toastReadingSaved'));
-      loadHydro();
-    }
+    await db.rpc('insert_reading', {
+      p_job_id:       queuePayload.jobId,
+      p_room_id:      queuePayload.roomId,
+      p_material:     queuePayload.material,
+      p_location:     queuePayload.location,
+      p_mc:           queuePayload.mc,
+      p_rh:           queuePayload.rh,
+      p_temp_f:       queuePayload.tempF,
+      p_gpp:          queuePayload.gpp,
+      p_dew_point:    queuePayload.dewPoint,
+      p_is_affected:  queuePayload.isAffected,
+      p_equipment_id: queuePayload.equipmentId,
+      p_taken_by:     queuePayload.takenBy,
+      p_notes:        queuePayload.notes,
+      p_client_id:    clientId,
+    });
+    toast(t('toastReadingSaved'));
+    loadHydro();
   };
 
   const handlePlaceEquipment = async (payload) => {
     if (!jobIdForRooms) throw new Error('Appointment not loaded');
-    const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+    // THROW, never return — see handleSaveReading above. EquipmentPlacementSheet
+    // has the identical await-then-succeed shape.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error(
+        'Equipment placement requires an internet connection. Reconnect and try again.',
+      );
+    }
+    const clientId = createOfflineOperationId();
     const queuePayload = {
       clientId,
       jobId: jobIdForRooms,
@@ -447,27 +389,18 @@ export default function TechAppointment() {
       serialNumber: payload.serial_number || null,
       placedBy: employee?.id || null,
     };
-    if (offlineQueueEnabled) {
-      await enqueue({ type: 'equipment.place', clientId, payload: queuePayload });
-      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        toast(t('toastPlacementQueued'), 'success');
-      } else {
-        toast(t('toastEquipmentPlaced'));
-      }
-    } else {
-      await db.rpc('place_equipment', {
-        p_job_id:         queuePayload.jobId,
-        p_room_id:        queuePayload.roomId,
-        p_equipment_type: queuePayload.equipmentType,
-        p_nickname:       queuePayload.nickname,
-        p_serial:         queuePayload.serialNumber,
-        p_placed_by:      queuePayload.placedBy,
-        p_client_id:      clientId,
-        p_notes:          null,
-      });
-      toast(t('toastEquipmentPlaced'));
-      loadHydro();
-    }
+    await db.rpc('place_equipment', {
+      p_job_id:         queuePayload.jobId,
+      p_room_id:        queuePayload.roomId,
+      p_equipment_type: queuePayload.equipmentType,
+      p_nickname:       queuePayload.nickname,
+      p_serial:         queuePayload.serialNumber,
+      p_placed_by:      queuePayload.placedBy,
+      p_client_id:      clientId,
+      p_notes:          null,
+    });
+    toast(t('toastEquipmentPlaced'));
+    loadHydro();
   };
 
   const handleRemoveEquipment = async (equipmentId) => {
@@ -478,18 +411,16 @@ export default function TechAppointment() {
     }
     setConfirmRemoveEquipId(null);
     try {
-      if (offlineQueueEnabled) {
-        await enqueue({
-          type: 'equipment.remove',
-          clientId: (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`,
-          payload: { equipmentId, removedBy: employee?.id || null, jobId: jobIdForRooms },
-        });
-        toast(t('toastEquipmentMarkedRemoval'));
-      } else {
-        await db.rpc('remove_equipment', { p_equipment_id: equipmentId, p_removed_by: employee?.id || null });
-        toast(t('toastEquipmentRemoved'));
-        loadHydro();
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        toast(
+          'Equipment removal requires an internet connection. Reconnect and try again.',
+          'error',
+        );
+        return;
       }
+      await db.rpc('remove_equipment', { p_equipment_id: equipmentId, p_removed_by: employee?.id || null });
+      toast(t('toastEquipmentRemoved'));
+      loadHydro();
     } catch (err) {
       toast(t('toastRemoveFailed', { message: err?.message || 'unknown' }), 'error');
     }

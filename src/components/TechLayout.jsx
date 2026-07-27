@@ -7,8 +7,8 @@
  *   The shell around every field-tech screen: the bottom tab bar, the offline
  *   indicator, the install banner, and the toast pop-ups. It also hosts the Tech
  *   Mobile v2 "panes" — the rebuilt dashboard and schedule stay alive in the
- *   background (behind their feature flags) so switching tabs is instant and
- *   nothing reloads; each other screen still renders in the normal spot.
+ *   background so switching tabs is instant and nothing reloads; each other
+ *   screen still renders in the normal spot.
  *
  * WHERE IT LIVES:
  *   Route:        wraps all /tech/* routes
@@ -17,14 +17,15 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
- *              components/tech/v2 (TechPane, skeletons), pages/tech/v2 (TechDashV2,
- *              TechScheduleV2 — lazy, flag-gated)
+ *              components/ErrorBoundary, components/tech/v2 (TechPane, skeletons),
+ *              lib/resumeRestore, lib/pwaDiagnostics, pages/tech/v2 (TechDashV2,
+ *              TechScheduleV2 — lazy)
  *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
  *
  * NOTES / GOTCHAS:
  *   - Pane host: v2 panes render OUTSIDE the pathname-keyed <Outlet/> wrapper so
  *     they never remount on navigation; hidden with display:none (transforms are
- *     banned on WKWebView). Flags OFF → panes not mounted, behavior byte-identical.
+ *     banned on WKWebView). Dashboard/Schedule are the only live implementations.
  *   - The keyed <Outlet/> replays the 0.2s fade on each route change and is not
  *     rendered while a v2 pane covers the screen.
  * ════════════════════════════════════════════════
@@ -34,18 +35,20 @@ import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSchedule, IconConversations } from '@/components/Icons';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
 import TechPane from '@/components/tech/v2/TechPane.jsx';
 import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
+import { isStandaloneDisplay } from '@/lib/resumeRestore.js';
+import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics.js';
 import { useTechConversations } from '@/pages/tech/v2/messages/useTechConversations.js';
 
-// Tech Mobile v2 panes — lazy so their chunk loads only when the flag is on
-// (dev-only during the wave). They render PERSISTENTLY in the pane host below,
-// outside the keyed <Outlet/>, so tab switches don't remount them.
+// Tech Mobile v2 panes render PERSISTENTLY in the pane host below, outside the
+// keyed <Outlet/>, so tab switches don't remount them.
 const TechDashV2 = lazy(() => import('@/pages/tech/v2/TechDashV2.jsx'));
 const TechScheduleV2 = lazy(() => import('@/pages/tech/v2/TechScheduleV2.jsx'));
 // Tech Messages v2 (Phase F-M) — the dedicated messaging pane, behind
-// page:tech_msgs_v2 (owner-only during the build; legacy Conversations otherwise).
+// page:tech_msgs_v2 on web (legacy Conversations remains the rollback surface).
 const TechMessagesV2 = lazy(() => import('@/pages/tech/v2/TechMessagesV2.jsx'));
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
@@ -145,8 +148,8 @@ const TABS = [
 ];
 
 /* ── Messages-tab unread badge (Phase F-M) ── */
-// Mounted ONLY when page:tech_msgs_v2 is on, so the convos poll + realtime channel
-// run only for flagged (owner) users. Reads unread_total from the shared
+// Mounted when Messages v2 is active, so the convos poll + realtime channel run
+// only for that implementation. Reads unread_total from the shared
 // useTechConversations hook (the sole convos-cache owner). NEVER gated on the pane
 // being the active tab — a new-message badge matters most when the tech is elsewhere.
 function MessagesUnreadBadge() {
@@ -166,15 +169,35 @@ function InstallBanner() {
   const { employee } = useAuth();
   // Read display-mode + dismissed state once during render (client-only SPA) —
   // lazy init avoids a setState-in-effect cascade and a first-render banner flash.
-  const [dismissed, setDismissed] = useState(() => !!sessionStorage.getItem('pwa-dismissed'));
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return !!sessionStorage.getItem('pwa-dismissed');
+    } catch {
+      return false;
+    }
+  });
   const [deferredPrompt, setDeferredPrompt] = useState(null);
-  const [isStandalone] = useState(() => typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches);
+  const [isStandalone, setIsStandalone] = useState(isStandaloneDisplay);
 
-  // Android/Chrome: listen for install prompt
+  // Android/Chrome: retain the install prompt. All platforms: stop advertising
+  // once the browser confirms installation.
   useEffect(() => {
-    const handler = (e) => { e.preventDefault(); setDeferredPrompt(e); };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
+    const beforeInstall = (event) => {
+      event.preventDefault();
+      setDeferredPrompt(event);
+    };
+    const installed = () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+      setDismissed(true);
+      recordPwaDiagnostic('install', { section: 'installed' });
+    };
+    window.addEventListener('beforeinstallprompt', beforeInstall);
+    window.addEventListener('appinstalled', installed);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', beforeInstall);
+      window.removeEventListener('appinstalled', installed);
+    };
   }, []);
 
   if (employee?.role !== 'field_tech') return null;
@@ -186,40 +209,60 @@ function InstallBanner() {
   if (!isIOS && !showAndroid) return null;
 
   const dismiss = () => {
-    sessionStorage.setItem('pwa-dismissed', '1');
+    try {
+      sessionStorage.setItem('pwa-dismissed', '1');
+    } catch {
+      // Private/blocked storage still allows dismissal for this render.
+    }
     setDismissed(true);
   };
 
   const install = async () => {
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      setDeferredPrompt(null);
-      dismiss();
+      try {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        recordPwaDiagnostic('install', {
+          section: choice?.outcome === 'accepted' ? 'accepted' : 'dismissed',
+        });
+        setDeferredPrompt(null);
+        if (choice?.outcome === 'accepted') dismiss();
+      } catch (error) {
+        recordPwaDiagnostic('install', { section: 'prompt-error', error });
+      }
     }
   };
 
   return (
-    <div style={{
-      background: 'var(--accent)', color: '#fff',
+    <div
+      role="region"
+      aria-label={t('installRegionLabel')}
+      style={{
+      background: 'var(--accent)', color: 'var(--text-inverse)',
       padding: '10px var(--space-4)',
       display: 'flex', alignItems: 'center', gap: 8,
       fontSize: 13, fontWeight: 500,
       fontFamily: 'var(--font-sans)',
     }}>
       <div style={{ flex: 1 }}>
-        {isIOS
-          ? <Trans t={t} i18nKey="installIos" components={{ b: <strong /> }} />
-          : t('installBanner')
-        }
+        <div>
+          {isIOS
+            ? <Trans t={t} i18nKey="installIos" components={{ b: <strong /> }} />
+            : t('installBanner')
+          }
+        </div>
+        <div style={{ fontSize: 12, lineHeight: 1.35, marginTop: 3, opacity: 0.9 }}>
+          {t('installOnlineRequired')}
+        </div>
       </div>
       {showAndroid && (
         <button
+          type="button"
           onClick={install}
           style={{
-            background: '#fff', color: 'var(--accent)',
+            background: 'var(--bg-elevated)', color: 'var(--accent)',
             border: 'none', borderRadius: 'var(--radius-md)',
-            padding: '5px 12px', fontSize: 12, fontWeight: 700,
+            padding: '8px 14px', minHeight: 48, fontSize: 12, fontWeight: 700,
             cursor: 'pointer', fontFamily: 'var(--font-sans)', flexShrink: 0,
           }}
         >
@@ -227,10 +270,14 @@ function InstallBanner() {
         </button>
       )}
       <button
+        type="button"
         onClick={dismiss}
+        aria-label={t('dismissInstall')}
+        title={t('dismissInstall')}
         style={{
-          background: 'none', border: 'none', color: '#fff',
-          cursor: 'pointer', padding: 4, fontSize: 18, lineHeight: 1,
+          background: 'none', border: 'none', color: 'var(--text-inverse)',
+          cursor: 'pointer', padding: 8, minWidth: 44, minHeight: 44,
+          fontSize: 18, lineHeight: 1,
           opacity: 0.8, flexShrink: 0,
         }}
       >
@@ -242,7 +289,7 @@ function InstallBanner() {
 
 /* ── TechLayout ── */
 
-export default function TechLayout() {
+export default function TechLayout({ nativeBuild = false }) {
   const { t } = useTranslation('nav');
   const location = useLocation();
   const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
@@ -251,17 +298,13 @@ export default function TechLayout() {
   const [toasts, setToasts] = useState([]);
 
   // ── Tech v2 pane host ──
-  // Each v2 pane is MOUNTED whenever its flag is on and kept alive across
-  // navigation (that is the whole point — no remount storm, state + scroll
-  // survive tab switches). A pane is ACTIVE only on its own path; inactive panes
-  // are hidden with display:none. When a v2 pane is active it covers the screen,
-  // so the keyed legacy <Outlet/> is not rendered underneath it. Flags OFF (every
-  // non-owner during the wave) → no pane mounts and behavior is byte-identical.
-  const dashV2 = isFeatureEnabled('page:tech_dash_v2');
-  const schedV2 = isFeatureEnabled('page:tech_sched_v2');
-  const msgsV2 = isFeatureEnabled('page:tech_msgs_v2');
-  const dashActive = dashV2 && location.pathname === '/tech';
-  const schedActive = schedV2 && location.pathname === '/tech/schedule';
+  // Dashboard and Schedule have no legacy implementation, so their retired
+  // rollout flags must never blank these core routes. Messages retains its web
+  // rollback; native excludes desktop Conversations and always mounts v2.
+  const msgsV2 = nativeBuild
+    || isFeatureEnabled('page:tech_msgs_v2');
+  const dashActive = location.pathname === '/tech';
+  const schedActive = location.pathname === '/tech/schedule';
   const msgsActive = msgsV2 && location.pathname === '/tech/conversations';
   const paneCovering = dashActive || schedActive || msgsActive;
 
@@ -299,28 +342,30 @@ export default function TechLayout() {
   return (
     <div className="tech-layout">
       {/* v2 persistent panes (outside the keyed wrapper so they never remount). */}
-      {dashV2 && (
-        <TechPane active={dashActive}>
+      <TechPane active={dashActive}>
+        <ErrorBoundary section="Technician dashboard">
           <Suspense fallback={<SkeletonList />}>
             <TechDashV2 active={dashActive} />
           </Suspense>
-        </TechPane>
-      )}
-      {schedV2 && (
-        <TechPane active={schedActive}>
+        </ErrorBoundary>
+      </TechPane>
+      <TechPane active={schedActive}>
+        <ErrorBoundary section="Technician schedule">
           <Suspense fallback={<SkeletonList />}>
             <TechScheduleV2 active={schedActive} />
           </Suspense>
-        </TechPane>
-      )}
+        </ErrorBoundary>
+      </TechPane>
       {/* Messages pane (Phase F-M). TechMessagesV2 owns its two-layer TechMsgsPane
           host, so the hidden wrapper lives inside it — the Suspense fallback here
           mirrors that hidden .tv2-msgs-pane shell so a first-load chunk fetch on
           another tab never flashes a skeleton over the visible screen. */}
       {msgsV2 && (
-        <Suspense fallback={<div className="tv2-msgs-pane" hidden={!msgsActive} aria-hidden={!msgsActive}><SkeletonList rows={7} /></div>}>
-          <TechMessagesV2 active={msgsActive} />
-        </Suspense>
+        <ErrorBoundary section="Technician messages" hidden={!msgsActive}>
+          <Suspense fallback={<div className="tv2-msgs-pane" hidden={!msgsActive} aria-hidden={!msgsActive}><SkeletonList rows={7} /></div>}>
+            <TechMessagesV2 active={msgsActive} />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* Legacy + detail routes: keyed by pathname so each navigation remounts +
@@ -334,7 +379,7 @@ export default function TechLayout() {
         </div>
       )}
 
-      {/* Floating offline-queue indicator — renders nothing when idle */}
+      {/* Legacy offline-state/reconciliation indicator — renders nothing when idle */}
       <div style={{
         position: 'fixed',
         top: 'calc(env(safe-area-inset-top, 0px) + 10px)',

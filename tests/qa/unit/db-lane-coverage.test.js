@@ -9,11 +9,14 @@
  *
  *   Every test file under supabase/tests/ belongs to the `db` lane. That lane
  *   deliberately refuses to run unless it is pointed at an isolated database,
- *   and no such database exists yet — so `npm test` skips all of them. On
- *   2026-07-27 that was 77 files, including the isolated signed Work
- *   Authorization consent regression guard and other guards written
- *   specifically to be durable. Nobody noticed for weeks, because a whole lane
- *   not running looks exactly like everything passing.
+ *   and no governed compatible target exists yet — so `npm test` skips all of
+ *   them. On 2026-07-27 the PR-525-integrated tree contains 79 JavaScript and
+ *   SQL test entrypoints, including the isolated signed Work Authorization
+ *   consent regression guard and other guards written specifically to be
+ *   durable. Derive this count from the tree: concurrent database initiatives
+ *   add and retire guards, so hand-copied arithmetic drifts. Nobody noticed the
+ *   original debt for weeks because a whole lane not running looks exactly like
+ *   everything passing.
  *
  *   The lane runner already fails when a test inside a lane is skipped. This is
  *   the same idea one level up: a whole lane going dark should be loud too.
@@ -49,15 +52,26 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
  * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
  * a guard that will not protect anything in CI until the db lane has a target.
  */
-const DARK_BASELINE = 77;
+const DARK_BASELINE = 79;
 // 2026-07-27: 76 -> 77, adding anon_closure_tranche_b.test.js. Acknowledged
 // deliberately, per the rule above: that file proves the customer-list closure
 // actually took effect, and it will NOT protect anything in CI until the db lane
 // has a target. Its CI-visible counterpart is
 // tests/qa/unit/anon-closure-tranche-b.test.js, which proves intent only.
+//
+// 2026-07-27: 77 -> 79, integrating PR #525. Counted against the merged tree,
+// not carried over from either side: +4 new .test.sql guards, +1 already
+// counted above from dev, -2 retired anon-client guards (notify_foundation,
+// notify_c_my_prefs). The two retirements are legitimate — both are replaced by
+// tests/qa/unit/notification-read-recipient-boundary.test.js, which DOES run in
+// CI. That was checked against the tree, not assumed. The incoming PR proposed
+// 78 with a `<=` assertion, which would have let the two deletions through
+// silently; the exact assertion below is what caught it.
 
 const dbLaneFiles = () =>
-  (existsSync(DB_TESTS) ? readdirSync(DB_TESTS) : []).filter((f) => f.endsWith('.test.js'));
+  (existsSync(DB_TESTS) ? readdirSync(DB_TESTS) : []).filter(
+    (file) => file.endsWith('.test.js') || file.endsWith('.test.sql'),
+  );
 
 describe('db-lane coverage debt', () => {
   it('reports how many database guards are not running in CI', () => {

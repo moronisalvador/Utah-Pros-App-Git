@@ -1,0 +1,191 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: native-bundle-boundary.mjs
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Defines exactly which page files may ship inside the iOS web bundle. It also
+ *   checks Vite's completed module graph and stops the build if an office,
+ *   settings, CRM, QuickBooks, or admin-mobile implementation slipped in.
+ *
+ * DEPENDS ON:
+ *   Packages:  node:path
+ *   Internal:  src/routes/buildTargetPages.native.jsx, vite.config.js
+ *   Data:      reads  → Vite module identifiers
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - This checks the graph Vite actually bundled, not import text alone.
+ *   - Add a field-mobile page here deliberately; a new file is denied by default.
+ * ════════════════════════════════════════════════
+ */
+import path from 'node:path';
+
+export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
+  'src/pages/Legal.jsx',
+  'src/pages/Login.jsx',
+  'src/pages/SetPassword.jsx',
+  'src/pages/SignPage.jsx',
+  'src/pages/tech/TechAppointment.jsx',
+  'src/pages/tech/TechClaimAlbum.jsx',
+  'src/pages/tech/TechClaimDetail.jsx',
+  'src/pages/tech/TechClaims.jsx',
+  'src/pages/tech/TechDemoSheet.jsx',
+  'src/pages/tech/TechEditAppointment.jsx',
+  'src/pages/tech/TechFeedback.jsx',
+  'src/pages/tech/TechHelp.jsx',
+  'src/pages/tech/TechJobAlbum.jsx',
+  'src/pages/tech/TechJobDetail.jsx',
+  'src/pages/tech/TechJobDocuments.jsx',
+  'src/pages/tech/TechMore.jsx',
+  'src/pages/tech/TechNewAppointment.jsx',
+  'src/pages/tech/TechNewCustomer.jsx',
+  'src/pages/tech/TechNewEvent.jsx',
+  'src/pages/tech/TechNewJob.jsx',
+  'src/pages/tech/TechOOPPricing.jsx',
+  'src/pages/tech/TechRoomDetail.jsx',
+  'src/pages/tech/TechSettings.jsx',
+  'src/pages/tech/TechTasks.jsx',
+  'src/pages/tech/techConstants.js',
+  'src/pages/tech/techFormConstants.js',
+  'src/pages/tech/techHelpContent.jsx',
+  'src/pages/tech/v2/TechDashV2.jsx',
+  'src/pages/tech/v2/TechJobHub.jsx',
+  'src/pages/tech/v2/TechMessagesV2.jsx',
+  'src/pages/tech/v2/TechScheduleV2.jsx',
+  'src/pages/tech/v2/dash/AttentionStrip.jsx',
+  'src/pages/tech/v2/dash/ComingUp.jsx',
+  'src/pages/tech/v2/dash/CompletedRows.jsx',
+  'src/pages/tech/v2/dash/CreateFAB.jsx',
+  'src/pages/tech/v2/dash/DashHeader.jsx',
+  'src/pages/tech/v2/dash/MiniTimeline.jsx',
+  'src/pages/tech/v2/dash/MyNumbers.jsx',
+  'src/pages/tech/v2/dash/NowNextHero.jsx',
+  'src/pages/tech/v2/dash/PhotoCaptureButton.jsx',
+  'src/pages/tech/v2/dash/dashHelpers.js',
+  'src/pages/tech/v2/hub/AdminJobMenu.jsx',
+  'src/pages/tech/v2/hub/HubBelowFold.jsx',
+  'src/pages/tech/v2/hub/HubChecklist.jsx',
+  'src/pages/tech/v2/hub/HubDock.jsx',
+  'src/pages/tech/v2/hub/HubHeader.jsx',
+  'src/pages/tech/v2/hub/HubStage.jsx',
+  'src/pages/tech/v2/hub/HubTools.jsx',
+  'src/pages/tech/v2/hub/JobClaimSection.jsx',
+  'src/pages/tech/v2/hub/PhotosNotes.jsx',
+  'src/pages/tech/v2/hub/StageClock.jsx',
+  'src/pages/tech/v2/hub/hubChecklistState.js',
+  'src/pages/tech/v2/hub/hubHelpers.js',
+  'src/pages/tech/v2/hub/hubStageState.js',
+  'src/pages/tech/v2/hub/useVisitClock.js',
+  'src/pages/tech/v2/messages/Composer.jsx',
+  'src/pages/tech/v2/messages/ConvoList.jsx',
+  'src/pages/tech/v2/messages/ConvoRow.jsx',
+  'src/pages/tech/v2/messages/NewConversationView.jsx',
+  'src/pages/tech/v2/messages/TechMsgsPane.jsx',
+  'src/pages/tech/v2/messages/ThreadView.jsx',
+  'src/pages/tech/v2/messages/mediaUpload.js',
+  'src/pages/tech/v2/messages/msgDateUtils.js',
+  'src/pages/tech/v2/messages/msgsSelectors.js',
+  'src/pages/tech/v2/messages/useComposerAttachments.js',
+  'src/pages/tech/v2/messages/useConvoMutations.js',
+  'src/pages/tech/v2/messages/useServiceSmsConsent.js',
+  'src/pages/tech/v2/messages/useTechConversations.js',
+  'src/pages/tech/v2/messages/useTemplates.js',
+  'src/pages/tech/v2/messages/useThread.js',
+  'src/pages/tech/v2/schedule/AgendaView.jsx',
+  'src/pages/tech/v2/schedule/CreatePicker.jsx',
+  'src/pages/tech/v2/schedule/CrewAvatars.jsx',
+  'src/pages/tech/v2/schedule/DayTimeline.jsx',
+  'src/pages/tech/v2/schedule/ScheduleHeader.jsx',
+  'src/pages/tech/v2/schedule/ScheduleRow.jsx',
+  'src/pages/tech/v2/schedule/WeekStrip.jsx',
+  'src/pages/tech/v2/schedule/filterStore.js',
+  'src/pages/tech/v2/schedule/scheduleFormat.js',
+  'src/pages/tech/v2/schedule/scheduleSelectors.js',
+  'src/pages/tech/v2/schedule/useScheduleData.js',
+]);
+
+const allowedNativePages = new Set(NATIVE_PAGE_ALLOWLIST);
+
+export const NATIVE_SHARED_SETTINGS_ALLOWLIST = Object.freeze([
+  'src/components/settings/AccountDeletionPanel.jsx',
+  'src/components/settings/NotificationPrefsMatrix.jsx',
+]);
+
+const allowedNativeSharedSettings = new Set(NATIVE_SHARED_SETTINGS_ALLOWLIST);
+
+const FORBIDDEN_NATIVE_MODULES = new Set([
+  'src/components/CrmLayout.jsx',
+  'src/components/Layout.jsx',
+  'src/components/SettingsLayout.jsx',
+  'src/routes/buildTargetPages.js',
+  'src/routes/buildTargetPages.web.jsx',
+]);
+
+const FORBIDDEN_NATIVE_PREFIXES = Object.freeze([
+  'src/components/admin-mobile/',
+  'src/components/collections/',
+  'src/components/crm/',
+]);
+
+function withoutViteSuffix(moduleId) {
+  const nul = moduleId.indexOf('\0');
+  if (nul === 0) return '';
+  const query = moduleId.indexOf('?');
+  return query === -1 ? moduleId : moduleId.slice(0, query);
+}
+
+export function repositoryModulePath(moduleId, repositoryRoot) {
+  if (typeof moduleId !== 'string' || !moduleId) return null;
+  const cleanId = withoutViteSuffix(moduleId);
+  if (!cleanId || !path.isAbsolute(cleanId)) return null;
+  const relative = path.relative(path.resolve(repositoryRoot), cleanId);
+  if (!relative || relative === '..' || relative.startsWith(`..${path.sep}`)) return null;
+  return relative.split(path.sep).join('/');
+}
+
+export function nativeBundleViolation(moduleId, repositoryRoot) {
+  const relative = repositoryModulePath(moduleId, repositoryRoot);
+  if (!relative) return null;
+
+  if (relative.startsWith('src/pages/') && !allowedNativePages.has(relative)) {
+    return `${relative} is not in the native page allowlist`;
+  }
+  if (FORBIDDEN_NATIVE_MODULES.has(relative)) {
+    return `${relative} is a web-only shell or page registry`;
+  }
+  if (
+    relative.startsWith('src/components/settings/')
+    && !allowedNativeSharedSettings.has(relative)
+  ) {
+    return `${relative} is not in the native shared-settings allowlist`;
+  }
+  if (FORBIDDEN_NATIVE_PREFIXES.some((prefix) => relative.startsWith(prefix))) {
+    return `${relative} belongs to a web-only implementation subtree`;
+  }
+  return null;
+}
+
+export function assertNativeBundleBoundary(moduleRecords, repositoryRoot) {
+  const violations = [];
+  for (const record of moduleRecords) {
+    const moduleId = typeof record === 'string' ? record : record?.id;
+    const violation = nativeBundleViolation(moduleId, repositoryRoot);
+    if (!violation) continue;
+    const chunk = typeof record === 'string' ? '' : record?.chunk;
+    violations.push(chunk ? `${violation} (chunk: ${chunk})` : violation);
+  }
+
+  const uniqueViolations = [...new Set(violations)].sort();
+  if (uniqueViolations.length === 0) return;
+  throw new Error(
+    `Native bundle boundary refused ${uniqueViolations.length} module(s):\n`
+    + uniqueViolations.map((violation) => `- ${violation}`).join('\n'),
+  );
+}
+
+export function resolveBuildTarget(value) {
+  const target = String(value || 'web').trim().toLowerCase();
+  if (target === 'web' || target === 'native') return target;
+  throw new Error(`VITE_BUILD_TARGET must be exactly "web" or "native"; received "${value}"`);
+}

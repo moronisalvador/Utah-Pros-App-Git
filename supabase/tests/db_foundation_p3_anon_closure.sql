@@ -17,7 +17,7 @@
 -- KNOWN, SANCTIONED anon exceptions (everything else must be closed):
 --   RPCs (database-standard §2): get_feature_flags, get_employee_page_access,
 --     get_crm_build_progress, get_sign_request_by_token, get_sign_document_templates.
---   Table policies (§2 login/devLogin bootstrap reads): employees, feature_flags,
+--   Historical table-policy bootstrap exceptions: employees, feature_flags,
 --     employee_page_access, nav_permissions (SELECT-only after P3's narrow).
 --   Deferred tables (manifest §8 — TEMPORARY: anon stays until the owning in-flight
 --     phase merges, then a follow-up closes them): messages, conversations,

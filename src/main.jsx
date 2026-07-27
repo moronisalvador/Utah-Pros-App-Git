@@ -6,17 +6,19 @@
  * WHAT THIS DOES (plain language):
  *   The app's entry point — the very first file the browser runs. It draws the
  *   whole React app onto the page, wraps it so the tech screens can remember their
- *   loaded data on the device (instant cold-open), tells the iOS updater the app
- *   booted OK, and cleans up any leftover service worker from older builds.
+ *   loaded data on the device (instant cold-open), and cleans up any leftover
+ *   service worker from older builds.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (bootstrap)
  *   Rendered by:  n/a — this is the root; it renders <App/>
  *
  * DEPENDS ON:
- *   Packages:  react, react-dom, @tanstack/react-query-persist-client, @capgo/capacitor-updater
- *   Internal:  App.jsx, lib/techQuery (shared QueryClient), lib/techQueryPersister
- *              (idb cache), lib/staleChunkReload, index.css
+ *   Packages:  react, react-dom, @tanstack/react-query-persist-client
+ *   Internal:  App.jsx, components/ErrorBoundary, lib/techQuery (shared
+ *              QueryClient), lib/techQueryPersister (idb cache),
+ *              lib/releaseIdentity, lib/pwaDiagnostics, lib/pwaServiceWorker,
+ *              lib/staleChunkReload, index.css
  *   Data:      none directly (the QueryClient's cache persists to IndexedDB, not Supabase)
  *
  * NOTES / GOTCHAS:
@@ -25,45 +27,26 @@
  *   - Service worker registration is flag-gated by feature:web_push (read from a
  *     localStorage mirror pre-auth): ON registers the push-only /sw.js; OFF runs
  *     the original kill-switch (unregister + cache wipe + /reset bounce) verbatim.
- *   - BUILD_ID doubles as the persist-cache buster — a new bundle drops a stale shape.
+ *   - Cache compatibility is an explicit generated release contract. It is not a
+ *     dated literal that relies on a maintainer remembering to edit this file.
  * ════════════════════════════════════════════════
  */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import App from './App.jsx';
-import { Capacitor } from '@capacitor/core';
-import { CapacitorUpdater } from '@capgo/capacitor-updater';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { buildResetUrl } from './lib/staleChunkReload.js';
 import { techQueryClient } from './lib/techQuery.js';
 import { techQueryPersister } from './lib/techQueryPersister.js';
-import { isWebPushEnabled, registerPushServiceWorker } from './lib/registerSW.js';
+import { isWebPushEnabled } from './lib/registerSW.js';
+import { RELEASE } from './lib/releaseIdentity.js';
+import { installPwaDiagnostics, recordPwaDiagnostic } from './lib/pwaDiagnostics.js';
+import { reconcilePushServiceWorker } from './lib/pwaServiceWorker.js';
 import { configureNativeKeyboard } from './lib/nativeKeyboard.js';
 import './index.css';
 
-// Bumped to force a new bundle hash when the Cloudflare edge cached a
-// broken response (text/html instead of application/javascript) for an
-// immutable /assets/*.js URL. Any time you suspect edge poisoning again,
-// changing this literal is the cheapest way to invalidate.
-const BUILD_ID = '2026-07-03-web-push-f1';
-
-// Notify Capgo that the app booted successfully so a bad OTA bundle isn't
-// auto-rolled-back. Defensive try/catch: a top-level module throw here would
-// blank the entire app — if notifyAppReady ever changes its web fallback
-// behavior, or the plugin isn't loaded for any reason, we swallow it and
-// let React mount anyway. The promise is fire-and-forget (no await) and
-// unhandled rejections won't stop rendering, but we guard the synchronous
-// call site defensively.
-if (Capacitor.isNativePlatform()) {
-  try {
-    const p = CapacitorUpdater.notifyAppReady();
-    if (p && typeof p.catch === 'function') {
-      p.catch((err) => console.warn('CapacitorUpdater.notifyAppReady failed:', err?.message || err));
-    }
-  } catch (err) {
-    console.warn('CapacitorUpdater.notifyAppReady threw:', err?.message || err);
-  }
-}
+installPwaDiagnostics();
 
 // One-time native keyboard config (no-op on web): hides the iOS accessory bar so
 // the tech Messages composer sits flush on the keyboard like iMessage. See
@@ -73,65 +56,53 @@ configureNativeKeyboard();
 // PersistQueryClientProvider sits ABOVE the router/auth (both live inside <App/>)
 // so the whole tech tree shares one QueryClient and its on-device cache. The
 // persister restores asynchronously; react-query gates dependent renders until
-// restore resolves. buster = BUILD_ID → a new bundle drops a stale cache shape.
+// restore resolves. The compatibility ID is deliberately separate from release
+// identity: bump it only for an incompatible persisted-query shape.
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <PersistQueryClientProvider
-      client={techQueryClient}
-      persistOptions={{
-        persister: techQueryPersister,
-        maxAge: 24 * 60 * 60 * 1000,
-        buster: BUILD_ID,
-      }}
-    >
-      <App />
-    </PersistQueryClientProvider>
+    <ErrorBoundary section="UPR application">
+      <PersistQueryClientProvider
+        client={techQueryClient}
+        persistOptions={{
+          persister: techQueryPersister,
+          maxAge: 24 * 60 * 60 * 1000,
+          buster: RELEASE.cacheCompatibilityId,
+        }}
+      >
+        <App />
+      </PersistQueryClientProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 );
 
-// Service worker policy is now flag-gated (Notification Center, Phase F1).
-//   feature:web_push ON  → register the PUSH-ONLY /sw.js (push + notificationclick
-//                          handlers, NO fetch caching — the MIME/blank-page trap
-//                          cannot re-form without a caching fetch handler).
-//   feature:web_push OFF → the original kill-switch, VERBATIM: unregister every
-//                          SW, wipe caches, and /reset-bounce once so no client is
-//                          left serving stale index.html-as-JS.
-// The flag loads only after sign-in, so this pre-auth path reads a localStorage
-// mirror AuthContext writes when flags load (one-page-load lag accepted, safe
-// both directions). Absent mirror = OFF = kill-switch preserved.
+// Reconcile the mirrored pre-auth policy at boot. AuthContext must call the same
+// helper immediately after the authenticated flag resolves, removing the former
+// one-page-load lag. Every browser operation is bounded inside the helper.
 if ('serviceWorker' in navigator) {
-  if (isWebPushEnabled()) {
-    // Fire-and-forget: SW registration must never block or blank the app.
-    registerPushServiceWorker();
-  } else {
-    // ── Kill-switch (flag OFF) — preserved byte-for-byte from the Apr 18 2026
-    // fix. Proactively unregister any SW clinging on from an older deploy, and
-    // wipe its caches so the browser isn't served stale index.html-as-JS. If a
-    // registration ACTUALLY existed, bounce ONCE through /reset
-    // (Clear-Site-Data: "cache") so this client also drops its poisoned
-    // HTTP-cached assets and lands fully fresh — no user action. Guarded by a
-    // once-per-session flag so it can't loop.
-    const resetOnce = () => {
+  const resetOnce = () => {
+    try {
       if (sessionStorage.getItem('swReset')) return;
       sessionStorage.setItem('swReset', '1');
       window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
-    };
-    navigator.serviceWorker.getRegistrations()
-      .then((regs) => {
-        const had = regs.length > 0;
-        return Promise.all(regs.map((r) => r.unregister().catch(() => {}))).then(() => had);
-      })
-      .then((had) => { if (had) resetOnce(); })
-      .catch(() => {});
-    if (typeof caches !== 'undefined' && caches.keys) {
-      caches.keys()
-        .then((keys) => Promise.all(keys.map((k) => caches.delete(k).catch(() => {}))))
-        .catch(() => {});
+    } catch {
+      // Blocked sessionStorage cannot prevent recovery.
+      window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
     }
-    // Second path: the kill-switch SW postMessages after cleanup, in case
-    // navigate() is a no-op in some browsers. Same once-guard.
-    navigator.serviceWorker.addEventListener('message', (e) => {
-      if (e && e.data && e.data.type === 'upr-reset') resetOnce();
+  };
+  reconcilePushServiceWorker(isWebPushEnabled())
+    .then((result) => {
+      if (!result.ok) {
+        recordPwaDiagnostic('service-worker', {
+          section: result.reason || 'reconcile',
+        });
+      }
+      if (result.reloadRequired) resetOnce();
+    })
+    .catch(() => {
+      recordPwaDiagnostic('service-worker', { section: 'reconcile-error' });
     });
-  }
+  // Legacy kill-switch workers may request recovery after their own cleanup.
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event?.data?.type === 'upr-reset') resetOnce();
+  });
 }

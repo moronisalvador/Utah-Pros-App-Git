@@ -30,16 +30,20 @@ NOTES / GOTCHAS:
 | `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
+| `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
 | `npm run generate:tooling` | Regenerates governed Claude Code/Codex adapters from the neutral sources in `tooling/` | Repository write only; inspect the generated diff and never hand-edit an adapter |
-| `npm run check:tooling-generated` | Fails when a governed adapter is missing or differs from its neutral source | Covers only capabilities listed in `tooling/capabilities.json` — 7 of 39 today |
-| `npm run validate:tooling` | Checks capability metadata, references, triggers, portability, adapter parity and shared permissions | Known findings stay warnings until their dated waiver expires (CAP-SEC-001/GOV-001 expire 2026-08-06) |
-| `npm run test:tooling` | Exercises renderer drift, routing contracts and governance failures | Decision fixtures are contracts; fresh runtime evaluation is still required before expanding the pilot |
+| `npm run check:tooling-generated` | Fails when a governed adapter is missing or differs from its neutral source | Covers only capabilities listed in `tooling/capabilities.json` — 12 of 44 tracked capability entrypoints today |
+| `npm run validate:tooling` | Checks capability metadata, references, triggers, portability, generated adapter parity and shared permissions | Known findings stay warnings until their dated waiver expires; this does not prove application, production, device or provider behavior |
+| `npm run test:tooling` | Exercises neutral renderer drift/runtime metadata, routing contracts, mobile preflight safety and governance failures | Decision fixtures are contracts; fresh runtime evaluation is still required before expanding the neutral inventory |
 | `npm run dev` | Frontend development server | `/api/*` needs a separate Wrangler Pages Functions process |
 | `npm run build:ios` | Native-target build and Capacitor sync | Still does not replace Xcode signing/simulator/device verification |
 
 Never report expected results as executed results. Record command, commit, environment and failures.
 Credential-free lanes scrub hosted/provider environment variables and use deterministic fixtures;
 they never reinterpret missing configuration as permission to use production.
+
+Use Node 22 from `.node-version`, matching CI, and install the lockfile with `npm ci`. Do not replace
+repository dependencies with global Vite, Capacitor, test-runner, or Fastlane installations.
 
 ## Test layers
 
@@ -125,6 +129,128 @@ allowed origins and provider sandboxes.
   signing/reviewer credentials.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
+
+## Mobile PWA/Capacitor readiness workflow
+
+`docs/mobile-production-readiness-roadmap.md` is the plan of record for the 37 findings observed at
+audited application source `ef305f6d6afab4d846eab92fc1b04038d70221f0`. Until the foundation is
+integrated, each wave starts from `codex/mobile-pwa-readiness-foundation` in a new isolated
+branch/worktree, fetches current `origin/dev`, and reconciles drift without dropping the foundation.
+After integration, current `origin/dev` is the base. Record all relevant SHAs and recapture only the
+affected current/live state. The dated audit is not rewritten as later evidence.
+
+Mobile sessions use the checked-in ownership manifest and at most three simultaneous subagents.
+Read-only mapping, security review, contract testing, and release audit can overlap when they do not
+share a live system, port, simulator, generated output, or source file. Supabase/Storage decisions,
+durable account state, shared auth/release/native project files, canonical docs, and other listed
+hotspots remain single-writer/serialized.
+
+Any development server, browser, simulator, Xcode build, or persistent child is limited to five
+minutes per subprocess. The launcher owns the full child tree, cleans it in `try/finally`, verifies
+the port/process is gone, and records the result. Unsigned compilation or simulator launch is not
+signed-device, TestFlight, privacy, entitlement, push, deep-link, OTA, or App Review proof.
+
+The initial release promise stays online-first with tested warm continuity. Cold-offline PWA,
+admin-mobile in the native binary, native push, and OTA are excluded/disabled until their owner
+decisions and roadmap evidence gates are complete. Expanded field use requires zero P0 findings and
+closure or explicit exclusion of every P1 within the promise. Live migration/apply, deploy,
+provider/customer action, signing, distribution, and submission remain separately authorized
+owner gates.
+
+R0's current source/live map and first local authorization slice are recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the source-only S1b QBO
+identity slice is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`. S1b tests the
+secret-first customer/payment-sync capability, both payment-sync HTTP methods, the direct
+`scheduled()` entry, human-only OAuth state writes, external-admin denial on charge/attach, and
+auth/configuration failure paths with zero downstream business/provider calls.
+
+The source-only S1c CallRail/notification slice is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. Its focused
+contracts cover missing/invalid/config-failed Auth, inactive/external/denied roles, explicit
+`crm_call_log`, exact lead/call-ID binding, missing credentials, direct/signed audio streaming and
+timeout failures. Notification coverage pins secret-first precedence, in-process/secret payload
+compatibility, active-internal-admin Bearer access, allowed object state, forged recipient/body/link
+rejection and zero dispatch/provider fan-out on every denial.
+The final contract pass also proves a thrown push subscription does not prevent the later
+subscription from succeeding or remove the per-channel summary, and positively exercises all four
+human HTTP event shapes after exact object proof.
+
+The S1d database-dispatcher apply candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Its credential-free
+contract suite proves exact live-body rollback, one-expression trusted-key hardening,
+`PUBLIC`/`anon`/`authenticated` denial, `service_role` retention, six-function/seven-call-site
+compatibility, trigger/cron metadata, no in-body role assertion, no browser caller, fail-closed
+drift checks, catalog-only pre/post-apply checks, and correct unapplied provenance treatment. The
+tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
+
+The S1f direct-bell apply candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
+credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
+authenticated denial, service-role retention, and sole owner-run database caller without invoking
+`create_notification` or reading notification rows. S1d, S1e, and S1f require separate explicit
+apply selections rather than a chronological all-pending command.
+
+The S1g notification read/recipient candidate is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1g-notification-reads-2026-07-26.md`. Credential-free
+CI checks exact RPC signatures/results/defaults, caller reconstruction, foreign-recipient denial,
+private broadcast receipts, legacy read compatibility, Realtime RLS, least-privilege ACLs, drift
+guards, and the owner-gated unsafe rollback. Preflight/post-apply SQL is catalog-only and does not
+read or mark notification rows. The synthetic multi-identity behavior script requires both the
+`UPR_ISOLATED_DB` psql variable and `upr.isolated_test_database=on`, and is
+transaction-rollback-only. `npm run test:db:local` now runs its exact pgTAP wrapper through
+`supabase test db --local` before the DB Vitest lane; the runner never offers `--linked` or
+`--db-url`. A temporary PGlite harness passed forward/post/behavior/rollback compilation, but the
+governed current-live-compatible local Supabase clone remains an execution gate. The obsolete
+anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
+integration coverage belongs to the separate identity/device/preferences slice.
+
+**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
+verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
+browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
+then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
+S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
+ledger row exists and its browser-read-only employee contract still matches. Recapture that
+catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
+S1e or S1g; each remains its own owner-approved window.
+
+The checksum-pinned operator sequence for all four separately authorized target windows is
+`docs/mobile/s1d-s1g-database-apply-runbook.md`. It forbids `supabase db push` and other
+all-pending sweeps, requires fresh value-free drift capture and a single exact migration per
+window, and keeps catalog proof, synthetic behavior, side-effect approval, rollback consequences,
+and close-out evidence explicit. The runbook is preparation only; it is not apply authorization.
+
+A mobile security slice is not releasable merely because mocked Worker tests pass: verify required
+runtime binding **names and presence only**, deploy only from a reviewed release commit under
+separate authorization, exercise approved allow/deny identities on non-customer fixtures, and
+monitor 401/403/5xx/upstream failures. For S1b, canary customer sync and payment polling before
+charge/attachment/OAuth paths; do not rotate the shared capability independently. For S1c, canary
+one non-customer CallRail fixture through the approved admin and explicit-capability identities,
+prove denied internal/external identities, then verify one database-trigger notification fixture
+without sending customer communication. Confirm secret **presence/equality only** through the
+approved deployment process; never copy its value into evidence.
+
+Authorization rollback normally uses a reviewed forward fix because reverting a gate deliberately
+reopens the bypass. An S1c emergency rollback must first disable the affected HTTP entrypoint or
+CallRail playback/notification trigger, then revert only the reviewed S1c source commits while
+explicitly accepting that any-employee recording or arbitrary-Bearer notification access reopens.
+No rollback rotates secrets or changes the shared database by implication. The separate
+authenticated `notify_emit` ACL residual now has an authored S1d migration and exact rollback but
+still needs its own owner-authorized apply/verification window. Immediately before apply, run
+`supabase/tests/notify_emit_service_boundary_preflight.sql` and confirm the reviewed hashes, ACL,
+six callers, three triggers, and one cron row. Apply only
+`20260726110000_notify_emit_service_boundary.sql` from the reviewed release commit; then run
+`supabase/tests/notify_emit_service_boundary_post_apply.sql`, representative role-denial checks,
+fresh provenance capture, and database advisors without invoking a real notification. Any
+synthetic trigger/service canary requires separate explicit authorization and non-customer
+fixtures. Rollback uses the paired SQL only after its forward-body drift guard passes and must
+record that authenticated arbitrary-emission capability was re-opened.
+
+The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
+dual-form path normalization and authorized delivery before a bucket flip; then recapture exact
+policies/grants/bucket metadata, apply in an owner-approved low-traffic window, prove
+anonymous/unrelated denial plus intended access, and retain exact pre-apply rollback SQL/settings.
+No source-only session authorizes that apply.
 
 ## Release evidence checklist
 
@@ -370,3 +496,62 @@ fresh outbound/inbound SMS; fresh outbound/inbound MMS with private object owner
 link to the exact field-PWA thread; exact-build promotion to `main`; production-only provider
 bindings/webhook/scheduler cutover; and the same controlled Production proofs. A passing build or a
 historical provider row is not a substitute for those layers.
+
+The S1e credential-free suite pins the live `get_inbound_leads` signature/body hash, table
+ACL/policy/trigger-free preconditions, forced-RLS service-only source table, post-ID capture and
+pre-storage payload-scrub triggers, opaque marker, active-internal company-wide SELECT policy,
+call-log capability gate, rollback, exact mobile/desktop truthiness callers, and approved proxy
+audio/error contracts. Worker tests exercise both deployment states and reject marker fallback.
+Catalog-only pre/post-apply SQL proves ACL, policy and trigger state without reading values. Live apply verification must prove
+browser denial and service access without selecting URL values or invoking a provider.
+`supabase/tests/inbound_lead_recording_source_isolated.sql` is an executable, rollback-only suite
+for a disposable post-migration clone. It refuses to run unless both the psql opt-in and
+`upr.isolated_test_database=on` guard are present; its synthetic fixtures exercise marker/source
+capture, recursive scrub, direct RLS, RPC allow/deny variants and authenticated DML denial.
+
+### S1h database proof boundary
+
+S1h has four distinct evidence layers across its ordered identity-authority, containment,
+page-access-provenance, and personal-ownership migrations:
+
+1. credential-free Vitest pins function identities, caller shapes, target hashes, browser/service
+   ACL intent, selector-free AuthContext behavior, generated-catalog scripts, local-runner refusal,
+   and the guarded unsafe rollback;
+2. catalog-only preflight/post-apply SQL reads no business value and refuses unreviewed function,
+   table, ACL, policy, employee-Auth, caller, or migration-ledger drift;
+3. the guarded identity and personal ownership SQL matrices require both the psql opt-in and
+   `upr.isolated_test_database=on`, cover active A/B, inactive, external, unmapped, admin,
+   project-manager and service cases, explicitly deny employee self-binding/promotion and
+   cross-owner Web/native token takeover, and always roll back; and
+4. real GoTrue/PostgREST/RLS behavior requires separately approved synthetic identities during
+   each owner-authorized apply window.
+
+The revised source closes the two findings from the rejected artifact in code and static tests:
+containment removes browser authority-row writes, and all four personal tables become
+browser-RPC-only with same-owner token refresh. That source result is not database behavior proof.
+
+The unsafe shared-project `notify_c_my_prefs.test.js` was retired: it used the anonymous client,
+mutated notification defaults/preferences, and cannot prove authenticated ownership. Its
+preference precedence/lock/redaction coverage is now inside the rollback-only S1h matrix. The
+local runner invokes S1g and S1h as separate exact SQL files after the same local-origin/ref/sentinel
+guard; it never uses `--linked` or a hosted database.
+
+A temporary, non-retained PostgreSQL-compatible experiment modeled the S1h lifecycle, but it did
+not execute the exact checked-in isolated, preflight, or post-apply files and retained neither its
+harness nor a complete log. It is exploratory feedback, not reproducible verification. Exact
+governed local SQL execution and live Auth/PostgREST verification remain open. Shared-database
+apply, deployment, providers, signing, and device qualification remain separate owner/external
+gates.
+
+### Initial mobile offline qualification
+
+The production source contract fixes `PRODUCTION_QUEUE_TYPES` to an empty list, requires zero
+production enqueue/photo-blob callers, exposes no enqueue/retry hook API, and imports no real
+dispatcher into the maintenance runner. Focused offline ownership/crash/source-contract tests cover
+payload-free legacy quarantine, exact-confirmation all-store discard, bounded IndexedDB open and
+version-change handling, owner/epoch revalidation, and maintenance-only completed-photo cleanup.
+
+Passing those tests proves that the initial release does not automatically admit or replay a field
+command. It does not prove offline mutation support. Web/PWA/Capacitor qualification must verify
+that online writes still work and offline attempts are not presented as saved; a future queue
+requires a separately reviewed end-to-end idempotency and crash-consistency contract.

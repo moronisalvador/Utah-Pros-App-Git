@@ -1,0 +1,6 @@
+interface:
+  display_name: "UPR Mobile Readiness Wave"
+  short_description: "Run a safe UPR mobile remediation wave"
+  default_prompt: "Use $mobile-readiness-wave to execute the next bounded UPR mobile production-readiness phase."
+policy:
+  allow_implicit_invocation: true

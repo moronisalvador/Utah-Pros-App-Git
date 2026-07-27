@@ -14,6 +14,8 @@
  * NOTES / GOTCHAS:
  *   - The default mode is check-only. Pass --write to update generated adapters.
  *   - Generated files must never be edited directly; change their neutral source or manifest.
+ *   - Runtime-only model, effort, turn-cap, and sandbox settings live in the manifest rather than
+ *     the neutral instruction body. Unsupported settings are not invented for the other runtime.
  */
 
 import crypto from 'node:crypto';
@@ -89,12 +91,20 @@ function renderSkill(source, raw, entry = {}) {
 function renderClaudeAgent(entry, raw) {
   const { metadata, body } = parseNeutralMarkdown(raw, entry.source);
   const hash = sourceHash(raw);
+  if (
+    entry.claude.maxTurns !== undefined &&
+    (!Number.isInteger(entry.claude.maxTurns) || entry.claude.maxTurns < 1)
+  ) {
+    throw new Error(`${entry.source} claude.maxTurns must be a positive integer.`);
+  }
   return [
     '---',
     `name: ${metadata.name}`,
     `description: ${metadata.description}`,
     `tools: ${entry.claude.tools}`,
     `model: ${entry.claude.model}`,
+    ...(entry.claude.effort ? [`effort: ${entry.claude.effort}`] : []),
+    ...(entry.claude.maxTurns ? [`maxTurns: ${entry.claude.maxTurns}`] : []),
     '---',
     '',
     generatedMarkdownNotice(entry.source, hash),
@@ -121,10 +131,16 @@ function renderCodexAgent(entry, raw) {
   // write-enabled session is write-enabled unless it pins otherwise. Presence is
   // not proof of effect (a user-layer `sandbox = "elevated"` exists on this
   // machine) — but an explicit pin is the only thing that can win at all.
+  const model = entry.codex?.model;
+  const modelReasoningEffort = entry.codex?.modelReasoningEffort;
   const sandboxMode = entry.codex?.sandboxMode;
   return [
     `name = ${tomlString(metadata.name)}`,
     `description = ${tomlString(metadata.description)}`,
+    ...(model ? [`model = ${tomlString(model)}`] : []),
+    ...(modelReasoningEffort
+      ? [`model_reasoning_effort = ${tomlString(modelReasoningEffort)}`]
+      : []),
     ...(sandboxMode ? [`sandbox_mode = ${tomlString(sandboxMode)}`] : []),
     'developer_instructions = """',
     instructions,

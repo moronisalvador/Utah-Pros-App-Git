@@ -4,26 +4,15 @@
 // the stored connection, without ever exposing tokens. The QBO /query API is
 // read-only by nature; we additionally reject anything that isn't a SELECT.
 //
-// Auth: x-webhook-secret (server-side, e.g. pg_net) or a Supabase Bearer (admin).
+// Auth: x-webhook-secret (server-side, e.g. pg_net) or an active internal admin session.
 // Body: { "query": "SELECT * FROM Class MAXRESULTS 100" }
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { getConnection, qboFetch } from '../lib/quickbooks.js';
+import { supabase } from '../lib/supabase.js';
 
 const MINOR_VERSION = '70';
-
-async function isAuthorized(request, env) {
-  const secret = request.headers.get('x-webhook-secret');
-  if (secret && env.QBO_WEBHOOK_SECRET && secret === env.QBO_WEBHOOK_SECRET) return true;
-
-  const auth = request.headers.get('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
-  if (!token) return false;
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
-    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
-  });
-  return res.ok;
-}
 
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -32,9 +21,9 @@ export async function onRequestOptions(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
 
-  if (!(await isAuthorized(request, env))) {
-    return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
-  }
+  const db = supabase(env);
+  const auth = await authorizeQboRequest(request, env, db);
+  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
 
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) {
@@ -42,7 +31,7 @@ export async function onRequestPost(context) {
   }
 
   let body = {};
-  try { body = await request.json(); } catch (_) { /* empty */ }
+  try { body = await request.json(); } catch { /* empty */ }
 
   const q = (body.query || '').trim();
   if (!q) return jsonResponse({ error: 'Provide a "query"' }, 400, request, env);

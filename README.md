@@ -4,8 +4,10 @@ Internal business management platform for Utah Pros Restoration — messaging, j
 scheduling, CRM, billing, and field-tech mobile tools.
 
 **Start here, not in this file:**
-- **[`CLAUDE.md`](CLAUDE.md)** — the project's non-negotiable rules, stack, DB client API, deployment
-  workflow, and file-structure map. The single source of truth for "how do we work here."
+- **[`AGENTS.md`](AGENTS.md)** — the shared law layer: authorization boundaries, non-negotiable
+  rules, verification requirements, depth map, and definition of done for every agent runtime.
+- **[`CLAUDE.md`](CLAUDE.md)** — imports that shared law and adds Claude-specific runtime routing,
+  plus the stack, DB client API, deployment workflow, and maintained file-structure map.
 - **[`UPR-Web-Context.md`](UPR-Web-Context.md)** — the full, continuously-updated schema (all tables,
   all RPCs), page/component inventory, and per-initiative build history. This file deliberately does
   **not** duplicate that list (a hand-copied page/table list is exactly how this README went stale
@@ -13,6 +15,9 @@ scheduling, CRM, billing, and field-tech mobile tools.
 - **[`docs/database/`](docs/database/)** — a plain-English "how the data model works" guide, a
   glossary, and a "how to safely add a table/RPC/policy" checklist, for anyone (human or AI session)
   orienting on the database layer before diving into `UPR-Web-Context.md`.
+- **[`docs/mobile/`](docs/mobile/)** — canonical field-mobile architecture, design, motion, data,
+  PWA/Capacitor, testing, and release boundaries. Read this before changing `/tech/*` or native/PWA
+  behavior.
 - **[`BILLING-CONTEXT.md`](BILLING-CONTEXT.md)** — QuickBooks/invoicing internals.
   **[`UPR-Design-System.md`](UPR-Design-System.md)** — CSS tokens/components.
 
@@ -50,16 +55,17 @@ npm test         # vitest
 
 ## Project Structure
 
-High-level orientation only — `CLAUDE.md`'s **File Structure** section is the maintained map (it's
-explicit that `src/pages/` alone has 41+ files and is not exhaustive; use `Glob` before assuming a
-page doesn't exist).
+High-level orientation only — `CLAUDE.md`'s **File Structure** section is the maintained map. Counts
+drift, so derive them from the current checkout with `rg`/`git ls-files` rather than copying a number
+into this README.
 
 ```
 src/            React app — App.jsx (routes), pages/, pages/tech/ (field-tech mobile shell),
                 pages/crm/ (CRM), pages/settings/ (settings hub), components/, contexts/, lib/
-functions/      Cloudflare Pages Functions — api/ (58+ workers: SMS, Encircle, e-sign, QuickBooks,
-                Stripe, Google, AI, docs/reports), lib/ (shared server-side clients/helpers)
-supabase/       migrations/ (schema-as-code, source of truth for the live DB) + tests/
+functions/      Cloudflare Pages Functions — api/ (SMS, Encircle, e-sign, QuickBooks, Stripe,
+                Google, AI, docs/reports), lib/ (shared server-side clients/helpers)
+supabase/       migrations/ (reviewed schema/provenance source; live catalog + ledger prove shared
+                DB state) + tests/
 docs/           per-initiative roadmaps/dispatch docs + docs/database/ (this phase) +
                 docs/generated/ (schema drift-verification snapshots, regenerate-don't-edit)
 db/baseline/    committed live-schema snapshot used by scripts/db-drift-check.mjs
@@ -77,11 +83,13 @@ sets — see `CLAUDE.md`'s Deployment section.
 
 ## Auth Flow
 
-Supabase Auth (email/password) → `AuthContext` matches the auth user to an `employees` row by email
-→ page access + nav loaded from the employee's role/overrides → `db` (the authenticated REST client)
-is exposed via `useAuth()` for the rest of the app. Dev builds also offer `devLogin` (bypass auth,
-pick an employee directly) — see `CLAUDE.md`'s AuthContext section for the full list of what's
-exposed.
+Supabase Auth (email/password or recovery) → `AuthContext` calls the selector-free
+`get_my_employee_profile()` RPC, which resolves `auth.uid()` inside the trusted database boundary
+and requires exactly one active supported employee identity → page access, typed feature flags and
+role navigation load → account-owned browser/native state is reconciled → `db` (the authenticated
+REST client) is exposed via `useAuth()`. The former anonymous employee picker/`devLogin` bypass is
+removed. Local real-data verification uses a dedicated Supabase Auth test account; see
+`CLAUDE.md`'s AuthContext and Local Dev sections.
 
 ## Deploy
 

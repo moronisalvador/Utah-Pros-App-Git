@@ -8,8 +8,8 @@
  *   moisture drying log (each reading colored against its drying goal, with
  *   "stalled" flags), and the drying-equipment list (what's on site, how many
  *   days each has been running — the number the drying rental bills off — with a
- *   two-tap Remove). Adding a reading or placing/removing equipment saves through
- *   the offline queue so it still works with no signal in a basement.
+ *   two-tap Remove). Reading insertion, placement, and removal require a live
+ *   connection for the initial production release.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (part of the Stage, Z2)
@@ -19,18 +19,17 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/tech/ReadingEntrySheet,
  *              @/components/tech/EquipmentPlacementSheet, @/components/tech/MaterialIcon,
- *              @/lib/toast, @/hooks/useOfflineQueue, @/lib/syncRunnerSingleton
+ *              @/lib/toast, @/lib/offlineOperationId
  *   Data:      reads  → moisture_readings (get_job_readings), equipment_placements
  *                        (get_job_equipment)
  *              writes → moisture_readings (insert_reading), equipment_placements
- *                        (place_equipment / remove_equipment) — direct or queued
+ *                        (place_equipment, remove_equipment; online only)
  *
  * NOTES / GOTCHAS:
  *   - Readings/equipment are JOB-scoped (shared across a job's visits); tasks are
  *     per-visit. Mirrors the legacy TechAppointment behavior exactly.
- *   - Offline fork (owner decision): per-visit captures keep the queue when
- *     'offline:queue' is on. A queued change fires onMutation('room') so the hub
- *     + rooms caches repaint once it syncs.
+ *   - Automatic offline command admission/replay is disabled for the initial
+ *     release; every field mutation below fails before its network write.
  *   - Equipment Remove is a two-tap inline confirm (turns red, resets after 3s) —
  *     the only confirm idiom on the stage, never a modal or native confirm.
  * ════════════════════════════════════════════════
@@ -45,10 +44,7 @@ import EquipmentPlacementSheet, { EQUIPMENT_LABELS } from '@/components/tech/Equ
 import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { toast } from '@/lib/toast';
 import { techKeys } from '@/lib/techQuery';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
-
-const newClientId = () => (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
+import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 /**
  * @param {{ job: object, jobId: string, address?: string, rooms: Array|null,
@@ -59,8 +55,6 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
   const { employee, db, isFeatureEnabled } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const moistureEnabled = isFeatureEnabled('page:tech_moisture');
   const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
 
@@ -105,23 +99,21 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
 
   useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
 
-  // Refresh when a queued hydro change for THIS job finishes syncing.
-  useEffect(() => {
-    if (!offlineQueueEnabled || !jobId) return undefined;
-    const runner = getSyncRunner();
-    if (!runner) return undefined;
-    return runner.on('sync:item-done', ({ item }) => {
-      const ty = item?.type;
-      if (ty !== 'reading.insert' && ty !== 'equipment.place' && ty !== 'equipment.remove') return;
-      if (item?.payload?.jobId && item.payload.jobId !== jobId) return;
-      reloadHydro();
-    });
-  }, [offlineQueueEnabled, jobId, reloadHydro]);
-
-  // ── Saves (offline fork) ──
+  // ── Saves (online-first release) ──
   const handleSaveReading = async (payload) => {
     if (!jobId) throw new Error('Job not loaded');
-    const clientId = newClientId();
+    // THROW, never return. ReadingEntrySheet awaits this and treats resolution as
+    // success — it fires "Reading saved" and closes the sheet. A bare return here
+    // resolved the promise, so the tech saw an error toast INSTANTLY overwritten by
+    // a success toast, the sheet closed, and the typed reading was gone. Throwing
+    // lands in the sheet's catch: "Failed to save reading: …", sheet stays open,
+    // form intact.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error(
+        'Moisture readings require an internet connection. Reconnect and try again.',
+      );
+    }
+    const clientId = createOfflineOperationId();
     const p = {
       clientId, jobId, roomId: payload.roomId || null,
       material: payload.material, location: payload.location || null,
@@ -131,42 +123,39 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
       notes: payload.notes || null, takenBy: employee?.id || null,
       takenAt: new Date().toISOString(),
     };
-    if (offlineQueueEnabled) {
-      await enqueue({ type: 'reading.insert', clientId, payload: p });
-      toast(typeof navigator !== 'undefined' && navigator.onLine === false ? t('toast.readingQueued') : t('toast.readingSaved'));
-    } else {
-      await db.rpc('insert_reading', {
-        p_job_id: p.jobId, p_room_id: p.roomId, p_material: p.material, p_location: p.location,
-        p_mc: p.mc, p_rh: p.rh, p_temp_f: p.tempF, p_gpp: p.gpp, p_dew_point: p.dewPoint,
-        p_is_affected: p.isAffected, p_equipment_id: p.equipmentId, p_taken_by: p.takenBy,
-        p_notes: p.notes, p_client_id: clientId,
-      });
-      toast(t('toast.readingSaved'));
-      reloadHydro();
-    }
+    await db.rpc('insert_reading', {
+      p_job_id: p.jobId, p_room_id: p.roomId, p_material: p.material, p_location: p.location,
+      p_mc: p.mc, p_rh: p.rh, p_temp_f: p.tempF, p_gpp: p.gpp, p_dew_point: p.dewPoint,
+      p_is_affected: p.isAffected, p_equipment_id: p.equipmentId, p_taken_by: p.takenBy,
+      p_notes: p.notes, p_client_id: clientId,
+    });
+    toast(t('toast.readingSaved'));
+    reloadHydro();
     onMutation?.('room');
   };
 
   const handlePlaceEquipment = async (payload) => {
     if (!jobId) throw new Error('Job not loaded');
-    const clientId = newClientId();
+    // THROW, never return — see handleSaveReading above. EquipmentPlacementSheet
+    // has the identical await-then-succeed shape.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error(
+        'Equipment placement requires an internet connection. Reconnect and try again.',
+      );
+    }
+    const clientId = createOfflineOperationId();
     const p = {
       clientId, jobId, roomId: payload.roomId || null,
       equipmentType: payload.equipment_type, nickname: payload.nickname || null,
       serialNumber: payload.serial_number || null, placedBy: employee?.id || null,
     };
-    if (offlineQueueEnabled) {
-      await enqueue({ type: 'equipment.place', clientId, payload: p });
-      toast(typeof navigator !== 'undefined' && navigator.onLine === false ? t('toast.placementQueued') : t('toast.placed'));
-    } else {
-      await db.rpc('place_equipment', {
-        p_job_id: p.jobId, p_room_id: p.roomId, p_equipment_type: p.equipmentType,
-        p_nickname: p.nickname, p_serial: p.serialNumber, p_placed_by: p.placedBy,
-        p_client_id: clientId, p_notes: null,
-      });
-      toast(t('toast.placed'));
-      reloadHydro();
-    }
+    await db.rpc('place_equipment', {
+      p_job_id: p.jobId, p_room_id: p.roomId, p_equipment_type: p.equipmentType,
+      p_nickname: p.nickname, p_serial: p.serialNumber, p_placed_by: p.placedBy,
+      p_client_id: clientId, p_notes: null,
+    });
+    toast(t('toast.placed'));
+    reloadHydro();
     onMutation?.('room');
   };
 
@@ -180,14 +169,16 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
     setConfirmRemoveId(null);
     if (confirmTimer.current) clearTimeout(confirmTimer.current);
     try {
-      if (offlineQueueEnabled) {
-        await enqueue({ type: 'equipment.remove', clientId: newClientId(), payload: { equipmentId: id, removedBy: employee?.id || null, jobId } });
-        toast(t('toast.equipMarkedRemoval'));
-      } else {
-        await db.rpc('remove_equipment', { p_equipment_id: id, p_removed_by: employee?.id || null });
-        toast(t('toast.equipRemoved'));
-        reloadHydro();
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        toast(
+          'Equipment removal requires an internet connection. Reconnect and try again.',
+          'error',
+        );
+        return;
       }
+      await db.rpc('remove_equipment', { p_equipment_id: id, p_removed_by: employee?.id || null });
+      toast(t('toast.equipRemoved'));
+      reloadHydro();
       onMutation?.('room');
     } catch (err) {
       toast(t('toast.removeFailed', { message: err?.message || 'unknown' }), 'error');
