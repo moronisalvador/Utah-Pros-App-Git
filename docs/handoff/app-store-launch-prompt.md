@@ -122,15 +122,29 @@ screenshots per required device size, age rating answers, export-compliance (the
 usually the standard exemption, confirm), the privacy-policy and support URLs, and the TestFlight
 internal-testing route for the owner's own multi-day test.
 
-## One strategic question to put to the owner before submitting
+## Distribution route — DECIDED: public App Store
 
-This is an internal business tool for one company's staff, with no public signup. Apple often directs
-such apps to **Apple Business Manager custom app distribution** rather than the public App Store: no
-public listing, no Guideline 4.2 "minimum functionality" argument, and the owner controls who installs.
-Public review for an internal-only app invites friction that custom distribution avoids entirely.
+**The owner has decided on the public App Store, not Apple Business Manager custom distribution.**
+Reason: the product is heading toward multi-tenant, and having the app already approved makes that
+transition far easier than starting a review cycle later. Do not reopen this decision.
 
-Find out which route the enrolment actually covers, present both, and let the owner decide. It changes
-the submission path materially, so ask before doing Task 5's public-listing work.
+What that means for your work: the app must read as a **B2B product other companies could subscribe
+to**, not as one company's internal tool. Apple can reject a single-company internal app submitted for
+public distribution, and the usual trigger is a listing that makes it obvious. Login-gated B2B apps are
+entirely normal on the public store — the difference is positioning and reviewability, both of which
+are solvable:
+
+- The App Store listing description should describe the product (restoration job management,
+  scheduling, field documentation, billing), not "Utah Pros staff app".
+- **Working demo credentials are non-negotiable** here, more so than for custom distribution — a
+  reviewer who cannot get past the login screen has no way to evaluate anything. See Task 4.
+- Expect a possible Guideline 4.2 / 4.3 question. The honest answer is that this is a vertical B2B
+  SaaS product; if a reviewer pushes back, the response is product framing plus a working account, not
+  an argument.
+
+Flag to the owner, without blocking on it: if multi-tenant is genuinely near, the account/organisation
+model and the sign-up path are what a reviewer will look for. Nothing in the current app lets a new
+company self-register, so the listing should not promise that until it exists.
 
 ## What only the owner can do
 
