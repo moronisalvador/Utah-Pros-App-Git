@@ -65,6 +65,36 @@ So: **apply `20260726180000` (additive — creates `get_my_employee_profile` and
 `get_employee_directory`) before the merge**, with fresh owner authorization for that apply. Verify
 both functions resolve live. Only then proceed.
 
+## The OTHER ordering constraint — and this one can take production down
+
+**Corrected 2026-07-27 after the review.** The review's apply order had
+`20260726182000_mobile_employee_identity_containment.sql` running once *dev* was verified. That would
+have broken **production**. Do not follow that ordering.
+
+Read what the migration actually does (`:834-848`): it drops `allow_anon_read_employees` and
+`allow_authenticated_employees`, replaces them with
+`employees_self_identity_read ... USING (auth_user_id = auth.uid())` — so an authenticated browser can
+read **only its own employee row** — and then revokes `employees` down to four columns
+(`id, auth_user_id, role, is_active`).
+
+The code **currently on `main`** reads `employees` directly in **14 files**, asking for much more:
+
+| Surface | Reads | After the migration |
+|---|---|---|
+| `Schedule.jsx:547` | `display_name, full_name, role, color, avatar_url`, all active | breaks |
+| `TimeTracking.jsx:206` | `full_name, hourly_rate` | breaks |
+| `settings/Team.jsx:98` | no `select=` filter, i.e. `SELECT *` | breaks |
+| `Login.jsx:30` | `full_name, email, role` | breaks |
+| ClaimPage, CustomerPage, JobPage, Jobs, Production, CrmTasks | `full_name`, all active | all break |
+
+That is the crew pickers, the schedule board, timesheets, the team screen and the dev-mode employee
+picker. **One database serves both branches**, so this lands on production the instant the migration
+applies — deploying the new bundle to `dev` does nothing to protect `main`.
+
+The PR's own code is clean: **zero** direct browser reads of `employees` remain (verified — it moved
+them all behind RPCs). So this is purely an ordering problem, and the fix is to promote to production
+BEFORE applying the containment migration. See "The apply order" below.
+
 ## Task 1 — Merge and reconcile
 
 **No rebase needed** — merge `dev` into the branch. Six files were touched on both sides; three
@@ -145,14 +175,23 @@ PR: `employees`, `inbound_leads`, `notifications`, `employee_page_access`, `noti
 `device_tokens`. Dev: `contacts`, `conversations`, `conversation_participants`,
 `notification_role_defaults`.
 
-1. `20260726180000` — **before the merge** (Task 0).
-2. Merge → dev deploys → **confirm login works on dev.utahpros.app**.
-3. `20260726182000` — only after step 2 is verified. It drops `allow_anon_read_employees` /
-   `allow_authenticated_employees` and revokes `employees` to four columns, which breaks any
-   still-cached old bundle.
-4. `20260727020000` → `20260727022920` (their preflights `RAISE EXCEPTION` out of order — a correct
-   fail-closed guard).
-5. Everything else, including dev's two, in any order, one window at a time.
+1. `20260726180000` — **before the merge** (Task 0). Additive: it only creates
+   `get_my_employee_profile` and `get_employee_directory`. Safe for production, which does not call
+   them yet.
+2. Merge → dev deploys → **confirm login works on dev.utahpros.app** as a real employee.
+3. **Promote `dev` → `main` so PRODUCTION is running the new bundle.** Wait for the Cloudflare
+   production deploy and confirm by fetching the deployed asset, not by trusting the green check.
+4. **Only now** apply `20260726182000` (the employees containment). Until production runs the new
+   code, this migration breaks the schedule board, timesheets, the team screen, the crew pickers and
+   the dev-mode employee picker — on production — because one database serves both branches. This is
+   the step the original review got wrong; see the section above.
+5. `20260727020000` → `20260727022920` (their preflights `RAISE EXCEPTION` out of order — a correct
+   fail-closed guard, not a defect).
+6. Everything else, including dev's two, in any order, one window at a time.
+
+After step 4, re-verify the same production surfaces that the table lists as at risk. A read-only
+catalog check is not enough here: the failure mode is a browser query returning one row instead of
+forty, which looks like "no crew" rather than an error.
 
 **Ledger gotcha:** this project assigns the ledger version **at apply time, not from the filename** —
 `20260726220000_permission_write_gates.sql` is live as `20260727012825`. Record the assigned versions
@@ -193,6 +232,32 @@ Say this plainly in the PR rather than implying full coverage:
 - the native iOS build, signing, entitlements, push enrolment
 - on-device motion/gesture feel and resume behaviour of the rewritten shell
 - most of the added `docs/` and `docs/audit/` evidence, which was sampled
+
+## Environment notes for a fresh session on this machine
+
+These cost the previous session real time. None is a bug; all are how this repo works.
+
+- **Free-form SQL is denied by policy.** `.claude/settings.json` denies `execute_sql`,
+  `exec_read_sql` and `upr_sql`, and deny beats the local allow-list. For read-only catalog work use
+  `upr_rpc` with `fn: "exec_read_sql"` and the parameter name **`p_query`** (not `query`). The MCP
+  labels it "mutating" from its name prefix and asks to confirm — the underlying function is
+  SELECT-only in a read-only transaction, so confirming is correct. It is still a live-catalog read:
+  fine for inspection, never for iterating.
+- **The main working tree carries another session's uncommitted files** (`.claude/`, `.agents/`,
+  `.codex/` adapters). Work in a worktree, and stage by explicit path — never `git add -A`.
+- **Tests must run through the npm scripts.** `npx vitest` fails with
+  `UPR_TEST_LANE must be exactly unit, worker, qa, or db`. Use `npm test` (unit + worker + qa) or a
+  single lane via `npm run test:unit|test:worker|test:qa`.
+- **A green Cloudflare Pages check does NOT mean production serves your code.** The check goes green
+  on the *build* while the production alias may still serve the previous bundle. The previous session
+  concluded "the fix does not work" from exactly this. Verify by fetching
+  `https://utahpros.app/` , reading the `assets/index-*.js` name, curl-ing that file and grepping it.
+- **Dev Mode is not a real session.** The Login screen's employee picker authenticates the employee
+  row but runs as Supabase `anon`, so every `TO authenticated` RPC returns `42501 permission denied`.
+  That is expected, not a bug — it is what produces `RPC get_claim_detail: 401 {"code":"42501"...}`.
+  For real data use "Dev Mode: Real Data (test admin)", and never type credentials yourself.
+- **Ledger versions are assigned at apply time, not from the filename.**
+  `20260726220000_permission_write_gates.sql` is live as `20260727012825`.
 
 ## Hard constraints
 
