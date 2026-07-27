@@ -219,7 +219,26 @@ scheduled paths accept only `GLOBAL_OPT_IN`.
 Use rollback-only synthetic records; do not send a provider message. Runtime code may roll back
 while the fail-closed hardening remains; reopening either race requires a separate approved
 migration.
-Capture provenance/readback before deploying the dependent Worker/UI.
+
+### Native Work Authorization bridge release gate
+
+The repository-only bridge is sequenced code-first without breaking public signing: while the new
+RPC is absent, `submit-esign` falls back only for PostgREST's explicit missing-function condition,
+completes the document through the existing RPC and records no consent. Any other wrapper error
+fails rather than bypassing an installed boundary. Deploy that backward-compatible Worker to `dev`
+first and verify that ordinary signing still completes with no consent evidence while the wrapper
+is absent. After separate approval, apply
+`20260727005212_upr_work_authorization_sms_consent.sql`, refresh the PostgREST schema cache if
+needed, and verify the table/RPC ACLs and exact status definition before promoting `dev` to `main`.
+
+Credential-free Worker/QA tests pin disclosure drift, missing-RPC fallback, non-bypass errors, ACLs,
+suppression ordering, no global opt-in mutation and the concrete rollback. The isolated DB lane
+adds behavioral proof for exact/mismatched disclosures, DND precedence, non-Work-Authorization
+documents and anon denial. Production verification must be read-only/no-send: use an owner-approved
+synthetic or newly signed test authorization, confirm the evidence/status result, and do not send
+to a real client. Applying the migration, deploying, or using a production signing token each
+remains separately owner-gated.
+Capture provenance/readback after apply and before the reviewed `dev` → `main` promotion.
 
 ## QuickBooks Online attachments + payment-sync cron release sequence (2026-07-24)
 

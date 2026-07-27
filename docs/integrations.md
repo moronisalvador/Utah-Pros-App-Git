@@ -70,6 +70,11 @@ bindings and provider consoles.
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
   Scheduled and automated SMS call the same suppression-aware status boundary but accept only
   `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
+- The UPR e-sign Worker has a repository-authored, not-yet-released bridge for native Work
+  Authorizations. It recognizes only the pinned rendered SMS disclosure and asks a service-only
+  database wrapper to complete the signature plus store linked immutable evidence atomically.
+  Missing schema or changed disclosure completes signing without permission, so staff messaging
+  remains blocked. The bridge calls no SMS provider and cannot send/retry a message.
 - `process-scheduled` also submits through `sendAutomatedMessage()` rather than calling Twilio
   directly. This keeps the automation kill-switch, global-consent/DND decision, recipient-local
   quiet hours, provider retry policy, delivery callback and worker-owned message row on one

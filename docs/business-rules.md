@@ -89,12 +89,16 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
   originate from the approved server path and bind the rendered disclosure/version, submitted
   choice, server-observed request context and resulting contact.
 - Valid service-message permission may also have been obtained verbally on a customer call or in
-  writing, including an SMS clause in a signed work authorization. Authorized admin/office staff
+  writing outside UPR, including an older signed work authorization. Authorized admin/office staff
   may attest that verified prior permission only by recording its method, date and evidence note;
   UPR records their server-derived identity, audit timestamp, attestation version, Utah Pros sender
-  identity and the fixed `service_related_customer_project_messages` scope. Contact existence, an
-  assumed business relationship, or merely lacking a STOP record is never permission. This
-  attestation does not authorize promotional, campaign or unrelated message subjects.
+  identity and the fixed `service_related_customer_project_messages` scope.
+- A Work Authorization signed through UPR's own e-sign flow is not a staff attestation. When its
+  rendered SMS section exactly matches the approved version/hash, UPR may record separate immutable
+  system evidence bound to the sign request, signed PDF, phone snapshot and signature timestamp.
+  Template drift records no messaging permission. Contact existence, an assumed business
+  relationship, or merely lacking a STOP record is never permission. Neither evidence path
+  authorizes promotional, campaign or unrelated message subjects.
 - Prior-consent attestation is not re-subscription. It never clears manual DND, STOP, provider
   opt-out or `opt_out_at`; customer re-consent after revocation follows the established inbound
   START/affirmative written path.
@@ -201,6 +205,9 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   missing evidence fail closed.
 - Active internal admin/office employees may attest documented prior service consent. Technicians
   may view the blocked state but cannot create the evidence record.
+- A native UPR Work Authorization with the pinned SMS disclosure may satisfy the same narrow status
+  decision without a manual employee attestation; it still cannot clear DND/STOP/opt-out or create
+  global, automated, group, broadcast or campaign consent.
 - Recording consent never automatically sends or retries a draft. Staff must explicitly press Send,
   and the server rechecks the complete consent/DND boundary.
 - Internal notes remain available when customer messaging is blocked because they do not leave UPR.

@@ -95,6 +95,13 @@ be treated as current architecture without re-verification.
   only the safe status decision to staff with Conversations access. The staff-send chokepoint uses
   the same service-only database decision and independently refuses duplicate-contact suppression
   or a durable inbound STOP awaiting projection.
+- A Work Authorization signed through UPR's own e-sign worker is a separate first-party evidence
+  source. The consent-aware completion wrapper calls the deployed `complete_sign_request` contract
+  and records immutable `work_authorization_sms_consents` evidence in the same transaction only
+  when the rendered SMS disclosure matches the pinned version/hash. The shared status RPC consumes
+  that evidence only as `SERVICE_CONSENT`; global/automated opt-in and all suppression checks remain
+  unchanged. This bridge is repository-authored but not a live boundary until its migration and
+  Worker deployment receive separate approval and verification.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.

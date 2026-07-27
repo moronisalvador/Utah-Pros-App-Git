@@ -1,7 +1,26 @@
-// Supabase REST helper for Cloudflare Workers
-// No SDK — pure fetch(), works in V8 isolates
+/**
+ * ════════════════════════════════════════════════
+ * FILE: supabase.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Provides the server-only REST, RPC, Auth and private Storage operations
+ *   Cloudflare Pages Functions use with the Supabase service-role credential.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  none
+ *   Data:      reads/writes → caller-selected Supabase resources
+ *
+ * NOTES / GOTCHAS:
+ *   - No SDK: every operation uses fetch and throws on a non-success response.
+ *   - Routes may inject fetchWithTimeout; existing callers default to the
+ *     platform fetch implementation.
+ *   - Never import this service-role helper into browser code.
+ * ════════════════════════════════════════════════
+ */
 
-export function supabase(env) {
+export function supabase(env, fetchImpl = fetch) {
   const url = env.SUPABASE_URL;
   const key = env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -15,14 +34,14 @@ export function supabase(env) {
   return {
     // SELECT — returns array of rows
     async select(table, query = '') {
-      const res = await fetch(`${url}/rest/v1/${table}?${query}`, { headers });
+      const res = await fetchImpl(`${url}/rest/v1/${table}?${query}`, { headers });
       if (!res.ok) throw new Error(`Supabase SELECT ${table}: ${res.status} ${await res.text()}`);
       return res.json();
     },
 
     // INSERT — returns inserted row(s)
     async insert(table, data) {
-      const res = await fetch(`${url}/rest/v1/${table}`, {
+      const res = await fetchImpl(`${url}/rest/v1/${table}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(data),
@@ -33,7 +52,7 @@ export function supabase(env) {
 
     // UPDATE — filter is PostgREST query string, e.g. "id=eq.abc-123"
     async update(table, filter, data) {
-      const res = await fetch(`${url}/rest/v1/${table}?${filter}`, {
+      const res = await fetchImpl(`${url}/rest/v1/${table}?${filter}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify(data),
@@ -44,7 +63,7 @@ export function supabase(env) {
 
     // UPSERT — insert or update on conflict
     async upsert(table, data) {
-      const res = await fetch(`${url}/rest/v1/${table}`, {
+      const res = await fetchImpl(`${url}/rest/v1/${table}`, {
         method: 'POST',
         headers: {
           ...headers,
@@ -58,7 +77,7 @@ export function supabase(env) {
 
     // DELETE
     async delete(table, filter) {
-      const res = await fetch(`${url}/rest/v1/${table}?${filter}`, {
+      const res = await fetchImpl(`${url}/rest/v1/${table}?${filter}`, {
         method: 'DELETE',
         headers,
       });
@@ -70,7 +89,7 @@ export function supabase(env) {
 
     // RPC — call a Postgres function
     async rpc(fn, params = {}) {
-      const res = await fetch(`${url}/rest/v1/rpc/${fn}`, {
+      const res = await fetchImpl(`${url}/rest/v1/rpc/${fn}`, {
         method: 'POST',
         headers,
         body: JSON.stringify(params),
@@ -84,7 +103,7 @@ export function supabase(env) {
     // service-role key isn't configured, rather than silently no-oping.
     async uploadStorage(bucket, path, bytes, contentType) {
       if (!key) throw new Error('Supabase service-role key not configured');
-      const res = await fetch(`${url}/storage/v1/object/${bucket}/${path}`, {
+      const res = await fetchImpl(`${url}/storage/v1/object/${bucket}/${path}`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${key}`,
@@ -100,7 +119,7 @@ export function supabase(env) {
 
     async downloadStorage(bucket, path, maxBytes = 5_000_000) {
       if (!key) throw new Error('Supabase service-role key not configured');
-      const res = await fetch(`${url}/storage/v1/object/authenticated/${bucket}/${path}`, {
+      const res = await fetchImpl(`${url}/storage/v1/object/authenticated/${bucket}/${path}`, {
         headers: {
           'Authorization': `Bearer ${key}`,
           'apikey': key,
@@ -142,7 +161,7 @@ export function supabase(env) {
 
     async signStorage(bucket, path, expiresIn = 600) {
       if (!key) throw new Error('Supabase service-role key not configured');
-      const res = await fetch(`${url}/storage/v1/object/sign/${bucket}/${path}`, {
+      const res = await fetchImpl(`${url}/storage/v1/object/sign/${bucket}/${path}`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ expiresIn }),

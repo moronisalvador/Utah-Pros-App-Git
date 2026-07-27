@@ -97,6 +97,9 @@ Payment is due within 30 days of invoice issuance. Any balance unpaid after 45 d
 
 {{insurance_section}}
 
+## SMS COMMUNICATIONS
+By signing this Agreement, I consent to receive text messages (SMS/MMS) from Utah Pros Restoration at the mobile number provided in connection with this Agreement. Messages may include appointment reminders, project status updates, scheduling notifications, and other communications related to my restoration project. Message and data rates may apply. Message frequency varies. Reply STOP to opt out at any time. Reply HELP for assistance. Carriers are not liable for delayed or undelivered messages.
+
 ## GOVERNING LAW
 This Agreement is governed by the laws of the State of Utah. Any dispute shall first be submitted to non-binding mediation. If mediation fails, the dispute shall be resolved by binding arbitration pursuant to the Utah Uniform Arbitration Act (Utah Code Ann. § 78B-11-101 et seq.). The prevailing party shall be entitled to recover reasonable attorney fees and costs.
 
