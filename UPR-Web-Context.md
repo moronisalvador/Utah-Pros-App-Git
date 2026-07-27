@@ -1,11 +1,30 @@
 # UPR Web Platform — Context Document
-Last updated: July 27, 2026 (current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
+Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair source;
+current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
 signed Work Authorization SMS consent and current `origin/dev` additions preserved; see git history
 for earlier accuracy-audit findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
+
+## Dorothy Killian downstairs reconstruction A/R repair (2026-07-27)
+
+Migration source
+`20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql` is a bounded, idempotent
+repair for the already-existing UPR records tied to QuickBooks invoice `4283` / document
+`R-2604-062`. It does not create another job, invoice, line item, or payment. It corrects the
+downstairs reconstruction job to claim `CLM-2603-010` / Encircle `4390121`, moves the incorrectly
+assigned upstairs reconstruction job to its own Encircle claim `4760844`, fills the reviewed
+customer/job identity fields, adds the missing primary `contact_jobs` association, and restores the
+existing invoice line to `$10,611.51`. Existing triggers then derive invoice balance `$2,938.64`
+from the preserved `$7,672.87` QuickBooks payment. The migration never writes generated or
+payment-trigger-owned money columns directly.
+
+The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
+invoice total and negative displayed balance. Live apply state remains unverified until the migration
+ledger and exact postconditions are read back from Supabase; repository source alone is not evidence
+of production state.
 
 ## Encircle managed credentials initiative (2026-07-23)
 
