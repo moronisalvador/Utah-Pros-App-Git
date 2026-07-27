@@ -19,6 +19,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireUser } from '../lib/auth.js';
 import { sendEmail } from '../lib/email.js';
+import { buildSigningUrl } from '../lib/short-link.js';
 
 // Signing-link origin. APP_URL wins when set (Cloudflare Pages, per environment),
 // otherwise derive it from the host this request actually arrived on.
@@ -159,7 +160,7 @@ export async function onRequestPost(context) {
 
     const { token, id: sign_request_id } = signReq;
     const APP_URL     = getAppUrl(env, request);
-    const signingUrl  = `${APP_URL}/sign/${token}`;
+    const signingUrl  = buildSigningUrl(APP_URL, token);
     const docLabel    = DOC_LABELS[doc_type] || 'Document';
     const locationStr = [job.address, job.city, job.state].filter(Boolean).join(', ') || 'your property';
 
