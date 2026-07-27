@@ -1022,8 +1022,39 @@ Twenty decisions, collected from all five design lanes and de-duplicated. **None
 
 ### 10. Evict the two `.claude/rules/` files that are not law?
 
+> #### ⛔ RE-OPENED 2026-07-26 — the DRAFT is no longer "not law", and the recursion fact is unsourced
+>
+> **The second eviction target now carries LIVE cross-session coordination state.** Since this ledger
+> item was written, `upr-engineering-foundation-wave-ownership.md` grew from 8,302 B to **11,740 B**
+> and gained an "Active writer register" (`:119`) holding: a DB lease over 8 unapplied migrations
+> naming 8 tables and 12 functions other sessions must not touch (`:133` "Do not author a migration
+> touching any of them"), and a **promotion hold** (`:158` "`dev` is **not** to be promoted to `main`
+> while APP-2/APP-3 are live"). `:125` says "Read this before authoring a migration, touching a
+> permission/notification surface, or promoting `dev` to `main`."
+>
+> **And the same file still disclaims its own authority** at `:15` and `:22-23`: "DRAFT FOR OWNER
+> REVIEW … not binding project law … grants no authority." So a promotion hold and a database lease
+> currently live inside a document that tells the reader to ignore it. Under the AGENTS.md precedence
+> ladder a session is entitled to do exactly that.
+>
+> That makes option (a) — evict to `docs/` — **actively unsafe as written**: it would move live
+> coordination state out of the unconditionally-loaded set while three sessions share this checkout.
+> But option (c), leave it, preserves a self-contradicting document. The real remedy is a third
+> option the ledger does not offer: **promote the register out of the DRAFT into something that binds
+> (or retire it if the leases have closed), THEN evict the remainder.** Sequencing matters here.
+>
+> **Also: the "newly-measured fact" below is not measured.** `git log --all --diff-filter=A
+> --name-only -- '.claude/rules/*/*'` is empty — no subdirectory has ever existed under
+> `.claude/rules/` in this repo's history, so the recursion claim cannot have been measured in-tree.
+> It appears in neither the MEASURED nor the NOT-MEASURED register of
+> `docs/agent-alignment-l2-evidence.md`. Treat it as an unsourced assertion. It happens not to matter
+> for option (a) (which leaves the tree entirely), but it is the stated justification for P8's
+> `find`-not-`ls` acceptance criterion.
+>
+> Byte figures below are stale: the DRAFT is 11,740 B, not 8,302 B.
+
 **Blocks:** P8.
-**A newly-measured fact changes the options:** the rules loader **recurses into subdirectories** of `.claude/rules/`, so moving either file into `.claude/rules/archive/` would **not** stop it loading. To stop loading, a file must leave the tree entirely — or carry `paths:`.
+**A newly-measured fact changes the options** *(see the correction above — this was never measured)*: the rules loader **recurses into subdirectories** of `.claude/rules/`, so moving either file into `.claude/rules/archive/` would **not** stop it loading. To stop loading, a file must leave the tree entirely — or carry `paths:`.
 **Options.** (a) Evict both: `git rm` the 358 B tombstone (its own text says it binds nothing and points at the archive) and `git mv` the 8,302 B DRAFT to `docs/` beside its existing roadmap, starting a `docs/archive/rules/README.md` index so the next three archivals produce index rows instead of stubs. (b) Leave both in place but add `paths:` frontmatter scoping them to something they will never match — same byte saving, at the cost of a rule that is deliberately unreachable, which is dishonest bookkeeping. (c) Leave both loading unconditionally — 8,660 B and 4.1% of all rule bytes, of which 8,302 B is self-declared non-binding text that **reads as law because of where it sits**.
 **Recommendation:** (a). The strongest argument is not the bytes: it is that 8.3 KB of admitted non-law in the law directory reads as law regardless of its disclaimer. Two mitigations make it cheap — an L0 pointer row for the draft's genuinely useful §5 disjointness ledger and §6 lease protocol, and the archive index so the breadcrumb survives. **Critical mechanical note (challenge finding S-7): `docs/archive/rules/admin-mobile-wave-ownership.md` already exists at 9,253 B**, so a plain `git mv` of the stub fails and a retry with `-f` would overwrite the archived substantive manifest with the stub. P8 therefore uses `git rm` plus an index row, with a before/after byte assertion on the archived file.
 **Prior owner decision (quoted):** `CLAUDE.md` already records the rule — wave-ownership manifests "live here while their initiative is active; when its LAST phase merges, `git mv` the manifest to `docs/archive/rules/` with a one-line tombstone (keeps the active set honest)." Admin-mobile is the worked precedent (complete 2026-07-13, manifest moved, flag opened 2026-07-07). Eviction applies your own recorded rule; the only novelty is doing it without leaving a stub behind.
