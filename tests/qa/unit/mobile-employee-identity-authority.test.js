@@ -31,6 +31,7 @@ import {
   extname,
   join,
   relative,
+  sep,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -767,7 +768,11 @@ describe('browser and trusted employee callers', () => {
       .filter((file) => readFileSync(file, 'utf8').includes(
         "db.rpc('get_all_employees')",
       ))
-      .map((file) => relative(ROOT, file));
+      // Normalise separators: relative() yields `src\pages\...` on Windows, so a
+      // hardcoded forward-slash comparison passed on CI's Linux and failed on the
+      // owner's machine. A test that is only green on CI teaches people to ignore
+      // local failures, which is worse than the test not existing.
+      .map((file) => relative(ROOT, file).split(sep).join('/'));
     expect(fullEmployeeCallers).toEqual(['src/pages/settings/Team.jsx']);
   });
 
