@@ -8780,6 +8780,46 @@ the expired client: local session state is cleared, the durable owner-bound jour
 only a fresh same-account bootstrap may complete it before employee publication. Independent
 security review found no remaining source P0/P1; the focused race suite passes 46/46.
 
+### PR #525 integration onto current `dev` (2026-07-27)
+
+**APPLIED to the shared database: `20260726180000_mobile_employee_identity_authority.sql`.**
+**Ledger version assigned at apply time: `20260727154506`** — the filename is NOT the ledger
+version; record the assigned one or the provenance gate reports it unmapped. Additive only: it
+creates three `SECURITY DEFINER` functions with pinned `search_path`, `REVOKE` from `PUBLIC, anon`
+then `GRANT` to `authenticated, service_role`:
+
+- `get_my_employee_profile() → TABLE(id, full_name, display_name, email, role, is_active, is_external, default_division)`
+- `get_employee_directory(p_include_inactive boolean DEFAULT false) → TABLE(id, full_name, display_name, role, color, avatar_url, is_active)`
+- `get_message_author_directory(p_message_ids uuid[]) → TABLE(id, full_name, display_name)` — capped
+  at 200 ids, gated behind `messaging_can_access_conversations()`
+
+It had to be applied **before** the merge: `AuthContext` bootstraps every session through
+`get_my_employee_profile` with no fallback, and its catch runs a local `signOut`. Verified live on a
+real authenticated session — a fresh login resolves the RPC and publishes the employee.
+
+**Owner ruling (2026-07-27):** `get_employee_directory` gates `is_external` only on the *inactive*
+roster, so an active external account can enumerate the active internal roster (names, roles,
+colors, avatars — no email, no pay). Owner reviewed and approved shipping as-is.
+
+**Still unapplied, and ORDER-CRITICAL:** `20260726182000_mobile_employee_identity_containment.sql`
+revokes `employees` to four columns and restricts reads to the caller's own row. Code on `main`
+reads `employees` directly in 14 files. One database serves both branches, so this must be applied
+only AFTER `dev` is promoted to `main` and production is confirmed serving the new bundle —
+otherwise it breaks the schedule board, timesheets, the team screen and the crew pickers on
+production.
+
+**New routes:** `/tech/legal/privacy`, `/tech/legal/terms`, `/tech/legal/support` render the same
+`PrivacyPolicy`/`TermsOfService`/`Support` components as the office routes, but inside the field
+shell. Field Settings links these, never the bare office paths: those render with no nav, and the
+PWA/Capacitor container has no browser back button, so a tech who tapped one had to force-quit. The
+office routes remain for the logged-out case, which is why `Login.jsx` still links them.
+
+**Offline product decision CLOSED (owner-ratified 2026-07-27):** online-only for the initial
+release. See the amendment in `.claude/rules/tech-mobile-ux.md`; `docs/mobile-production-readiness-roadmap.md`
+C1 updated. The four offline save handlers (`TechAppointment` readings/equipment, `HubTools`
+likewise) **throw** rather than return — both entry sheets treat a resolved promise as success, so a
+bare return fired "Reading saved", closed the sheet, and discarded the tech's typed reading.
+
 The initial production release intentionally has **zero automatic offline command admission or
 replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or
 persists a photo blob, and the maintenance runner imports no dispatcher. Field photo, moisture
