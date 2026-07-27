@@ -18,12 +18,12 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (getAuthHeader),
- *              @/lib/toast (toast), @/hooks/useTwoClickConfirm, @/components/ui (ErrorState)
+ *              @/lib/toast (toast), @/components/settings/AccountDeletionPanel
  *   Data:      reads  → get_google_drive_status / get_google_calendar_status /
- *                       get_my_account_deletion_request (RPCs)
- *              writes → request_account_deletion (RPC — files a deletion request +
- *                       notifies admins). Google connect/disconnect/resync go through
- *                       the /api/google-drive-connect|disconnect and
+ *                       account-deletion status via the shared panel
+ *              writes → account-deletion request via the shared panel. Google
+ *                       connect/disconnect/resync go through the
+ *                       /api/google-drive-connect|disconnect and
  *                       /api/google-calendar-resync workers.
  *
  * NOTES / GOTCHAS:
@@ -42,8 +42,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
-import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
-import { ErrorState } from '@/components/ui';
+import AccountDeletionPanel from '@/components/settings/AccountDeletionPanel';
 
 function IconDrive(p){return(<svg viewBox="0 0 24 24" fill="currentColor" {...p}><path d="M7.71 3.5 1.15 15l3.43 5.94 6.56-11.37L7.71 3.5zM22.85 15 16.29 3.5H9.43l6.56 11.5h6.86zM4.93 16.06 8.36 22h11.49l-3.43-5.94H4.93z"/></svg>);}
 
@@ -66,7 +65,7 @@ export default function MyAccount() {
   return (
     <>
       <GoogleDriveIntegrationPanel db={db} />
-      <DeleteAccountPanel db={db} />
+      <AccountDeletionPanel />
     </>
   );
 }
@@ -215,118 +214,6 @@ function GoogleDriveIntegrationPanel({ db }) {
           </button>
         )}
       </div>
-    </div>
-  );
-}
-
-/* ═══ DELETE ACCOUNT PANEL — in-app deletion request (Apple Guideline 5.1.1(v)) ═══ */
-// Request-and-confirm, not immediate self-service delete: UPR accounts are
-// admin-provisioned and a person's job/claim/time records are a shared business
-// record, so an employee files a request that an admin then actions. The RPC is
-// idempotent (an open request short-circuits) and it notifies admins via the bell.
-function DeleteAccountPanel({ db }) {
-  const [loading,    setLoading]    = useState(true);  // cold-start gate only (never re-set true)
-  const [loadError,  setLoadError]  = useState(false);
-  const [request,    setRequest]    = useState(null);  // caller's open pending request, or null
-  const [submitting, setSubmitting] = useState(false);
-  const { isArmed, arm, cancel } = useTwoClickConfirm();
-
-  const normalizeRow = (row) => {
-    const r = Array.isArray(row) ? (row[0] || null) : (row || null);
-    return r && r.id ? r : null;
-  };
-
-  const load = useCallback(async () => {
-    try {
-      const row = await db.rpc('get_my_account_deletion_request');
-      setRequest(normalizeRow(row));
-      setLoadError(false);
-    } catch {
-      // A failed status read must NOT fall through to the "request deletion" button
-      // (that is the empty/actionable state) — show an error with retry instead.
-      setLoadError(true);
-    } finally { setLoading(false); }
-  }, [db]);
-  useEffect(() => { load(); }, [load]);
-
-  const submit = async () => {
-    cancel();
-    setSubmitting(true);
-    try {
-      const row = await db.rpc('request_account_deletion', { p_notes: null });
-      setRequest(normalizeRow(row));
-      toast('Request submitted — an administrator will process this');
-    } catch {
-      toast('Could not submit your request. Please try again.', 'error');
-    } finally { setSubmitting(false); }
-  };
-
-  const armed = isArmed('delete-account');
-
-  return (
-    <div className="settings-panel" style={{ marginTop: 'var(--space-5)' }}>
-      <div style={{ marginBottom: 'var(--space-5)' }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Delete my account</h2>
-        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
-          Request that your account be deleted. Your personal login and app access will be
-          deactivated by an administrator. Business and job records you worked on — jobs,
-          claims, time entries, and photos — are a shared company record kept for legal and
-          accounting reasons, so they are retained rather than erased.
-        </p>
-      </div>
-
-      {loading ? (
-        <div style={{ padding: 'var(--space-5)', display: 'flex', justifyContent: 'center' }}>
-          <div className="spinner" />
-        </div>
-      ) : loadError ? (
-        <ErrorState message="Could not load your account status." onRetry={load} />
-      ) : request ? (
-        /* Pending state — a request is already on file. */
-        <div style={{
-          border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
-          padding: 'var(--space-5)', background: 'var(--bg-tertiary)',
-        }}>
-          <div style={{ fontWeight: 600, fontSize: 'var(--text-base)' }}>
-            Deletion requested
-          </div>
-          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginTop: 4 }}>
-            An administrator will process this
-            {request.requested_at ? ` · requested ${new Date(request.requested_at).toLocaleDateString()}` : ''}.
-            Contact your administrator if you need to cancel it.
-          </div>
-        </div>
-      ) : (
-        /* Empty/actionable state — no request yet: offer the two-click request button. */
-        <div style={{
-          border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
-          padding: 'var(--space-5)', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', gap: 'var(--space-4)', flexWrap: 'wrap',
-        }}>
-          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', maxWidth: '48ch' }}>
-            This sends a deletion request to your administrator. You can’t undo it yourself —
-            reach out to your administrator to cancel.
-          </div>
-          <button
-            className="btn btn-sm"
-            onClick={() => (armed ? submit() : arm('delete-account'))}
-            onBlur={cancel}
-            disabled={submitting}
-            style={{
-              minHeight: 44,
-              background: armed ? 'var(--danger-bg)' : 'var(--bg-tertiary)',
-              color:      armed ? 'var(--danger)' : 'var(--text-secondary)',
-              border:     `1px solid ${armed ? 'var(--danger-border)' : 'var(--border-light)'}`,
-            }}
-          >
-            {submitting
-              ? 'Submitting…'
-              : armed
-                ? 'Confirm — request deletion'
-                : 'Request account deletion'}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -1,167 +1,160 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+/**
+ * ════════════════════════════════════════════════
+ * FILE: App.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Builds the application shell and decides which screen each URL opens. It
+ *   keeps the browser product complete while packaging only field, account,
+ *   legal, support, and signing screens into the iPhone product.
+ *
+ * WHERE IT LIVES:
+ *   Route:        all application routes
+ *   Rendered by:  src/main.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  contexts, route registry, layouts, guards, native security,
+ *              account cleanup, route restoration
+ *   Data:      reads  → none directly (AuthProvider and routed screens own reads)
+ *              writes → none directly (AuthProvider and routed screens own writes)
+ *
+ * NOTES / GOTCHAS:
+ *   - Vite selects separate web/native page registries before bundling. A native
+ *     build fails if a forbidden desktop implementation enters its module graph.
+ *   - Native links wait for the authenticated account-owner lease; saved-route
+ *     restoration runs first so a newer external link remains the final intent.
+ * ════════════════════════════════════════════════
+ */
+import { useEffect, useState, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import '@/i18n'; // initialize the translation engine once, at app entry
-import Layout from '@/components/Layout';
-import SettingsLayout from '@/components/SettingsLayout';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
-import { markBundleReady } from '@/lib/nativeUpdater';
-import { Capacitor } from '@capacitor/core';
 import {
   checkBiometricAvailable,
-  isBiometricEnabled,
+  readBiometricPreference,
   verifyBiometric,
-  setBiometricEnabled,
-  enablePrivacyScreen,
 } from '@/lib/nativeBiometric';
+import { evaluateNativeBiometricLaunch } from '@/lib/nativeBiometricGate';
+import { cleanupAccountDeviceState } from '@/lib/accountDeviceCleanup';
+import { createSupabaseClient } from '@/lib/supabase';
 import { realtimeClient } from '@/lib/realtime';
-import { shouldReloadForStaleChunk, buildResetUrl } from '@/lib/staleChunkReload';
+import { buildResetUrl } from '@/lib/staleChunkReload';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { isMoroni } from '@/lib/owner';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
+import { getAccountLandingPath } from '@/contexts/authBootstrap';
+import targetPages, {
+  IS_NATIVE_BUILD,
+} from '@/routes/buildTargetPages';
 
-// Pages — lazy-loaded so each becomes its own chunk. Keeps the initial bundle
-// small (esp. the native tech app, which never loads admin/desktop pages).
-// Login + the layout shells stay eager (critical path).
-import Login from '@/pages/Login';
 import TechLayout from '@/components/TechLayout';
 
-// Wrap React.lazy so a failed dynamic import — almost always a STALE CHUNK after a new
-// deploy (the hashed file this already-open tab references no longer exists on the server) —
-// triggers a single automatic page reload to fetch the current chunk map, instead of dropping
-// the user on the "ran into a problem" screen.
-//
-// The guard is a TIMESTAMP cooldown (shouldReloadForStaleChunk), NOT a boolean flag. The old
-// flag-based guard cleared itself on every successful chunk load, so a sibling chunk loading
-// fine re-armed the reload — and a persistently-missing chunk (e.g. an edge-poisoned /crm
-// chunk) looped the page forever. A timestamp can't be cleared by unrelated successes: we
-// recover at most once per window, then surface the error to the ErrorBoundary.
-//
-// Recovery goes through /reset (not a plain reload): /reset is served with
-// `Clear-Site-Data: "cache"` (public/_headers), which evicts the browser's HTTP cache of a
-// poisoned `immutable` /assets/*.js — the one thing a plain reload (or even DevTools "Clear
-// site data") can miss — then returns to the original path. Zero user action, no logout.
-const CHUNK_RELOAD_KEY = 'chunkReloadAt';
-function lazyRetry(factory) {
-  return lazy(async () => {
-    try {
-      return await factory();
-    } catch (err) {
-      const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
-      if (shouldReloadForStaleChunk(Date.now(), last)) {
-        sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
-        window.location.replace(buildResetUrl(window.location.pathname + window.location.search));
-        return new Promise(() => {}); // hold render until the redirect takes over
-      }
-      throw err; // recovered recently and still failing → surface to the ErrorBoundary
-    }
-  });
-}
+// Vite selects a complete web registry or a deliberately small native registry
+// before Rollup builds the graph. The native graph cannot import office, CRM,
+// QBO, desktop settings, or real admin-mobile implementations.
+const {
+  AdminDemoSheetBuilder,
+  AdminFeedback,
+  AdminIntegrations,
+  AdminMobileRoutes,
+  ClaimCollectionPage,
+  ClaimPage,
+  ClaimsList,
+  Collections,
+  Commissions,
+  Conversations,
+  CrmAttribution,
+  CrmAutomations,
+  CrmCallLog,
+  CrmCampaigns,
+  CrmContacts,
+  CrmConversations,
+  CrmForms,
+  CrmIntegrations,
+  CrmLayout,
+  CrmLeads,
+  CrmOverview,
+  CrmReports,
+  CrmRoadmap,
+  CrmSequences,
+  CrmSettings,
+  CrmTasks,
+  CustomerPage,
+  Customers,
+  Dashboard,
+  DevTools,
+  EncircleImport,
+  EstimateEditor,
+  Feedback,
+  Help,
+  HomebuildingAnalysis,
+  InvoiceEditor,
+  JobPage,
+  Jobs,
+  JobsClosed,
+  Layout,
+  Leads,
+  ListsAndValues,
+  Login,
+  Marketing,
+  Melds,
+  MyAccount,
+  NewBuildSimulator,
+  NotificationDefaults,
+  NotificationsSettings,
+  OOPPricing,
+  PageAccess,
+  PaymentSettings,
+  PrivacyPolicy,
+  Production,
+  PublicRoadmap,
+  Roles,
+  Schedule,
+  ScheduleTemplates,
+  SetPassword,
+  SettingsHome,
+  SettingsLayout,
+  SignPage,
+  Status,
+  Support,
+  Team,
+  TechAppointment,
+  TechClaimAlbum,
+  TechClaimDetail,
+  TechClaims,
+  TechDemoSheet,
+  TechEditAppointment,
+  TechFeedback,
+  TechHelp,
+  TechJobAlbum,
+  TechJobDetail,
+  TechJobDocuments,
+  TechJobHub,
+  TechMore,
+  TechNewAppointment,
+  TechNewCustomer,
+  TechNewEvent,
+  TechNewJob,
+  TechOOPPricing,
+  TechRoomDetail,
+  TechSettings,
+  TechTasks,
+  Templates,
+  TemplatesEditor,
+  TermsOfService,
+  TimeTracking,
+} = targetPages;
 
-const Dashboard = lazyRetry(() => import('@/pages/Dashboard'));
-const Conversations = lazyRetry(() => import('@/pages/Conversations'));
-const Jobs = lazyRetry(() => import('@/pages/Jobs'));
-const JobsClosed = lazyRetry(() => import('@/pages/JobsClosed'));
-const JobPage = lazyRetry(() => import('@/pages/JobPage'));
-const ClaimsList = lazyRetry(() => import('@/pages/ClaimsList'));
-const ClaimPage = lazyRetry(() => import('@/pages/ClaimPage'));
-const Production = lazyRetry(() => import('@/pages/Production'));
-const Melds = lazyRetry(() => import('@/pages/Melds'));
-const Leads = lazyRetry(() => import('@/pages/Leads'));
-const Customers = lazyRetry(() => import('@/pages/Customers'));
-const CustomerPage = lazyRetry(() => import('@/pages/CustomerPage'));
-const Schedule = lazyRetry(() => import('@/pages/Schedule'));
-const ScheduleTemplates = lazyRetry(() => import('@/pages/ScheduleTemplates'));
-const TimeTracking = lazyRetry(() => import('@/pages/TimeTracking'));
-const Marketing = lazyRetry(() => import('@/pages/Marketing'));
-// Settings hub — index + sub-pages (Settings Overhaul Phase F; Settings.jsx +
-// Admin.jsx dissolved into these routed pages)
-const SettingsHome = lazyRetry(() => import('@/pages/settings/SettingsHome'));
-const ListsAndValues = lazyRetry(() => import('@/pages/settings/ListsAndValues'));
-const Templates = lazyRetry(() => import('@/pages/settings/Templates'));
-const TemplatesEditor = lazyRetry(() => import('@/pages/settings/TemplatesEditor'));
-const Commissions = lazyRetry(() => import('@/pages/settings/Commissions'));
-const MyAccount = lazyRetry(() => import('@/pages/settings/MyAccount'));
-const NotificationsSettings = lazyRetry(() => import('@/pages/settings/Notifications'));
-const Team = lazyRetry(() => import('@/pages/settings/Team'));
-const Roles = lazyRetry(() => import('@/pages/settings/Roles'));
-const PageAccess = lazyRetry(() => import('@/pages/settings/PageAccess'));
-const NotificationDefaults = lazyRetry(() => import('@/pages/settings/NotificationDefaults'));
-const SignPage = lazyRetry(() => import('@/pages/SignPage'));
-const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
-const Collections = lazyRetry(() => import('@/pages/Collections'));
-const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
-const DevTools = lazyRetry(() => import('@/pages/DevTools'));
-const Status = lazyRetry(() => import('@/pages/Status'));
-const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
-const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.PrivacyPolicy })));
-const TermsOfService = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.TermsOfService })));
-const Support = lazyRetry(() => import('@/pages/Legal').then(m => ({ default: m.Support })));
-const AdminFeedback = lazyRetry(() => import('@/pages/settings/FeedbackInbox'));
-const Feedback = lazyRetry(() => import('@/pages/Feedback'));
-const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
-const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/settings/ScopeSheets'));
-const AdminIntegrations = lazyRetry(() => import('@/pages/settings/Integrations'));
-const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
-const Help = lazyRetry(() => import('@/pages/Help'));
-const InvoiceEditor = lazyRetry(() => import('@/pages/InvoiceEditor'));
-const EstimateEditor = lazyRetry(() => import('@/pages/EstimateEditor'));
-const PaymentSettings = lazyRetry(() => import('@/pages/settings/Payments'));
-const HomebuildingAnalysis = lazyRetry(() => import('@/pages/HomebuildingAnalysis'));
-const NewBuildSimulator = lazyRetry(() => import('@/pages/NewBuildSimulator'));
-const CrmLayout = lazyRetry(() => import('@/components/CrmLayout'));
-const CrmRoadmap = lazyRetry(() => import('@/pages/crm/CrmRoadmap'));
-const CrmOverview = lazyRetry(() => import('@/pages/crm/CrmOverview'));
-const CrmLeads = lazyRetry(() => import('@/pages/crm/CrmLeads'));
-const CrmCallLog = lazyRetry(() => import('@/pages/crm/CrmCallLog'));
-const CrmTasks = lazyRetry(() => import('@/pages/crm/CrmTasks'));
-const CrmAttribution = lazyRetry(() => import('@/pages/crm/CrmAttribution'));
-const CrmReports = lazyRetry(() => import('@/pages/crm/CrmReports'));
-const CrmCampaigns = lazyRetry(() => import('@/pages/crm/CrmCampaigns'));
-const CrmIntegrations = lazyRetry(() => import('@/pages/crm/CrmIntegrations'));
-const CrmSettings = lazyRetry(() => import('@/pages/crm/CrmSettings'));
-const CrmContacts = lazyRetry(() => import('@/pages/crm/CrmContacts'));
-const CrmConversations = lazyRetry(() => import('@/pages/crm/CrmConversations'));
-const CrmSequences = lazyRetry(() => import('@/pages/crm/CrmSequences'));
-const CrmAutomations = lazyRetry(() => import('@/pages/crm/CrmAutomations'));
-const CrmForms = lazyRetry(() => import('@/pages/crm/CrmForms'));
-
-// Tech pages (field_tech role)
-const TechSettings = lazyRetry(() => import('@/pages/tech/TechSettings'));
-const TechTasks = lazyRetry(() => import('@/pages/tech/TechTasks'));
-const TechClaims = lazyRetry(() => import('@/pages/tech/TechClaims'));
-const TechClaimDetail = lazyRetry(() => import('@/pages/tech/TechClaimDetail'));
-const TechClaimAlbum = lazyRetry(() => import('@/pages/tech/TechClaimAlbum'));
-const TechRoomDetail = lazyRetry(() => import('@/pages/tech/TechRoomDetail'));
-const TechJobDetail = lazyRetry(() => import('@/pages/tech/TechJobDetail'));
-const TechJobHub = lazyRetry(() => import('@/pages/tech/v2/TechJobHub'));
-const TechJobAlbum = lazyRetry(() => import('@/pages/tech/TechJobAlbum'));
-const TechJobDocuments = lazyRetry(() => import('@/pages/tech/TechJobDocuments'));
-const TechAppointment = lazyRetry(() => import('@/pages/tech/TechAppointment'));
-const TechNewCustomer = lazyRetry(() => import('@/pages/tech/TechNewCustomer'));
-const TechNewJob = lazyRetry(() => import('@/pages/tech/TechNewJob'));
-const TechNewAppointment = lazyRetry(() => import('@/pages/tech/TechNewAppointment'));
-const TechNewEvent = lazyRetry(() => import('@/pages/tech/TechNewEvent'));
-const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppointment'));
-const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
-const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
-const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
-const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
-const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
-// Admin Mobile (Phase F) — admin capabilities inside the tech PWA, gated by
-// AdminMobileRoute (role==='admin' + page:admin_mobile). All per-screen routes
-// live inside this subrouter; App.jsx delegates to it with a single line.
-const AdminMobileRoutes = lazyRetry(() => import('@/pages/tech/admin/AdminMobileRoutes'));
-
-// Native builds (iOS via Capacitor) render only /login + /tech/*.
-// Admin surfaces are browser-only — see CAPACITOR-TASK.md Phase 2.
-const IS_NATIVE = import.meta.env.VITE_BUILD_TARGET === 'native';
+const IS_NATIVE = IS_NATIVE_BUILD;
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -230,8 +223,8 @@ function AccessRoute({ navKey, children }) {
 // and crm_partner users straight into the CRM (they have no access to Dashboard).
 function HomeRedirect() {
   const { employee } = useAuth();
-  if (employee?.role === 'field_tech') return <Navigate to="/tech" replace />;
-  if (employee?.role === 'crm_partner') return <Navigate to="/crm/leads" replace />;
+  const landingPath = getAccountLandingPath(employee?.role);
+  if (landingPath !== '/') return <Navigate to={landingPath} replace />;
   return <ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>;
 }
 
@@ -265,7 +258,13 @@ function PageLoader() {
 // Shared tech routes — used by both native and web trees
 function TechRoutes() {
   return (
-    <Route element={<ProtectedRoute><TechLayout /></ProtectedRoute>}>
+    <Route
+      element={(
+        <ProtectedRoute>
+          <TechLayout nativeBuild={IS_NATIVE} />
+        </ProtectedRoute>
+      )}
+    >
       <Route path="tech" element={null} />
       <Route path="tech/schedule" element={null} />
       <Route path="tech/tasks" element={<ErrorBoundary section="TechTasks"><TechTasks /></ErrorBoundary>} />
@@ -288,7 +287,7 @@ function TechRoutes() {
       <Route path="tech/new-job" element={<ErrorBoundary section="TechNewJob"><TechNewJob /></ErrorBoundary>} />
       <Route path="tech/new-appointment" element={<ErrorBoundary section="TechNewAppointment"><TechNewAppointment /></ErrorBoundary>} />
       <Route path="tech/new-event" element={<ErrorBoundary section="TechNewEvent"><TechNewEvent /></ErrorBoundary>} />
-      <Route path="tech/conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+      <Route path="tech/conversations" element={IS_NATIVE ? null : <ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
       <Route path="tech/feedback" element={<ErrorBoundary section="TechFeedback"><TechFeedback /></ErrorBoundary>} />
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
       <Route path="tech/settings" element={<ErrorBoundary section="TechSettings"><TechSettings /></ErrorBoundary>} />
@@ -301,7 +300,9 @@ function TechRoutes() {
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />
-      <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
+      {!IS_NATIVE && (
+        <Route path="tech/admin/*" element={<ErrorBoundary section="AdminMobile"><AdminMobileRoutes /></ErrorBoundary>} />
+      )}
     </Route>
   );
 }
@@ -313,9 +314,12 @@ function NativeRoutes() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/sign/:token" element={<SignPage />} />
-        {/* Short form. /sign/:token stays forever — links already sent live 30 days. */}
+        {/* Short form. /sign/:token remains for links already sent live. */}
         <Route path="/s/:code" element={<SignPage />} />
         <Route path="/set-password" element={<SetPassword />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
+        <Route path="/terms" element={<TermsOfService />} />
+        <Route path="/support" element={<Support />} />
         {TechRoutes()}
         <Route path="/" element={<Navigate to="/tech" replace />} />
         <Route path="*" element={<Navigate to="/tech" replace />} />
@@ -332,7 +336,7 @@ function WebRoutes() {
       {/* Public */}
       <Route path="/login" element={<Login />} />
       <Route path="/sign/:token" element={<SignPage />} />
-      {/* Short form. /sign/:token stays forever — links already sent live 30 days. */}
+      {/* Short form. /sign/:token remains for links already sent live. */}
       <Route path="/s/:code" element={<SignPage />} />
       <Route path="/set-password" element={<SetPassword />} />
       <Route path="/privacy" element={<PrivacyPolicy />} />
@@ -530,12 +534,28 @@ function WebRoutes() {
   );
 }
 
-// Cold-launch biometric gate. On native, if the user has a stored session and
-// opted into biometric unlock, block UI rendering until Face ID / Touch ID /
-// passcode succeeds. On cancel or failure, sign out and fall through to /login.
-// Web is passthrough — no gate.
+function resetAfterSecureCleanup() {
+  try {
+    if (sessionStorage.getItem('swReset')) return;
+    sessionStorage.setItem('swReset', '1');
+  } catch {
+    // A blocked session marker must not expose the authenticated route tree.
+  }
+  window.location.replace(
+    buildResetUrl(window.location.pathname + window.location.search),
+  );
+}
+
+// Cold-launch biometric gate. On native, an enrolled stored session stays
+// hidden until Face ID / Touch ID / passcode succeeds. Unavailable or rejected
+// verification runs the same account/device cleanup as logout, then signs out
+// locally. Session/policy/sign-out failures remain on a locked retry surface.
+// Web is passthrough.
 function BiometricGate({ children }) {
-  const [gate, setGate] = useState(() => (IS_NATIVE ? 'checking' : 'open'));
+  const [gate, setGate] = useState(() => ({
+    state: IS_NATIVE ? 'checking' : 'open',
+    reason: IS_NATIVE ? 'starting' : 'web',
+  }));
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
@@ -544,33 +564,48 @@ function BiometricGate({ children }) {
 
     (async () => {
       try {
-        const { data } = await realtimeClient.auth.getSession();
-        const hasSession = !!data?.session;
-        if (!hasSession) { if (!cancelled) setGate('open'); return; }
-
-        const [available, enabled] = await Promise.all([
-          checkBiometricAvailable(),
-          Promise.resolve(isBiometricEnabled()),
-        ]);
-        if (!available || !enabled) { if (!cancelled) setGate('open'); return; }
-
-        const ok = await verifyBiometric('Unlock UPR');
-        if (cancelled) return;
-        if (ok) { setGate('open'); return; }
-
-        // Failed or cancelled — sign out and let the login screen render
-        setBiometricEnabled(false);
-        await realtimeClient.auth.signOut();
-        setGate('open');
-      } catch {
-        if (!cancelled) setGate('open');
+        setGate({ state: 'checking', reason: 'verifying' });
+        const result = await evaluateNativeBiometricLaunch({
+          native: true,
+          getSession: () => realtimeClient.auth.getSession(),
+          readPreference: readBiometricPreference,
+          checkAvailable: checkBiometricAvailable,
+          verify: () => verifyBiometric('Unlock UPR'),
+          cleanup: (session) => {
+            if (!session?.access_token) {
+              throw new Error('Authenticated cleanup token is unavailable');
+            }
+            // Bootstrap-only security exception: AuthProvider has not mounted
+            // yet, so cleanup uses the exact stored session token directly.
+            return cleanupAccountDeviceState(
+              createSupabaseClient(session.access_token),
+            );
+          },
+          signOut: (options) => realtimeClient.auth.signOut(options),
+          isCurrent: () => !cancelled,
+        });
+        if (cancelled || result.reason === 'cancelled') return;
+        if (result.signedOut && result.reloadRequired) {
+          resetAfterSecureCleanup();
+          return;
+        }
+        setGate(result);
+      } catch (error) {
+        if (!cancelled) {
+          setGate({
+            state: 'locked',
+            reason: 'gate_error',
+            cause: error,
+          });
+        }
       }
     })();
 
     return () => { cancelled = true; };
   }, [retry]);
 
-  if (gate === 'checking') {
+  if (gate.state !== 'open') {
+    const locked = gate.state === 'locked';
     return (
       <div style={{
         position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
@@ -584,22 +619,46 @@ function BiometricGate({ children }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 36, fontWeight: 800, letterSpacing: -1,
         }}>U</div>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>Unlocking UPR…</div>
-        <button
-          onClick={() => { setGate('checking'); setRetry(r => r + 1); }}
-          style={{
-            marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
-            color: 'var(--accent)', background: 'transparent', border: 'none',
-            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-          }}
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ fontSize: 14, fontWeight: 600 }}
         >
-          Retry Face ID
-        </button>
+          {locked
+            ? 'UPR stayed locked because device security could not be verified.'
+            : 'Unlocking UPR…'}
+        </div>
+        {locked && (
+          <button
+            onClick={() => setRetry(r => r + 1)}
+            style={{
+              marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
+              color: 'var(--accent)', background: 'transparent', border: 'none',
+              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+            }}
+          >
+            Retry secure unlock
+          </button>
+        )}
       </div>
     );
   }
 
   return children;
+}
+
+// Route persistence is account-owned. Mount only after Auth has published the
+// employee and the immutable opaque owner lease from completed cleanup.
+function AuthenticatedRouteRestorer() {
+  const { employee, pwaOwnerLease } = useAuth();
+  if (!employee || !pwaOwnerLease) return null;
+  return (
+    <RouteRestorer
+      key={pwaOwnerLease.epoch}
+      authVerified
+      ownerLease={pwaOwnerLease}
+    />
+  );
 }
 
 // Null-render tracker: keeps html[data-nav] in sync with the router so the
@@ -629,18 +688,8 @@ export default function App() {
   useEffect(() => {
     // Shell status bar is driven by ThemeProvider (light vs dark); individual
     // gradient-hero screens still override it on mount/unmount.
-    // App-switcher snapshot blur is NOT yet live — enablePrivacyScreen() is an
-    // intentional no-op stub (see nativeBiometric.js) pending a Capacitor
-    // 8-compatible privacy-screen plugin. Kept as a call site so wiring the
-    // real plugin later is a one-file change.
-    enablePrivacyScreen();
     // Clear the native splash once the React tree has mounted
     hideSplash();
-    // Confirm the OTA (Capgo) bundle booted OK now that React has actually
-    // mounted — a stronger "this bundle works" signal than the module-load
-    // notifyAppReady() in src/main.jsx. Guarded so it's a true no-op on
-    // web/PWA; markBundleReady() is idempotent, so the two calls don't conflict.
-    if (Capacitor.isNativePlatform()) markBundleReady();
   }, []);
   return (
     <ThemeProvider>
@@ -649,12 +698,14 @@ export default function App() {
           {/* Sets html[data-nav]=forward|back each navigation so the directional
               View-Transition page push (index.css) reverses on Back. Renders nothing. */}
           <NavDirectionTracker />
-          {/* Home-screen-PWA eviction recovery: iOS relaunches an evicted PWA at
-              the manifest start_url — this sends the tech back to the screen
-              they were working on. Renders nothing; standalone-mode only. */}
-          <RouteRestorer />
           <BiometricGate>
             <AuthProvider>
+              {/* Home-screen-PWA eviction recovery is account-owned and remains
+                  inert until Auth publishes a verified opaque owner lease. */}
+              <AuthenticatedRouteRestorer />
+              {/* Restorer runs first; an accepted cold/warm native intent then
+                  wins as the newest route after account readiness. */}
+              <NativeNavigationBridge enabled={IS_NATIVE} />
               {/* Owner-gated preview classes (page transitions / liquid glass) —
                   reads feature flags, so must be inside AuthProvider. */}
               <UiFlagClasses />

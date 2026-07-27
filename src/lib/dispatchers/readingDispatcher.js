@@ -1,7 +1,27 @@
-// Dispatcher: sends a queued moisture_reading to Supabase via insert_reading RPC.
-// Mirrors the in-page flow exactly so online/offline writes produce identical rows.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: readingDispatcher.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Retains the dormant moisture-reading dispatch helper and its owner-bound
+ *   stable-operation contract for possible later review.
+ *
+ * DEPENDS ON:
+ *   Internal:  offlineDb
+ *   Data:      reads → owner-bound IndexedDB ID swaps; writes → insert_reading RPC
+ *
+ * NOTES / GOTCHAS:
+ *   - DORMANT: production command admission/replay is empty and the sync runner
+ *     does not import this helper.
+ *   - insert_reading must continue deduplicating p_client_id for safe replay.
+ * ════════════════════════════════════════════════
+ */
 
-import { resolveIdSwap } from '../offlineDb';
+import {
+  isStableQueueOperationId,
+  resolveIdSwap,
+} from '../offlineDb';
 
 /**
  * Send a queued moisture reading to the server.
@@ -15,15 +35,36 @@ import { resolveIdSwap } from '../offlineDb';
  * }} payload
  * @returns {Promise<{serverId:string|undefined}>}
  */
-export async function dispatchReading(db, employee, payload /*, queueItem */) {
-  if (!payload?.clientId || !payload?.jobId || !payload?.material) {
-    throw new Error('dispatchReading requires clientId, jobId, material');
+export async function dispatchReading(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
+  const operationId = queueItem?.operationId;
+  if (
+    !payload?.jobId
+    || !payload?.material
+    || !isStableQueueOperationId(operationId)
+    || payload.clientId !== operationId
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchReading requires an owner-bound stable operation ID',
+    );
   }
 
   // If the reading was captured while a room was still queued as a temp UUID,
   // swap it to the server UUID now. Same story for equipment.
-  const resolvedRoomId = await resolveIdSwap(payload.roomId);
-  const resolvedEquipmentId = await resolveIdSwap(payload.equipmentId);
+  const resolvedRoomId = await resolveIdSwap(payload.roomId, ownerLease);
+  const resolvedEquipmentId = await resolveIdSwap(
+    payload.equipmentId,
+    ownerLease,
+  );
+  const queuedAt = Number.isFinite(queueItem.createdAt)
+    ? new Date(queueItem.createdAt).toISOString()
+    : null;
 
   const row = await db.rpc('insert_reading', {
     p_job_id:       payload.jobId,
@@ -39,8 +80,8 @@ export async function dispatchReading(db, employee, payload /*, queueItem */) {
     p_equipment_id: resolvedEquipmentId || null,
     p_taken_by:     payload.takenBy || employee?.id || null,
     p_notes:        payload.notes || null,
-    p_client_id:    payload.clientId,
-    p_taken_at:     payload.takenAt || new Date().toISOString(),
+    p_client_id:    operationId,
+    p_taken_at:     payload.takenAt || queuedAt,
   });
 
   const result = Array.isArray(row) ? row[0] : row;

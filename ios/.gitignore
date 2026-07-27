@@ -4,6 +4,16 @@ App/output
 App/App/public
 DerivedData
 xcuserdata
+/build/
+/signing_certificate.p12
+/signing_profile.mobileprovision
+
+# Fastlane-generated local reports and screenshots
+/fastlane/Preview.html
+/fastlane/README.md
+/fastlane/report.xml
+/fastlane/screenshots/
+/fastlane/test_output/
 
 # Cordova plugins for Capacitor
 capacitor-cordova-ios-plugins

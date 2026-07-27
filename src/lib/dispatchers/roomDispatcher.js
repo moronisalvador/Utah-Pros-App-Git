@@ -1,8 +1,26 @@
-// Dispatcher: drains a `room.create` queue item by calling the server-side `create_room` RPC.
-// The RPC accepts our client-generated UUID (`p_client_id`) so reattempts are idempotent
-// on the server — duplicate submits return the existing row instead of creating a new one.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: roomDispatcher.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Retains the dormant room-create prototype for historical source context.
+ *
+ * DEPENDS ON:
+ *   Internal:  offlineDb
+ *   Data:      writes → create_room RPC; owner-bound IndexedDB ID swap
+ *
+ * NOTES / GOTCHAS:
+ *   - DORMANT: the production enqueue boundary rejects `room.create` and the
+ *     sync runner does not import this prototype.
+ *   - create_room must continue deduplicating p_client_id for safe replay.
+ * ════════════════════════════════════════════════
+ */
 
-import { recordIdSwap } from '../offlineDb';
+import {
+  isStableQueueOperationId,
+  recordIdSwap,
+} from '../offlineDb';
 
 /**
  * Send a queued room-create to Supabase.
@@ -11,9 +29,24 @@ import { recordIdSwap } from '../offlineDb';
  * @param {{jobId:string, clientId:string, name:string, areaSqft?:number, ceilingHeightFt?:number, sortOrder?:number, createdBy?:string}} payload
  * @returns {Promise<{serverId:string, row:object}>}
  */
-export async function dispatchRoom(db, employee, payload) {
-  if (!payload?.jobId || !payload?.clientId || !payload?.name) {
-    throw new Error('dispatchRoom requires jobId, clientId, name');
+export async function dispatchRoom(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
+  const operationId = queueItem?.operationId;
+  if (
+    !payload?.jobId
+    || !payload?.name
+    || !isStableQueueOperationId(operationId)
+    || payload.clientId !== operationId
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchRoom requires an owner-bound stable operation ID',
+    );
   }
 
   const result = await db.rpc('create_room', {
@@ -22,7 +55,7 @@ export async function dispatchRoom(db, employee, payload) {
     p_area_sqft: payload.areaSqft ?? null,
     p_ceiling_height_ft: payload.ceilingHeightFt ?? null,
     p_sort_order: payload.sortOrder ?? null,
-    p_client_id: payload.clientId,
+    p_client_id: operationId,
     p_created_by: payload.createdBy || employee?.id || null,
   });
 
@@ -32,8 +65,8 @@ export async function dispatchRoom(db, employee, payload) {
   if (!serverId) throw new Error('create_room returned no id');
 
   // Record swap so any in-flight photos/readings referencing the temp id can resolve it.
-  if (serverId !== payload.clientId) {
-    await recordIdSwap(payload.clientId, serverId);
+  if (serverId !== operationId) {
+    await recordIdSwap(operationId, serverId, ownerLease);
   }
 
   return { serverId, row };

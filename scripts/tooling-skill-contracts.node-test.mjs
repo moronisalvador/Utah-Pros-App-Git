@@ -35,6 +35,10 @@ const newCrmModule = fs.readFileSync(
   path.join(root, 'tooling', 'skills', 'new-crm-module', 'SKILL.md'),
   'utf8',
 );
+const mobileReadiness = fs.readFileSync(
+  path.join(root, 'tooling', 'skills', 'mobile-readiness-wave', 'SKILL.md'),
+  'utf8',
+);
 
 test('routing fixtures cover positive, negative, and collision decisions', () => {
   const ids = new Set();
@@ -50,6 +54,7 @@ test('routing fixtures cover positive, negative, and collision decisions', () =>
   assert.ok(expectedPrimaries.has('masterplan'));
   assert.ok(expectedPrimaries.has('db-migration'));
   assert.ok(expectedPrimaries.has('new-crm-module'));
+  assert.ok(expectedPrimaries.has('mobile-readiness-wave'));
   assert.ok(expectedPrimaries.has(null));
   assert.ok(
     evals.cases.some(
@@ -61,6 +66,20 @@ test('routing fixtures cover positive, negative, and collision decisions', () =>
     evals.cases.some(
       (fixture) =>
         fixture.expectedPrimary === 'masterplan' && fixture.expectedSupporting.includes('db-migration'),
+    ),
+  );
+  assert.ok(
+    evals.cases.some(
+      (fixture) =>
+        fixture.expectedPrimary === 'mobile-readiness-wave' &&
+        fixture.expectedSupporting.includes('mobile-readiness-security-reviewer'),
+    ),
+  );
+  assert.ok(
+    evals.cases.some(
+      (fixture) =>
+        fixture.expectedPrimary === 'mobile-readiness-wave' &&
+        fixture.expectedSupporting.includes('db-migration'),
     ),
   );
 });
@@ -120,5 +139,23 @@ test('routed database and CRM dispatchers preserve separate live and delivery ga
     'Commit, push, PR, deploy, live',
   ]) {
     assert.ok(newCrmModule.includes(required), `new-crm-module missing contract: ${required}`);
+  }
+});
+
+test('mobile readiness keeps bounded ownership, production gates, and honest evidence', () => {
+  for (const required of [
+    'Use an isolated worktree',
+    'Never treat the dated audit as current `dev`',
+    'at most three simultaneous subagents',
+    '`mobile-readiness-security-reviewer`',
+    'Without a separate explicit owner instruction',
+    'Never conflate a local test with production verification',
+    'enforce a five-minute maximum',
+    'Do not mark a finding closed solely because code was written',
+  ]) {
+    assert.ok(
+      mobileReadiness.includes(required),
+      `mobile-readiness-wave missing contract: ${required}`,
+    );
   }
 });

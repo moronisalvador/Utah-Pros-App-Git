@@ -46,9 +46,22 @@ against both and change both in one commit.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
 - Financial dates use the Denver business day, not UTC string slicing.
-- Invoice/estimate attachments are admin/manager-gated and human-selected: a person chooses which
-  file(s) to push to which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch.
+- Current employee roles contain `project_manager`, not `manager`. The historical
+  `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
+  authority requires an owner decision and coordinated UI, Worker, RLS and allow/deny tests.
+- The current S1a/S1b target for browser-initiated QBO provider actions is an active,
+  non-external `admin`.
+  Invoice/estimate attachments remain human-selected: a person chooses which file(s) to push to
+  which QBO invoice/estimate (via `/api/qbo-attach`), never an automatic batch. The attachment and
+  card-charge Workers explicitly reject external employees before business or provider work.
   They are pushed with `IncludeOnSend` so they ride along on the QBO-sent email; attach before send.
+- The `qbo_attachments` metadata SELECT policy is still role-scoped without an explicit
+  `is_external=false` predicate. Closing that direct-read residual requires a separately reviewed
+  migration; Worker containment is not a claim that the metadata surface is fully closed.
+- A server-side QBO capability may support the customer-sync and payment-sync scheduler paths, but
+  it does not grant a browser role or identify a human actor. OAuth connect, keyed card charge and
+  attachment mutation remain Bearer-only. Capability retention, caller binding and
+  rotation/retirement must be decided and rolled out across all dependent workers together.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
@@ -150,6 +163,44 @@ reuse it; reusing it with changed recipient/content/media/provider is a conflict
 ambiguous attempt is returned/reconciled rather than automatically submitted again. Internal notes
 remain provider-free, and group/broadcast sends cannot enter the CallRail adapter.
 
+## Internal notifications and call recordings
+
+- A human HTTP notification request is not trusted notification content. The Worker allowlists the
+  event, proves its appointment/crew/estimate object, derives audience/copy/routes from server data,
+  and rejects client-supplied recipients, body, HTML, payload, entities, jobs and links.
+- Database triggers use a distinct exact secret-first capability, and trusted Workers call the
+  dispatcher in-process. Those two service contracts retain the event-specific payloads needed for
+  existing fan-out; they do not make an arbitrary browser payload trusted.
+- Every final notification audience is intersected with active, non-external employees before bell,
+  push or email. Per-channel failure remains best-effort and is reported in the existing summary.
+- Staff recording playback is company-wide only for an active internal admin or the explicit
+  `crm_call_log` capability. The Worker must bind the UUID to an actual call row, match its stored
+  provider call ID to its stored allowlisted URL, and complete those checks before credential or
+  provider access.
+- Recording responses remain private (`Cache-Control: private`) and the clients require an
+  `audio/*` success type before playback. The proxy never accepts a raw caller-provided URL or
+  forwards browser Range/authentication headers upstream. Existing bounded provider detail/snippet
+  error fields and the provider-returned signed URL/content type are compatibility residuals, not
+  a claim of complete upstream-response redaction.
+- A database-originated notification has one trusted top-level `type_key`; an object payload may
+  not override it. Direct execution of `notify_emit` is a server capability, while its verified
+  owner-run trigger/RPC/cron callers remain database-internal. The S1d migration authors this
+  service-only ACL and trusted-key merge but is not live until a separate authorized apply, so the
+  current authenticated-executable deployment remains an explicit residual.
+- Direct `create_notification` bell emission and direct recording-source reads are independent
+  authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
+  S1f's unapplied bell migration makes direct emission service-only without changing recipient or
+  broadcast semantics; only applied role proof can close that residual.
+- Notification list, unread-count, mark-one, and mark-all operations are a separate read-state
+  boundary. S1g's unapplied migration reconstructs one active, non-external employee from
+  `auth.uid()`, rejects a foreign supplied employee/notification ID, and scopes direct
+  `notifications` reads (including Realtime payloads) to broadcasts plus that employee's targeted
+  rows.
+- A targeted notification continues to use its row-level `notifications.read_at`. A broadcast uses
+  a private `(notification_id, employee_id)` receipt so one employee cannot mark it read for
+  everyone. A legacy broadcast whose shared `read_at` is already non-null remains read for
+  everyone; migration must not resurface historical notifications.
+
 ## Capability links and public documents
 
 - Public signing links are capabilities: unguessable token, explicit status, expiration and
@@ -164,6 +215,40 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
 - UI gates are not sufficient for money, PII, company messaging or administrative operations.
 - Force-disable, employee overrides, admin/role permissions and rollout flags retain their documented
   precedence.
+- Personal page overrides, personal notification preferences, Web Push subscriptions, and native
+  device tokens belong to the active, non-external employee mapped from the authenticated user.
+  A caller-supplied employee ID is a selector to validate, never proof of ownership.
+- An active internal admin may inspect another employee's page-access overrides for the Page Access
+  control surface. That exception does not extend to another employee's personal notification
+  settings, Web Push devices, or native-token mutation.
+- Effective notification preference precedence remains catalog default → role default → employee
+  override → unlocked personal preference. A non-customizable role default suppresses the personal
+  value; a disabled notification type is omitted only from the self-service list.
+- Web Push endpoints and native device tokens are not bearer capabilities for browser users.
+  Authenticated registration may refresh a token only when it already belongs to the same verified
+  active-internal employee. A foreign-owner conflict is denied; only reviewed owner/service
+  maintenance may reassign it. Logout detachment and provider delivery remain separate rules.
+- Employee identity and authorization predicates may trust `employees.auth_user_id`, status, and
+  role only after browser roles are unable to insert, update, delete, self-bind, or self-promote
+  those authority fields.
+- Trusted service-role dispatchers may resolve employee preferences and directly read/prune
+  subscription/token rows only after their own Worker authorization or trusted scheduler/webhook
+  boundary. All four personal tables are browser-RPC-only after S1h; browser roles do not inherit
+  that service capability.
+
+## Initial mobile offline boundary
+
+- The initial production PWA/Capacitor release admits no automatic offline command and performs no
+  automatic replay. Field writes remain online-only and an offline attempt must never be presented
+  as saved or queued.
+- Historical IndexedDB rows are recovery data, not commands. The app may inspect only payload-free
+  counts, quarantine every legacy/unsupported/foreign-owner row, and perform bounded owner-scoped
+  cleanup of already-completed local photo data. It may not send those rows.
+- Destructive local recovery clears every offline store only after the existing two-click
+  confirmation explicitly warns that another account's unsynced local data can also be removed.
+- A future offline writer requires a separately reviewed end-to-end idempotency, account ownership,
+  crash consistency, cross-tab coordination, and server-authorization contract before admission or
+  replay is enabled.
 
 ## Time
 

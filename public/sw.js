@@ -21,6 +21,9 @@
 // flag is OFF, main.jsx runs the original kill-switch (unregister + cache wipe).
 // ════════════════════════════════════════════════
 
+// One reviewed tap-target policy, exercised directly by the static PWA tests.
+self.importScripts('/sw-target.js');
+
 // Take control ASAP so a freshly enabled push subscription works without a reload.
 self.addEventListener('install', (event) => {
   event.waitUntil(self.skipWaiting());
@@ -41,15 +44,16 @@ self.addEventListener('push', (event) => {
   }
 
   const title = payload.title || 'Utah Pros';
+  const rawTarget = (payload.data && payload.data.url) || payload.url;
+  const target = self.UPRPushTarget.normalizePushTarget(rawTarget, self.location.origin);
   const options = {
     body: payload.body || '',
-    icon: payload.icon || '/icon-192.svg',
-    badge: payload.badge || '/icon-192.svg',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     tag: payload.tag || undefined,          // same tag replaces an existing toast
-    data: {
-      url: payload.url || (payload.data && payload.data.url) || '/',
-      ...(payload.data || {}),
-    },
+    // Persist only the normalized navigation value. Raw payload metadata is not
+    // needed for a tap and must not become a second URL override.
+    data: { url: target },
     requireInteraction: !!payload.requireInteraction,
   };
 
@@ -59,7 +63,12 @@ self.addEventListener('push', (event) => {
 // ─── Notification tapped → focus an open tab or open the target URL ───
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || '/';
+  // Re-validate persisted data at the use boundary as defense in depth against
+  // old notifications created by an earlier worker version.
+  const target = self.UPRPushTarget.normalizePushTarget(
+    event.notification.data && event.notification.data.url,
+    self.location.origin,
+  );
 
   event.waitUntil((async () => {
     const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });

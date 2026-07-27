@@ -1,6 +1,6 @@
 // POST /api/qbo-charge — key a card on an invoice and charge it via QuickBooks Payments.
 //
-// Auth: active admin/manager Supabase employee session.
+// Auth: active internal admin/manager Supabase employee session.
 // Headers: Idempotency-Key: stable client-generated value (16–64 safe characters).
 // Body: { invoice_id: "<uuid>", token: "<intuit-card-token>", amount: <number> }
 //
@@ -51,6 +51,9 @@ export async function onRequestPost(context) {
   const db = supabase(env);
   const auth = await requireRole(request, env, db, BILLING_ROLES);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  if (auth.employee.is_external) {
+    return jsonResponse({ error: 'Insufficient role' }, 403, request, env);
+  }
 
   let body = {};
   try { body = await request.json(); } catch { /* empty */ }

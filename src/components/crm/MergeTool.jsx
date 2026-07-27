@@ -34,6 +34,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 
 const toast = (message, type = 'success') =>
   window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
@@ -181,7 +182,7 @@ function OwnershipTab({ db }) {
   useEffect(() => {
     (async () => {
       try {
-        const rows = await db.rpc('get_all_employees');
+        const rows = await loadEmployeeDirectory(db);
         setEmployees((rows || []).filter(e => e.is_active !== false));
       } catch { /* dropdown stays empty */ }
     })();

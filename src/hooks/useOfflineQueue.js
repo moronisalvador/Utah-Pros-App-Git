@@ -1,42 +1,229 @@
-// React hook — lets any component enqueue offline work and read live sync counts.
-// Uses `useSyncExternalStore` so multiple components stay in sync without props drilling.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: useOfflineQueue.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Exposes one signed-in field user's historical offline-state status and
+ *   recovery controls. Automatic command admission/replay is disabled; login
+ *   changes, logout, and another tab changing the account immediately
+ *   disconnect the old runner and event listeners.
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  AuthContext, offlineDb, pwaAccountState, resumeRestore,
+ *              syncRunnerSingleton
+ *   Data:      reads/writes → owner-scoped browser IndexedDB queue
+ *
+ * NOTES / GOTCHAS:
+ *   - Auth's immutable `pwaOwnerLease` is authoritative after account cleanup.
+ *     A fingerprint fallback exists only for an older provider with no field.
+ *   - Event subscriptions are rewired whenever the singleton runner changes.
+ * ════════════════════════════════════════════════
+ */
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useSyncExternalStore,
+} from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  enqueueItem,
-  queueCounts,
+  OFFLINE_DATA_DISCARD_CONFIRMATION,
   clearDone as clearDoneDb,
-  listQueue,
-  updateQueueStatus,
+  discardAllOfflineData,
+  getOfflineDbOpenState,
+  inspectOfflineOwnership,
+  listBlockedQueueItems,
+  queueCounts,
+  resolveBlockedQueueItem,
+  retryOfflineDbOpen,
+  subscribeOfflineDbOpenState,
 } from '@/lib/offlineDb';
-import { initSyncRunner, getSyncRunner } from '@/lib/syncRunnerSingleton';
+import { resolveVerifiedPwaOwnerLease } from '@/lib/pwaAccountState';
+import {
+  PWA_ACCOUNT_EPOCH_KEY,
+  PWA_ACCOUNT_OWNER_KEY,
+  PWA_ACCOUNT_TRANSITION_KEY,
+  isPwaOwnerLeaseCurrent,
+} from '@/lib/resumeRestore';
+import {
+  initSyncRunner,
+  suspendSyncRunner,
+} from '@/lib/syncRunnerSingleton';
 
-// Module-level state shared across all hook callers. Keeps us from thrashing IDB on every
-// render — we only refresh counts when the runner tells us something changed.
 const state = {
   pendingCount: 0,
   syncingCount: 0,
   errorCount: 0,
+  blockedCount: 0,
+  quarantinedCount: 0,
+  rolloutReady: true,
+  legacyRecoveryRequired: false,
+  unsupportedRecoveryRequired: false,
+  inspectionUnavailable: false,
   isOnline: typeof navigator !== 'undefined' ? navigator.onLine : true,
+  owner: null,
+  epoch: null,
+  principalKey: null,
 };
 
 const subscribers = new Set();
+let lastSnapshot = { ...state };
+let wiredRunner = null;
+let wiredUnsubscribers = [];
+let refreshGeneration = 0;
 
 function notify() {
-  subscribers.forEach(cb => { try { cb(); } catch { /* ignore */ } });
+  subscribers.forEach((callback) => {
+    try {
+      callback();
+    } catch {
+      // One broken consumer must not block every queue status subscriber.
+    }
+  });
 }
 
-async function refreshCounts() {
-  try {
-    const c = await queueCounts();
-    state.pendingCount = c.pending + c.syncing; // "not yet done" from the user's perspective
-    state.syncingCount = c.syncing;
-    state.errorCount = c.error;
-    notify();
-  } catch (err) {
-    console.error('[useOfflineQueue] refresh failed', err);
+function stateSnapshot() {
+  if (
+    lastSnapshot.pendingCount !== state.pendingCount
+    || lastSnapshot.syncingCount !== state.syncingCount
+    || lastSnapshot.errorCount !== state.errorCount
+    || lastSnapshot.blockedCount !== state.blockedCount
+    || lastSnapshot.quarantinedCount !== state.quarantinedCount
+    || lastSnapshot.rolloutReady !== state.rolloutReady
+    || lastSnapshot.legacyRecoveryRequired !== state.legacyRecoveryRequired
+    || lastSnapshot.unsupportedRecoveryRequired
+      !== state.unsupportedRecoveryRequired
+    || lastSnapshot.inspectionUnavailable !== state.inspectionUnavailable
+    || lastSnapshot.isOnline !== state.isOnline
+    || lastSnapshot.owner !== state.owner
+    || lastSnapshot.epoch !== state.epoch
+    || lastSnapshot.principalKey !== state.principalKey
+  ) {
+    lastSnapshot = { ...state };
   }
+  return lastSnapshot;
+}
+
+export function setOfflineQueueOwner(owner, principalKey, epoch = null) {
+  const changed = state.owner !== owner
+    || state.epoch !== epoch
+    || state.principalKey !== principalKey;
+  state.owner = owner;
+  state.epoch = epoch;
+  state.principalKey = principalKey;
+  if (changed) {
+    state.pendingCount = 0;
+    state.syncingCount = 0;
+    state.errorCount = 0;
+    state.blockedCount = 0;
+    state.quarantinedCount = 0;
+    state.rolloutReady = true;
+    state.legacyRecoveryRequired = false;
+    state.unsupportedRecoveryRequired = false;
+    state.inspectionUnavailable = false;
+    refreshGeneration += 1;
+    notify();
+  }
+}
+
+export async function refreshOfflineQueueCounts(
+  owner,
+  principalKey,
+  epoch,
+  {
+    count = queueCounts,
+    inspect = inspectOfflineOwnership,
+  } = {},
+) {
+  if (!owner || !principalKey || !epoch) return false;
+  const generation = ++refreshGeneration;
+  try {
+    const counts = await count({ owner, epoch });
+    const ownership = await Promise.resolve(inspect(owner));
+    if (
+      generation !== refreshGeneration
+      || state.owner !== owner
+      || state.epoch !== epoch
+      || state.principalKey !== principalKey
+    ) {
+      return false;
+    }
+    state.pendingCount = counts.pending + counts.syncing;
+    state.syncingCount = counts.syncing;
+    state.errorCount = counts.error;
+    state.blockedCount = counts.blocked || 0;
+    state.quarantinedCount = ownership?.quarantinedTotal
+      ?? (
+        (ownership?.otherOwner || 0)
+        + (ownership?.legacy || 0)
+        + (ownership?.unsupportedOwned || 0)
+      );
+    state.rolloutReady = ownership?.rolloutReady !== false;
+    state.legacyRecoveryRequired =
+      ownership?.legacyRecoveryRequired === true;
+    state.unsupportedRecoveryRequired =
+      ownership?.unsupportedRecoveryRequired === true;
+    state.inspectionUnavailable = false;
+    notify();
+    return true;
+  } catch (error) {
+    console.error('[useOfflineQueue] refresh failed', error);
+    if (
+      generation === refreshGeneration
+      && state.owner === owner
+      && state.epoch === epoch
+      && state.principalKey === principalKey
+    ) {
+      state.rolloutReady = false;
+      state.inspectionUnavailable = true;
+      notify();
+    }
+    return false;
+  }
+}
+
+export function unwireOfflineQueueRunner() {
+  wiredUnsubscribers.forEach((unsubscribe) => {
+    try {
+      unsubscribe();
+    } catch {
+      // Runner disposal remains authoritative.
+    }
+  });
+  wiredUnsubscribers = [];
+  wiredRunner = null;
+}
+
+/** Rewire the event bridge when login/account replacement creates a new runner. */
+export function wireOfflineQueueRunner(
+  runner,
+  { owner, principalKey, epoch },
+) {
+  if (!runner || !owner || !principalKey || !epoch) {
+    unwireOfflineQueueRunner();
+    return false;
+  }
+  if (wiredRunner === runner) return true;
+  unwireOfflineQueueRunner();
+  wiredRunner = runner;
+  const refresh = () => {
+    void refreshOfflineQueueCounts(owner, principalKey, epoch);
+  };
+  wiredUnsubscribers = [
+    runner.on('queue:changed', refresh),
+    runner.on('sync:item-done', refresh),
+    runner.on('sync:item-error', refresh),
+    runner.on('sync:idle', refresh),
+    runner.on('runner:stopped', () => {
+      if (wiredRunner !== runner) return;
+      unwireOfflineQueueRunner();
+      setOfflineQueueOwner(null, null, null);
+    }),
+  ];
+  refresh();
+  return true;
 }
 
 function updateOnline() {
@@ -47,107 +234,363 @@ function updateOnline() {
   }
 }
 
-// Wire up the runner event bridge once. `wireRunner` is idempotent — safe to call many times.
-let wired = false;
-function wireRunner(runner) {
-  if (wired || !runner) return;
-  wired = true;
-  runner.on('queue:changed', refreshCounts);
-  runner.on('sync:item-done', refreshCounts);
-  runner.on('sync:item-error', refreshCounts);
-  runner.on('sync:idle', refreshCounts);
-  refreshCounts();
-}
-
-// Browser online/offline listeners — set up exactly once at module load.
 if (typeof window !== 'undefined') {
   window.addEventListener('online', updateOnline);
   window.addEventListener('offline', updateOnline);
 }
 
-function subscribe(cb) {
-  subscribers.add(cb);
-  return () => subscribers.delete(cb);
+function subscribe(callback) {
+  subscribers.add(callback);
+  return () => subscribers.delete(callback);
 }
 
 function getSnapshot() {
-  // Return the stable state object. React's `useSyncExternalStore` will only re-render
-  // when `notify()` is called AND a shallow compare of any derived value changes.
   return stateSnapshot();
 }
 
-// Snapshot the state into a new object reference only when counts actually change.
-// Otherwise return the same reference so React bails out of re-renders.
-let _lastSnapshot = { ...state };
-function stateSnapshot() {
-  if (
-    _lastSnapshot.pendingCount !== state.pendingCount ||
-    _lastSnapshot.syncingCount !== state.syncingCount ||
-    _lastSnapshot.errorCount !== state.errorCount ||
-    _lastSnapshot.isOnline !== state.isOnline
-  ) {
-    _lastSnapshot = { ...state };
+export function getOfflineQueueSnapshot() {
+  return stateSnapshot();
+}
+
+function principalIdentity(user, employee) {
+  return user?.id && employee?.id ? `${user.id}:${employee.id}` : null;
+}
+
+async function resolveLease({
+  user,
+  employee,
+  pwaOwnerLease,
+}) {
+  // Once Auth exposes the field (including its pre-verification null state),
+  // that immutable tab lease is authoritative. Never let an older same-account
+  // tab adopt a newer epoch merely by rereading the device-global markers.
+  if (pwaOwnerLease !== undefined) {
+    return pwaOwnerLease && isPwaOwnerLeaseCurrent(pwaOwnerLease)
+      ? pwaOwnerLease
+      : null;
   }
-  return _lastSnapshot;
+  // Temporary compatibility for an Auth provider that predates the field.
+  return resolveVerifiedPwaOwnerLease({
+    authUserId: user?.id,
+    employeeId: employee?.id,
+  });
 }
 
 /**
- * Subscribe to the offline queue and get an enqueue helper.
- * @returns {{
- *   enqueue: (item: {type:string, payload:object, clientId?:string}) => Promise<{clientId:string}>,
- *   pendingCount: number,
- *   syncingCount: number,
- *   errorCount: number,
- *   isOnline: boolean,
- *   retryAll: () => Promise<void>,
- *   clearDone: () => Promise<void>,
- * }}
+ * Reconcile storage-marker changes without ever adopting another tab's epoch.
+ * A transition suspends once; clearing/aborting it may re-enable the immutable
+ * expected lease exactly once when that same lease is current again.
  */
-export function useOfflineQueue() {
-  const { db, employee } = useAuth();
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  const hasInitialized = useRef(false);
+export function createOfflineStorageReconciler({
+  getExpectedLease,
+  isLeaseCurrent,
+  onCurrent,
+  onSuspend,
+}) {
+  let generation = 0;
+  let activeLeaseKey = null;
+  let suspended = true;
+  let hasReconciled = false;
+  let disposed = false;
 
-  useEffect(() => {
-    // Lazy-init the singleton runner the first time a component subscribes. We intentionally
-    // do NOT stop the runner on unmount — other components may still be using it. Auth changes
-    // (login/logout) are detected inside `initSyncRunner` via the `(db, employee.id)` key.
-    const runner = initSyncRunner({ db, employee });
-    wireRunner(runner);
-    hasInitialized.current = true;
-  }, [db, employee?.id]);
+  const suspendOnce = async () => {
+    activeLeaseKey = null;
+    if (!hasReconciled || !suspended) {
+      suspended = true;
+      hasReconciled = true;
+      await onSuspend();
+    }
+  };
 
-  const enqueue = useCallback(async (item) => {
-    if (!item?.type) throw new Error('enqueue requires { type, payload }');
-    const clientId = item.clientId || (crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
-    await enqueueItem({ clientId, type: item.type, payload: item.payload || {} });
-    await refreshCounts();
-    // Kick a drain immediately — if we're online this item ships right away.
-    getSyncRunner()?.drainOnce();
-    return { clientId };
-  }, []);
+  const reconcile = async () => {
+    const run = ++generation;
+    const lease = await getExpectedLease();
+    if (disposed || run !== generation) return false;
+    let current = false;
+    try {
+      current = !!lease && isLeaseCurrent(lease) === true;
+    } catch {
+      current = false;
+    }
+    if (!current) {
+      await suspendOnce();
+      return false;
+    }
 
-  const retryAll = useCallback(async () => {
-    const errored = await listQueue('error');
-    await Promise.all(errored.map(i => updateQueueStatus(i.clientId, 'pending', {
-      retryCount: 0, retryAt: 0, error: null,
-    })));
-    await refreshCounts();
-    getSyncRunner()?.drainOnce();
-  }, []);
+    const leaseKey = `${lease.owner}:${lease.epoch}`;
+    if (!suspended && activeLeaseKey === leaseKey) return true;
+    activeLeaseKey = leaseKey;
+    suspended = false;
+    hasReconciled = true;
+    try {
+      await onCurrent(lease);
+    } catch (error) {
+      if (!disposed && run === generation) await suspendOnce();
+      throw error;
+    }
+    if (disposed) return false;
+    if (run !== generation) {
+      return !suspended && activeLeaseKey === leaseKey;
+    }
+    return true;
+  };
 
-  const clearDone = useCallback(async () => {
-    await clearDoneDb();
-    await refreshCounts();
-  }, []);
+  const onStorage = (event) => {
+    if (
+      event?.key
+      && ![
+        PWA_ACCOUNT_OWNER_KEY,
+        PWA_ACCOUNT_EPOCH_KEY,
+        PWA_ACCOUNT_TRANSITION_KEY,
+      ].includes(event.key)
+    ) {
+      return false;
+    }
+    void reconcile();
+    return true;
+  };
 
   return {
-    enqueue,
-    pendingCount: snapshot.pendingCount,
-    syncingCount: snapshot.syncingCount,
-    errorCount: snapshot.errorCount,
+    reconcile,
+    onStorage,
+    dispose() {
+      disposed = true;
+      generation += 1;
+    },
+  };
+}
+
+/**
+ * Subscribe to the current account's offline queue and get owner-safe actions.
+ */
+export function useOfflineQueue() {
+  const {
+    db,
+    employee,
+    user,
+    pwaOwnerLease,
+  } = useAuth();
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const storageState = useSyncExternalStore(
+    subscribeOfflineDbOpenState,
+    getOfflineDbOpenState,
+    getOfflineDbOpenState,
+  );
+  const principalKey = principalIdentity(user, employee);
+
+  useEffect(() => {
+    if (!db || !employee?.id || !user?.id) {
+      suspendSyncRunner();
+      unwireOfflineQueueRunner();
+      setOfflineQueueOwner(null, null, null);
+      return undefined;
+    }
+
+    const reconciler = createOfflineStorageReconciler({
+      getExpectedLease: () => resolveLease({
+        user,
+        employee,
+        pwaOwnerLease,
+      }),
+      isLeaseCurrent: isPwaOwnerLeaseCurrent,
+      onSuspend: () => {
+        suspendSyncRunner();
+        unwireOfflineQueueRunner();
+        setOfflineQueueOwner(null, null, null);
+      },
+      onCurrent: (lease) => {
+        setOfflineQueueOwner(lease.owner, principalKey, lease.epoch);
+        const runner = initSyncRunner({
+          db,
+          employee,
+          owner: lease.owner,
+          ownerLease: lease,
+          isOwnerCurrent: isPwaOwnerLeaseCurrent,
+        });
+        wireOfflineQueueRunner(runner, {
+          owner: lease.owner,
+          principalKey,
+          epoch: lease.epoch,
+        });
+      },
+    });
+    void reconciler.reconcile();
+    globalThis.window?.addEventListener?.('storage', reconciler.onStorage);
+
+    return () => {
+      reconciler.dispose();
+      globalThis.window?.removeEventListener?.(
+        'storage',
+        reconciler.onStorage,
+      );
+    };
+  }, [
+    db,
+    employee,
+    principalKey,
+    pwaOwnerLease,
+    user,
+  ]);
+
+  const getActionLease = useCallback(async () => {
+    const lease = await resolveLease({
+      user,
+      employee,
+      pwaOwnerLease,
+    });
+    if (!lease) {
+      suspendSyncRunner();
+      throw new Error('Offline work is unavailable until account verification completes');
+    }
+    return lease;
+  }, [employee, pwaOwnerLease, user]);
+
+  const clearDone = useCallback(async () => {
+    const lease = await getActionLease();
+    await clearDoneDb(lease);
+    setOfflineQueueOwner(lease.owner, principalKey, lease.epoch);
+    await refreshOfflineQueueCounts(
+      lease.owner,
+      principalKey,
+      lease.epoch,
+    );
+  }, [getActionLease, principalKey]);
+
+  const loadBlocked = useCallback(async () => {
+    const lease = await getActionLease();
+    const [items, ownership] = await Promise.all([
+      listBlockedQueueItems(lease),
+      inspectOfflineOwnership(lease.owner),
+    ]);
+    return {
+      items,
+      quarantined: {
+        foreign: ownership.otherOwner,
+        legacy: ownership.legacy,
+        unsupported: ownership.unsupportedOwned || 0,
+        orphanPhotos: ownership.orphanPhotoOwned || 0,
+        total: ownership.quarantinedTotal
+          ?? (
+            ownership.otherOwner
+            + ownership.legacy
+            + (ownership.unsupportedOwned || 0)
+          ),
+      },
+      rollout: {
+        ready: ownership.rolloutReady !== false,
+        legacyRecoveryRequired:
+          ownership.legacyRecoveryRequired === true,
+        unsupportedRecoveryRequired:
+          ownership.unsupportedRecoveryRequired === true,
+        gate: ownership.rolloutGate || null,
+      },
+    };
+  }, [getActionLease]);
+
+  const retryOfflineStorage = useCallback(async () => {
+    const lease = await getActionLease();
+    await retryOfflineDbOpen();
+    setOfflineQueueOwner(lease.owner, principalKey, lease.epoch);
+    await refreshOfflineQueueCounts(
+      lease.owner,
+      principalKey,
+      lease.epoch,
+    );
+    return true;
+  }, [getActionLease, principalKey]);
+
+  const discardLegacyOfflineData = useCallback(async () => {
+    const lease = await getActionLease();
+    suspendSyncRunner();
+    unwireOfflineQueueRunner();
+    try {
+      const result = await discardAllOfflineData(lease, {
+        confirmation: OFFLINE_DATA_DISCARD_CONFIRMATION,
+      });
+      setOfflineQueueOwner(lease.owner, principalKey, lease.epoch);
+      await refreshOfflineQueueCounts(
+        lease.owner,
+        principalKey,
+        lease.epoch,
+      );
+      return result;
+    } finally {
+      if (
+        db
+        && employee?.id
+        && isPwaOwnerLeaseCurrent(lease)
+      ) {
+        const runner = initSyncRunner({
+          db,
+          employee,
+          owner: lease.owner,
+          ownerLease: lease,
+          isOwnerCurrent: isPwaOwnerLeaseCurrent,
+        });
+        wireOfflineQueueRunner(runner, {
+          owner: lease.owner,
+          principalKey,
+          epoch: lease.epoch,
+        });
+      }
+    }
+  }, [db, employee, getActionLease, principalKey]);
+
+  const resolveBlocked = useCallback(async (
+    operationId,
+    resolution,
+    { confirmedVisibleOnServer = false } = {},
+  ) => {
+    const lease = await getActionLease();
+    const result = await resolveBlockedQueueItem(
+      operationId,
+      lease,
+      {
+        resolution,
+        evidence: confirmedVisibleOnServer
+          ? 'confirmed-visible-on-server'
+          : null,
+      },
+    );
+    setOfflineQueueOwner(lease.owner, principalKey, lease.epoch);
+    await refreshOfflineQueueCounts(
+      lease.owner,
+      principalKey,
+      lease.epoch,
+    );
+    return result;
+  }, [getActionLease, principalKey]);
+
+  const expectedLease = pwaOwnerLease === undefined
+    ? { owner: snapshot.owner, epoch: snapshot.epoch }
+    : pwaOwnerLease;
+  const ownsSnapshot = state.principalKey === principalKey
+    && !!expectedLease
+    && snapshot.owner === expectedLease.owner
+    && snapshot.epoch === expectedLease.epoch;
+
+  return {
+    pendingCount: ownsSnapshot ? snapshot.pendingCount : 0,
+    syncingCount: ownsSnapshot ? snapshot.syncingCount : 0,
+    errorCount: ownsSnapshot ? snapshot.errorCount : 0,
+    blockedCount: ownsSnapshot ? snapshot.blockedCount : 0,
+    quarantinedCount: ownsSnapshot ? snapshot.quarantinedCount : 0,
+    rolloutReady: ownsSnapshot ? snapshot.rolloutReady : true,
+    legacyRecoveryRequired: ownsSnapshot
+      ? snapshot.legacyRecoveryRequired
+      : false,
+    unsupportedRecoveryRequired: ownsSnapshot
+      ? snapshot.unsupportedRecoveryRequired
+      : false,
+    inspectionUnavailable: ownsSnapshot
+      ? snapshot.inspectionUnavailable
+      : false,
     isOnline: snapshot.isOnline,
-    retryAll,
+    storageState,
     clearDone,
+    loadBlocked,
+    resolveBlocked,
+    retryOfflineStorage,
+    discardLegacyOfflineData,
   };
 }

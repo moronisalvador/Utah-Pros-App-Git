@@ -1,3 +1,23 @@
+<!--
+FILE: docs/app-store-readiness-roadmap.md
+
+WHAT THIS DOES (plain language):
+  Tracks the source, owner, Apple, signing, TestFlight, device, privacy, and submission work needed
+  before the UPR iPhone app can ship. It preserves the original phase history while adding current
+  source reconciliation instead of treating old gap statements as present truth.
+
+DEPENDS ON:
+  Internal: .claude/rules/app-store-readiness-wave-ownership.md,
+            docs/app-store-connect-metadata.md, docs/mobile/pwa-and-capacitor.md,
+            .github/workflows/ios-release.yml, ios/
+  Data:     reads → repository and owner decision records
+            writes → documentation only
+
+NOTES / GOTCHAS:
+  - A checked source box is not signed-archive, TestFlight, device, or App Review evidence.
+  - External Apple actions require separate owner authorization.
+-->
+
 # App Store Readiness & iOS Native Capabilities — Roadmap
 
 **Plan of record.** Committed 2026-07-17. Owner: Moroni Salvador. Slug: `app-store-readiness`.
@@ -43,11 +63,14 @@ shipped code changes either way (§ above, unchanged).
 
 ## 1. Gap audit (live-verified 2026-07-17)
 
+This table is the 2026-07-17 starting point. It is retained as phase provenance, not current truth.
+The 2026-07-26 reconciliation in §6 records the current source and remaining gates.
+
 | Area | Verdict | Evidence |
 |---|---|---|
 | Distribution model | DECISION NEEDED | §0 |
 | App icon / splash | MISSING — stock Capacitor placeholder | `ios/App/App/Assets.xcassets/{AppIcon.appiconset,Splash.imageset}` — confirmed byte-identical placeholder PNGs, zero UPR branding |
-| Entitlements / Push capability | BLOCKER | No `ios/App/App.entitlements` file exists anywhere; Push Notifications capability not enabled at the Xcode project level |
+| Entitlements / Push capability | BLOCKER | No `ios/App/App/App.entitlements` file existed; Push Notifications capability was not enabled at the Xcode project level |
 | APNs push (native) | PARTIAL — wired but dormant + 2 bugs | Registration wired into real login (`AuthContext.jsx:224-225`); `functions/api/send-push.js` has no owner/admin auth check and doesn't prune `400 BadDeviceToken`; `AppDelegate.swift` has zero push-delegate code |
 | `device_tokens` RLS | BLOCKER (security) | `supabase/migrations/20260708_dbf_p3_anon_policy_closure.sql:108-109` — policy named "Own tokens or admin read" is `USING (true)`, every employee can read every device token |
 | App-target Privacy Manifest | MISSING | Capacitor's bundled `PrivacyInfo.xcprivacy` is an empty declaration (verified by direct read) — app target needs its own |
@@ -77,8 +100,8 @@ Day 0 (owner, ~30 min, zero engineering cost — not a build phase)
      nothing downstream should wait on it STARTING (only on it COMPLETING for submission).
 
 Wave 1 (parallel, run via Workflow in one session, isolated worktrees)
-  ├─ Phase F1 — Signing & Push Foundation      (Opus — can't be compile-verified in this
-  │                                              Linux env; extra rigor matters)
+  ├─ Phase F1 — Signing & Push Foundation      (Opus — could not be compile-verified in the
+  │                                              2026-07-17 Linux session; extra rigor mattered)
   ├─ Phase A  — Backend hardening               (Opus — shared-prod RLS security fix)
   ├─ Phase B  — Account deletion compliance     (Opus — compliance-sensitive)
   └─ Phase D  — CI/fastlane scaffold            (Sonnet — mechanical)
@@ -105,13 +128,14 @@ was already shipped in F1. This session additionally shipped, on branch `app-sto
   pastes into App Store Connect rather than starting blank.
 Still genuinely owner-gated (nobody else can do these): the distribution-model decision (§0), Apple
 Developer Program / ABM enrollment, demo reviewer credentials, screenshots (needs a real Xcode/
-Simulator build), and the actual App Store Connect data entry.
+Simulator release build), and the actual App Store Connect data entry. The distribution decision
+was later made; see §6 for current gates.
 
 ### Phase F1 — Signing & Push Foundation
 > **Branch:** `app-store-f1-signing-push` · **Model · effort:** Opus · high · **Read scope:** this
 > block + `.claude/rules/app-store-readiness-wave-ownership.md`
 
-- Create `ios/App/App.entitlements` declaring `aps-environment` (`development`).
+- Create `ios/App/App/App.entitlements` declaring `aps-environment` (`development`).
 - Register it in `ios/App/App.xcodeproj/project.pbxproj` (`CODE_SIGN_ENTITLEMENTS` build setting on
   both Debug/Release configs) and enable the Push Notifications capability.
 - `ios/App/App/AppDelegate.swift`: add `didRegisterForRemoteNotificationsWithDeviceToken` /
@@ -123,10 +147,9 @@ Simulator build), and the actual App Store Connect data entry.
   layouts exist anywhere in `src/pages/tech/`; ship as a fix unless the owner wants landscape kept).
 - Add app-target `ios/App/App/PrivacyInfo.xcprivacy` declaring `NSPrivacyAccessedAPICategoryUserDefaults`
   with reason `CA92.1` (no App Group sharing) — covers Capacitor's/Cordova's transitive UserDefaults use.
-- **Caveat that MUST ship in the PR description:** none of this can be compile-verified in this
-  (Linux, no Xcode) environment. The owner must open the project in real Xcode, confirm it builds,
-  archives, and signs before this reaches any device — flag exactly like the existing
-  "owner on-device iPhone check" items elsewhere in this repo.
+- **2026-07-17 caveat retained as phase history:** that Linux session could not compile native
+  changes. Later unsigned generic/simulator evidence closed only that narrow source-build gap;
+  archive signing, TestFlight, and physical-device proof remain open in §6.
 - Close-out: no `npm test`/`build` coverage possible for native-only files (say so); `upr-pattern-checker`
   on any non-native files touched; PR into `dev`, stop.
 
@@ -140,8 +163,10 @@ Simulator build), and the actual App Store Connect data entry.
   unless asked).
 - `functions/api/send-push.js`: add an owner/admin role check on the caller before allowing a push
   to an arbitrary `employee_id`; prune `device_tokens` on `400 BadDeviceToken`, not just `410 Gone`.
-- `src/App.jsx`: call `nativeUpdater.markBundleReady()` on mount, guarded by
-  `Capacitor.isNativePlatform()` (no-op on web).
+- ~~`src/App.jsx`: call `nativeUpdater.markBundleReady()` on mount.~~
+  **Superseded 2026-07-26:** OTA is exact-default-off and no boot path acknowledges a bundle.
+  A future explicit health checkpoint must call `markBundleReady({ healthVerified: true })`;
+  mounting React is not health proof.
 - Close-out: `npm run test` + `build` + `eslint` (changed files) → `migration-safety-checker` +
   `anon-grant-auditor` (mandatory, this ships a migration) → `upr-pattern-checker` → apply + verify
   the migration live via Supabase MCP → update `UPR-Web-Context.md` → PR into `dev`, stop.
@@ -207,14 +232,17 @@ D  ─┘                                                                       
 Most native-iOS work collides on the same handful of files (`Info.plist`, `project.pbxproj`,
 entitlements) — F1/F2 can't be meaningfully split across sessions, they're one lane by nature. App
 Store Connect metadata and the ABM/Developer enrollment itself are pure owner/ops work, not
-delegatable to a coding session at all. F1 cannot be build-verified in this environment (no
-Xcode/macOS) — every native change carries an explicit owner on-device/Xcode verification gate,
-same convention as this repo's other "owner-gated" items.
+delegatable to a coding session at all. The original 2026-07-17 session had no Xcode/macOS and
+therefore could not build-verify F1. Later unsigned generic and iPhone 17 Pro/iOS 26.5 simulator
+build/install/launch evidence narrowed that source gate, but it did not replace clean signed
+archive, TestFlight, or representative physical-device verification.
 
 ## 6. Status
 
-- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; **still owner-gated** on Xcode build-verify (cannot be compile-verified in the Linux env — see §5 / F1 block)
-- [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning, guarded `markBundleReady()` on App mount.
+- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; later unsigned generic and
+  iPhone 17 Pro/iOS 26.5 simulator build/install/launch evidence exists, while signed archive,
+  TestFlight, and physical-device proof remain owner/external gates
+- [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning. The then-added boot acknowledgment is superseded by the 2026-07-26 exact-default-off OTA contract above.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
 - [x] Phase D validation repair — 2026-07-23: the manual-only workflow no longer references
@@ -226,3 +254,55 @@ same convention as this repo's other "owner-gated" items.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
 - [ ] Owner: Xcode build-verify of F1 before any real device sees it
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
+
+### 2026-07-26 current source reconciliation
+
+Completed in source, pending final integration/release review:
+
+- native output is field-only by target-specific page registry plus completed-module-graph guard;
+  office, CRM, billing/QBO, desktop settings, and admin-mobile are excluded while the web/desktop
+  build keeps its full route graph;
+- `/privacy`, `/terms`, `/support`, `/sign/:token`, and `/s/:code` are present in native and web;
+- the account-deletion request panel is shared by desktop My Account and field Tech Settings;
+- enrolled biometrics fail closed through account/device cleanup and local sign-out; AppDelegate
+  installs an opaque app-switcher privacy shield before resign/background;
+- custom scheme, Associated Domains, AASA, App-plugin cold/warm listener, and Push-action routing
+  use one deny-by-default route/query resolver; `/tech/admin` is excluded;
+- native Push enrollment is exact-default-off and account cleanup detaches server/local state;
+- OTA is exact-default-off and has zero boot acknowledgment pending an explicit health gate;
+- app-target `PrivacyInfo.xcprivacy` is registered and declares no tracking, UserDefaults `CA92.1`,
+  and exactly 12 linked/non-tracking App Functionality data types, including Other Financial Info
+  for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;
+- the manual `main`-only archive workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler
+  4.0.16, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
+  signing/provisioning/entitlements/privacy/build identity/hashes.
+
+Open source/reproducibility gates:
+
+- `ios/Gemfile.lock` is absent; generate and review it only with Ruby 3.3.12/Bundler 4.0.16;
+- `@capacitor/app` is a direct dependency, but the managed
+  `ios/App/CapApp-SPM/Package.swift` has not been synchronized; a reviewed `cap sync ios` is
+  required and must not be replaced by hand-editing the generated file;
+- Supabase session tokens remain in default WebView storage; the owner must approve that optional
+  biometric policy or require a Keychain-backed design;
+- rejected authenticated bootstrap, authorization-response typing, and cleanup-gated password
+  recovery are source-fixed; observer work is serialized outside the Supabase Auth lock and the
+  independent source review is clean; signed-device account-switch/recovery proof remains;
+- the initial release now admits/replays zero offline commands and keeps IndexedDB v3 only for
+  count-only blocking legacy quarantine, exact-confirmation all-store cleanup, bounded open/
+  version-change recovery, and retry-limited historical-photo maintenance; focused/broader source
+  verification and independent review are green, while device proof remains;
+- account-deletion request intake exists, but fulfillment/SLA/retention/audit remains an owner/
+  compliance process gate.
+
+Open external/release gates:
+
+- Apple enrollment/account/team/certificates/profiles and App Store Connect keys;
+- clean signed archive/IPA verification, internal TestFlight upload/install, Universal/custom link,
+  recovery/signing, Push, background/privacy, biometric, account-switch, permission, and offline
+  physical-device matrix;
+- screenshots, demo credentials, privacy/legal review, App Store Connect entry, distribution, and
+  App Review.
+
+No source, simulator, or unsigned build result closes those external gates. Native database changes,
+deployment/providers, signing, TestFlight, and device qualification remain separate authorizations.

@@ -52,7 +52,7 @@
  *     service_role only (never anon — database-standard.md §1), and crm_lead_notes
  *     is RLS deny-all (RPC-only). So this suite only truly exercises when run
  *     where those roles can reach the RPCs (an authenticated harness, or the
- *     Supabase MCP as a privileged role) — NOT a plain anon devLogin session.
+ *     Supabase MCP as a privileged role) — NOT a plain anonymous browser session.
  *     The live 24-arm contract + every fixture column/enum here was verified
  *     read-only via the Supabase MCP against project glsmljpabrwonfiltiqm.
  *   - The two 'note' arms (job_notes vs crm_lead_notes) share activity_type

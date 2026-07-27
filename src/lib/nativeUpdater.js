@@ -1,38 +1,75 @@
-// Capgo OTA updater wrapper. No-op on web.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: nativeUpdater.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Keeps native over-the-air update operations behind an explicit, reviewed
+ *   opt-in and refuses to accept a bundle until its caller proves the complete
+ *   application health checkpoint passed.
+ *
+ * DEPENDS ON:
+ *   Packages:  @capacitor/core, @capgo/capacitor-updater
+ *   Internal:  none
+ *   Data:      reads native updater metadata only when OTA is explicitly enabled
+ *
+ * NOTES / GOTCHAS:
+ *   - Production currently keeps CapacitorUpdater.autoUpdate=false and
+ *     VITE_NATIVE_OTA_ENABLED=false. No boot path acknowledges a bundle.
+ *   - A future OTA release lane must define and test the health checkpoint, then
+ *     call markBundleReady({ healthVerified: true }) exactly once.
+ * ════════════════════════════════════════════════
+ */
 //
 // Capgo ships React/CSS/HTML updates to installed iOS apps without an App Store
 // resubmit. The native plugin auto-checks on app resume and downloads matching
 // channel bundles in the background. Next cold launch applies the new bundle.
-//
-// CRITICAL: notifyAppReady() must be called shortly after the app boots.
-// If we don't call it, Capgo assumes the update crashed and rolls back to the
-// previous bundle on next launch. That's the safety net against shipping a
-// broken bundle — we just have to honour it.
 
 import { Capacitor } from '@capacitor/core';
 import { CapacitorUpdater } from '@capgo/capacitor-updater';
 
 const isNative = () => Capacitor.isNativePlatform();
 
-// Call this once after the React tree has mounted successfully.
-// Tells Capgo "this bundle works" so it doesn't roll back.
-export async function markBundleReady() {
-  if (!isNative()) return;
+export function isNativeOtaEnabled(env = import.meta.env) {
+  return env?.VITE_NATIVE_OTA_ENABLED === 'true';
+}
+
+/**
+ * Accept a pending OTA bundle only after a separately defined health checkpoint.
+ * Merely importing modules or mounting React is intentionally insufficient.
+ */
+export async function markBundleReady({
+  healthVerified = false,
+  env = import.meta.env,
+  updater = CapacitorUpdater,
+} = {}) {
+  if (!isNative()) return { ok: false, reason: 'not_native' };
+  if (!isNativeOtaEnabled(env)) {
+    return { ok: false, reason: 'ota_disabled' };
+  }
+  if (healthVerified !== true) {
+    return { ok: false, reason: 'health_unverified' };
+  }
   try {
-    await CapacitorUpdater.notifyAppReady();
+    await updater.notifyAppReady();
+    return { ok: true };
   } catch (err) {
-    // Per the CRITICAL note above, a failure here means Capgo will roll back
-    // to the previous bundle on next launch — log it so that's diagnosable.
-    console.warn('CapacitorUpdater.notifyAppReady failed (markBundleReady):', err?.message || err);
+    return {
+      ok: false,
+      reason: 'acknowledgement_failed',
+      error: err,
+    };
   }
 }
 
-// Optional: manually trigger a check. autoUpdate already runs this on resume,
-// so normal flow doesn't need it. Useful for a "check for updates" button.
-export async function checkForUpdate() {
-  if (!isNative()) return null;
+// Optional future manual check. Disabled OTA never contacts the updater.
+export async function checkForUpdate({
+  env = import.meta.env,
+  updater = CapacitorUpdater,
+} = {}) {
+  if (!isNative() || !isNativeOtaEnabled(env)) return null;
   try {
-    const latest = await CapacitorUpdater.getLatest();
+    const latest = await updater.getLatest();
     return latest;
   } catch {
     return null;
@@ -40,10 +77,13 @@ export async function checkForUpdate() {
 }
 
 // Read the current bundle info — useful for "version" display in an About screen.
-export async function getCurrentBundleInfo() {
-  if (!isNative()) return null;
+export async function getCurrentBundleInfo({
+  env = import.meta.env,
+  updater = CapacitorUpdater,
+} = {}) {
+  if (!isNative() || !isNativeOtaEnabled(env)) return null;
   try {
-    return await CapacitorUpdater.current();
+    return await updater.current();
   } catch {
     return null;
   }

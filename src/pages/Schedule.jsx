@@ -41,6 +41,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
@@ -544,7 +545,7 @@ export default function Schedule() {
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);
-  useEffect(() => { db.select('employees', 'is_active=eq.true&order=display_name.asc&select=id,display_name,full_name,role,color,avatar_url').then(setAllEmployees).catch(() => {}); }, [db]);
+  useEffect(() => { loadEmployeeDirectory(db).then(setAllEmployees).catch(() => {}); }, [db]);
 
   const toggleJob = async (jobId, addToBoard) => { try { if (addToBoard) await db.insert('dispatch_board_jobs', { job_id: jobId, added_by: employee?.id }); else await db.delete('dispatch_board_jobs', `job_id=eq.${jobId}`); setPanelJobs(prev => prev.map(j => j.id === jobId ? { ...j, on_board: addToBoard } : j)); loadBoard(); } catch (e) { console.error('Toggle:', e); } };
 

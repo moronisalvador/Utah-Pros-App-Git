@@ -66,6 +66,8 @@ recorded in an audit is a thing to remove, never a pattern to copy.
 `tooling/capabilities.json` names the neutral sources and their generated Claude Code / Codex
 adapters. **Edit the neutral source and run `npm run generate:tooling`; never hand-edit a generated
 `.claude`, `.agents` or `.codex` adapter.** `npm run check:tooling-generated` enforces this.
+The mobile-readiness skill and reviewer roles follow that same neutral-source path; they are not a
+separate legacy generator or an exception to the cross-runtime drift check.
 
 ## Non-negotiable rules
 
@@ -74,13 +76,13 @@ form "CLAUDE.md Rule N" resolves here. Renumbering would silently break every on
 current count rather than trusting this sentence:
 
 ```bash
-git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l   # 172 across 56 files, 2026-07-26
+rg --hidden -o '\bRules? [0-9]+\b' -g '*.md' | wc -l   # 180 across 59 files, 2026-07-27
 ```
 
 1. **Read files from disk before editing.** Never assume file contents from memory.
 2. **No `alert()`/`confirm()`** (eslint-enforced, error-level). Feedback goes through **`src/lib/toast.js`** (`toast`/`ok`/`err`) — the ONLY toast entry point; never dispatch `upr:toast` raw or copy a local `errToast` (eslint-`warn`, ratcheting to error). Destructive actions use inline two-click confirm, never a modal. Patterns: `UPR-Design-System.md`; states law: [`.claude/rules/loading-error-states.md`](.claude/rules/loading-error-states.md).
 3. **`const { db } = useAuth()`** in components — never import `db` directly from `@/lib/supabase` (that also exports an unauthenticated singleton for bootstrapping only).
-4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exception:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)) — concurrent sessions genuinely need the isolation + reviewer gauntlet. See [Deployment](#deployment--release-workflow).
+4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exceptions:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)); the active mobile-readiness program keeps bounded `codex/mobile-readiness-*` wave branches/worktrees and reconciles current `origin/dev` by merge without rewriting history. Neither exception authorizes a push, deploy, or production apply. See [Deployment](#deployment--release-workflow).
 5. **Mobile CSS: `@media (max-width: 768px)` only.** Never touch desktop layout/colors/spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
 6. **Commit after every 2–3 files.** Small commits, clear messages.
 7. **New tables/columns → write a migration in `supabase/migrations/` first** (derive the current count; real schema-as-code), apply via Supabase MCP `apply_migration` only when explicitly authorized, then query through the narrowest appropriate table/RPC contract. **Check real column names** via `information_schema.columns` first — tables routinely have 20-60+ columns, never assume from a short doc list. **Grant/policy posture is least-privilege by default** — `authenticated` proves identity, not permission; use role/assignment/owner/org predicates and grant each RPC only to intended callers. `anon` only via the named temporary public allowlist. Full standard: [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md).
@@ -275,6 +277,36 @@ across UI, API, Pages Functions and SQL without recording the enforcement bounda
 `docs/business-rules.md`.
 
 ## Repository model and orientation
+
+### Mobile PWA and Capacitor production-readiness program
+
+For any task tied to a `MOB-*` finding or `UPRF-MOB-001`, also read:
+
+- `docs/mobile-production-readiness-roadmap.md`
+- `docs/mobile-production-readiness-wave-ownership.md`
+- `docs/mobile-production-readiness-setup.md`
+- `.claude/skills/mobile-readiness-wave/SKILL.md`
+- the complete canonical `docs/mobile/` set
+- the affected files under `docs/audit/mobile-pwa/`
+- `docs/app-store-readiness-roadmap.md` for Apple ownership/release gates
+
+Until the foundation is integrated into `dev`, create each wave branch/worktree from
+`codex/mobile-pwa-readiness-foundation`, fetch current `origin/dev`, and reconcile drift without
+dropping the foundation or rewriting history. After integration, start from current `origin/dev`.
+Run `npm run preflight:mobile` before implementation. The 2026-07 audit source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` is historical; record and inspect the current
+`origin/dev` SHA instead of assuming the snapshot remains current.
+
+Use one primary and no more than three simultaneous subagents. The project-scoped mobile roles are
+generated from their neutral `tooling/agents/mobile-readiness-*.md` sources by
+`npm run generate:tooling`; never hand-edit a runtime adapter. Follow the ownership manifest's
+single-writer/shared-hotspot rules.
+
+All mobile waves keep Supabase, Storage, Cloudflare, providers, production, customer data, Apple
+signing, TestFlight, and App Store state read-only unless the user separately authorizes the exact
+external action. Bound server/browser/simulator/Xcode subprocesses to five minutes, guarantee
+owned-child cleanup in `try/finally`, verify cleanup, and report auth/device/signing limitations
+honestly.
 
 - **Frontend:** React 19 + Vite 8 SPA in `src/`, all JSX, no TypeScript. React Router v7. CSS custom
   properties only — no Tailwind, no CSS modules. Data goes through PostgREST via the REST client in

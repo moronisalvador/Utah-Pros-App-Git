@@ -2,7 +2,7 @@
 // along on the email QuickBooks sends the customer (IncludeOnSend) and shows on the
 // transaction inside QuickBooks.
 //
-// Auth: active admin/manager Supabase employee session (billing role) — mirrors
+// Auth: active internal admin/manager Supabase employee session (billing role) — mirrors
 //       qbo-charge. Attaching pushes customer documents to QuickBooks.
 //
 // Attach:  { entity_type: 'invoice'|'estimate', id: '<upr uuid>',
@@ -54,6 +54,9 @@ export async function onRequestPost(context) {
 
   const auth = await requireRole(request, env, db, BILLING_ROLES);
   if (auth.error) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  if (auth.employee.is_external) {
+    return jsonResponse({ error: 'Insufficient role' }, 403, request, env);
+  }
 
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);

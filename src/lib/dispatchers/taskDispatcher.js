@@ -1,19 +1,50 @@
-// Dispatcher: sends a queued appointment-task toggle to Supabase via the
-// toggle_appointment_task RPC. Mirrors the in-page flow in TechTasks.jsx exactly
-// so an offline checkbox tap produces the same server state as an online one.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: taskDispatcher.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Retains the dormant task-toggle prototype for historical source context.
+ *
+ * DEPENDS ON:
+ *   Internal:  none
+ *   Data:      writes → toggle_appointment_task RPC
+ *
+ * NOTES / GOTCHAS:
+ *   - DORMANT: the production enqueue boundary rejects `task.toggle` and the
+ *     sync runner does not import this prototype.
+ *   - A toggle has no desired-state/operation-ID contract. Ambiguous outcomes
+ *     require manual reconciliation and must never auto-replay.
+ * ════════════════════════════════════════════════
+ */
+
+import { isStableQueueOperationId } from '../offlineDb';
 
 /**
- * Send a queued task toggle to the server.
- * The offline queue fires each enqueued toggle exactly once (deduped by clientId),
- * so a single tap flips the task once — matching the online single-tap behavior.
+ * Send a queued task toggle to the server. The RPC is a toggle and accepts no
+ * operation ID, so an ambiguous outcome must be reconciled manually; the queue
+ * runner never automatically replays it.
  * @param {object} db - Authenticated supabase client (db.rpc).
  * @param {object} employee - employee row (for the p_employee_id fallback).
  * @param {{ clientId:string, taskId:string, employeeId?:string }} payload
  * @returns {Promise<{serverId:string|undefined}>}
  */
-export async function dispatchTaskToggle(db, employee, payload /*, queueItem */) {
-  if (!payload?.clientId || !payload?.taskId) {
-    throw new Error('dispatchTaskToggle requires clientId, taskId');
+export async function dispatchTaskToggle(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
+  if (
+    !payload?.taskId
+    || !isStableQueueOperationId(queueItem?.operationId)
+    || payload.clientId !== queueItem.operationId
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchTaskToggle requires an owner-bound stable operation ID',
+    );
   }
 
   await db.rpc('toggle_appointment_task', {

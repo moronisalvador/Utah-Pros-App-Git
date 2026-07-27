@@ -19,18 +19,15 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext, @/components/tech/PhotoNoteSheet,
- *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics
  *   Data:      reads  → rooms (get_job_rooms)
  *              writes → job-files storage bucket (direct REST upload),
  *                        job_documents (insert_job_document + a direct caption
  *                        update), rooms (move_photo_to_room / create_room)
  *
  * NOTES / GOTCHAS:
- *   - Two upload paths, identical to v1: an offline-queue path (gated by the
- *     'offline:queue' flag — stores the blob in IndexedDB and enqueues a sync
- *     job) and the default inline path (uploads to Storage, then records via
- *     insert_job_document). Snap-first: neither blocks the camera flow.
+ *   - Photo upload is online-only because Storage plus document metadata has no
+ *     idempotent replay fence. Offline attempts fail before local persistence.
  *   - onUploaded() is the caller's cache-invalidation hook (photo mutation) — it
  *     replaces v1's onReload full refetch.
  * ════════════════════════════════════════════════
@@ -42,9 +39,7 @@ import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { savePhotoBlob } from '@/lib/offlineDb';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
+import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 /**
  * @param {{ job: object, appointmentId: string, employee: object, db: object,
@@ -53,8 +48,6 @@ import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 export default function PhotoCaptureButton({ job, appointmentId, employee, db, onUploaded }) {
   const { t } = useTranslation(['dash', 'tech']);
   const { isFeatureEnabled } = useAuth();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
   const [uploading, setUploading] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
@@ -85,31 +78,14 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
     if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
     if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
-    // ── Offline-queue path (gated) ────────────────────────────────────────
-    if (offlineQueueEnabled) {
-      try {
-        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
-        await savePhotoBlob(clientId, {
-          blob: file, mimeType: file.type, name: file.name,
-          jobId: job.id, appointmentId, uploadedBy: employee?.id || null,
-          roomId: null, description: null,
-        });
-        await enqueue({
-          type: 'photo.upload',
-          clientId,
-          payload: { clientId, jobId: job.id, appointmentId, roomId: null, description: null, name: file.name },
-        });
-        impact('light');
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast(t('tech:toast.photoQueued'), 'success');
-        }
-      } catch (err) {
-        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
-      }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
       return;
     }
 
-    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -140,18 +116,6 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
       setUploading(false);
     }
   };
-
-  // Reload the dashboard when a queued photo for this appointment finishes.
-  useEffect(() => {
-    if (!offlineQueueEnabled) return undefined;
-    const runner = getSyncRunner();
-    if (!runner) return undefined;
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (item?.payload?.appointmentId !== appointmentId) return;
-      if (onUploaded) onUploaded();
-    });
-  }, [offlineQueueEnabled, appointmentId, onUploaded]);
 
   const handlePhotoCaptured = async (e) => {
     const file = e.target.files?.[0];
@@ -195,7 +159,7 @@ export default function PhotoCaptureButton({ job, appointmentId, employee, db, o
     if (!job?.id) throw new Error('Job not loaded');
     const created = await db.rpc('create_room', {
       p_job_id: job.id, p_name: name,
-      p_created_by: employee?.id, p_client_id: crypto?.randomUUID?.() || null,
+      p_created_by: employee?.id, p_client_id: createOfflineOperationId(),
     });
     setRooms(await db.rpc('get_job_rooms', { p_job_id: job.id }) || []);
     return created;

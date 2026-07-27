@@ -43,7 +43,7 @@
  *     client here runs as the anon Supabase role, so even with creds present
  *     this suite only proves the RPC/RLS behavior when run somewhere the
  *     anon role can actually reach these tables (e.g. against the live
- *     project via the Supabase MCP, not a local devLogin session). Verify
+ *     project via the Supabase MCP, not a plain anonymous browser session). Verify
  *     with direct SQL fixtures via the Supabase MCP when this self-skips.
  * ════════════════════════════════════════════════
  */

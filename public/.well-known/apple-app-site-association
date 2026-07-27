@@ -1,5 +1,28 @@
 {
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "P93U4Z4DJB.com.utahprosrestoration.upr",
+        "paths": [
+          "NOT /tech/admin",
+          "NOT /tech/admin/*",
+          "/tech",
+          "/tech/*",
+          "/login",
+          "/set-password",
+          "/sign/*",
+          "/s/*",
+          "/privacy",
+          "/terms",
+          "/support"
+        ]
+      }
+    ]
+  },
   "webcredentials": {
-    "apps": ["com.utahpros.mobile"]
+    "apps": [
+      "com.utahpros.mobile"
+    ]
   }
 }

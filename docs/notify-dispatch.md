@@ -65,6 +65,11 @@ owner merges; do NOT subscribe to, babysit, or wait for review on it.
 
 ## Phase F2 — Data foundation
 
+> **Historical dispatch, superseded 2026-07-26 for database testing:** S1g retired
+> `notify_foundation.test.js`; do not rerun it against any shared project. Bell
+> signature/recipient/read behavior now uses the guarded local-only S1g SQL suite. The old
+> preference-resolver portion requires separate authenticated isolated coverage.
+
 ```
 [Phase F2 — Wave 0.5]
 Branch: session-assigned, cut from origin/dev
@@ -234,3 +239,21 @@ clean; visual check of the tab on the branch preview; fill your pre-labeled Sess
 sub-header in UPR-Web-Context.md; reconcile the Session D checkboxes honestly; delete test
 rows; push -u; PR into dev as a handoff, mark ready, stop — no babysitting.
 ```
+
+## 2026-07-26 mobile-readiness dispatch addendum
+
+Do not dispatch the historical Session C prompt as current authorization guidance. S1h now owns
+the personal preference/Web Push RPC authorization repair. Its revised ordered source replaces the
+anonymous shared-project integration test with guarded rollback-only identity matrices and covers
+the employee-authority self-promotion and cross-owner Web Push/native-token takeover cases found by
+independent review. Credential-free source review and static negative tests pass, but the exact
+checked-in forward, catalog, isolated, and rollback chain has not run in a retained governed
+Supabase target. S1h is source-hardened but not database-behavior-verified or
+`ready_for_apply`; **do not apply it**.
+
+Any later Notification Center database session is S1i only: admin defaults, employee overrides,
+and their exact RPC/table ACL boundary. It remains unstarted and requires a fresh scoped ownership
+and authorization decision after the ordered S1h database chain is qualified. It must then
+recapture current catalog/callers read-only, preserve the resolver's successful precedence
+contract, and remain separate from every S1d-S1h apply, provider, deployment, signing, and device
+gate.

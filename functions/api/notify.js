@@ -15,13 +15,13 @@
  *
  * WHERE IT LIVES:
  *   Route:        POST /api/notify  (Cloudflare Pages Function)
- *   Rendered by:  n/a (worker) — called by feedback-notify.js (in-process) and by
- *                 DB triggers (via integration_config notify_worker_url) using the
- *                 x-webhook-secret; Session B wires the remaining event origins.
+ *   Rendered by:  n/a (worker) — DB triggers call the HTTP route with the exact
+ *                 x-webhook-secret; trusted workers import dispatchEvent in-process.
  *
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
+ *              ../lib/auth.js (active internal admin for the legacy Bearer path),
  *              ../lib/webPush.js (sendWebPush/loadVapidConfig), ../lib/email.js
  *   Data:      reads  → notification_types (catalog + enabled master switch),
  *                        employees (audience + email), appointment_crew (crew
@@ -33,9 +33,11 @@
  * NOTES / GOTCHAS:
  *   - A type ships enabled=false and is INERT: dispatchEvent returns {skipped} for
  *     a disabled type, so wiring an emit hook before the type is turned on is safe.
- *   - Auth accepts EITHER a matching x-webhook-secret (DB-trigger calls) OR a valid
- *     Bearer user token (worker-to-worker, e.g. feedback-notify) — same shape as
- *     send-push/feedback-notify.
+ *   - HTTP auth accepts EITHER the matching x-webhook-secret (DB-trigger calls)
+ *     OR an active internal admin. A supplied secret is checked first and never
+ *     falls through to Bearer when wrong. The Bearer path accepts only the
+ *     allowlisted, server-derived object events below; secret and in-process
+ *     callers retain their deployed payloads.
  *   - Web Push 503-skips when VAPID is unset (the APNs precedent) and prunes 404/410
  *     subscriptions. Email skips + reports a NULL address. None of these throw.
  *   - Bell rows are per-recipient (recipient_id set) so each person's feed + read
@@ -47,6 +49,7 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
 import { sendEmail } from '../lib/email.js';
 
@@ -67,6 +70,20 @@ const ROLE_AUDIENCE = {
   'timesheet.change_requested': ['admin'],
   // clock.abandoned is NOT here — it resolves to admins PLUS the affected tech
   // (see resolveAudience), so the tech gets their own "forgot to clock out" nudge.
+};
+
+const NOTIFY_BROWSER_ROLES = ['admin'];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// There is no checked-in browser caller for POST /api/notify. Keep the legacy
+// Bearer capability deliberately narrow: only events whose recipient and
+// message can be derived from an existing database object. All other event
+// origins use the exact server secret or call dispatchEvent in-process.
+const HUMAN_HTTP_EVENT_FIELDS = {
+  'appointment.assigned': new Set(['type_key', 'appointment_id', 'employee_id']),
+  'appointment.updated': new Set(['type_key', 'appointment_id']),
+  'appointment.canceled': new Set(['type_key', 'appointment_id']),
+  'estimate.accepted': new Set(['type_key', 'estimate_id']),
 };
 
 // ─── SECTION: Helpers ───
@@ -397,11 +414,11 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
   return { type_key: typeKey, recipients: recipientIds.length, results };
 }
 
-// ─── SECTION: Auth (x-webhook-secret for triggers, OR a Bearer user token) ───
+// ─── SECTION: HTTP identity + object contract ───
 
-async function authorize(request, env, db, fetchImpl) {
+export async function authorizeNotifyRequest(request, env, db) {
   const secret = request.headers.get('x-webhook-secret');
-  if (secret) {
+  if (request.headers.has('x-webhook-secret')) {
     let expected = null;
     try {
       const rows = await db.select('integration_config', 'key=eq.notify_webhook_secret&select=value');
@@ -411,22 +428,110 @@ async function authorize(request, env, db, fetchImpl) {
     return { ok: false, status: 401, error: 'Invalid webhook secret' };
   }
 
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { ok: false, status: 401, error: 'Missing Authorization header' };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const apiKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await (fetchImpl || fetch)(`${url}/auth/v1/user`, {
-    headers: { apikey: apiKey, Authorization: `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { ok: false, status: 401, error: 'Invalid or expired token' };
-  return { ok: true, via: 'bearer', authHeader };
+  const auth = await requireRole(request, env, db, NOTIFY_BROWSER_ROLES);
+  if (auth.error) {
+    return {
+      ok: false,
+      status: auth.status,
+      error: auth.status === 403 ? 'Forbidden' : auth.error,
+    };
+  }
+  if (auth.employee.is_external !== false) {
+    return { ok: false, status: 403, error: 'Forbidden' };
+  }
+  return { ok: true, via: 'bearer', user: auth.user, employee: auth.employee };
+}
+
+function scopeFailure(error, status) {
+  return { ok: false, error, status };
+}
+
+async function readScopedRow(db, table, query) {
+  try {
+    const rows = await db.select(table, query);
+    return { ok: true, row: rows?.[0] || null };
+  } catch {
+    return scopeFailure('Notification object lookup failed', 500);
+  }
+}
+
+/**
+ * Converts a human HTTP request into the minimum dispatcher payload after the
+ * referenced object is proven. Client-supplied recipients, message copy, HTML,
+ * links, entities, jobs, payload and push data are all rejected.
+ */
+export async function scopeBearerNotification(db, typeKey, body) {
+  const allowedFields = HUMAN_HTTP_EVENT_FIELDS[typeKey];
+  if (!allowedFields) {
+    return scopeFailure('Unsupported type_key for Bearer dispatch', 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return scopeFailure('Invalid notification scope', 400);
+  }
+  if (Object.keys(body).some((key) => !allowedFields.has(key))) {
+    return scopeFailure('Unsupported fields for Bearer dispatch', 400);
+  }
+
+  if (typeKey === 'appointment.assigned') {
+    if (!UUID_RE.test(body.appointment_id || '') || !UUID_RE.test(body.employee_id || '')) {
+      return scopeFailure('Invalid notification scope', 400);
+    }
+    const scoped = await readScopedRow(
+      db,
+      'appointment_crew',
+      `appointment_id=eq.${body.appointment_id}&employee_id=eq.${body.employee_id}&select=appointment_id,employee_id&limit=1`,
+    );
+    if (!scoped.ok) return scoped;
+    if (!scoped.row) return scopeFailure('Notification object not found', 404);
+    return {
+      ok: true,
+      body: { appointment_id: body.appointment_id, employee_id: body.employee_id },
+    };
+  }
+
+  if (typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') {
+    if (!UUID_RE.test(body.appointment_id || '')) {
+      return scopeFailure('Invalid notification scope', 400);
+    }
+    const scoped = await readScopedRow(
+      db,
+      'appointments',
+      `id=eq.${body.appointment_id}&select=id,status&limit=1`,
+    );
+    if (!scoped.ok) return scoped;
+    if (!scoped.row || (typeKey === 'appointment.canceled' && scoped.row.status !== 'cancelled')) {
+      return scopeFailure('Notification object not found', 404);
+    }
+    return { ok: true, body: { appointment_id: body.appointment_id } };
+  }
+
+  if (!UUID_RE.test(body.estimate_id || '')) {
+    return scopeFailure('Invalid notification scope', 400);
+  }
+  const scoped = await readScopedRow(
+    db,
+    'estimates',
+    `id=eq.${body.estimate_id}&select=id,status&limit=1`,
+  );
+  if (!scoped.ok) return scoped;
+  if (!scoped.row || scoped.row.status !== 'approved') {
+    return scopeFailure('Notification object not found', 404);
+  }
+  return { ok: true, body: { estimate_id: body.estimate_id } };
 }
 
 // ─── SECTION: HTTP handler (injectable deps for tests) ───
 
-export async function handleNotify({ request, env, db, fetchImpl = fetch, sendWebPushImpl, sendEmailImpl }) {
-  const auth = await authorize(request, env, db, fetchImpl);
+export async function handleNotify({
+  request,
+  env,
+  db,
+  fetchImpl = fetch,
+  sendWebPushImpl,
+  sendEmailImpl,
+  dispatchImpl = dispatchEvent,
+}) {
+  const auth = await authorizeNotifyRequest(request, env, db);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
 
   let body;
@@ -436,7 +541,22 @@ export async function handleNotify({ request, env, db, fetchImpl = fetch, sendWe
   const typeKey = body?.type_key;
   if (!typeKey) return { status: 400, data: { error: 'type_key is required' } };
 
-  const summary = await dispatchEvent({ db, env, typeKey, body, fetchImpl, sendWebPushImpl, sendEmailImpl });
+  let dispatchBody = body;
+  if (auth.via === 'bearer') {
+    const scoped = await scopeBearerNotification(db, typeKey, body);
+    if (!scoped.ok) return { status: scoped.status, data: { error: scoped.error } };
+    dispatchBody = scoped.body;
+  }
+
+  const summary = await dispatchImpl({
+    db,
+    env,
+    typeKey,
+    body: dispatchBody,
+    fetchImpl,
+    sendWebPushImpl,
+    sendEmailImpl,
+  });
   return { status: 200, data: summary };
 }
 

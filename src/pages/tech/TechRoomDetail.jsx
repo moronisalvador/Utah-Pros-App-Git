@@ -21,25 +21,19 @@
  *   Internal:  ./techConstants, @/components/DivisionIcons, @/lib/toast,
  *              @/lib/nativeCamera, @/lib/nativeHaptics,
  *              @/components/tech/Lightbox, @/lib/techDateUtils,
- *              @/contexts/AuthContext, @/hooks/useOfflineQueue,
- *              @/lib/offlineDb, @/lib/syncRunnerSingleton
+ *              @/contexts/AuthContext
  *   Data:      All access goes through the db client from useAuth (RPC + REST).
  *              Tables below were resolved from each call/RPC, not guessed:
  *              reads  → claims, contacts, jobs (get_claim_detail);
  *                        job_documents, rooms (get_claim_rooms);
  *                        job_documents (direct db.select by room_id)
  *              writes → job_documents (insert_job_document) + job-files storage
- *                        bucket (direct REST upload) on the inline path; on the
- *                        offline path the photo blob goes to IndexedDB
- *                        (savePhotoBlob) and is enqueued for later sync
+ *                        bucket (direct REST upload)
  *
  * NOTES / GOTCHAS:
- *   - Every upload is pre-tagged with this room_id so the photo lands in the
- *     right room even if it syncs hours later.
- *   - Two upload paths: an offline-queue path gated by the 'offline:queue'
- *     feature flag (stores blob + enqueues), and the default inline path
- *     (Storage POST + insert_job_document). A sync:item-done listener reloads
- *     the page when a queued photo for THIS room finishes uploading.
+ *   - Every upload is pre-tagged with this room_id.
+ *   - Photo upload is online-only because Storage plus document metadata has no
+ *     idempotent replay fence. No photo bytes are persisted to the offline queue.
  *   - Rooms are claim-scoped, so the room is found by matching roomId within
  *     get_claim_rooms rather than fetched on its own.
  *   - Sub-components in this file: TabButton, EmptyState, JobPicker.
@@ -55,17 +49,12 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { photoDateTime } from '@/lib/techDateUtils';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { savePhotoBlob } from '@/lib/offlineDb';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 
 export default function TechRoomDetail() {
   // ─── SECTION: State & hooks ──────────────
   const { claimId, roomId } = useParams();
   const navigate = useNavigate();
-  const { db, employee, isFeatureEnabled } = useAuth();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
+  const { db, employee } = useAuth();
 
   const [claim, setClaim] = useState(null);
   const [jobs, setJobs] = useState([]);
@@ -146,47 +135,14 @@ export default function TechRoomDetail() {
     if (file.size > 10 * 1024 * 1024) { toast('Photo is too large (max 10 MB)', 'error'); return; }
     if (!file.type.startsWith('image/')) { toast('Only image files are allowed', 'error'); return; }
 
-    // ── Offline-queue path (gated) ────────────────────────────────────────
-    // This page pre-tags every upload with the current room_id so the photo
-    // lands in the right place even if it syncs hours later.
-    if (offlineQueueEnabled) {
-      try {
-        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
-        await savePhotoBlob(clientId, {
-          blob: file,
-          mimeType: file.type,
-          name: file.name,
-          jobId,
-          appointmentId: null,
-          uploadedBy: employee?.id || null,
-          roomId: room.id,
-          description: null,
-        });
-        await enqueue({
-          type: 'photo.upload',
-          clientId,
-          payload: {
-            clientId,
-            jobId,
-            appointmentId: null,
-            roomId: room.id,
-            description: null,
-            name: file.name,
-          },
-        });
-        impact('light');
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-          toast('Photo queued — will upload when online', 'success');
-        } else {
-          toast('Photo uploading…');
-        }
-      } catch (err) {
-        toast('Failed to queue photo: ' + (err?.message || 'unknown'), 'error');
-      }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
       return;
     }
 
-    // ── Inline path (default) ────────────────────────────────────────────
     setUploading(true);
     try {
       const ts = Date.now();
@@ -215,19 +171,7 @@ export default function TechRoomDetail() {
     } finally {
       setUploading(false);
     }
-  }, [db, employee?.id, room, load, offlineQueueEnabled, enqueue]);
-
-  // Reload when a queued photo for THIS room finishes syncing.
-  useEffect(() => {
-    if (!offlineQueueEnabled || !room) return;
-    const runner = getSyncRunner();
-    if (!runner) return;
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (item?.payload?.roomId !== room.id) return;
-      load();
-    });
-  }, [offlineQueueEnabled, room, load]);
+  }, [db, employee?.id, room, load]);
 
   const handleFileInputChange = (e) => {
     const file = e.target.files?.[0];

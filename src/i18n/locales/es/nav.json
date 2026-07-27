@@ -4,7 +4,10 @@
   "schedule": "Agenda",
   "messages": "Mensajes",
   "more": "Más",
-  "installBanner": "Instala UPR para la mejor experiencia",
+  "installBanner": "Instala UPR para un acceso más rápido en campo",
   "installApp": "Instalar app",
-  "installIos": "Toca <b>Compartir</b> → <b>Agregar a inicio</b> para instalar UPR"
+  "installIos": "Toca <b>Compartir</b> → <b>Agregar a inicio</b> para instalar UPR",
+  "installOnlineRequired": "Se necesita internet para iniciar de forma confiable y guardar el trabajo de campo. El guardado sin conexión no está habilitado.",
+  "installRegionLabel": "Instalar UPR",
+  "dismissInstall": "Cerrar las instrucciones de instalación"
 }

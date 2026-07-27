@@ -51,6 +51,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
@@ -106,7 +107,7 @@ export default function TechEditAppointment() {
       const [detail, taskList, empList] = await Promise.all([
         db.rpc('get_appointment_detail', { p_appointment_id: id }),
         db.rpc('get_appointment_tasks', { p_appointment_id: id }),
-        db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,role'),
+        loadEmployeeDirectory(db),
       ]);
       if (!detail) { toast(t('toastNotFound'), 'error'); navigate(-1); return; }
 

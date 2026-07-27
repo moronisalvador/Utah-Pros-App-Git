@@ -24,8 +24,12 @@ Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/
   what they left. Never re-run a spinner-gated `load()` on resume/pull-to-refresh (the minimize test at
   close-out enforces this).
 - **Loading:** cold-start skeleton only; a refetch never blanks a rendered screen.
-- **Offline:** mutations go through `useOfflineQueue` where wired (photos, notes, task toggles) so a
-  basement with no signal doesn't lose work; a failed sync retries, never silently drops.
+- **Offline:** the initial production release does not admit or automatically replay field
+  mutations. Photos, notes, readings, equipment actions, task toggles, and other writes fail clearly
+  while offline and remain online-only until an end-to-end idempotent, account-owned queue contract
+  is separately reviewed. The retained local queue surface is recovery-only: it may inventory and
+  quarantine legacy metadata without exposing payloads, and it may delete exact local data only
+  after explicit confirmation; it must never send or retry that work.
 
 **Task assignment business logic (CRITICAL):** *(also mirrored in `UPR-Web-Context.md`; that is the
 source of truth for the join paths and column names — verify live, not from this summary.)*

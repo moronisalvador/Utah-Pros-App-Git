@@ -78,7 +78,7 @@ fixed header.
 | D1 | Native keyboard handling | PARTIAL | visualViewport exists (Phase C) but global var + contentEditable (Findings 3, 9) |
 | D2 | 48px everywhere / no hover idioms | PARTIAL | Finding 6 |
 | E1 | Feed/thread RPC layer + migration coverage | MISSING | zero RPCs; only increment_conversation_unread + claim_scheduled_message exist (tracked, no drift) |
-| E2 | Realtime survives F-red | HAVE (verified) | supabase-js attaches session JWT to the socket; publication covers both tables — challenge-CONFIRMED, devLogin caveat |
+| E2 | Realtime survives F-red | HAVE (verified) | supabase-js attaches the genuine session JWT to the socket; publication covers both tables — challenge-CONFIRMED |
 | F1 | i18n | MISSING | Finding 5; no msgs namespace |
 
 ## Binding design principles & architecture calls (post-challenge, corrected)
@@ -124,8 +124,8 @@ fixed header.
    `subscribeToConversations` channel alive for the pane's mounted lifetime (updates the
    convos cache via setQueryData/targeted invalidate — feeds the badge). Consume frozen
    `realtime.js` as-is. Verified: the socket carries the authenticated JWT (survives
-   F-red); **devLogin caveat**: local realtime testing post-F-red will falsely appear
-   broken — verify with a real login; one live re-verify line after F-red applies.
+   F-red). The retired anonymous employee selector is not a valid Realtime test
+   path; verify with a real authenticated login and re-verify after F-red applies.
 8. **Composer**: real `<textarea>` (AutoGrowTextarea-style autosize, capped), **Enter =
    send** + `enterKeyHint="send"` (legacy tech muscle memory + one-primary-action;
    Shift+Enter = newline for hardware keyboards), ≥16px font, 48px send target,
@@ -294,7 +294,8 @@ fallback). Foundation-as-SPOF priced in via the full reviewer gauntlet before B1
    adjudicated; native punch list (haptics/slide/no-autofocus/blur-on-scroll).
 3. **Contracts (MODIFIED):** primitives confirmed unscoped (flex-column dependency named);
    copy-in surface honestly rescoped (handleSend rewritten; :364-399 reference-only);
-   **realtime JWT verified — survives F-red** (devLogin caveat); 403 code set completed;
+   **realtime JWT verified — survives F-red** (genuine authenticated session required);
+   403 code set completed;
    201≠delivered preserved; persister privacy filter added; bubble-EN disclosed; dark-theme
    override rule amended.
 4. **Data (MODIFIED):** keyset cursor fixed (COALESCE + id tiebreaker); badge freshness

@@ -1,3 +1,22 @@
+// ════════════════════════════════════════════════
+// FILE: AppDelegate.swift
+// ════════════════════════════════════════════════
+//
+// WHAT THIS DOES (plain language):
+//   Boots the Capacitor iOS shell, forwards APNs and deep-link callbacks, and
+//   covers the app with an opaque privacy shield before iOS captures an
+//   app-switcher snapshot.
+//
+// DEPENDS ON:
+//   Frameworks: UIKit, Capacitor
+//   Data:       no business data; lifecycle-only UI and callback forwarding
+//
+// NOTES / GOTCHAS:
+//   - Keep the privacy shield native. JavaScript can be suspended before it has
+//     time to hide sensitive content during backgrounding.
+//   - The shield protects app-switcher snapshots; it does not claim to disable
+//     deliberate screenshots while the app is active.
+// ════════════════════════════════════════════════
 import UIKit
 import Capacitor
 
@@ -5,6 +24,41 @@ import Capacitor
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+    private var privacyShield: UIView?
+
+    private func showPrivacyShield() {
+        guard let window else { return }
+
+        if let privacyShield {
+            window.bringSubviewToFront(privacyShield)
+            return
+        }
+
+        let shield = UIView(frame: window.bounds)
+        shield.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        shield.backgroundColor = .systemBackground
+        shield.isUserInteractionEnabled = false
+        shield.accessibilityIdentifier = "upr-privacy-shield"
+
+        let mark = UILabel()
+        mark.translatesAutoresizingMaskIntoConstraints = false
+        mark.text = "UPR"
+        mark.font = .systemFont(ofSize: 28, weight: .bold)
+        mark.textColor = .secondaryLabel
+        shield.addSubview(mark)
+        NSLayoutConstraint.activate([
+            mark.centerXAnchor.constraint(equalTo: shield.centerXAnchor),
+            mark.centerYAnchor.constraint(equalTo: shield.centerYAnchor),
+        ])
+
+        window.addSubview(shield)
+        privacyShield = shield
+    }
+
+    private func hidePrivacyShield() {
+        privacyShield?.removeFromSuperview()
+        privacyShield = nil
+    }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Override point for customization after application launch.
@@ -12,13 +66,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
-        // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-        // Use this method to pause ongoing tasks, disable timers, and invalidate graphics rendering callbacks. Games should use this method to pause the game.
+        // Cover before the system captures the app-switcher snapshot.
+        showPrivacyShield()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
-        // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later.
-        // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+        // Defensive repeat for lifecycle paths that skip or reorder callbacks.
+        showPrivacyShield()
     }
 
     func applicationWillEnterForeground(_ application: UIApplication) {
@@ -26,7 +80,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+        hidePrivacyShield()
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

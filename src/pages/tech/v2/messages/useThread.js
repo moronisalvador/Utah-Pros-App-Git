@@ -41,9 +41,16 @@
  * ════════════════════════════════════════════════
  */
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import useLookup from '@/hooks/useLookup';
 import { subscribeToMessages, getAuthHeader } from '@/lib/realtime';
+import {
+  attachEmployeeDirectory,
+  employeeDirectoryMap,
+  loadMessageAuthorDirectory,
+  missingMessageAuthorMessageIds,
+} from '@/lib/employeeDirectory';
 import { techKeys } from '@/lib/techQuery';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import {
@@ -58,7 +65,7 @@ import {
   failByClientId, summarizeSendResult,
 } from './msgsSelectors';
 
-const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at';
 const PAGE = 30;
 
 // Human reason for a non-OK /api/send-message response (the four 403 codes + fallback).
@@ -91,6 +98,7 @@ function clearConvoUnread(queryClient, convId) {
 
 export function useThread(convId, { active = true, onConsentRequired } = {}) {
   const { db, employee } = useAuth();
+  const { data: employeeDirectory = [] } = useLookup('employees');
   const queryClient = useQueryClient();
   const enabled = !!db && !!convId;
 
@@ -120,7 +128,33 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
 
   const pages = query.data?.pages;
   const serverAsc = useMemo(() => flattenThreadPages(pages || []), [pages]);
-  const messages = useMemo(() => mergeOverlay(serverAsc, overlay), [serverAsc, overlay]);
+  const unresolvedMessageAuthorIds = useMemo(
+    () => missingMessageAuthorMessageIds(serverAsc, employeeDirectory),
+    [serverAsc, employeeDirectory],
+  );
+  const { data: historicalMessageAuthors = [] } = useQuery({
+    queryKey: ['message-author-directory', unresolvedMessageAuthorIds],
+    queryFn: () => loadMessageAuthorDirectory(
+      db,
+      unresolvedMessageAuthorIds,
+    ),
+    enabled: enabled && unresolvedMessageAuthorIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const directoryById = useMemo(
+    () => employeeDirectoryMap([
+      ...employeeDirectory,
+      ...historicalMessageAuthors,
+    ]),
+    [employeeDirectory, historicalMessageAuthors],
+  );
+  const messages = useMemo(
+    () => mergeOverlay(serverAsc, overlay).map(
+      message => attachEmployeeDirectory(message, directoryById),
+    ),
+    [serverAsc, overlay, directoryById],
+  );
 
   // Patch the thread cache; return the SAME pages ref from `fn` to skip a needless notify.
   const setPages = useCallback((fn) => {

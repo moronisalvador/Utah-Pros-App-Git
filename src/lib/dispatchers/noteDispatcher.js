@@ -1,8 +1,27 @@
-// Dispatcher: sends a queued text note to Supabase via the insert_job_document RPC.
-// Mirrors the in-page note flow (PhotosNotes.jsx / TimeTracker.jsx) exactly so an
-// offline-captured note produces the same job_documents row as an online one.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: noteDispatcher.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Retains the dormant field-note prototype for historical source context.
+ *
+ * DEPENDS ON:
+ *   Internal:  offlineDb
+ *   Data:      reads → owner-bound IndexedDB ID swap; writes → job document RPC
+ *
+ * NOTES / GOTCHAS:
+ *   - DORMANT: the production enqueue boundary rejects `note.insert` and the
+ *     sync runner does not import this prototype.
+ *   - The RPC has no operation ID. Ambiguous outcomes require manual
+ *     reconciliation and must never auto-replay.
+ * ════════════════════════════════════════════════
+ */
 
-import { resolveIdSwap } from '../offlineDb';
+import {
+  isStableQueueOperationId,
+  resolveIdSwap,
+} from '../offlineDb';
 
 /**
  * Send a queued field note to the server.
@@ -14,14 +33,28 @@ import { resolveIdSwap } from '../offlineDb';
  * }} payload
  * @returns {Promise<{serverId:string|undefined}>}
  */
-export async function dispatchNote(db, employee, payload /*, queueItem */) {
+export async function dispatchNote(
+  db,
+  employee,
+  payload,
+  queueItem,
+  ownerLease,
+) {
   const text = (payload?.description || '').trim();
-  if (!payload?.clientId || !payload?.jobId || !text) {
-    throw new Error('dispatchNote requires clientId, jobId, description');
+  if (
+    !payload?.jobId
+    || !text
+    || !isStableQueueOperationId(queueItem?.operationId)
+    || payload.clientId !== queueItem.operationId
+    || ownerLease?.owner !== queueItem?.owner
+  ) {
+    throw new Error(
+      'dispatchNote requires an owner-bound stable operation ID',
+    );
   }
 
-  // A roomId captured offline may still be a temp UUID from a queued room.create.
-  const resolvedRoomId = await resolveIdSwap(payload.roomId);
+  // Historical prototype data may reference a temporary room UUID.
+  const resolvedRoomId = await resolveIdSwap(payload.roomId, ownerLease);
 
   const doc = await db.rpc('insert_job_document', {
     p_job_id: payload.jobId,

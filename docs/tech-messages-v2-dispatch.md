@@ -68,9 +68,9 @@ reader/writer of the convos cache: useQuery(techKeys.convos()) → the RPC, refe
 ~60s (TechLayout taskCount precedent :260-271), PLUS one subscribeToConversations channel
 alive for the pane's mounted lifetime that updates the cache via
 queryClient.setQueryData/targeted invalidate. Realtime note (verified, on record): the
-socket carries the authenticated JWT and survives the pending F-red anon closure;
-devLogin-based local testing will falsely appear broken post-F-red — verify with a real
-login.
+socket carries the authenticated JWT and survives the pending F-red anon closure. The
+retired anonymous employee selector is not a valid Realtime test path — verify with a
+real authenticated login.
 (5) TechLayout.jsx (authorized seam edit): third pane mirroring :241-294 — msgsV2 flag
 check, msgsActive = flag && pathname==='/tech/conversations', fold into paneCovering
 (:245), pane block after :294, lazy import. App.jsx is NOT touched (paneCovering already

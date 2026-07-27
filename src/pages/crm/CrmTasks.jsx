@@ -38,6 +38,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { IconTasks } from '@/lib/crmIcons';
 import { isTaskOverdue } from '@/components/crm/OverdueTasksWidget';
 import { ok, err } from '@/lib/toast';
@@ -101,7 +102,7 @@ export default function CrmTasks() {
   useEffect(() => {
     (async () => {
       try {
-        const rows = await db.select('employees', 'is_active=eq.true&select=id,full_name&order=full_name.asc');
+        const rows = await loadEmployeeDirectory(db);
         setEmployees(rows || []);
       } catch { /* assignee picker just stays empty */ }
     })();
