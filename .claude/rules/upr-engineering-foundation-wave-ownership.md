@@ -180,6 +180,20 @@ longer leased; a new migration touching them needs only the normal review, not t
 `is_active_internal_admin()` is now live. Backlog item 3.2 should build on it rather than adding a
 second admin predicate.
 
+**What DB-1's release does NOT close** (added 2026-07-27 by the DB-1 session itself, so the
+release is not mistaken for "everything is settled"):
+
+- **The promotion hold above still stands.** It is keyed to the app sessions, not to DB-1, and
+  releasing the database lease does not release it.
+- **The provenance gate is RED.** Two independent causes: live evidence needs re-capturing (it
+  predates the applies, and there is no capture script — see `7580f93d` for the required shape), and
+  the applied source lives on `dev`, so the gate cannot pass against `main` until promotion. The
+  apply-ahead-of-promotion is a recorded **owner-authorized `database-standard.md` §5 exception**;
+  the reconciliation §5 asks for *is* that promotion.
+- **Ledger row `20260726233416 encircle_managed_credentials` is still unmapped.** Applied by another
+  session; DB-1 deliberately did not map source it had not reviewed. Its owner needs to, or the next
+  fresh evidence capture will report it as an unmapped live ledger row.
+
 **Still open:** APP-2/APP-3 and therefore the promotion hold. Delete this register when they close.
 
 ## 7. Close-out for every future phase
