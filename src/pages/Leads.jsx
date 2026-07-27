@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ErrorState } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 export default function Leads() {
   const { db } = useAuth();
@@ -9,6 +10,9 @@ export default function Leads() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  // ErrorState only renders on an empty list, so a refresh failure over existing
+  // rows would otherwise show the user nothing at all.
+  const hadRowsRef = useRef(false);
 
   const load = useCallback(async () => {
     // Leads = jobs in the 'lead' phase — not a contacts role
@@ -18,12 +22,14 @@ export default function Leads() {
         'phase=eq.lead&status=eq.active&order=created_at.desc&select=id,job_number,insured_name,address,city,state,division,type_of_loss,insurance_company,created_at,priority,lead_source'
       );
       setLeads(rows || []);
+      hadRowsRef.current = (rows || []).length > 0;
       setLoadError(null);
-    } catch (err) {
+    } catch (loadErr) {
       // Was console.error only, so a failed load rendered "No leads yet" —
       // indistinguishable from a genuinely empty pipeline (loading-error-states.md §1).
-      console.error('Leads load error:', err);
+      console.error('Leads load error:', loadErr);
       setLoadError('Couldn’t load leads. Check your connection and try again.');
+      if (hadRowsRef.current) err('Couldn’t refresh — showing last-loaded leads.');
     } finally {
       setLoading(false);
     }

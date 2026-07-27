@@ -21,7 +21,7 @@
 
 # Codex reads the AGENTS.md chain up to this many bytes and then drops the TAIL
 # SILENTLY -- no warning, no error, the rules just stop existing. The default is
-# 32768. AGENTS.md alone measured 24,733 B on 2026-07-26, so the default left
+# 32768. AGENTS.md alone measured 25,325 B on 2026-07-26, so the default left
 # under 8 KB of headroom for the whole chain, and the two vendor pages disagree
 # about whether the budget is per-file or combined (we assume combined, the
 # stricter reading). 65536 removes the cliff with real room to grow.

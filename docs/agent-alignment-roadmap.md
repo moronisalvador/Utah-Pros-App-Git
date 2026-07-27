@@ -76,23 +76,38 @@ implementation before designing one** — `CLAUDE.md:74-77` already requires it,
 `masterplan` neutral source states it directly: *"Finish already-started work before inventing a
 replacement."* That text was not on `dev` when this plan was generated.
 
-### L0/L1 status — P1 and P2 LANDED 2026-07-26
+### L0/L1 status — P1, P2 and P3 LANDED 2026-07-26
 
-`AGENTS.md` is now the shared law core (P1) and `CLAUDE.md` line 1 is `@AGENTS.md` (P2), with the
-`CLAUDE.md` non-negotiables **deliberately still duplicated**. Evidence and the full no-weakening
-coverage table: [`docs/agent-alignment-l0-coverage.md`](agent-alignment-l0-coverage.md).
+`AGENTS.md` is the shared law core (P1), `CLAUDE.md` line 1 is `@AGENTS.md` (P2), and **the duplicate
+is gone (P3, `89c9432a`)** — `AGENTS.md` is now the sole carrier of rules 1–12. Evidence and the full
+no-weakening coverage table: [`docs/agent-alignment-l0-coverage.md`](agent-alignment-l0-coverage.md).
 
-**P3 (delete the duplicate) is BLOCKED on a post-compact canary in a fresh session** — token
-the `AGENTS.md` anchor token must still be quotable after `/compact` with zero file reads. A session that
-wrote the import cannot self-certify this; a mid-session edit does not take effect until `/clear`,
-`/compact` or restart.
+**P3's gate was met, but not by the test this plan specified.** The anchor-token canary proved
+unrunnable: a compaction summary can carry the token forward, so a session's quote is a contaminated
+self-report. What answered it was the P7 instrument reading the loader's own record — across a real
+`/compact`, `AGENTS.md` reloaded with `reason=include, parent=CLAUDE.md`, alongside all 23 unscoped
+rules files. `node scripts/instructions-loaded-report.mjs --assert-core` → PASS.
+Details: [`docs/agent-alignment-l2-evidence.md`](agent-alignment-l2-evidence.md) §4b.
+
+Two knock-on results:
+
+- **Ledger #11 is now measured, not argued.** 23 of 23 rules reload at compaction *because they are
+  unscoped*. Scoping `database-standard.md` would drop the shared-production apply gate at every
+  `/compact`. P9 must keep it unscoped.
+- **Coverage §5's delete-list had a self-contradicting row** (`## Deployment & Release Workflow` is
+  an anchor target for Rule 4 and cannot be deleted). Corrected in place. The general rule: when a
+  block's heading is an anchor target, carry the prose into the core and **keep the heading**.
+
+**P7 is partially landed:** the `InstructionsLoaded` recorder, the reporter with `--assert-core`, and
+the empirical baseline exist and are wired. The glob linter and the four glob refutations in
+`agent-alignment-l2-evidence.md` §5 are still UNMEASURED — P8/P9 must not start on belief.
 
 **Superseded by owner direction (2026-07-26): the byte budget is not a target.** Challenge finding
 P-1 set 22,000 B / 26,000 B ceiling; the brief for session 4 said 8–12 KB. The owner asked whether
 either limit was real. It is not — the **only** hard mechanism is Codex's `project_doc_max_bytes`,
 whose 32,768 default drops the chain's tail silently, and this phase raised it to 65,536 in the new
 tracked `.codex/config.toml`. Both prose targets were self-imposed. **Write the law complete and
-dense; let the size be an outcome.** Landed at 24,733 B with ~40 KB of headroom. The real cost of a
+dense; let the size be an outcome.** Landed at 25,325 B with ~40 KB of headroom. The real cost of a
 long instruction file is attention dilution, which argues for density — never for compressing law,
 which the initiative's constraints forbid outright.
 

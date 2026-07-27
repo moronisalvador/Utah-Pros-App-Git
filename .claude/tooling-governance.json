@@ -10,7 +10,7 @@
     "skills": 25,
     "agents": 19,
     "rules": 23,
-    "hooks": 2
+    "hooks": 4
   },
   "adapterStrategy": {
     "status": "owner-approved",

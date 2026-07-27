@@ -71,6 +71,21 @@ function normalizedPhoneIdentity(value) {
   return null;
 }
 
+// "Moroni Salvador" → "Moroni S." — the short sender identity used on every message
+// after the first. CallRail caps content at 140 characters, and the full
+// "Utah Pros Restoration - Moroni Salvador: " prefix spent 41 of them before the
+// employee typed anything. Returns null for a blank name so the caller can fall back
+// to the company string rather than emit an anonymous prefix.
+function shortSenderName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return parts[0];
+  // Second token, not the last: "first name + first last-name initial" (owner-specified
+  // 2026-07-26). For a two-surname name like "Moroni Salvador Perez" that is "Moroni S.".
+  const initial = [...parts[1]][0];
+  return initial ? `${parts[0]} ${initial.toUpperCase()}.` : parts[0];
+}
+
 // Run the per-recipient consent gate. Returns { blocked, code } and, when a
 // resolved contact is blocked, writes the audit row to sms_consent_log. Fails
 // CLOSED: a missing contact (dangling/forged participant) is a block, not a send.
@@ -505,16 +520,24 @@ export async function onRequestPost(context) {
     }
 
     // 2. Sender identity + first-message opt-out notice. An employee name by itself
-    // does not identify the party that obtained consent. Repeating the company on
-    // later messages is safe and keeps every standalone message attributable.
-    const senderPrefix = auth.employee.full_name
-      ? `Utah Pros Restoration - ${auth.employee.full_name}: `
-      : 'Utah Pros Restoration: ';
+    // does not identify the party that obtained consent, so the FIRST outbound message
+    // in a thread names the company — the same message that carries the STOP notice.
+    // Once the thread is established the recipient knows who they are talking to, so
+    // later messages use the short "Moroni S.: " form (owner decision 2026-07-26).
+    // This is a character-budget fix: CallRail caps content at 140, and the long
+    // prefix + STOP notice consumed 68 of them (see docs/messaging-transport-roadmap.md).
     const priorOutbound = await db.select(
       'messages',
       `conversation_id=eq.${conversation_id}&type=eq.sms_outbound&status=in.(queued,sent,delivered,read)&select=id&limit=1`,
     );
-    const optOutNotice = priorOutbound.length === 0
+    const isFirstOutbound = priorOutbound.length === 0;
+    const shortName = shortSenderName(auth.employee.full_name);
+    const senderPrefix = isFirstOutbound || !shortName
+      ? (shortName
+        ? `Utah Pros Restoration - ${shortName}: `
+        : 'Utah Pros Restoration: ')
+      : `${shortName}: `;
+    const optOutNotice = isFirstOutbound
       ? ' Reply STOP to unsubscribe.'
       : '';
     // Media-only send: drop the dangling "Name: " colon so the MMS carries just the

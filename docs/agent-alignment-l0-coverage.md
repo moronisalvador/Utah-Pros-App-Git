@@ -24,7 +24,7 @@ NOTES / GOTCHAS:
 # L0 coverage — no-weakening proof
 
 **Written:** 2026-07-26 · **Phases:** L0/L1 P1 (author the core) + P2 (the bridge)
-**Base:** `origin/dev` at `1ac8914` · `AGENTS.md` 24,733 B · `CLAUDE.md` 33,780 B
+**Base:** `origin/dev` at `1ac8914` · `AGENTS.md` 25,325 B · `CLAUDE.md` 33,921 B
 
 Verdict vocabulary: **verbatim** (byte-identical), **distilled** (same strength, fewer words),
 **STRICTER** (the new text binds harder than the old). No row reads *weaker*. No row has destination
@@ -113,6 +113,26 @@ file. They are now loaded, not merely pointed at.
 
 ## 5. CLAUDE.md blocks — what P3 may and may not delete
 
+> **P3 trap, found by testing the guard 2026-07-26.** The string
+> `## ⚠️ NON-NEGOTIABLE RULES` occurs **twice** in `CLAUDE.md` — once inside the redirect prose at
+> the top (which explains that the block below is a deliberate duplicate) and once as the real
+> heading. A naive `indexOf` / find-and-delete matches the **prose** first and deletes the
+> `### Claude-only mechanisms` block along with the rules. Anchor on a line-start heading match
+> (`/^## ⚠️ NON-NEGOTIABLE RULES$/m`), then run `node scripts/check-l0-bridge.mjs` — its
+> over-deletion guard catches exactly this and names the block you lost.
+
+**Run the guard before and after P3:**
+
+```bash
+node scripts/check-l0-bridge.mjs     # 14/14 both pre- and post-P3; exits 1 on any failure
+```
+
+It verifies the import line has no CR, neither file is a symlink or a `120000` index entry, rules
+1–12 are complete and — while both copies exist — byte-identical, the canary is unique to
+`AGENTS.md`, Code Review Rules keeps its exact heading and stays free of style-lint rules, every
+Claude-only block survives, Rule 4's anchors still resolve, and the Codex byte cap still clears the
+real file size. All four failure modes were confirmed to fail the check, not just pass it.
+
 **P3 may delete** (fully carried into `AGENTS.md`, verified above):
 
 | CLAUDE.md block | Lines (pre-P2) | Lands in |
@@ -124,7 +144,15 @@ file. They are now loaded, not merely pointed at.
 | `## Compact instructions` | 81-83 | §Context reset |
 | `## Stack` | 85-89 | §Repository model |
 | `## What NOT to Touch` | 219-221 | §Repository model → Extra caution |
-| `## Deployment & Release Workflow` | 223-229 | Rule 4 + §13 + §Repository model (env sets) |
+
+> **CORRECTION (2026-07-26, found while running P3).** This table used to list
+> `## Deployment & Release Workflow` as deletable. **It is not.** Rule 4 is verbatim in `AGENTS.md`
+> and links to `#deployment--release-workflow`, an in-page anchor that resolves only inside
+> `CLAUDE.md`. Deleting the section breaks the link *and* fails assertion 12 of
+> `check-l0-bridge.mjs`, so the two halves of this very section contradicted each other. Its
+> *content* is genuinely carried (Rule 4 + §13 + §Repository model env sets), so P3 reduced the body
+> to a pointer and **kept the heading**, which is the only part the anchor needs. The same applies
+> to any future block whose heading is an anchor target: carry the prose, keep the heading.
 
 **P3 must NOT delete** — Claude-only routing or reference the core deliberately does not carry:
 
@@ -147,7 +175,7 @@ file. They are now loaded, not merely pointed at.
 
 | Gate | Result |
 |---|---|
-| `AGENTS.md` size | 24,733 B — under Codex's raised 65,536 B cap with ~40 KB headroom |
+| `AGENTS.md` size | 25,325 B — under Codex's raised 65,536 B cap with ~40 KB headroom |
 | Heading order, `## Code Review Rules` before Depth map and Repository model | pass |
 | Rules 1–12 verbatim vs `HEAD:CLAUDE.md` | identical |
 | Numbering 1..12, no gaps, no 13+ | pass |
@@ -159,7 +187,36 @@ file. They are now loaded, not merely pointed at.
 | `## ⚠️ NON-NEGOTIABLE RULES` still in `CLAUDE.md` | present — duplicate deliberately kept |
 | `src/`, `functions/`, `supabase/`, `ios/` touched | none |
 
-## 7. Open — what P3 needs before it may run
+## 7. CLOSED 2026-07-26 — the gate P3 needed, and how it was actually answered
+
+**Result: the import survives `/compact`. P3 ran.** The duplicated blocks are gone from `CLAUDE.md`
+and `AGENTS.md` is the sole carrier of rules 1–12.
+
+The evidence is **not** the anchor-token quote this section originally specified. That test turned
+out to be unrunnable as designed: a compaction summary can itself carry the token forward, and this
+session's had already read `AGENTS.md` before the test began, so any quote it produced would have
+been a contaminated self-report. **A session asserting what it can see is the weakest possible
+evidence, and it was the only kind this plan had.**
+
+What answered the gate instead was the `InstructionsLoaded` hook (P7) reading the loader's own
+record. Across a real `/compact` in session `1b85a217`:
+
+```
+AGENTS.md    include    CLAUDE.md      ← the bridge, reloaded
+CLAUDE.md    compact    —
+…23 rules    compact    —              ← every unscoped rules file, reloaded
+```
+
+`node scripts/instructions-loaded-report.mjs --assert-core` → PASS. A session cannot talk its way
+past this, which is the whole point. **Prefer the mechanical check to the canary from here on**; the
+token is retained as a cheap cross-tool smoke signal (and as Codex's only option), not as proof.
+
+That run also measured the L2 premise directly: 23 of 23 rules files reload at compaction *because
+they are unscoped*. A `paths:`-scoped `database-standard.md` would have been missing from that list
+— which is ledger #11's justification, now observed rather than argued.
+
+<details>
+<summary>The original gate text, kept for provenance</summary>
 
 The **post-compact canary in a fresh session**. In a Claude session with real work in it, run
 `/compact`, then require the `AGENTS.md` anchor token to still be quotable with **zero file reads**.
@@ -177,5 +234,8 @@ If the import does not survive compaction, **P3 does not proceed**: the non-nego
 forced. A mid-session edit does not take effect until `/clear`, `/compact` or restart, so this cannot
 be self-certified by the session that wrote the import.
 
+</details>
+
 Codex exposes **no** loaded-document introspection and no truncation warning. Its side is
-canary-and-byte-count only. Any claim of verification parity between the two tools is false.
+canary-and-byte-count only. Any claim of verification parity between the two tools is false — and
+P7 widens that gap, since the mechanical check is Claude-side only.

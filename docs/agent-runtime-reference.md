@@ -170,6 +170,18 @@ Re-measure before relying on any of these.
   rule — allow **and** deny — matches nothing. Regex hook matchers are the only gate that fires.
 - **Codex cloud sessions see only the committed tree.** Untracked `.agents/` / `.codex/` do not exist
   there, and nothing reports their absence — local and cloud Codex behave differently, silently.
+- **`core.autocrlf=true` is on.** Git stores LF but writes CRLF into the working copy — and the
+  working copy is what the tools parse. Any file an agent *parses a path out of* is exposed: an
+  `@AGENTS.md\r` import on line 1 of `CLAUDE.md` resolves to nothing, with no error. `.gitattributes`
+  pins `*.sh`, `*.mjs`, `CLAUDE.md` and `AGENTS.md` to `eol=lf`; extend it before adding another
+  parsed file. Check with `head -1 <file> | cat -A`, not by eye.
+- **Git Bash (MSYS) mangles `git show <ref>:<path>` when the path contains a slash.**
+  `git show origin/dev:.codex/config.toml` becomes `origin\dev;.codex\config.toml` and reports
+  `unknown revision or path`, which reads exactly like a missing file — on 2026-07-26 this nearly
+  produced a false defect report against a file that was correctly committed. `HEAD:CLAUDE.md` is
+  unaffected because there is no slash after the colon. Use `MSYS_NO_PATHCONV=1 git show …`, or
+  `git ls-tree <ref> <dir>/` and `git cat-file -p <blob>`. **Never conclude a file is missing from a
+  ref on the strength of that error alone.**
 - The scheduling API **auto-attaches every connected MCP connector** to a new routine unless cleared.
 - Platform inversion, worth repeating: on win32 **Codex can sandbox and Claude cannot.**
 

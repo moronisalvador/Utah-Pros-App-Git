@@ -24,7 +24,16 @@ NOTES / GOTCHAS:
 
 # Handoff — Agent alignment, session 4
 
-**Written:** 2026-07-26 · **Base:** `origin/dev` at `1ac8914` → **now `9c4ac2e`** · pushed, no open branch.
+> **THIS IS THE CURRENT BATON.** `docs/handoff/agent-alignment-session-2-handoff.md` and
+> `-session-3-handoff.md` are superseded — the routing glob
+> `agent-alignment-session-*-handoff.md` matches all three, so check you opened this one.
+
+**Written:** 2026-07-26 · **Base:** `origin/dev` at `1ac8914`, session-4 work starts at `6505402`.
+Pushed to `dev`, no open branch. For the current tip (this file cannot cite a commit it precedes):
+
+```bash
+git log --oneline 1ac8914..origin/dev
+```
 
 ---
 
@@ -50,7 +59,7 @@ asked whether either limit was real. **Neither was.** The only hard mechanism is
 `project_doc_max_bytes` — default 32,768, drops the chain's **tail silently** — and this phase raised
 it to 65,536. Anthropic's "under 200 lines" is style advice with no enforcement. The real cost of a
 long instruction file is **attention dilution**, which argues for density, not for compressing law
-(which the constraints forbid). Landed at **24,733 B** with ~40 KB headroom. *Write the law complete;
+(which the constraints forbid). Landed at **25,325 B** with ~40 KB headroom. *Write the law complete;
 let size be an outcome.*
 
 **`core.autocrlf=true` was about to break the bridge silently.** Git stores LF but wrote
@@ -77,6 +86,12 @@ after any tooling touches these files.
    API, File Structure, Workers, Patterns, Task File Protocol, CRM Phase Workflow).
    Also verify the Codex side by canary + `wc -c` only — **Codex exposes no loaded-doc introspection
    and no truncation warning, so any claim of verification parity between the tools is false.**
+
+   **Run `node scripts/check-l0-bridge.mjs` before and after the deletion** — 14 checks, exits 1 on
+   failure, passes in both the pre- and post-P3 shapes. It replaces every gate session 4 ran by hand.
+   **Known trap it exists to catch:** `## ⚠️ NON-NEGOTIABLE RULES` appears **twice** in `CLAUDE.md`
+   — once in the redirect prose, once as the real heading — so a naive find-and-delete removes the
+   `### Claude-only mechanisms` block too. Anchor on `/^## ⚠️ NON-NEGOTIABLE RULES$/m`.
 2. **L2 — on-demand depth.** All 23 `.claude/rules/*.md` still load unconditionally
    (**213,576 B**, `cat .claude/rules/*.md | wc -c`, measured 2026-07-26 — the roadmap and ownership
    §10.4 both say 212,822 B, which is the older "before" figure; the files have grown). Add `paths:`
@@ -88,8 +103,10 @@ after any tooling touches these files.
    `InstructionsLoaded` hook + `/context` in a **fresh** session.
 3. **Extend coverage from 7 of 39 capabilities** to all (24 Claude skills + 15 subagents). **Cut the
    roster before porting** — both tools silently truncate discovery lists, so some capabilities are
-   already invisible to implicit matching. 30 of 33 `.codex/agents/*.toml` remain ungoverned and
-   inherit the parent sandbox.
+   already invisible to implicit matching. **12 of 15** `.codex/agents/*.toml` remain ungoverned and
+   inherit the parent sandbox. (Corrected 2026-07-26: the 30-of-33 figure predates the owner-run SEO
+   deletion, which removed 18 `seo*.toml`. Verify with
+   `ls .codex/agents/*.toml | wc -l` and `grep -l sandbox_mode .codex/agents/*.toml | wc -l`.)
 4. **The remaining gates — mostly closed by `76a0dff` while session 4 was running.** `.env` denies
    and the MCP denies are in. `apply_migration` is **`permissions.ask`**, not deny: deny blocked an
    explicitly owner-authorized apply, which is stricter than `database-standard.md` §0 intends.
@@ -135,8 +152,11 @@ already runs `validate:tooling`, so **do not edit `ci.yml`**; new invariants go 
 `.claude/settings.local.json` is now **untracked** (`b075007`), so the 121 pre-approvals and overnight
 autonomy are intact on disk. The credential rotation needs **two gates in this order** — rotating
 first is wrong because there is nowhere sanctioned to put the new key until the card renders:
-1. apply `supabase/migrations/20260723_encircle_managed_credentials.sql` (reviewed, provenance clean
-   `4799feb`, rollback present, verified **not** in the live ledger, and the hardened guard allows it);
+1. ~~apply `supabase/migrations/20260723_encircle_managed_credentials.sql`~~ **DONE — applied
+   2026-07-26, live ledger version `20260726233416`.** Verified read-only against the live catalog
+   at 2026-07-26 ~18:00 MT. Provenance clean: the source blob is identical on `main` and `dev`
+   (`0a06a21` / `4799feb`), so this was applied from a reviewed commit reachable from the release
+   branch, as `database-standard.md` §5 requires. **Do not re-apply.**
 2. flip `feature:encircle_managed_credentials` (seeded `false`; `Integrations.jsx:1074` gates the card).
 
 Then rotate and paste. The validator's `secret-bearing-permission` warning clearing is the **only**
@@ -214,15 +234,31 @@ draft and the mobile-readiness `AGENTS.md` section, both reused rather than rein
 
 ## Opening prompt for session 5
 
-> Continue the agent-instruction alignment initiative. Read
-> `docs/handoff/agent-alignment-session-4-handoff.md` first, then
-> `docs/agent-alignment-l0-coverage.md` §5 and `docs/agent-runtime-reference.md`.
-> `git fetch` and check `origin/dev` before trusting any number.
+> Continue the agent-instruction alignment initiative on the UPR Platform.
 >
-> **Start with the P3 canary, and do it before anything else fills the context:** with real work in
-> the session, run `/compact`, then try to quote the `AGENTS.md` anchor token with zero file reads. If it
-> survives, delete the `CLAUDE.md` non-negotiables duplicate per coverage §5 — deleting only the
-> blocks listed as safe. If it does not survive, record that and stop; the duplicate stays forever.
-> Then move to L2 (`paths:` frontmatter, brace-light, `database-standard.md` stays unscoped).
+> **Before you read anything, answer this from context alone: is there a token in your context
+> matching `UPR-L0-CANARY-<something>`? Quote it, or say plainly that you cannot see one.**
+> Do not open, read, grep or search `AGENTS.md` to answer — that destroys the test. This is the
+> load-verification canary: it lives only in `AGENTS.md`, which `CLAUDE.md` pulls in via an
+> `@AGENTS.md` import on line 1. If you can quote it, the import loaded at session start.
 >
-> Docs and agent-configuration only. Stage by explicit path — another session shares this tree.
+> Then read `docs/handoff/agent-alignment-session-4-handoff.md`, and
+> `docs/agent-alignment-l0-coverage.md` §5. `git fetch` and check `origin/dev` first — the repo moves
+> under you, and several parallel sessions are landing commits.
+>
+> **The gate for P3 is the SECOND half of that test.** Do real work first, run `/compact`, then try
+> to quote the token again with zero file reads. Surviving `/compact` is what proves the import is
+> durable, because `paths:`-scoped and nested instruction files are dropped at compaction.
+> - **If it survives:** delete the duplicated non-negotiables from `CLAUDE.md` per coverage §5 —
+>   only the blocks listed as safe, and anchor on `/^## ⚠️ NON-NEGOTIABLE RULES$/m` because that
+>   string also appears in the redirect prose above it. Run `node scripts/check-l0-bridge.mjs`
+>   before and after; it must stay 14/14.
+> - **If it does not survive:** record that outcome and stop. The duplicate stays in `CLAUDE.md`
+>   permanently and the shared core becomes Codex-only. Do not force it.
+>
+> Then move to L2: `paths:` frontmatter on `.claude/rules/*.md`, brace-light globs (an over-braced
+> pattern silently matches nothing), and `database-standard.md` stays permanently unscoped.
+>
+> Docs and agent-configuration only — no `src/`, `functions/`, `supabase/`, `ios/`, no migration, no
+> live or provider state. Stage by explicit path, never `git add -A`; another session shares this
+> working tree and has ~48 uncommitted files in it.

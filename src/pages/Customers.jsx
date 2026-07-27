@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { IconSearch } from '@/components/Icons';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import PullToRefresh from '@/components/PullToRefresh';
 import { ErrorState } from '@/components/ui';
+import { err } from '@/lib/toast';
 
 
 const ROLE_LABELS = { homeowner: 'Homeowner', tenant: 'Tenant', property_manager: 'Prop. Manager' };
@@ -15,6 +16,10 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  // Mirrors "are there rows on screen right now". ErrorState only renders when the
+  // list is empty, so without this a REFRESH failure over existing rows would set
+  // loadError and show the user nothing at all.
+  const hadRowsRef = useRef(false);
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
 
@@ -23,20 +28,35 @@ export default function Customers() {
   const loadCustomers = useCallback(async () => {
     try {
       const data = await db.rpc('get_customers_list', { p_search: searchDebounced || null, p_limit: 200, p_offset: 0 });
-      setCustomers(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setCustomers(rows);
+      hadRowsRef.current = rows.length > 0;
       setLoadError(null);
-    } catch (err) {
-      console.error('Load customers:', err);
+    // NB: named rpcErr, not err — a catch param called `err` would shadow the
+    // imported toast helper of the same name and turn err(...) into a TypeError.
+    } catch (rpcErr) {
+      console.error('Load customers:', rpcErr);
       try {
         // Degraded, not failed: the list still renders, just without job pills.
-        const data = await db.select('contacts', 'role=in.(homeowner,tenant,property_manager)&order=created_at.desc&limit=200');
-        setCustomers((data || []).map(c => ({ ...c, jobs: [], job_count: 0 })));
+        // The search term must be carried across — without it a failure while
+        // searching silently returns the unfiltered top 200, which reads as
+        // "search is broken" rather than "we fell back".
+        const term = (searchDebounced || '').trim();
+        const filter = term
+          ? `&or=(name.ilike.*${encodeURIComponent(term)}*,phone.ilike.*${encodeURIComponent(term)}*,email.ilike.*${encodeURIComponent(term)}*)`
+          : '';
+        const data = await db.select('contacts', `role=in.(homeowner,tenant,property_manager)${filter}&order=created_at.desc&limit=200`);
+        const rows = (data || []).map(c => ({ ...c, jobs: [], job_count: 0 }));
+        setCustomers(rows);
+        hadRowsRef.current = rows.length > 0;
         setLoadError(null);
       } catch (err2) {
         console.error('Fallback:', err2);
         // Both paths are down. Say so — never fall through to "No customers yet",
         // which reads as "this company has no clients" (loading-error-states.md §1).
         setLoadError('Couldn’t load customers. Check your connection and try again.');
+        // Rows already on screen: ErrorState will not render, so announce it.
+        if (hadRowsRef.current) err('Couldn’t refresh — showing last-loaded customers.');
       }
     } finally { setLoading(false); }
   }, [db, searchDebounced]);
