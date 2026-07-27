@@ -279,7 +279,10 @@ export default function TechClaimDetail() {
         setDocs(docList || []);
       }
     } catch (e) {
-      setLoadError(e.message || t('toastLoadFailed'));
+      // Raw failures stay in the console for diagnosis and never reach the screen:
+      // a tech in a flooded basement must not be shown PostgREST JSON.
+      console.error('TechClaimDetail load failed:', e?.message || e);
+      setLoadError(t('toastLoadFailed'));
       toast(t('toastLoadFailed'), 'error');
     } finally {
       setLoading(false);

@@ -4,24 +4,24 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Guards the rule that a field technician following a notification ends up on a
- *   field screen, not the office website. The bell used to send techs to
- *   `/conversations` (the office inbox) while the same event delivered by push went
- *   to `/tech/conversations`, and job notifications pointed at the office job page.
+ *   Guards the WIRING that keeps a field technician on field screens: which office
+ *   routes are wrapped, and that only field techs are redirected. The mapping itself
+ *   (which office page becomes which field page) is behaviour, and is tested for real
+ *   in src/lib/techShellRoutes.test.js — this file only proves the router is hooked up.
  *
- *   This reads App.jsx as text rather than rendering it: App.jsx is the router for
- *   the whole application and pulls in dozens of lazy routes, so a render test
- *   would be far more fragile than the thing it protects. Same approach as the
- *   other contract tests in this folder.
+ *   It reads App.jsx as text rather than rendering it: App.jsx is the router for the
+ *   whole application and pulls in dozens of lazy routes, so a render test would be
+ *   far more fragile than the thing it protects. Same approach as the sibling
+ *   contract tests in this folder.
  *
  * DEPENDS ON:
  *   Packages:  vitest
  *   Internal:  src/App.jsx (read as source)
  *
  * NOTES / GOTCHAS:
- *   - This proves INTENT (the wiring is present), not runtime behaviour. The
- *     behavioural check is a real field_tech session landing on /conversations and
- *     ending up at /tech/conversations.
+ *   - This proves INTENT, not runtime behaviour. The behavioural check is a real
+ *     field_tech session landing on /conversations and ending up at
+ *     /tech/conversations, which was done by hand on 2026-07-27.
  * ════════════════════════════════════════════════
  */
 
@@ -32,49 +32,50 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const source = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8').replace(/\r\n/g, '\n');
+const redirectBlock = source.slice(source.indexOf('function TechShellRedirect'));
+const redirectBody = redirectBlock.slice(0, redirectBlock.indexOf('\n}'));
 
 describe('field techs are redirected out of office routes', () => {
   it('only redirects field_tech, so office roles keep their pages', () => {
-    const block = source.slice(source.indexOf('function TechShellRedirect'));
-    expect(block).toContain("employee?.role === 'field_tech'");
-    // Trapping admin/office/supervisor/PM in the tech shell would be a worse bug
+    expect(redirectBody).toContain("employee?.role === 'field_tech'");
+    // Trapping admin/office/supervisor/PM in the field shell would be a worse bug
     // than the one being fixed.
     for (const role of ['admin', 'office', 'supervisor', 'project_manager']) {
-      expect(block.slice(0, block.indexOf('}'))).not.toContain(`'${role}'`);
+      expect(redirectBody).not.toContain(`'${role}'`);
     }
   });
 
   it('preserves the query string, because message links carry ?c=<conversationId>', () => {
-    const block = source.slice(source.indexOf('function TechShellRedirect'));
-    expect(block).toContain('location.search');
+    expect(redirectBody).toContain('location.search');
   });
 
   it('replaces rather than pushes, so Back does not bounce', () => {
-    const block = source.slice(source.indexOf('function TechShellRedirect'));
-    expect(block).toContain('replace');
+    expect(redirectBody).toContain('replace');
   });
 
-  it('wraps the office conversations route (the bell message target)', () => {
-    expect(source).toMatch(
-      /<TechShellRedirect resolve=\{\(\) => '\/tech\/conversations'\}>/,
-    );
+  it('uses the shared mapping instead of its own copy', () => {
+    // One source of truth, shared with NotificationBell — otherwise the router and
+    // the bell can disagree about where a notification should land.
+    expect(source).toContain("import { officeToTechPath } from '@/lib/techShellRoutes'");
+    expect(redirectBody).toContain('officeToTechPath(location.pathname)');
   });
 
-  it('wraps the office job route (the job notification target)', () => {
-    expect(source).toMatch(/<TechShellRedirect resolve=\{\(p\) => jobHref\(p\.jobId\)\}>/);
+  it('passes through untouched when there is no field equivalent', () => {
+    // officeToTechPath returns null for e.g. /devtools; that must render the page,
+    // not redirect to "null".
+    expect(redirectBody).toMatch(/if \(techPath\)/);
   });
 
-  it('routes jobs through jobHref, never a hardcoded tech job path', () => {
-    // The tech-v2 manifest forbids hardcoding /tech/jobs/ so the Job Hub cutover
-    // stays a one-constant flip.
-    const jobRedirect = source.match(/<TechShellRedirect resolve=\{\(p\) => [^}]+\}>/g) || [];
-    const jobLine = jobRedirect.find((line) => line.includes('jobId'));
-    expect(jobLine).toBeTruthy();
-    expect(jobLine).not.toContain('/tech/jobs/');
-    expect(source).toContain("import { jobHref } from '@/components/tech/v2/nav'");
+  it('wraps the office routes a notification can point at', () => {
+    // conversations (bell messages), jobs/:jobId (job notifications), claims/:claimId,
+    // schedule. Counted rather than matched per-route so the wrappers stay uniform.
+    const wrappers = source.match(/<TechShellRedirect>/g) || [];
+    expect(wrappers.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('wraps the office claim route', () => {
-    expect(source).toContain('resolve={(p) => `/tech/claims/${p.claimId}`}');
+  it('leaves list routes alone, so techs are not bounced off /claims or /jobs indexes', () => {
+    // The index routes are rendered directly, never wrapped.
+    expect(source).toMatch(/<Route index element=\{<ErrorBoundary section="Claims">/);
+    expect(source).toMatch(/<Route index element=\{<ErrorBoundary section="Jobs">/);
   });
 });

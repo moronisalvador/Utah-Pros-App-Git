@@ -209,7 +209,10 @@ export default function TechJobDetail() {
       setDocs(docList || []);
       setWorkAuthSigned((workAuth || []).length > 0);
     } catch (e) {
-      setLoadError(e.message || t('toastLoadFailed'));
+      // Raw failures stay in the console for diagnosis and never reach the screen:
+      // a tech in a flooded basement must not be shown PostgREST JSON.
+      console.error('TechJobDetail load failed:', e?.message || e);
+      setLoadError(t('toastLoadFailed'));
       toast(t('toastLoadFailed'), 'error');
     } finally {
       setLoading(false);
