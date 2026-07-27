@@ -33,10 +33,17 @@
 --     contacts_authenticated_{select,insert,update,delete} (is_crm_partner-scoped),
 --     allow_authenticated_conversations (ALL/true),
 --     allow_authenticated_conversation_participants (ALL/true).
---   - Caller inventory: 21 direct browser reads of these tables, ALL on
+--   - Caller inventory: AT LEAST 26 direct browser reads of these tables, ALL on
 --     authenticated surfaces (Layout, Conversations, Customers, CRM, tech pages,
---     DevTools, Merge/Estimate/Esign modals). They run with a real JWT as
+--     DevTools, Merge/Estimate/Esign modals, the estimate/invoice editors and the
+--     tech-admin estimate/invoice screens). They run with a real JWT as
 --     `authenticated`, so the revoke does not reach them.
+--     Counting note: `db.select('contacts'…)` finds 21. FIVE more reach the same
+--     tables through a ref-held or aliased client — `d.select('contacts'…)`, the
+--     page-lifecycle.md dbRef idiom — in EstimateEditor:138, InvoiceEditor:213,
+--     AdminEstimateDetail:91, AdminEstimateEditor:89, AdminInvoiceDetail:101. Any
+--     future inventory must match both forms or it silently undercounts. (The
+--     original header said "21"; migration-safety-checker caught the undercount.)
 --   - The ONLY logged-out surface is SignPage, and it reads NONE of these three.
 --     It calls two token-scoped RPCs (get_sign_request_by_token,
 --     get_sign_document_templates) and POSTs /api/submit-esign. Verified by
@@ -47,7 +54,20 @@
 --     (functions/lib/supabase.js), which this revoke never names.
 --   - Realtime is unaffected: subscriptions run on the logged-in user's JWT as
 --     `authenticated`. Precedent — `messages` anon access was already closed the
---     same way (sms-experience F-red) and realtime kept working.
+--     same way and realtime kept working:
+--     20260723215926_messaging_transport_foundation.sql:445
+--     (`REVOKE ALL ON TABLE public.messages FROM anon`). NOTE: an earlier draft of
+--     this header credited that closure to "sms-experience F-red". That was wrong —
+--     no F-red-branded migration shipped it; messaging-transport's foundation did.
+--     Corrected after migration-safety-checker flagged the misattribution.
+--
+-- APPLY-WINDOW CAVEAT (database-standard.md §5):
+--   Every policy name, predicate and grant above was captured from a read-only
+--   live-catalog query on 2026-07-27. Nothing in the repository can independently
+--   confirm those facts, so they rest on that capture. RE-VERIFY THE CATALOG FRESH
+--   immediately before applying rather than trusting this header — if a policy was
+--   added or renamed since, a `DROP POLICY IF EXISTS` silently no-ops and the hole
+--   stays open while the migration reports success.
 --
 -- DEFERRED-BUCKET RELEASE (disclosed):
 --   .claude/rules/db-foundation-wave-ownership.md §8 defers these three tables

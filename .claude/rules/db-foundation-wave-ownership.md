@@ -158,13 +158,16 @@ refused to accept static analysis in a migration comment as satisfying that gate
 - **Why no in-flight caller breaks.** Verified against the live catalog and the repository, not
   inferred: the `authenticated` policies already cover every real caller and are untouched
   (`contacts_authenticated_{select,insert,update,delete}`, `allow_authenticated_conversations`,
-  `allow_authenticated_conversation_participants`). All 21 direct browser reads of these tables sit
-  on authenticated surfaces. The only logged-out surface, `SignPage`, reads none of the three — it
+  `allow_authenticated_conversation_participants`). At least 26 direct browser reads of these tables
+  sit on authenticated surfaces — 21 via `db.select`, plus 5 through a ref-held client (`d.select`,
+  the `page-lifecycle.md` dbRef idiom) that a `db.select`-only grep misses. The only logged-out
+  surface, `SignPage`, reads none of the three — it
   calls `get_sign_request_by_token` / `get_sign_document_templates` and POSTs `/api/submit-esign`.
   Neither `AuthContext` nor `Login` touches them, so pre-login bootstrap is unaffected. Workers use
   the service-role client, which the revoke never names. Realtime runs on the logged-in user's JWT as
-  `authenticated` — precedent: `messages` anon access was closed the same way (sms-experience F-red)
-  and realtime kept working.
+  `authenticated` — precedent: `messages` anon access was closed the same way in
+  `20260723215926_messaging_transport_foundation.sql:445` and realtime kept working. (An earlier
+  draft credited this to "sms-experience F-red"; that attribution was wrong and is corrected here.)
 - **The committed tests** the clause requires: `supabase/tests/anon_closure_tranche_b.test.js`
   (behavioural, opt-in `RUN_TRANCHE_B=1`, db lane) and
   `tests/qa/unit/anon-closure-tranche-b.test.js` (CI-visible source contract — the db lane still
