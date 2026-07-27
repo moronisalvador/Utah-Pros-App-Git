@@ -314,7 +314,12 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
     ...body,
     title: what ? `${verb} · ${what}` : verb,
     body: when || body.body || '',
-    link: body.link || `/tech/appointment/${body.appointment_id}`,
+    // Store the OFFICE path. A notification has no idea who will open it or on
+    // what, so the reader's shell decides (src/lib/techShellRoutes.js): field techs
+    // are routed to /tech/appointment/:id, the office keeps this one. Storing the
+    // field path here — which this did while /tech/appointment/:id was the only
+    // appointment screen in the app — put desktop dispatchers in the phone UI.
+    link: body.link || `/schedule/appointment/${body.appointment_id}`,
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,
   };
