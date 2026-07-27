@@ -806,6 +806,9 @@ tr:hover td { background: var(--bg-secondary); }
 .conv-status-pending { color: var(--text-tertiary); }
 .conv-status-failed { color: var(--status-needs-response); flex-wrap: wrap; gap: 6px; }
 .conv-status-failed.uiclass-carrier, .conv-status-failed.uiclass-config { color: var(--status-waiting); }
+/* A failure a later identical send already replaced. Still shown — it happened —
+   but muted, and with no Retry affordance to tap a second time. */
+.conv-status-superseded { color: var(--text-tertiary); opacity: 0.75; }
 .conv-status-reason { white-space: normal; }
 .conv-status-spinner {
   width: 11px; height: 11px; border-radius: 50%; display: inline-block;
