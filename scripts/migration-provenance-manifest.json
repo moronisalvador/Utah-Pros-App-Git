@@ -166,6 +166,12 @@
       "reviewedOriginCommit": "bc6fb01"
     },
     {
+      "version": "20260726233416",
+      "name": "encircle_managed_credentials",
+      "path": "supabase/migrations/20260723_encircle_managed_credentials.sql",
+      "reviewedOriginCommit": "4799feb3"
+    },
+    {
       "version": "20260727012536",
       "name": "ops_health_recipients",
       "path": "supabase/migrations/20260726193000_ops_health_recipients.sql",
@@ -355,6 +361,10 @@
       "identity": "get_contact_activity(uuid)",
       "path": "supabase/migrations/20260724180000_crm_lead_notes.sql",
       "allowedRawDrift": "comments_or_whitespace"
+    },
+    {
+      "identity": "get_managed_credentials_status()",
+      "path": "supabase/migrations/20260723_encircle_managed_credentials.sql"
     },
     {
       "identity": "qbo_payments_sync_poll()",
