@@ -93,7 +93,7 @@ export default function Production() {
       setEmployees(empsData);
     } catch (err) {
       console.error('Production load error:', err);
-      setLoadError(err.message);
+      setLoadError('Failed to load the production board');
     } finally {
       setLoading(false);
     }

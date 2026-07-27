@@ -92,7 +92,7 @@ export default function Jobs() {
       setEmployees(empsData);
     } catch (err) {
       console.error('Jobs load error:', err);
-      setLoadError(err.message);
+      setLoadError('Failed to load jobs');
     } finally {
       setLoading(false);
     }

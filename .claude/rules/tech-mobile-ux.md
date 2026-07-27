@@ -1,5 +1,8 @@
 # UX Design Principles — Tech Mobile App
 
+**Last-verified: 2026-07-27** (offline bullet amended — owner ratified online-only for the initial
+release; see the amendment under "Resume, loading & offline".)
+
 Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/components/tech/`.
 
 **The User Persona:** Every tech UI decision should be made through the lens of a 64-year-old field technician who is not tech-savvy, standing in a flooded basement or doing drywall repair, wearing work gloves, holding his phone in one hand, possibly in direct sunlight. If he can't figure it out in one tap without reading instructions, it's too complicated.
@@ -30,6 +33,23 @@ Linked from `CLAUDE.md`. Applies to everything under `src/pages/tech/` and `src/
   is separately reviewed. The retained local queue surface is recovery-only: it may inventory and
   quarantine legacy metadata without exposing payloads, and it may delete exact local data only
   after explicit confirmation; it must never send or retry that work.
+
+  > **AMENDED 2026-07-27 (owner-directed) — the offline product decision is MADE.** This bullet
+  > previously read "mutations go through `useOfflineQueue` where wired (photos, notes, task toggles)
+  > so a basement with no signal doesn't lose work." PR #525 rewrote it to the online-only wording
+  > above **while `docs/mobile-production-readiness-roadmap.md`'s C1 row still listed "offline product
+  > decision" as a pending exit criterion** — a rule rewritten with the decision behind it still open.
+  > Asked to resolve it on 2026-07-27, the owner **ratified online-only for the initial release**, so
+  > the wording above is now law rather than an implementation artifact, and C1's offline criterion is
+  > closed. Recorded here in the `db-foundation-wave-ownership.md` §8 format so the change is
+  > attributable rather than silent.
+  >
+  > **What this costs, stated plainly:** a tech in a basement with no signal now *loses* the tap. The
+  > protection is that they are TOLD — the save fails visibly and the sheet stays open with the typed
+  > value intact (`TechAppointment.jsx` `handleSaveReading`/`handlePlaceEquipment`,
+  > `hub/HubTools.jsx` likewise). Those four handlers **throw**; they must never `return`, because both
+  > entry sheets treat a resolved promise as success and would fire "Reading saved", close, and discard
+  > the reading. Re-opening queued offline writes is a separate reviewed change, not a bug fix.
 
 **Task assignment business logic (CRITICAL):** *(also mirrored in `UPR-Web-Context.md`; that is the
 source of truth for the join paths and column names — verify live, not from this summary.)*

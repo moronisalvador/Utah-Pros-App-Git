@@ -46,6 +46,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToNotifications } from '@/lib/realtime';
+import { linkForCurrentShell } from '@/lib/techShellRoutes';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 
 // Poll backoff: after a failure the count is worth far less than the noise of
@@ -187,7 +188,12 @@ export default function NotificationBell({ align = 'left', triggerClassName }) {
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read_at: new Date().toISOString() } : n)));
       try { await dbRef.current.rpc('mark_notification_read', { p_id: item.id }); } catch { /* non-fatal */ }
     }
-    if (item.link) navigate(item.link);
+    // Keep the tap in the shell the user is standing in. This bell is mounted in
+    // the field dash header as well as the office nav, and notification links are
+    // stored as office paths — so without this, someone working out of the field
+    // PWA (admins and supervisors do) gets thrown into the office inbox. Role-based
+    // routing in App.jsx cannot cover them, because they are not field_tech.
+    if (item.link) navigate(linkForCurrentShell(item.link, window.location.pathname));
   };
 
   const markAll = async () => {

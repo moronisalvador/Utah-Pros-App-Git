@@ -66,7 +66,8 @@ export default function ClaimsList() {
       const data = await db.rpc('get_claims_list', {});
       setClaims(Array.isArray(data) ? data : []);
     } catch (e) {
-      setLoadError(e.message);
+      console.error('ClaimsList load failed:', e?.message || e);
+      setLoadError('Failed to load claims');
       window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: 'Failed to load claims', type: 'error' } }));
     } finally {
       setLoading(false);

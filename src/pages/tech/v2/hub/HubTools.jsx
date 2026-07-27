@@ -102,12 +102,16 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
   // ── Saves (online-first release) ──
   const handleSaveReading = async (payload) => {
     if (!jobId) throw new Error('Job not loaded');
+    // THROW, never return. ReadingEntrySheet awaits this and treats resolution as
+    // success — it fires "Reading saved" and closes the sheet. A bare return here
+    // resolved the promise, so the tech saw an error toast INSTANTLY overwritten by
+    // a success toast, the sheet closed, and the typed reading was gone. Throwing
+    // lands in the sheet's catch: "Failed to save reading: …", sheet stays open,
+    // form intact.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      toast(
+      throw new Error(
         'Moisture readings require an internet connection. Reconnect and try again.',
-        'error',
       );
-      return;
     }
     const clientId = createOfflineOperationId();
     const p = {
@@ -132,12 +136,12 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
 
   const handlePlaceEquipment = async (payload) => {
     if (!jobId) throw new Error('Job not loaded');
+    // THROW, never return — see handleSaveReading above. EquipmentPlacementSheet
+    // has the identical await-then-succeed shape.
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      toast(
+      throw new Error(
         'Equipment placement requires an internet connection. Reconnect and try again.',
-        'error',
       );
-      return;
     }
     const clientId = createOfflineOperationId();
     const p = {
