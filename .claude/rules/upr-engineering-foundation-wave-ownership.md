@@ -165,14 +165,23 @@ The overlap that DOES exist is `CLAUDE.md` / `close-out-standard.md`, both edite
 the app sessions while DB-1 was running — DB-1 must re-read them before its close-out
 rather than working from a cached copy.
 
-**Current promotion hold:** `dev` is **not** to be promoted to `main` while the transferred
-APP-2/APP-3 reconciliation lease is active. The previous hold was discharged when the owner
-promoted `98786f52`; that historical event is not a standing assertion that the branches remain
-equal. At the mobile session's 2026-07-26 read-only recapture, `origin/main` was `c19434a0`,
-`origin/dev` was `4583f0a6`, and `origin/dev` was 10 commits ahead. These SHAs are evidence for that
-capture only. Promote from a quiet `dev`, then re-fetch and re-check
-`git rev-list --left-right --count origin/main...origin/dev` immediately before the separately
-authorized promotion.
+**Promotion hold — RELEASED 2026-07-27 (owner-authorized).** ~~`dev` is **not** to be promoted to
+`main` while the transferred APP-2/APP-3 reconciliation lease is active.~~ The mobile
+current-origin reconciliation landed on `dev` as PR #525, and on **2026-07-27 the owner explicitly
+authorized the `dev` → `main` promotion** and separately confirmed that the concurrent billing
+session (the Dorothy AR repair, ledger `20260727224804`) had finished. The hold is discharged.
+
+Recorded because a stale binding hold is the exact defect the note at the top of this file warns
+about: a session reading it as non-binding and promoting anyway. It was still asserting a live hold
+hours after the work it was keyed to had merged.
+
+The *procedure* it prescribed remains correct and outlives the hold: promote from a **quiet** `dev`,
+and re-check `git rev-list --left-right --count origin/main...origin/dev` immediately before the
+promotion rather than trusting a recorded SHA. The previous hold was discharged when the owner
+promoted `98786f52`; that historical event was never a standing assertion that the branches remain
+equal. The mobile session's 2026-07-26 SHAs (`origin/main` `c19434a0`, `origin/dev` `4583f0a6`, 10
+ahead) are evidence for that capture only — by 2026-07-27 17:00 local the real numbers were
+`origin/main` `ef0afc52` and `origin/dev` `df7becbe`, **108 ahead**.
 
 **Rollback for DB-1:** every migration ships a paired file in `supabase/rollbacks/`.
 ~~Nothing is applied, so the current rollback is `git revert` alone.~~ **All 8 are now applied
