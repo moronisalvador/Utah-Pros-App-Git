@@ -164,6 +164,27 @@ export default defineConfig(({ command, mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: false,
+      // Deliberately NOT the default 'assets'.
+      //
+      // On 2026-07-27 a deploy race left three hashed files under /assets/
+      // cached as text/html with `immutable, max-age=31536000` — a year — on
+      // both the Cloudflare edge and end-user devices. Purging the edge fixed
+      // the edge. It could not touch the copies already on a phone, and the
+      // app's /reset recovery relies on Clear-Site-Data, which Safari does not
+      // implement, so an iPhone had no way back at all.
+      //
+      // Moving the output directory changes every asset URL, so no device can
+      // hold a poisoned copy of a path that has never existed. index.html is
+      // served no-store, so clients pick up the new paths on the next load
+      // with no cache clear, no reinstall, and nothing asked of a technician.
+      //
+      // This is a ONE-TIME un-poisoning. Do not bump it again as routine
+      // practice: recurrence is prevented by the /assets 404 rule in
+      // public/_redirects and the boot guard in index.html. If you ever DO
+      // need to bump it, update public/_headers and public/_redirects to
+      // match, or assets lose their immutable caching and the 404 rule stops
+      // covering them.
+      assetsDir: 'app-assets',
     },
     server: {
       proxy: {

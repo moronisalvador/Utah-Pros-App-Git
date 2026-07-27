@@ -26,9 +26,16 @@
   Cache-Control: public, max-age=300
 
 # Cache-recovery bounce page. Loading /reset evicts the browser's HTTP cache +
-# Cache API so a poisoned immutable /assets/*.js can't survive (the app redirects
-# here on a chunk-load failure — see src/App.jsx lazyRetry / buildResetUrl).
+# Cache API so a poisoned immutable asset can't survive (the app redirects here
+# on a chunk-load failure — see src/App.jsx lazyRetry / buildResetUrl).
 # "cache" ONLY — never "storage"/"cookies" — so the user's login is preserved.
+#
+# ⚠️ SAFARI DOES NOT IMPLEMENT Clear-Site-Data. Proven on a real iPhone on
+# 2026-07-27: loading /reset did nothing for a device holding poisoned assets.
+# So this page is a recovery path for Chrome/Edge/Firefox ONLY. iOS — every
+# field technician — is covered instead by the boot guard in index.html, which
+# repairs entries with fetch(url, {cache:'reload'}). Never treat /reset as the
+# recovery mechanism for the field app.
 /reset
   Clear-Site-Data: "cache"
   Cache-Control: no-store
@@ -36,5 +43,15 @@
   Clear-Site-Data: "cache"
   Cache-Control: no-store
 
+# Build output lives in app-assets/ (vite.config.js build.assetsDir), NOT the
+# default assets/. Keep this glob in step with it or every asset silently loses
+# immutable caching — a real perf regression on an LTE field device.
+/app-assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Retained deliberately: /assets/* is the pre-2026-07-27 output path. Devices
+# still holding poisoned copies under it will never request these again (the
+# app no longer references them), but leaving the rule costs nothing and avoids
+# a surprise if anything is ever served from there again.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

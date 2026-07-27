@@ -28,7 +28,8 @@
     "test:figma-governance": "node --test scripts/validate-figma-governance.node-test.mjs",
     "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
-    "validate:provenance": "node scripts/check-migration-provenance.mjs"
+    "validate:provenance": "node scripts/check-migration-provenance.mjs",
+    "smoke:deploy": "node scripts/smoke-deploy.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
