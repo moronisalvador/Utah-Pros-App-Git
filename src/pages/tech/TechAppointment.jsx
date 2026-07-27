@@ -71,6 +71,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
+import { pickerHref } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
@@ -706,21 +707,27 @@ export default function TechAppointment() {
           </a>
         )}
 
-        {/* Message — TODO: switch to in-app SMS when available */}
+        {/* Message — opens the thread INSIDE UPR, not the phone's SMS app. The old
+            sms: link sent from the tech's personal number, so the text never landed
+            in the customer's UPR thread and office staff could not see it.
+            get_appointment_detail carries no contact id, so this lands on the in-app
+            contact picker rather than guessing a contact from the phone number. The
+            job and claim screens have the contact and open the thread directly. */}
         {job?.client_phone ? (
-          <a
-            href={`sms:${job.client_phone}`}
+          <button
+            type="button"
+            onClick={() => navigate(pickerHref())}
             style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-              gap: 4, textDecoration: 'none',
+              gap: 4, background: 'none', border: 'none',
               padding: '6px 0', minWidth: 64, minHeight: 56,
               fontFamily: 'var(--font-sans)', color: 'var(--text-secondary)',
-              touchAction: 'manipulation',
+              touchAction: 'manipulation', cursor: 'pointer',
             }}
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             <span style={{ fontSize: 10, fontWeight: 600 }}>{t('action.message')}</span>
-          </a>
+          </button>
         ) : (
           <button
             disabled

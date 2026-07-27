@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-27T02:34:32Z",
+  "capturedAt": "2026-07-27T13:46:24Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "b1d2259c78b4b3e0c080b96c800560d1b0e3f638",
+  "captureBaseCommit": "eafa811b3270047be665c6c6332e933fc864461f",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -147,6 +147,10 @@
     {
       "version": "20260727012929",
       "name": "notification_control_gates"
+    },
+    {
+      "version": "20260727041645",
+      "name": "upr_work_authorization_sms_consent"
     }
   ],
   "functions": [
@@ -184,6 +188,21 @@
       "identity": "claim_callrail_provider_event(uuid,timestamp with time zone,timestamp with time zone)",
       "rawMd5": "b2041fd84b38db1780af05bfbdb5dfe1",
       "semanticMd5": "96c9c017cabee581b76ef9e582dcfdf3",
+      "language": "plpgsql",
+      "securityDefiner": false,
+      "volatility": "v",
+      "config": [
+        "search_path=\"\""
+      ],
+      "anonExecute": false,
+      "authenticatedExecute": false,
+      "serviceRoleExecute": true,
+      "publicExecute": false
+    },
+    {
+      "identity": "complete_sign_request_with_work_authorization_sms_consent(uuid,text,text,text,boolean,boolean,boolean,boolean,text,text)",
+      "rawMd5": "c19625a6066b36e45b58fd389647b572",
+      "semanticMd5": "7be03e47ebaa1b1705bfadec7f7b7947",
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",
@@ -392,8 +411,8 @@
     },
     {
       "identity": "get_service_sms_consent_status(uuid,text)",
-      "rawMd5": "3912e63a1a2e75116f604e01e790b5b6",
-      "semanticMd5": "260cb7f4c9fdfc621f0d9d15d45be383",
+      "rawMd5": "25789b7c994b99a6e8403050f424b9a9",
+      "semanticMd5": "9cdf8ab17d49680ffa3857f41c850466",
       "language": "plpgsql",
       "securityDefiner": false,
       "volatility": "v",

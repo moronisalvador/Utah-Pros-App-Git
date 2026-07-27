@@ -1,5 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
+import { jobHref } from '@/components/tech/v2/nav';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
@@ -235,6 +236,35 @@ function HomeRedirect() {
   return <ErrorBoundary section="Dashboard"><Dashboard /></ErrorBoundary>;
 }
 
+// Send field techs to the tech shell when they land on an office route that has a
+// field equivalent.
+//
+// WHY THIS EXISTS: notification links are stored server-side as absolute office
+// paths, and nothing knows who will receive them. The bell navigates to
+// `item.link` and push opens `data.url` verbatim — neither is role-aware. So a
+// tech tapping a message notification landed on `/conversations` (the office
+// inbox rendered narrow) while the SAME event delivered by push went to
+// `/tech/conversations`. Job notifications pointed at `/jobs/<id>`, the office
+// job page, which is not the screen the field team uses.
+//
+// Fixing it here rather than at each link site is deliberate: four of those
+// `/conversations` links are baked into SQL migrations, so they cannot be changed
+// without a migration, and any link hardcoded later is covered automatically.
+//
+// Only `field_tech` is redirected — office, admin, supervisor, PM and estimator
+// all legitimately use these pages, and trapping them in the tech shell would be
+// a worse bug than the one being fixed. Query string and hash are preserved
+// because the message links carry `?c=<conversationId>`.
+function TechShellRedirect({ resolve, children }) {
+  const { employee } = useAuth();
+  const location = useLocation();
+  const params = useParams();
+  if (employee?.role === 'field_tech') {
+    return <Navigate to={`${resolve(params)}${location.search}${location.hash}`} replace />;
+  }
+  return children;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 function NotFound() {
@@ -356,18 +386,33 @@ function WebRoutes() {
       {/* Protected — all wrapped in Layout */}
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<HomeRedirect />} />
-        <Route path="conversations" element={<ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>} />
+        {/* Bell message notifications point here; techs belong in the field inbox. */}
+        <Route path="conversations" element={
+          <TechShellRedirect resolve={() => '/tech/conversations'}>
+            <ErrorBoundary section="Conversations"><Conversations /></ErrorBoundary>
+          </TechShellRedirect>
+        } />
 
         <Route path="claims">
           <Route index element={<ErrorBoundary section="Claims"><ClaimsList /></ErrorBoundary>} />
-          <Route path=":claimId" element={<ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>} />
+          <Route path=":claimId" element={
+            <TechShellRedirect resolve={(p) => `/tech/claims/${p.claimId}`}>
+              <ErrorBoundary section="Claim"><ClaimPage /></ErrorBoundary>
+            </TechShellRedirect>
+          } />
         </Route>
 
         <Route path="jobs">
           <Route index element={<ErrorBoundary section="Jobs"><Jobs /></ErrorBoundary>} />
           <Route path="new" element={<Navigate to="/jobs" replace />} />
           <Route path="closed" element={<ErrorBoundary section="Jobs Closed"><JobsClosed /></ErrorBoundary>} />
-          <Route path=":jobId" element={<ErrorBoundary section="Job"><JobPage /></ErrorBoundary>} />
+          {/* Job notifications point here. jobHref() (not a hardcoded path) so this
+              follows the Job Hub flag when it opens, per the tech-v2 manifest. */}
+          <Route path=":jobId" element={
+            <TechShellRedirect resolve={(p) => jobHref(p.jobId)}>
+              <ErrorBoundary section="Job"><JobPage /></ErrorBoundary>
+            </TechShellRedirect>
+          } />
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />

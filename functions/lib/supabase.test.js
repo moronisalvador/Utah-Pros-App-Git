@@ -6,6 +6,27 @@ afterEach(() => {
 });
 
 describe('worker Supabase Storage signing', () => {
+  it('accepts a route-scoped timeout fetch implementation', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const db = supabase({
+      SUPABASE_URL: 'https://project.supabase.co',
+      SUPABASE_SERVICE_ROLE_KEY: 'server-secret',
+    }, fetchImpl);
+
+    await expect(db.rpc('safe_probe', { p_id: 'probe-1' }))
+      .resolves.toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://project.supabase.co/rest/v1/rpc/safe_probe',
+      expect.objectContaining({ method: 'POST' }),
+    );
+  });
+
   it('uses the service role only on the server and returns an absolute signed URL', async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       signedURL: '/object/sign/message-attachments/callrail/photo.jpg?token=signed',

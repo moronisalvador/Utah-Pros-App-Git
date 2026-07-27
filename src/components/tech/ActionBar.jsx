@@ -7,7 +7,7 @@
  *   A row of big buttons — Call, Navigate, Message, and (on the job screen
  *   only) Documents — that sits at the top of a claim or job screen. Tapping
  *   Call opens the phone dialer, Navigate opens the maps app pointed at the
- *   address, Message opens the phone's text-message app, and Documents opens
+ *   address, Message opens the customer's conversation INSIDE UPR, and Documents opens
  *   the job's e-signature documents. If there is no phone number or address,
  *   the matching button is shown greyed out and can't be tapped.
  *
@@ -18,26 +18,34 @@
  *
  * DEPENDS ON:
  *   Packages:  none (React 19 automatic JSX runtime)
- *   Internal:  @/lib/techDateUtils (openMap — opens the maps app)
+ *   Internal:  @/lib/techDateUtils (openMap — opens the maps app),
+ *              @/lib/openInAppThread (resolves + opens the customer's UPR thread)
  *   Data:      reads  → none (phone + address arrive as props)
  *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - Props: phone, address, onDocuments (optional callback).
+ *   - Props: phone, address, onDocuments (optional callback), contactId
+ *     (needed to open the in-app thread; without it Message opens the picker).
  *   - The Documents button only renders when onDocuments is passed, so the
  *     claim screen (TechClaimDetail) keeps its original 3-button bar.
  *   - TechAppointment has its own 5-button variant — this one was NOT
  *     refactored to cover it.
- *   - Message button uses the native sms:{phone} link. TODO: switch to
- *     in-app SMS when available.
+ *   - Message navigates to /tech/conversations, NOT a native sms: link. The old
+ *     sms: link sent from the tech's personal number, so the text never appeared
+ *     in the customer's UPR thread and office staff could not see it.
  * ════════════════════════════════════════════════
  */
 import { useTranslation } from 'react-i18next';
 import { openMap } from '@/lib/techDateUtils';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { openInAppThread } from '@/lib/openInAppThread';
 
 // ─── SECTION: Render ──────────────
-export default function ActionBar({ phone, address, onDocuments }) {
+export default function ActionBar({ phone, address, onDocuments, contactId }) {
   const { t } = useTranslation('tech');
+  const navigate = useNavigate();
+  const [opening, setOpening] = useState(false);
   const btnBase = {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
     gap: 4, padding: '6px 0', minWidth: 64, minHeight: 56,
@@ -86,14 +94,20 @@ export default function ActionBar({ phone, address, onDocuments }) {
         </button>
       )}
 
-      {/* Message — TODO: switch to in-app SMS when available */}
-      {phone ? (
-        <a href={`sms:${phone}`} style={{ ...btnBase, ...enabledStyle, textDecoration: 'none' }}>
+      {/* Message — opens the thread INSIDE UPR (was a native sms: link, which sent
+          from the tech's personal number and never reached the customer's UPR thread). */}
+      {(contactId || phone) ? (
+        <button
+          type="button"
+          disabled={opening}
+          onClick={async () => { setOpening(true); try { await openInAppThread(navigate, contactId); } finally { setOpening(false); } }}
+          style={{ ...btnBase, ...enabledStyle, background: 'none', border: 'none' }}
+        >
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
           </svg>
           <span style={{ fontSize: 11, fontWeight: 600 }}>{t('actionBar.message')}</span>
-        </a>
+        </button>
       ) : (
         <button disabled style={{ ...btnBase, ...disabledStyle, background: 'none', border: 'none' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

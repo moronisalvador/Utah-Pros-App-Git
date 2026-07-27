@@ -1,5 +1,6 @@
 # UPR Web Platform — Context Document
-Last updated: July 23, 2026 (live prior-service SMS consent boundary, release evidence, and
+Last updated: July 26, 2026 (repository-only signed Work Authorization SMS consent bridge,
+live prior-service SMS consent boundary, release evidence, and
 cross-platform isolated-browser profile containment; see git history for earlier accuracy-audit
 findings)
 
@@ -854,7 +855,7 @@ functions/
     attest-sms-consent.js         — GET status + record-only POST for verified prior direct service-SMS permission. GET requires the Conversations capability and returns only a safe decision; POST is internal admin/office, derives actor + trusted Cloudflare IP server-side, requires method/date/evidence, and never sends/retries. Service-only RPCs use browser-inaccessible current + append-only evidence tables, never change general/automated opt-in, serialize with inbound CallRail, refuse duplicate suppression or pending STOP, and place only a redacted evidence reference in `sms_consent_log`. Direct staff sends may consume this scope; group/broadcast/automated/scheduled paths may not. The foundation is live as ledger version `20260724035913_attest_prior_sms_consent`; contact-phone revalidation and strict STOP→later-START hardening are live as ledger version `20260724043000_harden_service_sms_consent`.
     messaging-setup.js            — Admin-only, read-only `/api/messaging-setup` Worker. Default GET reports redacted server-owned mode/configuration presence and deterministic blockers; `action=callrail-options` performs bounded CallRail GET-only discovery of active SMS-enabled/supported trackers. It exposes no API/signing secret, customer thread, destination number, raw provider body, mutation, test send, or Cloudflare/provider control-plane toggle. No migration; Production remains disabled pending owner-approved activation.
     send-push.js                  — APNs push via ES256 JWT; returns 503 until APNS_* env vars set (Phase 4 code-only). **App Store readiness A (Jul 17 2026):** now server-gated via `functions/lib/auth.js` `requireRole(['admin','project_manager'])` (pushing to an arbitrary `employee_id` is privileged — a valid session alone no longer passes); prunes `device_tokens` on `400 BadDeviceToken` as well as `410 Gone`.
-    submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com)
+    submit-esign.js               — Process signature, generate PDF, upload to storage; on success notifies office (in-app notification + job_notes activity entry + email to restoration@utah-pros.com). **Repository-only Work Authorization SMS bridge (not applied/deployed):** recognizes only the pinned `upr_work_auth_sms_v1` rendered disclosure, completes through an atomic service-only wrapper when available, and records narrow direct-service evidence (including trusted Cloudflare signer IP in the private evidence table, never the legacy log) without global opt-in, suppression changes, send or retry. Missing schema, signer IP, or disclosure drift completes signing but leaves messaging blocked.
     encircle-backfill.js          — Batch 6-month historical importer. Cursor-paginates Encircle, creates contacts+claims+jobs, repairs legacy orphans, gated CLM writeback. GET=dry-run, POST=execute. Idempotent via (encircle_claim_id, division) composite.
     encircle-import.js            — Search/get/patch/import Encircle claims (manual selective import)
     sync-claim-to-encircle.js     — Push UPR-native claim UP to Encircle. POST { claim_id }. Idempotent (skips if claims.encircle_claim_id set). Writes encircle_claim_id back on claims AND all child jobs. On failure stores error on claims.encircle_sync_error for retry. Called automatically from CreateJobModal + TechNewJob post-RPC; manual retry via DevTools → Backfill tab → Unsynced Claims panel.
@@ -1147,6 +1148,11 @@ Later phases: I (inbound Email Worker), O (send-message.js email branch), U (uni
 sign_requests           — Esign requests (token, status, open tracking). Recon agreement adds:
                           consent_terms, consent_commitment, consent_esign, consent_authority BOOLEAN (all nullable),
                           consents_signed_at TIMESTAMPTZ — populated by complete_sign_request when consents are attested.
+work_authorization_sms_consents
+                        — Repository-only, not applied: immutable service-role-only evidence keyed
+                          by a signed UPR Work Authorization, with contact/job/phone/private signer IP/PDF/time and
+                          pinned SMS disclosure identity. Consumed only as narrow SERVICE_CONSENT;
+                          never global opt-in and never a send/retry.
 document_templates      — 24 rows — (CoC×5 divisions, work_auth, direction_pay, change_order,
                           recon_agreement×16 legal sections with sort_order 1–16)
 document_requests       — Document request records

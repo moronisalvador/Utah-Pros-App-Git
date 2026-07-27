@@ -242,6 +242,26 @@ re-attestation history, legacy-log redaction, unchanged general opt-in, duplicat
 suppression and durable pending-STOP suppression. See
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
+### Signed UPR Work Authorization evidence (repository only; not applied)
+
+Migration `20260727005212_upr_work_authorization_sms_consent.sql` proposes
+`work_authorization_sms_consents`, keyed one-to-one by `sign_request_id` with restrictive foreign
+keys to the contact and job. Each row snapshots the phone, trusted Cloudflare signer IP, signed
+file path/time, fixed
+`service_related_customer_project_messages` scope, `upr_signed_work_authorization` source, and
+`upr_work_auth_sms_v1` disclosure SHA-256. The table enables/forces RLS and grants only
+`SELECT, INSERT` to `service_role`; browser roles have no policy or privilege. Automatic evidence
+is refused when the signing request has no server-observed signer IP. The broadly readable legacy
+`sms_consent_log` receives only a redacted evidence reference and a null IP, never the signer IP.
+
+The service-role-only `complete_sign_request_with_work_authorization_sms_consent(...)` invoker RPC
+calls the existing deployed completion function and inserts qualifying evidence in the same
+transaction. `get_service_sms_consent_status(uuid,text)` keeps its signature and existing response
+vocabulary, checks DND/opt-out/pending STOP/global state first, and then accepts either the existing
+staff-attested service row or matching signed-authorization evidence. The migration never updates
+`contacts.opt_in_status`. A concrete rollback restores the read-only-captured pre-change status
+body before removing the wrapper/table. None of this is live until separately applied and verified.
+
 ## Known limits
 
 The repository does not by itself prove current live state after the dated capture. The July 2026

@@ -251,6 +251,26 @@ function-definition hash drift or duplicate patch anchor before replacing either
 Read-only catalog recapture confirmed both functions remain `SECURITY INVOKER`, use an empty
 `search_path`, deny browser roles and permit only `service_role` execution.
 
+## Native UPR Work Authorization consent bridge (repository only; not applied)
+
+Migration `20260727005212_upr_work_authorization_sms_consent.sql` proposes a separate immutable
+evidence table and service-role-only, invoker-rights completion wrapper. The public signing request
+still reaches only the Worker; the Worker supplies the exact approved disclosure version/hash, and
+the wrapper calls the existing completion RPC plus records evidence in one transaction. `PUBLIC`,
+`anon` and `authenticated` receive neither table privileges/policies nor wrapper execution.
+
+The bridge does not manufacture an employee actor and does not use the admin/office attestation
+RPC. The shared status RPC remains service-role-only and evaluates duplicate-contact DND,
+`opt_out_at`, pending STOP, destination/phone consistency and global opt-in before considering
+signed Work Authorization evidence. A missing/mutated disclosure or absent migration leaves
+messaging blocked while allowing the legal signature workflow to complete. Repository source is
+not proof that this boundary exists in the shared database or deployed Worker.
+
+The signing Worker supplies its trusted Cloudflare connection IP to the completion RPC. The
+dedicated service-role-only Work Authorization evidence stores that IP and refuses automatic
+consent when it is absent. The legacy `sms_consent_log` remains redacted and does not receive the
+raw signer IP.
+
 `GET/POST /api/message-conversations` requires the same server-side Conversations capability as
 the messaging send surface before any service-role read or write. Contact search is length- and
 grammar-bounded, returns only `id`, `name`, `phone`, and `company`, and caps results at 25.

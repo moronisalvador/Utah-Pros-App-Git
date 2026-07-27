@@ -218,6 +218,12 @@
       "name": "notification_control_gates",
       "path": "supabase/migrations/20260726250000_notification_control_gates.sql",
       "reviewedOriginCommit": "245c0c41"
+    },
+    {
+      "version": "20260727041645",
+      "name": "upr_work_authorization_sms_consent",
+      "path": "supabase/migrations/20260727005212_upr_work_authorization_sms_consent.sql",
+      "reviewedOriginCommit": "9e79d287"
     }
   ],
   "selectedFunctions": [
@@ -268,11 +274,8 @@
     },
     {
       "identity": "get_service_sms_consent_status(uuid,text)",
-      "path": "supabase/migrations/20260724043000_harden_service_sms_consent.sql",
-      "expectedFingerprints": {
-        "rawMd5": "3912e63a1a2e75116f604e01e790b5b6",
-        "semanticMd5": "260cb7f4c9fdfc621f0d9d15d45be383"
-      },
+      "path": "supabase/migrations/20260727005212_upr_work_authorization_sms_consent.sql",
+      "allowedRawDrift": "comments_or_whitespace",
       "expected": {
         "securityDefiner": false,
         "config": [
@@ -365,6 +368,21 @@
     {
       "identity": "get_managed_credentials_status()",
       "path": "supabase/migrations/20260723_encircle_managed_credentials.sql"
+    },
+    {
+      "identity": "complete_sign_request_with_work_authorization_sms_consent(uuid,text,text,text,boolean,boolean,boolean,boolean,text,text)",
+      "path": "supabase/migrations/20260727005212_upr_work_authorization_sms_consent.sql",
+      "allowedRawDrift": "comments_or_whitespace",
+      "expected": {
+        "securityDefiner": false,
+        "config": [
+          "search_path=\"\""
+        ],
+        "anonExecute": false,
+        "authenticatedExecute": false,
+        "serviceRoleExecute": true,
+        "publicExecute": false
+      }
     },
     {
       "identity": "qbo_payments_sync_poll()",
