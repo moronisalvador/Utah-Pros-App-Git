@@ -464,10 +464,37 @@ Section 8 keeps `AGENTS.md`'s accurate Repository model block and adds the point
 > - [ ] `.claude/tooling-governance.json` `rules` count **23 to 21** plus the section 1 prose stamp, same commit
 > - [ ] `upr-pattern-checker` clean; standard gates; `npx eslint` n/a with the reason
 
-**Scope — the ten conversions.** Every glob is brace-free, repo-root-relative, and verified against the installed matcher after the loader's trailing-`/**` stripping. `motion-standard.md` [26,649 B] to `src/index.css`, `src/components/ui/**`, `src/lib/nativeHaptics.js`, `src/components/tech/PullToRefresh.jsx` — **deliberately NOT `src/pages/**`**, which would reload 26.6 KB on nearly every UI session and forfeit the whole win; the standard's own section 1 forbids bespoke keyframes in a page, so real motion work touches `index.css` or a shared primitive, and a stray page-level transition is caught by `design-consistency-checker` section 9 and `review-animations` at close-out. `page-lifecycle.md` [5,245] to `src/pages/**`, `src/components/**`, `src/hooks/**`, `src/lib/stableDb.js`. `perf-budget.md` [3,169] to `package.json`, `vite.config.js`, `src/index.css`, `src/main.jsx`, `src/App.jsx`, `src/lib/mediaCompress.js`, `src/hooks/**`, `.github/workflows/ci.yml`. `documentation-standard.md` [7,182] to `supabase/migrations/**`, `supabase/migrations-staged/**`, `supabase/rollbacks/**`, `.claude/rules/**` — **gated on the L0 depth-map row for the JS/JSX header template existing first** (challenge finding P-11). `tech-v2-wave-ownership.md` [11,324], `app-store-readiness-wave-ownership.md` [3,107], `ux-alignment-wave-ownership.md` [6,565], `settings-overhaul-wave-ownership.md` [9,886], `db-foundation-wave-ownership.md` [8,995] to their own surfaces as enumerated in the manifest DRAFT.
+**Scope — the ten conversions.** Every glob is brace-free, repo-root-relative, and verified against the installed matcher after the loader's trailing-`/**` stripping. `motion-standard.md` [26,649 B] to `src/index.css`, `src/components/ui/**`, `src/lib/nativeHaptics.js`, `src/components/PullToRefresh.jsx` **[path corrected 2026-07-26 — the roadmap said `src/components/tech/PullToRefresh.jsx`, which matches no tracked file; caught by `scripts/agents/verify-rule-globs.mjs`]** — **deliberately NOT `src/pages/**`**, which would reload 26.6 KB on nearly every UI session and forfeit the whole win; the standard's own section 1 forbids bespoke keyframes in a page, so real motion work touches `index.css` or a shared primitive, and a stray page-level transition is caught by `design-consistency-checker` section 9 and `review-animations` at close-out. `page-lifecycle.md` [5,245] to `src/pages/**`, `src/components/**`, `src/hooks/**`, `src/lib/stableDb.js`. `perf-budget.md` [3,169] to `package.json`, `vite.config.js`, `src/index.css`, `src/main.jsx`, `src/App.jsx`, `src/lib/mediaCompress.js`, `src/hooks/**`, `.github/workflows/ci.yml`. `documentation-standard.md` [7,182] to `supabase/migrations/**`, `supabase/migrations-staged/**`, `supabase/rollbacks/**`, `.claude/rules/**` — **gated on the L0 depth-map row for the JS/JSX header template existing first** (challenge finding P-11). `tech-v2-wave-ownership.md` [11,324], `app-store-readiness-wave-ownership.md` [3,107], `ux-alignment-wave-ownership.md` [6,565], `settings-overhaul-wave-ownership.md` [9,886], `db-foundation-wave-ownership.md` [8,995] to their own surfaces as enumerated in the manifest DRAFT.
 
 **Deliberately NOT:** no body text edited. No ownership matrix touched. No mixed-content file converted (that is P9). No renumbering.
-**Risk tier:** AMBER — these ten carry craft, behaviour and initiative-bookkeeping law and **zero** money, consent, authorization or shared-database content, so scoping them cannot leave a safety non-negotiable unenforced. The glob linter plus the per-file flip check reduce the residual to a detected-and-reverted failure rather than an undetected one. Both evictions are gated on ledger #10.
+> ### ⛔ BLOCKING CORRECTION 2026-07-26 — the "zero safety content" premise is FALSE for two files
+>
+> The risk tier below rests on these files carrying **zero** shared-database or authorization law.
+> Two of them do, verified by reading the files rather than their titles. Scoped rules are **dropped
+> at `/compact`**, so scoping either one silently removes live safety law mid-task.
+>
+> **`db-foundation-wave-ownership.md`** — `:12` "apply-window discipline of `database-standard.md` §5
+> on the one shared Supabase"; `:74-75` "no phase adds an `anon` grant without an allowlist entry +
+> `-- public: <reason>` comment"; `:81` "P3 and P4 must not have overlapping apply windows"; `:96-97`
+> the `ALTER DEFAULT PRIVILEGES ... REVOKE ... FROM anon` backstop; plus a RED-tier owner gate on
+> REVOKE/DROP/data-UPDATE. This is `database-standard.md`-class content and belongs in the
+> permanently-unscoped set with it, or must go through P9's split-then-scope discipline.
+>
+> **`app-store-readiness-wave-ownership.md`** — `§3:35-38` "each RLS-safe, least-privilege
+> (`authenticated, service_role`, **never `anon`**), with a stated rollback per
+> `database-standard.md` §6. No `ALTER`/`DROP`/rename of a live table." **This one is worse than it
+> looks:** its §2 surfaces are `ios/**`, `functions/api/send-push.js` and
+> `src/pages/settings/MyAccount.jsx` — **not** `supabase/migrations/**`. Scoping it "to its own
+> surfaces" would unload the never-`anon` and rollback rule at exactly the moment someone opens the
+> `device_tokens` policy migration it governs.
+>
+> **Owner adjudication required** before P8 runs: either drop these two from the conversion set
+> (9 → 7), or route them through P9. Not decided here — recording the evidence, not the choice.
+> The remaining seven were not re-audited to this depth; assume the premise is unverified for them
+> too until someone reads each file's body.
+
+**Risk tier:** AMBER — ~~these ten carry craft, behaviour and initiative-bookkeeping law and **zero**
+money, consent, authorization or shared-database content~~ **(refuted above for at least two files)**, so scoping them cannot leave a safety non-negotiable unenforced. The glob linter plus the per-file flip check reduce the residual to a detected-and-reverted failure rather than an undetected one. Both evictions are gated on ledger #10.
 **Size:** L.
 **Rollback:** per-file and instant — delete the `paths:` block and the rule is unconditional again on the next `/clear` or restart, because the loader's rule is strictly binary and there is no residual state. A softer mid-investigation option, without editing the file: set `paths: ["**"]`, which the loader treats as unconditional. `git revert` also restores both evicted files. **A restart is required before any rollback is reported as effective.**
 
