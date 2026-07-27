@@ -60,12 +60,33 @@ describe('shared account-deletion access', () => {
 });
 
 describe('legal and support discovery', () => {
-  it('links all three public destinations before login and from field Settings', () => {
-    for (const source of [login, techSettings]) {
-      expect(source).toContain("['/privacy', 'Privacy']");
-      expect(source).toContain("['/terms', 'Terms']");
-      expect(source).toContain("['/support', 'Support']");
-      expect(source).toContain('aria-label="Legal and support"');
-    }
+  // Both surfaces must expose all three destinations — that requirement is
+  // unchanged. What differs is WHICH copy each one links, and that is the point:
+  // Login runs pre-auth where no shell exists, so it links the bare public pages.
+  // Field Settings runs inside the PWA/Capacitor container, which has no browser
+  // back button — linking the bare pages there rendered a page with no nav and
+  // stranded the tech until they force-quit. It links the /tech/legal/* copies,
+  // same components inside the field shell.
+  it('links all three public destinations before login', () => {
+    expect(login).toContain("['/privacy', 'Privacy']");
+    expect(login).toContain("['/terms', 'Terms']");
+    expect(login).toContain("['/support', 'Support']");
+    expect(login).toContain('aria-label="Legal and support"');
+  });
+
+  it('links all three from field Settings, inside the field shell', () => {
+    expect(techSettings).toContain("['/tech/legal/privacy', 'Privacy']");
+    expect(techSettings).toContain("['/tech/legal/terms', 'Terms']");
+    expect(techSettings).toContain("['/tech/legal/support', 'Support']");
+    expect(techSettings).toContain('aria-label="Legal and support"');
+  });
+
+  it('never sends the field app to a shell-less legal page', () => {
+    // The regression this replaced: tapping Privacy in field Settings left the
+    // tech shell entirely. Anchoring on the array-entry form keeps this honest
+    // without matching the /tech/legal/* paths above.
+    expect(techSettings).not.toContain("['/privacy',");
+    expect(techSettings).not.toContain("['/terms',");
+    expect(techSettings).not.toContain("['/support',");
   });
 });

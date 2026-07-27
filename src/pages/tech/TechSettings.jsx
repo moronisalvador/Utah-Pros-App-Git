@@ -68,10 +68,15 @@ export default function TechSettings() {
               aria-label="Legal and support"
               style={{ alignItems: 'stretch' }}
             >
+              {/* /tech/legal/* — the SAME components as the office /privacy,
+                  /terms and /support routes, rendered inside the field shell.
+                  Never link the bare office paths from here: they render with no
+                  nav, and the PWA/Capacitor container has no browser back button,
+                  so a tech who tapped one had to force-quit to get back. */}
               {[
-                ['/privacy', 'Privacy'],
-                ['/terms', 'Terms'],
-                ['/support', 'Support'],
+                ['/tech/legal/privacy', 'Privacy'],
+                ['/tech/legal/terms', 'Terms'],
+                ['/tech/legal/support', 'Support'],
               ].map(([to, label]) => (
                 <Link
                   key={to}

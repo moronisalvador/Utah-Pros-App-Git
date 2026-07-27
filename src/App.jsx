@@ -324,6 +324,15 @@ function TechRoutes() {
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
       <Route path="tech/settings" element={<ErrorBoundary section="TechSettings"><TechSettings /></ErrorBoundary>} />
       <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
+      {/* Legal/support INSIDE the field shell. Apple requires these reachable in-app,
+          and TechSettings links them. The office copies at /privacy, /terms and
+          /support render with no shell at all — correct pre-login, but a dead end
+          from the PWA/Capacitor container, where there is no browser back button:
+          a tech who tapped Privacy had to force-quit. Same components, tech chrome,
+          bottom nav intact. The office routes stay for the logged-out case. */}
+      <Route path="tech/legal/privacy" element={<ErrorBoundary section="PrivacyPolicy"><PrivacyPolicy /></ErrorBoundary>} />
+      <Route path="tech/legal/terms" element={<ErrorBoundary section="TermsOfService"><TermsOfService /></ErrorBoundary>} />
+      <Route path="tech/legal/support" element={<ErrorBoundary section="Support"><Support /></ErrorBoundary>} />
       <Route path="tech/tools/oop-pricing" element={
         <FeatureRoute flag="tool:oop_pricing">
           <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
