@@ -143,3 +143,34 @@ refused to accept static analysis in a migration comment as satisfying that gate
   names. `email_suppressions` has zero browser references; its only writers are `email_unsubscribe`
   and `record_email_suppression`, both definers invoked through service-role Workers.
 - **Still deferred:** every other table in the bucket above. This amendment releases exactly two.
+
+### AMENDED 2026-07-27 (owner-directed) — `contacts`, `conversations`, `conversation_participants` released
+
+**Released from this bucket** by `20260727143000_anon_closure_tranche_b.sql`, again under the §8
+"OR ship a committed backward-compat test" clause. Recorded here so the bucket stays truthful.
+
+- **Why now.** All three carried `USING (true)` policies for `anon` plus table privileges, and the
+  anon key ships in the browser bundle. So an unauthenticated caller could read every contact we
+  have — name, phone, email, billing address — edit any of them, and read every conversation and its
+  participants. Schedule-A and omni-inbox both remain unstarted with no merge date, and waiting meant
+  leaving the entire customer database readable from the internet indefinitely. The owner directed
+  closing the open items on 2026-07-27.
+- **Why no in-flight caller breaks.** Verified against the live catalog and the repository, not
+  inferred: the `authenticated` policies already cover every real caller and are untouched
+  (`contacts_authenticated_{select,insert,update,delete}`, `allow_authenticated_conversations`,
+  `allow_authenticated_conversation_participants`). All 21 direct browser reads of these tables sit
+  on authenticated surfaces. The only logged-out surface, `SignPage`, reads none of the three — it
+  calls `get_sign_request_by_token` / `get_sign_document_templates` and POSTs `/api/submit-esign`.
+  Neither `AuthContext` nor `Login` touches them, so pre-login bootstrap is unaffected. Workers use
+  the service-role client, which the revoke never names. Realtime runs on the logged-in user's JWT as
+  `authenticated` — precedent: `messages` anon access was closed the same way (sms-experience F-red)
+  and realtime kept working.
+- **The committed tests** the clause requires: `supabase/tests/anon_closure_tranche_b.test.js`
+  (behavioural, opt-in `RUN_TRANCHE_B=1`, db lane) and
+  `tests/qa/unit/anon-closure-tranche-b.test.js` (CI-visible source contract — the db lane still
+  does not run in CI, see backlog 6.1, and `DARK_BASELINE` was raised 76 → 77 to acknowledge it).
+- **Still deferred:** `messages`/`email_*` beyond what F-red already closed, `crm_automations` /
+  `crm_automation_runs` / `jobs` / `job_phase_history` (5-Ops), `appointments` / `claims` (schedule A).
+  This amendment releases exactly three.
+- **Not applied by the authoring session.** The migration and rollback are authored and reviewed;
+  applying to the shared project is a separate owner-authorized window per `database-standard.md` §0.

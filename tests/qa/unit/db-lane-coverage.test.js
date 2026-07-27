@@ -10,7 +10,7 @@
  *   Every test file under supabase/tests/ belongs to the `db` lane. That lane
  *   deliberately refuses to run unless it is pointed at an isolated database,
  *   and no such database exists yet — so `npm test` skips all of them. On
- *   2026-07-26 that was 76 files, including the isolated signed Work
+ *   2026-07-27 that was 77 files, including the isolated signed Work
  *   Authorization consent regression guard and other guards written
  *   specifically to be durable. Nobody noticed for weeks, because a whole lane
  *   not running looks exactly like everything passing.
@@ -49,7 +49,12 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
  * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
  * a guard that will not protect anything in CI until the db lane has a target.
  */
-const DARK_BASELINE = 76;
+const DARK_BASELINE = 77;
+// 2026-07-27: 76 -> 77, adding anon_closure_tranche_b.test.js. Acknowledged
+// deliberately, per the rule above: that file proves the customer-list closure
+// actually took effect, and it will NOT protect anything in CI until the db lane
+// has a target. Its CI-visible counterpart is
+// tests/qa/unit/anon-closure-tranche-b.test.js, which proves intent only.
 
 const dbLaneFiles = () =>
   (existsSync(DB_TESTS) ? readdirSync(DB_TESTS) : []).filter((f) => f.endsWith('.test.js'));
