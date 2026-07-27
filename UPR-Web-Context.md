@@ -8819,6 +8819,64 @@ release. See the amendment in `.claude/rules/tech-mobile-ux.md`; `docs/mobile-pr
 C1 updated. The four offline save handlers (`TechAppointment` readings/equipment, `HubTools`
 likewise) **throw** rather than return — both entry sheets treat a resolved promise as success, so a
 bare return fired "Reading saved", closed the sheet, and discarded the tech's typed reading.
+Verified live on dev 2026-07-27: offline save produced one error toast, the sheet stayed open, and
+the typed values (42.7 / 61 / 70) survived intact.
+
+### Deploy-cache poisoning and the boot guard (2026-07-27)
+
+**Build output moved from `assets/` to `app-assets/`** (`vite.config.js` `build.assetsDir`).
+`public/_headers` follows it. This was a ONE-TIME un-poisoning, not routine practice.
+
+`dev.utahpros.app` went fully blank — desktop and installed iPhone PWA. Not a code defect. Two
+config lines combined: `public/_redirects`' `/* /index.html 200` answers a MISSING hashed asset with
+the app shell at **HTTP 200**, and `public/_headers`' asset rule stamps it `immutable` for a year.
+During a deployment swap an edge node requested a chunk that had not propagated, and both the
+Cloudflare edge and end-user devices cached HTML under a `.js` URL. A browser refuses `text/html`
+for `<script type="module">`, so the entry graph never instantiates: `main.jsx` never runs, React
+never attaches, and **nothing throws**. Blank page, empty console.
+
+Three things future work must not undo:
+
+- **Prevention is NOT available at the Pages layer.** Two `_redirects` 404 variants were tried and
+  BOTH were ignored on a real preview deploy. The hazard and both failed attempts are documented in
+  `public/_redirects`; do not re-add an inert rule believing it protects anything.
+- **The boot guard in `index.html` must stay a CLASSIC script.** `vite build` hoists the module tag
+  into `<head>`, so correctness rests on module-defer semantics. As `type="module"` it would fail for
+  the same reason the app does and become decorative.
+- **`/reset` is inert on iOS.** It relies on `Clear-Site-Data`, which **Safari does not implement** —
+  proven on a real iPhone. Every field technician is on iOS, so the guard repairs entries with
+  `fetch(url, {cache:'reload'})` instead. Never treat `/reset` as the field app's recovery path.
+
+**Post-deploy check:** `npm run smoke:deploy -- <url>` (`scripts/smoke-deploy.mjs`). Asserts every
+boot asset really is JS/CSS and that `index.html` is `no-store`. Run it AFTER the alias swaps — the
+Cloudflare check went green ~9 minutes early, measured twice. It caught the race recurring live.
+
+### Office appointment route (2026-07-27)
+
+**New route `/schedule/appointment/:apptId`** renders the Schedule board and opens the appointment's
+existing `EditAppointmentModal` from the URL. Until it existed, `/tech/appointment/:id` was the ONLY
+appointment screen in the app, so `notify.js` pointed every appointment notification at it and
+desktop users clicking the bell landed in the mobile UI; `ClaimPage.jsx:706` already linked here and
+simply 404'd. `notify.js` now stores the office path. `techShellRoutes.js` gained `techToOfficePath()`
+so `linkForCurrentShell` translates BOTH directions — that is what fixes the notification rows that
+already store a field path, with no data backfill.
+
+### Applied to the shared database (2026-07-27)
+
+Ledger versions are assigned AT APPLY TIME, not from the filename:
+
+- `mobile_employee_identity_authority` → **`20260727154506`**
+- `anon_closure_tranche_b` → applied. Dropped 8 always-true `anon` policies and revoked table
+  privileges on `contacts` / `conversations` / `conversation_participants`. Verified after: anon
+  policies 8→0, anon grants→0, all 6 `authenticated` policies intact, conversations still loading.
+- `notification_role_defaults_rpc_only` → applied. Table is now RPC-only.
+
+**`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
+`20260726183409` and `20260726260000` add POLICIES whose predicates read it, and a policy predicate
+evaluates with the CALLING role's privileges — ungranted, every authenticated SELECT on those tables
+fails. Both siblings preflight that the column EXISTS, never that it is GRANTED. Bounded by the
+self-identity policy: a caller reads only their own row. The structural fix (route those policies
+through a `SECURITY DEFINER` helper and drop the carve-out) is a roadmap item.
 
 The initial production release intentionally has **zero automatic offline command admission or
 replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or
