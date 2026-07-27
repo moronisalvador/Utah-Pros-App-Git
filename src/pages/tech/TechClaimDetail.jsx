@@ -555,7 +555,7 @@ export default function TechClaimDetail() {
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
-      <ActionBar phone={phone} address={address} />
+      <ActionBar phone={phone} address={address} contactId={contact?.id} />
 
       <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
       {nowNext && (

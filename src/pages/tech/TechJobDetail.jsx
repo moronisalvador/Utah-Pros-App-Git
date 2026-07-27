@@ -375,6 +375,7 @@ export default function TechJobDetail() {
       <ActionBar
         phone={phone}
         address={address}
+        contactId={contact?.id}
         onDocuments={() => navigate(`/tech/jobs/${jobId}/documents`)}
       />
 
