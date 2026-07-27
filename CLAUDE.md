@@ -12,9 +12,17 @@
 > 2026-07-26; derive it with `git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). This file adds
 > the **Claude-only** routing on top.
 >
-> The `## ⚠️ NON-NEGOTIABLE RULES` block below is a **deliberate duplicate** kept while the import is
-> being proven. It is removed only after a post-compact canary in a fresh session shows the import
-> survives compaction. Until then the rules are enforced twice, never zero times.
+> **The duplicated `## ⚠️ NON-NEGOTIABLE RULES` block was removed on 2026-07-26**, once the import
+> was proven durable rather than assumed. The `InstructionsLoaded` hook recorded `AGENTS.md`
+> reloading with `reason=include, parent=CLAUDE.md` across a real `/compact`, alongside all 23
+> unscoped `.claude/rules/*.md` — the loader's own record, not a session reporting what it can see.
+> Evidence: [`docs/agent-alignment-l2-evidence.md`](docs/agent-alignment-l2-evidence.md). Re-check
+> any time with `node scripts/check-l0-bridge.mjs` (14 assertions) and
+> `node scripts/instructions-loaded-report.mjs --assert-core`.
+>
+> **If that bridge ever breaks, this file carries no rules at all.** That is the trade P3 made: one
+> copy that is verified on every run, instead of two copies that drift. The guard is the safety net —
+> run it before touching either file.
 
 ### Claude-only mechanisms (silent divergences from Codex if unstated)
 
@@ -39,91 +47,13 @@
 - On win32 Claude Code **cannot sandbox** (WSL2 required, fails open by default) while Codex sandboxes
   natively. Never list sandboxing as a Claude-side control on this platform.
 
-## ⚠️ NON-NEGOTIABLE RULES
-
-1. **Read files from disk before editing.** Never assume file contents from memory.
-2. **No `alert()`/`confirm()`** (eslint-enforced, error-level). Feedback goes through **`src/lib/toast.js`** (`toast`/`ok`/`err`) — the ONLY toast entry point; never dispatch `upr:toast` raw or copy a local `errToast` (eslint-`warn`, ratcheting to error). Destructive actions use inline two-click confirm, never a modal. Patterns: `UPR-Design-System.md`; states law: [`.claude/rules/loading-error-states.md`](.claude/rules/loading-error-states.md).
-3. **`const { db } = useAuth()`** in components — never import `db` directly from `@/lib/supabase` (that also exports an unauthenticated singleton for bootstrapping only).
-4. **Routine work commits directly to `dev`; never push `main` directly.** Default flow: verify locally (build+test) → commit straight to `dev` → it auto-deploys to dev.utahpros.app. **No feature branch, no PR for routine changes** — that step was retired 2026-07-02 (owner decision: it exploded GitHub API usage and added a manual merge click for no benefit on a solo-owned repo). Production still goes via a reviewed **`dev → main` PR** — that's the one place a PR earns its keep (CI build+test gate before prod). **Exception:** the CRM parallel wave keeps feature-branch → PR-into-`dev` (see [CRM Phase Workflow](#crm-phase-workflow)) — concurrent sessions genuinely need the isolation + reviewer gauntlet. See [Deployment](#deployment--release-workflow).
-5. **Mobile CSS: `@media (max-width: 768px)` only.** Never touch desktop layout/colors/spacing unintentionally. `dvh` and `env(safe-area-inset-bottom)` are safe globally.
-6. **Commit after every 2–3 files.** Small commits, clear messages.
-7. **New tables/columns → write a migration in `supabase/migrations/` first** (derive the current count; real schema-as-code), apply via Supabase MCP `apply_migration` only when explicitly authorized, then query through the narrowest appropriate table/RPC contract. **Check real column names** via `information_schema.columns` first — tables routinely have 20-60+ columns, never assume from a short doc list. **Grant/policy posture is least-privilege by default** — `authenticated` proves identity, not permission; use role/assignment/owner/org predicates and grant each RPC only to intended callers. `anon` only via the named temporary public allowlist. Full standard: [`.claude/rules/database-standard.md`](.claude/rules/database-standard.md).
-8. **Don't break existing pages.** Every page is live and in use. Read the file first if unsure.
-9. **Update `UPR-Web-Context.md`** after any session touching tables/RPCs/components/pages/workers, `*-TASK.md` or not. It's the source of truth this file deliberately does not duplicate (hand-copied schema lists are exactly how this file went stale before).
-10. **`viewport-fit=cover` required in `index.html`** — without it, `env(safe-area-inset-bottom)` evaluates to `0px` everywhere. Never remove.
-11. **`.tech-nav` bottom padding:** `padding-bottom: max(12px, env(safe-area-inset-bottom, 12px))`.
-12. **New/substantially-edited files get a Documentation Standard header.** Template: `.claude/rules/documentation-standard.md`. Guideline, not hook-enforced.
-
 ## How we work
 
-1. **Understand before acting.** Read the real file (Rule 1); reuse existing patterns ([Patterns](#patterns-to-follow)) over inventing.
-2. **Verify before shipping.** Run `npm run lint`, `npm run build`, `npm test` (vitest). CI runs **build+test on PRs to `main` AND `dev`** (staging no longer ships unchecked); lint is non-blocking (pre-existing baseline) but don't add new ones — the changed-files ratchet surfaces them. Any change touching `src/pages`|`src/components` runs the **3-agent gauntlet** (`upr-pattern-checker` + `design-consistency-checker` + `page-behavior-checker`) and the [close-out standard](.claude/rules/close-out-standard.md) — including the **minimize/resume test** and a 390px mobile check. Behavior law: [`page-lifecycle.md`](.claude/rules/page-lifecycle.md); perf budget: [`perf-budget.md`](.claude/rules/perf-budget.md). Report the real result — never claim "done" unverified.
-3. **Ship the sanctioned way (Rule 4).** Routine work: commit direct to `dev`, it auto-deploys to staging — no branch, no PR. Production: reviewed `dev → main` PR → merge commit (not squash) → fast-forward `dev`. CRM wave: feature branch → PR into `dev`. Wait for the Cloudflare Pages check on any prod release.
-4. **Report honestly.** State outcomes and discrepancies out loud. Ask when a request is genuinely ambiguous.
-5. **Keep context lean.** Delegate broad searches to subagents — file/pattern/caller *finding* goes to the cheap read-only **`upr-scout`** agent (Haiku); judgment work (review, money, consent, migrations, architecture) stays on the sonnet/opus checkers and reviewers. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components). `/clear` between unrelated tasks; `/btw` for side questions that shouldn't enter history. At a completed-task boundary, if the next request is independent and accumulated unrelated context would reduce reliability, proactively recommend `/clear` or a new conversation and provide a concise handoff; never interrupt in-flight work or switch based on length alone.
+Understanding before acting, verification before shipping, the sanctioned ship path and honest
+reporting all live in the shared core (`AGENTS.md` §Starting a task, §Verify before shipping, §17).
+What remains here is Claude-only.
 
-## Repository knowledge
-
-Before making architectural or cross-cutting changes, read:
-
-- `docs/architecture.md`
-- `docs/database-schema.md`
-- `docs/auth-and-authorization.md`
-- `docs/business-rules.md`
-- `docs/integrations.md`
-- `docs/testing-and-deployment.md`
-
-When a change alters architecture, schema, authorization, business rules, integrations, deployment,
-or testing conventions, update the corresponding document in the same commit.
-
-Do not infer production database behavior solely from TypeScript/generated types or client models.
-Inspect migrations, SQL functions, triggers, policies, grants, callers, and live catalog state when
-access is available.
-
-For database/auth/public-form/signing/Storage work, read the last broad live evidence at
-`docs/audit/2026-07/evidence/live-supabase.md` plus later object-specific evidence addenda. The
-authenticated `exec_read_sql` exposure in that snapshot was contained on 2026-07-23; broad anon
-policies and other urgent exceptions remain findings to remove, never patterns to copy.
-
-Do not duplicate business rules across UI, API, Cloudflare Pages Functions, and SQL without
-documenting the enforcement boundary in `docs/business-rules.md`.
-
-Dated audit evidence belongs under `docs/audit/<year-month>/`; it is not current project law.
-
-### Task-specific foundation reading
-
-After the canonical documents above, read the smallest relevant foundation set before planning or
-editing. Do not rely on an older roadmap, dispatch prompt or audit snapshot without reconciling it
-against the current source, Git history and live external state where applicable.
-
-| Work in scope | Required additional reading |
-|---|---|
-| Any page or shared component | `UPR-Design-System.md`, `.claude/rules/page-lifecycle.md`, `.claude/rules/loading-error-states.md`, `.claude/rules/perf-budget.md`, `.claude/rules/close-out-standard.md` |
-| Motion, transitions or gestures | `.claude/rules/motion-standard.md` plus the UI foundation set above |
-| Field-tech/mobile UI | `.claude/rules/tech-mobile-ux.md` plus the UI foundation set above |
-| Database, RLS, RPC, Auth or Storage | `.claude/rules/database-standard.md`, `docs/database-schema.md`, `docs/auth-and-authorization.md`, and the latest live Supabase evidence |
-| Worker or external integration | `.claude/rules/workers-standard.md`, `docs/integrations.md`, `docs/business-rules.md`, and the provider-specific handoff/reference |
-| Billing, QBO or Stripe | `BILLING-CONTEXT.md`, `docs/business-rules.md`, `docs/integrations.md`, and the relevant current status/handoff |
-| Testing, CI, deployment or release | `docs/testing-and-deployment.md` and `.claude/rules/close-out-standard.md` |
-| Active roadmap phase or parallel wave | The initiative's current `docs/*-roadmap.md`, dispatch block and active ownership manifest; verify its status before treating a checkbox as fact |
-| Security/reliability remediation | The latest `docs/audit/<year-month>/executive-summary.md`, findings, remediation backlog and evidence addenda; promote lasting decisions into canonical docs |
-| Agent instruction files, hooks, skills, subagents, permissions or anything cross-tool (Claude Code ⇄ Codex) | [`docs/agent-runtime-reference.md`](docs/agent-runtime-reference.md) — how each tool actually loads instructions, which gates really block versus only advise, and the fail-open modes; plus `docs/tooling-governance.md` and the current `docs/handoff/agent-alignment-session-*-handoff.md` |
-
-Before starting a new initiative, inspect existing roadmaps, feature flags, stubs and ownership
-manifests for overlapping or unfinished work. Prefer completing, explicitly blocking, cancelling or
-retiring an existing path over creating a parallel implementation. A foundation is not complete when
-only tokens, primitives, routes, schema or stubs exist; adoption, verification, rollout and legacy
-cleanup must be accounted for.
-
-## Compact instructions
-
-When compacting, always preserve: the current objective + acceptance criteria; owner decisions (and rejected alternatives); the current branch and the exact list of modified files; **which migrations were already applied to the shared Supabase** (forgetting or re-applying one hits production); tests/builds run and their REAL results; unresolved reviewer-agent findings; and the next action. Discard: raw passing-test output, repeated doc excerpts, abandoned searches, superseded approaches, and large code excerpts that remain on disk.
-
-## Stack
-
-React 19 + Vite 8, all JSX, no TypeScript · React Router **v7** · Supabase Postgres + PostgREST — **no Supabase JS SDK for data** (`supabase-js` used only in `src/lib/realtime.js`) · Cloudflare Pages Functions (`functions/api/*.js`, no `wrangler.toml` — dashboard-configured; local: `wrangler pages dev dist`) · CSS custom properties only, no Tailwind/CSS-modules · Capacitor 8 iOS app (`ios/`, see `UPR-Web-Context.md`) · Also: `pdf-lib` (PDF gen), `idb` (tech offline storage), `react-grid-layout` (dashboard widgets), `@googlemaps/js-api-loader` (address autocomplete, optional — falls back to plain text without `VITE_GOOGLE_MAPS_API_KEY`).
-
-**Env vars:** see `.env.example` (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_API_KEY`). Supabase project ref: `glsmljpabrwonfiltiqm`.
+**Keep context lean.** Delegate broad searches to subagents — file/pattern/caller *finding* goes to the cheap read-only **`upr-scout`** agent (Haiku); judgment work (review, money, consent, migrations, architecture) stays on the sonnet/opus checkers and reviewers. Right doc for the job: `BILLING-CONTEXT.md` (QBO/invoicing), `UPR-Web-Context.md` (schema/RPCs/iOS), `UPR-Design-System.md` (CSS/components). `/clear` between unrelated tasks; `/btw` for side questions that shouldn't enter history. At a completed-task boundary, if the next request is independent and accumulated unrelated context would reduce reliability, proactively recommend `/clear` or a new conversation and provide a concise handoff; never interrupt in-flight work or switch based on length alone.
 
 ## DB Client API
 
@@ -253,17 +183,19 @@ Installed skills auto-load by description when a task matches; you rarely invoke
 
 **Precedence when guidance conflicts:** (1) CLAUDE.md non-negotiables + `.claude/rules/` standards are **law** — always win; (2) UPR-native skills drive the flow; (3) vendor skills advise within their lane only. A vendor skill **never** overrides a standard: no `framer-motion`/`gsap` (`perf-budget.md` — motion is CSS tokens + View Transitions, see `motion-standard.md §8`), no Next.js APIs, no loosening `database-standard.md`. The **impeccable PostToolUse hook** is the one *deterministic* layer — it runs on every UI edit; fix its findings or consciously waive them (never silence a real one).
 
-## What NOT to Touch
-
-`src/lib/supabase.js`, `src/lib/realtime.js` — stable. `src/contexts/AuthContext.jsx`, `src/components/Layout.jsx` — only if a feature needs it. `src/App.jsx` — only add routes. Any existing page — don't touch unless instructed. `main` — never push directly (Rule 4).
-
 ## Deployment & Release Workflow
 
-**Branches:** routine work commits **directly to `dev`** (staging, dev.utahpros.app, auto-deploys on push, independent — not force-synced from `main`); production is a reviewed **PR `dev → main`** (utahpros.app; Capacitor iOS also loads `/tech/*` from this build). Feature branches + PRs-into-`dev` are reserved for the CRM parallel wave (concurrent sessions). **Retired 2026-07-02:** per-change feature-branch+PR for routine work — it burned GitHub API quota (mostly the PR-activity *watch/babysit* polling + the per-PR Cloudflare/claude[bot] bots, not the merge itself) and added a manual click. Sessions should **not** subscribe to / babysit PRs unless explicitly asked, and should **not** open a PR for routine `dev` work.
+Carried in full by Rule 4 and `AGENTS.md` §13: routine work commits directly to `dev`
+(auto-deploys to dev.utahpros.app); production goes via a reviewed `dev → main` PR; the CRM
+parallel wave keeps feature-branch → PR-into-`dev`; Cloudflare keeps separate Production and
+Preview variable sets, so a new secret needs both plus a redeploy; and one shared Supabase sits
+behind both branches, which makes a migration a production change the instant it applies.
 
-**Env vars:** Cloudflare keeps separate Production (`main`) / Preview (`dev`+branches) sets — new secrets need both + a redeploy.
+> **This heading is load-bearing.** Rule 4's `#deployment--release-workflow` anchor resolves here
+> and nowhere else, so the section stays even though its content now lives in the core.
+> `scripts/check-l0-bridge.mjs` fails if it is removed.
 
-**One shared Supabase across `dev`/`main` (critical):** migrations/data changes hit both immediately—sequence so consuming code deploys first. Apply only migration source committed to a reviewed commit reachable from the designated release branch; an owner-authorized emergency exception records the exact commit/reason and is reconciled immediately. Runbook: `.claude/rules/scope-sheet-rollback.md`.
+Incident runbook: `.claude/rules/scope-sheet-rollback.md`.
 
 ## Task File Protocol
 
