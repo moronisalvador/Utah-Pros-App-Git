@@ -32,5 +32,8 @@ playwright/.auth/
 .claude/worktrees/
 # Machine-local Claude permissions must remain untracked after the CAP-SEC-001 owner cleanup.
 .claude/settings.local.json
+# Per-session instruction-load evidence. Machine-local and append-only; the
+# report is derived, never the log itself.
+.claude/logs/
 CLEANUP-TEST-DATA.sql
 .env
