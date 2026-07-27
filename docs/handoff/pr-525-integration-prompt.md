@@ -272,6 +272,16 @@ point of naming it here is that it does not get forgotten between sessions.
 
 These cost the previous session real time. None is a bug; all are how this repo works.
 
+- **Check first whether you have database tools at all.** There is no project-scoped MCP config in
+  this repo (`.mcp.json` is absent; nothing tracked defines `mcpServers`), so the Supabase and UPR MCP
+  servers are configured per **account**, not per project. On a different Claude account they may
+  simply not exist. Confirm before planning around them: if `upr_rpc` / `exec_read_sql` /
+  `apply_migration` are unavailable, you can still do all of the CODE work — merge, the three conflict
+  resolutions, the Task 2 blocker fix, build/test/lint, marking the PR ready — but you **cannot**
+  verify the live catalog or apply anything. In that case do the code work, and hand the live steps
+  (Task 0's verification and every apply) back to the owner explicitly rather than assuming or
+  skipping them silently. `gh` is authenticated at machine level, so GitHub access carries over
+  regardless.
 - **Free-form SQL is denied by policy.** `.claude/settings.json` denies `execute_sql`,
   `exec_read_sql` and `upr_sql`, and deny beats the local allow-list. For read-only catalog work use
   `upr_rpc` with `fn: "exec_read_sql"` and the parameter name **`p_query`** (not `query`). The MCP
