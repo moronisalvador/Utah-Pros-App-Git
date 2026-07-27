@@ -127,15 +127,64 @@ export function reducesToUnconditional(entries) {
   return survivors.length > 0 && survivors.every((s) => s === '**')
 }
 
+let TRACKED = null
+function tracked() {
+  if (TRACKED) return TRACKED
+  const out = execFileSync('git', ['-C', REPO, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+  TRACKED = out.split('\0').filter(Boolean)
+  return TRACKED
+}
+
+/** Glob a single path SEGMENT (no `/`), gitignore-style. */
+function segmentRe(pattern) {
+  let re = ''
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]
+    if (c === '*') re += '[^/]*'
+    else if (c === '?') re += '[^/]'
+    else if (c === '[') { const end = pattern.indexOf(']', i); if (end === -1) { re += '\\[' } else { re += pattern.slice(i, end + 1); i = end } }
+    else re += c.replace(/[.+^${}()|\\]/g, '\\$&')
+  }
+  return new RegExp(`^${re}$`)
+}
+
+/**
+ * Match one already-brace-expanded pattern against the tracked tree.
+ *
+ * Two dialects, because they genuinely differ and the difference bit us:
+ *   - A pattern containing `/` is ROOT-ANCHORED in both gitignore and git
+ *     pathspec, so git's own matcher is used.
+ *   - A pattern with NO `/` is UNANCHORED under gitignore semantics — it
+ *     matches that basename at ANY depth. git pathspec anchors it to the root
+ *     and returns fewer files. Measured: `package.json` matches 2 tracked files
+ *     under the loader's semantics, but `git ls-files -- ':(glob)package.json'`
+ *     returns 1. Using git for this case made the linter report an over-matching
+ *     glob as healthy — the precise defect it exists to catch.
+ *   - A LEADING `/` is gitignore's explicit root anchor. Strip it and use git;
+ *     note that passing it to git verbatim is a fatal error, not a no-match.
+ */
 function gitMatches(pattern) {
   try {
-    const out = execFileSync('git', ['-C', REPO, 'ls-files', '-z', '--', `:(glob)${pattern}`], {
+    if (!pattern.includes('/')) {
+      const re = segmentRe(pattern)
+      return tracked().filter((f) => re.test(f.slice(f.lastIndexOf('/') + 1)))
+    }
+    const p = pattern.startsWith('/') ? pattern.slice(1) : pattern
+    if (!p) return []
+    const out = execFileSync('git', ['-C', REPO, 'ls-files', '-z', '--', `:(glob)${p}`], {
       encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
     })
     return out.split('\0').filter(Boolean)
   } catch {
     return []
   }
+}
+
+/** True when a slash-free pattern matches at more than one depth. */
+function isUnanchoredOvermatch(pattern) {
+  if (pattern.includes('/')) return false
+  const m = gitMatches(pattern)
+  return m.length > 1 || (m.length === 1 && m[0].includes('/'))
 }
 
 /** Union of matches across every brace expansion, capped for sanity. */
@@ -229,6 +278,16 @@ function selfTest() {
   checks.push({ name: 'git matcher resolves and finds docs/**/*.md', ok: docsMd.length > 0, actual: `${docsMd.length} files`, expected: '>0' })
   const nonsense = gitMatches('this/path/does/not/exist/**')
   checks.push({ name: 'matcher rejects a nonexistent path', ok: nonsense.length === 0, actual: `${nonsense.length} files`, expected: '0' })
+  // Regression: the two dialects. A slash-free pattern is UNANCHORED under
+  // gitignore semantics; git pathspec anchors it and under-reports. Using git
+  // here let an over-matching glob pass as healthy.
+  const bare = gitMatches('package.json')
+  checks.push({ name: 'slash-free pattern matches at any depth (gitignore, not pathspec)', ok: bare.length >= 2 && bare.includes('upr-mcp/package.json'), actual: bare.join(','), expected: 'includes upr-mcp/package.json' })
+  const anchored = gitMatches('/package.json')
+  checks.push({ name: 'leading / anchors to root (and does not fatal out)', ok: anchored.length === 1 && anchored[0] === 'package.json', actual: anchored.join(','), expected: 'package.json' })
+  checks.push({ name: 'over-match is detected', ok: isUnanchoredOvermatch('package.json') === true, actual: isUnanchoredOvermatch('package.json'), expected: true })
+  checks.push({ name: 'anchored pattern is not flagged', ok: isUnanchoredOvermatch('/package.json') === false, actual: isUnanchoredOvermatch('/package.json'), expected: false })
+  checks.push({ name: 'no fabricated upr-mcp/vite.config.js', ok: gitMatches('vite.config.js').length === 1, actual: gitMatches('vite.config.js').join(','), expected: 'vite.config.js only' })
   // Ties the linter to the empirical result: the disputed shape matches here too.
   const disputed = matchesFor('docs/**/*.{md,txt}')
   checks.push({ name: 'disputed **/*.{md,txt} shape matches (as measured on both builds)', ok: (disputed || []).length > 0, actual: `${(disputed || []).length} files`, expected: '>0' })
@@ -272,6 +331,12 @@ function lint() {
       const m = matchesFor(e)
       if (m && m.length === 0) {
         findings.push({ level: 'error', file: rel, glob: e, msg: 'matches no tracked file — dead glob (typo, or the path moved).' })
+      } else if (isUnanchoredOvermatch(e)) {
+        const hits = gitMatches(e)
+        findings.push({
+          level: 'warn', file: rel, glob: e,
+          msg: `no "/" in this pattern, so gitignore semantics match the basename at ANY depth — ${hits.length} files: ${hits.slice(0, 4).join(', ')}${hits.length > 4 ? ', …' : ''}. Anchor it with a leading "/" if you meant only the repo root.`,
+        })
       }
     }
   }
