@@ -16,8 +16,13 @@
 #
 # A clean 404 is recoverable — the module fails loudly, the boot guard in
 # index.html sees it and bounces through /reset. A poisoned 200 is not.
-/app-assets/* /asset-missing.html 404
-/assets/*     /asset-missing.html 404
+# Destination is EXTENSIONLESS on purpose. Cloudflare Pages auto-normalizes
+# .html URLs with a 308 to the extensionless path, and a destination that
+# itself redirects makes Pages ignore the rule — verified on a preview
+# deployment 2026-07-27, where /asset-missing.html returned 308 and a missing
+# asset still came back as index.html with 200.
+/app-assets/* /asset-missing 404
+/assets/*     /asset-missing 404
 
 # SPA routing. Every non-file path renders the app shell.
 /* /index.html 200

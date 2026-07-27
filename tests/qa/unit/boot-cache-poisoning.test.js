@@ -45,8 +45,8 @@ const viteConfig = read('vite.config.js');
 
 describe('a missing asset must 404, never become a poisoned 200', () => {
   it('routes both asset dirs to a 404 before the SPA catch-all', () => {
-    const live = redirects.indexOf('/app-assets/* /asset-missing.html 404');
-    const legacy = redirects.indexOf('/assets/*     /asset-missing.html 404');
+    const live = redirects.indexOf('/app-assets/* /asset-missing 404');
+    const legacy = redirects.indexOf('/assets/*     /asset-missing 404');
     const catchAll = redirects.indexOf('/* /index.html 200');
     expect(live).toBeGreaterThan(-1);
     expect(legacy).toBeGreaterThan(-1);
