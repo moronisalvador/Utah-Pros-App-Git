@@ -31,8 +31,11 @@
 - **`paths:`-scoped rules and nested `CLAUDE.md` files are dropped at `/compact`** until a matching
   file is re-read. Cheap-at-startup and survives-compaction are mutually exclusive, so a
   non-negotiable must never live in either — it stays unscoped at the root.
-- An **over-braced `paths:` glob is used unexpanded and matches nothing**, so the rule loads *never*,
-  with no error. Prefer several brace-free patterns.
+- **`paths:` brace groups work — until they don't, silently.** Measured 2026-07-26 on 2.1.219: 512
+  expansions load, 1024 do not (the ~1,000-pattern budget; 2.1.85 does not enforce it). Past it the
+  glob is used unexpanded and the rule loads *never*, with no error. Nested groups multiply, so `{a,b}{c,d}{e,f}…` is the hazard; `{js,jsx}`
+  is fine. Bracket classes work. Both block-list and inline-array YAML work. Prove a new glob with
+  `node scripts/instructions-loaded-report.mjs`; never assume it fires.
 - **`.claude` is a protected path.** Edits prompt for approval and `permissions.allow` cannot
   pre-approve them — the prompts are correct behaviour, not a misconfiguration.
 - **Skills are `/name` here and `$name` in Codex**, and the slash command comes from the skill's

@@ -51,8 +51,14 @@ and production. This file records how each one actually behaves so sessions stop
   re-read. Cheap-at-startup and survives-compaction are **mutually exclusive**. Safety-critical law
   therefore stays unscoped at the root, permanently.
 - An over-braced `paths:` glob (the list shares a 1,000-expanded-pattern / 4 MiB budget) is used
-  **unexpanded** and matches nothing — the rule loads **never**, with no error. Prefer several
-  brace-free patterns. Bracket classes work; braces are the hazard.
+  **unexpanded** and matches nothing — the rule loads **never**, with no error. **Measured
+  2026-07-26** (`docs/agent-alignment-l2-evidence.md` §4c): on **2.1.219**, 512 expansions load and
+  1024 do not, so the 1,000-pattern figure holds; **2.1.85 does not enforce it at all** and loads even
+  2048. Braces below the budget work normally on both — the often-repeated "brace groups match
+  nothing" is **false and did not reproduce on either build**, including the specific `**/*.{js,jsx}`
+  shape it was claimed for. Nested groups multiplying (`{a,b}{c,d}{e,f}…`) is the actual hazard, not
+  braces as such. Bracket classes work. Block-list and inline-array YAML both work. A scoped rule
+  loads only via `path_glob_match`, never at `session_start`.
 - **Never commit a symlink** as the bridge: Git for Windows sets `core.symlinks=false` and checks it
   out as a text file whose entire content is the string `AGENTS.md`. Presents as "the rules stopped
   working." Anthropic explicitly recommends the import on Windows.

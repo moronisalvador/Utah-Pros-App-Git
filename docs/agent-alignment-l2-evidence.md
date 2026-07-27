@@ -114,15 +114,87 @@ The §6 caveat below was written expecting an empty log. It did not happen — t
 time. Keep the caveat anyway: it is the correct reading if a *future* mid-session wiring logs
 nothing.
 
+## 4c. MEASURED — `paths:` glob semantics, and one inherited claim refuted
+
+Method: eight temporary untracked probe rules in `.claude/rules/`, each `paths:`-scoped by a
+different glob form, **every one constructed so exactly one expansion equals the target**
+`docs/glob-probe-target.tmp.md`. A headless session then read the target; the `InstructionsLoaded`
+log says which probes fired. Constructing them that way matters — the first draft's over-braced
+pattern expanded to `globprobetarget.tmp.md` (hyphens dropped), which would have produced a null
+result from a *broken pattern* and been misread as a budget refusal.
+
+**Run on both installed builds**, because the inherited claim was recorded on the old one:
+
+| Glob form | Expansions | 2.1.219 | 2.1.85 |
+|---|---|---|---|
+| exact path, block-list YAML | 1 | loads | loads |
+| `docs/**/*.md`, inline-array YAML | 1 | loads | loads |
+| braces in filename | 16 | loads | loads |
+| braces in filename | **512** | loads | loads |
+| braces in filename | **1024** | **NO load** | loads |
+| braces in filename | 2048 | **NO load** | loads |
+| **`docs/**/*.{md,txt}`** — the disputed shape | 1 | **loads** | **loads** |
+| `docs/*.{md,txt}` | 1 | **loads** | loads |
+| `docs/…tmp.{md,txt}` (no star) | 1 | **loads** | loads |
+| bracket class `docs/**/*.m[d]` | 1 | loads | loads |
+| `docs/**` | 1 | loads | loads |
+
+**Findings:**
+
+1. **"Brace groups match nothing" does not reproduce on either build.** Our roadmap, dispatch and
+   challenge report all state that `src/**/*.{js,jsx}` matches neither `Foo.jsx` nor `Foo.js`, cited
+   as directly measured. The equivalent shape `docs/**/*.{md,txt}` **loads on 2.1.219 and on 2.1.85**.
+   It is not a filename-versus-extension distinction either — braces work in both positions, with and
+   without a preceding star. Whatever produced the original reading, it is not reproducible here, and
+   **no `paths:` authoring rule should continue to rest on it.**
+2. **The ~1,000-pattern budget is real, and is enforced only on the NEWER build.** 512 loads, 1024
+   does not, on 2.1.219. On 2.1.85 all three over-budget patterns load. So the budget is an *added
+   check*, not an old bug — the opposite of what the version history suggested. Either way the safe
+   authoring rule is the strict one, because ledger #1 mandates ≥ 2.1.217.
+3. **Bracket classes work** on both builds, confirming the inherited claim.
+4. **Both YAML shapes work** — `paths:` as a block list and as an inline array.
+5. **`path_glob_match` is real and exclusive.** Every probe fired with `reason=path_glob_match`, while
+   the 25 non-probe events in the same run were all `session_start`/`include`. A scoped rule does
+   **not** load at startup. This is the mechanism L2 depends on, now observed rather than assumed.
+
+**Style rule this produces** (supersedes "prefer brace-free"): braces are permitted. What must never
+ship is a pattern whose expansion count approaches 1,000 — nested groups multiply, so
+`{a,b}{c,d}{e,f}…` is the hazard, and `{js,jsx}` is fine. Count the product of the group sizes, or
+split into several patterns. **A glob is never assumed to work; it is proved with the P7 instrument
+before it is relied on.**
+
+### The instrument was wrong first, and that is the transferable lesson
+
+Two defects surfaced only because the two-build comparison produced an impossible-looking result:
+
+- **`CLAUDE_CODE_SESSION_ID` and `CLAUDE_CODE_EXECPATH` are inherited by a headless child.** The
+  2.1.85 run reported *my interactive session's* id and *the 2.1.219 path*. Grouping on either merged
+  the two builds into one bucket, which read as "both builds behave identically" — a wrong conclusion
+  that survived one round of analysis. Verified afterwards across the whole log: 36 rows where the
+  env id disagrees with the payload id, all of them that one run.
+- **`process.ppid` does not fix it.** Each hook invocation is spawned through its own shell, so it
+  yields ~25 distinct pids per run. Tried, measured, rejected.
+
+**The hook payload's own `session_id` is authoritative.** The recorder now stores it as `session_id`,
+keeps the environment's under `env_session_id` as provenance, and also captures `transcript_path` and
+`memory_type`. The reporter groups on the payload id and says so when it sees an inherited one.
+Re-verified: the 2.1.85 run now stands alone as session `78917c5d` with 36 events, and all four
+negative `--assert-core` fixtures still fail with exit 1.
+
+**Generalise this, not just the glob numbers:** the instrument that proves a claim needs its own
+adversarial check. A measurement tool inherited an environment variable and quietly attributed one
+process's behaviour to another. It was caught only because the result contradicted a prediction —
+which is an argument for predicting before measuring, every time.
+
 ## 5. NOT MEASURED — do not promote these without running the probe
 
 | Claim | Status |
 |---|---|
-| ~~The import survives `/compact`~~ | **MEASURED 2026-07-26 — PASS.** Promoted to §4b below. |
-| A `paths:`-scoped rule loads only for matching paths (`path_glob_match`) | **UNMEASURED.** No scoped rule exists on disk yet. |
-| Brace groups in a `paths:` glob match nothing | **UNMEASURED here.** Inherited claim; the dispatch calls for it to be recorded as a tested refutation, and it has not been tested. |
-| Bracket classes *do* work in `paths:` globs | **UNMEASURED here.** Same. |
-| `claudeMdExcludes` covers `.claude/rules/*.md` | **UNMEASURED here.** Same. |
+| ~~The import survives `/compact`~~ | **MEASURED 2026-07-26 — PASS.** §4b. |
+| ~~`path_glob_match` fires only for matching paths~~ | **MEASURED 2026-07-26.** §4c. |
+| ~~Brace groups match nothing~~ | **MEASURED 2026-07-26 — REFUTED.** §4c. |
+| ~~Bracket classes work~~ | **MEASURED 2026-07-26 — CONFIRMED.** §4c. |
+| `claudeMdExcludes` covers `.claude/rules/*.md` | **UNMEASURED, and deliberately deferred.** Testing it means writing an exclusion into `.claude/settings.json`. Three sessions share this checkout; a settings change is picked up by any of them that restarts or compacts inside the test window, and the exclusion under test would drop *all* rules from that session. The probe is cheap but the blast radius is another session's law loading. Run it when this checkout has one writer, not three. Nothing in P8/P9 depends on it — `paths:` scoping is the mechanism; `claudeMdExcludes` is only an alternative. |
 
 ## 6. Caveat on measuring the compaction case
 

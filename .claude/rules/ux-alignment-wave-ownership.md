@@ -107,10 +107,14 @@ those five files inside an alignment-initiative commit should reject it.
    #11). `paths:`-scoped rules are **dropped at `/compact`**, and that file carries the shared-production
    apply gate. The same reasoning is why no money, consent/TCPA or server-authorization law may sit
    behind a glob.
-2. **No `paths:` conversion may be claimed unverified.** Globs use gitignore semantics on repo-relative
-   paths: **brace groups match nothing** and are used unexpanded, so an over-braced pattern means the
-   rule loads *never*, silently. Bracket classes do work. Prove each conversion's load behaviour with
-   the alignment initiative's P7 instrument before claiming it.
+2. **No `paths:` conversion may be claimed unverified.** *(Corrected 2026-07-26 by measurement — this
+   item previously said "brace groups match nothing", which is **false**.)* Globs use gitignore
+   semantics on repo-relative paths. Brace groups **work** at realistic sizes; what fails is a pattern
+   whose expansion count exceeds the ~1,000-pattern budget, measured to break between **512 (loads)**
+   and **1024 (does not load)**. Past it the pattern is used unexpanded and the rule loads *never*,
+   silently, with no error. Nested groups multiply, so `{a,b}{c,d}{e,f}…` is the hazard — `{js,jsx}` is
+   fine. Bracket classes work. Evidence: `docs/agent-alignment-l2-evidence.md` §4c. Prove each
+   conversion's load behaviour with the alignment initiative's P7 instrument before claiming it.
 
 **Initiative status, recorded because it changes how to read this file.** Asked on 2026-07-26 whether
 W1–W5 are stalled or live (no commits since 2026-07-18 while F-S1 shipped), the owner said the

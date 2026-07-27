@@ -61,7 +61,18 @@ function main() {
 
   const row = {
     ts: new Date().toISOString(),
-    session_id: process.env.CLAUDE_CODE_SESSION_ID || null,
+    // MEASURED 2026-07-26: a headless `claude -p` child INHERITS
+    // CLAUDE_CODE_SESSION_ID and CLAUDE_CODE_EXECPATH from the interactive
+    // parent. The PAYLOAD carries the run's real session_id; the env var does
+    // not. Verified: 36 rows where the two disagree, all of them one subprocess
+    // run that the env var mislabelled as its parent. Payload wins; the env
+    // value is kept only as provenance.
+    // (`process.ppid` was tried and rejected — each hook invocation is spawned
+    //  through its own shell, so it yields a fresh pid per event, 25 per run.)
+    session_id: pick(parsed, ['session_id', 'sessionId']) || process.env.CLAUDE_CODE_SESSION_ID || null,
+    env_session_id: process.env.CLAUDE_CODE_SESSION_ID || null,
+    transcript_path: pick(parsed, ['transcript_path', 'transcriptPath']),
+    memory_type: pick(parsed, ['memory_type', 'memoryType']),
     exec: process.env.CLAUDE_CODE_EXECPATH || null,
     agent: process.env.AI_AGENT || null,
     cwd: process.cwd(),

@@ -22,7 +22,7 @@
 //
 // USAGE:
 //   node scripts/instructions-loaded-report.mjs                 # newest session
-//   node scripts/instructions-loaded-report.mjs --all           # every session
+//   node scripts/instructions-loaded-report.mjs --all           # everything
 //   node scripts/instructions-loaded-report.mjs --session <id>
 //   node scripts/instructions-loaded-report.mjs --assert-core   # exit 1 if the core did not load
 //
@@ -37,6 +37,15 @@
 //   - Field names for this event are not contractual. The recorder stores the
 //     raw payload, so if `_matched` shows a field was not found, fix the key
 //     list in the recorder rather than trusting a hopeful parse.
+//   - GROUP ON THE PAYLOAD's session_id, never the environment's. Measured
+//     2026-07-26: a headless `claude -p` child inherits CLAUDE_CODE_SESSION_ID
+//     *and* CLAUDE_CODE_EXECPATH from the interactive parent, so the env var
+//     does not identify a run and exec does not identify the binary. A
+//     two-build comparison merged into one bucket and briefly read as "both
+//     builds behave identically". For --assert-core the same merge is a
+//     false-PASS route: the parent's bridge event gets credited to a child that
+//     never loaded it. `process.ppid` does NOT fix this — each hook invocation
+//     is spawned through its own shell, giving ~25 distinct pids per run.
 // ════════════════════════════════════════════════
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs'
@@ -78,11 +87,24 @@ if (rows.length === 0) {
   process.exit(has('--assert-core') ? 1 : 0)
 }
 
+// The run's TRUE id comes from the hook payload. The env var is inherited by a
+// headless child from its interactive parent, so grouping on it merges a
+// subprocess into the parent — measured 2026-07-26 on 36 rows. Old rows that
+// predate the fix keep the env value in `session_id`; `raw.session_id` is
+// authoritative wherever it exists, so read it first for both.
+const sid = (r) => (r.raw && typeof r.raw === 'object' && r.raw.session_id) || r.session_id || null
+
 let scope = rows
 if (!has('--all')) {
-  const want = val('--session') || process.env.CLAUDE_CODE_SESSION_ID || rows[rows.length - 1].session_id
-  scope = rows.filter((r) => r.session_id === want)
+  const want = val('--session') || sid(rows[rows.length - 1])
+  scope = rows.filter((r) => sid(r) === want)
   console.log(`Session: ${want || '(unknown)'}   ·   ${scope.length} load event(s)`)
+  // Flag the inheritance when it actually happened, so nobody re-derives it.
+  const mislabelled = scope.filter((r) => r.env_session_id && r.env_session_id !== sid(r)).length
+  if (mislabelled) {
+    console.log(`ℹ  ${mislabelled} event(s) here carry an inherited CLAUDE_CODE_SESSION_ID from a parent`)
+    console.log('   session. Grouped by the payload id, which is the correct one.')
+  }
 } else {
   console.log(`All sessions   ·   ${scope.length} load event(s)`)
 }
