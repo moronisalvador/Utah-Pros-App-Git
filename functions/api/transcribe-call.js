@@ -178,6 +178,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee, checkCronSecret } from '../lib/auth.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
+import { isAllowedRecordingUrl } from '../lib/callrail.js';
 import { formatDeepgramTranscript, buildTranscriptAnalysis, turnsToFlatText } from '../lib/deepgram.js';
 import {
   buildSpeakerPrompt, parseSpeakerIdentities, applySpeakerIdentities,
@@ -801,6 +802,26 @@ export async function onRequestPost(context) {
   }
 
   leads = leads || [];
+  if (leads.length) {
+    try {
+      const leadIds = leads.map((lead) => lead.id).filter(Boolean);
+      const sourceRows = leadIds.length
+        ? await db.select(
+            'inbound_lead_recording_sources',
+            `lead_id=in.(${leadIds.join(',')})&select=lead_id,recording_url`,
+          )
+        : [];
+      const sourceByLead = new Map((sourceRows || []).map((row) => [row.lead_id, row.recording_url]));
+      leads = leads.map((lead) => ({ ...lead, recording_url: sourceByLead.get(lead.id) || null }));
+    } catch {
+      // Pre-S1e compatibility: the existing rows still carry real URLs. Once
+      // S1e replaces them with opaque markers, a missing source table fails in
+      // place before any provider resolver sees the marker.
+      if (leads.some((lead) => lead.recording_url && !isAllowedRecordingUrl(lead.recording_url))) {
+        return jsonResponse({ error: 'Failed to load recording sources' }, 500, request, env);
+      }
+    }
+  }
   let processed = 0;
   let skipped = 0;
   const errors = [];

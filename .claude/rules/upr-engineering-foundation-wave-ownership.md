@@ -29,19 +29,22 @@ NOTES / GOTCHAS:
 owner explicitly adopts it. It grants no authority to edit code, apply migrations, change live
 systems, commit, push, deploy, or open a PR.
 
-## 1. Current writer state
+## 1. Historical writer state — current leases are in §6
 
-No application/database writer lease is active. Encircle implementation landed on `origin/dev` at
-`0a06a21`; the owner reports CI and Cloudflare staging passed, and its writer lease is released.
-Its migration remains unapplied, flag OFF, and credentials unchanged.
+At the 2026-07-24 capture, no application/database writer lease was active. Encircle implementation
+had landed on `origin/dev` at `0a06a21`; its writer lease was released, and its migration was then
+reported unapplied with the flag OFF and credentials unchanged. Those live-state claims are
+historical. Current Encircle state is unknown pending read-only provenance recapture, and §6 is the
+binding current writer register.
 
 Foundation F1 containment and F2 provenance reconciliation are complete. F2 performed no live write;
 its source-restoration and release-gate lease is released.
 
-The landed Encircle seam set is in `docs/upr-unfinished-work-registry.md`. It requires rebase and
-contract preservation, not a global file freeze. Encircle’s later migration apply, flag change,
-candidate entry, runtime smoke, credential rotation/fallback removal, and obsolete Netlify
-retirement are separate owner/external gates. They do not reserve a writer lease.
+The landed Encircle seam set is recorded in `docs/upr-unfinished-work-registry.md`. New work must
+fetch current `origin/dev` and reconcile by a normal no-rewrite merge while preserving that
+contract; it does not impose a global file freeze. Encircle apply, flag, candidate, runtime-smoke,
+credential, fallback-removal, and Netlify-retirement actions remain separate owner/external gates
+and reserve no writer lease.
 
 This remains an owner coordination rule, not a technical lock. Before another implementation
 launches, classify sibling worktrees/branches (including `codex/messaging-transport-build`) as
@@ -106,7 +109,7 @@ unlisted candidate-port files are not part of G’s authoritative output.
 | Signing ∥ Storage | shared PDF, job-file, document behavior | one bucket/document contract | NOT DISJOINT; co-design and apply serially |
 | Schedule ∥ UX | overlapping pages/CSS/shared UI likely | shared browser fixtures | NOT PROVEN; serialize/rebaseline |
 | Encircle rollout ∥ DB phase | code landed; possible shared migration/apply state | one shared DB | NOT DISJOINT for apply; serialize |
-| Encircle contract ∥ UX/product | overlap possible in landed files/helpers | no automatic live overlap | CONDITIONAL: rebase on `0a06a21`, preserve tests, assign exact files |
+| Encircle contract ∥ UX/product | overlap possible in landed files/helpers | no automatic live overlap | CONDITIONAL: treat `0a06a21` as historical provenance, reconcile current `origin/dev` by normal no-rewrite merge, preserve tests, assign exact files |
 
 ## 6. WIP limits and lease protocol
 
@@ -124,9 +127,10 @@ unlisted candidate-port files are not part of G’s authoritative output.
 
 ### Active writer register — opened 2026-07-26
 
-Three Claude Code sessions are live on this repo at once, which is at the cap above
-(one DB writer + two app writers) with zero margin. Recorded here because the line
-this replaces claimed "zero writers", and a session that trusted it would collide.
+The earlier three-session register reached the repository cap. DB-1 has since released and APP-2/
+APP-3 were explicitly transferred into one current-origin mobile integration lease. No other app
+writer is declared active by this register. This current state is recorded because either the old
+"zero writers" claim or the historical three-writer count would now cause a collision.
 
 **Read this before authoring a migration, touching a permission/notification
 surface, or promoting `dev` to `main`.**
@@ -134,7 +138,7 @@ surface, or promoting `dev` to `main`.**
 | Lease | Owner | Scope | State |
 |---|---|---|---|
 | ~~**DB-1 — security tightening batch**~~ | ~~`claude/parked-sessions-recovery-4fdbb7`~~ | 8 migrations | **RELEASED 2026-07-26 — owner reports all 8 applied and verified.** The release condition below is met. |
-| APP-2, APP-3 | agent-alignment / tooling-governance sessions (incl. "session 5", started 2026-07-26) | `.claude/**`, `AGENTS.md`, `CLAUDE.md`, `tooling/**`, `docs/agent-alignment-*` | active |
+| APP-2, APP-3 | `codex/mobile-readiness-current-origin-review` (owner handoff from the agent-alignment / tooling-governance sessions, 2026-07-26) | `.claude/**`, `AGENTS.md`, `CLAUDE.md`, `tooling/**`, `docs/agent-alignment-*`; reconciliation only outside the mobile ownership manifest | **TRANSFERRED / ACTIVE** until the current-origin mobile integration is locally verified and handed back |
 
 **DB-1 owns these database objects. Do not author a migration touching any of them
 until this lease releases:**
@@ -155,20 +159,29 @@ until this lease releases:**
 item 3.2 rolls out in place of 342 individual function reviews — build on it rather
 than adding a second one.
 
-**Verified disjoint as of 2026-07-26:** no session other than DB-1 has touched
+**Historical DB-1 disjointness check as of 2026-07-26:** no session other than DB-1 had touched
 `supabase/` in the `main..dev` range, and `database-standard.md` is unmodified.
 The overlap that DOES exist is `CLAUDE.md` / `close-out-standard.md`, both edited by
 the app sessions while DB-1 was running — DB-1 must re-read them before its close-out
 rather than working from a cached copy.
 
-~~**Promotion hold:** `dev` is **not** to be promoted to `main` while APP-2/APP-3 are live.~~
-**DISCHARGED 2026-07-27 — the owner promoted.** `origin/main` and `origin/dev` are both at
-`98786f52` (PR #521), so the two branches are identical and nothing is pending promotion.
+**Promotion hold — RELEASED 2026-07-27 (owner-authorized).** ~~`dev` is **not** to be promoted to
+`main` while the transferred APP-2/APP-3 reconciliation lease is active.~~ The mobile
+current-origin reconciliation landed on `dev` as PR #525, and on **2026-07-27 the owner explicitly
+authorized the `dev` → `main` promotion** and separately confirmed that the concurrent billing
+session (the Dorothy AR repair, ledger `20260727224804`) had finished. The hold is discharged.
 
-The hold's reasoning is kept because it stays true for the *next* promotion: `dev` moved four times
-in thirty minutes on 2026-07-26, and CI green is computed against a SHA, so it is stale on arrival.
-Promote from a quiet `dev`, not a moving one — and re-check `git rev-list --left-right --count
-origin/main...origin/dev` immediately before, not from a doc.
+Recorded because a stale binding hold is the exact defect the note at the top of this file warns
+about: a session reading it as non-binding and promoting anyway. It was still asserting a live hold
+hours after the work it was keyed to had merged.
+
+The *procedure* it prescribed remains correct and outlives the hold: promote from a **quiet** `dev`,
+and re-check `git rev-list --left-right --count origin/main...origin/dev` immediately before the
+promotion rather than trusting a recorded SHA. The previous hold was discharged when the owner
+promoted `98786f52`; that historical event was never a standing assertion that the branches remain
+equal. The mobile session's 2026-07-26 SHAs (`origin/main` `c19434a0`, `origin/dev` `4583f0a6`, 10
+ahead) are evidence for that capture only — by 2026-07-27 17:00 local the real numbers were
+`origin/main` `ef0afc52` and `origin/dev` `df7becbe`, **108 ahead**.
 
 **Rollback for DB-1:** every migration ships a paired file in `supabase/rollbacks/`.
 ~~Nothing is applied, so the current rollback is `git revert` alone.~~ **All 8 are now applied
@@ -186,8 +199,8 @@ second admin predicate.
 **What DB-1's release does NOT close** (added 2026-07-27 by the DB-1 session itself, so the
 release is not mistaken for "everything is settled"):
 
-- **The promotion hold above still stands.** It is keyed to the app sessions, not to DB-1, and
-  releasing the database lease does not release it.
+- **The current promotion hold above still stands.** It is keyed to the owner-transferred mobile
+  reconciliation lease, not to DB-1, and releasing the database lease does not release it.
 - **The provenance gate is RED.** Two independent causes: live evidence needs re-capturing (it
   predates the applies, and there is no capture script — see `7580f93d` for the required shape), and
   the applied source lives on `dev`, so the gate cannot pass against `main` until promotion. The
@@ -197,11 +210,13 @@ release is not mistaken for "everything is settled"):
   session; DB-1 deliberately did not map source it had not reviewed. Its owner needs to, or the next
   fresh evidence capture will report it as an unmapped live ledger row.
 
-**Still open:** APP-2/APP-3 and therefore the promotion hold. Delete this register when they close.
+**Still open:** the transferred APP-2/APP-3 reconciliation lease and therefore the current
+promotion hold. Delete this register when the owner accepts the locally verified handback.
 
 ## 7. Close-out for every future phase
 
-- Rebase from current `origin/dev`; verify plan/manifest on disk; stop if missing.
+- Fetch current `origin/dev`, then reconcile it by a normal no-rewrite merge and prove both
+  histories by ancestry; verify plan/manifest on disk; stop if missing.
 - Run named risk tests first, then build/unit/targeted lint and the required reviewers.
 - Database work: migration safety, anon-grant audit, rollback, intended/denied role tests, provenance,
   and explicit owner apply authorization.

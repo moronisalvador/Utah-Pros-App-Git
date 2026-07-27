@@ -148,33 +148,184 @@ legacy runtime is still publicly deployed. The owner confirmed on 2026-07-23 tha
 unsupported. Retire the Netlify deployment and any remaining secret binding separately; it is not a
 supported Encircle consumer or a credential-rotation dependency.
 
+## QuickBooks Online authorization checkpoints (R0 S1a and S1b, 2026-07-26)
+
+The local R0 containment slice centralizes authorization for `/api/qbo-invoice`,
+`/api/qbo-estimate`, `/api/qbo-payment`, and `/api/qbo-query`. An exact configured
+`x-webhook-secret` preserves the existing server-to-server contract; otherwise a Supabase Bearer
+must resolve to an active, non-external `admin`. Authorization completes before connection,
+service-role domain reads, telemetry and Intuit calls, and the downstream request/response/provider
+contracts are unchanged.
+
+The capability is not a human role and no checked-in caller was found for its use on those four
+routes. Do not rotate or retire it independently: customer sync and payment sync share its
+lifecycle. Cloudflare binding presence/equality and deployed callers were not inspected.
+
+S1b applies the same browser boundary to customer sync and the payment poller's HTTP GET/POST
+handlers while preserving their exact secret-first capability and the poller's separate direct
+`scheduled()` entry. OAuth connect is deliberately human-only: a server secret cannot replace
+`qbo_oauth_state` or `qbo_oauth_user`. Charge and attachment mutation retain their existing
+Bearer-only billing predicate and now explicitly reject external employees before privileged
+work. Approved-caller downstream request/response shapes, callback redirects, scheduler behavior
+and provider helpers are unchanged; new denials are the deliberate authorization transition.
+Customer-sync and manual payment-sync browser authorization resolves the actor but does not
+persist that actor in current worker telemetry, so complete QBO actor auditability remains open.
+
+This remains a source-only slice. Direct `qbo_attachments` metadata SELECT does not yet exclude
+external admins, and the broader mobile Worker/RPC/RLS/Storage boundary remains open. The real role
+is `project_manager`, not `manager`; project-manager billing authority remains owner-gated.
+R0 source/live evidence is in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the S1b source,
+test, rollout and rollback record is
+`docs/audit/2026-07/evidence/mobile-readiness-s1b-qbo-identity-2026-07-26.md`.
+
+## CallRail recording and notification HTTP checkpoints (S1c, 2026-07-26)
+
+`GET /api/callrail-recording` is shared by mobile `LeadRow` and desktop `CrmCallLog`. It now
+authorizes an active internal admin or the established `crm_call_log` capability before any
+service-role lead/credential read or CallRail request. The exact UUID must name a call row whose
+stored `callrail_id` matches the ID in its stored allowlisted `api.callrail.com` or
+`app.callrail.com` recording URL. There is no employee-to-CRM-organization mapping, so the approved
+capability is explicitly company-wide rather than falsely described as tenant- or assignment-scoped.
+External CRM partners are denied even though their current desktop shell exposes the Call Log UI.
+The non-admin Worker capability does not currently consume the desktop CRM rollout/kill flags.
+Direct authenticated `get_inbound_leads`/`inbound_leads` access remains a separate route around the
+proxy and prevents an end-to-end recording-confidentiality claim.
+
+The proxy preserves the deployed 200 audio stream, `Content-Type`, and
+`Cache-Control: private, max-age=300` contracts, plus its existing JSON error families. Both the
+authenticated CallRail recording fetch and the no-auth signed-audio follow-up are bounded by the
+shared 15-second timeout. Browser `Range` and authorization headers are not forwarded. Account
+discovery/rewrite remains compatible and can persist a discovered account ID only on an approved
+deployed request; no provider or setting was contacted during S1c verification.
+
+HTTP `POST /api/notify` has no checked-in browser/mobile/desktop Bearer caller. Its deployed HTTP
+caller is `notify_emit`, which reads the stored URL/secret and is reached by appointment,
+estimate, timesheet and abandoned-clock trigger/cron origins. The exact secret remains
+header-first and receives the existing full event payload. Direct CallRail/form/feedback/e-sign,
+message/webhook/outbox, health, Meld and payment paths continue to import `dispatchEvent`
+in-process. Fan-out ordering, preferences, type-disabled skips, channel summaries, VAPID behavior,
+dead-subscription pruning and transactional email behavior are unchanged.
+
+The retained legacy Bearer surface now requires an active internal admin and accepts only four
+object-derived events: appointment assigned/updated/canceled and estimate accepted. It rejects all
+caller message copy, recipient, payload and link fields before dispatch. Shared Auth and Web Push
+still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
+slice. Email retains its timed provider request.
+
+At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
+`SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the
+database-side capability bypass. The S1d section below records the separately authored
+caller-compatible migration/rollback/tests, which still require an owner-authorized
+shared-database apply. S1c evidence:
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
+Direct authenticated execution of `create_notification` has a separate S1f attribute-only apply
+candidate. It retains the service-role Worker and owner-run midnight-clock caller and remains live
+exposure until its own reviewed apply/verification window.
+
+## Notification dispatcher database checkpoint (S1d, 2026-07-26)
+
+The S1d read-only live capture found one exact `notify_emit(text,jsonb) -> void` overload and no
+browser/Pages source caller. It is owned by `postgres`, runs `SECURITY DEFINER` with
+`search_path=public`, and currently grants EXECUTE to `authenticated` and `service_role`.
+Its direct database graph is three notification trigger functions, two timesheet RPCs, and the
+abandoned-clock scanner; those six definer functions contain seven calls, and the scanner is
+scheduled every 30 minutes as `postgres`.
+
+`20260726110000_notify_emit_service_boundary.sql` is a reviewed local apply candidate, not live
+state. It removes direct browser execution and retains `service_role` while leaving the
+owner-executed database chain intact. The HTTP contract is deliberately frozen: the notification
+catalog enabled gate, Worker URL/secret configuration key names, stored values, `Content-Type`,
+`x-webhook-secret`, `net.http_post`, fire-and-forget response behavior, and `/api/notify` payload
+shape do not change. Only the JSON object merge order changes so the trusted `p_type_key` cannot be
+replaced by `p_body`.
+
+Apply and rollback each fail closed on the captured function and caller graph. Apply-window checks
+are catalog-only and do not invoke a notification or provider. The migration must remain absent
+from live provenance until an owner-authorized apply records its actual ledger version and fresh
+fingerprint. Evidence:
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
+## Notification read/Realtime recipient checkpoint (S1g, 2026-07-26)
+
+PWA and Capacitor share `NotificationBell` and `subscribeToNotifications`; no client source change
+is required for S1g. The deployed list/count/mark call shapes remain exact, and the existing
+JavaScript recipient comparison stays as defense in depth.
+
+The unapplied S1g migration moves the primary boundary into Supabase. Direct table SELECT and
+Postgres Changes authorize only an active, non-external employee's own targeted rows plus
+broadcasts. Because Realtime evaluates table RLS before delivering a Postgres Changes payload, a
+foreign targeted title/body/link/payload must no longer reach the callback after apply.
+`notifications` remains in `supabase_realtime`; the private receipt table is not published. The
+policy's employee lookup depends on authenticated employee SELECT/RLS visibility, which the S1g
+preflight pins explicitly.
+
+Broadcast read state becomes per employee through private receipts while the RPC still returns the
+same `notifications` composite and projected `read_at`. Existing shared non-null `read_at` values
+remain globally read for compatibility. This source checkpoint does not prove a live socket:
+apply qualification requires two authenticated synthetic sessions showing own and broadcast
+INSERT delivery, foreign INSERT non-delivery, mark isolation, reconnect/token-refresh behavior,
+and unchanged PWA/Capacitor call results. It is a separate gate from notification emission,
+providers, native push, OTA, signing, and devices.
+
+The guarded SQL behavior matrix passed in an in-memory PostgreSQL-compatible harness and is wired
+into the local-only Supabase DB runner. That does not substitute for the two-session PostgREST and
+Realtime socket qualification above.
+
+**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
+verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
+browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
+then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
+S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
+ledger row exists and its browser-read-only employee contract still matches. Recapture that
+catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
+S1e or S1g; each remains its own owner-approved window.
+
+## Mobile push R0 authorization checkpoint (2026-07-25)
+
+The Web Push subscription RPCs resolve their employee from `auth.uid()` before upsert/delete, but
+native post-login `upsert_device_token(p_employee_id, ...)` trusts the browser-supplied employee ID
+inside a live `SECURITY DEFINER` function and can reassign an existing token. Notification
+preference and bell RPCs similarly accept employee/notification IDs without reconstructing the
+caller. These are open `MOB-SEC-014` boundaries; UI visibility and client-side recipient filtering
+are not authorization.
+
+No APNs/Web Push provider action, entitlement/signing check, physical-device test, binding change,
+or push delivery occurred in R0. Product inclusion and rollout remain owner-gated, and any
+containment must preserve account-switch/logout behavior plus deployed RPC response shapes.
+
 ## QuickBooks Online attachments (2026-07-24)
 
 `POST /api/qbo-attach` attaches a staff-selected file to a QBO Invoice or Estimate via the QuickBooks
 Attachable API (`/v3/company/{realmId}/upload`, multipart) with `IncludeOnSend=true`, so the file
 shows on the transaction in QuickBooks **and** rides along on the email QuickBooks sends the customer.
-Auth is `requireRole(['admin','manager'])` (mirrors `qbo-charge`); it requires the invoice/estimate to
-already carry a `qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as
-base64 (≤20 MB); the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
+Auth is the literal `requireRole(['admin','manager'])` predicate (mirrors `qbo-charge`); because
+`manager` is not a current employee role, it is admin-effective. The Worker explicitly rejects
+external employees after that predicate and before connection or data/provider access. It requires
+the invoice/estimate to already carry a
+`qbo_invoice_id`/`qbo_estimate_id`. The file goes browser → worker → QuickBooks as base64 (≤20 MB);
+the raw bytes are never stored in UPR — only metadata + the opaque attachable id in
 `qbo_attachments`. Idempotent: a required `Idempotency-Key` header + a pre-insert lookup prevent a
-retry from creating a duplicate Attachable (which would email the customer twice). A `delete` action
-removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row. Outbound calls
-use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
+retry from creating a duplicate Attachable (which would email the customer twice). A `delete`
+action removes the Attachable from QuickBooks (GET SyncToken → delete) and the tracking row.
+Outbound calls use `fetchWithTimeout`. Helpers live in `functions/lib/quickbooks.js`
 (`uploadAttachable`/`getAttachable`/`deleteAttachable`/`buildAttachableMetadata`); the UI is the
 shared `src/components/collections/QboAttachments.jsx` in the invoice + estimate editors. Uses the
-already-granted **accounting** scope (no Payments-scope reconnect needed).
+already-granted **accounting** scope (no Payments-scope reconnect needed). The UI lists metadata
+directly through the table SELECT policy, which is role-scoped but does not yet exclude external
+admins; that RLS residual is tracked separately from Worker mutation containment.
 
 ## QuickBooks Online payment two-way sync activation (2026-07-24)
 
 The QBO→UPR payment path (`qbo-webhook.js` real-time + `qbo-payments-sync.js` hourly safety net,
-`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built and dormant. Migration
-`20260724180100_qbo_payments_sync_cron.sql` (authored; owner-authorized apply pending) wires the
-hourly poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
+`qbo-payment-sync.js` mapper, dedup on `qbo_payment_id`) is built. Historical 2026-07-24 evidence
+records migration `20260724180100_qbo_payments_sync_cron.sql` as applied and wiring the hourly
+poller via Supabase pg_cron + pg_net → `/api/qbo-payments-sync`, carrying
 `integration_config.qbo_webhook_secret` as `x-webhook-secret` (the value already set in Cloudflare as
-`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). Still owner/dashboard gated for
-the real-time half: set `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy,
-and subscribe the **Payment** webhook in Intuit Developer (production) to
-`https://utahpros.app/api/qbo-webhook`.
+`QBO_WEBHOOK_SECRET`, which is how customer-sync authenticates today). S1b did not re-read current
+runtime values or invoke the schedule. The real-time half remains owner/dashboard gated: set
+`QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
+**Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
 
 ## Messaging transport build state (2026-07-23)
 
@@ -336,6 +487,18 @@ CallRail `message.sent` recipients may omit the `+1` stored on the original UPR 
 projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
 provider-message, or attempt identity checks.
 
+### CallRail recording-source isolation (S1e authored, not applied)
+
+The recording proxy keeps its URL allowlist, lead UUID/provider-call binding, credential ordering,
+direct/signed audio streaming, private cache header, and JSON error contracts. Its source lookup
+changes from browser-readable `inbound_leads.recording_url` to service-only
+`inbound_lead_recording_sources`; `transcribe-call` uses the same source. The public lead row keeps
+only `upr-recording://available`, preserving mobile/desktop truthiness without disclosing a
+provider URL. Both Workers retain a validated legacy-column fallback so compatible code can deploy
+before the table; the marker is never accepted as a source. Ingestion recursively strips
+`recording` and `recording_url` keys from stored `raw_payload`. No provider request, playback,
+credential read, or live setting change occurred.
+
 Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
 provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
 identity without downloading UPR's own attachment back from CallRail. Confirmation requires the
@@ -345,3 +508,29 @@ retryable `outbound_unmatched` outcome so older and newer workers both fail clos
 database migration rolls out. Inbound MMS remains
 fail-closed: it must download the verified provider media endpoint, validate the response bytes,
 and persist an owned private reference before canonical projection.
+
+### Mobile subscription and native-token ownership (S1h authored, not applied)
+
+Web Push registration keeps the deployed endpoint/key/user-agent contract, but authenticated source
+resolves the one active, non-external employee from `auth.uid()`. Same-owner registration refreshes
+keys and metadata. A foreign-owned endpoint is rejected rather than transferred. List output stays
+redacted to ID, label, creation time, and a short endpoint hash; delete rejects a foreign endpoint.
+Notification dispatch retains service-role direct reads and stale-subscription pruning.
+
+Native `upsert_device_token(uuid,text,text)` preserves its client shape and validates the supplied
+employee against the session. Same-owner refresh succeeds; a token owned by another employee is
+rejected. The reviewed service-role branch retains cross-owner registration and pruning for trusted
+server/device lifecycle work. Browser roles receive no raw subscription endpoint, Web Push key, or
+native token through direct table access: all four personal tables become forced-RLS,
+policy-free, and browser-RPC-only after the ordered S1h sequence.
+
+The revised containment and S1h source address the rejected artifact's employee self-promotion and
+raw-token takeover findings, but they are not applied or exact database-behavior-verified. Repository
+source also journals old-account Web/APNs detachment until cleanup is confirmed and locks account
+transitions on cleanup/session errors; that is not evidence that either provider is configured or
+delivers.
+
+Provider credentials, VAPID/APNs configuration, feature activation, notification fan-out,
+compatible deployment, native logout/account-switch device proof, entitlements, signing,
+simulator/device tests, and distribution remain independent. No provider call or device
+registration occurred while authoring S1h.

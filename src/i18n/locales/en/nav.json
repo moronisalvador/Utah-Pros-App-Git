@@ -4,7 +4,10 @@
   "schedule": "Schedule",
   "messages": "Messages",
   "more": "More",
-  "installBanner": "Install UPR for the best experience",
+  "installBanner": "Install UPR for quicker field access",
   "installApp": "Install App",
-  "installIos": "Tap <b>Share</b> → <b>Add to Home Screen</b> to install UPR"
+  "installIos": "Tap <b>Share</b> → <b>Add to Home Screen</b> to install UPR",
+  "installOnlineRequired": "Internet is required to start reliably and save field work. Offline saving is not enabled.",
+  "installRegionLabel": "Install UPR",
+  "dismissInstall": "Dismiss install guidance"
 }

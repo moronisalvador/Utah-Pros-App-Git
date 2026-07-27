@@ -234,6 +234,14 @@ unpushed" is not a holding state here; use a branch if something must wait for r
 
 Self-contained; references no prior conversation. Paste as-is.
 
+> **Re-verified 2026-07-27 against `dev` after 111 commits landed.** All four verification commands
+> still pass, the rules count is still 23, and both P8 exclusions still carry the safety law that
+> excluded them — so the substance of this prompt held up. Three things changed and are folded in:
+> the rules total grew to **227 KB**; the **APP-2/APP-3 lease was transferred to the
+> mobile-readiness program** and now covers P8's entire edit surface, so the prompt opens with a
+> hard stop; and an active mobile-readiness program exists that did not before. **Re-check the
+> writer register before trusting any of this** — it moved twice in two days.
+
 ```text
 Continue the agent-instruction alignment initiative on the UPR Platform.
 
@@ -259,13 +267,26 @@ docs/handoff/production-promotion-and-followups-prompt.md — from a different s
 covering the security-batch promotion. That promotion is DONE (main and dev are both at
 98786f52). It is not your job; do not start from it.
 
+⛔ CHECK THE WRITER LEASE BEFORE YOU EDIT ANYTHING. Read §6 "Active writer register"
+in .claude/rules/upr-engineering-foundation-wave-ownership.md.
+
+As of 2026-07-27 the APP-2/APP-3 lease was TRANSFERRED to
+`codex/mobile-readiness-current-origin-review` and is ACTIVE. It covers `.claude/**`,
+`AGENTS.md`, `CLAUDE.md`, `tooling/**` and `docs/agent-alignment-*` — which is exactly
+the surface P8/P9 edits. If that lease is still active when you read this, you may NOT
+convert rules files. Do the read-only audit (step 1), report, and STOP. Ask the owner to
+either release the lease to you or confirm the mobile integration has been handed back.
+Re-read the register rather than trusting this paragraph; it changes often.
+
 YOUR JOB: P8/P9 — scope the .claude/rules files with `paths:` frontmatter.
 
-Why it is worth doing: ~214 KB of rules load into EVERY session regardless of relevance.
-motion-standard.md alone is 26.6 KB of animation law that loads while you edit a
-Cloudflare worker. Correct scoping cuts 40-60 KB per session.
+Why it is worth doing: ~227 KB of rules load into EVERY session regardless of relevance
+(23 files, measured 2026-07-27 — re-derive, it grows). motion-standard.md alone is 26.3 KB
+of animation law that loads while you edit a Cloudflare worker. Correct scoping cuts
+40-60 KB per session.
 
-Work in this order, and do not skip step 1:
+Work in this order, and do not skip step 1. Step 1 is READ-ONLY and is safe to do even
+while the lease is held:
 
 1. AUDIT BEFORE CONVERTING. Scoped rules are DROPPED AT /compact. Any file carrying
    money, consent/TCPA, server-authorization or shared-production-apply law must stay
@@ -285,8 +306,14 @@ CONSTRAINTS
   No src/, functions/, supabase/, ios/. No migration, no live or provider state.
 - Permissions changes are owner-gated. Do not edit permissions.allow/deny/ask.
 - Stage by explicit path. NEVER `git add -A`. Other sessions share this working tree and
-  keep dozens of files uncommitted; leave every one of them alone.
+  have repeatedly left dozens of files uncommitted; leave every one of them alone. (It was
+  clean on 2026-07-27 — check, do not assume either way.)
 - A push from any session publishes all of dev, so unpushed is not a holding state.
+- `dev` moves FAST — 111 commits landed in roughly one day between two sessions of this
+  initiative. Re-fetch before you start and again before you push, and expect to merge.
+- There is an active mobile-readiness program (`codex/mobile-readiness-*` branches, its own
+  `mobile-readiness-wave` skill, a Rule 4 exception in AGENTS.md). It is not your work and
+  it currently holds the lease over your surface. Do not edit its files or its manifest.
 - Verify before claiming. This repo's docs have repeatedly carried confident numbers that
   were wrong — including two derive-commands that counted the wrong thing. Re-derive.
 

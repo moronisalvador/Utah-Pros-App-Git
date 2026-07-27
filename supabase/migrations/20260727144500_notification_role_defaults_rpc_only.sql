@@ -1,0 +1,62 @@
+-- ════════════════════════════════════════════════
+-- MIGRATION: 20260727144500_notification_role_defaults_rpc_only
+-- Phase: Notification control hardening — close the table behind its gated RPCs
+-- ════════════════════════════════════════════════
+--
+-- WHAT THIS DOES (plain language):
+--   Stops non-admins from changing who gets which notifications.
+--
+--   The screen that edits notification defaults is admin-only, and the helper it
+--   calls was recently made admin-only too. But the TABLE underneath was still
+--   wide open: any logged-in employee — including an external CRM partner — could
+--   edit it directly, going straight past the admin check. Anyone on the internet
+--   could read it, because the public browser key had table privileges as well.
+--
+--   After this the table answers only to the helper functions, which is how the
+--   app already reads and writes it. Nothing a person uses changes.
+--
+-- ADDITIVE-ONLY:
+--   No — this is a deliberate REVOKE (RED tier), which is the point. It drops one
+--   always-true policy and revokes table privileges from both browser roles. It
+--   creates and drops no table, column, index or function, and changes no row of
+--   business data.
+--
+-- EVIDENCE (live catalog + caller inventory, 2026-07-27):
+--   - Policy `notification_role_defaults_all` = ALL / {authenticated} / USING true
+--     / WITH CHECK true. anon additionally held SELECT/INSERT/UPDATE/DELETE table
+--     privileges with no anon policy behind them; the revoke closes those too.
+--   - Caller inventory: ZERO direct table access anywhere in src/ or functions/.
+--     The only reference is a comment in
+--     src/components/tech/settings/NotificationsSection.jsx:50. All real access is
+--     via get_notification_defaults / set_notification_default, called from
+--     src/components/admin/NotificationDefaultsTab.jsx.
+--   - Both RPCs are SECURITY DEFINER with search_path=public pinned, so they
+--     bypass RLS entirely and are unaffected by dropping the policy. Verified in
+--     the live catalog, not assumed. get_my_notification_prefs is the same.
+--   - set_notification_default already carries an admin gate inside the function
+--     (added 2026-07-26). This migration closes the bypass AROUND that gate; the
+--     gate itself is not touched.
+--   - Precedent, same posture, already applied: notification_types is RLS-enabled
+--     with zero policies and no browser grants
+--     (20260726210000_notification_types_rpc_only.sql).
+--
+-- TESTS:
+--   tests/qa/unit/notification-role-defaults-rpc-only.test.js — CI-visible source
+--   contract. No new db-lane file is added on purpose: that lane does not run in
+--   CI (backlog 6.1) and every addition raises the dark-guard debt. The
+--   behavioural proof for this one is cheap and direct — open Settings →
+--   Notification Defaults as an admin in the apply window and confirm the matrix
+--   still loads and a toggle still saves.
+--
+-- ════════════════════════════════════════════════
+-- ROLLBACK:
+--   Run supabase/rollbacks/20260727144500_notification_role_defaults_rpc_only.rollback.sql
+--   It recreates the always-true authenticated policy and re-grants the browser-role
+--   table privileges, restoring the prior (deliberately permissive) posture.
+-- ════════════════════════════════════════════════
+
+DROP POLICY IF EXISTS notification_role_defaults_all ON public.notification_role_defaults;
+
+-- RLS stays enabled with no policy: the table is reachable only through the
+-- SECURITY DEFINER RPCs above. service_role is deliberately NOT named.
+REVOKE ALL ON TABLE public.notification_role_defaults FROM anon, authenticated;

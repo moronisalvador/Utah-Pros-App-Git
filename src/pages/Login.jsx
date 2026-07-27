@@ -1,12 +1,40 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Login.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Lets an authorized UPR user sign in or ask for a password-reset email.
+ *   It also provides public Privacy, Terms, and Support links before sign-in and
+ *   enables the native biometric preference after a successful supported login.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /login
+ *   Rendered by:  src/App.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/contexts/AuthContext, @/lib/realtime, @/lib/nativeBiometric
+ *   Data:      reads  → Supabase Auth session through AuthContext
+ *              writes → Supabase Auth session/password-reset request and the
+ *                       device-local biometric preference
+ *
+ * NOTES / GOTCHAS:
+ *   - The real-data development button appears only when the dedicated local
+ *     test-account environment values are configured.
+ *   - Legal/support routes are public and must remain in both web and native
+ *     route modules.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient } from '@/lib/realtime';
-import { db } from '@/lib/supabase';
 import { checkBiometricAvailable, setBiometricEnabled } from '@/lib/nativeBiometric';
 
 export default function Login() {
-  const { login, devLogin, isAuthenticated, isDev, error: authError } = useAuth();
+  const { login, isAuthenticated, isDev, error: authError } = useAuth();
   const navigate = useNavigate();
 
   const [email,        setEmail]        = useState('');
@@ -17,21 +45,9 @@ export default function Login() {
   const [forgotMode,   setForgotMode]   = useState(false);
   const [resetSent,    setResetSent]    = useState(false);
 
-  // Dev mode: list employees for quick select
-  const [employees, setEmployees] = useState([]);
-  const [devMode,   setDevMode]   = useState(false);
-
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
   }, [isAuthenticated, navigate]);
-
-  useEffect(() => {
-    if (isDev) {
-      db.select('employees', 'select=id,full_name,email,role&order=full_name.asc')
-        .then(setEmployees)
-        .catch(() => {});
-    }
-  }, [isDev]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -68,24 +84,9 @@ export default function Login() {
     }
   };
 
-  const handleDevLogin = async (emp) => {
-    setLoading(true);
-    try {
-      await devLogin(emp.email);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Dev Mode's employee picker (handleDevLogin above) binds the anon role —
-  // fine for UI/layout work, but every RPC scoped `TO authenticated` 401s, so
-  // dashboards show "Couldn't load" (see CLAUDE.md "Local Dev & UI
-  // Verification"). This runs a REAL signInWithPassword against a dedicated
-  // local-only test account (never a real employee's credentials) when one is
-  // configured in .env.local, giving a genuine authenticated session for
-  // verifying real data loads locally.
+  // Local real-data verification uses a genuine authenticated session through
+  // the dedicated external test account. The old anonymous employee picker was
+  // removed with the employee-directory privacy boundary.
   const devTestEmail = import.meta.env.VITE_DEV_TEST_EMAIL;
   const devTestPassword = import.meta.env.VITE_DEV_TEST_PASSWORD;
   const handleDevRealLogin = async () => {
@@ -112,35 +113,6 @@ export default function Login() {
           <div className="login-error">{error || authError}</div>
         )}
 
-        {/* ── Dev mode: quick employee selector ── */}
-        {isDev && devMode && (
-          <div>
-            <p style={{ fontSize: 13, color: '#5f6672', marginBottom: 12 }}>
-              Dev Mode — Select an employee:
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {employees.map(emp => (
-                <button
-                  key={emp.id}
-                  className="btn btn-secondary"
-                  style={{ justifyContent: 'flex-start', textAlign: 'left' }}
-                  onClick={() => handleDevLogin(emp)}
-                  disabled={loading}
-                >
-                  <span style={{ fontWeight: 600 }}>{emp.full_name}</span>
-                  <span style={{ color: '#8b929e', marginLeft: 'auto', fontSize: 11 }}>{emp.role}</span>
-                </button>
-              ))}
-              {employees.length === 0 && (
-                <p style={{ fontSize: 13, color: '#8b929e' }}>No employees found. Check Supabase connection.</p>
-              )}
-            </div>
-            <button className="btn btn-ghost" style={{ width: '100%', marginTop: 12 }} onClick={() => setDevMode(false)}>
-              Use email login instead
-            </button>
-          </div>
-        )}
-
         {/* ── Forgot password: reset sent confirmation ── */}
         {resetSent && (
           <div>
@@ -162,7 +134,7 @@ export default function Login() {
         )}
 
         {/* ── Forgot password form ── */}
-        {forgotMode && !resetSent && (!isDev || !devMode) && (
+        {forgotMode && !resetSent && (
           <form onSubmit={handleForgotPassword}>
             <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
               Enter your email and we'll send you a link to reset your password.
@@ -188,7 +160,7 @@ export default function Login() {
         )}
 
         {/* ── Standard email/password login ── */}
-        {!forgotMode && !resetSent && (!isDev || !devMode) && (
+        {!forgotMode && !resetSent && (
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="label" htmlFor="email">Email</label>
@@ -248,14 +220,6 @@ export default function Login() {
               Forgot password?
             </button>
 
-            {isDev && (
-              <button type="button" className="btn btn-ghost"
-                style={{ width: '100%', marginTop: 'var(--space-2)' }}
-                onClick={() => setDevMode(true)}>
-                Dev Mode: Select Employee
-              </button>
-            )}
-
             {/* Only appears once VITE_DEV_TEST_EMAIL/PASSWORD are set in a local
                 .env.local — see CLAUDE.md "Local Dev & UI Verification". */}
             {isDev && devTestEmail && devTestPassword && (
@@ -267,6 +231,42 @@ export default function Login() {
             )}
           </form>
         )}
+
+        <nav
+          aria-label="Legal and support"
+          style={{
+            marginTop: 'var(--space-5)',
+            paddingTop: 'var(--space-3)',
+            borderTop: '1px solid var(--border-light)',
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 'var(--space-2)',
+            flexWrap: 'wrap',
+          }}
+        >
+          {[
+            ['/privacy', 'Privacy'],
+            ['/terms', 'Terms'],
+            ['/support', 'Support'],
+          ].map(([to, label]) => (
+            <Link
+              key={to}
+              to={to}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                minHeight: 'var(--tech-min-tap, 44px)',
+                padding: '0 var(--space-2)',
+                color: 'var(--accent)',
+                fontSize: 'var(--text-sm)',
+                fontWeight: 500,
+                textDecoration: 'none',
+              }}
+            >
+              {label}
+            </Link>
+          ))}
+        </nav>
       </div>
     </div>
   );

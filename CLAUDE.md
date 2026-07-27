@@ -8,8 +8,8 @@
 > directly; Claude Code reads it through that import. It carries the numbered non-negotiables, the
 > authorization boundary, the document precedence ladder, the depth map and the definition of done.
 > **Rule numbering is frozen** — a reference of the form "CLAUDE.md Rule N" resolves in `AGENTS.md`,
-> where rules 1–12 are reproduced verbatim (172 such references across 56 tracked files, re-measured
-> 2026-07-26; derive it with `git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). This file adds
+> where rules 1–12 are reproduced verbatim (180 such references across 59 files, re-measured
+> 2026-07-27; derive it with `rg --hidden -o '\bRules? [0-9]+\b' -g '*.md' | wc -l`). This file adds
 > the **Claude-only** routing on top.
 >
 > **The duplicated `## ⚠️ NON-NEGOTIABLE RULES` block was removed on 2026-07-26**, once the import
@@ -78,25 +78,36 @@ const {
   user, employee, permissions,
   employeePageAccess,  // per-employee page-access override map, backs canAccess()
   featureFlags,         // { 'page:marketing': { key, enabled, dev_only_user_id, ... } }
-  loading, error,
+  pwaOwnerLease,        // opaque owner + login epoch; null until device state is verified
+  loading, error, sessionExpired,
   db,                   // authenticated client — USE THIS (Rule 3)
-  login, logout, devLogin,  // devLogin = DEV builds only
+  login, logout, retrySecureAccountCleanup,
   canAccess, isFeatureEnabled, isAuthenticated, isDev,
 } = useAuth();
 ```
 
 ## Local Dev & UI Verification
 
-A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the **anon/publishable** key unlocks real local dev + UI verification: `preview_start({name: "Vite Dev Server"})` (config in `.claude/launch.json`) → Login screen's **"Dev Mode: Select Employee"** button → click an approved test employee. The key is intentionally public, not a secret, but that does **not** make database access safe—RLS/policies must assume every internet caller has it, and the live audit confirms broad anon exposure. Use this mode only for authorized UI verification; never treat it as authentication. If `.env.local` doesn't exist yet, get the URL + publishable key via the Supabase MCP (`get_project_url` / `get_publishable_keys`) rather than asking the user to paste secrets in chat—but never create the file directly (`.claude/hooks/block-secrets.sh` blocks any `Write`/`Edit` to `.env*` by filename, on purpose); hand the two lines to a human to paste in.
-
-**Limitation (expected, not a bug — don't waste time re-diagnosing it):** Dev Mode authenticates the *employee* row but the client still runs as Supabase's `anon` role, not a real JWT. Any RPC scoped `TO authenticated` (most of them, per `database-standard.md` §1) returns `42501 permission denied for function ...`, so dashboard/list data shows "Couldn't load" even though the UI itself is fine.
+A local `.env.local` (gitignored — Vite auto-loads it) with `VITE_SUPABASE_URL` + the
+**anon/publishable** key enables the Login screen and public bootstrap only. It does not grant an
+employee identity: the anonymous employee picker and `devLogin` bypass were removed with the
+employee-directory privacy boundary. Every application-data session now uses Supabase Auth and the
+selector-free `get_my_employee_profile()` contract. The publishable key is intentionally public, not
+a secret, but RLS/policies must still assume every internet caller has it. If `.env.local` does not
+exist yet, obtain only the URL + publishable key through the approved read-only setup path; never ask
+the user to paste secrets in chat or write a real credential into the repository.
 
 **`functions/api/*.js` workers don't run on `localhost:5173` at all.** Vite Dev Server only serves the frontend; `/api/*` calls proxy to `localhost:8788` (`vite.config.js`), which is nothing unless the separate **"Cloudflare Pages Functions"** launch config (`wrangler pages dev dist`, needs a fresh `npm run build` first) is also running — otherwise a worker call just silently network-errors, easy to mistake for the feature being broken. And even with both running locally, any worker needing the Supabase **service-role** key (most write-side workers) still can't complete end-to-end — that key is Cloudflare-only by design, never in a local file. For verifying anything that hits a `functions/api/*` worker, use the real deployed site (`dev.utahpros.app` / `utahpros.app`), not localhost.
 
-**Three ways to get UI access locally — pick whichever fits what you're actually verifying, none of these is "the" way:**
-- **Anon-role Dev Mode** (employee picker, above) — any employee, instant, no data.
-- **Real-data Dev Mode** — Login screen's **"Dev Mode: Real Data (test admin)"** button (`src/pages/Login.jsx`), shown only when `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` are set in `.env.local`. Runs a real `signInWithPassword()` against a dedicated `[Local Dev Test Account]` employee (`admin` role, `is_external: true`, its own Supabase Auth user — never a real employee's credentials), so it's a genuine `authenticated` session with real RLS-scoped data.
-- **Human-authenticated tab** — a human logs into `dev.utahpros.app` themselves in the Browser pane, then hand off that already-authenticated tab — the only option that reflects a specific real employee's actual account/permissions rather than the test account's.
+**Two authenticated UI-verification paths — pick the one that answers the question:**
+- **Real-data local test account** — Login's **"Dev Mode: Real Data (test admin)"** button
+  (`src/pages/Login.jsx`) appears only when a human has placed
+  `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` in `.env.local`. It calls
+  `signInWithPassword()` for the dedicated external test account and therefore receives a genuine
+  `authenticated` session; it is not an employee-selection bypass.
+- **Human-authenticated deployed tab** — a human logs into `dev.utahpros.app`, then hands off that
+  already-authenticated tab. This is the path for a specific employee's actual permissions or any
+  Pages Function that cannot run safely with local production credentials.
 
 Use judgment on which one answers the question at hand (pure UI/layout vs. real data vs. a specific employee's actual view) — this list is scope, not a decision tree to follow in order. Whichever is used, never enter credentials directly yourself, even ones handed over in chat, even for the throwaway test account — if `.env.local` needs updating, hand the lines to a human to paste in.
 

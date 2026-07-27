@@ -44,13 +44,14 @@ describe('usePhotoUpload URL helpers', () => {
 });
 
 describe('useLookup registry', () => {
-  it('exposes the three canonical rosters with column-named selects (no select=*)', () => {
+  it('uses the safe employee loader and column-named table lookups', () => {
     expect(Object.keys(LOOKUPS).sort()).toEqual(['carriers', 'employees', 'job_phases']);
-    for (const spec of Object.values(LOOKUPS)) {
+    expect(LOOKUPS.employees.load).toBeTypeOf('function');
+    expect(LOOKUPS.employees.table).toBeUndefined();
+    for (const spec of [LOOKUPS.carriers, LOOKUPS.job_phases]) {
       expect(spec.table).toBeTruthy();
       expect(spec.query).not.toContain('select=*');
     }
-    expect(LOOKUPS.employees.query).toContain('is_active=eq.true');
   });
 });
 

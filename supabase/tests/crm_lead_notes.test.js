@@ -35,7 +35,7 @@
  *     authenticated + service_role only (never anon — database-standard.md §1),
  *     so this suite only actually exercises them when run somewhere those roles
  *     can reach the RPCs (an authenticated harness, or the Supabase MCP as a
- *     privileged role), NOT a plain anon devLogin session. Verify with direct
+ *     privileged role), NOT a plain anonymous browser session. Verify with direct
  *     RPC calls via the Supabase MCP when this self-skips.
  * ════════════════════════════════════════════════
  */

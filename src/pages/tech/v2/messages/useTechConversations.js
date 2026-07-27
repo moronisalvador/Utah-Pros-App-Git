@@ -34,9 +34,9 @@
  *     kind (prefix), refreshing every filtered view + the badge. A targeted
  *     setQueryData patch can't keep server-side ordering/counts honest, so an
  *     invalidate is the correct primitive here.
- *   - devLogin caveat (on record): after the pending sms F-red anon closure, realtime
- *     tested via devLogin will falsely appear broken — the socket needs the real
- *     authenticated JWT. Verify with a real login. REST polling still works either way.
+ *   - Realtime verification requires a genuine authenticated JWT. The former
+ *     anonymous local employee selector is retired and is not a supported test
+ *     path. REST polling and Realtime are both verified with a real login.
  * ════════════════════════════════════════════════
  */
 import { useEffect } from 'react';

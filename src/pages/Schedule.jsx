@@ -39,8 +39,10 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { TYPE_COLORS, STATUS_LABELS, WEEKDAYS_FULL, fmtDate, fmtShort, fmtTime, getMonday } from '@/lib/scheduleUtils';
 import JobPanel from '@/components/JobPanel';
 import CreateAppointmentModal from '@/components/CreateAppointmentModal';
@@ -544,7 +546,7 @@ export default function Schedule() {
 
   useEffect(() => { loadPanelJobs(); }, [loadPanelJobs]);
   useEffect(() => { loadBoard(); }, [loadBoard]);
-  useEffect(() => { db.select('employees', 'is_active=eq.true&order=display_name.asc&select=id,display_name,full_name,role,color,avatar_url').then(setAllEmployees).catch(() => {}); }, [db]);
+  useEffect(() => { loadEmployeeDirectory(db).then(setAllEmployees).catch(() => {}); }, [db]);
 
   const toggleJob = async (jobId, addToBoard) => { try { if (addToBoard) await db.insert('dispatch_board_jobs', { job_id: jobId, added_by: employee?.id }); else await db.delete('dispatch_board_jobs', `job_id=eq.${jobId}`); setPanelJobs(prev => prev.map(j => j.id === jobId ? { ...j, on_board: addToBoard } : j)); loadBoard(); } catch (e) { console.error('Toggle:', e); } };
 
@@ -595,6 +597,50 @@ export default function Schedule() {
     if (appt.kind === 'event') setEventModal({ event: appt });
     else setEditModal(appt);
   };
+
+  // ─── SECTION: Deep link — /schedule/appointment/:apptId ──────────
+  // The office destination for an appointment (bell notifications, ClaimPage).
+  // Two steps, because the board only holds the currently anchored date window and
+  // a notification is usually for a day the dispatcher is not looking at:
+  //   1. resolve the appointment's date and move the anchor there,
+  //   2. once the reloaded board contains the row, open it.
+  // Opening from boardData (not from a raw fetch) guarantees EditAppointmentModal
+  // gets the same shape a click would hand it — crew included.
+  // The URL is deliberately left alone: rewriting it here would remount Schedule
+  // and close the modal we just opened.
+  const { apptId: deepLinkApptId } = useParams();
+  const deepLinkOpenedRef = useRef(null);
+
+  useEffect(() => {
+    if (!deepLinkApptId || deepLinkOpenedRef.current === deepLinkApptId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await db.select('appointments', `id=eq.${deepLinkApptId}&select=date`);
+        const date = Array.isArray(rows) && rows[0]?.date;
+        if (!cancelled && date) setAnchor(new Date(`${date}T00:00:00`));
+      } catch (e) {
+        // Non-fatal: the board still renders. If the row is unreachable the open
+        // effect below simply never fires, which is the correct quiet failure.
+        console.error('Schedule deep link:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [db, deepLinkApptId]);
+
+  useEffect(() => {
+    if (!deepLinkApptId || deepLinkOpenedRef.current === deepLinkApptId) return;
+    let found = null;
+    for (const job of boardData) {
+      const hit = (job.appointments || []).find(a => a.id === deepLinkApptId);
+      if (hit) { found = hit; break; }
+    }
+    if (!found) found = events.find(e => e.id === deepLinkApptId) || null;
+    if (!found) return;
+    deepLinkOpenedRef.current = deepLinkApptId;
+    if (found.kind === 'event') setEventModal({ event: found });
+    else setEditModal(found);
+  }, [deepLinkApptId, boardData, events]);
 
   // ── Optimistic drag-drop (move) — works for both jobs and events ──
   const handleApptDrop = async (apptId, newDate, newTimeStart, newTimeEnd) => {

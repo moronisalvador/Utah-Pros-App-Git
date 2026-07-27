@@ -18,15 +18,16 @@
  * DEPENDS ON:
  *   Packages:  react, @tanstack/react-query (the app-wide QueryClient from main.jsx)
  *   Internal:  @/contexts/AuthContext (the authenticated db client)
- *   Data:      reads → employees, job_phases, insurance_carriers
+ *   Data:      reads → get_employee_directory, job_phases, insurance_carriers
  *
  * NOTES / GOTCHAS:
  *   - Usage: const { data: employees = [], isLoading, error } = useLookup('employees');
  *     Returns the raw react-query result — default the array so a first render is safe.
  *   - Query keys are ['lookup', kind] and are STABLE and shared, so react-query dedups
  *     across every consumer (perf-budget.md §3). staleTime 5 min (rosters change rarely).
- *   - The queries are the canonical column-named selects the pages already used (never
- *     select=*). Add a new roster kind here (one registry entry), not a per-page fetch.
+ *   - Table-backed lookups use canonical column-named selects (never select=*).
+ *     Employees use the selector-safe directory RPC. Add a roster kind here,
+ *     not a per-page fetch.
  *   - The db client identity is stable (stableDb), so it is NOT in the queryKey — the
  *     key stays cacheable across auth-token refreshes.
  * ════════════════════════════════════════════════
@@ -34,12 +35,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 
-// The canonical fetch for each shared roster (column-named — never select=*).
+// The canonical fetch for each shared roster.
 export const LOOKUPS = {
   employees: {
-    table: 'employees',
-    query: 'is_active=eq.true&order=full_name.asc&select=id,full_name,display_name,role,color',
+    load: loadEmployeeDirectory,
   },
   job_phases: {
     table: 'job_phases',
@@ -59,7 +60,9 @@ export function useLookup(kind, options = {}) {
   return useQuery({
     queryKey: ['lookup', kind],
     queryFn: async () => {
-      const rows = await db.select(spec.table, spec.query);
+      const rows = spec.load
+        ? await spec.load(db)
+        : await db.select(spec.table, spec.query);
       return rows || [];
     },
     staleTime: 5 * 60 * 1000,   // rosters change rarely — 5 min fresh

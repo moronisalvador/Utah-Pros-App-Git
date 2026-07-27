@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "build:ios": "VITE_BUILD_TARGET=native vite build && cap sync ios",
+    "build:native": "node scripts/build-native.mjs",
+    "sync:ios": "cap sync ios",
+    "build:ios": "npm run build:native && npm run sync:ios",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:worker && npm run test:qa",
@@ -20,15 +22,18 @@
     "test:artifacts": "node scripts/qa/scan-test-artifacts.mjs",
     "generate:tooling": "node scripts/render-tooling-adapters.mjs --write",
     "check:tooling-generated": "node scripts/render-tooling-adapters.mjs --check",
-    "test:tooling": "node --test scripts/validate-tooling-governance.node-test.mjs scripts/render-tooling-adapters.node-test.mjs scripts/tooling-skill-contracts.node-test.mjs",
+    "preflight:mobile": "node scripts/mobile-readiness-preflight.mjs",
+    "test:tooling": "node --test scripts/validate-tooling-governance.node-test.mjs scripts/render-tooling-adapters.node-test.mjs scripts/tooling-skill-contracts.node-test.mjs scripts/mobile-readiness-preflight.node-test.mjs",
     "validate:tooling": "node scripts/validate-tooling-governance.mjs",
     "test:figma-governance": "node --test scripts/validate-figma-governance.node-test.mjs",
     "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
-    "validate:provenance": "node scripts/check-migration-provenance.mjs"
+    "validate:provenance": "node scripts/check-migration-provenance.mjs",
+    "smoke:deploy": "node scripts/smoke-deploy.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",
+    "@capacitor/app": "^8.0.0",
     "@capacitor/camera": "^8.1.0",
     "@capacitor/cli": "^8.3.1",
     "@capacitor/core": "^8.3.1",

@@ -1,6 +1,6 @@
 # Database Standard
 
-**Last verified:** 2026-07-25
+**Last verified:** 2026-07-26
 
 Linked from `CLAUDE.md` (Rule 7 + the DB Client API section). These are the standing rules for
 schema, RLS, grants, secrets, apply-window discipline, rollback, and time — on the **one shared
@@ -32,11 +32,12 @@ templates. Evidence: `docs/audit/2026-07/evidence/live-supabase.md`.
 
 **Why the flip is safe (verified, not assumed):** logged-in users already carry a real Supabase Auth
 JWT with `role=authenticated` (`AuthContext.jsx` builds the db client from `session.access_token`;
-the anon key is only used for pre-login bootstrap and DEV `devLogin`). `AuthContext.jsx` even
-comments *"anon client breaks if RLS tightens"* — the app runs as `authenticated`, so scoping
-policies and grants to `authenticated` does not regress it. The old blanket-`anon` template is what
-exposed every `USING (true)` table to unauthenticated reads via the anon key shipped in the browser
-bundle.
+the anon key is only used for deliberately public/pre-login boundaries). The anonymous employee
+picker and `devLogin` bypass are removed; local real-data verification also uses a genuine Supabase
+Auth session, and employee identity resolves selector-free from `auth.uid()`. The application data
+path therefore runs as `authenticated`, so scoping policies and grants to `authenticated` does not
+regress it. The old blanket-`anon` template is what exposed every `USING (true)` table to
+unauthenticated reads via the anon key shipped in the browser bundle.
 
 ---
 
@@ -117,6 +118,10 @@ Extend this list deliberately, one line per entry naming the exact object and th
 - Apply only migrations committed to a reviewed commit reachable from the designated release
   branch. An emergency feature-branch apply requires owner authorization, a recorded commit/reason
   and immediate merge/reconciliation; run a read-only live-ledger-versus-release-ref check.
+- New governed migration files rely on the Supabase migration executor's transaction, which includes
+  both the SQL and its `schema_migrations` ledger write. Do not add top-level `BEGIN`/`COMMIT` to
+  those forward files or require it in source-contract tests; an operator-run rollback may own an
+  explicit transaction when its runbook says so. Never substitute a raw direct-SQL apply path.
 - Two migrations that issue strong-lock DDL (`CREATE/DROP POLICY`, `ADD CONSTRAINT`, `ADD/DROP INDEX`)
   against the **same** hot tables must not have overlapping apply windows — serialize the apply even
   though merge order is free. Use `ADD CONSTRAINT ... NOT VALID` → `VALIDATE CONSTRAINT` to keep the

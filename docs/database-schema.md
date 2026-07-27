@@ -311,6 +311,59 @@ backslashes all remain fail-closed. It is live under ledger version `20260724200
 live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
 remain unchanged with `outbound_unmatched`.
 
+## Pending mobile notification dispatcher boundary (S1d, 2026-07-26)
+
+`20260726110000_notify_emit_service_boundary.sql` is authored and locally tested but **not
+applied**. It changes no table, trigger, schedule, policy, configuration row, URL, secret, header,
+or response shape. It preserves
+`public.notify_emit(p_type_key text,p_body jsonb) RETURNS void`, owner `postgres`,
+`SECURITY DEFINER`, `search_path=public`, the catalog/URL no-op gates, and the existing
+`net.http_post` transport. Its only body change reverses the top-level object merge so the trusted
+`p_type_key` wins over a same-named key in `p_body`.
+
+The ACL transition removes `authenticated` and leaves only the owner plus explicit
+`service_role` execution; `PUBLIC` and `anon` remain denied. Three trigger functions, two timesheet
+RPCs, and `scan_abandoned_clocks` account for the exact six live caller functions/seven call sites.
+They are owner-run `SECURITY DEFINER` functions, and the abandoned-clock cron runs as `postgres`, so
+the migration deliberately adds no in-body `current_user`/`auth.role()` check and rewrites no
+caller. The forward and rollback scripts fail closed on the captured target/caller/trigger/cron
+metadata. The rollback restores the exact prior body and `authenticated` grant and therefore
+re-opens the browser capability.
+
+Because the migration is unapplied, it is intentionally absent from the live provenance manifest.
+Add a ledger mapping and fresh function fingerprint only after an owner-authorized apply from the
+reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
+
+## Pending notification read receipts and recipient RLS (S1g, 2026-07-26)
+
+`20260726260000_notification_read_recipient_boundary.sql` is authored and locally tested but **not
+applied**. It adds `notification_reads(notification_id, employee_id, read_at)` with cascading
+foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, has no
+policies, and grants no direct browser or service-role table access; the owner-run guarded
+`SECURITY DEFINER` bell RPCs are its only access path.
+
+The four existing bell RPC identities and result shapes remain unchanged. For broadcasts they
+project an employee-specific receipt through the existing `notifications.read_at` field; targeted
+rows continue using the base row. A non-null legacy broadcast `read_at` wins over any receipt so
+historical globally-read rows do not reappear. Mark-one and mark-all insert broadcast receipts
+idempotently and update only the authenticated employee's targeted rows.
+
+The existing Realtime table stays published. Its `notifications_select` policy object is altered,
+not dropped, from authenticated `USING (true)` to an active, non-external
+`employees.auth_user_id = auth.uid()` own-or-broadcast predicate. Direct authenticated table access
+becomes SELECT-only; `anon` loses table privileges and the obsolete authenticated
+`notifications_delete_testrows` policy is removed. The apply preflight pins the current employee
+UUID/active/external columns plus authenticated employee SELECT/RLS policy because that table is an
+explicit dependency of the notification predicate.
+
+This schema description is proposed source state until a separate shared-database apply succeeds.
+The generated live schema/RPC reports and provenance ledger must remain unchanged before then.
+Rollback is owner-guarded because it drops receipt history and deliberately restores the prior
+cross-recipient/shared-read exposure. It restores the exact prior functions and authenticated
+policy behavior but intentionally keeps the historical `anon` notification-table grant revoked;
+notifications have no approved public allowlist use case.
+
 ## QuickBooks Online attachments tracking (2026-07-24)
 
 `20260724180000_qbo_attachments.sql` (**live under ledger version `20260724190829`**) adds one additive table,
@@ -353,3 +406,68 @@ large table would not be safe to apply casually. Rollback:
 Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with no constraint
 behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
 poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.
+
+## Mobile S1e inbound recording-source boundary (authored 2026-07-26)
+
+Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is reviewed source only and
+has not been applied. It adds forced-RLS, service-role-only
+`inbound_lead_recording_sources`, keyed one-to-one to `inbound_leads`. Provider URLs move there;
+`inbound_leads.recording_url` remains in its deployed position but contains only the opaque truthy
+marker `upr-recording://available`. An AFTER trigger captures new URLs once the lead ID exists and
+immediately replaces the public value; a BEFORE payload trigger recursively removes
+`recording`/`recording_url` keys from `raw_payload`. The ingestion adapter performs the same scrub
+before RPC submission.
+
+The migration removes anonymous privileges and authenticated direct DML, then replaces the broad
+authenticated `ALL` policy with company-wide SELECT for active, non-external employees. That scope
+is explicit because no employee-to-CRM-org or lead assignment relation exists.
+`get_inbound_leads(integer) -> jsonb` keeps its signature/order/limit and adds the existing
+admin-or-`crm_call_log` capability decision. Rollback restores raw URLs, the exact prior RPC,
+grants/policy, and removes the companion table; it deliberately reopens scalar URL exposure.
+Privacy-safe removal of recording keys from historical `raw_payload` is not reversible.
+
+**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
+verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
+browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
+then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
+S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
+ledger row exists and its browser-read-only employee contract still matches. Recapture that
+catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
+S1e or S1g; each remains its own owner-approved window.
+
+## Pending mobile identity and personal ownership sequence (S1h, 2026-07-27)
+
+S1h now consists of four reviewed source migrations, all absent from the shared live ledger:
+
+- `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
+  selector-safe employee read RPCs and changes no existing table, policy, grant, row, or function.
+- `20260726182000_mobile_employee_identity_containment.sql` is a later schema-last boundary. It
+  removes browser employee writes, narrows direct identity reads, and gates existing roster and
+  commission RPCs only after compatible clients are deployed.
+- `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
+  already-live permission writer with its reviewed body fingerprint; behavior and grants do not
+  change.
+- `20260727022920_mobile_personal_ownership_boundary.sql` replaces nine existing personal RPC
+  bodies, adds one private owner-only helper, forces RLS on `employee_page_access`,
+  `notification_prefs`, `push_subscriptions`, and `device_tokens`, and removes every browser policy
+  and table privilege from those four tables. Their columns, constraints, indexes, triggers,
+  publications, views, and business rows remain unchanged.
+
+The live permission dependency exists as assigned version
+`20260727012825 permission_write_gates`; repository provenance maps it to reviewed source
+`20260726220000_permission_write_gates.sql`. S1h accepts only that exact dependency and the separate
+provenance reconciliation. Browser token conflicts are same-owner refresh only; cross-owner Web
+Push/native token registration and deletion fail closed, while reviewed owner/service maintenance
+remains.
+
+The earlier `20260726223610_mobile_personal_ownership_boundary.sql` artifact is rejected evidence,
+not an apply candidate. Its employee self-promotion and raw-token takeover paths are addressed by
+the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
+pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
+retained governed local database. Generated schema/RPC reports must continue describing deployed
+state; none of these source migrations is live or `ready_for_apply`.
+
+Rollback is not routine compatibility work. It deliberately restores anonymous page-access
+enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary
+token mutation. It requires its explicit unsafe session flag plus a separate owner decision;
+forward repair is preferred. See `docs/mobile/s1h-database-apply-runbook.md`.

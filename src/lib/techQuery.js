@@ -163,3 +163,14 @@ export function makeTechQueryClient() {
 // Singleton for the provider in main.jsx. Kept module-level so the same client is
 // shared across the whole tech tree (and the persister that wraps it).
 export const techQueryClient = makeTechQueryClient();
+
+/**
+ * Drop all in-memory tech queries during an account transition.
+ *
+ * Persisted state is cleared separately by `clearPersistedTechQueries`; keeping
+ * both operations explicit lets the account lifecycle await durable cleanup and
+ * prevents already-hydrated rows from surviving in memory.
+ */
+export function clearTechQueryMemory() {
+  techQueryClient.clear();
+}

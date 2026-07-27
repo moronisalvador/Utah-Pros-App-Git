@@ -1,19 +1,45 @@
 # UPR Web Platform — Context Document
-Last updated: July 26, 2026 (repository-only signed Work Authorization SMS consent bridge,
-live prior-service SMS consent boundary, release evidence, and
-cross-platform isolated-browser profile containment; see git history for earlier accuracy-audit
-findings)
+Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair applied;
+current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
+signed Work Authorization SMS consent and current `origin/dev` additions preserved; see git history
+for earlier accuracy-audit findings)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+## Dorothy Killian downstairs reconstruction A/R repair (2026-07-27)
+
+Migration source
+`20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql` is a bounded, idempotent
+repair for the already-existing UPR records tied to QuickBooks invoice `4283` / document
+`R-2604-062`. It does not create another job, invoice, line item, or payment. It corrects the
+downstairs reconstruction job to claim `CLM-2603-010` / Encircle `4390121`, moves the incorrectly
+assigned upstairs reconstruction job to its own Encircle claim `4760844`, fills the reviewed
+customer/job identity fields, adds the missing primary `contact_jobs` association, and restores the
+existing invoice line to `$10,611.51`. Existing triggers then derive invoice balance `$2,938.64`
+from the preserved `$7,672.87` QuickBooks payment. The migration never writes generated or
+payment-trigger-owned money columns directly.
+
+The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
+invoice total and negative displayed balance. The exact migration committed in `97b81c82` was applied
+to shared UPR Supabase project `glsmljpabrwonfiltiqm` as ledger version `20260727224804`. Immediate
+read-back verified one QBO invoice `4283`, one payment `4284`, one primary contact association, one
+reconstruction job for each Encircle claim, invoice total `$10,611.51`, preserved payment
+`$7,672.87`, balance `$2,938.64`, and `partially_paid` status in `get_ar_invoices()`. QuickBooks and
+Encircle remained read-only; this repair made no provider write.
+
 ## Encircle managed credentials initiative (2026-07-23)
 
-Implementation is landed and dark-gated; repository/live readiness was reverified on current
-`origin/dev` on 2026-07-23. No migration, deployment, credential entry, rotation, or revocation has
-occurred. The plan of record is `docs/encircle-managed-credentials-roadmap.md`, with the dated
-catalog and test snapshot at
+Implementation is landed and was dark-gated in the dated 2026-07-23 evidence. That snapshot said
+the migration was pending. The active ownership register later recorded a live ledger row
+`20260726233416 encircle_managed_credentials`, applied by another session, but also records that
+the source-to-live mapping and fresh catalog evidence are missing. This mobile integration did not
+recapture Encircle live state. Current apply/catalog/flag state is therefore **unknown pending the
+separately scoped read-only provenance recapture**; do not replay the migration or infer rollout
+readiness from either dated statement. No credential entry, rotation, revocation, deployment, or
+provider action occurred in this mobile session. The plan of record is
+`docs/encircle-managed-credentials-roadmap.md`, with the dated catalog and test snapshot at
 `docs/audit/2026-07/evidence/encircle-managed-credential-readiness-2026-07-23.md`.
 
 - Seven Pages Encircle workers now resolve the locked `integration_credentials` source first and
@@ -21,8 +47,10 @@ catalog and test snapshot at
 - `upr-mcp/src/encircle.js` uses the same managed row/state precedence.
 - New `/api/encircle-credential` requires an active admin plus a fail-closed rollout flag, validates
   a candidate against Encircle before storage, and never returns it.
-- `20260723_encircle_managed_credentials.sql` is pending apply. It seeds no secret, leaves the flag
-  OFF, adds fallback/active/disabled plus verification metadata, and preserves zero-policy RLS.
+- `20260723_encircle_managed_credentials.sql` is the reviewed repository source. It seeds no
+  secret, leaves the flag OFF, adds fallback/active/disabled plus verification metadata, and
+  preserves zero-policy RLS. The later reported live ledger row is unmapped; verify provenance and
+  catalog state read-only before deciding whether this source already corresponds to it.
 - `/settings/integrations` adds the Encircle card only when the explicit flag row is effectively on.
 - Technician Scope Sheet files and payload/response contracts were intentionally not changed.
 - Service-role writer gates were tightened without removing the technician new-job path: import is
@@ -391,7 +419,8 @@ get_sign_document_templates(p_token text) → SETOF document_templates  — SECU
 -- Migration B — RED, STAGED. 20260708_dbf_p3_anon_policy_closure.sql
 Recreates 126 public policies (66 tables) dropping anon → TO authenticated (USING/WITH CHECK
      unchanged, incl. the `(NOT is_crm_partner(auth.uid()))` predicates). nav_permissions narrowed
-     (anon ALL → anon SELECT, for devLogin bootstrap). notifications_select ALTERed TO authenticated
+     (anon ALL → anon SELECT for the then-deployed bootstrap; the anonymous selector is now retired).
+     notifications_select ALTERed TO authenticated
      (never dropped — realtime + reads depend on it). Idempotent (DROP POLICY IF EXISTS), alphabetical.
 
 -- Migration C — RED, STAGED. 20260708_dbf_p3_anon_rpc_revoke.sql
@@ -401,7 +430,8 @@ REVOKE EXECUTE ON FUNCTION ... FROM PUBLIC, anon on 322 functions (both grants �
 
 -- KEPT anon (§2 allowlist): RPCs get_feature_flags, get_employee_page_access, get_crm_build_progress,
      upsert_lead_from_form, get_sign_request_by_token, get_sign_document_templates; table reads on
-     employees / feature_flags / employee_page_access / nav_permissions (login+devLogin bootstrap).
+     employees / feature_flags / employee_page_access / nav_permissions (historical bootstrap
+     compatibility; current source uses a genuine session and selector-free RPCs).
      Current correction: `20260723235900_public_form_rpc_boundary.sql` is now authored to remove
      upsert_lead_from_form from this temporary exception because both runtime callers use the
      service-role Worker path. It remains unapplied until an owner-authorized serialized window.
@@ -629,7 +659,7 @@ src/
   main.jsx                       — Entry point
   index.css                      — All global styles + CSS variables
   contexts/
-    AuthContext.jsx               — Auth state, db client, login/logout/devLogin,
+    AuthContext.jsx               — Auth state, account cleanup lock, genuine-session login/logout,
                                    featureFlags map, isFeatureEnabled(), canAccess()
   lib/
     supabase.js                   — REST client (baseUrl, apiKey, select/insert/update/delete/rpc)
@@ -639,7 +669,7 @@ src/
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx + TechDash.jsx before OMW.
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
   pages/
-    Login.jsx                     — Email/password login + forgot password + dev mode selector
+    Login.jsx                     — Email/password login + forgot password (no employee selector)
     SetPassword.jsx               — Password reset flow (recovery link handler)
     Dashboard.jsx                 — Owner "Overview" dashboard: 12-col widget grid (replaced the old
                                     stats+jobs view Jun 24 2026). See the "Overview Dashboard" section below.
@@ -2626,7 +2656,7 @@ QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit De
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
 QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
 QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
-QBO_WEBHOOK_SECRET              — Shared secret; must equal integration_config.qbo_webhook_secret (DB trigger → worker auth)
+QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved QBO server paths, including invoice/estimate customer self-calls and payment scheduling; the legacy contact trigger is inert
 APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
@@ -2691,18 +2721,16 @@ record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnosti
 
 ## QuickBooks Online Integration (Jun 18 2026 — Phase 1: customer sync)
 
-One-directional push: when a paying-party contact (`role` in homeowner /
-property_manager / tenant, with a non-empty name) is inserted into `contacts`,
-it is created as a Customer in QuickBooks Online. Same worker + service-role
-pattern as the Encircle sync.
+Customer creation is one-directional UPR→QBO, but it is no longer automatic on contact insert.
+When an invoice or estimate needs a paying-party contact
+(`homeowner`/`property_manager`/`tenant`, with a non-empty name),
+`ensureQboCustomer()` self-posts `{contact_id}` to `/api/qbo-sync-customer` with the existing server
+capability. Settings also exposes explicit preview/backfill. The Worker creates or links the QBO
+Customer and writes `qbo_customer_id`/`qbo_synced_at` back to the contact.
 
-**Data flow:**
-`contacts` INSERT → trigger `trg_qbo_customer_sync` → `notify_qbo_customer_sync()`
-fires `net.http_post` (pg_net, async, non-blocking) to `/api/qbo-sync-customer`
-with `{ contact_id }` + an `x-webhook-secret` header → worker creates the QBO
-customer → writes `qbo_customer_id` / `qbo_synced_at` back on the contact. The
-trigger no-ops unless QuickBooks is connected, so it is safe to ship before
-setup is finished.
+The attached `trg_qbo_customer_sync`/`notify_qbo_customer_sync()` path is deliberately inert after
+`20260701_crm_qbo_phase_b_gate_contact_trigger.sql`; its historical pg_net flow is not a current
+caller.
 
 **Tables (RLS-locked — service-role only; NO anon/authenticated policies):**
 - `integration_credentials` — `provider PK, access_token, refresh_token, realm_id, environment ('sandbox'|'production'), token_expires_at, company_name, connected_by UUID→employees, connected_at, updated_at`. One row per provider (`'quickbooks'`). Access token auto-refreshes (~1h) inside the worker; refresh token rolls forward.
@@ -2715,19 +2743,31 @@ setup is finished.
 - `get_qbo_sync_stats()` → synced, pending, errored (counts over contacts)
 
 **Workers:**
-- `quickbooks-connect.js` — GET, authed (Supabase Bearer). Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`.
-- `quickbooks-callback.js` — GET. Intuit redirect target; exchanges code→tokens, stores connection + company name, redirects to `/dev-tools?qbo=connected`.
-- `qbo-sync-customer.js` — POST. Auth via `x-webhook-secret` (trigger) or Supabase Bearer (manual). Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
+- `quickbooks-connect.js` — GET, active internal-admin Supabase Bearer only. Returns `{ url }` to start Intuit OAuth; stashes a CSRF `state`. The shared QBO server secret is intentionally not an OAuth identity.
+- `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
+- `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
 **Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact becomes a QBO customer at invoice/estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
 
-**On-demand customer creation (Phase A, shipped; full detail in BILLING-CONTEXT.md):** `qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client first" error only if it's still missing. No-op today (the `trg_qbo_customer_sync` contact-insert trigger still pre-creates); **Phase B (planned, not yet applied)** retires that trigger so contacts sync to QBO only when transacted with — applied only after Phase A reaches `main` (shared dev/main Supabase).
+**On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
+`qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a
+billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client
+first" error only if it is still missing. Migration
+`20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
+trigger body with `RETURN NEW`, so it is deliberately inert; on-demand invoice/estimate sync and
+explicit Settings preview/backfill are the active checked-in customer-sync callers.
 
 ### Settings Overhaul P9 + Encircle — managed credentials
-Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend secrets into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables. The pending, **not applied** `20260723_encircle_managed_credentials.sql` adds Encircle to the same source with an inert default-OFF rollout. Admins manage these on **`/settings/integrations`** instead of editing environment bindings. **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
-- **Rows:** `integration_credentials` contains `stripe` / `twilio` / `resend`; the pending migration seeds an Encircle placeholder with no token. Encircle adds `managed_status` (`fallback|active|disabled`), `last_verified_at`, and `last_verification_status`. `integration_config` holds `twilio_account_sid`, `twilio_messaging_service_sid`, `twilio_phone_number` (non-secret identifiers). OAuth *app-registration* client IDs (QBO/Google) deliberately stay env — see the roadmap architecture caveat.
+
+**Historical source-shape note:** this subsection records the P9/Encircle source as understood on
+2026-07-23. Its former “pending/unapplied/flag OFF” live-state claims are superseded by the current
+checkpoint at the top of this document. Current source-to-live mapping, apply, catalog, and flag
+state are unknown pending read-only provenance recapture.
+
+Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend secrets into the already-locked `integration_credentials` (secret = `access_token`) + `integration_config` (Twilio's non-secret bits) tables. The reviewed repository source `20260723_encircle_managed_credentials.sql` adds Encircle to the same source with an inert default-OFF rollout. Admins manage these on **`/settings/integrations`** instead of editing environment bindings. **Both tables keep their zero-policy RLS posture — no policy added; secrets are service-role/SECURITY-DEFINER-only and never reach the browser.**
+- **Rows:** `integration_credentials` contains `stripe` / `twilio` / `resend`; the reviewed source seeds an Encircle placeholder with no token. Encircle adds `managed_status` (`fallback|active|disabled`), `last_verified_at`, and `last_verification_status`. `integration_config` holds `twilio_account_sid`, `twilio_messaging_service_sid`, `twilio_phone_number` (non-secret identifiers). OAuth *app-registration* client IDs (QBO/Google) deliberately stay env — see the roadmap architecture caveat.
 - **RPCs** (SECURITY DEFINER; writes admin-gated via `auth.uid()`→`employees.role='admin' AND is_active`; never return a token):
-  - `get_managed_credentials_status()` → SETOF json. Pending shape has four provider rows and preserves legacy fields while adding Encircle-safe `managed_status`, verification timestamps/status, and organization name. It never selects a token and calls `p9_assert_admin()` before reading.
+  - `get_managed_credentials_status()` → SETOF json. The reviewed source shape has four provider rows and preserves legacy fields while adding Encircle-safe `managed_status`, verification timestamps/status, and organization name. It never selects a token and calls `p9_assert_admin()` before reading.
   - `set_integration_secret(p_provider, p_secret)` — write the Stripe/Resend key or Twilio auth token. GRANT `authenticated`.
   - `set_twilio_config(p_account_sid, p_messaging_service_sid, p_phone_number)` — NULL arg = leave unchanged, `''` = clear. GRANT `authenticated`.
   - `disconnect_integration(p_provider)` — clears the secret (+ Twilio config). GRANT `authenticated`.
@@ -2743,18 +2783,24 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 **Environments / domains (IMPORTANT):**
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
 - **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
-- `integration_config.qbo_worker_url` is the DB trigger's target; set to the **production** worker `https://utahpros.app/api/qbo-sync-customer`. Env vars must live in the matching Cloudflare environment (Preview for dev, Production for main).
+- `integration_config.qbo_worker_url` is legacy configuration for the now-inert contact trigger; it
+  is not an active caller. On-demand invoice/estimate sync uses the deployment's own origin. QBO
+  bindings must still live in the matching Cloudflare environment (Preview for dev, Production for
+  main).
 - Public EULA/Privacy pages (required by the Intuit production profile) are served at `https://utahpros.app/terms` and `/privacy` (`src/pages/Legal.jsx`). Connecting your own company needs production keys but **no marketplace review**.
 
 **Production setup checklist:**
 1. developer.intuit.com → get **Production** Client ID + Secret. Add redirect URI `https://utahpros.app/api/quickbooks-callback` under the **Production** Redirect URIs tab; set EULA=`/terms`, Privacy=`/privacy`, host domain=`utahpros.app`.
 2. Cloudflare **Production** env vars: `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT=production`, `QBO_REDIRECT_URI=https://utahpros.app/api/quickbooks-callback`, `QBO_WEBHOOK_SECRET` (must equal `integration_config.qbo_webhook_secret`). Redeploy.
-3. https://utahpros.app/dev-tools → Integrations → Connect QuickBooks → authorize your real company.
+3. https://utahpros.app/settings/integrations → Connect QuickBooks → authorize your real company.
 4. Preview sync → review → "Sync existing customers" to backfill the existing paying-party contacts.
 
 (Sandbox testing used the same flow with `dev.utahpros.app` URLs, `QBO_ENVIRONMENT=sandbox`, and the Development-tab redirect URI. Before the production cutover, clear the sandbox connection (`DELETE FROM integration_credentials WHERE provider='quickbooks'`) and reset `contacts.qbo_customer_id/qbo_synced_at/qbo_sync_error` to NULL so the production backfill processes everything fresh.)
 
-**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact (normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Phone-only stubs later given a name+role are NOT caught by the contacts INSERT trigger — use the backfill.
+**Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
+(normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
+Customers through invoice/estimate on-demand sync or explicit Settings preview/backfill, regardless
+of when name/role was populated.
 
 ---
 
@@ -2762,7 +2808,9 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **One invoice per job (= per division)** is the norm — insurance pays each category (mitigation, reconstruction) on separate checks, so each check applies to its own single-class invoice. **A job can have more than one invoice when a supplement is needed** (you can't add lines to an already-paid invoice). The QBO `DocNumber` is unique per invoice: the number QBO already assigned, else `job_number` for the first invoice and `job_number-N` for the Nth (e.g. `R-2604-009`, then `R-2604-009-2`) — see `functions/api/qbo-invoice.js`. UPR's `invoices` / `invoice_line_items` / `invoice_adjustments` tables are the source of truth (draft → push to QBO); QBO gets a clean summary invoice.
 
-**Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough (Items/Classes/Invoices); auth via `x-webhook-secret` or Supabase Bearer; tokens stay server-side.
+**Read endpoint:** `functions/api/qbo-query.js` — POST, SELECT-only QBO query passthrough
+(Items/Classes/Invoices); auth via the exact server capability or an active internal-admin Supabase
+Bearer; tokens stay server-side.
 
 **Foundation (`migrations/20260618_invoice_qbo_foundation.sql`):** `invoices.qbo_invoice_id/qbo_synced_at/qbo_sync_error`; `generate_invoice_number()` (seq `invoice_number_seq` → `INV-######`); `create_draft_invoice_for_job()` AFTER INSERT trigger on `jobs` (one draft per job), **gated by `integration_config.auto_draft_invoices` (default `'false'` = dormant)**.
 
@@ -2792,7 +2840,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **QBO→UPR payment sync — IMPLEMENTED (Jun 24 2026).** When a customer pays a QBO invoice online (card/ACH), the payment now flows back into UPR automatically:
 - **`functions/api/qbo-webhook.js`** (`POST /api/qbo-webhook`) — Intuit webhook receiver. Verifies the `intuit-signature` HMAC against `QBO_WEBHOOK_VERIFIER_TOKEN`, claims each event once via `claim_qbo_event` (idempotent), and for `Payment` entities mirrors the payment into UPR (Delete/Void/Merge → removes the imported payment). Inert (acks 200) until the verifier token is set.
-- **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. Logs `worker_runs` as `qbo-payments-sync`. **Point an hourly cron at it (same mechanism as `process-scheduled`).**
+- **`functions/api/qbo-payments-sync.js`** (`GET/POST /api/qbo-payments-sync`, + `scheduled()`) — hourly safety-net poller; queries recent QBO Payments and reconciles any the webhook missed. HTTP uses the exact server capability or an active internal-admin Bearer; the direct Cloudflare `scheduled()` entry remains a distinct non-HTTP capability. Logs `worker_runs` as `qbo-payments-sync`.
 - **`functions/lib/qbo-payment-sync.js`** — shared `syncQboPaymentToUpr()` / `removeQboPaymentFromUpr()`. Maps a QBO Payment's linked invoices → UPR invoices (by `qbo_invoice_id`), inserts `payments` rows (`source='qbo'`, method mapped to credit_card/ach/other), and the existing `update_invoice_paid` trigger rolls them up. **Dedup:** skips any QBO payment whose `qbo_payment_id` already exists on a UPR payment — so UPR-originated payments are never double-counted.
 - **`functions/lib/intuit.js`** — `verifyIntuitSignature()` (base64 HMAC-SHA256) + `sha256hex()`.
 - **Schema (`supabase/migrations/20260624_qbo_payment_webhook.sql`):** `qbo_events` table (event idempotency, service-role only) + `claim_qbo_event(p_id,p_entity,p_operation)` RPC (mirrors `claim_stripe_event`).
@@ -2801,7 +2849,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 **QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` remains **unapplied** and owner-gated.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
-- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])`; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed).
+- **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
 - **`functions/lib/quickbooks.js`** — `uploadAttachable` (multipart `/upload` via `fetchWithTimeout`), `getAttachable`, `deleteAttachable`, `buildAttachableMetadata` (pure).
 - **`src/components/collections/QboAttachments.jsx`** — shared list/upload/remove card in `InvoiceEditor.jsx` + `EstimateEditor.jsx` (rendered for admin/manager; two-click remove).
 - **Schema (`supabase/migrations/20260724180000_qbo_attachments.sql`, authored/not-yet-applied):** `qbo_attachments` (metadata only, no bytes; RLS SELECT scoped to active admin/manager; UNIQUE `qbo_attachable_id` + `idempotency_key`; writes are service-role worker only).
@@ -3523,6 +3571,12 @@ The Encircle replacement build is scoped as a 6-8 week effort ending with Hydro
 (moisture readings, IICRC S500) and a Water Loss Report PDF. Phase 1 + 1.5
 landed Apr 17 and covers rooms + offline-first photo capture.
 
+> **Superseded mobile boundary (Jul 27 2026):** the bullets below describe the Apr 17 deployment
+> history, not the current release promise. The initial production PWA/Capacitor release admits
+> and replays zero automatic offline commands: every field write is online-only,
+> `PRODUCTION_QUEUE_TYPES` is empty, the hook exposes no enqueue/retry API, and the runner imports
+> no dispatchers. IndexedDB remains only for count-only legacy quarantine and bounded cleanup.
+
 ### What's live
 - **Rooms** — claim-scoped per `rooms` table. UI: Rooms grid on TechClaimDetail,
   dedicated TechRoomDetail page with Photos/Notes tabs. Add Room sheet with 16
@@ -3704,6 +3758,11 @@ package.json  — added "test": "vitest run" and vitest devDependency.
 ```
 
 ### TechAppointment integration
+
+> **Current behavior:** the historical queue routing described below is disabled. Moisture and
+> equipment writes fail before local persistence when offline; no production caller enqueues or
+> retries them.
+
 - New sections between Tasks and Photos: **Moisture** and **Equipment**,
   both flag-gated.
 - Moisture rows: material icon, name + (unaffected) marker, room /
@@ -4103,14 +4162,22 @@ callrail-backfill.js  — POST, authenticated, manually triggered (not a cron). 
                          confirm before Phase 1 starts"). Does NOT affect live form leads — those
                          arrive the same way calls do, through callrail-webhook.js's
                          mapFormPayload(), once CallRail is connected.
-callrail-recording.js — GET, authenticated. Streams a call recording INLINE so staff never leave
+callrail-recording.js — GET, active internal admin or company-wide `crm_call_log` employee/role
+                         capability. Streams a call recording INLINE so staff never leave
                          the Call Log. `inbound_leads.recording_url` is CallRail's authenticated API
                          endpoint (opening it directly in a browser → "HTTP Token: Access denied"),
-                         so this proxy takes a `lead_id`, reads that lead's recording_url + the
+                         so this proxy takes a UUID `lead_id`, proves it is a call row and that its
+                         stored `callrail_id` matches the ID embedded in its stored allowlisted
+                         recording URL, then reads the
                          CallRail API key from integration_credentials, fetches with the
                          `Authorization: Token token="…"` header, and streams the audio back. SSRF
                          guard (`isAllowedRecordingUrl`, functions/lib/callrail.js): proxies only a
-                         CallRail-hosted URL stored on that lead. **app→api rewrite (critical):** the
+                         CallRail-hosted URL stored on that lead. Identity/object denial happens
+                         before credential/provider access. External identities, including current
+                         desktop `crm_partner` Call Log users, are deliberately denied; hiding that
+                         playback control is a separate UI compatibility follow-up. There is no
+                         employee→CRM-org assignment model, so this is explicitly company-wide
+                         capability scope. **app→api rewrite (critical):** the
                          LIVE webhook delivers `app.callrail.com/calls/{id}/recording/redirect?access_key=…`,
                          which THROWS when fetched server-side → the Worker crashed and Cloudflare
                          returned a raw **502 (text/html)**, so live-call recordings would not play or
@@ -4121,10 +4188,16 @@ callrail-recording.js — GET, authenticated. Streams a call recording INLINE so
                          `callrail-webhook.js` also normalizes recording_url to the api form AT INGEST,
                          so all consumers (this proxy + `transcribe-call`) get a working URL.
                          `resolveCallRecording` now try/catches the fetch so a throw returns a clean
-                         error shape instead of 502-ing the Worker. The key never reaches the client. Robust to CallRail's response shape: streams
+                         error shape instead of 502-ing the Worker. Both provider and signed-audio
+                         fetch paths are timed. The key never reaches the client. Robust to CallRail's response shape: streams
                          audio/* directly, follows a JSON `{url}` descriptor to the signed audio and
                          streams that, else returns a 502 with the upstream status + body snippet so
-                         a bad shape is diagnosable. `CrmCallLog.jsx` fetches it as a blob (an
+                         a bad shape is diagnosable. That raw bounded upstream diagnostic and the
+                         trusted provider-returned signed URL/content type are preserved deployed
+                         contracts and remain P2 redaction/validation residuals. Direct
+                         `get_inbound_leads`/`inbound_leads` access can still expose stored recording
+                         URLs and is a separate database authorization residual.
+                         `CrmCallLog.jsx` fetches it as a blob (an
                          `<audio src>` can't carry the Supabase Bearer) and plays it in a compact
                          **custom** player (`RecordingPlayer` — a hidden `<audio>` engine + CRM-styled
                          play/pause, seek, and time), not the browser's default control chrome. Each
@@ -5367,8 +5440,9 @@ so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/
 
 **Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
 imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
-session (CLAUDE.md rule 3's documented carve-out for public/bootstrapping calls; same pattern
-`Login.jsx` already uses for its dev-mode employee picker). No new migration was needed:
+session under CLAUDE.md Rule 3’s public/bootstrap carve-out. This is a `/status`-specific public
+call; the former `Login.jsx` employee picker and `devLogin` path have been removed and are not a
+current precedent. No new migration was needed:
 `get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
 `supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
 `information_schema.routine_privileges` before building, not assumed. The underlying
@@ -7059,11 +7133,24 @@ roadmap — `migration-safety-checker` enforces). Session C: `get_my_notificatio
 `get_effective_notification_prefs` per recipient → per-recipient `create_notification` (bell) →
 Web Push per subscription (`webPush.js`; 503-skip when VAPID unset, prune 404/410) →
 transactional email via `sendEmail` (from `UPR - Notifications <restoration@utahpros.app>`;
-NULL-address skip reported). Auth accepts a matching `x-webhook-secret` (DB triggers) OR a valid
-Bearer user token. Disabled types are inert (`{skipped}`). `dispatchEvent` is the reusable core
+NULL-address skip reported). Auth checks a supplied `x-webhook-secret` first with no Bearer fallback
+on mismatch; matching secret callers retain the full deployed server payload. The legacy human
+Bearer path now requires an active internal admin and accepts only object-proven
+`appointment.assigned|updated|canceled` or `estimate.accepted` IDs; caller recipients, copy, HTML,
+payload/data, entity/job fields and links are rejected. No checked-in browser/mobile/desktop Bearer
+caller exists. Disabled types are inert (`{skipped}`). `dispatchEvent` is the reusable core
 imported in-process by `feedback-notify.js`, which F2 **rewired** to replace F1's hardcoded
 bell+APNs+webpush block with one `dispatchEvent('feedback.submitted', …)` call (still
-fire-and-forget). Optional APNs forward was omitted — native push stays separate/dormant.
+fire-and-forget). All other trusted in-process callers and the sequential best-effort
+fan-out/summary contract are unchanged. Optional APNs forward was omitted — native push stays
+separate/dormant. Shared Auth and Web Push fetches remain unbounded legacy paths. Critically,
+`notify_emit(text,jsonb)` remains an authenticated-executable `SECURITY DEFINER` confused-deputy
+path that can present the stored secret with caller-controlled JSON; S1c HTTP hardening is partial
+containment. S1d (`20260726110000_notify_emit_service_boundary.sql`) now provides the separately
+reviewed local migration/rollback/tests: revoke browser execution, retain `service_role`, preserve
+the owner-run trigger/RPC/cron chain, and reverse only the object merge so the trusted type key
+wins. It is **not applied**, so this paragraph still describes the live capability until an
+owner-authorized apply/verification window.
 
 **Emission triggers** (live `20260630` pattern; **doubly inert**): `trg_appointment_crew_notify`
 (appointment_crew INSERT → `appointment.assigned`) and `trg_appointment_notify` (appointments
@@ -7078,6 +7165,13 @@ service role — no Cloudflare env needed).
 skip, VAPID 503-skip, 404/410 prune, auth) + `supabase/tests/notify_foundation.test.js`
 (integration — old bell shapes, targeting, resolver precedence; self-skips without creds, verified
 live via MCP). `feedback-notify.test.js` rewired to assert delegation.
+
+**2026-07-26 S1g supersession:** the legacy `notify_foundation.test.js` was retired because its
+anonymous shared-database client, sentinel DELETE cleanup, and broadcast-mutating mark-all probe
+are unsafe/incompatible with the recipient/read boundary. Bell signature, recipient, RLS, and read
+behavior now live in the two-gate, rollback-only S1g SQL suite wired to the local-only DB runner.
+Full preference-resolver integration coverage remains a separate identity/preferences QA item;
+this note does not rewrite the historical F2 verification claim.
 
 ### Session B (event wiring) — shipped Jul 3 2026
 One emit hook at each event origin, all **additive + fire-and-forget** (a notify failure can never
@@ -7543,7 +7637,7 @@ audit + 6-agent adversarial challenge pass (all MODIFIED, none REFUTED).
   patch/append (never invalidate-per-event) · Enter=send · techs get one-tap DND **ON**
   only (OFF stays office/admin — TCPA asymmetry) · all-org scoping v1 (assigned_to is 100%
   unpopulated; per-employee param reserved) · realtime verified to survive F-red
-  (authenticated JWT socket; devLogin caveat).
+  (authenticated JWT socket; genuine signed-in session required).
 - **Phase B1 (core experience) SHIPPED** (branch `claude/tech-msgs-v2-b1-core-5gqbi3`; PR into
   `dev`; flag stays OFF/owner-only; ZERO schema). Fills the F-M stub — owned files only
   (`src/pages/tech/v2/TechMessagesV2.jsx` + `src/pages/tech/v2/messages/**` + css inside the
@@ -8309,7 +8403,8 @@ reconciliation remain external/owner gates.
 `functions/api/qbo-charge.js` and `stripe-pay-link.js` now use the shared `requireRole` boundary
 with the UI's `admin`/`manager` billing-role set. Missing sessions, missing/inactive employees, and
 non-billing roles return before provider calls. QBO charge no longer accepts the generic webhook
-secret as a money-moving alternate identity.
+secret as a money-moving alternate identity. The S1b source slice additionally rejects external
+employees before connection, invoice/contact access, telemetry or provider helpers.
 
 The QBO route also requires a stable 16–64-character client `Idempotency-Key` and passes it as
 Intuit's `Request-Id`; validates positive whole-cent amounts against the current outstanding invoice
@@ -8514,3 +8609,346 @@ are inside the schedulers' exact-URL SSRF allowlist.
 `CALLRAIL_OUTBOUND_UNMATCHED` / `processing_deferred` after 5 attempts each. These are likely what the
 ops-health "stuck past retry time" condition reports, and relate to the outbound NANP identity seam.
 Two outbound MMS remain `failed` and deliberately untouched pending an owner decision.
+## Mobile PWA/Capacitor production-readiness program (2026-07-25)
+
+The completed audit at historical application source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` found 37 items: 2 P0, 21 P1, and 14 P2. The P0
+boundaries are bypassable mobile authorization (`MOB-SEC-014`) and public/listable, broadly writable
+`job-files` Storage (`MOB-SEC-015`). The audit and canonical mobile documentation are under
+`docs/audit/mobile-pwa/` and `docs/mobile/`; macOS/Xcode/simulator addendum evidence is under
+`docs/audit/2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md`.
+
+`docs/mobile-production-readiness-roadmap.md` is the active plan of record (`UPRF-MOB-001`).
+`docs/mobile-production-readiness-wave-ownership.md` owns collaboration/hotspots, and
+`docs/mobile-production-readiness-setup.md` owns task prerequisites. The initial promise is an
+online-first PWA with tested warm continuity and a field-route-only Capacitor scope. Cold-offline,
+admin-mobile native inclusion, native push, and OTA remain excluded/disabled until explicit owner
+decisions and their device/release evidence pass.
+
+The project now has one neutral `tooling/skills/mobile-readiness-wave` source and four bounded
+neutral roles under `tooling/agents/`; `npm run generate:tooling` deterministically emits the
+checked-in `.claude`, `.agents`, and `.codex` adapters. Run `npm run generate:tooling`,
+`npm run check:tooling-generated`, `npm run preflight:mobile`, `npm run validate:tooling`, and
+`npm run test:tooling` at session start/close-out. Until the foundation is integrated, start a
+bounded `codex/mobile-readiness-*` wave from `codex/mobile-pwa-readiness-foundation`, fetch current
+`origin/dev`, and reconcile drift without dropping either history; afterward, current `origin/dev`
+is the base. Never assume the dated audit is current. Supabase/Storage/production/providers remain
+read-only until a separately authorized apply/deploy/action, and Apple signing/TestFlight/App Store
+work remains owner-gated.
+
+### Wave R0 recapture and first containment slice (2026-07-25)
+
+R0 started from clean foundation `7aa4b0c6569396b7e7b5524ed052eca279927218` in isolated branch
+`codex/mobile-readiness-wave-r0`. Fetched `origin/dev`
+`90b265ee6f733c8dbcd75786f4e4057dd3355d38` was already an ancestor, so the 14 foundation commits
+were preserved without a merge/rebase. Historical audit source
+`ef305f6d6afab4d846eab92fc1b04038d70221f0` remains the comparison anchor.
+
+Read-only live recapture corrected the historical inline count to 84 current transitive,
+client-reachable mobile RPC identifiers: 82 from the authenticated `/tech` graph plus
+`get_sign_document_templates` and `get_sign_request_by_token` from public `SignPage`. All are
+authenticated/service-role-executable `SECURITY DEFINER`; four allow `anon` and three allow
+`PUBLIC`. The correction includes shared auth, bell, Web Push, native push, clock-precheck,
+preference, job/claim-merge, and public-signing callers. The current graph also has 22 direct
+PostgREST tables plus Realtime on
+`conversations`, `messages`, and `notifications`; `messages` retains the scoped capability policy,
+while several adjacent policies remain broad. `job-files` remains public with anonymous/public
+SELECT, authenticated bucket-wide INSERT/DELETE, no MIME allowlist, a 50 MiB limit and aggregate
+77 objects / 58,233,782 recorded bytes. No object name/content was read. Exact capture timestamps,
+routes, callers, function signatures/bodies, policies/grants and complete
+browser/worker/public-media inventory are in
+`docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`.
+
+The first bounded local slice adds `functions/lib/qbo-auth.js` and gates
+`qbo-invoice`, `qbo-estimate`, `qbo-payment` and `qbo-query` before privileged work. The exact
+server capability is preserved; browser access now requires an active, non-external `admin`.
+Negative tests cover missing/expired/config-failed identities, missing/inactive/external employees,
+every denied real role, server-secret precedence/fallback, malformed bodies and zero downstream
+provider/domain calls. Approved-caller downstream response/provider contracts remain unchanged;
+new denials are the deliberate authorization transition.
+
+S1b continues from the exact R0 tip. Customer sync and HTTP payment sync now share the active,
+internal-admin browser boundary while retaining their secret-first capability; direct
+`scheduled()` payment reconciliation is unchanged. OAuth connect uses a human-only variant so the
+server secret cannot replace state. QBO charge/attach remain Bearer-only and reject external
+employees. Seventy-seven focused tests cover denied identities and auth/config failure before
+business/provider helpers, scheduler/OAuth/capability compatibility and exact disconnected
+responses. Customer-sync and manual payment-sync resolve the human actor for authorization but do
+not persist that actor in current `worker_runs` telemetry; durable actor auditing remains open.
+
+S1c continues from the exact S1b tip. The CallRail recording proxy now admits only an active
+internal admin or `crm_call_log` employee/role capability, binds the call row/provider ID/URL
+before secrets, preserves the private audio/error/rewrite contracts and times both fetch paths.
+HTTP notify keeps exact-secret and in-process callers unchanged; a human Bearer is active internal
+admin only and may request four object-derived appointment/estimate events with no caller-supplied
+audience or content. Eighty-three focused tests cover identity/configuration/object denial,
+provider-never-called ordering, recording success/error/timeout shapes, secret precedence and
+notification object contracts. No provider, notification, customer content or secret value was
+read.
+The complete source/caller/test/review/rollout record is
+`docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
+
+S1d continues from exact S1c tip `352be211` and merges current provenance-only `origin/dev`
+`d54b6ba` without rewriting history. A bounded read-only live capture confirmed the exact
+`notify_emit(text,jsonb) -> void` signature, owner/definer/search-path/ACL/body and its six
+owner-run caller functions/seven call sites, three triggers, and abandoned-clock `postgres` cron.
+The authored migration keeps URL/secret/header/payload/pg_net/ignored-response contracts, removes
+direct `authenticated` execution, retains `service_role`, and makes the trusted top-level type key
+win. Exact rollback, catalog-only pre/post-apply checks, browser-denial/caller/failure/provenance
+contracts and sanitized evidence are in
+`docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Nothing was applied.
+
+Neither P0 is closed. The pending S1d apply, direct `get_inbound_leads`/`inbound_leads`
+recording-URL access, authenticated `create_notification`, the wider definer/direct-policy census,
+unbounded shared Auth/Web Push fetches and the external-partner playback UI mismatch remain under
+`MOB-SEC-014`; private media compatibility and live apply remain under `MOB-SEC-015`. Current
+native source still mounts `/tech/admin/*`, so field-only Capacitor scope is an unenforced product
+decision. Cold-offline, native/admin scope, Web Push/APNs, OTA, account-deletion fulfillment, pilot
+support, `project_manager` billing authority and the shared QBO capability lifecycle remain owner
+gates. QBO human-actor telemetry and external-admin `qbo_attachments` RLS remain separate named
+residuals; S1d made no QBO or recording-source schema change.
+
+No deploy, migration apply, push, secret/provider change, message, push notification, money
+movement, signing or distribution occurred in S1d.
+
+S1e continues from exact S1d tip `fa58dba` and merges fetched `origin/dev` `6b5dc802` through
+`02ed432a` without rewriting history. Read-only live metadata captured only the exact
+`get_inbound_leads` definition/hash/ACL, `inbound_leads` columns/ACL/policy/trigger metadata, and
+employee/CRM assignment column names. No row, URL, recording, customer, provider, configuration or
+secret value was selected.
+
+Unapplied migration `20260726183409_inbound_lead_recording_source_boundary.sql` moves raw URLs to
+forced-RLS service-only `inbound_lead_recording_sources`, captures future scalar sources after lead
+IDs exist, recursively strips recording-source keys from `raw_payload` before storage, and leaves
+`upr-recording://available` in the frozen public shape. It gates
+`get_inbound_leads` to active internal admin or `crm_call_log`, removes anonymous privileges and
+authenticated direct DML, and allows active-internal company-wide SELECT because no employee-to-
+CRM-org/lead assignment exists. The approved proxy and `transcribe-call` read the new source table
+with a validated legacy-column fallback for Worker-first rollout; mobile/desktop still send only
+`lead_id` and test marker truthiness. Exact rollback, value-free apply checks and credential-free
+contracts accompany it. Rollback cannot reconstruct privacy-safe keys removed from `raw_payload`.
+
+S1d apply, `create_notification`, QBO actor telemetry, `qbo_attachments` RLS, private media and
+other mobile/native/release gates remain separate. No apply, deploy, push, provider call, playback,
+secret/live-setting change, message, money movement, signing or distribution occurred in S1e.
+
+S1f continues from exact S1e tip `637ac709`, initially merges fetched `origin/dev` `65fddb5c`
+through `b7bd45ab`, then reconciles final `origin/dev` `245c0c4` through `d99fce91` without
+rewriting history. Catalog-only live capture found one exact
+`create_notification(text,text,text,text,text,uuid,uuid,jsonb,uuid,text) -> notifications`
+overload, owner `postgres`, SQL `SECURITY DEFINER`, `search_path=public`, unchanged body/definition
+hashes, and EXECUTE for `authenticated` plus `service_role`. Its sole direct database-body caller
+is owner-run `apply_midnight_clock_split()`; the sole non-test runtime API caller is the
+service-role notification Worker.
+
+Unapplied migration `20260726194300_create_notification_service_boundary.sql` changes only EXECUTE
+ACLs: browser roles are denied and `service_role` is retained. Signature, defaults, return shape,
+body, recipient/broadcast semantics, tables, rows, policies, triggers, and callers do not change.
+Exact rollback, catalog-only pre/post checks, and a credential-free CI contract accompany it.
+S1d/S1e/S1f applies, notification read/mark recipient binding, QBO telemetry/RLS, private media,
+deployment, providers, and native/device gates remain separate. No live mutation or bell emission
+occurred.
+
+S1g starts from reviewed S1f tip `a6b139b`; fetched `origin/dev` remains `245c0c4` and is already
+an ancestor, so no drift merge or history rewrite is required. Catalog-only live capture reads no
+notification/employee/customer row. It pins the exact four bell read/mark overloads and
+body/definition hashes, their authenticated/service ACLs, the 13-column notification shape,
+broad table ACL, authenticated `notifications_select USING (true)`, sentinel-delete policy,
+Realtime publication, the authenticated employee SELECT/RLS dependency, employee Auth uniqueness,
+and zero direct database-body callers.
+
+Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves
+`get_notifications(integer,uuid) -> SETOF notifications`,
+`get_unread_notification_count(uuid) -> integer`, `mark_notification_read(uuid) -> void`, and
+`mark_all_notifications_read(uuid) -> void`, including defaults and old broadcast-only call
+shapes. Authenticated calls derive one active non-external employee from `auth.uid()` and reject
+foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` provides independent
+broadcast receipts while legacy globally-read broadcasts stay read and targeted rows keep base
+`read_at`. The existing notification SELECT policy object becomes active-internal
+own-or-broadcast, authenticated table access becomes SELECT-only for Realtime, and the obsolete
+test-row DELETE policy is removed. The shared PWA/Capacitor `NotificationBell` and Realtime client
+need no source change; the JavaScript recipient filter remains defense in depth.
+
+Exact fail-closed rollback, catalog-only pre/post checks, a two-gate rollback-only multi-identity
+behavior script (including all service compatibility branches), local-only pgTAP runner bridge,
+credential-free QA contract, and dated evidence accompany S1g. A temporary in-memory
+PostgreSQL-compatible harness passed preflight, forward, post-apply, behavior, and rollback; live
+Supabase Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical
+anonymous notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
+private media, shared identity/device/preferences, deployment, providers, native signing/devices,
+and final qualification remain separate. No live mutation, notification read/mark, deploy,
+provider action, signing, or distribution occurred in S1g.
+
+S1h source began from reviewed S1g tip `f6554ad4`. The authorized governance merge preserves exact
+parents `f6554ad4` and `e9bf8f2`; subsequent history through `e2b7585` keeps the R0→S1g chain and the
+normal `origin/dev` merge at `6019b667` without rebase or rewrite. The owner transferred the DB-1
+and APP-2/APP-3 coordination surfaces to this mobile-readiness session.
+
+The final review worktree is `codex/mobile-readiness-current-origin-review`. Local integration merge
+`4688ed64` preserves direct parents `4583f0a6` and `e2b7585f`. A read-only pre-publish fetch completed
+2026-07-27 08:02 MDT and advanced `origin/dev` to `983b8ca4`; the follow-up merge has direct parents
+`4688ed64` and `983b8ca4`, with common base `4583f0a6`. Its sole content conflict in `src/App.jsx`
+was resolved by retaining both target-specific web/native registries and the latest field-tech
+conversation/job/claim/schedule redirects. Work Authorization messaging, conversation retry
+deduplication, friendly field error states, provenance updates, agent governance, and other
+concurrent additions are retained rather than overwritten.
+
+Authentication source is now selector-free and fail-closed. A genuine Supabase session resolves
+`get_my_employee_profile()`; malformed profile/role/feature/page-access responses do not publish an
+internal employee. Rejected bootstrap, logout, password recovery, observer-only session expiry,
+and direct account transitions must complete or safely preserve old-account PWA/Web Push/APNs
+cleanup before the next principal becomes usable. Observer-only cleanup failure never retries with
+the expired client: local session state is cleared, the durable owner-bound journal survives, and
+only a fresh same-account bootstrap may complete it before employee publication. Independent
+security review found no remaining source P0/P1; the focused race suite passes 46/46.
+
+### PR #525 integration onto current `dev` (2026-07-27)
+
+**APPLIED to the shared database: `20260726180000_mobile_employee_identity_authority.sql`.**
+**Ledger version assigned at apply time: `20260727154506`** — the filename is NOT the ledger
+version; record the assigned one or the provenance gate reports it unmapped. Additive only: it
+creates three `SECURITY DEFINER` functions with pinned `search_path`, `REVOKE` from `PUBLIC, anon`
+then `GRANT` to `authenticated, service_role`:
+
+- `get_my_employee_profile() → TABLE(id, full_name, display_name, email, role, is_active, is_external, default_division)`
+- `get_employee_directory(p_include_inactive boolean DEFAULT false) → TABLE(id, full_name, display_name, role, color, avatar_url, is_active)`
+- `get_message_author_directory(p_message_ids uuid[]) → TABLE(id, full_name, display_name)` — capped
+  at 200 ids, gated behind `messaging_can_access_conversations()`
+
+It had to be applied **before** the merge: `AuthContext` bootstraps every session through
+`get_my_employee_profile` with no fallback, and its catch runs a local `signOut`. Verified live on a
+real authenticated session — a fresh login resolves the RPC and publishes the employee.
+
+**Owner ruling (2026-07-27):** `get_employee_directory` gates `is_external` only on the *inactive*
+roster, so an active external account can enumerate the active internal roster (names, roles,
+colors, avatars — no email, no pay). Owner reviewed and approved shipping as-is.
+
+**Still unapplied, and ORDER-CRITICAL:** `20260726182000_mobile_employee_identity_containment.sql`
+revokes `employees` to four columns and restricts reads to the caller's own row. Code on `main`
+reads `employees` directly in 14 files. One database serves both branches, so this must be applied
+only AFTER `dev` is promoted to `main` and production is confirmed serving the new bundle —
+otherwise it breaks the schedule board, timesheets, the team screen and the crew pickers on
+production.
+
+**New routes:** `/tech/legal/privacy`, `/tech/legal/terms`, `/tech/legal/support` render the same
+`PrivacyPolicy`/`TermsOfService`/`Support` components as the office routes, but inside the field
+shell. Field Settings links these, never the bare office paths: those render with no nav, and the
+PWA/Capacitor container has no browser back button, so a tech who tapped one had to force-quit. The
+office routes remain for the logged-out case, which is why `Login.jsx` still links them.
+
+**Offline product decision CLOSED (owner-ratified 2026-07-27):** online-only for the initial
+release. See the amendment in `.claude/rules/tech-mobile-ux.md`; `docs/mobile-production-readiness-roadmap.md`
+C1 updated. The four offline save handlers (`TechAppointment` readings/equipment, `HubTools`
+likewise) **throw** rather than return — both entry sheets treat a resolved promise as success, so a
+bare return fired "Reading saved", closed the sheet, and discarded the tech's typed reading.
+Verified live on dev 2026-07-27: offline save produced one error toast, the sheet stayed open, and
+the typed values (42.7 / 61 / 70) survived intact.
+
+### Deploy-cache poisoning and the boot guard (2026-07-27)
+
+**Build output moved from `assets/` to `app-assets/`** (`vite.config.js` `build.assetsDir`).
+`public/_headers` follows it. This was a ONE-TIME un-poisoning, not routine practice.
+
+`dev.utahpros.app` went fully blank — desktop and installed iPhone PWA. Not a code defect. Two
+config lines combined: `public/_redirects`' `/* /index.html 200` answers a MISSING hashed asset with
+the app shell at **HTTP 200**, and `public/_headers`' asset rule stamps it `immutable` for a year.
+During a deployment swap an edge node requested a chunk that had not propagated, and both the
+Cloudflare edge and end-user devices cached HTML under a `.js` URL. A browser refuses `text/html`
+for `<script type="module">`, so the entry graph never instantiates: `main.jsx` never runs, React
+never attaches, and **nothing throws**. Blank page, empty console.
+
+Three things future work must not undo:
+
+- **Prevention is NOT available at the Pages layer.** Two `_redirects` 404 variants were tried and
+  BOTH were ignored on a real preview deploy. The hazard and both failed attempts are documented in
+  `public/_redirects`; do not re-add an inert rule believing it protects anything.
+- **The boot guard in `index.html` must stay a CLASSIC script.** `vite build` hoists the module tag
+  into `<head>`, so correctness rests on module-defer semantics. As `type="module"` it would fail for
+  the same reason the app does and become decorative.
+- **`/reset` is inert on iOS.** It relies on `Clear-Site-Data`, which **Safari does not implement** —
+  proven on a real iPhone. Every field technician is on iOS, so the guard repairs entries with
+  `fetch(url, {cache:'reload'})` instead. Never treat `/reset` as the field app's recovery path.
+
+**Post-deploy check:** `npm run smoke:deploy -- <url>` (`scripts/smoke-deploy.mjs`). Asserts every
+boot asset really is JS/CSS and that `index.html` is `no-store`. Run it AFTER the alias swaps — the
+Cloudflare check went green ~9 minutes early, measured twice. It caught the race recurring live.
+
+### Office appointment route (2026-07-27)
+
+**New route `/schedule/appointment/:apptId`** renders the Schedule board and opens the appointment's
+existing `EditAppointmentModal` from the URL. Until it existed, `/tech/appointment/:id` was the ONLY
+appointment screen in the app, so `notify.js` pointed every appointment notification at it and
+desktop users clicking the bell landed in the mobile UI; `ClaimPage.jsx:706` already linked here and
+simply 404'd. `notify.js` now stores the office path. `techShellRoutes.js` gained `techToOfficePath()`
+so `linkForCurrentShell` translates BOTH directions — that is what fixes the notification rows that
+already store a field path, with no data backfill.
+
+### Applied to the shared database (2026-07-27)
+
+Ledger versions are assigned AT APPLY TIME, not from the filename:
+
+- `mobile_employee_identity_authority` → **`20260727154506`**
+- `anon_closure_tranche_b` → applied. Dropped 8 always-true `anon` policies and revoked table
+  privileges on `contacts` / `conversations` / `conversation_participants`. Verified after: anon
+  policies 8→0, anon grants→0, all 6 `authenticated` policies intact, conversations still loading.
+- `notification_role_defaults_rpc_only` → applied. Table is now RPC-only.
+
+**`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
+`20260726183409` and `20260726260000` add POLICIES whose predicates read it, and a policy predicate
+evaluates with the CALLING role's privileges — ungranted, every authenticated SELECT on those tables
+fails. Both siblings preflight that the column EXISTS, never that it is GRANTED. Bounded by the
+self-identity policy: a caller reads only their own row. The structural fix (route those policies
+through a `SECURITY DEFINER` helper and drop the carve-out) is a roadmap item.
+
+The initial production release intentionally has **zero automatic offline command admission or
+replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or
+persists a photo blob, and the maintenance runner imports no dispatcher. Field photo, moisture
+reading, equipment placement, and equipment removal paths fail clearly while offline. Historical
+IndexedDB rows are payload-free quarantine only; exact two-click local discard may clear all
+accounts' offline stores, and bounded owner-scoped completed-photo cleanup never sends. Independent
+offline review found no P0/P1; the focused zero-replay lane passes 58/58. Under Node 22.23.1, the
+integrated unit lane passes 90 files/1,079 tests, Worker passes 99 files/1,476 tests, and QA passes
+25 files/206 tests, with zero unexpected skips. Targeted lint and web/native builds pass; full lint
+retains the known 310-problem baseline.
+
+Credential-free local browser smoke at 390px and 1440px caught a current-origin route-registry
+omission before release: `/settings/lists` still rendered `ListsAndValues`, but the page was missing
+from the frozen web registry and `App` destructuring. The binding is restored, and a generic QA
+contract now proves equality across all 90 declared lazy pages, web-registry exports, and
+`App` bindings. Logged-out root, `/privacy`, and `/status` smoke now passes; independent
+cross-platform review found no P0/P1 and confirmed the page remains absent from the native graph.
+Authenticated/installed/device proof is still pending.
+
+The revised S1h database source is an ordered sequence:
+
+1. `20260726180000_mobile_employee_identity_authority.sql`;
+2. compatible browser/PWA/native deployment and explicit old-client decision;
+3. `20260726182000_mobile_employee_identity_containment.sql`;
+4. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql`; and
+5. `20260727022920_mobile_personal_ownership_boundary.sql`.
+
+The prior permission writer is live as assigned version
+`20260727012825 permission_write_gates`. The four new source migrations are absent from the live
+ledger. Containment removes browser employee authority writes; the final boundary makes
+`employee_page_access`, `notification_prefs`, `push_subscriptions`, and `device_tokens`
+forced-RLS, policy-free, and browser-RPC-only. Web/native registration permits same-owner refresh
+but rejects cross-owner possession/rebind; reviewed service maintenance remains.
+
+The rejected `20260726223610` artifact is retained only under
+`docs/audit/2026-07/evidence/rejected-sql/`. A temporary, non-retained PostgreSQL-compatible
+experiment did not execute the exact checked-in forward, catalog, isolated, or rollback files and
+retained no governed harness/log. S1h is therefore source-hardened but not applied,
+database-behavior-verified, or `ready_for_apply`; use
+`docs/mobile/s1h-database-apply-runbook.md`.
+
+Native source includes separate web/native route registries, legal/support/signing routes, app-link
+coordination, privacy-screen plumbing, account deletion, a release workflow, and an Apple privacy
+manifest with 12 linked/nontracking App Functionality data types. Repository configuration is not
+proof of APNs/VAPID, hosted AASA, Cloudflare bindings, Apple signing, archive/TestFlight/App Store
+Connect acceptance, or real-device behavior.
+
+S1d, S1e, S1f, S1g, the four S1h windows, QBO telemetry/RLS, private media, public signing,
+deployment, providers, Apple signing/TestFlight, browser/PWA/device qualification, and eventual
+`dev → main` promotion remain separate owner/external gates. Local source-integration commits and a
+draft PR do not authorize any of them. No database apply, deployment, provider call, notification,
+money movement, signing, or device action occurred in this reconciliation.

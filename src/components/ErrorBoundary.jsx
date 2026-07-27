@@ -1,16 +1,24 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: ErrorBoundary.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Contains a React render failure so one route or persistent mobile pane does
+ *   not blank the whole application. It records only privacy-redacted local
+ *   diagnostics and offers bounded retry/reset navigation.
+ *
+ * DEPENDS ON:
+ *   Packages:  react
+ *   Internal:  lib/staleChunkReload, lib/pwaDiagnostics, lib/releaseIdentity
+ *   Data:      writes → local session diagnostics only
+ * ════════════════════════════════════════════════
+ */
 import { Component } from 'react';
 import { buildResetUrl } from '@/lib/staleChunkReload';
+import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics';
+import { RELEASE } from '@/lib/releaseIdentity';
 
-/**
- * ErrorBoundary — catches render errors in any child tree.
- * Shows a recovery UI instead of a white screen.
- * Wrap each major route section in App.jsx with this.
- *
- * Usage:
- *   <ErrorBoundary section="Jobs">
- *     <Jobs />
- *   </ErrorBoundary>
- */
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -22,8 +30,16 @@ export default class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    // Log to console — swap for a real error reporting service later
-    console.error(`[ErrorBoundary:${this.props.section || 'App'}]`, error, info.componentStack);
+    const diagnostic = recordPwaDiagnostic('react-boundary', {
+      section: this.props.section || 'App',
+      error,
+    });
+    if (import.meta.env.DEV) {
+      console.error(`[ErrorBoundary:${this.props.section || 'App'}]`, error, info.componentStack);
+    } else {
+      console.error('[ErrorBoundary]', diagnostic);
+    }
+    this.props.onError?.(error);
   }
 
   handleReset = () => {
@@ -36,7 +52,7 @@ export default class ErrorBoundary extends Component {
     const section = this.props.section || 'This page';
 
     return (
-      <div style={{
+      <div hidden={this.props.hidden} style={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', minHeight: '60vh',
         padding: '32px 24px', textAlign: 'center',
@@ -52,7 +68,7 @@ export default class ErrorBoundary extends Component {
           fontSize: 13, color: 'var(--text-tertiary)',
           marginBottom: 24, maxWidth: 320, lineHeight: 1.5,
         }}>
-          Something unexpected happened. Your data is safe — this is just a display error.
+          This screen stopped before it could finish rendering. Try again, or reload a fresh copy.
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
           <button
@@ -61,7 +77,7 @@ export default class ErrorBoundary extends Component {
               padding: '10px 20px', borderRadius: 'var(--radius-md)',
               background: 'var(--accent)', color: '#fff',
               border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-              fontFamily: 'var(--font-sans)',
+              fontFamily: 'var(--font-sans)', minHeight: 44,
             }}
           >
             Try again
@@ -78,6 +94,7 @@ export default class ErrorBoundary extends Component {
               background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
               border: '1px solid var(--border-color)', cursor: 'pointer',
               fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              minHeight: 44,
             }}
           >
             Clear cache &amp; reload
@@ -89,10 +106,17 @@ export default class ErrorBoundary extends Component {
               background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
               border: '1px solid var(--border-color)', cursor: 'pointer',
               fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-sans)',
+              minHeight: 44,
             }}
           >
             Go to Dashboard
           </button>
+        </div>
+        <div style={{
+          marginTop: 16, fontSize: 11, color: 'var(--text-tertiary)',
+          fontFamily: 'var(--font-mono)',
+        }}>
+          Support code: {RELEASE.releaseId}
         </div>
         {import.meta.env.DEV && this.state.error && (
           <details style={{

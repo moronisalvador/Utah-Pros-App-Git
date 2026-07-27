@@ -52,6 +52,7 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
 import { getActorEmployee } from '../lib/google-drive.js';
 import { resolveCallRailAccountId, transcriptText } from '../lib/callrail-api.js';
+import { withoutRecordingSources } from '../lib/callrail.js';
 
 const MAX_PAGES = 50; // hard cap — guards against a runaway pagination loop
 
@@ -84,7 +85,7 @@ function mapCall(c) {
     p_value:           firstOf(c, ['value']),
     p_direction:       firstOf(c, ['direction']),
     p_occurred_at:     firstOf(c, ['start_time']) || new Date().toISOString(),
-    p_raw_payload:     c,
+    p_raw_payload:     withoutRecordingSources(c),
   };
 }
 

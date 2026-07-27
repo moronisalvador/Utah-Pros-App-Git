@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "purpose": "Neutral source registry for UPR-authored Claude Code and Codex capability adapters.",
   "skills": [
     {
@@ -65,6 +65,22 @@
       "riskTier": "amber",
       "riskRationale": "Implements an active CRM phase; touches product code, migrations via db-migration, and ownership-leased files.",
       "modelInvocable": true
+    },
+    {
+      "name": "mobile-readiness-wave",
+      "source": "tooling/skills/mobile-readiness-wave/SKILL.md",
+      "outputs": [
+        ".claude/skills/mobile-readiness-wave/SKILL.md",
+        ".agents/skills/mobile-readiness-wave/SKILL.md"
+      ],
+      "codexInterface": {
+        "displayName": "UPR Mobile Readiness Wave",
+        "shortDescription": "Run a safe UPR mobile remediation wave",
+        "defaultPrompt": "Use $mobile-readiness-wave to execute the next bounded UPR mobile production-readiness phase."
+      },
+      "riskTier": "red",
+      "riskRationale": "Coordinates source work that can span mobile authorization, the shared production database, providers, deployment, signing and device release gates; every external mutation remains separately owner-authorized.",
+      "modelInvocable": true
     }
   ],
   "agents": [
@@ -115,7 +131,88 @@
       "codex": {
         "sandboxMode": "read-only"
       }
+    },
+    {
+      "name": "mobile-readiness-mapper",
+      "source": "tooling/agents/mobile-readiness-mapper.md",
+      "claudeOutput": ".claude/agents/mobile-readiness-mapper.md",
+      "codexOutput": ".codex/agents/mobile-readiness-mapper.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob",
+        "model": "haiku",
+        "effort": "medium",
+        "maxTurns": 14
+      },
+      "riskTier": "green",
+      "riskRationale": "Read-only contract mapper; reports repository evidence and never edits, applies or publishes.",
+      "modelInvocable": true,
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "modelReasoningEffort": "medium",
+        "sandboxMode": "read-only"
+      }
+    },
+    {
+      "name": "mobile-readiness-security-reviewer",
+      "source": "tooling/agents/mobile-readiness-security-reviewer.md",
+      "claudeOutput": ".claude/agents/mobile-readiness-security-reviewer.md",
+      "codexOutput": ".codex/agents/mobile-readiness-security-reviewer.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob",
+        "model": "opus",
+        "effort": "high",
+        "maxTurns": 18
+      },
+      "riskTier": "green",
+      "riskRationale": "Read-only adversarial reviewer; reports findings and never edits, applies or publishes.",
+      "modelInvocable": true,
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "modelReasoningEffort": "high",
+        "sandboxMode": "read-only"
+      }
+    },
+    {
+      "name": "mobile-readiness-contract-tester",
+      "source": "tooling/agents/mobile-readiness-contract-tester.md",
+      "claudeOutput": ".claude/agents/mobile-readiness-contract-tester.md",
+      "codexOutput": ".codex/agents/mobile-readiness-contract-tester.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob, Bash",
+        "model": "sonnet",
+        "effort": "high",
+        "maxTurns": 18
+      },
+      "riskTier": "amber",
+      "riskRationale": "Runs bounded local checks and may create worktree-local caches or test artifacts; source and every external system remain read-only.",
+      "modelInvocable": true,
+      "codex": {
+        "model": "gpt-5.6-terra",
+        "modelReasoningEffort": "high",
+        "sandboxMode": "workspace-write"
+      }
+    },
+    {
+      "name": "mobile-readiness-release-auditor",
+      "source": "tooling/agents/mobile-readiness-release-auditor.md",
+      "claudeOutput": ".claude/agents/mobile-readiness-release-auditor.md",
+      "codexOutput": ".codex/agents/mobile-readiness-release-auditor.toml",
+      "claude": {
+        "tools": "Read, Grep, Glob, Bash",
+        "model": "opus",
+        "effort": "high",
+        "maxTurns": 18
+      },
+      "riskTier": "green",
+      "riskRationale": "Read-only close-out auditor; runs only bounded non-mutating checks and never edits, applies or publishes.",
+      "modelInvocable": true,
+      "codex": {
+        "model": "gpt-5.6-sol",
+        "modelReasoningEffort": "high",
+        "sandboxMode": "read-only"
+      }
     }
   ],
-  "riskTierContract": "riskTier follows docs/tooling-governance.md section 3 (green|amber|red) and records BLAST RADIUS, not invocability. modelInvocable drives the human-only gates the renderer emits: disable-model-invocation (Claude) and policy.allow_implicit_invocation (Codex). Owner direction 2026-07-26: UPR gates the MUTATION, not the dispatcher, so a red-tier planner stays invocable and its live step is gated by .claude/hooks/block-destructive-sql.sh plus a separate owner authorization."
+  "riskTierContract": "riskTier follows docs/tooling-governance.md section 3 (green|amber|red) and records BLAST RADIUS, not invocability. modelInvocable drives the human-only gates the renderer emits: disable-model-invocation (Claude) and policy.allow_implicit_invocation (Codex). Owner direction 2026-07-26: UPR gates the MUTATION, not the dispatcher, so a red-tier planner stays invocable and its live step is gated by .claude/hooks/block-destructive-sql.sh plus a separate owner authorization.",
+  "runtimeMetadataContract": "Optional claude.effort and claude.maxTurns fields render only into Claude agent frontmatter. Optional codex.model and codex.modelReasoningEffort fields render only into Codex agent configuration. The retired custom mobile adapter never emitted a Codex turn cap, and the governed Codex configuration surface has no verified per-agent turn-cap key, so maxTurns remains explicitly Claude-only rather than inventing an unsupported setting."
 }

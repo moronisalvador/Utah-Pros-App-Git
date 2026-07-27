@@ -1,7 +1,7 @@
 # UPR Skills, Agents, Plugins, and Tooling Governance
 
 **Status:** owner-approved project law
-**Last verified:** 2026-07-24
+**Last verified:** 2026-07-26
 **Scope:** repository-local instructions, hooks, permissions, validation, and runtime adapters
 
 This document is the implementation addendum to
@@ -20,15 +20,16 @@ not rewritten here.
 - UPR-authored entrypoints are owned by UPR platform engineering. Vendor-derived entrypoints retain
   their upstream author/license and are advisory within their stated lane; UPR overrides must be
   explicit and narrow.
-- Only `.agents/` and `.codex/` files named as outputs in `tooling/capabilities.json` are governed
-  generated adapters. Other files in those candidate trees remain non-authoritative until separately
-  inventoried, reconciled, and added to the manifest.
+- Only `.claude/`, `.agents/`, and `.codex/` files declared as outputs in
+  `tooling/capabilities.json` (plus the renderer's deterministic Codex skill-interface companion)
+  are governed generated adapters. Unrelated files in those candidate trees remain
+  non-authoritative until inventoried, reconciled, and added to the manifest.
 - `.claude/tooling-governance.json` is validation policy and review metadata.
   `tooling/capabilities.json` is the neutral source registry; neither file contains the instruction
   bodies themselves.
 
-Tracked inventory after the owner-approved SEO retirement: **24 skill entrypoints,
-15 agent entrypoints, 23 rules, and 2 hooks**. The validator treats these as reviewed counts and
+Tracked inventory after the mobile capability migration: **25 skill entrypoints,
+19 agent entrypoints, 23 rules, and 4 hooks**. The validator treats these as reviewed counts and
 requires this inventory stamp to change when tracked capability entrypoints are deliberately added
 or removed.
 
@@ -45,9 +46,10 @@ When instructions conflict, use this order:
 
 One dispatcher owns each broad domain. `db-migration` owns UPR database-change workflow;
 `new-feature` owns ordinary feature workflow; `masterplan` owns initiative planning; `seo` is the
-only broad SEO dispatcher. Supabase, Postgres, design, motion, Playwright, marketing, and provider
-skills are specialists selected by a dispatcher or explicit request. A specialist does not
-independently expand scope or authorize a write.
+only broad SEO dispatcher; `mobile-readiness-wave` owns the bounded `UPRF-MOB-001` production-
+readiness program rather than ordinary responsive feature work. Supabase, Postgres, design, motion,
+Playwright, marketing, and provider skills are specialists selected by a dispatcher or explicit
+request. A specialist does not independently expand scope or authorize a write.
 
 ## 3. Risk tiers and authorization
 
@@ -80,6 +82,10 @@ Blocking reviewers enforce project law:
   workers. A UI gate is never sufficient.
 - `upr-pattern-checker` for applicable non-negotiables and `page-behavior-checker` for lifecycle
   regressions.
+- For `UPRF-MOB-001`, `mobile-readiness-security-reviewer`,
+  `mobile-readiness-contract-tester`, and `mobile-readiness-release-auditor` enforce the program
+  security, claimed-evidence, and close-out boundaries. `mobile-readiness-mapper` is read-only
+  orientation, not an approval.
 
 Design taste, copy quality, SEO ideas, performance suggestions without an accepted budget, and
 provider recommendations are advisory unless an applicable project standard makes a specific
@@ -128,9 +134,9 @@ discovery roots. Claude loaded 0 SEO capabilities; Codex loaded 49.
 - **Replacement:** none in this repository. Reintroduction belongs in the repository that owns the
   public website, per §5, and requires fresh dependency, credential, permission and trigger review.
 - **Measured effect:** Codex's skill-description budget drops from **17,439 to 10,671 chars** against
-  a documented **8,000-char cap** — SEO was 38% of the overage. Still over; the remaining gap is the
-  coverage work (7 of 39 capabilities governed), not this deletion. Recorded so the improvement is not
-  mistaken for a fix.
+  a documented **8,000-char cap** — SEO was 38% of the overage. Still over; the remaining gap includes
+  the coverage work (12 of 44 tracked capability entrypoints are now neutral-governed), not this
+  deletion. Recorded so the improvement is not mistaken for a fix.
 
 **This amendment does not weaken §1.** Its prohibition stands for every other capability in those
 trees, and "do not mass-delete optional bundles" stands as written. This is a single named set, with
@@ -142,29 +148,35 @@ deprecation paragraph requires.
 Run:
 
 ```text
+npm run generate:tooling
+npm run check:tooling-generated
+npm run preflight:mobile
 npm run validate:tooling
 npm run test:tooling
 ```
 
 The validator checks entrypoint metadata, governed local references, broad-dispatcher collisions,
 neutral-source portability, generated Claude/Codex adapter drift, reviewer parity for migrated
-capabilities, and dangerous or secret-bearing shared permission patterns. Broken references,
-generated drift, runtime-specific language in a neutral source, and unsafe shared permissions are
-blocking. Optional/conditional bundle reference debt is reported as non-blocking so it can be
-repaired deliberately rather than mass-rewritten.
+capabilities, and dangerous or secret-bearing shared permission patterns. Tooling tests exercise
+runtime metadata rendering, trigger decisions, mobile preflight branch/foundation rules, and exact
+generated drift. Broken references, generated drift, runtime-specific language in a neutral source,
+and unsafe shared permissions are blocking. Optional/conditional bundle reference debt is reported
+as non-blocking so it can be repaired deliberately rather than mass-rewritten.
 
-The tracked `.claude/settings.local.json` remains a known critical owner gate from CAP-SEC-001 and
-CAP-GOV-001. This initiative does not alter credentials. The temporary validator waiver expires on
-2026-08-06; the owner must rotate/revoke the credential, review history, sanitize/untrack the file,
-and reset local approvals before that date.
+The formerly tracked `.claude/settings.local.json` is now untracked, but CAP-SEC-001 and CAP-GOV-001
+remain external owner gates: untracking did not rotate a credential or clean repository history.
+The owner must still rotate/revoke the credential, review history, sanitize the machine-local file,
+and reset local approvals.
 
 ## 7. Neutral Claude/Codex adapter model
 
 The owner approved this direction on 2026-07-23 and authorized the first implementation on
 2026-07-24. Claude Code and Codex share the same project law and both route to the tracked
-`.claude/rules/` standards. The pilot migrates the four interacting UPR dispatchers
+`.claude/rules/` standards. The first tranche migrated the four interacting UPR dispatchers
 (`new-feature`, `masterplan`, `db-migration`, and `new-crm-module`) plus
-`upr-pattern-checker`, `worker-security-reviewer`, and `db-foundation-phase-reviewer`:
+`upr-pattern-checker`, `worker-security-reviewer`, and `db-foundation-phase-reviewer`. The mobile
+tranche adds `mobile-readiness-wave` plus its mapper, security reviewer, contract tester, and
+release auditor:
 
 - one capability manifest naming the neutral source and every generated output;
 - one neutral instruction body using repository-root symbolic references rather than
@@ -174,6 +186,24 @@ The owner approved this direction on 2026-07-23 and authorized the first impleme
   cross-runtime safety/trigger decision fixtures;
 - adapters containing pointers where the runtime supports them, with content duplication only when
   required and always generated.
+
+The mobile instructions now live only under `tooling/skills/` and `tooling/agents/`. The standard
+renderer generates both runtimes, and the retired mobile-only manifest/renderer no longer forms a
+second source of truth. `tooling/capabilities.json` retains the prior runtime choices: Claude tools,
+model, effort, and `maxTurns`; Codex model, reasoning effort, and sandbox. The mapper, security
+reviewer, and release auditor are green/read-only. The amber contract tester alone retains
+`workspace-write` for bounded local caches and test artifacts.
+
+`maxTurns` remains explicitly Claude-only. The retired custom Codex adapter never emitted a turn
+cap, and the governed Codex configuration surface has no verified per-agent turn-cap key. The
+cross-runtime five-minute subprocess bound remains in the neutral instructions rather than being
+silently translated into an unsupported configuration field. The skill remains implicitly
+invocable in both runtimes; red classifies its potential blast radius and does not authorize a live
+action.
+
+This is an incremental migration, not a silent port of all repository tooling. Broader promotion
+remains open under `GOV-001`; quality gates and project-law precedence must stay identical before
+another domain is added.
 
 Run `npm run generate:tooling` after changing a neutral source, then
 `npm run check:tooling-generated`, `npm run validate:tooling`, and `npm run test:tooling`.

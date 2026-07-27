@@ -4,11 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   The little sync-status badge in the field-app header. It watches the
- *   offline upload queue and shows one of three things: an amber "Syncing N"
- *   while uploads are pending, a red "N failed" the tech can tap to retry, or
- *   a brief green "Synced" flash once everything finishes. When there's
- *   nothing to report, it shows nothing at all.
+ *   The local-offline-status badge in the field-app header. Automatic command
+ *   admission/replay is disabled, so historical or ambiguous work is surfaced
+ *   for review and local recovery without a resend action.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (header status component)
@@ -17,12 +15,12 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/hooks/useOfflineQueue
- *   Data:      reads  → none (Supabase); reflects the local IndexedDB-backed
- *                        upload queue via useOfflineQueue (pending / error counts)
- *              writes → none (retryAll re-runs queued uploads; no direct DB here)
+ *   Data:      reads  → none (Supabase); reflects local IndexedDB state through
+ *                        useOfflineQueue
+ *              writes → local-only review/recovery actions; no server send
  *
  * NOTES / GOTCHAS:
- *   - Precedence: the error state wins over pending, which wins over "Synced".
+ *   - Precedence: manual review/recovery wins over pending/synced.
  *   - The "Synced" flash only fires on a >0 → 0 transition with no errors,
  *     and auto-hides after 2s.
  *   - Injects its spin keyframes inline (stable id, dedup-safe) only while visible.
@@ -30,6 +28,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import OfflineReconciliationPanel from './OfflineReconciliationPanel';
 
 // ─── SECTION: Icon helpers ──────────────
 function SpinnerIcon({ size = 12 }) {
@@ -72,34 +71,43 @@ function CheckIcon({ size = 12 }) {
 
 // ─── SECTION: Render ──────────────
 export default function OfflineStatusPill() {
-  const { pendingCount, errorCount, retryAll } = useOfflineQueue();
+  const {
+    pendingCount,
+    errorCount,
+    blockedCount,
+    quarantinedCount,
+    rolloutReady,
+    legacyRecoveryRequired,
+    unsupportedRecoveryRequired,
+    inspectionUnavailable,
+    storageState,
+    loadBlocked,
+    resolveBlocked,
+    retryOfflineStorage,
+    discardLegacyOfflineData,
+  } = useOfflineQueue();
   const [showSynced, setShowSynced] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const prevPending = useRef(pendingCount);
+  const showTimer = useRef(null);
   const fadeTimer = useRef(null);
 
   // Flash "Synced" for 2s after the queue goes from >0 to 0 with no errors.
   useEffect(() => {
     if (prevPending.current > 0 && pendingCount === 0 && errorCount === 0) {
-      setShowSynced(true);
+      if (showTimer.current) clearTimeout(showTimer.current);
       if (fadeTimer.current) clearTimeout(fadeTimer.current);
-      fadeTimer.current = setTimeout(() => setShowSynced(false), 2000);
+      showTimer.current = setTimeout(() => {
+        setShowSynced(true);
+        fadeTimer.current = setTimeout(() => setShowSynced(false), 2000);
+      }, 0);
     }
     prevPending.current = pendingCount;
-    return () => { if (fadeTimer.current) clearTimeout(fadeTimer.current); };
+    return () => {
+      if (showTimer.current) clearTimeout(showTimer.current);
+      if (fadeTimer.current) clearTimeout(fadeTimer.current);
+    };
   }, [pendingCount, errorCount]);
-
-  const handleRetry = async () => {
-    try {
-      await retryAll();
-      window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: 'Retrying queued uploads', type: 'success' },
-      }));
-    } catch (err) {
-      window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: 'Retry failed: ' + (err?.message || 'unknown'), type: 'error' },
-      }));
-    }
-  };
 
   const basePillStyle = {
     display: 'inline-flex',
@@ -116,28 +124,92 @@ export default function OfflineStatusPill() {
     cursor: 'default',
     userSelect: 'none',
   };
+  const storageBlocked = [
+    'blocked',
+    'error',
+    'version-changed',
+  ].includes(storageState?.status);
+  const recoveryRequired = rolloutReady === false
+    || legacyRecoveryRequired
+    || unsupportedRecoveryRequired
+    || inspectionUnavailable;
 
-  // Error pill takes precedence — something the tech needs to act on.
-  if (errorCount > 0) {
+  // This recovery surface never resends historical work.
+  if (
+    blockedCount > 0
+    || quarantinedCount > 0
+    || storageBlocked
+    || recoveryRequired
+  ) {
     return (
-      <>
-        <button
-          type="button"
-          onClick={handleRetry}
-          style={{
-            ...basePillStyle,
-            background: '#fef2f2',
-            color: '#dc2626',
-            borderColor: '#fecaca',
-            cursor: 'pointer',
-          }}
-          aria-label={`${errorCount} upload${errorCount === 1 ? '' : 's'} failed — tap to retry`}
-        >
-          <RetryIcon />
-          <span>{errorCount} failed</span>
-        </button>
+      <div style={{
+        position: 'relative',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+      }}>
+        {(
+          blockedCount > 0
+          || quarantinedCount > 0
+          || storageBlocked
+          || recoveryRequired
+        ) && (
+          <button
+            type="button"
+            onClick={() => setReviewOpen((open) => !open)}
+            aria-expanded={reviewOpen}
+            aria-label={storageBlocked
+              ? 'Offline storage is blocked; open recovery guidance'
+              : inspectionUnavailable
+                ? 'Offline work could not be inspected; open recovery guidance'
+              : recoveryRequired
+                ? 'Legacy offline work requires a recovery decision'
+                : blockedCount > 0
+                  ? `${blockedCount} offline action${blockedCount === 1 ? '' : 's'} need review; ${quarantinedCount} quarantined local records`
+                  : `${quarantinedCount} quarantined local record${quarantinedCount === 1 ? '' : 's'}`}
+            title={storageBlocked
+              ? storageState?.guidance
+              : inspectionUnavailable
+                ? 'Offline work could not be inspected. Close other UPR tabs, reload, and retry.'
+              : recoveryRequired
+                ? 'Unsynced legacy work is quarantined and blocks rollout.'
+                : blockedCount > 0
+                  ? 'This work may already be on the server. Review it online without resending.'
+                  : 'Foreign, legacy, or unsupported local records remain quarantined and unchanged.'}
+            style={{
+              ...basePillStyle,
+              background: '#fff7ed',
+              color: '#c2410c',
+              borderColor: '#fed7aa',
+              cursor: 'pointer',
+            }}
+          >
+            <RetryIcon />
+            <span>
+              {storageBlocked
+                ? 'Offline storage blocked'
+                : inspectionUnavailable
+                  ? 'Offline inspection blocked'
+                : recoveryRequired
+                  ? 'Legacy work blocked'
+                  : blockedCount > 0
+                    ? `${blockedCount} need review`
+                    : `${quarantinedCount} quarantined`}
+            </span>
+          </button>
+        )}
+        {reviewOpen && (
+          <OfflineReconciliationPanel
+            loadBlocked={loadBlocked}
+            resolveBlocked={resolveBlocked}
+            storageState={storageState}
+            retryOfflineStorage={retryOfflineStorage}
+            discardLegacyOfflineData={discardLegacyOfflineData}
+            onClose={() => setReviewOpen(false)}
+          />
+        )}
         <SpinKeyframes />
-      </>
+      </div>
     );
   }
 

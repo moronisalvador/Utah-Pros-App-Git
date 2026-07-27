@@ -44,6 +44,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import StatusBoard from '@/components/StatusBoard';
 import { realtimeClient } from '@/lib/realtime';
 import { C, STATUS, fmt$2, divColor, divLabel } from '@/components/collections/collTokens';
@@ -203,7 +204,7 @@ export default function TimeTracking() {
   const [pendingReqCount, setPendingReqCount] = useState(0);
 
   useEffect(() => {
-    db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,hourly_rate')
+    loadEmployeeDirectory(db)
       .then(setEmployees).catch(() => {});
   }, [db]);
 
@@ -760,7 +761,12 @@ function RequestsView({ db, currentUser, onReviewed }) {
       const empIds   = [...new Set(list.map(r => r.requested_by))].filter(Boolean);
       const [entriesRows, empRows] = await Promise.all([
         entryIds.length ? db.select('job_time_entries', `id=in.(${entryIds.join(',')})&select=id,employee_id,work_date,hours,clock_in,clock_out,travel_minutes,description,notes,job_id`) : [],
-        empIds.length   ? db.select('employees', `id=in.(${empIds.join(',')})&select=id,full_name`) : [],
+        empIds.length
+          ? loadEmployeeDirectory(db, { includeInactive: true })
+            .then(employeeRows => employeeRows.filter(
+              employee => empIds.includes(employee.id),
+            ))
+          : [],
       ]);
       const entryMap = Object.fromEntries((entriesRows || []).map(e => [e.id, e]));
       const empMap   = Object.fromEntries((empRows || []).map(e => [e.id, e.full_name]));

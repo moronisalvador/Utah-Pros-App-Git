@@ -1,10 +1,27 @@
-// Public legal pages — Privacy Policy & Terms of Service.
-// Served at /privacy and /terms (no auth) so they can be linked from the Intuit
-// (QuickBooks) app profile and anywhere else a public URL is required.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: Legal.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Serves the public Privacy, Terms, and Support pages used by the browser,
+ *   native app, provider profiles, and App Store listing.
+ *
+ * DEPENDS ON:
+ *   Packages:  react-router-dom
+ *   Internal:  none
+ *   Data:      none
+ *
+ * NOTES / GOTCHAS:
+ *   - These routes stay public so signed-out users and store reviewers can read
+ *     them. Keep their factual data-use statements aligned with the native
+ *     privacy manifest and App Store Connect packet.
+ * ════════════════════════════════════════════════
+ */
 
 import { Link } from 'react-router-dom';
 
-const UPDATED       = 'June 18, 2026';
+const UPDATED       = 'July 26, 2026';
 const COMPANY       = 'Utah Pros Restoration';
 const CONTACT_EMAIL = 'restoration@utah-pros.com';
 
@@ -39,13 +56,14 @@ export function PrivacyPolicy() {
       <p>The Platform is private software for use by {COMPANY} and its authorized employees and contractors. It is not a public product and is not offered for sale or public sign-up.</p>
 
       <h2 style={h2}>Information we handle</h2>
-      <p>To operate our business, the Platform stores information including: customer and contact details (names, addresses, phone numbers, email addresses), job and insurance-claim details, photos and documents related to work performed, scheduling and time records, and employee account information.</p>
+      <p>To operate our business, the Platform stores information including employee account identifiers; customer and staff names, physical addresses, phone numbers, and email addresses; job and insurance-claim details; photos and videos; messages, notes, documents, and support requests; scheduling and time records; and other information authorized users enter for restoration work.</p>
+      <p>With device permission, field workflows may collect precise location to record arrivals, departures, and travel activity. If native notifications are enabled, the Platform also stores a device push token so an authorized notification can reach that installation. The Platform does not use these identifiers for advertising or cross-app tracking.</p>
 
       <h2 style={h2}>How we use information</h2>
-      <p>Information is used solely to operate {COMPANY}'s business — including coordinating work, communicating with customers, generating estimates and invoices, and maintaining accurate financial and project records.</p>
+      <p>Information is collected when an authorized user enters or uploads it, grants a device permission for a requested field action, communicates through the Platform, or uses a connected business service. It is used solely to provide Platform functionality — including authenticating accounts, coordinating and documenting work, communicating with customers and staff, responding to support requests, generating estimates and invoices, and maintaining accurate financial, time, and project records.</p>
 
       <h2 style={h2}>Third-party services</h2>
-      <p>The Platform connects to trusted third-party services to perform its functions, and shares only the data necessary for each. These include Intuit QuickBooks Online (accounting and customer/invoice synchronization) and providers used for messaging and email. When data is shared with Intuit, it is handled in accordance with Intuit's privacy policy. We do not sell personal information.</p>
+      <p>The Platform connects to service providers to perform specific business functions and shares only the data needed for those functions. These include Intuit QuickBooks Online for accounting and customer/invoice synchronization, hosting and database providers, Apple notification services when native notifications are enabled, and providers used for messaging and email. We require providers to handle data under their applicable privacy and security obligations. We do not sell personal information or use it for third-party advertising.</p>
 
       <h2 style={h2}>Data security</h2>
       <p>Data is stored in secured, access-controlled systems. Access is limited to authorized {COMPANY} personnel who need it for their roles, and is protected by authentication and encryption in transit.</p>
@@ -54,7 +72,7 @@ export function PrivacyPolicy() {
       <p>We retain business records for as long as necessary to operate our business and to meet legal, tax, and contractual obligations.</p>
 
       <h2 style={h2}>Your choices</h2>
-      <p>Customers may request access to, correction of, or deletion of their personal information — subject to our legal and recordkeeping obligations — by contacting us at the email below.</p>
+      <p>Device permissions such as location, photos, and notifications can be denied or changed in device settings; unavailable permissions may limit only the field feature that needs them. Authorized users can initiate an account-deletion request from account settings. Customers and authorized users may also request access to, correction of, or deletion of personal information by contacting us below. Some business records may be retained when required for legal, tax, insurance, safety, or contractual obligations, and we will explain that limitation when it applies.</p>
 
       <h2 style={h2}>Changes</h2>
       <p>We may update this Privacy Policy from time to time. The "Last updated" date above reflects the most recent revision.</p>

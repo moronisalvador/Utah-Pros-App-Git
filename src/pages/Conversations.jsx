@@ -50,8 +50,16 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import useLookup from '@/hooks/useLookup';
 import { subscribeToMessages, subscribeToConversations, getAuthHeader } from '@/lib/realtime';
+import {
+  attachEmployeeDirectory,
+  employeeDirectoryMap,
+  loadMessageAuthorDirectory,
+  missingMessageAuthorMessageIds,
+} from '@/lib/employeeDirectory';
 import { IconSend, IconSearch, IconNote } from '@/components/Icons';
 import DatePicker from '@/components/DatePicker';
 import {
@@ -181,7 +189,7 @@ const TEMPLATE_CATEGORIES = {
   auto: '🤖 Auto', general: '📝 General',
 };
 
-const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at,employees(full_name)';
+const MSG_COLS = 'id,type,body,status,sent_by,sender_contact_id,media_urls,error_code,error_message,num_segments,client_request_id,created_at';
 const PAGE = 30;         // messages fetched per thread page
 const LIST_PAGE = 40;    // conversations fetched per list page
 
@@ -191,6 +199,7 @@ const LIST_PAGE = 40;    // conversations fetched per list page
 
 export default function Conversations({ replyAssist } = {}) {
   const { db, employee } = useAuth();
+  const { data: employeeDirectory = [] } = useLookup('employees');
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const deepLinkHandled = useRef(false);
@@ -259,6 +268,21 @@ export default function Conversations({ replyAssist } = {}) {
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
   const consentStatusRequestRef = useRef(0);
+
+  const unresolvedMessageAuthorIds = useMemo(
+    () => missingMessageAuthorMessageIds(messages, employeeDirectory),
+    [messages, employeeDirectory],
+  );
+  const { data: historicalMessageAuthors = [] } = useQuery({
+    queryKey: ['message-author-directory', unresolvedMessageAuthorIds],
+    queryFn: () => loadMessageAuthorDirectory(
+      db,
+      unresolvedMessageAuthorIds,
+    ),
+    enabled: !!db && unresolvedMessageAuthorIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
 
   const attachmentsRef = useRef([]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
@@ -778,17 +802,28 @@ export default function Conversations({ replyAssist } = {}) {
     return c;
   }, [conversations]);
 
+  const directoryById = useMemo(
+    () => employeeDirectoryMap([
+      ...employeeDirectory,
+      ...historicalMessageAuthors,
+    ]),
+    [employeeDirectory, historicalMessageAuthors],
+  );
+
   const groupedMessages = useMemo(() => {
     const g = []; let cur = null;
-    // Drop failures a later identical send already replaced: a retry is the same
-    // message, so the thread shows one bubble, the way every chat app does it.
+    // A retry is the same logical message. Preserve current-origin deduplication,
+    // then enrich the surviving row with the authenticated employee directory.
     withoutSupersededFailures(messages).forEach(msg => {
       const l = getDateLabel(msg.created_at);
       if (l !== cur) { cur = l; g.push({ type: 'date', label: l }); }
-      g.push({ type: 'msg', data: msg });
+      g.push({
+        type: 'msg',
+        data: attachEmployeeDirectory(msg, directoryById),
+      });
     });
     return g;
-  }, [messages]);
+  }, [messages, directoryById]);
 
   const templatesByCategory = useMemo(() => {
     const g = {};

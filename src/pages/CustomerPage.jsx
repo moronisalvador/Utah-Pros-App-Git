@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { DivisionIcon, DIVISION_COLORS } from '@/components/DivisionIcons';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import PullToRefresh from '@/components/PullToRefresh';
 import { LookupSelect } from '@/components/AddContactModal';
 import AddRelatedJobModal from '@/components/AddRelatedJobModal';
@@ -89,7 +90,7 @@ export default function CustomerPage(){
       setLoadError(null);
       setData(result);
       db.select('insurance_carriers','order=name.asc&select=id,name,short_name').then(setCarriers).catch(()=>{});
-      db.select('employees','is_active=eq.true&order=full_name.asc&select=id,full_name,role').then(setEmployees).catch(()=>{});
+      loadEmployeeDirectory(db).then(setEmployees).catch(()=>{});
       // Same feed the CRM contact drawer uses — richer than get_customer_detail's
       // job_notes/phase_history-only activity (adds claims, SMS, tasks, invoices, etc).
       db.rpc('get_contact_activity',{p_contact_id:contactId}).then(setActivity).catch(()=>setActivity([]));

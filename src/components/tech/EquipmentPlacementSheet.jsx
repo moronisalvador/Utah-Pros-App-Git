@@ -21,8 +21,8 @@
  *   Internal:  ./RoomChip, @/pages/tech/techConstants (ROOM_TEMPLATES)
  *   Data:      reads  → none
  *              writes → none directly — the parent's onSave callback performs
- *                        the place_equipment RPC (writes equipment_placements),
- *                        or queues it offline; onCreateRoom performs the room RPC
+ *                        the place_equipment RPC (writes equipment_placements)
+ *                        only while online; onCreateRoom performs the room RPC
  *
  * NOTES / GOTCHAS:
  *   - Exports a named constant EQUIPMENT_LABELS (imported by TechAppointment.jsx

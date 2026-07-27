@@ -1,34 +1,122 @@
-// Lazy singleton for the sync runner. One instance per page load, regardless of how many
-// components use `useOfflineQueue`. The first call to `initSyncRunner` wires it up; subsequent
-// calls are no-ops unless the `db` or `employee.id` changes (e.g. after login/logout).
+/**
+ * ════════════════════════════════════════════════
+ * FILE: syncRunnerSingleton.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Keeps exactly one offline sender alive in a browser tab. Logout or an
+ *   account change invalidates the old sender synchronously, before any slower
+ *   push or browser cleanup begins.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  syncRunner
+ *   Data:      none directly
+ *
+ * NOTES / GOTCHAS:
+ *   - Incomplete auth never returns the previous account's runner.
+ *   - A suspended runner is disposed permanently; stale component references
+ *     cannot restart or drain it.
+ * ════════════════════════════════════════════════
+ */
 
 import { createSyncRunner } from './syncRunner';
 
-let _runner = null;
-let _authKey = null; // tracks which (db, employee.id) pair the current runner was built for
+let currentRunner = null;
+let currentDb = null;
+let currentEmployeeId = null;
+let currentOwner = null;
+let currentEpoch = null;
 
 /**
- * Ensure a runner exists for the given auth context. Safe to call on every render.
- * @param {{db:object, employee:object}} deps
- * @returns {object|null} the active runner, or null if deps are incomplete
+ * Stop and forget the current runner immediately. Safe to call repeatedly.
+ * This function intentionally performs no await.
  */
-export function initSyncRunner({ db, employee }) {
-  if (!db || !employee?.id) return _runner;
-
-  const key = `${employee.id}:${db.apiKey || 'anon'}`;
-  if (_runner && _authKey === key) return _runner;
-
-  // Auth changed (login/logout/refresh). Tear down old runner before creating a new one.
-  if (_runner) {
-    try { _runner.stop(); } catch { /* ignore */ }
+export function suspendSyncRunner() {
+  const runner = currentRunner;
+  const previousOwner = currentOwner;
+  currentRunner = null;
+  currentDb = null;
+  currentEmployeeId = null;
+  currentOwner = null;
+  currentEpoch = null;
+  if (runner) {
+    try {
+      runner.stop();
+    } catch {
+      // References were already invalidated above; cleanup remains fail closed.
+    }
   }
-  _runner = createSyncRunner({ db, employee });
-  _authKey = key;
-  _runner.start();
-  return _runner;
+  return {
+    suspended: true,
+    hadRunner: !!runner,
+    previousOwner,
+  };
 }
 
-/** Read the current runner without initializing. Returns null before `initSyncRunner`. */
-export function getSyncRunner() {
-  return _runner;
+/**
+ * Ensure an owner-bound runner exists for the verified auth context.
+ */
+export function initSyncRunner({
+  db,
+  employee,
+  owner,
+  ownerLease,
+  isOwnerCurrent,
+}) {
+  if (
+    !db
+    || !employee?.id
+    || !owner
+    || ownerLease?.owner !== owner
+    || !ownerLease?.epoch
+    || typeof isOwnerCurrent !== 'function'
+  ) {
+    suspendSyncRunner();
+    return null;
+  }
+
+  if (
+    currentRunner
+    && currentDb === db
+    && currentEmployeeId === employee.id
+    && currentOwner === owner
+    && currentEpoch === ownerLease.epoch
+    && currentRunner.isActive()
+  ) {
+    return currentRunner;
+  }
+
+  suspendSyncRunner();
+  const runner = createSyncRunner({
+    db,
+    employee,
+    owner,
+    ownerLease,
+    isOwnerCurrent,
+  });
+  currentRunner = runner;
+  currentDb = db;
+  currentEmployeeId = employee.id;
+  currentOwner = owner;
+  currentEpoch = ownerLease.epoch;
+  if (!runner.start()) {
+    suspendSyncRunner();
+    return null;
+  }
+  return runner;
+}
+
+/**
+ * Read the active runner. Supplying owner prevents a stale caller from
+ * retrieving a runner that belongs to a later account.
+ */
+export function getSyncRunner(owner = null) {
+  if (!currentRunner?.isActive?.()) return null;
+  if (owner && owner !== currentOwner) return null;
+  return currentRunner;
+}
+
+export function getSyncRunnerOwner() {
+  return getSyncRunner() ? currentOwner : null;
 }

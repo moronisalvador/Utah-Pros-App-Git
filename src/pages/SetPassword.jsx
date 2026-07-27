@@ -28,8 +28,10 @@ export default function SetPassword() {
           setChecking(false);
           if (session?.user?.email) setUserEmail(session.user.email);
         }
-        if (event === 'SIGNED_IN' && session?.user?.email && !userEmail) {
-          setUserEmail(session.user.email);
+        if (event === 'SIGNED_IN' && session?.user?.email) {
+          setUserEmail((currentEmail) => (
+            currentEmail || session.user.email
+          ));
         }
       }
     );
@@ -68,7 +70,10 @@ export default function SetPassword() {
       if (updateErr) throw updateErr;
 
       setSuccess(true);
-      setTimeout(() => navigate('/'), 2000);
+      // Recovery sessions intentionally do not bootstrap employee/device
+      // state. Reload after success so AuthProvider performs a normal verified
+      // bootstrap with the updated credential.
+      setTimeout(() => window.location.replace('/'), 2000);
     } catch (err) {
       setError(err.message);
     } finally {

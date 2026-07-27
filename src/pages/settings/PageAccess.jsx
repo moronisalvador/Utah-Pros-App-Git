@@ -18,7 +18,7 @@
  *   Internal:  @/contexts/AuthContext (db, employee),
  *              @/components/settings/SettingsPageHeader,
  *              @/lib/navKeys (PAGE_ACCESS_KEYS, roleLabel)
- *   Data:      reads  → get_all_employees, get_employee_page_access,
+ *   Data:      reads  → get_employee_directory, get_employee_page_access,
  *              get_feature_flags, nav_permissions (RPCs/selects)
  *              writes → upsert_employee_page_access / delete_employee_page_access (RPCs)
  *
@@ -33,6 +33,7 @@
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
 import { PAGE_ACCESS_KEYS, roleLabel } from '@/lib/navKeys';
 
@@ -69,7 +70,7 @@ export default function PageAccess() {
   // Load employees (non-admin, active only)
   const loadEmployees = useCallback(async () => {
     try {
-      const data = await db.rpc('get_all_employees');
+      const data = await loadEmployeeDirectory(db);
       const nonAdmin = (data || []).filter(e => e.is_active !== false && e.role !== 'admin');
       setEmployees(nonAdmin);
     } catch {

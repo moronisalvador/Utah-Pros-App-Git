@@ -38,6 +38,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormConstants';
@@ -68,7 +69,7 @@ export default function TechNewEvent() {
 
   // ─── SECTION: Data fetching ──────────────
   useEffect(() => {
-    db.select('employees', 'is_active=eq.true&order=full_name.asc&select=id,full_name,display_name,role,color')
+    loadEmployeeDirectory(db)
       .then(e => setEmployees(e || []))
       .catch(() => {});
   }, [db]);

@@ -1,92 +1,259 @@
-name: iOS release (TestFlight)
+name: iOS release
 
 on:
-  # PAUSED (scaffold, 2026-07-17): Apple Developer Program enrollment + CI
-  # signing secrets (APPLE_TEAM_ID, a signing certificate/profile or an App
-  # Store Connect API key, APPLE_ID) do not exist yet, so this workflow
-  # cannot complete a run. It is workflow_dispatch-only (manual) so nobody
-  # accidentally triggers it before those secrets are added — mirrors
-  # capgo-deploy.yml's paused-safe pattern. Once signing secrets exist, this
-  # can gain a real trigger (e.g. a release tag) if desired.
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      publish_to_testflight:
+        description: Upload the verified IPA to internal TestFlight after archive verification
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_IDENTIFIER: com.utahprosrestoration.upr
+  BUILD_NUMBER: "${{ github.run_number }}.${{ github.run_attempt }}"
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  FASTLANE_HIDE_CHANGELOG: "1"
+  FASTLANE_SKIP_UPDATE_CHECK: "1"
 
 jobs:
-  release:
-    runs-on: macos-latest
-    env:
-      # GitHub does not allow the secrets context directly in step `if` expressions.
-      # Mapping this once keeps the manual scaffold valid while still treating an
-      # unset signing identity as the explicit owner gate below.
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+  archive:
+    name: Build and verify signed IPA
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: ios-signing
     steps:
-      - name: Checkout
+      - name: Checkout the requested commit
         uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: npm
+          fetch-depth: 1
+          persist-credentials: false
 
-      - name: Install JS deps
-        run: npm ci
+      - name: Enforce production source and locked Ruby dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "iOS release archives must be dispatched from refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ ! -f ios/Gemfile.lock ]]; then
+            echo "ios/Gemfile.lock is required before any signing material is handled." >&2
+            exit 1
+          fi
+          if [[ ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*(\.[0-9]+){0,2}$ ]]; then
+            echo "Generated BUILD_NUMBER is not a valid Apple bundle version." >&2
+            exit 1
+          fi
 
-      - name: Build web bundle (native target)
+      - name: Validate archive inputs
+        shell: bash
         env:
-          VITE_BUILD_TARGET: native
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npx vite build
+        run: |
+          set -euo pipefail
+          required_names=(
+            APPLE_TEAM_ID
+            APPLE_CERTIFICATE_BASE64
+            APPLE_CERTIFICATE_PASSWORD
+            APPLE_PROVISIONING_PROFILE_BASE64
+            APPLE_PROVISIONING_PROFILE_NAME
+            VITE_SUPABASE_URL
+            VITE_SUPABASE_ANON_KEY
+          )
+          for name in "${required_names[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required iOS archive secret: $name" >&2
+              exit 1
+            fi
+          done
 
-      - name: Sync Capacitor iOS project
-        run: npx cap sync ios
+      - name: Select and verify Xcode 26.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcode_version="$(xcodebuild -version)"
+          grep -Fx "Xcode 26.6" <<<"$xcode_version"
+          grep -Fx "Build version 17F113" <<<"$xcode_version"
 
-      - name: Setup Ruby + bundler
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run repository tests
+        run: npm test
+
+      - name: Build the native web bundle
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node scripts/build-native.mjs
+
+      - name: Synchronize the iOS platform
+        run: node_modules/.bin/cap sync ios
+
+      - name: Reject uncommitted Capacitor project drift
+        run: git diff --exit-code -- ios/App
+
+      - name: Setup Ruby 3.3.12 and locked gems
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3"
+          ruby-version: 3.3.12
+          bundler: 4.0.16
           bundler-cache: true
           working-directory: ios
 
-      - name: Decode signing certificate
-        working-directory: ios
+      - name: Decode signing assets into runner temporary storage
+        shell: bash
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE_BASE64" ]; then
-            echo "APPLE_CERTIFICATE_BASE64 secret not set yet — signing secrets are pending" \
-              "Apple Developer Program enrollment. This step is a no-op scaffold until then."
-            exit 0
-          fi
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > signing_certificate.p12
-
-      - name: Decode provisioning profile
-        working-directory: ios
-        env:
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
         run: |
-          if [ -z "$APPLE_PROVISIONING_PROFILE_BASE64" ]; then
-            echo "APPLE_PROVISIONING_PROFILE_BASE64 secret not set yet — signing secrets are pending" \
-              "Apple Developer Program enrollment. This step is a no-op scaffold until then."
-            exit 0
-          fi
-          echo "$APPLE_PROVISIONING_PROFILE_BASE64" | base64 --decode > signing_profile.mobileprovision
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/upr-signing-certificate.p12"
+          profile_path="$RUNNER_TEMP/upr-signing-profile.mobileprovision"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | /usr/bin/base64 -D >"$certificate_path"
+          printf '%s' "$APPLE_PROVISIONING_PROFILE_BASE64" | /usr/bin/base64 -D >"$profile_path"
+          chmod 600 "$certificate_path" "$profile_path"
 
-      - name: Run fastlane beta lane
-        if: ${{ env.APPLE_TEAM_ID != '' }}
+      - name: Create signed archive without provider upload
         working-directory: ios
+        shell: bash
         env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
+        run: |
+          set -euo pipefail
+          keychain_password="$(/usr/bin/openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          export KEYCHAIN_PASSWORD="$keychain_password"
+          export APPLE_CERTIFICATE_PATH="$RUNNER_TEMP/upr-signing-certificate.p12"
+          export APPLE_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/upr-signing-profile.mobileprovision"
+          bundle exec fastlane ios archive
+
+      - name: Verify archive and exported IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node scripts/qa/verify-ios-release-artifact.mjs \
+            --archive ios/build/UPR.xcarchive \
+            --ipa ios/build/UPR.ipa \
+            --report ios/build/UPR-release-verification.json \
+            --expected-bundle-id "$APP_IDENTIFIER" \
+            --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-build-number "$BUILD_NUMBER"
+
+      - name: Retain verified IPA and sanitized report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upr-ios-release-${{ github.sha }}
+          path: |
+            ios/build/UPR.ipa
+            ios/build/UPR-release-verification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove decoded signing assets
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f -- "$RUNNER_TEMP/upr-signing-certificate.p12"
+          rm -f -- "$RUNNER_TEMP/upr-signing-profile.mobileprovision"
+
+  publish:
+    name: Upload verified IPA to internal TestFlight
+    needs: archive
+    if: ${{ inputs.publish_to_testflight }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    environment: ios-testflight
+    steps:
+      - name: Checkout the archived commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download the verified release artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: upr-ios-release-${{ github.sha }}
+          path: release-artifact
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+
+      - name: Validate provider inputs and locked Ruby dependencies
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
-        run: bundle exec fastlane beta
-
-      - name: Signing secrets not configured yet
-        if: ${{ env.APPLE_TEAM_ID == '' }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
         run: |
-          echo "APPLE_TEAM_ID secret is not set — this workflow is an inert scaffold until" \
-            "Apple Developer Program enrollment completes and CI signing secrets are added" \
-            "(see ios/fastlane/Fastfile header and docs/app-store-readiness-roadmap.md)."
-          exit 1
+          set -euo pipefail
+          test -f ios/Gemfile.lock
+          required_names=(
+            APPLE_TEAM_ID
+            ASC_KEY_ID
+            ASC_ISSUER_ID
+            ASC_KEY_CONTENT_BASE64
+          )
+          for name in "${required_names[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required TestFlight provider secret: $name" >&2
+              exit 1
+            fi
+          done
+
+      - name: Reverify downloaded IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node scripts/qa/verify-ios-release-artifact.mjs \
+            --ipa release-artifact/UPR.ipa \
+            --report "$RUNNER_TEMP/UPR-publish-verification.json" \
+            --expected-bundle-id "$APP_IDENTIFIER" \
+            --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-build-number "$BUILD_NUMBER"
+
+      - name: Setup Ruby 3.3.12 and locked gems
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3.12
+          bundler: 4.0.16
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Upload the reverified IPA
+        working-directory: ios
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
+          IPA_PATH: ${{ github.workspace }}/release-artifact/UPR.ipa
+        run: bundle exec fastlane ios upload

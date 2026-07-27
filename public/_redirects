@@ -1,1 +1,30 @@
+# SPA routing. Every non-file path renders the app shell.
+#
+# ⚠️ KNOWN HAZARD, deliberately left in place because Cloudflare Pages gives us
+# no way to close it here.
+#
+# This rule also answers a MISSING /app-assets/*.js with index.html at HTTP 200.
+# Combined with the immutable caching in _headers, that is what took
+# dev.utahpros.app down on 2026-07-27: during a deployment swap an edge node
+# requested a chunk that had not uploaded yet, cached the HTML answer under a
+# .js URL for a year, and every client that touched that PoP got a permanently
+# blank page — browsers refuse text/html for <script type="module">, so the
+# entry graph never instantiates and nothing throws.
+#
+# Two attempts to make a missing asset 404 here BOTH FAILED on a real preview
+# deployment (2026-07-27):
+#   /app-assets/* /asset-missing.html 404   -> ignored; Pages 308-normalizes
+#                                              .html, and a redirecting target
+#                                              makes the rule fall through
+#   /app-assets/* /asset-missing 404        -> also ignored; a missing asset
+#                                              still returned index.html + 200
+# Do not re-add a variant of these without verifying it on a preview build
+# first. A rule that looks protective but is inert is worse than none.
+#
+# What actually protects users is therefore NOT prevention but recovery:
+#   - the boot guard in index.html repairs poisoned cache entries with
+#     fetch(url, {cache:'reload'}) and reloads, which works on Safari where
+#     /reset's Clear-Site-Data does not;
+#   - build.assetsDir (vite.config.js) can be moved to retire a poisoned URL
+#     namespace outright, as was done once on 2026-07-27.
 /* /index.html 200

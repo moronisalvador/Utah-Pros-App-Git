@@ -17,10 +17,111 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="UPR" />
-    <link rel="apple-touch-icon" href="/icon-192.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      BOOT GUARD — must stay ABOVE the module script, and must stay classic
+      (no type="module"), so it runs even when the module graph cannot.
+
+      The failure it exists for: a hashed /assets/*.js answered with index.html
+      at HTTP 200 and cached `immutable` (see public/_redirects). A browser
+      refuses text/html for a module script, so the ENTRY GRAPH never
+      instantiates — main.jsx never executes, React never attaches, and no
+      exception is raised. The page is blank forever with nothing in the
+      console to act on.
+
+      Every other recovery path in this app (routes/lazyRetry, ErrorBoundary,
+      AuthContext, SettingsHome, main.jsx) lives INSIDE the running app, so in
+      this exact failure none of them can fire. This is the only layer that
+      can. That gap is what made 2026-07-27 unrecoverable without a dashboard
+      cache purge.
+
+      index.html is served no-store, so this guard is always fresh even when
+      every hashed asset in the browser's cache is poisoned — which is what
+      lets it repair a client that is already broken.
+    -->
+    <script>
+      (function () {
+        var ONCE = 'upr:boot-recovered';
+        var ASSET_DIR = '/app-assets/';
+
+        function claimAttempt() {
+          // One attempt per tab session, so a persistent fault degrades to a
+          // blank page rather than a reload loop.
+          try {
+            if (sessionStorage.getItem(ONCE)) return false;
+            sessionStorage.setItem(ONCE, '1');
+          } catch (e) { /* private mode: allow the single attempt anyway */ }
+          return true;
+        }
+
+        // Repair the browser's own cache entries, then reload.
+        //
+        // Deliberately NOT /reset. That page relies on Clear-Site-Data, which
+        // SAFARI DOES NOT IMPLEMENT — proven on a real iPhone on 2026-07-27,
+        // where loading /reset changed nothing. Since every field technician is
+        // on iOS, a Safari-ineffective recovery is no recovery.
+        //
+        // fetch(url, {cache:'reload'}) bypasses AND REWRITES the HTTP cache
+        // entry, and is plain fetch supported everywhere. This is the exact
+        // operation that repaired a poisoned browser by hand during the
+        // incident, which is why it is the mechanism here.
+        function repairAndReload(urls) {
+          if (!claimAttempt()) return;
+          var done = 0;
+          function step() {
+            if (++done === urls.length) window.location.reload();
+          }
+          for (var i = 0; i < urls.length; i++) {
+            fetch(urls[i], { cache: 'reload' }).then(step)['catch'](step);
+          }
+        }
+
+        function isAsset(url) {
+          return url && (url.indexOf(ASSET_DIR) !== -1 || url.indexOf('/assets/') !== -1);
+        }
+
+        // Loud path: the module script fails to load at all.
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === 'SCRIPT' && isAsset(t.src)) repairAndReload([t.src]);
+        }, true);
+
+        // Silent path: every request returns 200 but one is HTML, so the graph
+        // never instantiates and nothing throws. Confirm a real content-type
+        // fault before acting — a slow connection must NEVER be mistaken for a
+        // poisoned cache, least of all on a field tech's LTE.
+        window.setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+
+          var urls = [];
+          var entry = document.querySelector('script[type=module][src]');
+          if (entry) urls.push(entry.src);
+          var pre = document.querySelectorAll('link[rel=modulepreload][href]');
+          for (var i = 0; i < pre.length; i++) urls.push(pre[i].href);
+          if (!urls.length) return;
+
+          var done = 0;
+          var bad = [];
+          for (var j = 0; j < urls.length; j++) {
+            (function (url) {
+              // No cache option: read exactly what the module loader would.
+              fetch(url).then(function (r) {
+                var ct = r.headers.get('content-type') || '';
+                if (ct.indexOf('javascript') === -1) bad.push(url);
+              })['catch'](function () {
+                bad.push(url);
+              }).then(function () {
+                if (++done === urls.length && bad.length) repairAndReload(bad);
+              });
+            })(urls[j]);
+          }
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

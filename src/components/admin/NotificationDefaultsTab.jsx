@@ -21,7 +21,7 @@
  *                        get_notification_defaults();
  *                        per-employee tri-state via
  *                        get_employee_notification_overrides();
- *                        employee list via get_all_employees
+ *                        employee list via get_employee_directory
  *              writes → set_notification_default (role×type×channel + lock),
  *                        set_employee_notification_override,
  *                        delete_employee_notification_override
@@ -40,6 +40,7 @@
  */
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 
 // Role order + labels for the defaults matrix. Mirrors Admin.jsx ROLES and the
 // role set get_notification_defaults() expands over.
@@ -280,7 +281,7 @@ function EmployeeOverrides() {
   // ─── SECTION: Data fetching ───
   const loadEmployees = useCallback(async () => {
     try {
-      const data = await db.rpc('get_all_employees');
+      const data = await loadEmployeeDirectory(db);
       setEmployees((data || []).filter(e => e.is_active !== false && e.role !== 'admin'));
     } catch {
       toast('Failed to load employees', 'error');

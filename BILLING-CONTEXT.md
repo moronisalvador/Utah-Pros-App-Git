@@ -1,6 +1,6 @@
 # UPR Billing, QuickBooks & Xactimate AI — Engineering Context
 
-**Last updated:** June 26, 2026
+**Last updated:** July 26, 2026
 **Scope:** Everything behind the invoice builder, the two-way QuickBooks Online (QBO) sync,
 payments, Stripe pay links, and the Xactimate AI import. Read this before building on the billing
 stack so you extend it cleanly instead of re-deriving (or accidentally redesigning) it.
@@ -202,8 +202,9 @@ hardcoded). `QBO_INSURANCE_ADJUSTMENT_ITEM_ID = '1010000231'`. This same mapping
 invoice-sync line building **and** the Xactimate Item/Class autofill — change it in one place.
 
 ### Workers (`functions/api/`)
-All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer token (the UI uses
-`getAuthHeader()` from `src/lib/realtime.js`).
+Worker identities vary by route. Server-capability and Bearer-only boundaries are defined in
+“QBO Worker identity boundary (S1a/S1b, 2026-07-26)” below; UI callers obtain their Bearer through
+the established authenticated request helpers.
 
 - **`qbo-invoice.js`** — `POST {invoice_id, action?: 'send'|'delete', send_to?}`.
   - Loads invoice + job + contact + claim. **Requires `contact.qbo_customer_id`** (sync the customer
@@ -233,7 +234,8 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
     contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret) so a QBO
     customer is created **when the contact is actually invoiced/estimated**, then re-reads the id and
     throws the usual "sync the client first" error only if it's still missing. Was a no-op until
-    Phase B; now the ONLY path that creates a QBO customer.
+    Phase B; now the only automatic transaction-time path that creates a QBO customer. Settings
+    preview/backfill remains an explicit manual path.
   - **Phase B (SHIPPED — `20260701_crm_qbo_phase_b_gate_contact_trigger.sql`):** `trg_qbo_customer_sync`
     is now a **no-op** — `notify_qbo_customer_sync()` was replaced with a `RETURN NEW` body (the
     trigger is kept attached, not dropped, so restoring the prior body re-enables auto-sync; the
@@ -247,6 +249,28 @@ All accept either an `x-webhook-secret` (server-to-server) or a Supabase Bearer 
       invoice/estimate self-heal syncs at transaction time regardless of when the name was set.
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
+
+### QBO Worker identity boundary (S1a/S1b, 2026-07-26)
+
+- Browser calls to invoice, estimate, payment, query, customer sync, payment sync and OAuth connect
+  require a valid Supabase session resolving to an active, non-external `admin`.
+- The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing server paths:
+  invoice/estimate/payment/query, customer sync and HTTP payment sync. The payment poller's direct
+  `scheduled()` entry remains separate. OAuth connect never accepts that capability.
+- QBO card charge and attachment mutation retain their existing Bearer-only
+  `requireRole(['admin','manager'])` contract and explicitly reject external employees before
+  business data, telemetry or provider calls. `manager` is not a current role; adding
+  `project_manager` remains an owner decision.
+- Approved-caller downstream bodies/statuses, OAuth callback redirects, scheduler behavior and
+  provider helpers are preserved; the new 403 results are the deliberate authorization
+  transition. Negative/failure-path tests assert denied requests reach at most Auth plus the
+  employee lookup.
+- Customer-sync and manual payment-sync resolve the human caller for authorization but do not
+  persist that actor in current `worker_runs` telemetry. A durable actor field/write requires a
+  separate schema/telemetry decision.
+- This is Worker containment only. Direct `qbo_attachments` metadata SELECT remains role-scoped
+  without an explicit `is_external=false` predicate and requires a separate reviewed migration.
+  Binding equality, deployed hashes and representative live identities remain release gates.
 
 ### Payments flowing back from QBO (and Stripe)
 - **`qbo-webhook.js`** — Intuit-signed webhook (Payment entity). Idempotent via the `claim_qbo_event`
@@ -270,6 +294,8 @@ is the right attach point). `functions/api/qbo-attach.js` (`requireRole(['admin'
 The file goes browser → worker → QBO as base64; UPR stores only metadata + the opaque attachable id in
 `qbo_attachments` (never the bytes). UI: shared `src/components/collections/QboAttachments.jsx` in both
 editors. Uses the already-granted **accounting** scope (no Payments-scope reconnect required).
+The Worker rejects external employees, but the UI's direct metadata SELECT policy does not yet
+carry the same `is_external=false` predicate; that database residual is tracked separately.
 
 ### Payment two-way sync activation (2026-07-24)
 The QBO→UPR payment path is built; the hourly safety-net poller is now wired via pg_cron
@@ -291,7 +317,8 @@ in the UI — adjust/refund them in QBO so reconciliation stays intact.
 **Server boundary refresh (2026-07-23):** both `/api/stripe-pay-link` and `/api/qbo-charge` now
 resolve an active employee and require the same `admin`/`manager` billing-role predicate as the UI
 before configuration, invoice, credential, or provider access. The charge endpoint no longer
-accepts the generic QBO webhook secret as an alternate money-moving identity. It requires a stable
+accepts the generic QBO webhook secret as an alternate money-moving identity and now explicitly
+rejects external employees before privileged work. It requires a stable
 client `Idempotency-Key`, passes it to Intuit as the request ID, rejects fractional-cent or
 over-balance charges, records the actor employee, and uses the Mountain-Time business date for both
 UPR and QBO.

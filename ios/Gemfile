@@ -3,17 +3,18 @@
 # ════════════════════════════════════════════════
 #
 # WHAT THIS DOES (plain language):
-#   Lists the Ruby tool (fastlane) needed to build and upload the iOS app,
-#   so CI can install an exact, repeatable version of it instead of
-#   "whatever's newest today." Standard fastlane convention — pairs with
-#   ios/fastlane/Fastfile and ios/fastlane/Appfile.
+#   Pins the Ruby tool (fastlane) used to build and upload the iOS app.
+#   A committed Gemfile.lock is still required before the release workflow
+#   is allowed to install dependencies or handle signing material.
 #
 # NOTES / GOTCHAS:
-#   - This alone does not require any Apple signing secrets — it is safe to
-#     install/bundle at any time. The Fastfile lanes it enables are what's
-#     inert until signing secrets exist (see ios/fastlane/Fastfile header).
+#   - Version 2.237.0 is the reviewed release for the pinned Ruby 3.3 CI
+#     toolchain. Regenerate and review Gemfile.lock on that toolchain after
+#     intentional dependency changes.
 # ════════════════════════════════════════════════
 
 source "https://rubygems.org"
 
-gem "fastlane"
+ruby "3.3.12"
+
+gem "fastlane", "2.237.0"

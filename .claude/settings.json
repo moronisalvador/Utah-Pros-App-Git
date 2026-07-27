@@ -125,7 +125,6 @@
       "Bash(git push origin main)",
       "Bash(git push origin main:*)",
       "Bash(git push origin HEAD:main)",
-      "mcp__*__execute_sql",
       "mcp__*__exec_read_sql",
       "mcp__*__upr_sql",
       "Bash(git push --force:*)",
@@ -145,6 +144,7 @@
     ],
     "ask": [
       "mcp__*__apply_migration",
+      "mcp__*__execute_sql",
       "mcp__*__merge_pull_request",
       "mcp__*__github_merge_pr",
       "mcp__*__stripe_create_payout",

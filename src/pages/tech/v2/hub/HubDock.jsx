@@ -18,16 +18,16 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/contexts/AuthContext, @/components/tech/PhotoNoteSheet,
  *              @/lib/toast, @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/hooks/useOfflineQueue, @/lib/offlineDb, @/lib/syncRunnerSingleton,
  *              @/lib/techDateUtils (openMap)
  *   Data:      reads  → none (rooms arrive as a prop)
  *              writes → job-files storage bucket + job_documents (insert_job_document
- *                        / caption update / move_photo_to_room) — direct or queued
+ *                        / caption update / move_photo_to_room) — online only
  *
  * NOTES / GOTCHAS:
- *   - Snap-first preserved verbatim (tech-mobile-ux law): the inline path shows a
- *     4s "Photo saved · Add note" toast that opens PhotoNoteSheet; the offline
- *     path just queues (no toast prompt), exactly like the dashboard button.
+ *   - Snap-first preserved verbatim (tech-mobile-ux law): a successful upload
+ *     shows a 4s "Photo saved · Add note" toast that opens PhotoNoteSheet.
+ *   - Photo upload is online-only because its two-step server contract is not
+ *     idempotent; offline attempts fail before persisting any local command.
  *   - Photos always tag the SELECTED visit (appointmentId) even when the tech is
  *     clocked into a different job — explicit attribution, never silent.
  *   - The bar hides on focusin of any text input (iOS keyboard hazard).
@@ -42,9 +42,10 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { openMap } from '@/lib/techDateUtils';
-import { useOfflineQueue } from '@/hooks/useOfflineQueue';
-import { savePhotoBlob } from '@/lib/offlineDb';
-import { getSyncRunner } from '@/lib/syncRunnerSingleton';
+// Message opens the in-app thread (see the dock button below). The offline-queue
+// imports that used to sit here went with the PR's removal of the offline photo
+// fork — uploadPhotoFile is online-only now and guards on navigator.onLine.
+import { pickerHref } from '@/lib/openInAppThread';
 
 /**
  * @param {{ jobId: string, appointmentId: string|null, phone?: string|null,
@@ -54,8 +55,6 @@ import { getSyncRunner } from '@/lib/syncRunnerSingleton';
 export default function HubDock({ jobId, appointmentId, phone, address, rooms, onCreateRoom, onMutation }) {
   const { t } = useTranslation(['hub', 'tech']);
   const { employee, db, isFeatureEnabled } = useAuth();
-  const { enqueue } = useOfflineQueue();
-  const offlineQueueEnabled = isFeatureEnabled('offline:queue');
   const roomsEnabled = isFeatureEnabled('page:tech_rooms');
   const navigate = useNavigate();
 
@@ -86,22 +85,11 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
     if (file.size > 10 * 1024 * 1024) { toast(t('tech:toast.photoTooLarge'), 'error'); return; }
     if (!file.type.startsWith('image/')) { toast(t('tech:toast.onlyImages'), 'error'); return; }
 
-    // Offline fork: with the queue on AND a visit selected, store the blob + enqueue
-    // (tagged to the selected visit). Otherwise upload directly. No snap-first toast
-    // on the queued path (parity with the dashboard photo button).
-    if (offlineQueueEnabled && appointmentId) {
-      try {
-        const clientId = (crypto?.randomUUID?.()) || `${Date.now()}-${Math.random()}`;
-        await savePhotoBlob(clientId, {
-          blob: file, mimeType: file.type, name: file.name,
-          jobId, appointmentId, uploadedBy: employee?.id || null, roomId: null, description: null,
-        });
-        await enqueue({ type: 'photo.upload', clientId, payload: { clientId, jobId, appointmentId, roomId: null, description: null, name: file.name } });
-        impact('light');
-        if (typeof navigator !== 'undefined' && navigator.onLine === false) toast(t('tech:toast.photoQueued'), 'success');
-      } catch (err) {
-        toast(t('tech:toast.photoQueueFailed', { message: err?.message || 'unknown' }), 'error');
-      }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast(
+        'Photo uploads require an internet connection. Reconnect and try again.',
+        'error',
+      );
       return;
     }
 
@@ -129,18 +117,6 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
       setUploading(false);
     }
   };
-
-  // Reload docs when a queued photo for THIS job finishes syncing.
-  useEffect(() => {
-    if (!offlineQueueEnabled || !jobId) return undefined;
-    const runner = getSyncRunner();
-    if (!runner) return undefined;
-    return runner.on('sync:item-done', ({ item }) => {
-      if (item?.type !== 'photo.upload') return;
-      if (item?.payload?.jobId && item.payload.jobId !== jobId) return;
-      onMutation?.('photo');
-    });
-  }, [offlineQueueEnabled, jobId, onMutation]);
 
   const onCaptured = async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) await uploadPhotoFile(f); };
 
@@ -203,10 +179,19 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
           <span>{t('tech:actionBar.navigate')}</span>
         </button>
 
-        <a className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`} href={phone ? `sms:${phone}` : undefined} aria-disabled={!phone}>
+        {/* Opens the thread INSIDE UPR. A native sms: link here would send from the
+            tech's personal number, so it would never reach the customer's UPR
+            thread. The Job Hub flag is off today, so this was latent — it would
+            have surfaced the moment the flag opened. */}
+        <button
+          type="button"
+          className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`}
+          onClick={phone ? () => navigate(pickerHref()) : undefined}
+          disabled={!phone}
+        >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
           <span>{t('tech:actionBar.message')}</span>
-        </a>
+        </button>
 
         <button type="button" className="tv2-hub-dock__btn" onClick={() => setMenuOpen((v) => !v)} aria-label={t('dock.more')}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
