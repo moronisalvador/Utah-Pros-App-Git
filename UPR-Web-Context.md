@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair source;
+Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair applied;
 current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
 signed Work Authorization SMS consent and current `origin/dev` additions preserved; see git history
 for earlier accuracy-audit findings)
@@ -21,10 +21,16 @@ existing invoice line to `$10,611.51`. Existing triggers then derive invoice bal
 from the preserved `$7,672.87` QuickBooks payment. The migration never writes generated or
 payment-trigger-owned money columns directly.
 
-The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
+The paired rollback is emergency-only because it intentionally restores the known-broken `The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
 invoice total and negative displayed balance. Live apply state remains unverified until the migration
 ledger and exact postconditions are read back from Supabase; repository source alone is not evidence
-of production state.
+of production state.`
+invoice total and negative displayed balance. The exact migration committed in `97b81c82` was applied
+to shared UPR Supabase project `glsmljpabrwonfiltiqm` as ledger version `20260727224804`. Immediate
+read-back verified one QBO invoice `4283`, one payment `4284`, one primary contact association, one
+reconstruction job for each Encircle claim, invoice total `$10,611.51`, preserved payment
+`$7,672.87`, balance `$2,938.64`, and `partially_paid` status in `get_ar_invoices()`. QuickBooks and
+Encircle remained read-only; this repair made no provider write.
 
 ## Encircle managed credentials initiative (2026-07-23)
 
