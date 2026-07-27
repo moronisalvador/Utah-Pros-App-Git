@@ -87,11 +87,38 @@ This is L2's premise, previously asserted and now observed. The whole set enters
 Real growth since the handoff is **218 B**, not 3,061. **The handoff's own command over-reports by
 ~2.8 KB on a Windows checkout.** Subtract CR bytes, or measure from `git show`.
 
+## 4b. MEASURED — the import survives `/compact` (the P3 gate)
+
+Session `1b85a217`, a long working session, compacted for real. All 25 events below are the
+compaction reload — the hook was wired mid-session, so no session-start events exist for it:
+
+```
+LOADED       REASON     PARENT
+AGENTS.md    include    CLAUDE.md
+CLAUDE.md    compact    —
+…23 rules    compact    —
+```
+
+`--assert-core` → **PASS**, exit 0. `CLAUDE.md` came back with `reason=compact` and pulled
+`AGENTS.md` in behind it as an `include`. **The `@AGENTS.md` bridge is durable across compaction.**
+
+Two consequences, both acted on the same day:
+
+1. **P3 ran** (`89c9432a`) — the duplicated rules block and six other carried blocks left
+   `CLAUDE.md`. `check-l0-bridge.mjs` 14/14 either side.
+2. **Ledger #11 is now observed, not argued.** All 23 rules reloaded *because they are unscoped*. A
+   `paths:`-scoped `database-standard.md` would have been absent from that list, taking the
+   shared-production apply gate with it. That is the measurement behind "permanently unscoped".
+
+The §6 caveat below was written expecting an empty log. It did not happen — the hook was live in
+time. Keep the caveat anyway: it is the correct reading if a *future* mid-session wiring logs
+nothing.
+
 ## 5. NOT MEASURED — do not promote these without running the probe
 
 | Claim | Status |
 |---|---|
-| The import survives `/compact` | **UNMEASURED.** The P3 gate. Needs a real compaction in a real session; `/compact` is user-invoked and cannot be triggered by a session or a subprocess. |
+| ~~The import survives `/compact`~~ | **MEASURED 2026-07-26 — PASS.** Promoted to §4b below. |
 | A `paths:`-scoped rule loads only for matching paths (`path_glob_match`) | **UNMEASURED.** No scoped rule exists on disk yet. |
 | Brace groups in a `paths:` glob match nothing | **UNMEASURED here.** Inherited claim; the dispatch calls for it to be recorded as a tested refutation, and it has not been tested. |
 | Bracket classes *do* work in `paths:` globs | **UNMEASURED here.** Same. |

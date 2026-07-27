@@ -144,7 +144,15 @@ real file size. All four failure modes were confirmed to fail the check, not jus
 | `## Compact instructions` | 81-83 | §Context reset |
 | `## Stack` | 85-89 | §Repository model |
 | `## What NOT to Touch` | 219-221 | §Repository model → Extra caution |
-| `## Deployment & Release Workflow` | 223-229 | Rule 4 + §13 + §Repository model (env sets) |
+
+> **CORRECTION (2026-07-26, found while running P3).** This table used to list
+> `## Deployment & Release Workflow` as deletable. **It is not.** Rule 4 is verbatim in `AGENTS.md`
+> and links to `#deployment--release-workflow`, an in-page anchor that resolves only inside
+> `CLAUDE.md`. Deleting the section breaks the link *and* fails assertion 12 of
+> `check-l0-bridge.mjs`, so the two halves of this very section contradicted each other. Its
+> *content* is genuinely carried (Rule 4 + §13 + §Repository model env sets), so P3 reduced the body
+> to a pointer and **kept the heading**, which is the only part the anchor needs. The same applies
+> to any future block whose heading is an anchor target: carry the prose, keep the heading.
 
 **P3 must NOT delete** — Claude-only routing or reference the core deliberately does not carry:
 
@@ -179,7 +187,36 @@ real file size. All four failure modes were confirmed to fail the check, not jus
 | `## ⚠️ NON-NEGOTIABLE RULES` still in `CLAUDE.md` | present — duplicate deliberately kept |
 | `src/`, `functions/`, `supabase/`, `ios/` touched | none |
 
-## 7. Open — what P3 needs before it may run
+## 7. CLOSED 2026-07-26 — the gate P3 needed, and how it was actually answered
+
+**Result: the import survives `/compact`. P3 ran.** The duplicated blocks are gone from `CLAUDE.md`
+and `AGENTS.md` is the sole carrier of rules 1–12.
+
+The evidence is **not** the anchor-token quote this section originally specified. That test turned
+out to be unrunnable as designed: a compaction summary can itself carry the token forward, and this
+session's had already read `AGENTS.md` before the test began, so any quote it produced would have
+been a contaminated self-report. **A session asserting what it can see is the weakest possible
+evidence, and it was the only kind this plan had.**
+
+What answered the gate instead was the `InstructionsLoaded` hook (P7) reading the loader's own
+record. Across a real `/compact` in session `1b85a217`:
+
+```
+AGENTS.md    include    CLAUDE.md      ← the bridge, reloaded
+CLAUDE.md    compact    —
+…23 rules    compact    —              ← every unscoped rules file, reloaded
+```
+
+`node scripts/instructions-loaded-report.mjs --assert-core` → PASS. A session cannot talk its way
+past this, which is the whole point. **Prefer the mechanical check to the canary from here on**; the
+token is retained as a cheap cross-tool smoke signal (and as Codex's only option), not as proof.
+
+That run also measured the L2 premise directly: 23 of 23 rules files reload at compaction *because
+they are unscoped*. A `paths:`-scoped `database-standard.md` would have been missing from that list
+— which is ledger #11's justification, now observed rather than argued.
+
+<details>
+<summary>The original gate text, kept for provenance</summary>
 
 The **post-compact canary in a fresh session**. In a Claude session with real work in it, run
 `/compact`, then require the `AGENTS.md` anchor token to still be quotable with **zero file reads**.
@@ -197,5 +234,8 @@ If the import does not survive compaction, **P3 does not proceed**: the non-nego
 forced. A mid-session edit does not take effect until `/clear`, `/compact` or restart, so this cannot
 be self-certified by the session that wrote the import.
 
+</details>
+
 Codex exposes **no** loaded-document introspection and no truncation warning. Its side is
-canary-and-byte-count only. Any claim of verification parity between the two tools is false.
+canary-and-byte-count only. Any claim of verification parity between the two tools is false — and
+P7 widens that gap, since the mechanical check is Claude-side only.
