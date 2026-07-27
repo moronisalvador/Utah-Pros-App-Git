@@ -372,7 +372,16 @@ describe('schema-last employee identity containment', () => {
     );
   });
 
-  it('replaces broad policies with self-only RLS and four identity columns', () => {
+  // Was "four identity columns". `is_external` became a fifth on 2026-07-27 as a
+  // NAMED CARVE-OUT, not a widening — see the commented GRANT in the migration.
+  // The sibling inbound_leads/notifications POLICIES read it, and a policy
+  // predicate runs as the CALLING role, so without the grant every authenticated
+  // SELECT on those tables fails. It is separable from the sensitive set below
+  // because the self-identity policy limits rows to auth_user_id = auth.uid():
+  // a caller only ever learns their OWN flag. The structural fix (route those
+  // policies through a SECURITY DEFINER helper and drop the carve-out) is on the
+  // mobile-production-readiness roadmap.
+  it('replaces broad policies with self-only RLS and five identity columns', () => {
     const anonDrop = containment.indexOf(
       'drop policy allow_anon_read_employees on public.employees',
     );
@@ -386,7 +395,7 @@ describe('schema-last employee identity containment', () => {
       'revoke all privileges on table public.employees from public, anon, authenticated',
     );
     const grant = containment.indexOf(
-      'grant select (id, auth_user_id, role, is_active) on table public.employees to authenticated',
+      'grant select (id, auth_user_id, role, is_active, is_external) on table public.employees to authenticated',
     );
 
     expect(anonDrop).toBeGreaterThan(-1);
@@ -405,7 +414,7 @@ describe('schema-last employee identity containment', () => {
     );
 
     expect(containment).toContain(
-      "v_authenticated_columns is distinct from array['auth_user_id', 'id', 'is_active', 'role']::text[]",
+      "v_authenticated_columns is distinct from array['auth_user_id', 'id', 'is_active', 'is_external', 'role']::text[]",
     );
     expect(containment).toContain(
       'v_authenticated_privileges is distinct from array[]::text[]',
@@ -417,7 +426,7 @@ describe('schema-last employee identity containment', () => {
       "where acl.grantee = 0 or grantor_role.rolname is distinct from 'postgres' or grantee_role.rolname is distinct from 'authenticated'",
     );
     const columnGrant = containment.match(
-      /grant select \(id, auth_user_id, role, is_active\) on table public\.employees to authenticated/,
+      /grant select \(id, auth_user_id, role, is_active, is_external\) on table public\.employees to authenticated/,
     )?.[0];
     expect(columnGrant).toBeTruthy();
     for (const sensitiveColumn of [
@@ -429,10 +438,15 @@ describe('schema-last employee identity containment', () => {
       'overtime_rate',
       'commission_percent',
       'commission_flat',
-      'is_external',
     ]) {
       expect(columnGrant).not.toContain(sensitiveColumn);
     }
+
+    // The carve-out is asserted POSITIVELY and on its own, so it reads as a
+    // deliberate exception rather than a gap in the list above. Removing it
+    // breaks the CRM leads board, task picker, forecast widget and Realtime
+    // bell delivery the moment the sibling migrations apply.
+    expect(columnGrant).toContain('is_external');
   });
 
   it('makes full employee data active-internal-admin/service only', () => {
