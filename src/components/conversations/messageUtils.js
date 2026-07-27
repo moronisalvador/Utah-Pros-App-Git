@@ -51,6 +51,58 @@ import { classifyTwilioError } from '../../../functions/lib/twilio-errors.js';
 // (tech-messages-v2 imports `computeSmsSegments` from here as a frozen contract).
 export { computeSmsSegments, maxCharsForSegments } from '../../../functions/lib/sms-segments.js';
 
+// ─── SECTION: Helpers — superseded failures ──────────────
+
+const OUTBOUND_TYPES = new Set(['sms_outbound', 'email_outbound']);
+// 'queued' counts: the worker only writes it once the provider accepted the send.
+const DELIVERED_ENOUGH = new Set(['queued', 'sent', 'delivered', 'read']);
+
+/**
+ * Mark failed outbound rows that a later successful send has already replaced.
+ *
+ * Retrying does NOT update the failed row — the worker is the sole writer and it
+ * inserts a NEW row per attempt (omni §7.1). So a successful retry leaves the
+ * thread holding both: the original, `failed` forever, and the new one, `sent`.
+ * Left alone the old bubble keeps a live Retry button, and tapping it sends the
+ * customer a third copy.
+ *
+ * Rather than hide the failure (it really happened, and quietly deleting history
+ * is worse), annotate it: callers render `_superseded` rows de-emphasized and
+ * withhold `onRetry`. Derived from the rows themselves, so it survives a reload
+ * without needing a column.
+ *
+ * Limitation, deliberate: matching is on identical body text, so a staff member
+ * who genuinely sends the same words twice will see the earlier failure marked
+ * superseded. That is the safe direction to be wrong in — the cost is a missing
+ * Retry button on a message whose text already reached the customer.
+ */
+export function annotateSupersededFailures(messages = []) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+
+  // Earliest index at which each body text was successfully sent outbound.
+  const firstSuccessAt = new Map();
+  messages.forEach((m, i) => {
+    if (!OUTBOUND_TYPES.has(m?.type)) return;
+    if (!DELIVERED_ENOUGH.has(m?.status)) return;
+    const key = (m.body || '').trim();
+    if (!key) return;
+    if (!firstSuccessAt.has(key)) firstSuccessAt.set(key, i);
+  });
+  if (firstSuccessAt.size === 0) return messages;
+
+  let changed = false;
+  const out = messages.map((m, i) => {
+    const failed = m?._failed || m?.status === 'failed' || m?.status === 'undelivered';
+    if (!failed || !OUTBOUND_TYPES.has(m?.type)) return m;
+    const at = firstSuccessAt.get((m.body || '').trim());
+    if (at === undefined || at <= i) return m;
+    changed = true;
+    return { ...m, _superseded: true };
+  });
+  // Preserve identity when nothing matched so React sees no spurious change.
+  return changed ? out : messages;
+}
+
 // ─── SECTION: Helpers — linkify (scheme-whitelisted, no raw HTML) ──────────────
 
 // Matches an http(s) URL, a bare www. URL, or an email address. Trailing sentence

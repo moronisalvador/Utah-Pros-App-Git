@@ -138,6 +138,18 @@ function StatusAffordance({ msg, onRetry }) {
   const ambiguous = isAmbiguousSend(msg);
 
   if (failed) {
+    // A retry that succeeded left this row behind (the worker inserts a new row
+    // per attempt rather than updating this one). Keep the failure visible, but
+    // never offer Retry again — the text already reached the customer, and a
+    // second tap would send a third copy.
+    if (msg._superseded) {
+      return (
+        <span className="conv-status conv-status-failed conv-status-superseded"
+          title={`Failed — ${failureReason(msg)}. A later send of the same message succeeded.`}>
+          <span className="conv-status-reason">Failed — resent</span>
+        </span>
+      );
+    }
     return (
       <span className={`conv-status conv-status-failed uiclass-${uiClassForMessage(msg)}`}>
         <span className="conv-status-reason" title={failureReason(msg)}>

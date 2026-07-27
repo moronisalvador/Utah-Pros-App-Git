@@ -25,6 +25,7 @@ import {
   mergeRefreshedMessages,
   getServiceConsentUiState,
   getDraft, setDraft, clearDraft,
+  annotateSupersededFailures,
 } from './messageUtils';
 
 describe('computeSmsSegments', () => {
@@ -254,5 +255,72 @@ describe('draft persistence', () => {
     setDraft('conv-2', 'x');
     setDraft('conv-2', '   ');
     expect(getDraft('conv-2')).toBe('');
+  });
+});
+
+// ─── annotateSupersededFailures ──────────────
+// A successful retry does not update the failed row — the worker inserts a new
+// one — so the thread holds both. Without this, the stale bubble keeps a live
+// Retry button and a second tap sends the customer a third copy.
+describe('annotateSupersededFailures', () => {
+  const failed = (body, id = 'f1') => ({ id, type: 'sms_outbound', status: 'failed', body });
+  const sent = (body, id = 's1') => ({ id, type: 'sms_outbound', status: 'sent', body });
+
+  it('marks a failure that a later identical send replaced', () => {
+    const out = annotateSupersededFailures([failed('Hi Deana'), sent('Hi Deana')]);
+    expect(out[0]._superseded).toBe(true);
+    expect(out[1]._superseded).toBeUndefined();
+  });
+
+  it('leaves a failure alone when nothing replaced it', () => {
+    const rows = [failed('Hi Deana'), sent('something else')];
+    const out = annotateSupersededFailures(rows);
+    expect(out[0]._superseded).toBeUndefined();
+    // Identity preserved when nothing matched, so React sees no spurious change.
+    expect(out).toBe(rows);
+  });
+
+  it('does not let an EARLIER success excuse a LATER failure', () => {
+    // Sent, then the same text failed. That failure is real and still retryable.
+    const out = annotateSupersededFailures([sent('Ping'), failed('Ping')]);
+    expect(out[1]._superseded).toBeUndefined();
+  });
+
+  it('treats queued as sent — the worker only writes it after provider acceptance', () => {
+    const out = annotateSupersededFailures([
+      failed('Hi'), { id: 'q', type: 'sms_outbound', status: 'queued', body: 'Hi' },
+    ]);
+    expect(out[0]._superseded).toBe(true);
+  });
+
+  it('ignores inbound and internal notes that happen to share the text', () => {
+    const out = annotateSupersededFailures([
+      failed('Thanks'),
+      { id: 'in', type: 'sms_inbound', status: 'received', body: 'Thanks' },
+      { id: 'n', type: 'internal_note', status: 'sent', body: 'Thanks' },
+    ]);
+    expect(out[0]._superseded).toBeUndefined();
+  });
+
+  it('covers undelivered, not just failed', () => {
+    const out = annotateSupersededFailures([
+      { id: 'u', type: 'sms_outbound', status: 'undelivered', body: 'Hi' }, sent('Hi'),
+    ]);
+    expect(out[0]._superseded).toBe(true);
+  });
+
+  it('never matches on an empty body', () => {
+    const out = annotateSupersededFailures([
+      { id: 'a', type: 'sms_outbound', status: 'failed', body: '' },
+      { id: 'b', type: 'sms_outbound', status: 'sent', body: '' },
+    ]);
+    expect(out[0]._superseded).toBeUndefined();
+  });
+
+  it('handles an empty or missing input without throwing', () => {
+    expect(annotateSupersededFailures([])).toEqual([]);
+    // Defaults to [] rather than undefined, so a caller can always .map() it.
+    expect(annotateSupersededFailures()).toEqual([]);
+    expect(annotateSupersededFailures(null)).toBeNull();
   });
 });

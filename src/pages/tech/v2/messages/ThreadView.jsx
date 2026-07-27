@@ -41,7 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
-import { getServiceConsentUiState } from '@/components/conversations/messageUtils';
+import { getServiceConsentUiState, annotateSupersededFailures } from '@/components/conversations/messageUtils';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
@@ -169,7 +169,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
 
   const contactPhone = contact?.phone || conv?.conversation_participants?.[0]?.phone || '';
 
-  const items = useMemo(() => groupMessagesByDay(messages), [messages]);
+  // Flag failures a later identical send already replaced, so the stale bubble
+  // loses its Retry button instead of offering to send a third copy.
+  const items = useMemo(() => groupMessagesByDay(annotateSupersededFailures(messages)), [messages]);
 
   const scrollToBottom = useCallback((smooth) => {
     const el = scrollRef.current;
