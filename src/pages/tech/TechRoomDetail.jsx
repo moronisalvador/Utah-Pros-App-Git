@@ -109,7 +109,10 @@ export default function TechRoomDetail() {
         .catch(() => []);
       setDocs(docList || []);
     } catch (e) {
-      setLoadError(e.message || 'Failed to load room');
+      // Raw failures stay in the console for diagnosis and never reach the screen:
+      // a tech in a flooded basement must not be shown PostgREST JSON.
+      console.error('TechRoomDetail load failed:', e?.message || e);
+      setLoadError('Failed to load room');
       toast('Failed to load room', 'error');
     } finally {
       setLoading(false);

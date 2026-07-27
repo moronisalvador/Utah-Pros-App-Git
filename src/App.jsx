@@ -431,7 +431,14 @@ function WebRoutes() {
         } />
         <Route path="customers" element={<ErrorBoundary section="Customers"><Customers /></ErrorBoundary>} />
         <Route path="customers/:contactId" element={<ErrorBoundary section="Customer"><CustomerPage /></ErrorBoundary>} />
-        <Route path="schedule" element={<ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>} />
+        {/* No notification links here today, but a tech who reaches the office
+            schedule any other way (a shared link, a stale bookmark) belongs in the
+            field schedule, which is the screen built for a phone. */}
+        <Route path="schedule" element={
+          <TechShellRedirect resolve={() => '/tech/schedule'}>
+            <ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>
+          </TechShellRedirect>
+        } />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
         <Route path="invoices/:invoiceId" element={<ErrorBoundary section="Invoice"><InvoiceEditor /></ErrorBoundary>} />
 

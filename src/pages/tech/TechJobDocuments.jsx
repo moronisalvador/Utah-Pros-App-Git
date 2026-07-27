@@ -124,7 +124,10 @@ export default function TechJobDocuments() {
 
       await loadRequests();
     } catch (e) {
-      setLoadError(e.message || 'Failed to load documents');
+      // Raw failures stay in the console for diagnosis and never reach the screen:
+      // a tech in a flooded basement must not be shown PostgREST JSON.
+      console.error('TechJobDocuments load failed:', e?.message || e);
+      setLoadError('Failed to load documents');
       toast('Failed to load documents', 'error');
     } finally {
       setLoading(false);

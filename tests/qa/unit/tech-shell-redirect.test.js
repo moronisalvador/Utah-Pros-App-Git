@@ -77,4 +77,16 @@ describe('field techs are redirected out of office routes', () => {
   it('wraps the office claim route', () => {
     expect(source).toContain('resolve={(p) => `/tech/claims/${p.claimId}`}');
   });
+
+  it('wraps the office schedule route', () => {
+    expect(source).toMatch(/<TechShellRedirect resolve=\{\(\) => '\/tech\/schedule'\}>/);
+  });
+
+  it('leaves list routes alone, so techs are not bounced off /claims or /jobs indexes', () => {
+    // Only the DETAIL routes have field equivalents. Redirecting the index routes
+    // would strand a tech who legitimately opened a list.
+    const wrapped = source.match(/<TechShellRedirect[\s\S]{0,120}?>/g) || [];
+    expect(wrapped.some((w) => w.includes("'/tech/claims'"))).toBe(false);
+    expect(wrapped.some((w) => w.includes("'/tech/jobs'"))).toBe(false);
+  });
 });
