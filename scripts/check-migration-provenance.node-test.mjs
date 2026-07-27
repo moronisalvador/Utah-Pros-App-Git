@@ -189,7 +189,7 @@ test('treats checkout CRLF conversion as the same reviewed repository text', () 
   assert.equal(result.ok, true);
 });
 
-test('blocks stale live evidence', () => {
+test('warns but does not block on stale live evidence', () => {
   const fixture = makeFixture();
   const result = validateProvenance({
     ...fixture,
@@ -197,8 +197,39 @@ test('blocks stale live evidence', () => {
     worktree: false,
     now: new Date('2026-07-24T12:00:00Z'),
   });
+  // Staleness is not drift: the evidence still proves the catalog state at capture time.
+  // Failing here is what made CI go red on a clock and skip build+test.
+  assert.equal(result.ok, true);
+  assert.equal(result.stale, true);
+  assert.ok(result.warnings.some((warning) => warning.includes('release window')));
+  assert.equal(result.issues.length, 0);
+});
+
+test('blocks stale live evidence under --strict-freshness (the release gate)', () => {
+  const fixture = makeFixture();
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    now: new Date('2026-07-24T12:00:00Z'),
+    strictFreshness: true,
+  });
   assert.equal(result.ok, false);
+  assert.equal(result.stale, true);
   assert.ok(result.issues.some((issue) => issue.includes('release window')));
+});
+
+test('blocks malformed evidence with a missing or future capturedAt, even when lenient', () => {
+  const fixture = makeFixture();
+  const result = validateProvenance({
+    ...fixture,
+    ref: 'HEAD',
+    worktree: false,
+    evidence: { ...fixture.evidence, capturedAt: '2099-01-01T00:00:00Z' },
+    now: new Date('2026-07-23T23:00:00Z'),
+  });
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.some((issue) => issue.includes('missing or future capturedAt')));
 });
 
 test('blocks an evidence capture base outside release ancestry', () => {

@@ -59,12 +59,6 @@ jobs:
       - name: Test Figma governance refusals
         run: npm run test:figma-governance
 
-      - name: Validate migration provenance
-        run: npm run validate:provenance
-
-      - name: Test migration provenance gate
-        run: npm run test:provenance
-
       # Mirror the production build. Supabase URL/anon key come from repo secrets
       # (same names the Capgo deploy workflow uses); the build also succeeds
       # without them, so this stays green even if the secrets are unset.
@@ -76,6 +70,23 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # Provenance runs AFTER build+test, deliberately. It used to run before them, so
+      # stale evidence (6h TTL) skipped build and test entirely and hid whether the code
+      # compiled — CI was red for hours on 2026-07-27 for that reason alone. Real drift
+      # still fails here on any branch; only staleness is treated differently, and it is
+      # promoted to a hard failure just for the release gate below.
+      - name: Test migration provenance gate
+        run: npm run test:provenance
+
+      - name: Validate migration provenance (drift blocks; stale only warns)
+        run: npm run validate:provenance
+
+      # main IS production. Promoting requires evidence that is actually current, so
+      # staleness blocks here and nowhere else.
+      - name: Validate migration provenance — release freshness
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        run: npm run validate:provenance -- --strict-freshness
 
       # Credential-free synthetic browser foundation only. The target origin is a code constant
       # (127.0.0.1:4173); production/dev/hosted Supabase and provider egress fail closed.
