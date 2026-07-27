@@ -19,6 +19,12 @@ NOTES / GOTCHAS:
 
 **Last-verified: 2026-07-24**
 
+> **EXCEPTION TO THE DISCLAIMER BELOW — §6's "Active writer register" is operational fact, not
+> draft planning, and it binds.** It records which sessions hold write leases and whether `dev` may
+> be promoted. A blanket "this file grants no authority" over a live promotion hold is a defect: a
+> session is entitled to read the hold as non-binding and promote anyway. Everything *else* here
+> remains a draft. (Recorded 2026-07-26 — alignment ledger #10.)
+
 **DRAFT FOR OWNER REVIEW.** This file is a planning artifact, not binding project law until the
 owner explicitly adopts it. It grants no authority to edit code, apply migrations, change live
 systems, commit, push, deploy, or open a PR.
@@ -127,7 +133,7 @@ surface, or promoting `dev` to `main`.**
 
 | Lease | Owner | Scope | State |
 |---|---|---|---|
-| **DB-1 — security tightening batch** | this session (`claude/parked-sessions-recovery-4fdbb7`, working in the main checkout on `dev`) | 8 migrations, all **authored and NOT applied** | held |
+| ~~**DB-1 — security tightening batch**~~ | ~~`claude/parked-sessions-recovery-4fdbb7`~~ | 8 migrations | **RELEASED 2026-07-26 — owner reports all 8 applied and verified.** The release condition below is met. |
 | APP-2, APP-3 | agent-alignment / tooling-governance sessions (incl. "session 5", started 2026-07-26) | `.claude/**`, `AGENTS.md`, `CLAUDE.md`, `tooling/**`, `docs/agent-alignment-*` | active |
 
 **DB-1 owns these database objects. Do not author a migration touching any of them
@@ -162,10 +168,19 @@ mid-sequence ("session-5 opening prompt", "session 4 baton"). Promote from a qui
 `dev`, not a moving one.
 
 **Rollback for DB-1:** every migration ships a paired file in `supabase/rollbacks/`.
-Nothing is applied, so the current rollback is `git revert` alone.
+~~Nothing is applied, so the current rollback is `git revert` alone.~~ **All 8 are now applied
+(owner, 2026-07-26), so `git revert` alone no longer undoes them** — an undo means running the
+paired rollback file against the shared project, which is a fresh owner-authorized apply.
 
 **Release condition:** DB-1 releases after its 8 migrations are applied and verified,
-or on explicit owner handoff. Delete this register when all three leases close.
+or on explicit owner handoff. **MET 2026-07-26 — DB-1 is released.** The database objects it
+reserved (the 8 tables, 12 replaced/created functions and 2 added columns listed above) are no
+longer leased; a new migration touching them needs only the normal review, not this lease.
+
+`is_active_internal_admin()` is now live. Backlog item 3.2 should build on it rather than adding a
+second admin predicate.
+
+**Still open:** APP-2/APP-3 and therefore the promotion hold. Delete this register when they close.
 
 ## 7. Close-out for every future phase
 
