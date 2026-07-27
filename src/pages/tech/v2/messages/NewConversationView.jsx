@@ -59,7 +59,8 @@ export default function NewConversationView({ onBack, onStarted }) {
       } catch (error) {
         if (error.name !== 'AbortError' && current) {
           setContacts([]);
-          setLoadError(error.message || t('newConversation.loadError'));
+          console.error('NewConversationView search failed:', error?.message || error);
+          setLoadError(t('newConversation.loadError'));
         }
       } finally {
         if (current) setLoading(false);

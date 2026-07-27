@@ -42,6 +42,7 @@ import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import { openMap } from '@/lib/techDateUtils';
+import { pickerHref } from '@/lib/openInAppThread';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 import { savePhotoBlob } from '@/lib/offlineDb';
 import { getSyncRunner } from '@/lib/syncRunnerSingleton';
@@ -203,10 +204,19 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
           <span>{t('tech:actionBar.navigate')}</span>
         </button>
 
-        <a className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`} href={phone ? `sms:${phone}` : undefined} aria-disabled={!phone}>
+        {/* Opens the thread INSIDE UPR. A native sms: link here would send from the
+            tech's personal number, so it would never reach the customer's UPR
+            thread. The Job Hub flag is off today, so this was latent — it would
+            have surfaced the moment the flag opened. */}
+        <button
+          type="button"
+          className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`}
+          onClick={phone ? () => navigate(pickerHref()) : undefined}
+          disabled={!phone}
+        >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
           <span>{t('tech:actionBar.message')}</span>
-        </a>
+        </button>
 
         <button type="button" className="tv2-hub-dock__btn" onClick={() => setMenuOpen((v) => !v)} aria-label={t('dock.more')}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>

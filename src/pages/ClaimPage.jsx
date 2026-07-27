@@ -83,7 +83,8 @@ export default function ClaimPage() {
         } catch { setInvoicesByJob({}); }
       } else { setInvoicesByJob({}); }
     } catch (e) {
-      setLoadError(e.message);
+      console.error('ClaimPage load failed:', e?.message || e);
+      setLoadError('Failed to load claim');
       errToast('Failed to load claim');
     } finally {
       setLoading(false);

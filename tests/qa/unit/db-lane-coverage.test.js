@@ -70,14 +70,21 @@ describe('db-lane coverage debt', () => {
     expect(count).toBeGreaterThanOrEqual(0);
   });
 
-  it('fails if the unrun-guard debt grows without being acknowledged', () => {
+  it('fails if the unrun-guard debt changes without being acknowledged', () => {
+    // EXACT, not <=. A `<=` assertion passes when the count DROPS, which hides the
+    // more dangerous direction: deleting a behavioural guard. Found 2026-07-27 —
+    // an incoming 315-file PR removed notify_c_my_prefs.test.js and
+    // notify_foundation.test.js while raising DARK_BASELINE to 78, and `<=` let
+    // both the deletions and the wrong number through silently.
     const count = dbLaneFiles().length;
     expect(
       count,
-      `supabase/tests/ grew to ${count} files but DARK_BASELINE is ${DARK_BASELINE}. `
-      + 'Either wire the db lane to a real isolated target, or raise DARK_BASELINE in this '
-      + 'commit to record that you are knowingly adding a guard that does not run in CI.',
-    ).toBeLessThanOrEqual(DARK_BASELINE);
+      `supabase/tests/ has ${count} test files but DARK_BASELINE is ${DARK_BASELINE}. `
+      + 'If you ADDED a guard, raise DARK_BASELINE in this commit to record that it does not '
+      + 'run in CI. If you REMOVED one, lower it — and say in the commit message why that '
+      + 'guard is no longer needed, because deleting a database guard is how a regression '
+      + 'gets in unnoticed.',
+    ).toBe(DARK_BASELINE);
   });
 
   it('still names supabase/tests as db-lane-only, so this check stays meaningful', () => {

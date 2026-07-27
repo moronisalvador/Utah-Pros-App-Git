@@ -46,7 +46,8 @@ export default function PdfGapsPanel({ db, navigate }) {
       setGaps(rows || []);
       setLoaded(true);
     } catch (e) {
-      setLoadError(e.message || 'Failed to check for gaps');
+      console.error('PdfGapsPanel load failed:', e?.message || e);
+      setLoadError('Failed to check for gaps');
     } finally {
       setLoading(false);
     }
