@@ -53,9 +53,43 @@ result. The deliberate-breakage run found a bug in the linter within a minute of
 One research agent in this session fabricated a file path while hunting for fabricated file paths.
 Do not skip the adversarial pass.
 
+## 2b. DECISIONS TAKEN (owner delegated, 2026-07-26)
+
+The owner released DB-1 — all 8 migrations applied — and delegated the rest, with a standing steer:
+**safety measures must earn their friction.** Resolved in `agent-alignment-roadmap.md` §10:
+
+- **Ledger #1** closed, no action — the version gate was already satisfied.
+- **Ledger #10: both evictions REJECTED.** The DRAFT holds a live promotion hold; the tombstone is
+  358 B serving ~18 inbound references. Evicting either costs more than it saves. The *defects*
+  underneath were fixed instead — the DRAFT's §6 now binds despite the file's disclaimer, the
+  archived manifest no longer claims to be binding in present tense, and a reviewer agent's pointer
+  was retargeted off the tombstone.
+- **Ledger #11** measured, not argued: all 23 rules reload at `/compact` *because* unscoped.
+- **Ledger #12:** all three held. Two carry amendments from two days ago; `omni-inbox` is dormant
+  and is P20's first candidate, but dormant is not merged.
+- **P8 scope: 7 files, not 9.**
+- **Permissions rebuilt** (`4eb0c2f0`) — every deny/ask entry is now live where 8 of 11 were dead.
+  Deliberately not maximal: deny only irreversible financial deletes; PR merge, Stripe payout and
+  Twilio SMS merely *ask*.
+
 ## 3. ⚠️ WHAT I NEED FROM YOU
 
-### A. Security — three QuickBooks delete tools have no gate *(please look at this first)*
+**Most of this section is now DONE — see §2b. Two items genuinely remain: the machine-local allow
+list (§A) and the `claudeMdExcludes` probe (§E). Everything else below is history, kept because it
+explains why the decisions went the way they did.**
+
+### A. STILL OPEN — 22 dead `permissions.allow` entries are costing you prompts daily
+
+Every MCP entry in `permissions.allow` names a server alias that no live server bears, so **none of
+them pre-approve anything** and read-only Supabase / UPR / GitHub calls prompt every time. This is
+pure friction with no safety benefit.
+
+**It cannot be fixed in this repo.** Allow rules reject wildcards — the validator requires a literal
+`mcp__<server>__` prefix — and your live servers are install-specific UUIDs. So the fix belongs in
+your machine-local settings, using the real server ids. The deny/ask side is already fixed and
+committed, because those *do* accept wildcards.
+
+### A-hist. Security — three QuickBooks delete tools had no gate *(FIXED in `4eb0c2f0`)*
 
 `permissions.deny` has 11 MCP entries. The three `mcp__*__<tool>` wildcards fire. The other eight
 name servers by literal alias (`UPR_MCP`, `github`, `Gusto`, `Supabase`) and **no live server bears
