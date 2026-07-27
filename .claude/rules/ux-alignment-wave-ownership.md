@@ -122,3 +122,37 @@ initiative is **a work in progress but not fixed** — they may **restart it fro
 rules and standards are in place**. So: treat §§1–5 as a live contract *today*, but do not invest in
 elaborate compatibility with it. A session picking W1–W5 up should first ask the owner whether it is
 resuming this plan or replacing it.
+
+---
+
+## 7. Addendum (2026-07-27, owner-directed) — `Schedule.jsx` deep-link for the office appointment route
+
+Recorded so §1's in-flight list stays truthful. §1 reserves `src/pages/Schedule.jsx` to the Schedule
+Desktop initiative (A/B/C, still unstarted) and limits W2 to "the callback→silentReloadBoard +
+error-branch behavior fixes".
+
+**What happened.** The owner clicked a bell notification on desktop and landed in the mobile tech
+app. Root cause was not the notification-shell fix: **the office shell had no appointment-detail
+screen at all**, so `functions/api/notify.js` stored `/tech/appointment/<id>` — the only appointment
+screen that existed — and every reader went there regardless of shell. The same gap made
+`ClaimPage.jsx:706`'s existing `/schedule/appointment/:id` link a confirmed 404.
+
+**Authorized by this addendum — and nothing else:**
+
+- a new `schedule/appointment/:apptId` route in `src/App.jsx`, wrapped in `TechShellRedirect`;
+- a **deep-link block only** in `src/pages/Schedule.jsx` (a `useParams` import plus two effects that
+  move the anchor to the appointment's date and open the existing `EditAppointmentModal`). No
+  restructure, no restyle, no change to board loading, drag-drop, or filters;
+- `techToOfficePath()` in `src/lib/techShellRoutes.js` and the matching `officeToTechPath` arm, so
+  `linkForCurrentShell` translates both directions — this is what fixes the ~35 notification rows
+  that already store a field path, without a data backfill;
+- the one-line writer change in `functions/api/notify.js`;
+- the guards in `src/lib/techShellRoutes.test.js`, `tests/qa/unit/tech-shell-redirect.test.js`, and
+  the two updated assertions in `functions/api/notify.test.js`.
+
+**Explicitly NOT authorized:** any other change to `Schedule.jsx`, the §2 ownership matrix, or any
+W-phase's owned files. The five pre-existing `side-tab` design-hook findings in `Schedule.jsx`
+(L126, 251, 340, 867, 893) were **left unchanged** — they predate this work and restyling a frozen
+file during a bug fix would be scope creep.
+
+Schedule Desktop A/B/C inherits the deep-link block as-is; it is additive and self-contained.

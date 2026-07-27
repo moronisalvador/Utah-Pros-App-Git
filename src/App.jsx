@@ -454,6 +454,17 @@ function WebRoutes() {
             <ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>
           </TechShellRedirect>
         } />
+        {/* The office appointment destination. Until this existed, /tech/appointment/:id
+            was the ONLY appointment screen in the app, so notify.js pointed every
+            appointment notification at it and desktop users clicking the bell landed in
+            the mobile tech UI. ClaimPage already linked here and simply 404'd.
+            Renders the same Schedule board, which opens the appointment's edit modal
+            from the URL. TechShellRedirect still sends field techs to /tech/appointment/:id. */}
+        <Route path="schedule/appointment/:apptId" element={
+          <TechShellRedirect>
+            <ErrorBoundary section="Schedule"><Schedule /></ErrorBoundary>
+          </TechShellRedirect>
+        } />
         <Route path="schedule/templates" element={<ErrorBoundary section="Schedule Templates"><ScheduleTemplates /></ErrorBoundary>} />
         <Route path="invoices/:invoiceId" element={<ErrorBoundary section="Invoice"><InvoiceEditor /></ErrorBoundary>} />
 

@@ -422,7 +422,10 @@ describe('enrichAppointmentBody', () => {
     const out = await enrichAppointmentBody(db, 'appointment.assigned', { appointment_id: 'ap-1' });
     expect(out.title).toBe('New appointment · Water Mitigation');
     expect(out.body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
-    expect(out.link).toBe('/tech/appointment/ap-1');
+    // Office path, not /tech/appointment/ap-1. A notification does not know who will
+    // open it; the reader's shell translates (src/lib/techShellRoutes.js). Storing the
+    // field path put desktop dispatchers in the phone UI.
+    expect(out.link).toBe('/schedule/appointment/ap-1');
     expect(out.entity_type).toBe('appointment');
     expect(out.entity_id).toBe('ap-1');
   });
@@ -457,7 +460,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const bell = db.rpcCalls.find(c => c.fn === 'create_notification');
     expect(bell.params.p_title).toBe('New appointment · Water Mitigation');
     expect(bell.params.p_body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
-    expect(bell.params.p_link).toBe('/tech/appointment/ap-1');
+    expect(bell.params.p_link).toBe('/schedule/appointment/ap-1');
   });
 });
 

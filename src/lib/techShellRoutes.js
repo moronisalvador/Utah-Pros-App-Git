@@ -55,23 +55,59 @@ export function officeToTechPath(pathname = '') {
   const claim = pathname.match(/^\/claims\/([^/]+)$/);
   if (claim) return `/tech/claims/${claim[1]}`;
 
+  const appt = pathname.match(/^\/schedule\/appointment\/([^/]+)$/);
+  if (appt) return `/tech/appointment/${appt[1]}`;
+
   return null;
 }
 
 /**
- * Rewrite a stored notification link for someone already inside the field shell.
+ * The reverse: a field path back to its office equivalent.
+ *
+ * Needed because `notify.js` stored `/tech/appointment/<id>` directly for months —
+ * at the time that was the ONLY appointment screen in the app, so there was no
+ * office path to store. Those rows are still in `notifications`, and a stored field
+ * path is otherwise untranslatable: a dispatcher on desktop clicking the bell got
+ * dropped into the phone UI. Forward-fixing the writer does nothing for rows that
+ * already exist, so the office shell translates on read instead of a data backfill.
+ *
+ * Only appointments map. A tech claim/job/conversation path is NOT reversed here:
+ * those office screens are materially different pages rather than the same screen
+ * in another shell, and silently retargeting them would be its own bug.
+ *
+ * @param {string} pathname a field path, e.g. "/tech/appointment/<uuid>"
+ * @returns {string|null} the office equivalent, or null if there isn't one
+ */
+export function techToOfficePath(pathname = '') {
+  if (!pathname || !isTechPath(pathname)) return null;
+
+  const appt = pathname.match(/^\/tech\/appointment\/([^/]+)$/);
+  if (appt) return `/schedule/appointment/${appt[1]}`;
+
+  return null;
+}
+
+/**
+ * Rewrite a stored notification link for the shell the reader is standing in.
  * Preserves query and hash — message links carry `?c=<conversationId>`, and losing
  * it would open the inbox on the wrong thread.
+ *
+ * Translates BOTH directions. Field-shell readers get the field screen, which is
+ * what this function originally did. Office-shell readers now get the office
+ * screen, which they previously did not: stored `/tech/appointment/<id>` links
+ * sent a dispatcher on desktop into the phone UI.
  *
  * @param {string} link      the stored link, possibly with ?query#hash
  * @param {string} currentPathname where the user is standing right now
  */
 export function linkForCurrentShell(link, currentPathname) {
-  if (!link || !isTechPath(currentPathname)) return link;
+  if (!link) return link;
   const [pathname, rest = ''] = [
     link.split(/[?#]/)[0],
     link.slice(link.split(/[?#]/)[0].length),
   ];
-  const techPath = officeToTechPath(pathname);
-  return techPath ? `${techPath}${rest}` : link;
+  const target = isTechPath(currentPathname)
+    ? officeToTechPath(pathname)
+    : techToOfficePath(pathname);
+  return target ? `${target}${rest}` : link;
 }

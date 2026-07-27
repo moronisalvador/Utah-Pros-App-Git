@@ -35,6 +35,26 @@ const source = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8').replace(/\r\n/g, 
 const redirectBlock = source.slice(source.indexOf('function TechShellRedirect'));
 const redirectBody = redirectBlock.slice(0, redirectBlock.indexOf('\n}'));
 
+describe('the office appointment destination exists', () => {
+  // Without this route, notify.js had nowhere to point an appointment notification
+  // except /tech/appointment/:id, so desktop dispatchers landed in the phone UI —
+  // and ClaimPage's existing /schedule/appointment/:id link just 404'd.
+  it('routes /schedule/appointment/:apptId', () => {
+    expect(source).toContain('path="schedule/appointment/:apptId"');
+  });
+
+  it('wraps it in TechShellRedirect so field techs still get the field screen', () => {
+    const idx = source.indexOf('path="schedule/appointment/:apptId"');
+    expect(source.slice(idx, idx + 260)).toContain('<TechShellRedirect>');
+  });
+
+  it('has the writer store the office path, not the field one', () => {
+    const notify = readFileSync(join(ROOT, 'functions/api/notify.js'), 'utf8');
+    expect(notify).toContain('`/schedule/appointment/${body.appointment_id}`');
+    expect(notify).not.toContain('`/tech/appointment/${body.appointment_id}`');
+  });
+});
+
 describe('field techs are redirected out of office routes', () => {
   it('only redirects field_tech, so office roles keep their pages', () => {
     expect(redirectBody).toContain("employee?.role === 'field_tech'");

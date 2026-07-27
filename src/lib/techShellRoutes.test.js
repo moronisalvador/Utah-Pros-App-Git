@@ -17,7 +17,28 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { officeToTechPath, isTechPath, linkForCurrentShell } from './techShellRoutes.js';
+import {
+  officeToTechPath, isTechPath, linkForCurrentShell, techToOfficePath,
+} from './techShellRoutes.js';
+
+describe('techToOfficePath', () => {
+  it('maps the field appointment screen to its office equivalent', () => {
+    expect(techToOfficePath('/tech/appointment/a1')).toBe('/schedule/appointment/a1');
+  });
+
+  it('returns null for field screens with no office twin', () => {
+    // Deliberate: /claims and /jobs office pages are different pages, not the same
+    // screen in another shell, so retargeting them would be its own bug.
+    expect(techToOfficePath('/tech/claims/c1')).toBe(null);
+    expect(techToOfficePath('/tech/conversations')).toBe(null);
+    expect(techToOfficePath('/tech')).toBe(null);
+  });
+
+  it('returns null for a path that is not a field path', () => {
+    expect(techToOfficePath('/schedule/appointment/a1')).toBe(null);
+    expect(techToOfficePath('')).toBe(null);
+  });
+});
 
 describe('officeToTechPath', () => {
   it('maps the office detail screens that have field equivalents', () => {
@@ -25,6 +46,10 @@ describe('officeToTechPath', () => {
     expect(officeToTechPath('/schedule')).toBe('/tech/schedule');
     expect(officeToTechPath('/jobs/abc-123')).toBe('/tech/jobs/abc-123');
     expect(officeToTechPath('/claims/xyz-789')).toBe('/tech/claims/xyz-789');
+  });
+
+  it('maps the office appointment screen to the field one', () => {
+    expect(officeToTechPath('/schedule/appointment/a1')).toBe('/tech/appointment/a1');
   });
 
   it('leaves index routes alone — being bounced off a list you opened is its own bug', () => {
@@ -64,11 +89,35 @@ describe('linkForCurrentShell', () => {
     expect(linkForCurrentShell('/jobs/j1#files', '/tech/dash')).toBe('/tech/jobs/j1#files');
   });
 
-  it('leaves the link untouched for someone in the office shell', () => {
+  it('leaves an office link untouched for someone in the office shell', () => {
     // An office user on a desktop must keep the office page.
     expect(linkForCurrentShell('/conversations?c=conv-1', '/dashboard'))
       .toBe('/conversations?c=conv-1');
     expect(linkForCurrentShell('/jobs/j1', '/jobs')).toBe('/jobs/j1');
+  });
+
+  it('pulls a stored FIELD appointment link back to the office screen', () => {
+    // The regression: notify.js stored /tech/appointment/<id> for months, because
+    // it was the only appointment screen that existed. A dispatcher clicking the
+    // bell on desktop was dropped into the phone UI. Those rows are still live, so
+    // the office shell has to translate on read.
+    expect(linkForCurrentShell('/tech/appointment/a1', '/dashboard'))
+      .toBe('/schedule/appointment/a1');
+    expect(linkForCurrentShell('/tech/appointment/a1', '/claims/c1'))
+      .toBe('/schedule/appointment/a1');
+  });
+
+  it('does NOT pull other field links back — those are different pages, not shells', () => {
+    expect(linkForCurrentShell('/tech/conversations', '/dashboard')).toBe('/tech/conversations');
+    expect(linkForCurrentShell('/tech/claims/c1', '/dashboard')).toBe('/tech/claims/c1');
+  });
+
+  it('keeps a field reader on the field appointment screen', () => {
+    // Both link forms must land a tech in the field shell: the new office path
+    // stored going forward, and the legacy field path already in the table.
+    expect(linkForCurrentShell('/schedule/appointment/a1', '/tech'))
+      .toBe('/tech/appointment/a1');
+    expect(linkForCurrentShell('/tech/appointment/a1', '/tech')).toBe('/tech/appointment/a1');
   });
 
   it('leaves a link with no field equivalent alone even inside the field shell', () => {
