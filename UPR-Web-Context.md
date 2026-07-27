@@ -8434,3 +8434,77 @@ Read-only provider + catalog evidence, no mutation:
   `CALLRAIL_SIGNING_KEY` does not match. Inbound is captured exactly once; the noise is real but
   benign. `INVALID_CALLRAIL_TEXT_EVENT:id` occurred only **twice**, both on 2026-07-23, and is not
   recurring.
+
+## Security tightening batch applied — 2026-07-27 (owner-authorized)
+
+Eight migrations authored 2026-07-26 and applied live on owner instruction. Ledger versions
+`20260727012536`..`20260727012929`, all mapped in `scripts/migration-provenance-manifest.json`.
+Four reviewers signed off first (migration-safety-checker, anon-grant-auditor,
+worker-security-reviewer, consent-path-auditor); every finding was addressed before apply.
+
+**What was actually exposed.** `automation_settings` and `email_suppressions` each carried an
+`ALL / {anon,authenticated} / USING true` policy plus all 7 table privileges granted to `anon`. The
+anon key ships in the browser bundle, so with no login at all a caller could flip the customer-SMS
+kill switch or delete the opt-out list. Both are now RPC-only with zero browser grants.
+
+**Closed, verified live after each step:**
+
+| Object | Before | After |
+|---|---|---|
+| `automation_settings`, `email_suppressions`, `notification_types` | always-true policy + anon grants | 0 policies, 0 browser grants, `service_role` retained |
+| `set_automation_setting` | no caller check | `sms_sending_enabled` admin-only; four toggles admin-or-office; both exclude `is_external`; writes a `system_events` audit row in the same transaction |
+| `nav_permissions`, `employee_page_access`, `feature_flags` | `ALL / authenticated / true` write | admin-only write via `is_active_internal_admin()` |
+| 6 permission RPCs + 3 notification RPCs | no caller check | admin-gated, `service_role` bypass retained |
+| `message_provider_events` | no acknowledgement path | `resolved_at`/`resolved_by` + partial index + service-only `resolve_provider_event()` |
+
+**The trap that was one line from breaking the app:** `nav_permissions` has no authenticated SELECT
+policy of its own — every logged-in read was served by the always-true policy being replaced.
+Dropping it without adding `nav_permissions_auth_read` would have blanked the navigation menu for
+every non-admin. The read policy is in place and verified; 103 rows intact.
+
+**`is_active_internal_admin()`** is the shared admin predicate intended to replace 342 individual
+definer reviews (backlog 3.2). Build on it; do not add a second one.
+
+**Still off:** `automation_settings.sms_sending_enabled` is `false` in both org rows. That flip is a
+separate owner decision and now writes an audit row capturing the full armed state, because
+`missed_call_textback_enabled` is already `true` in one row and goes live the instant the switch does.
+
+### CallRail stranded-event recovery — 2026-07-27
+
+`rearm_callrail_provider_event()` closed a real capability gap: a terminally-failed event had no path
+back into the queue, so a genuine customer photo that failed to fetch was unrecoverable by anyone.
+Service-role only, matched on the exact event id AND its current `error_code`, so it cannot bulk-reset.
+
+**First drain succeeded**, correcting the prior expectation recorded above under "CallRail account
+identity — verified live 2026-07-25": event `c672c71b` (`CALLRAIL_MMS_URL_INVALID`) went
+`failed → processed`, `outcome=inbound_persisted`, **media recovered** (765 KB JPEG, sha256 recorded).
+It landed in `message-attachments` (`public: false`) and the message row carries an opaque
+`upr-storage://` reference, not a URL — the private-media contract held. So `URL_INVALID` events are
+recoverable today; the account-identity work is NOT a prerequisite for that class.
+
+**Both `CALLRAIL_MMS_URL_REFRESH_FAILED` events also recovered** (`f50611e2`, `e69e002f`):
+`failed → processed`, `outcome=inbound_persisted`, `owned_media=1` each, on their first attempt after
+re-arming. **All three stranded inbound MMS are recovered; none was lost.**
+
+Those two were drained by the **production** Worker — the URL switch below landed between their
+re-arm and the tick that processed them, so production is proven live on this path, not just
+configured.
+
+⚠️ **This supersedes the "CallRail account identity — verified live 2026-07-25" section above.** That
+section states the masked-vs-numeric account preference means "every media refresh 404s →
+`CALLRAIL_MMS_URL_REFRESH_FAILED`" and is "not yet fixed". The refresh path demonstrably works today:
+all three events, across BOTH error classes, recovered their media on first retry with no change to
+`functions/lib/callrail-mms.js`. The account-identity finding was real when captured, but the fix
+chain landed on 2026-07-24 (`7f86aaf`, `5f8e00f`, `48c7f0d`, `0ff443f`, all in `main`). What actually
+kept these five events stuck was the *absence of any re-arm path*, not the account identity. Treat
+that section as historical evidence, not current state.
+
+**Worker URLs moved to production** (owner instruction 2026-07-27): both
+`ops_health_worker_url` and `callrail_event_recovery_worker_url` now point at `https://utahpros.app/...`.
+Verified before switching that both worker files exist on `origin/main` and that both production URLs
+are inside the schedulers' exact-URL SSRF allowlist.
+
+**Unexamined, flagged not fixed:** six events sit in `retryable` with
+`CALLRAIL_OUTBOUND_UNMATCHED` / `processing_deferred` after 5 attempts each. These are likely what the
+ops-health "stuck past retry time" condition reports, and relate to the outbound NANP identity seam.
+Two outbound MMS remain `failed` and deliberately untouched pending an owner decision.
