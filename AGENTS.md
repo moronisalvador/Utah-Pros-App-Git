@@ -74,7 +74,7 @@ form "CLAUDE.md Rule N" resolves here. Renumbering would silently break every on
 current count rather than trusting this sentence:
 
 ```bash
-git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l   # 170 across 56 files, 2026-07-26
+git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l   # 172 across 56 files, 2026-07-26
 ```
 
 1. **Read files from disk before editing.** Never assume file contents from memory.
@@ -293,9 +293,15 @@ across UI, API, Pages Functions and SQL without recording the enforcement bounda
 Counts drift. Derive them, never quote them from a doc:
 
 ```bash
-ls functions/api/*.js | wc -l          # workers
-ls supabase/migrations/*.sql | wc -l   # local migration files (compare provenance, not counts)
-rg --files src/pages -g '*.jsx' | wc -l
+# Workers — EXCLUDE the tests or you over-count by half (142 raw vs 91 real, 2026-07-26).
+ls functions/api/*.js | grep -vE '\.test\.js$' | wc -l   # 91
+
+ls supabase/migrations/*.sql | wc -l   # 242 local files — compare provenance, not counts
+
+# Pages — a bare git pathspec `*` CROSSES `/`, so it silently returns the recursive count.
+# Use :(glob) when you mean one directory.
+git ls-files -- ':(glob)src/pages/*.jsx' | wc -l   # 35 top-level
+rg --files src/pages -g '*.jsx' | wc -l            # 137 recursive
 ```
 
 **Starting a task.**

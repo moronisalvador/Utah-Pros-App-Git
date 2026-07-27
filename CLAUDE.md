@@ -8,7 +8,7 @@
 > directly; Claude Code reads it through that import. It carries the numbered non-negotiables, the
 > authorization boundary, the document precedence ladder, the depth map and the definition of done.
 > **Rule numbering is frozen** — a reference of the form "CLAUDE.md Rule N" resolves in `AGENTS.md`,
-> where rules 1–12 are reproduced verbatim (170 such references across 56 tracked files, measured
+> where rules 1–12 are reproduced verbatim (172 such references across 56 tracked files, re-measured
 > 2026-07-26; derive it with `git grep -ohE '\bRules? [0-9]+\b' -- '*.md' | wc -l`). This file adds
 > the **Claude-only** routing on top.
 >
@@ -102,7 +102,10 @@ Use judgment on which one answers the question at hand (pure UI/layout vs. real 
 
 ## File Structure (key files)
 
-Not exhaustive — `src/pages/` has 41 files, `src/pages/tech/` has 22. `Glob src/pages/**/*.jsx` before assuming a page doesn't exist.
+Not exhaustive — **35** files directly in `src/pages/`, **21** in `src/pages/tech/`, 137 under
+`src/pages/**` in total (2026-07-26). `Glob src/pages/**/*.jsx` before assuming a page doesn't exist.
+To re-derive, use `:(glob)` — a bare git pathspec `*` crosses `/` and silently returns the recursive
+count: `git ls-files -- ':(glob)src/pages/*.jsx' | wc -l`.
 
 ```
 src/App.jsx        route wrappers: AdminRoute, FeatureRoute, DevRoute, AccessRoute
@@ -135,7 +138,10 @@ supabase/migrations/ tracked SQL migrations — schema-as-code (Rule 7). Count d
 
 ## Workers (Cloudflare Pages Functions)
 
-Each worker exports `onRequest`. Client: `import { createClient } from '../lib/supabase.js'`. CORS: `import { jsonResponse } from '../lib/cors.js'`. Standard: [`.claude/rules/workers-standard.md`](.claude/rules/workers-standard.md) (auth-via-lib, outbound timeouts, idempotency, `worker_runs`). Count drifts — derive: `ls functions/api/*.js | wc -l` (~95 as of 2026-07). **Representative set:**
+Each worker exports `onRequest`. Client: `import { createClient } from '../lib/supabase.js'`. CORS: `import { jsonResponse } from '../lib/cors.js'`. Standard: [`.claude/rules/workers-standard.md`](.claude/rules/workers-standard.md) (auth-via-lib, outbound timeouts, idempotency, `worker_runs`). Count drifts — derive it, and **exclude the tests or you will over-count by half**:
+`ls functions/api/*.js | grep -vE '\.test\.js$' | wc -l` → **91** (2026-07-26). The bare
+`ls functions/api/*.js | wc -l` this file used to give returns 142, because 51 of those files are
+`*.test.js`. **Representative set:**
 - **SMS:** `send-message`, `twilio-webhook`, `twilio-status`, `process-scheduled` (cron)
 - **Encircle:** `sync-encircle`, `sync-claim-to-encircle`, `encircle-import/search/upload/rooms/backfill`
 - **E-sign:** `send-esign`, `submit-esign`, `resend-esign`, `track-open`
