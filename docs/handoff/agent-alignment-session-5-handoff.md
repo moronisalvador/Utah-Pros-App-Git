@@ -78,16 +78,21 @@ The owner released DB-1 — all 8 migrations applied — and delegated the rest,
 list (§A) and the `claudeMdExcludes` probe (§E). Everything else below is history, kept because it
 explains why the decisions went the way they did.**
 
-### A. STILL OPEN — 22 dead `permissions.allow` entries are costing you prompts daily
+### A. LOW PRIORITY — 22 dead `permissions.allow` entries *(owner deprioritized 2026-07-26)*
 
-Every MCP entry in `permissions.allow` names a server alias that no live server bears, so **none of
-them pre-approve anything** and read-only Supabase / UPR / GitHub calls prompt every time. This is
-pure friction with no safety benefit.
+Every MCP entry in `permissions.allow` names a server alias that no live server bears, so none of
+them pre-approve anything and read-only Supabase / UPR / GitHub calls prompt every time.
 
-**It cannot be fixed in this repo.** Allow rules reject wildcards — the validator requires a literal
-`mcp__<server>__` prefix — and your live servers are install-specific UUIDs. So the fix belongs in
-your machine-local settings, using the real server ids. The deny/ask side is already fixed and
-committed, because those *do* accept wildcards.
+I flagged this as the biggest remaining friction win. **The owner corrected me: they rarely use
+those MCP servers, so the prompts cost almost nothing in practice.** Recorded because the analysis
+was right about the mechanism and wrong about the impact — a dead config entry is only friction if
+somebody actually hits it. Don't spend a session on this.
+
+If it ever does start biting: it cannot be fixed in this repo. Allow rules reject wildcards (the
+validator requires a literal `mcp__<server>__` prefix) and the live servers are install-specific
+UUIDs, so the fix belongs in machine-local settings. The deny/ask side is already fixed and
+committed, because those *do* accept wildcards — and that side was worth doing regardless, since it
+covers irreversible deletes rather than convenience.
 
 ### A-hist. Security — three QuickBooks delete tools had no gate *(FIXED in `4eb0c2f0`)*
 
