@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-27T23:09:25Z",
+  "capturedAt": "2026-07-27T23:46:53Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "df7becbe547938bd69f9846b268635f8fcca6282",
+  "captureBaseCommit": "45633aea0e01b04d6178b17562555ee5626e4ee5",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -167,6 +167,18 @@
     {
       "name": "dorothy_killian_downstairs_reconstruction_repair",
       "version": "20260727224804"
+    },
+    {
+      "name": "create_notification_service_boundary",
+      "version": "20260727233252"
+    },
+    {
+      "name": "notify_emit_service_boundary",
+      "version": "20260727233704"
+    },
+    {
+      "name": "upsert_employee_page_access_provenance_reconciliation",
+      "version": "20260727233845"
     }
   ],
   "functions": [

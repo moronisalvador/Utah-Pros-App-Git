@@ -248,6 +248,24 @@
       "name": "dorothy_killian_downstairs_reconstruction_repair",
       "path": "supabase/migrations/20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql",
       "reviewedOriginCommit": "97b81c82"
+    },
+    {
+      "version": "20260727233252",
+      "name": "create_notification_service_boundary",
+      "path": "supabase/migrations/20260726194300_create_notification_service_boundary.sql",
+      "reviewedOriginCommit": "4688ed64"
+    },
+    {
+      "version": "20260727233704",
+      "name": "notify_emit_service_boundary",
+      "path": "supabase/migrations/20260726110000_notify_emit_service_boundary.sql",
+      "reviewedOriginCommit": "4688ed64"
+    },
+    {
+      "version": "20260727233845",
+      "name": "upsert_employee_page_access_provenance_reconciliation",
+      "path": "supabase/migrations/20260727020000_upsert_employee_page_access_provenance_reconciliation.sql",
+      "reviewedOriginCommit": "4688ed64"
     }
   ],
   "selectedFunctions": [
