@@ -5,7 +5,11 @@
 > (last merge 2026-07-07) and `page:admin_mobile` opened to all admins 2026-07-07. This
 > manifest binds no active session; retained for history.
 
-**Committed by Phase F (Foundation). Binding for every admin-mobile wave session.**
+**Committed by Phase F (Foundation). ~~Binding for every admin-mobile wave session.~~ Binding on
+nobody — the initiative closed 2026-07-13.** Everything below is present-tense because it was
+written while the wave was live; read it as history. It is retained as the record of what Foundation
+shipped, and remains a correct description of the code, but it imposes no obligation and its
+"authoritative" claim below settles nothing for current work.
 Linked from `CLAUDE.md`-adjacent workflow and `docs/admin-mobile-roadmap.md` (the plan of
 record) + `docs/admin-mobile-dispatch.md` (cold-session launch blocks). Each wave session's
 read scope = `CLAUDE.md` + its phase block in the roadmap + **this file** (+

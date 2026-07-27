@@ -924,7 +924,39 @@ Reconciled against **both** colour systems, stated separately rather than blende
 
 ## §10 OWNER DECISION LEDGER
 
-Twenty decisions, collected from all five design lanes and de-duplicated. **None is resolved here.** Where a decision touches a recorded prior owner decision, that original rationale is quoted rather than summarised.
+> ## ✅ DECISIONS TAKEN 2026-07-26 (owner delegated: "make the best decision for us")
+>
+> The owner released DB-1 (all 8 migrations applied) and delegated the rest. Resolved:
+>
+> | # | Decision | Why |
+> |---|---|---|
+> | **1** — version | **CLOSED, no action.** Gate already satisfied: PATH 2.1.220, running 2.1.219. The roadmap's 2.1.85 was a stale reading of a third binary still on the machine. | measured |
+> | **10** — evictions | **REJECTED, both.** Neither file is evicted. | see below |
+> | **11** — `database-standard.md` | **Stays permanently unscoped.** Now measured, not argued: all 23 rules reload at `/compact` *because* they are unscoped, so scoping it would drop the shared-production apply gate at every compaction. | measured |
+> | **12** — three held files | **HELD**, all three. `messaging-transport` and `tech-messages-v2` carry amendments dated 2026-07-24 — active within 48h. `omni-inbox` is dormant (last touched 2026-07-09, its O and U phases absorbed by sms-experience) and is the first candidate when P20 runs, but dormant is not merged. | measured |
+> | **P8 scope** | **7 files, not 9.** `db-foundation-wave-ownership.md` and `app-store-readiness-wave-ownership.md` carry anon-grant, apply-window and rollback law — see the BLOCKING CORRECTION in the P8 block. The other 7 still need a body-level audit before conversion. | measured |
+>
+> **Why both evictions were rejected**, since the recommendation was (a) evict both:
+>
+> - **The DRAFT** now carries a live promotion hold and a DB lease. Evicting it moves live
+>   coordination state out of the always-loaded set. Instead the *defect* was fixed: §6 of that file
+>   is now scoped out of its own "grants no authority" disclaimer, so the hold actually binds.
+>   Re-evaluate once APP-2/APP-3 close.
+> - **The tombstone** is 358 B — 0.16% of rule bytes — and serves **~18 inbound references** across
+>   `docs/admin-mobile-roadmap.md`, `docs/admin-mobile-dispatch.md`, `UPR-Web-Context.md` and a
+>   reviewer agent. `git rm` would dangle all of them to save a third of a kilobyte. The stub is
+>   doing its job as a redirect. Instead: the reviewer agent's pointer was retargeted to the archive,
+>   and the archived copy's stale "Binding for every admin-mobile wave session" line was neutralized
+>   — it had been sitting in present tense under an ARCHIVED banner, which is the actual hazard.
+>
+> **Standing steer from the owner, applies to every future decision here:** safety measures must
+> earn their friction. A gate that blocks a real dev loop needs a real failure mode behind it. The
+> permission work done the same day followed this — irreversible financial deletes are denied,
+> consequential-but-legitimate actions (PR merge, payout, SMS) only *ask*, and the 22 dead
+> `permissions.allow` entries that were silently causing prompts are recorded for a machine-local fix.
+
+Twenty decisions, collected from all five design lanes and de-duplicated. **The five above are now
+resolved; the rest are not.** Where a decision touches a recorded prior owner decision, that original rationale is quoted rather than summarised.
 
 ---
 
