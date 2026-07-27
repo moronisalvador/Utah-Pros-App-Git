@@ -1,19 +1,104 @@
-// POST /api/submit-esign
-// Called when client submits signature on the sign page.
-// Generates signed PDF with pdf-lib, uploads to Supabase Storage,
-// calls complete_sign_request to mark signed + insert into job_documents.
-//
-// Body: { token, signer_name, signature_png }
-// Divisions and template content come from the DB — not the request body.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: submit-esign.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Completes a public token-gated e-signature, renders and stores the signed
+ *   PDF, writes the legal document/audit records, and sends best-effort
+ *   confirmation notifications. A Work Authorization carrying the exact
+ *   approved SMS disclosure also records narrow project-service SMS evidence.
+ *
+ * DEPENDS ON:
+ *   Packages:  pdf-lib
+ *   Internal:  functions/lib/cors.js, email.js, supabase.js, pdfText.js,
+ *              functions/api/notify.js
+ *   Data:      reads  → sign request, job and document template RPC/data
+ *              writes → Storage, complete-sign RPC, notifications and job note
+ *
+ * NOTES / GOTCHAS:
+ *   - The SMS disclosure text + SHA are deliberately version-pinned. Template
+ *     drift completes the signature but records no messaging permission.
+ *   - The legacy completion RPC fallback exists only for code-first rollout; it
+ *     leaves messaging blocked until the additive database migration exists.
+ *   - Signing never sends an SMS, retries a draft, clears suppression or flips
+ *     the contact's global opt-in.
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { sendEmail } from '../lib/email.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { supabase } from '../lib/supabase.js';
 import { dispatchEvent } from './notify.js';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { pdfSafe } from '../lib/pdfText.js';
 
+const WORK_AUTH_SMS_COMPLETION_RPC =
+  'complete_sign_request_with_work_authorization_sms_consent';
+const WORK_AUTH_SMS_DISCLOSURE_TEXT =
+  'By signing this Agreement, I consent to receive text messages (SMS/MMS) from Utah Pros Restoration at the mobile number provided in connection with this Agreement. Messages may include appointment reminders, project status updates, scheduling notifications, and other communications related to my restoration project. Message and data rates may apply. Message frequency varies. Reply STOP to opt out at any time. Reply HELP for assistance. Carriers are not liable for delayed or undelivered messages.';
+
+export const WORK_AUTH_SMS_DISCLOSURE_VERSION = 'upr_work_auth_sms_v1';
+export const WORK_AUTH_SMS_DISCLOSURE_SHA256 =
+  '22b2a37dc4094f683da6c0fe1d4955da989733a3a799307129b9fa83cae1265e';
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function escHtml(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function normalizeDisclosure(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+export function getApprovedWorkAuthSmsDisclosure(templateSections) {
+  const smsSection = (templateSections || []).find(
+    (section) => normalizeDisclosure(section?.heading).toUpperCase() === 'SMS COMMUNICATIONS',
+  );
+  const renderedText = normalizeDisclosure((smsSection?.blocks || []).join(' '));
+  if (renderedText !== WORK_AUTH_SMS_DISCLOSURE_TEXT) return null;
+  return {
+    version: WORK_AUTH_SMS_DISCLOSURE_VERSION,
+    sha256: WORK_AUTH_SMS_DISCLOSURE_SHA256,
+  };
+}
+
+export function getTrustedSignerIp(request) {
+  return String(
+    request?.headers?.get('CF-Connecting-IP') || '',
+  ).trim() || null;
+}
+
+function isMissingWorkAuthConsentRpc(error) {
+  const message = String(error?.message || error || '');
+  return message.includes(WORK_AUTH_SMS_COMPLETION_RPC)
+    && (
+      message.includes('PGRST202')
+      || /could not find the function/i.test(message)
+      || /schema cache/i.test(message)
+    );
+}
+
+export async function completeSignRequest({
+  rpc,
+  params,
+  smsDisclosure = null,
+}) {
+  try {
+    const result = await rpc(WORK_AUTH_SMS_COMPLETION_RPC, {
+      ...params,
+      p_sms_disclosure_version: smsDisclosure?.version || null,
+      p_sms_disclosure_sha256: smsDisclosure?.sha256 || null,
+    });
+    return { result, bridgeAvailable: true };
+  } catch (error) {
+    if (!isMissingWorkAuthConsentRpc(error)) throw error;
+    return {
+      result: await rpc('complete_sign_request', params),
+      bridgeAvailable: false,
+    };
+  }
+}
 
 // ── esign.signed notification hook (Notification Center, Session B) ──
 // Additive + fire-and-forget: replaces the old global create_notification
@@ -45,37 +130,27 @@ export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
+// public: a secret signing token is the narrow customer capability; pending
+// status and expiry are checked before Storage, completion, consent or notify writes.
 export async function onRequestPost(context) {
   const { request, env } = context;
 
   const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  const SUPABASE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
   // Base URL for the "open the job" link in the internal notification email.
   const SITE_URL = env.APP_BASE_URL || 'https://utahpros.app';
 
   if (!SUPABASE_URL || !SUPABASE_KEY) {
-    return jsonResponse({ error: 'Supabase env vars missing' }, 500, request, env);
+    return jsonResponse({ error: 'Signing service is unavailable' }, 503, request, env);
   }
 
-  const sbHeaders = {
-    'apikey':        SUPABASE_KEY,
-    'Authorization': `Bearer ${SUPABASE_KEY}`,
-    'Content-Type':  'application/json',
-  };
-
-  const rpc = async (fn, params) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
-      method: 'POST', headers: sbHeaders, body: JSON.stringify(params),
-    });
-    if (!res.ok) throw new Error(`RPC ${fn}: ${await res.text()}`);
-    return res.json();
-  };
-
-  const select = async (table, query) => {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: sbHeaders });
-    if (!res.ok) throw new Error(`SELECT ${table}: ${await res.text()}`);
-    return res.json();
-  };
+  const db = supabase({
+    ...env,
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: SUPABASE_KEY,
+  }, fetchWithTimeout);
+  const rpc = (fn, params) => db.rpc(fn, params);
+  const select = (table, query) => db.select(table, query);
 
   try {
     const {
@@ -85,6 +160,7 @@ export async function onRequestPost(context) {
     } = await request.json();
 
     if (!token)         return jsonResponse({ error: 'token is required' },         400, request, env);
+    if (!UUID_RE.test(token)) return jsonResponse({ error: 'token is invalid' },     400, request, env);
     if (!signer_name)   return jsonResponse({ error: 'signer_name is required' },   400, request, env);
     if (!signature_png) return jsonResponse({ error: 'signature_png is required' }, 400, request, env);
 
@@ -134,9 +210,17 @@ export async function onRequestPost(context) {
         }
       }
     }
+    const smsDisclosure = signReq.doc_type === 'work_auth'
+      ? getApprovedWorkAuthSmsDisclosure(templateSections)
+      : null;
+    if (signReq.doc_type === 'work_auth' && !smsDisclosure) {
+      console.warn('Work Authorization SMS disclosure is not the approved version; consent remains blocked.');
+    }
 
     // ── 3. Generate PDF ──
-    const signerIp = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || null;
+    // Only Cloudflare's connection header is trusted as consent evidence. A
+    // browser-supplied/fallback forwarding header must never satisfy this gate.
+    const signerIp = getTrustedSignerIp(request);
     const pdfBytes = await buildPdf({
       job, signer_name, signature_png,
       signed_at: signedAt,
@@ -152,20 +236,10 @@ export async function onRequestPost(context) {
 
     // ── 4. Upload to Supabase Storage ──
     const storagePath = `${job.id}/esign/${signReq.doc_type}-signed-${Date.now()}.pdf`;
-    const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/job-files/${storagePath}`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'apikey':        SUPABASE_KEY,
-        'Content-Type':  'application/pdf',
-        'x-upsert':      'true',
-      },
-      body: pdfBytes,
-    });
-    if (!uploadRes.ok) throw new Error(`Storage upload failed: ${await uploadRes.text()}`);
+    await db.uploadStorage('job-files', storagePath, pdfBytes, 'application/pdf');
 
     // ── 5. Complete sign request ──
-    const result = await rpc('complete_sign_request', {
+    const completionParams = {
       p_token:              token,
       p_signer_name:        signer_name,
       p_signer_ip:          signerIp,
@@ -175,8 +249,18 @@ export async function onRequestPost(context) {
       p_consent_commitment: signReq.doc_type === 'recon_agreement' ? !!consent_commitment : null,
       p_consent_esign:      signReq.doc_type === 'recon_agreement' ? !!consent_esign      : null,
       p_consent_authority:  signReq.doc_type === 'recon_agreement' ? !!consent_authority  : null,
+    };
+    const { result, bridgeAvailable } = await completeSignRequest({
+      rpc,
+      params: completionParams,
+      smsDisclosure,
     });
     if (!result || result.error) throw new Error(result?.error || 'Failed to complete sign request');
+    if (signReq.doc_type === 'work_auth' && !bridgeAvailable) {
+      console.warn('Work Authorization SMS consent bridge is not deployed; consent remains blocked.');
+    } else if (signReq.doc_type === 'work_auth' && result.sms_consent_recorded === false) {
+      console.warn(`Work Authorization signed without SMS consent evidence: ${result.sms_consent_reason || 'unknown'}`);
+    }
 
     // ── 6. Send confirmation email with PDF attached ──
     const docLabel = {
@@ -224,13 +308,14 @@ export async function onRequestPost(context) {
     const signedDate  = signedAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
     await notifyEsignSigned({
-      db: supabase(env), env, job, docLabel,
+      db, env, job, docLabel,
       docType: signReq.doc_type, signerName: signer_name, jobDocumentId: result.job_document_id,
     });
 
-    await fetch(`${SUPABASE_URL}/rest/v1/job_notes`, {
-      method: 'POST', headers: sbHeaders,
-      body: JSON.stringify({ job_id: job.id, author_name: 'E-Signature', body: `✍️ ${signer_name} signed the ${docLabel}.` }),
+    await db.insert('job_notes', {
+      job_id: job.id,
+      author_name: 'E-Signature',
+      body: `✍️ ${signer_name} signed the ${docLabel}.`,
     }).catch(e => console.error('job_note activity insert failed:', e.message));
 
     await sendEmail(env, {
@@ -249,8 +334,15 @@ export async function onRequestPost(context) {
     }, 200, request, env);
 
   } catch (err) {
-    console.error('submit-esign error:', err);
-    return jsonResponse({ error: err.message || 'Internal server error' }, 500, request, env);
+    const reference = crypto.randomUUID();
+    console.error('submit-esign failed', {
+      reference,
+      error_type: err instanceof Error ? err.name : 'UnknownError',
+    });
+    return jsonResponse({
+      error: 'Unable to complete signing request',
+      reference,
+    }, 500, request, env);
   }
 }
 
