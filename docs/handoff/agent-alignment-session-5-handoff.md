@@ -184,6 +184,12 @@ recommended cutting them; that recommendation is withdrawn.
 3. **P19 — one CI invariant guard.** This session found stale derive-commands and 8 dead permission
    entries; both drifted in silently. One check stops the recurrence. Note its invariant (4) is
    already corrected in the roadmap — assert the expansion budget, never brace-freedom.
+   **Smaller than the roadmap implies — the precedent already exists (added 2026-07-27):**
+   `scripts/check-migration-provenance.mjs` is wired into `.github/workflows/ci.yml` via
+   `npm run validate:provenance` and `npm run test:provenance`. Copy that shape. Note that
+   `check-l0-bridge.mjs` and `verify-rule-globs.mjs` are **not** in CI today, so every guard this
+   initiative built only runs when a human remembers to — which is the exact failure mode P19 exists
+   to close.
 4. **P10 / P13 / P14** — Codex depth layer and single-sourced adapters, if appetite remains.
 
 **DROP unless something changes:** most of Wave 2 (P4/P5/P6 add gates; the owner's standing steer is
@@ -248,6 +254,11 @@ Then read, in order:
   docs/agent-alignment-roadmap.md                     (§10's DECISIONS TAKEN block, then P8 and P9)
   docs/agent-alignment-l2-evidence.md                 (what is measured vs still believed)
 
+Note there is a SECOND, unrelated prompt in that folder —
+docs/handoff/production-promotion-and-followups-prompt.md — from a different session,
+covering the security-batch promotion. That promotion is DONE (main and dev are both at
+98786f52). It is not your job; do not start from it.
+
 YOUR JOB: P8/P9 — scope the .claude/rules files with `paths:` frontmatter.
 
 Why it is worth doing: ~214 KB of rules load into EVERY session regardless of relevance.
@@ -288,4 +299,11 @@ priority after P8/P9. It is not optional parity work.
 The owner's standing steer: safety measures must earn their friction. A gate that blocks a
 real dev loop needs a real failure mode behind it. Prefer removing dead controls over
 adding new ones.
+
+IF P8/P9 FINISHES EARLY, the next-best item is small and well-precedented: neither
+scripts/check-l0-bridge.mjs nor scripts/agents/verify-rule-globs.mjs runs in CI, so every
+guard this initiative built only fires when a human remembers to. Wire them the way
+scripts/check-migration-provenance.mjs already is — npm run validate:provenance and
+npm run test:provenance in .github/workflows/ci.yml. That needs a package.json edit, which
+is outside the constraint list above, so ask the owner before doing it.
 ```

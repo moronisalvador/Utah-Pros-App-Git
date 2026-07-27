@@ -161,11 +161,14 @@ The overlap that DOES exist is `CLAUDE.md` / `close-out-standard.md`, both edite
 the app sessions while DB-1 was running — DB-1 must re-read them before its close-out
 rather than working from a cached copy.
 
-**Promotion hold:** `dev` is **not** to be promoted to `main` while APP-2/APP-3 are
-live. `dev` moved four times in thirty minutes on 2026-07-26; CI green is computed
-against a SHA and is stale on arrival, and the agent-alignment commits are
-mid-sequence ("session-5 opening prompt", "session 4 baton"). Promote from a quiet
-`dev`, not a moving one.
+~~**Promotion hold:** `dev` is **not** to be promoted to `main` while APP-2/APP-3 are live.~~
+**DISCHARGED 2026-07-27 — the owner promoted.** `origin/main` and `origin/dev` are both at
+`98786f52` (PR #521), so the two branches are identical and nothing is pending promotion.
+
+The hold's reasoning is kept because it stays true for the *next* promotion: `dev` moved four times
+in thirty minutes on 2026-07-26, and CI green is computed against a SHA, so it is stale on arrival.
+Promote from a quiet `dev`, not a moving one — and re-check `git rev-list --left-right --count
+origin/main...origin/dev` immediately before, not from a doc.
 
 **Rollback for DB-1:** every migration ships a paired file in `supabase/rollbacks/`.
 ~~Nothing is applied, so the current rollback is `git revert` alone.~~ **All 8 are now applied

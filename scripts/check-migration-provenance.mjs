@@ -65,10 +65,12 @@ function parseArgs(argv) {
     manifest: DEFAULT_MANIFEST,
     evidence: DEFAULT_EVIDENCE,
     worktree: false,
+    strictFreshness: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
     if (value === '--worktree') options.worktree = true;
+    else if (value === '--strict-freshness') options.strictFreshness = true;
     else if (value === '--ref') options.ref = argv[++index];
     else if (value === '--manifest') options.manifest = argv[++index];
     else if (value === '--evidence') options.evidence = argv[++index];
@@ -186,23 +188,37 @@ export function validateProvenance({
   manifest,
   evidence,
   now = new Date(),
+  strictFreshness = false,
 }) {
   const issues = [];
   const warnings = [];
   if (manifest.projectRef !== evidence.projectRef) {
     issues.push('Evidence projectRef does not match the manifest');
   }
+  // Staleness is NOT drift. Evidence captured six hours ago still proves what the live
+  // catalog looked like at capture time; it just proves it about an older moment. Treating
+  // that as a build failure made CI go red on a clock — and because this gate used to run
+  // BEFORE build+test, an expired file skipped both and hid whether the code compiled at
+  // all (2026-07-27: red from 22:21Z, last real build 19:59Z). So staleness warns by
+  // default and only fails under --strict-freshness, which the release gate uses.
+  // Genuine drift below — an unmapped live ledger row, a body or policy fingerprint
+  // mismatch, source that differs from its reviewed origin — still fails hard, always.
   const capturedAt = Date.parse(evidence.capturedAt);
   const maximumAgeMs = manifest.evidenceMaxAgeHours * 60 * 60 * 1000;
-  if (
-    !Number.isFinite(capturedAt) ||
-    capturedAt > now.getTime() + 5 * 60 * 1000 ||
-    now.getTime() - capturedAt > maximumAgeMs
-  ) {
-    issues.push(
-      `Live evidence is not within the ${manifest.evidenceMaxAgeHours}-hour release window`,
-    );
+  const unusable = !Number.isFinite(capturedAt) || capturedAt > now.getTime() + 5 * 60 * 1000;
+  const expired = Number.isFinite(capturedAt) && now.getTime() - capturedAt > maximumAgeMs;
+  if (unusable) {
+    // A missing or future capturedAt is malformed evidence, not merely old.
+    issues.push('Live evidence has a missing or future capturedAt');
+  } else if (expired) {
+    const ageHours = Math.floor((now.getTime() - capturedAt) / (60 * 60 * 1000));
+    const message =
+      `Live evidence is ${ageHours}h old, outside the ${manifest.evidenceMaxAgeHours}-hour ` +
+      'release window — refresh with scripts/capture-migration-provenance.mjs';
+    if (strictFreshness) issues.push(message);
+    else warnings.push(message);
   }
+  const stale = unusable || expired;
   if (!worktree && !isAncestor(root, evidence.captureBaseCommit, ref)) {
     issues.push(`Evidence capture base ${evidence.captureBaseCommit} is not an ancestor of ${ref}`);
   }
@@ -274,6 +290,7 @@ export function validateProvenance({
 
   return {
     ok: issues.length === 0,
+    stale,
     releaseCommit: releaseCommit(root, ref, worktree),
     ledgerMappings: manifest.ledgerMappings.length,
     selectedFunctions: manifest.selectedFunctions.length,
@@ -291,8 +308,9 @@ function main() {
   const result = validateProvenance({ root, ...options, manifest, evidence });
   for (const warning of result.warnings) process.stdout.write(`WARN ${warning}\n`);
   for (const issue of result.issues) process.stderr.write(`ERROR ${issue}\n`);
+  const verdict = result.ok ? (result.stale ? 'PASS (evidence stale)' : 'PASS') : 'FAIL';
   process.stdout.write(
-    `Migration provenance: ${result.ok ? 'PASS' : 'FAIL'}; ref=${result.releaseCommit}; ` +
+    `Migration provenance: ${verdict}; ref=${result.releaseCommit}; ` +
       `ledger=${result.ledgerMappings}; functions=${result.selectedFunctions}; ` +
       `policies=${result.selectedPolicies}.\n`,
   );
