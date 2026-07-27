@@ -233,6 +233,41 @@ Say this plainly in the PR rather than implying full coverage:
 - on-device motion/gesture feel and resume behaviour of the rewritten shell
 - most of the added `docs/` and `docs/audit/` evidence, which was sampled
 
+## Other work in flight — NOT yours unless the owner says so
+
+Listed so nothing is orphaned when this PR closes. Do not start any of it without being asked; the
+point of naming it here is that it does not get forgotten between sessions.
+
+1. **Two security migrations, authored and reviewed, NOT applied.** `20260727143000_anon_closure_tranche_b`
+   (closes `anon` on `contacts`, `conversations`, `conversation_participants` — the entire customer
+   list is currently readable and writable with the public browser key) and
+   `20260727144500_notification_role_defaults_rpc_only` (closes the bypass around the admin gate on
+   notification defaults). Both passed `migration-safety-checker` and `anon-grant-auditor`. Both are
+   independent of PR #525 — disjoint tables — so they need no coordination with it, only an apply
+   window. Full plan: **`docs/handoff/apply-window-and-followups-prompt.md`**, which also carries the
+   `APPLY-WINDOW CAVEAT` (re-capture the catalog first, because `DROP POLICY IF EXISTS` silently
+   no-ops on a renamed policy and still reports success).
+2. **`dev` is ahead of `main` by verified, unpromoted work** — the notification routing fix, the
+   in-app Message button, the raw-error fix on eleven screens, the caller-name fix, and the three
+   guards. Check `git rev-list --left-right --count origin/main...origin/dev`. Promoting these is
+   independent of #525 and is the owner's call; do not fold it into the #525 merge silently.
+3. **A small ops surface for stuck provider events.** `rearm_callrail_provider_event()` and
+   `resolve_provider_event()` are live and proven, but no UI calls them, and six
+   `CALLRAIL_OUTBOUND_UNMATCHED` events are stuck and will escalate to `critical`. Pure additive UI +
+   worker, no schema. Details in the apply-window doc.
+4. **CallRail has no delivery confirmation.** A CallRail message sits at `status='sent'` forever, so a
+   silent delivery failure is indistinguishable from success. Establish whether CallRail's API even
+   offers receipts before building anything.
+5. **The rules cleanup.** The provenance gate was fixed 2026-07-27 (moved after Build/Test, staleness
+   warns, strict only for PRs into `main`). The owner wants the remaining overprotective friction
+   removed and has said so directly. Standing recommendation: keep exactly four gates — consent/TCPA,
+   the human Save-to-QuickBooks gate, the shared-database apply gate, and server-side worker
+   authorization. Those protect against irreversible outward harm; most other friction is
+   self-inflicted.
+6. **Owner-gated, cannot be done from a session:** missed-call textback (needs a real call), inbound
+   MMS (needs someone to reply with an image), and a real field-tech login if you need a technician's
+   own RLS-scoped view.
+
 ## Environment notes for a fresh session on this machine
 
 These cost the previous session real time. None is a bug; all are how this repo works.
