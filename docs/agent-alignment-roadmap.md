@@ -935,6 +935,18 @@ Reconciled against **both** colour systems, stated separately rather than blende
 > | **11** — `database-standard.md` | **Stays permanently unscoped.** Now measured, not argued: all 23 rules reload at `/compact` *because* they are unscoped, so scoping it would drop the shared-production apply gate at every compaction. | measured |
 > | **12** — three held files | **HELD**, all three. `messaging-transport` and `tech-messages-v2` carry amendments dated 2026-07-24 — active within 48h. `omni-inbox` is dormant (last touched 2026-07-09, its O and U phases absorbed by sms-experience) and is the first candidate when P20 runs, but dormant is not merged. | measured |
 > | **P8 scope** | **7 files, not 9.** `db-foundation-wave-ownership.md` and `app-store-readiness-wave-ownership.md` carry anon-grant, apply-window and rollback law — see the BLOCKING CORRECTION in the P8 block. The other 7 still need a body-level audit before conversion. | measured |
+> | **Codex phases** | **KEPT — P10/P12/P13/P14 are NOT cuttable.** A provisional recommendation to drop them is withdrawn. | owner, below |
+>
+> **Why the Codex phases survive, and why P12 moves up the order.** Asked whether Codex was real
+> usage or theoretical, the owner said they work in Codex *"every time I run out of token budget on
+> my Anthropic account and have to wait until next week."* That is days at a stretch, on a schedule
+> nobody controls — and it **inverts the risk model this roadmap assumed.** Every mechanical control
+> built so far is Claude-only: the `InstructionsLoaded` instrument, `--assert-core`, and all three
+> PreToolUse guards. Codex has none of them, has no loaded-document introspection, and its
+> `project_doc_max_bytes` drops the tail of `AGENTS.md` **with no warning**. So the owner spends
+> stretches of time in the mode with the fewest verifiable guardrails and a silent failure mode.
+> **P12 (close the Codex safety divergences) is therefore the priority immediately after P8/P9** —
+> ahead of the remaining Claude-side work, not behind it.
 >
 > **Why both evictions were rejected**, since the recommendation was (a) evict both:
 >

@@ -142,24 +142,150 @@ unverified for them too.
 - **Wire the linter into CI?** `package.json` is outside the scope I was given. Suggested:
   `"validate:rule-globs": "node scripts/agents/verify-rule-globs.mjs"` plus a self-test step.
 
-## 4. Next session — start here
+## 4. ⭐ SCOPE DECISION 2026-07-26 — Codex is real, and it is the RISKIER mode
 
-P8/P9 are unblocked on *evidence* but gated on **B and D above**. Until those land, the highest-value
-unblocked work is:
+Asked whether Codex was actually used or just theoretical, the owner said: **"I do use Codex,
+usually every time I run out of token budget on my Anthropic account and have to wait until next
+week."** So Codex is not a parity nicety — it is where the work happens for days at a stretch,
+on a schedule nobody controls.
 
-1. Turn the P0 evidence doc into `scripts/qa/capability-floor.mjs` — a re-runnable check. Both P0
-   findings were silent and both drifted in unnoticed, which is the argument for automating it.
-2. Implement P8 close-out criterion (c) — "a declared near-miss does not match". There is no
-   declaration mechanism, so that criterion has no instrument today.
-3. Audit the remaining seven P8 candidates' bodies for safety content, the way §3D describes.
+**This inverts the risk model the initiative has been assuming.** Every mechanical control built so
+far is Claude-only:
+
+| Control | Claude Code | Codex |
+|---|---|---|
+| `InstructionsLoaded` instrument / `--assert-core` | ✅ | ❌ none |
+| PreToolUse hooks (push-to-main, secrets, destructive SQL) | ✅ exit 2 blocks | ❌ different model |
+| Loaded-document introspection | ✅ | ❌ none documented |
+| Byte-cap truncation warning | n/a | ❌ **silent tail drop** |
+| Native sandbox | ❌ on win32 | ✅ |
+
+So during a budget lockout the owner works in the mode with **fewer verifiable guardrails and a
+silent failure mode** (`project_doc_max_bytes` drops the tail of `AGENTS.md` with no warning). The
+byte cap is currently 65,536 against a 25,657 B file — fine today, and it must be *checked*, not
+assumed, because nothing will say so when it stops being fine. `scripts/check-l0-bridge.mjs`
+assertion 13 is that check; keep it green.
+
+**Consequence for the roadmap:** P10, P12, P13 and P14 (the Codex depth layer, the safety
+divergences, the generated adapters, dispatcher conformance) are **NOT cuttable**. I had provisionally
+recommended cutting them; that recommendation is withdrawn.
+
+## 4b. Revised remaining scope — what to do and what to drop
+
+**DO, in this order:**
+
+1. **P8/P9 — scope the rules files.** The direct payoff: ~214 KB of rules enter every session
+   regardless of relevance (`motion-standard.md` is 26.6 KB of animation law loading while you edit
+   a Cloudflare worker). Scoped correctly this cuts 40–60 KB per session. Everything needed is
+   built: `scripts/agents/verify-rule-globs.mjs` and the `InstructionsLoaded` instrument. Scope is
+   **7 files, not 9** (§2b), and the other 7 still need a body-level safety audit first.
+2. **P12 — close the Codex safety divergences.** Highest value per the §4 table: it hardens the mode
+   with the fewest guardrails, during the weeks the owner is stuck in it.
+3. **P19 — one CI invariant guard.** This session found stale derive-commands and 8 dead permission
+   entries; both drifted in silently. One check stops the recurrence. Note its invariant (4) is
+   already corrected in the roadmap — assert the expansion budget, never brace-freedom.
+4. **P10 / P13 / P14** — Codex depth layer and single-sourced adapters, if appetite remains.
+
+**DROP unless something changes:** most of Wave 2 (P4/P5/P6 add gates; the owner's standing steer is
+that safety must earn its friction) and most of Wave 5 (P15–P18 process ceremony).
+
+**Smaller, genuinely unblocked:**
+
+- Turn `docs/audit/2026-07/evidence/agent-capability-floor.md` into `scripts/qa/capability-floor.mjs`.
+  Both P0 findings were silent and drifted in unnoticed — that is the argument for automating it.
+- P8 close-out criterion (c), "a declared near-miss does not match", has **no instrument**. There is
+  no declaration mechanism, so the linter cannot check it.
 
 **Do not** trust a byte figure, a checkbox or a "measured" claim in the roadmap without re-deriving
 it. This session found stale numbers in `CLAUDE.md`, `AGENTS.md`, the roadmap and the dispatch,
 including two derive-commands that returned the wrong answer (`ls functions/api/*.js` counts 51 test
 files as workers; a bare git pathspec `*` crosses `/`).
 
+## 4c. Hazards specific to the next session's work
+
+- **A wrong `paths:` glob fails silently.** No error, no warning — the rule just never loads again.
+  Never claim a conversion works; prove it. `node scripts/agents/verify-rule-globs.mjs` catches
+  budget/dead/unconditional errors, then confirm the rule actually fires with
+  `node scripts/instructions-loaded-report.mjs`.
+- **The linter's matcher is close to the loader's, not identical.** It says so itself. Treat exit 0
+  as necessary, never sufficient.
+- **Scoped rules are dropped at `/compact`.** Anything carrying money, consent/TCPA,
+  server-authorization or shared-production-apply law stays unscoped, permanently. Two P8 candidates
+  already failed this test; assume the others are unaudited.
+- **Group log events by the PAYLOAD's `session_id`.** `CLAUDE_CODE_SESSION_ID` and
+  `CLAUDE_CODE_EXECPATH` are inherited by headless children — that produced a confidently wrong
+  two-build comparison before it was caught.
+
 ## 5. Shared-checkout hazard
 
 Three sessions were live on this tree. **A push from any of them publishes every commit on `dev`,
 including another session's unpublished work** — that happened to me this session. "Committed but
 unpushed" is not a holding state here; use a branch if something must wait for review.
+
+---
+
+## 6. Opening prompt for session 6
+
+Self-contained; references no prior conversation. Paste as-is.
+
+```text
+Continue the agent-instruction alignment initiative on the UPR Platform.
+
+FIRST, three commands, before reading anything. Report the real output of each.
+
+  git fetch origin && git status --short --branch
+  node scripts/check-l0-bridge.mjs                          # must be 14/14
+  node scripts/instructions-loaded-report.mjs --assert-core  # must PASS
+
+The third is the mechanical proof that the shared law core (AGENTS.md, imported by
+CLAUDE.md line 1) actually loaded. It replaced an older token-quoting canary, which
+turned out to be unrunnable — a compaction summary can carry the token forward, so a
+session quoting it proves nothing. Do not reintroduce that test. If --assert-core says
+NO EVIDENCE, the hook has not fired yet this session; that is ambiguous, not a failure.
+
+Then read, in order:
+  docs/handoff/agent-alignment-session-5-handoff.md   (the baton — start at §4)
+  docs/agent-alignment-roadmap.md                     (§10's DECISIONS TAKEN block, then P8 and P9)
+  docs/agent-alignment-l2-evidence.md                 (what is measured vs still believed)
+
+YOUR JOB: P8/P9 — scope the .claude/rules files with `paths:` frontmatter.
+
+Why it is worth doing: ~214 KB of rules load into EVERY session regardless of relevance.
+motion-standard.md alone is 26.6 KB of animation law that loads while you edit a
+Cloudflare worker. Correct scoping cuts 40-60 KB per session.
+
+Work in this order, and do not skip step 1:
+
+1. AUDIT BEFORE CONVERTING. Scoped rules are DROPPED AT /compact. Any file carrying
+   money, consent/TCPA, server-authorization or shared-production-apply law must stay
+   unscoped forever. Two candidates already failed this — db-foundation and
+   app-store-readiness were removed from the set for exactly that reason. Read each
+   remaining candidate's BODY, not its title. Report what you find before editing.
+2. Convert one file at a time. After each: `node scripts/agents/verify-rule-globs.mjs`
+   (budget / dead-glob / silently-unconditional), then PROVE the rule actually fires by
+   touching a matching file and checking
+   `node scripts/instructions-loaded-report.mjs`. A wrong glob fails SILENTLY — no
+   error, the rule simply never loads again. Never report a conversion as working
+   without that second check.
+3. database-standard.md stays unscoped permanently. Owner-confirmed and measured.
+
+CONSTRAINTS
+- Agent-configuration and docs only: .claude/, .codex/, .agents/, docs/, scripts/agents/.
+  No src/, functions/, supabase/, ios/. No migration, no live or provider state.
+- Permissions changes are owner-gated. Do not edit permissions.allow/deny/ask.
+- Stage by explicit path. NEVER `git add -A`. Other sessions share this working tree and
+  keep dozens of files uncommitted; leave every one of them alone.
+- A push from any session publishes all of dev, so unpushed is not a holding state.
+- Verify before claiming. This repo's docs have repeatedly carried confident numbers that
+  were wrong — including two derive-commands that counted the wrong thing. Re-derive.
+
+CONTEXT THAT CHANGES PRIORITIES: the owner uses Codex for days at a time whenever the
+Anthropic token budget runs out. Codex has no InstructionsLoaded instrument, no PreToolUse
+hooks and no truncation warning — its byte cap drops the tail of AGENTS.md silently. So
+Codex is the higher-risk mode, and P12 (closing the Codex safety divergences) is the next
+priority after P8/P9. It is not optional parity work.
+
+The owner's standing steer: safety measures must earn their friction. A gate that blocks a
+real dev loop needs a real failure mode behind it. Prefer removing dead controls over
+adding new ones.
+```
