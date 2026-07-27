@@ -58,25 +58,26 @@ const OUTBOUND_TYPES = new Set(['sms_outbound', 'email_outbound']);
 const DELIVERED_ENOUGH = new Set(['queued', 'sent', 'delivered', 'read']);
 
 /**
- * Mark failed outbound rows that a later successful send has already replaced.
+ * Drop failed outbound rows that a later successful send has already replaced.
  *
  * Retrying does NOT update the failed row — the worker is the sole writer and it
  * inserts a NEW row per attempt (omni §7.1). So a successful retry leaves the
  * thread holding both: the original, `failed` forever, and the new one, `sent`.
- * Left alone the old bubble keeps a live Retry button, and tapping it sends the
- * customer a third copy.
+ * Shown as-is that is two bubbles for one message, and the dead one keeps a live
+ * Retry button whose next tap sends the customer a third copy.
  *
- * Rather than hide the failure (it really happened, and quietly deleting history
- * is worse), annotate it: callers render `_superseded` rows de-emphasized and
- * withhold `onRetry`. Derived from the rows themselves, so it survives a reload
- * without needing a column.
+ * Every chat people actually use — iMessage, WhatsApp, Google Messages — treats a
+ * retry as the SAME message: one bubble whose status changes. So the replaced row
+ * is removed from the thread entirely, not merely de-emphasized. The failure is
+ * still on the row in the database for audit; the chat shows the conversation,
+ * not the plumbing.
  *
  * Limitation, deliberate: matching is on identical body text, so a staff member
- * who genuinely sends the same words twice will see the earlier failure marked
- * superseded. That is the safe direction to be wrong in — the cost is a missing
- * Retry button on a message whose text already reached the customer.
+ * who genuinely sends the same words twice will have the earlier failure hidden
+ * once the later one succeeds. That is the safe direction to be wrong in — the
+ * text did reach the customer, and the row is still in the database.
  */
-export function annotateSupersededFailures(messages = []) {
+export function withoutSupersededFailures(messages = []) {
   if (!Array.isArray(messages) || messages.length === 0) return messages;
 
   // Earliest index at which each body text was successfully sent outbound.
@@ -90,17 +91,14 @@ export function annotateSupersededFailures(messages = []) {
   });
   if (firstSuccessAt.size === 0) return messages;
 
-  let changed = false;
-  const out = messages.map((m, i) => {
+  const out = messages.filter((m, i) => {
     const failed = m?._failed || m?.status === 'failed' || m?.status === 'undelivered';
-    if (!failed || !OUTBOUND_TYPES.has(m?.type)) return m;
+    if (!failed || !OUTBOUND_TYPES.has(m?.type)) return true;
     const at = firstSuccessAt.get((m.body || '').trim());
-    if (at === undefined || at <= i) return m;
-    changed = true;
-    return { ...m, _superseded: true };
+    return at === undefined || at <= i;
   });
-  // Preserve identity when nothing matched so React sees no spurious change.
-  return changed ? out : messages;
+  // Preserve identity when nothing was dropped so React sees no spurious change.
+  return out.length === messages.length ? messages : out;
 }
 
 // ─── SECTION: Helpers — linkify (scheme-whitelisted, no raw HTML) ──────────────
