@@ -21,10 +21,7 @@ existing invoice line to `$10,611.51`. Existing triggers then derive invoice bal
 from the preserved `$7,672.87` QuickBooks payment. The migration never writes generated or
 payment-trigger-owned money columns directly.
 
-The paired rollback is emergency-only because it intentionally restores the known-broken `The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
-invoice total and negative displayed balance. Live apply state remains unverified until the migration
-ledger and exact postconditions are read back from Supabase; repository source alone is not evidence
-of production state.`
+The paired rollback is emergency-only because it intentionally restores the known-broken `$0`
 invoice total and negative displayed balance. The exact migration committed in `97b81c82` was applied
 to shared UPR Supabase project `glsmljpabrwonfiltiqm` as ledger version `20260727224804`. Immediate
 read-back verified one QBO invoice `4283`, one payment `4284`, one primary contact association, one
