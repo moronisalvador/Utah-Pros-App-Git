@@ -4,8 +4,8 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Locks the native notification panel's motion, lifecycle, refresh, and
- *   accessibility source contracts without changing the frozen web styling.
+ *   Locks the native notification panel and dashboard menu's shared motion,
+ *   lifecycle, refresh, accessibility, and field-tech surface contracts.
  *
  * DEPENDS ON:
  *   Packages:  node:fs, vitest
@@ -33,7 +33,7 @@ describe('native notification bell motion contract', () => {
     expect(bell).toContain("data-state={open ? 'open' : 'closing'}");
     expect(bell).toContain('onAnimationEnd');
     expect(bell).toContain("matchMedia?.('(prefers-reduced-motion: reduce)')");
-    expect(css).toContain('NATIVE NOTIFICATION POLISH RESERVED — BELL-01');
+    expect(css).toContain('TECH POPOVER MOTION + NATIVE NOTIFICATION SURFACE — BELL-01');
     expect(css).toContain("notification-bell__panel[data-state='open']");
     expect(css).toContain("notification-bell__panel[data-state='closing']");
     expect(css).toMatch(
@@ -43,11 +43,26 @@ describe('native notification bell motion contract', () => {
 
   it('scopes the visual treatment to native while using catalog motion tokens', () => {
     expect(css).toContain(":root[data-native='true'] .notification-bell__panel");
+    expect(css).toContain('border-radius: var(--tech-radius-card) !important');
+    expect(css).toContain(":root[data-native='true'] .notification-bell__item");
+    expect(css).toContain('font-size: var(--tech-text-body)');
     expect(css).toContain('var(--motion-duration-fast)');
     expect(css).toContain('var(--motion-spring-in)');
     expect(css).toContain('var(--motion-ease-accelerate)');
     expect(css).not.toMatch(
-      /notificationBellPanel(?:In|Out)[\s\S]*?transition:\s*\d+ms/,
+      /techPopover(?:In|Out)[\s\S]*?transition:\s*\d+ms/,
+    );
+  });
+
+  it('uses the same enter and exit motion for the dashboard menu', () => {
+    expect(header).toContain('menuPresent');
+    expect(header).toContain("data-state={menuOpen ? 'open' : 'closing'}");
+    expect(header).toContain('onAnimationEnd');
+    expect(header).toContain('aria-expanded={menuOpen}');
+    expect(css).toContain(".tv2-dash-menu[data-state='open']");
+    expect(css).toContain(".tv2-dash-menu[data-state='closing']");
+    expect(css).toMatch(
+      /tv2-dash-menu\[data-state='open'\][\s\S]*?techPopoverIn[\s\S]*?notification-bell__panel\[data-state='open'\][\s\S]*?techPopoverIn/,
     );
   });
 
@@ -73,6 +88,10 @@ describe('native notification bell motion contract', () => {
 
   it('routes live feedback through the shared toast entry point', () => {
     expect(bell).toContain("import { err, toast } from '@/lib/toast'");
+    expect(bell).toContain("import { impact } from '@/lib/nativeHaptics'");
+    expect(bell).toMatch(/const openItem = async \(item\) => \{\s*impact\('light'\)/);
+    expect(bell).toMatch(/const markAll = async \(\) => \{[\s\S]*?impact\('light'\)/);
+    expect(bell).toMatch(/const retryList = \(\) => \{\s*impact\('light'\)/);
     expect(bell).toContain("err('Could not mark that notification as read.')");
     expect(bell).toContain("err('Could not mark all notifications as read.')");
     expect(bell).not.toContain("dispatchEvent(new CustomEvent('upr:toast'");

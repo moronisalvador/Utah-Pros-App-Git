@@ -3429,11 +3429,14 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   `App.getInfo()`. It remains owner-gated on Apple enrollment, signing secrets, distribution archive
   proof, and an explicitly dispatched release.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
-  uses a native-only scale/fade enter plus accelerated exit lifecycle, returns focus, closes on
-  Escape/click-away/route/inactive-pane changes, and resolves immediately for Reduce Motion. The
-  2026-07-28 simulator visual check observed multi-frame motion, but the recording contained
-  authenticated data and was deleted; sanitized SHA-bound recapture, physical-device feel, and
-  VoiceOver remain release checks.
+  uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
+  focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
+  Reduce Motion. Its native surface now uses the field-tech card radius, readable typography,
+  non-shrinking wrapped cards, and a bounded scrolling list; the dashboard three-dot menu consumes
+  the same tokenized enter/exit motion instead of flashing in and disappearing instantly. The
+  2026-07-28 simulator visual checks observed both populated notification cards and the matching
+  menu motion, but the recordings contained authenticated data and were deleted; sanitized
+  SHA-bound recapture, physical-device feel, and VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
 - **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
   resign/background and removes it after the app becomes active.
