@@ -130,6 +130,38 @@ allowed origins and provider sandboxes.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 
+### Static-asset serving contract (2026-07-27)
+
+Two outages on 2026-07-27 came from the same cause: Cloudflare Pages answered a request for a
+missing `/app-assets/*` file with the app's `index.html` at **HTTP 200**, and `public/_headers`
+marks that directory `immutable` for a year, so the wrong answer was cached under an asset URL.
+First occurrence hit a `.js` file (blank screen), second a `.css` file (every page unstyled).
+
+The 200-OK-for-anything-missing behaviour is **built into Pages**, not produced by any rule in
+`public/_redirects` — the `/* /index.html 200` catch-all that file used to blame is rejected by
+Cloudflare as an infinite loop and was never active. Three rule variants were tried and all three
+failed; they are recorded in `public/_redirects`, which is the canonical explanation.
+
+The serving contract now is:
+
+- **`public/404.html` must exist.** Its presence is what disables the built-in fallback. Deleting it
+  silently restores the outage.
+- **`public/_redirects` lists app route prefixes only, never an asset path.** A rule matching
+  `/app-assets/*` rewrites *real* assets to HTML too, because rewrites run before the file lookup.
+- Rewrite rules target `/`, never `/index.html`: a splat rule to a `.html` target is dropped as a
+  loop, and a splat-free one 308-redirects to `/` and discards the address.
+- Adding a route to `src/App.jsx` requires a matching `_redirects` line, or that page's URL returns
+  404. `tests/qa/unit/spa-route-coverage.test.js` re-derives the list and fails when one is missing.
+- **Behaviour change:** an unknown *top-level* path (`/bogus`) now returns `404.html` instead of the
+  app's in-app not-found screen. Unknown paths *below* a known prefix (`/crm/bogus`) still render the
+  app, so `<Route path="*">` remains reachable there.
+- Verify on a preview before merging any change to these files:
+  `node scripts/smoke-deploy.mjs <preview-url>` asserts a missing asset 404s alongside the existing
+  boot-graph checks, and the same probe runs every 30 minutes via `.github/workflows/deploy-smoke.yml`.
+
+Prevention does not replace recovery. The boot guard in `index.html` is still required: it repairs a
+device already holding a poisoned copy from 2026-07-27, which prevention cannot reach.
+
 ## Mobile PWA/Capacitor readiness workflow
 
 `docs/mobile-production-readiness-roadmap.md` is the plan of record for the 37 findings observed at
