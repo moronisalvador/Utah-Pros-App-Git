@@ -95,7 +95,11 @@
 
 import { sendEmail } from './email.js';
 import { emailAllows } from './email-consent.js';
-import { consentAllows } from './sms-consent.js';
+import {
+  AUTOMATED_ACCEPTED_CONSENT_CODES,
+  consentAllows,
+  isAcceptedConsent,
+} from './sms-consent.js';
 import { sendMessage } from './twilio.js';
 import { normalizePhone } from './phone.js';
 import { supabase } from './supabase.js';
@@ -487,7 +491,8 @@ export async function sendGatedSms(env, {
 
   // Gate 2: TCPA consent. The database decision also sees duplicate-contact
   // suppression and durable-but-unprojected STOP events. Automated traffic
-  // accepts GLOBAL_OPT_IN only; staff-only SERVICE_CONSENT is never consumed.
+  // accepts GLOBAL_OPT_IN only; staff-only SERVICE_CONSENT and IMPLIED_CONSENT
+  // are never consumed here.
   const locallyAllowed = consentAllows({
     phone,
     opt_in_status: contact?.opt_in_status,
@@ -510,8 +515,7 @@ export async function sendGatedSms(env, {
   }
   if (
     !locallyAllowed
-    || consentStatus?.allowed !== true
-    || consentStatus?.code !== 'GLOBAL_OPT_IN'
+    || !isAcceptedConsent(consentStatus, AUTOMATED_ACCEPTED_CONSENT_CODES)
   ) {
     const reason = !phone
       ? 'no_phone'

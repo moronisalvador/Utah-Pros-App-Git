@@ -120,10 +120,37 @@ describe('sendAutomatedMessage — SMS gate', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it('does NOT text a non-consented contact even with the switch ON', async () => {
+  it('does NOT text a non-consented contact even if the database returns implied permission', async () => {
     state.smsEnabled = true;
     state.contact = { ...OPTED_IN, opt_in_status: false };
-    const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
+    state.consentStatus = { allowed: true, code: 'IMPLIED_CONSENT' };
+    const res = await sendAutomatedMessage(
+      'sms', 'c1', null, {}, {}, { body: 'hi', now: DAYTIME },
+    );
+    expect(res.skipped).toBe(true);
+    expect(res.reason).toBe('no_consent');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT text when the database refuses, whatever the local row says', async () => {
+    state.smsEnabled = true;
+    state.contact = { ...OPTED_IN, opt_in_status: false };
+    state.consentStatus = { allowed: false, code: 'NO_CONSENT', source: 'pending_stop' };
+    const res = await sendAutomatedMessage(
+      'sms', 'c1', null, {}, {}, { body: 'hi', now: DAYTIME },
+    );
+    expect(res.skipped).toBe(true);
+    expect(res.reason).toBe('no_consent');
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('does NOT accept staff-only SERVICE_CONSENT for automated traffic', async () => {
+    state.smsEnabled = true;
+    state.contact = { ...OPTED_IN, opt_in_status: false };
+    state.consentStatus = { allowed: true, code: 'SERVICE_CONSENT' };
+    const res = await sendAutomatedMessage(
+      'sms', 'c1', null, {}, {}, { body: 'hi', now: DAYTIME },
+    );
     expect(res.skipped).toBe(true);
     expect(res.reason).toBe('no_consent');
     expect(sendMessage).not.toHaveBeenCalled();
