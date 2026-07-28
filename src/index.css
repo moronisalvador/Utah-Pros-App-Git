@@ -12594,7 +12594,12 @@ html.ui-glass .tech-nav {
    .crm-leads-filter-btn beside it — instead of `.input`'s 40px, so search, the
    date tabs and Filters share a top and bottom edge and read as one toolbar
    rather than three different heights. ── */
-.crm-leads-search { flex: 0 1 260px; min-width: 190px; max-width: 300px; }
+/* Deliberately a FIXED basis, not `flex: 1` into the free space. The Clear
+   button appears the moment a query becomes active, so a growing field would
+   shrink out from under the cursor on the first keystroke. 420px fits a
+   realistic longest query ("smith water damage provo") without the field
+   reading as an empty trough on a wide board. */
+.crm-leads-search { flex: 0 1 420px; min-width: 220px; }
 .crm-leads-search .crm-leads-search-input {
   height: 38px; font-size: var(--text-sm); padding: 0 30px;
   color: var(--crm-text-primary); background: var(--crm-bg-content);
