@@ -78,14 +78,25 @@ describe('PICK-01 — source contract', () => {
     expect(source).toMatch(/const locale = currentLocaleTag\(\);/);
   });
 
-  it('pins both formatters to UTC', () => {
-    // Without this, Intl formats in the device zone and a UTC-constructed
-    // Sunday renders as Saturday anywhere west of Greenwich, shifting every
-    // column heading by one. Caught by the Sunday assertion above.
-    const formatters = source.match(/new Intl\.DateTimeFormat\([^)]*\)/g) || [];
-    expect(formatters.length).toBeGreaterThanOrEqual(2);
-    for (const f of formatters) {
-      expect(f, f).toContain("timeZone: 'UTC'");
+  it('pins the reference-date formatters to UTC, and only those', () => {
+    // The rule is narrower than "always UTC". A formatter fed a synthetic
+    // Date.UTC(...) reference MUST be pinned, or the device zone shifts it and
+    // every column heading moves by one (that is the bug the Sunday assertion
+    // caught). A formatter fed a REAL calendar date must NOT be pinned, or the
+    // spoken label drifts a day for users east of Greenwich.
+    for (const helper of ['weekdayLabels', 'monthLabels']) {
+      const at = source.indexOf(`function ${helper}`);
+      expect(at, `${helper} not found`).toBeGreaterThan(-1);
+      const body = source.slice(at, source.indexOf('\n}', at));
+      expect(body, helper).toContain('Date.UTC(');
+      expect(body, helper).toContain("timeZone: 'UTC'");
+    }
+    for (const helper of ['dayAriaLabel', 'monthNavLabel']) {
+      const at = source.indexOf(`function ${helper}`);
+      expect(at, `${helper} not found`).toBeGreaterThan(-1);
+      const body = source.slice(at, source.indexOf('\n}', at));
+      expect(body, `${helper} formats a real date and must not be UTC-pinned`)
+        .not.toContain("timeZone: 'UTC'");
     }
   });
 });

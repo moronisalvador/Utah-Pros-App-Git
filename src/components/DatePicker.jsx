@@ -20,6 +20,30 @@ function weekdayLabels(locale) {
     fmt.format(new Date(Date.UTC(2026, 1, 1 + i))).replace(/\.$/, ''));
 }
 
+/**
+ * PICK-05: a bare "14" tells a screen-reader user nothing about which month or
+ * year they are in. Intl gives the full date in the active language for free.
+ */
+function dayAriaLabel(date, locale) {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    }).format(date);
+  } catch {
+    return String(date.getDate());
+  }
+}
+
+/** PICK-05: names the destination month, so the control says where it goes. */
+function monthNavLabel(viewDate, delta, locale) {
+  try {
+    const target = new Date(viewDate.getFullYear(), viewDate.getMonth() + delta, 1);
+    return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(target);
+  } catch {
+    return delta < 0 ? 'Previous month' : 'Next month';
+  }
+}
+
 function monthLabels(locale) {
   // Same reason, plus day 15 keeps any offset far from a month boundary.
   const fmt = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' });
@@ -168,7 +192,9 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
           borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)',
           cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)',
           color: value ? 'var(--text-primary)' : 'var(--text-tertiary)',
-          minHeight: 36, transition: 'border-color 120ms ease',
+          // PICK-05: 36 -> 48, the tech-mobile-ux.md primary floor. This is the
+          // control a technician taps first, with gloves on.
+          minHeight: 48, transition: 'border-color 120ms ease',
           ...(open ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px rgba(37,99,235,0.1)' } : {}),
         }}
       >
@@ -188,7 +214,10 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
         <div ref={calRef} style={{
           position: 'absolute', left: 0, zIndex: 50,
           ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
-          width: 280, background: 'var(--bg-primary)',
+          // PICK-05: widened from 280 so seven day cells can each carry a 44px
+          // hit area (7x44 = 308, plus 8px padding a side). At 280 the columns
+          // were ~38px, below the tech-mobile-ux.md floor for gloved hands.
+          width: 328, background: 'var(--bg-primary)',
           border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
           boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
         }}>
@@ -197,13 +226,21 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '10px 12px', borderBottom: '1px solid var(--border-light)',
           }}>
-            <button onClick={prevMonth} style={S.navBtn}>‹</button>
+            {/* PICK-05: the glyphs are decorative; without labels these
+                announce as "button" twice. */}
+            <button type="button" onClick={prevMonth} style={S.navBtn}
+              aria-label={monthNavLabel(viewDate, -1, locale)}>
+              <span aria-hidden="true">‹</span>
+            </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
                 {MONTHS[month]} {year}
               </span>
             </div>
-            <button onClick={nextMonth} style={S.navBtn}>›</button>
+            <button type="button" onClick={nextMonth} style={S.navBtn}
+              aria-label={monthNavLabel(viewDate, 1, locale)}>
+              <span aria-hidden="true">›</span>
+            </button>
           </div>
 
           {/* Weekday headers */}
@@ -230,37 +267,51 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
                   const isDisabled = (minDate && dateStr < min) || (maxDate && dateStr > max);
 
                   return (
-                    <div
+                    // PICK-05: a real <button>, not a click-div. The 44px hit
+                    // area is the button; the 34px circle stays the visual, so
+                    // the calendar looks the same but is reachable with gloves.
+                    // tech-mobile-ux.md bans hit areas under 24px regardless of
+                    // visual size — these were 34.
+                    <button
                       key={di}
+                      type="button"
+                      disabled={isDisabled}
+                      aria-label={dayAriaLabel(thisDate, locale)}
+                      aria-current={isToday ? 'date' : undefined}
+                      aria-pressed={isSelected}
                       onClick={() => !isDisabled && handleSelect(day)}
                       style={{
                         position: 'relative',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        width: 34, height: 34, margin: '0 auto',
+                        width: 44, height: 44, margin: '0 auto', padding: 0,
+                        border: 'none', background: 'transparent',
                         borderRadius: 'var(--radius-full)', cursor: isDisabled ? 'default' : 'pointer',
                         fontSize: 12, fontWeight: isSelected ? 700 : isToday ? 600 : 400,
                         fontFamily: 'var(--font-sans)',
                         color: isDisabled ? 'var(--text-tertiary)' : isSelected ? '#fff' : isToday ? 'var(--accent)' : 'var(--text-primary)',
-                        background: isSelected ? 'var(--accent)' : 'transparent',
                         opacity: isDisabled ? 0.4 : 1,
-                        transition: 'all 100ms ease',
-                      }}
-                      onMouseEnter={e => {
-                        if (!isDisabled && !isSelected) e.currentTarget.style.background = 'var(--bg-tertiary)';
-                      }}
-                      onMouseLeave={e => {
-                        if (!isSelected) e.currentTarget.style.background = 'transparent';
+                        WebkitTapHighlightColor: 'transparent',
                       }}
                     >
-                      {day}
+                      {/* The visual circle, sized independently of the target. */}
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: 'absolute', width: 34, height: 34,
+                          borderRadius: 'var(--radius-full)',
+                          background: isSelected ? 'var(--accent)' : 'transparent',
+                          transition: 'background 100ms ease',
+                        }}
+                      />
+                      <span style={{ position: 'relative' }}>{day}</span>
                       {/* Today dot */}
                       {isToday && !isSelected && (
-                        <span style={{
-                          position: 'absolute', bottom: 3, width: 3, height: 3,
+                        <span aria-hidden="true" style={{
+                          position: 'absolute', bottom: 6, width: 3, height: 3,
                           borderRadius: 2, background: 'var(--accent)',
                         }} />
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -291,7 +342,8 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
 
 const S = {
   navBtn: {
-    width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    // PICK-05: 28 -> 44. Month nav is a documented-secondary control.
+    width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center',
     border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
     background: 'var(--bg-primary)', cursor: 'pointer', fontSize: 16,
     color: 'var(--text-secondary)', fontFamily: 'var(--font-sans)',
