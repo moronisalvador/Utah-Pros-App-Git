@@ -251,11 +251,8 @@ export default function Login() {
             <Link
               key={to}
               to={to}
+              className="btn btn-ghost btn-lg"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                minHeight: 'var(--tech-min-tap, 44px)',
-                padding: '0 var(--space-2)',
                 color: 'var(--accent)',
                 fontSize: 'var(--text-sm)',
                 fontWeight: 500,

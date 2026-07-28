@@ -17,7 +17,8 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (subscribeToNotifications),
- *              @/hooks/useResumeRefetch (hidden-guarded poll + resume edge)
+ *              @/hooks/useResumeRefetch (hidden-guarded poll + resume edge),
+ *              @/components/ui (IconButton press/a11y/haptic contract)
  *   Data:      reads  → notifications (via get_notifications / get_unread_notification_count RPCs)
  *              writes → notifications (via mark_notification_read / mark_all_notifications_read RPCs)
  *
@@ -50,6 +51,7 @@ import { subscribeToNotifications } from '@/lib/realtime';
 import { linkForCurrentShell } from '@/lib/techShellRoutes';
 import { toast } from '@/lib/toast';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
+import { IconButton } from '@/components/ui';
 
 // Poll backoff: after a failure the count is worth far less than the noise of
 // retrying it every minute forever. Doubles per consecutive failure from the
@@ -307,22 +309,26 @@ export default function NotificationBell({
   // ─── SECTION: Render ───
   return (
     <div ref={rootRef} className="notification-bell" style={{ position: 'relative' }}>
-      <button
+      <IconButton
         ref={triggerRef}
         onClick={toggle}
-        title="Notifications"
-        aria-label="Notifications"
+        label="Notifications"
         aria-expanded={open}
         aria-controls="notification-bell-panel"
+        size={triggerClassName ? 'lg' : undefined}
         className={triggerClassName || undefined}
         data-active={triggerClassName ? (open ? 'true' : undefined) : undefined}
         style={triggerClassName
-          ? { position: 'relative' }
+          ? {
+              position: 'relative',
+              borderRadius: 'var(--tech-radius-button)',
+              border: `1px solid ${open ? 'var(--accent)' : 'var(--border-light)'}`,
+              background: open ? 'var(--accent-light)' : 'var(--bg-tertiary)',
+              color: open ? 'var(--accent)' : 'var(--text-secondary)',
+            }
           : {
-              position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: 36, height: 36, borderRadius: 'var(--radius-md)', border: 'none',
-              background: open ? 'var(--bg-tertiary)' : 'transparent', color: 'var(--text-secondary)',
-              cursor: 'pointer',
+              position: 'relative',
+              background: open ? 'var(--bg-tertiary)' : 'transparent',
             }}
       >
         <IconBell style={{ width: triggerClassName ? 20 : 19, height: triggerClassName ? 20 : 19 }} />
@@ -336,7 +342,7 @@ export default function NotificationBell({
             {unread > 9 ? '9+' : unread}
           </span>
         )}
-      </button>
+      </IconButton>
 
       {panelPresent && (
         <>
