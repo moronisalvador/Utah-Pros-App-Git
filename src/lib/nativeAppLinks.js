@@ -23,13 +23,15 @@
  */
 import { App } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
+import { NATIVE_APP_HTTPS_HOSTS } from './nativeHosts.js';
 
 export const NATIVE_APP_SCHEME = 'com.utahprosrestoration.upr';
 export const NATIVE_APP_SCHEME_HOST = 'app';
-export const NATIVE_APP_HTTPS_HOSTS = Object.freeze([
-  'utahpros.app',
-  'dev.utahpros.app',
-]);
+// Moved to nativeHosts.js (no imports) so the native BUILD SCRIPT can validate
+// its API origin against the same list — this file imports @capacitor/app, so a
+// plain Node script cannot load it. Imported AND re-exported: `export { x } from`
+// alone would not create the local binding this module uses below.
+export { NATIVE_APP_HTTPS_HOSTS };
 
 const MAX_TARGET_LENGTH = 8_192;
 const ID_VALUE = /^[A-Za-z0-9_-]{1,128}$/;
