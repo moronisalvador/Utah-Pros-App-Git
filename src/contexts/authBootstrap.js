@@ -39,6 +39,13 @@ export function getAccountLandingPath(role) {
  * exclusion is `crm_partner`, the external product identity, which had full
  * access to job data, claims, customer records and photos.
  *
+ * `manager` was in this list briefly and has been removed (NAV-01). It is not a
+ * real role: absent from AuthContext's SUPPORTED_EMPLOYEE_ROLES and from
+ * navKeys ROLES, so no employee can ever hold it. Listing it implied an
+ * identity that does not exist. Note the two canonical lists still disagree
+ * about `estimator` — AuthContext accepts it, navKeys ROLES omits it — which is
+ * why this list follows AuthContext, the one that actually admits a session.
+ *
  * This lives beside getAccountLandingPath deliberately: the landing redirect
  * and the route gate must not drift, and the refusal screen sends a blocked
  * account to getAccountLandingPath(role) rather than looping.
@@ -55,7 +62,6 @@ export const FIELD_SHELL_ROLES = Object.freeze([
   'supervisor',
   'estimator',
   'project_manager',
-  'manager',
 ]);
 
 export function canUseFieldShell(role) {

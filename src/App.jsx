@@ -322,7 +322,11 @@ function TechRoutes() {
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
-      <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
+      {/* NAV-01: TechClaimDetail gates the rooms grid on page:tech_rooms and
+          skips get_claim_rooms entirely when it is off, but this route had no
+          guard — so a flag-off user reaching the URL directly, or by back-nav
+          after the flag flipped, landed on an ungated screen. */}
+      <Route path="tech/claims/:claimId/rooms/:roomId" element={<FeatureRoute flag="page:tech_rooms"><ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
       {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
           (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is

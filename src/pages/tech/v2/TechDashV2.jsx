@@ -56,6 +56,7 @@ import CompletedRows from './dash/CompletedRows.jsx';
 import ComingUp from './dash/ComingUp.jsx';
 import CreateFAB from './dash/CreateFAB.jsx';
 import { selectHero, splitToday } from './dash/dashHelpers.js';
+import { ADMIN_MOBILE_FLAG, canAccessAdminMobile } from '@/components/admin-mobile';
 
 /**
  * @param {{ active?: boolean }} props - active = this pane is the visible tab.
@@ -63,7 +64,7 @@ import { selectHero, splitToday } from './dash/dashHelpers.js';
 export default function TechDashV2({ active = true }) {
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation('dash');
-  const { employee, db, logout } = useAuth();
+  const { employee, db, logout, isFeatureEnabled } = useAuth();
   const queryClient = useQueryClient();
 
   // ─── SECTION: Data fetching ──────────────
@@ -97,7 +98,16 @@ export default function TechDashV2({ active = true }) {
 
   const tasksTotal = appointments.reduce((s, a) => s + Number(a.task_total || 0), 0);
   const tasksDone = appointments.reduce((s, a) => s + Number(a.task_completed || 0), 0);
-  const isAdmin = employee?.role === 'admin';
+  // NAV-01: this gates the "Admin view" menu item, which navigates to
+  // adminDashHref(). On native the shim returns '/tech' — so an admin tapped it
+  // and silently stayed put. Asking canAccessAdminMobile instead means the item
+  // DISAPPEARS on native (the shim hard-returns false) rather than no-opping,
+  // and on web it additionally respects the page:admin_mobile flag, which a
+  // bare role check ignored. Same call shape TechMore already uses.
+  const isAdmin = canAccessAdminMobile({
+    role: employee?.role,
+    flagEnabled: isFeatureEnabled(ADMIN_MOBILE_FLAG),
+  });
 
   return (
     <TechV2Page>

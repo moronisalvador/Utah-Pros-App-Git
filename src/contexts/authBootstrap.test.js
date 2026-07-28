@@ -97,10 +97,28 @@ describe('getAccountLandingPath', () => {
 // render every /tech/* route: the landing redirect only fires on '/', so a
 // direct URL, a Universal Link or a notification tap bypassed it entirely.
 describe('canUseFieldShell', () => {
-  it.each(['field_tech', 'admin', 'office', 'supervisor', 'estimator', 'project_manager', 'manager'])(
+  it.each(['field_tech', 'admin', 'office', 'supervisor', 'estimator', 'project_manager'])(
     'admits the internal role %s',
     (role) => { expect(canUseFieldShell(role)).toBe(true); },
   );
+
+  it('does not admit "manager", which is not a real role', () => {
+    // NAV-01: absent from AuthContext's SUPPORTED_EMPLOYEE_ROLES and from
+    // navKeys ROLES, so no session can hold it. It was briefly in the allowlist
+    // where it granted nothing but implied an identity that does not exist.
+    expect(canUseFieldShell('manager')).toBe(false);
+  });
+
+  it('only lists roles a session can actually hold', () => {
+    // Guards against another phantom role being added from a stale grep.
+    const SUPPORTED = new Set([
+      'admin', 'office', 'project_manager', 'field_tech',
+      'estimator', 'supervisor', 'crm_partner',
+    ]);
+    for (const role of FIELD_SHELL_ROLES) {
+      expect(SUPPORTED.has(role), `${role} is not a supported employee role`).toBe(true);
+    }
+  });
 
   it('refuses crm_partner, the external product identity', () => {
     // Owner-ratified 2026-07-27. This identity previously reached job data,
