@@ -16,10 +16,12 @@
  *   lead, a log of every stage it's moved through, and a combined timeline of
  *   every call, text, note, and estimate tied to that contact. A filter bar
  *   above the board narrows
- *   what's shown: a date-range switch (Week / Month / All time, or a custom
- *   range) plus a criteria panel (source, sentiment, service needed, time in
- *   stage) — both pure client-side filters over the leads already loaded,
- *   no extra fetch.
+ *   what's shown: a search box, a date-range switch (Week / Month / All time,
+ *   or a custom range) plus a criteria panel (source, sentiment, service
+ *   needed, time in stage) — all pure client-side filters over the leads
+ *   already loaded, no extra fetch. Typing in the search box narrows the board
+ *   as you type, matching a lead's name, phone number, source, campaign, the
+ *   AI call summary, or a web-form answer.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/leads
@@ -70,6 +72,15 @@
  *     classes for identical visual feedback. The stage <select> in the
  *     detail panel still works as an always-available fallback on any
  *     device — tapping a card without dragging it still opens that panel.
+ *   - The board fetches only the BOARD_LEAD_LIMIT (200) most recent leads, so
+ *     search covers exactly what the board can see. Once that cap is actually
+ *     reached the filter bar says so in a line under it rather than letting the
+ *     search box imply it found everything (loading-error-states.md §5).
+ *   - Search deliberately does NOT read the raw call `transcription`, even
+ *     though the board loads it: this page never renders a transcript (Call Log
+ *     does), so a transcript-only hit would show a card with no visible reason
+ *     for matching. The AI summary and topics are searched instead — both are
+ *     surfaced on the card, so every match stays explainable.
  *   - The detail panel's "Submitted answers" section labels each field using
  *     the form's real published schema when it can load one (fetched by
  *     raw_payload.form_id); if that fetch fails or the lead predates a
@@ -86,7 +97,7 @@ import { normalizePhone, formatPhone } from '@/lib/phone';
 import { URGENT_TOPIC_RX } from '@/lib/crmPipeline';
 import { IconNote } from '@/components/Icons';
 import { IconTasks } from '@/lib/crmIcons';
-import { IconButton, StatusPill, ErrorState } from '@/components/ui';
+import { IconButton, StatusPill, ErrorState, SearchInput } from '@/components/ui';
 import ActivityTimeline from '@/components/crm/ActivityTimeline';
 import CrmDatePicker from '@/components/crm/CrmDatePicker';
 import TabLoading from '@/components/TabLoading';
@@ -305,6 +316,76 @@ function sentimentKeyFor(lead) {
 
 const emptyFilters = () => ({ sources: new Set(), campaigns: new Set(), sentiments: new Set(), services: new Set(), stageAges: new Set() });
 
+// ─── SECTION: Search (client-side, over the already-loaded board) ──────────────
+// Same architecture as the filter bar above: a pure filter over the `leads`
+// already in memory, no extra fetch, instant on every keystroke. The board
+// fetches the most-recent BOARD_LEAD_LIMIT leads, so search covers exactly
+// what the board can see — and says so out loud once that cap is actually
+// reached, rather than letting a search box imply completeness it doesn't have
+// (loading-error-states.md §5: truncation never dead-ends silently).
+const BOARD_LEAD_LIMIT = 200;
+
+// Split a query into terms that must ALL match (AND, not OR) — "smith water"
+// finds the Smith lead about water damage, not every lead mentioning either
+// word. Each term also carries a digits-only twin so a partial phone number
+// typed any way a human types it ("801-555", "(801) 555", "8015551234") hits
+// the same stored +18015551234. normalizePhone() cannot do that job: it
+// returns null below 10 digits, i.e. for every partial query.
+// eslint-disable-next-line react-refresh/only-export-components
+export function leadSearchTerms(query) {
+  return String(query || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(raw => {
+      const digits = raw.replace(/\D/g, '');
+      // 3+ digits before treating it as a phone fragment — one or two digits
+      // match a dollar amount or a date on half the board and are pure noise.
+      return { raw, digits: digits.length >= 3 ? digits : null };
+    });
+}
+
+// One flat lowercase string per lead holding every field someone would
+// plausibly search by. Built once per `leads` change (see searchIndex), never
+// per keystroke.
+//
+// Deliberately EXCLUDES the raw call `transcription`: this page never renders
+// it (that is Call Log's job), so a transcript-only hit would surface a card
+// with no visible reason for matching. The AI summary and topics ARE surfaced
+// here — the card's summary line, the Urgent badge, the Service-needed filter
+// — so a match on those stays explainable by something on screen.
+// eslint-disable-next-line react-refresh/only-export-components
+export function leadSearchText(lead) {
+  const analysis = lead.transcript_analysis || {};
+  const parts = [
+    lead.contact?.name, lead.caller_name,
+    lead.contact?.phone, lead.caller_number,
+    lead.source, lead.medium, lead.campaign,
+    analysis.summary, analysis.customer_email, analysis.customer_address,
+    Array.isArray(analysis.topics) ? analysis.topics.join(' ') : null,
+    lead.lost_reason, lead.notes,
+  ];
+  // A web-form lead keeps its answers in jsonb — the submitted name/email/
+  // message is often the ONLY identifying text it has (no transcript, and
+  // frequently no caller_name either).
+  if (lead.form_data && typeof lead.form_data === 'object') {
+    for (const value of Object.values(lead.form_data)) {
+      if (Array.isArray(value)) parts.push(value.join(' '));
+      else if (value !== null && typeof value !== 'object') parts.push(value);
+    }
+  }
+  for (const raw of [lead.caller_number, lead.contact?.phone]) {
+    if (raw) parts.push(String(raw).replace(/\D/g, ''));
+  }
+  return parts.filter(v => v !== null && v !== undefined && v !== '').join(' ').toLowerCase();
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function matchesLeadSearch(haystack, terms) {
+  if (!terms.length) return true;
+  return terms.every(t => haystack.includes(t.raw) || (t.digits !== null && haystack.includes(t.digits)));
+}
+
 export default function CrmLeads() {
   const { db, employee } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -335,6 +416,12 @@ export default function CrmLeads() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showFilterPanel, setShowFilterPanel] = useState(false);
   const [filters, setFilters] = useState(emptyFilters);
+
+  // Free-text search — the same kind of pure client-side filter as the rest of
+  // this bar. Kept in component state rather than the URL, matching the other
+  // filters: opening a lead is an in-page panel, not a route change, so nothing
+  // is lost by not round-tripping it through the query string.
+  const [search, setSearch] = useState('');
 
   // Card AI-summary inline expand/collapse — a lead id in this set shows its
   // full transcript_analysis.summary in place instead of the one-line
@@ -374,7 +461,7 @@ export default function CrmLeads() {
     try {
       const [stageRows, leadRows, positionRows] = await Promise.all([
         db.rpc('get_pipeline_stages', {}),
-        db.select('inbound_leads', 'spam_flag=eq.false&merged_into_lead_id=is.null&select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=200'),
+        db.select('inbound_leads', `spam_flag=eq.false&merged_into_lead_id=is.null&select=*,contact:contacts(name,phone)&order=occurred_at.desc,created_at.desc&limit=${BOARD_LEAD_LIMIT}`),
         db.select('lead_pipeline_stage', 'select=lead_id,stage_id,updated_at'),
       ]);
       setStages(stageRows || []);
@@ -436,13 +523,28 @@ export default function CrmLeads() {
     [leads]
   );
 
-  const hasActiveFilters = datePeriod !== 'all'
+  // One lowercase haystack per lead, rebuilt only when `leads` changes — so a
+  // keystroke costs ~200 String.includes calls, not 200 string rebuilds
+  // (perf-budget.md §5: memoize the hot path, and typing is one).
+  const searchIndex = useMemo(() => {
+    const index = new Map();
+    for (const lead of leads) index.set(lead.id, leadSearchText(lead));
+    return index;
+  }, [leads]);
+  const searchTerms = useMemo(() => leadSearchTerms(search), [search]);
+
+  // Split so the empty state can tell "nothing matched what you typed" apart
+  // from "nothing matched the criteria panel", and so each Clear button can be
+  // labelled for what is actually set.
+  const hasCriteriaFilters = datePeriod !== 'all'
     || filters.sources.size > 0 || filters.campaigns.size > 0 || filters.sentiments.size > 0
     || filters.services.size > 0 || filters.stageAges.size > 0;
+  const hasActiveFilters = hasCriteriaFilters || searchTerms.length > 0;
 
   const filteredLeads = useMemo(() => {
     const { start, end } = dateRangeFor(datePeriod, customRange);
     return leads.filter(lead => {
+      if (searchTerms.length > 0 && !matchesLeadSearch(searchIndex.get(lead.id) || '', searchTerms)) return false;
       if (start != null || end != null) {
         const ts = lead.occurred_at ? new Date(lead.occurred_at).getTime() : null;
         if (ts == null) return false;
@@ -460,7 +562,7 @@ export default function CrmLeads() {
       }
       return true;
     });
-  }, [leads, datePeriod, customRange, filters, stagePositions]);
+  }, [leads, datePeriod, customRange, filters, stagePositions, searchTerms, searchIndex]);
 
   const grouped = useMemo(() => groupLeadsByStage(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
   const pipelineValue = useMemo(() => weightedPipelineValue(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
@@ -488,7 +590,7 @@ export default function CrmLeads() {
       return next;
     });
   }, []);
-  const clearFilters = useCallback(() => { setFilters(emptyFilters()); setDatePeriod('all'); setCustomRange({ start: '', end: '' }); }, []);
+  const clearFilters = useCallback(() => { setFilters(emptyFilters()); setDatePeriod('all'); setCustomRange({ start: '', end: '' }); setSearch(''); }, []);
 
   // Commit a stage move (optionally with a lost reason). Optimistic; reverts on error.
   const commitMove = useCallback(async (lead, stageId, reason) => {
@@ -732,6 +834,15 @@ export default function CrmLeads() {
 
         {leads.length > 0 && (
           <div className="crm-leads-filterbar">
+            <SearchInput
+              className="crm-leads-search"
+              inputClassName="crm-leads-search-input"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search leads…"
+              aria-label="Search leads by name, phone, source or call summary"
+            />
+
             <div className="crm-board-period" role="tablist" aria-label="Date range">
               {DATE_PERIODS.map(p => (
                 <button
@@ -841,8 +952,21 @@ export default function CrmLeads() {
               )}
             </div>
 
-            {hasActiveFilters && <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm" onClick={clearFilters}>Clear filters</button>}
+            {hasActiveFilters && (
+              <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm" onClick={clearFilters}>
+                {hasCriteriaFilters ? 'Clear filters' : 'Clear search'}
+              </button>
+            )}
           </div>
+        )}
+
+        {/* At the fetch cap the board genuinely cannot see older leads, so a
+            search box would otherwise imply a completeness it doesn't have.
+            Only rendered when the cap is actually hit (loading-error-states.md §5). */}
+        {leads.length >= BOARD_LEAD_LIMIT && searchTerms.length > 0 && (
+          <p className="crm-leads-search-cap">
+            Searching the {BOARD_LEAD_LIMIT} most recent leads — older ones aren’t loaded on this board.
+          </p>
         )}
       </div>
 
@@ -857,8 +981,14 @@ export default function CrmLeads() {
       ) : filteredLeads.length === 0 ? (
         <div className="crm-empty-state">
           <IconLeads className="crm-empty-icon" />
-          <p>No leads match the current filters.</p>
-          <button className="crm-btn crm-btn-primary" onClick={clearFilters}>Clear filters</button>
+          <p>
+            {searchTerms.length > 0
+              ? <>No leads match “{search.trim()}”{hasCriteriaFilters ? ' with the current filters' : ''}.</>
+              : 'No leads match the current filters.'}
+          </p>
+          <button className="crm-btn crm-btn-primary" onClick={clearFilters}>
+            {hasCriteriaFilters ? 'Clear filters' : 'Clear search'}
+          </button>
         </div>
       ) : (
         <div className="crm-board" ref={boardRef}>
