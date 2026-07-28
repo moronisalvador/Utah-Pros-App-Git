@@ -3401,10 +3401,11 @@ Zero migrations, zero CRM-file edits.
 
 ---
 
-## Native iOS App (Capacitor) — mostly shipped
+## Native iOS App (Capacitor) — source-hardened, release gates remain
 
-Camera, push registration, geolocation, biometric gate, and the Capgo OTA updater below are all
-live, not in-progress. Only the privacy-screen plugin (see Deferred below) is genuinely still pending.
+Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
+popover are integrated in source. Push enrollment and Capgo OTA remain exact-default-off, and
+distribution signing/TestFlight/App Review remain separate owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3416,16 +3417,25 @@ live, not in-progress. Only the privacy-screen plugin (see Deferred below) is ge
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
-  - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeBiometric.js` + `<BiometricGate>` in App.jsx. Cold-launch gate on native: if a Supabase session exists and the flag is set, show "Unlocking UPR…" lock screen and prompt Face ID / Touch ID / passcode. Cancel or failure → sign out + show login. Flag is enabled in Login.jsx after a successful password login on native, cleared in AuthContext.logout. Token still lives in localStorage — full Keychain migration is future hardening.
-  - `@capgo/capacitor-updater` — OTA React/CSS/HTML updates without App Store resubmit. `src/lib/nativeUpdater.js` exposes `markBundleReady()` (called on App.jsx mount — critical, Capgo rolls back otherwise), plus `checkForUpdate` and `getCurrentBundleInfo` helpers. `capacitor.config.json` plugin config: `autoUpdate: true`, `defaultChannel: production`, auto-cleanup on success/fail.
+  - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
+  - `@capgo/capacitor-updater` — OTA React/CSS/HTML support remains exact-default-off. `src/lib/nativeUpdater.js` exposes guarded helpers, but `CapacitorUpdater.autoUpdate` is `false`, `VITE_NATIVE_OTA_ENABLED` must be exactly `true`, and no boot path calls `notifyAppReady()` pending a real health checkpoint.
 - **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
-  manual-only and no-direct-secret-condition boundaries. It remains owner-gated on Apple enrollment,
-  signing secrets, Xcode archive/device proof, and an explicitly dispatched release.
+  manual-only and no-direct-secret-condition boundaries. `ios/App/Version.xcconfig` is the single
+  marketing-version source (`1.0.0`); the workflow supplies a unique build from its run
+  number/attempt, and native Settings displays the installed version/build through
+  `App.getInfo()`. It remains owner-gated on Apple enrollment, signing secrets, distribution archive
+  proof, and an explicitly dispatched release.
+- **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
+  uses a native-only scale/fade enter plus accelerated exit lifecycle, returns focus, closes on
+  Escape/click-away/route/inactive-pane changes, and resolves immediately for Reduce Motion. The
+  2026-07-28 iPhone 17 Pro simulator recording verified multi-frame motion; physical-device feel and
+  VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
-- **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
+- **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
+  resign/background and removes it after the app becomes active.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
 
 ---

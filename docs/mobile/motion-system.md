@@ -118,6 +118,24 @@ Never reuse a keyframe that changes an unrelated baseline transform. The audited
 - Haptics: impact/notification/selection helpers only on native, respecting user/platform settings;
   use the plugin's complete selection lifecycle.
 
+### Native notification popover
+
+The native field-shell bell now owns one stable popover lifecycle:
+
+- enter scales from `0.96` to `1` while fading in on the fast motion token;
+- exit accelerates over 75% of that duration before unmount;
+- the badge may scale from `0.9` to `1` only when it mounts;
+- subsequent Realtime/resume refreshes preserve existing rows and update silently rather than
+  blanking or remounting the list;
+- Escape, click-away, route changes, and a persistent pane becoming inactive all run the same close
+  lifecycle, with focus entering the dialog and returning to the bell;
+- Reduce Motion establishes the open or closed state immediately.
+
+The behavior is scoped to `:root[data-native='true']` at the mobile breakpoint; the office/PWA bell
+keeps its existing presentation. A 2026-07-28 iPhone 17 Pro simulator frame recording verified a
+multi-frame enter and exit instead of the prior flash. Physical-iPhone feel and VoiceOver remain
+release-device checks.
+
 ## Gestures
 
 Native scrolling/scroll snap is the default. Do not add custom drag/swipe solely for novelty.
