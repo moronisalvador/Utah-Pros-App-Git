@@ -120,6 +120,51 @@
             })(urls[j]);
           }
         }, 12000);
+
+        // Silent path #2 — a poisoned STYLESHEET (added 2026-07-27 after a
+        // second outage on the same mechanism).
+        //
+        // The check above deliberately bails when #root has rendered, because
+        // for a poisoned module the app cannot render at all. A poisoned
+        // stylesheet is the opposite: every script loads, React mounts, the
+        // page renders — completely unstyled, because the browser refuses
+        // text/html for a stylesheet under nosniff. root.childElementCount is
+        // > 0, so the guard above returns immediately and never looks. That is
+        // exactly how dev.utahpros.app served every page unstyled on
+        // 2026-07-27 with nothing in the console.
+        //
+        // So this runs INDEPENDENTLY of whether the app rendered, and asks the
+        // only question that matters: is a stylesheet we asked for being
+        // answered with something that is not CSS?
+        window.setTimeout(function () {
+          var links = document.querySelectorAll('link[rel=stylesheet][href]');
+          var urls = [];
+          for (var i = 0; i < links.length; i++) {
+            // Our own hashed output only. A third-party sheet (Google Fonts)
+            // is not ours to repair and must never trigger a reload.
+            if (isAsset(links[i].href)) urls.push(links[i].href);
+          }
+          if (!urls.length) return;
+
+          var done = 0;
+          var bad = [];
+          for (var j = 0; j < urls.length; j++) {
+            (function (url) {
+              // No cache option: read exactly what the CSS loader would.
+              fetch(url).then(function (r) {
+                var ct = r.headers.get('content-type') || '';
+                // ONLY a confirmed wrong content-type counts. Unlike the module
+                // path above, a network failure is NOT treated as poisoned — a
+                // dropped request on a tech's LTE must never cost them a
+                // reload when the stylesheet is fine.
+                if (ct && ct.indexOf('css') === -1) bad.push(url);
+              })['catch'](function () { /* network flake: not a poisoning signal */ })
+                .then(function () {
+                  if (++done === urls.length && bad.length) repairAndReload(bad);
+                });
+            })(urls[j]);
+          }
+        }, 12000);
       })();
     </script>
     <script type="module" src="/src/main.jsx"></script>

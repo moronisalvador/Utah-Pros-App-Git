@@ -1,0 +1,86 @@
+# ════════════════════════════════════════════════
+# Deployed-site smoke check
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Every half hour, asks the live sites for the files a browser needs to start
+#   and checks each one really is JavaScript or CSS — not the site's HTML page
+#   wearing a .js or .css name. If one is wrong, this fails and emails us.
+#
+# WHY IT EXISTS:
+#   Twice on 2026-07-27 a deploy race let Cloudflare cache index.html under a
+#   hashed asset URL at HTTP 200. `_headers` marks /app-assets/* immutable for a
+#   year, so that answer stuck. First time it hit .js and the app was a blank
+#   white screen; second time it hit .css and every page rendered unstyled.
+#   Both times every automated check was green, because they all validated the
+#   BUILD. Nothing validated what the live site handed a browser.
+#
+#   `scripts/smoke-deploy.mjs` was written for exactly this and has existed
+#   since the first outage — but was never wired to anything, so it never ran.
+#   That is what this file fixes.
+#
+# WHY A SCHEDULE, NOT A DEPLOY TRIGGER:
+#   Cloudflare Pages does not create GitHub deployments for this repo (the
+#   deployments API returns empty), so there is no deployment_status event to
+#   hook. Pages' own check also goes green well before the alias swaps —
+#   measured ~9 minutes early on 2026-07-27 — so a push-triggered run would
+#   check the OLD deployment and pass while the new one is broken. Waiting it
+#   out in a job would mean paying for ten idle billable minutes per push.
+#
+#   A poll every 30 minutes costs nothing while idle and catches a poisoning
+#   whenever it happens, not only after our own pushes — which matters, because
+#   ANY request landing in a deploy window can poison the edge, including a
+#   user's. Worst case is ~30 minutes of exposure instead of "until a human
+#   happens to look", which is how both outages were found.
+#
+# WHEN IT FAILS:
+#   The report names the remedy. "EDGE POISONED" means the origin is fine and a
+#   Cloudflare cache purge fixes it. "ORIGIN SERVING HTML" means the deployment
+#   itself is bad and a purge will not help.
+# ════════════════════════════════════════════════
+
+name: Deploy smoke
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub runs cron on UTC and may delay under load;
+    # this check is not time-critical to the minute.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Single site to check (blank = both dev and production)'
+        required: false
+        type: string
+
+concurrency:
+  # A backed-up schedule must not stack runs.
+  group: deploy-smoke
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      # Never stop checking production because dev failed, and vice versa.
+      fail-fast: false
+      matrix:
+        site:
+          - https://dev.utahpros.app
+          - https://utahpros.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # No install: smoke-deploy.mjs is deliberately dependency-free so it can
+      # run against any URL without the repo being built.
+      - name: Smoke ${{ matrix.site }}
+        if: ${{ github.event.inputs.url == '' || github.event.inputs.url == matrix.site }}
+        run: node scripts/smoke-deploy.mjs "${{ matrix.site }}"
