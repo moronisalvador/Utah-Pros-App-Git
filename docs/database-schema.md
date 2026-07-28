@@ -256,11 +256,28 @@ is refused when the signing request has no server-observed signer IP. The broadl
 
 The service-role-only `complete_sign_request_with_work_authorization_sms_consent(...)` invoker RPC
 calls the existing deployed completion function and inserts qualifying evidence in the same
-transaction. `get_service_sms_consent_status(uuid,text)` keeps its signature and existing response
-vocabulary, checks DND/opt-out/pending STOP/global state first, and then accepts either the existing
-staff-attested service row or matching signed-authorization evidence. The migration never updates
-`contacts.opt_in_status`. A concrete rollback restores the read-only-captured pre-change status
-body before removing the wrapper/table. None of this is live until separately applied and verified.
+transaction. In that earlier migration, `get_service_sms_consent_status(uuid,text)` keeps its
+signature and then-existing response vocabulary, checks DND/opt-out/pending STOP/global state first,
+and accepts either the existing staff-attested service row or matching signed-authorization
+evidence. The migration never updates `contacts.opt_in_status`. A concrete rollback restores the
+read-only-captured pre-change status body before removing the wrapper/table. None of this is live
+until separately applied and verified.
+
+### Direct-service implied SMS decision (repository only; not applied)
+
+Migration `20260728000000_sms_consent_opt_out_only.sql` keeps the frozen
+`get_service_sms_consent_status(uuid,text) -> jsonb` signature and adds the distinct
+`IMPLIED_CONSENT` response code after every existing DND, explicit opt-out, pending STOP,
+duplicate-phone, phone-mismatch/change, global-opt-in, service-attestation, and signed-work-
+authorization branch. It changes no table, column, policy, grant, or business row and reasserts
+service-role-only execution.
+
+An `allowed=true` response is not sufficient authorization to send: every service-role caller must
+allowlist the returned code for its exact purpose. Only the staff-written direct 1:1 service-message
+path accepts `IMPLIED_CONSENT`. Automated, scheduled, group, broadcast, bulk, campaign, and
+marketing paths accept `GLOBAL_OPT_IN` only; `SERVICE_CONSENT` also remains direct-staff-only.
+The concrete rollback restores `NO_CONSENT`. Until the exact migration is separately reviewed,
+authorized, applied, and verified, the live database does not return `IMPLIED_CONSENT`.
 
 ## Known limits
 

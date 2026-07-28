@@ -68,8 +68,11 @@ bindings and provider consoles.
   chokepoint, consumes the service-only consent decision, and adds Utah Pros identification plus
   first-conversation STOP instructions before provider dispatch. Recording permission never
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
-  Scheduled and automated SMS call the same suppression-aware status boundary but accept only
-  `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
+  The mobile thread does not call the attestation GET endpoint on open; the server rechecks when
+  staff presses Send. Under the reviewed 2026-07-28 opt-out-only rollout, only a staff-written
+  direct service message may accept the distinct `IMPLIED_CONSENT` code after the matching
+  migration is separately applied. Automated, scheduled, group, broadcast, bulk, marketing, and
+  campaign sends still require `GLOBAL_OPT_IN`; `SERVICE_CONSENT` also remains direct-staff-only.
 - The UPR e-sign Worker has a repository-authored, not-yet-released bridge for native Work
   Authorizations. It recognizes only the pinned rendered SMS disclosure and asks a service-only
   database wrapper to complete the signature plus store linked immutable evidence atomically.

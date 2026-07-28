@@ -285,16 +285,24 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 ## Mobile person-to-person messaging
 
 - Starting a conversation is not consent and never sends a message.
-- A contact's presence in UPR is not consent evidence. Direct SMS/MMS stays blocked until the
-  authoritative consent decision allows it; loading, read failure, DND, STOP, phone mismatch, and
-  missing evidence fail closed.
-- Active internal admin/office employees may attest documented prior service consent. Technicians
-  may view the blocked state but cannot create the evidence record.
-- A native UPR Work Authorization with the pinned SMS disclosure may satisfy the same narrow status
-  decision without a manual employee attestation; it still cannot clear DND/STOP/opt-out or create
-  global, automated, group, broadcast or campaign consent.
+- Owner decision 2026-07-28: staff-written direct service messages use an opt-out-only model. A
+  reachable contact phone with no recorded objection may produce the distinct `IMPLIED_CONSENT`
+  decision for that one-to-one path.
+  DND, explicit opt-out, pending STOP, phone mismatch, missing contact/phone, and an unavailable or
+  unknown server decision still fail closed before provider selection. Automated, scheduled,
+  group, broadcast, bulk, marketing, and campaign traffic still require recorded global opt-in.
+- Active internal admin/office employees may still attest documented prior service consent, and a
+  native UPR Work Authorization with the pinned SMS disclosure may still provide stronger evidence.
+  Technicians cannot create either record, and neither evidence path can clear DND/STOP/opt-out.
+- The mobile thread no longer performs a consent-status request on open. It derives the visible
+  DND state from the already-loaded contact and leaves the server as the final authority at Send.
+  An explicit server refusal never falls back to another channel.
 - Recording consent never automatically sends or retries a draft. Staff must explicitly press Send,
   and the server rechecks the complete consent/DND boundary.
 - Internal notes remain available when customer messaging is blocked because they do not leave UPR.
 - CallRail is person-to-person only. Scheduled, automated, group, bulk, campaign, and broadcast
   sends never use it.
+- The opt-out-only source is committed as
+  `20260728000000_sms_consent_opt_out_only.sql` but remains inert until that exact migration is
+  separately approved, applied, and verified on the shared project: workers accept
+  `IMPLIED_CONSENT` only for the direct staff path, while the current database does not yet return it.
