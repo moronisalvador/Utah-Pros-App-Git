@@ -19,7 +19,7 @@
  *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (subscribeToNotifications),
  *              @/hooks/useResumeRefetch (hidden-guarded poll + resume edge),
  *              @/components/ui (IconButton press/a11y/haptic contract),
- *              @/components/TabLoading, @/lib/toast
+ *              @/components/TabLoading, @/lib/nativeHaptics, @/lib/toast
  *   Data:      reads  → notifications (via get_notifications / get_unread_notification_count RPCs)
  *              writes → notifications (via mark_notification_read / mark_all_notifications_read RPCs)
  *
@@ -50,6 +50,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToNotifications } from '@/lib/realtime';
 import { linkForCurrentShell } from '@/lib/techShellRoutes';
+import { impact } from '@/lib/nativeHaptics';
 import { err, toast } from '@/lib/toast';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { IconButton } from '@/components/ui';
@@ -288,6 +289,7 @@ export default function NotificationBell({
   };
 
   const openItem = async (item) => {
+    impact('light');
     closePanel({ restoreFocus: false });
     if (!item.read_at) {
       const priorUnread = unread;
@@ -312,6 +314,7 @@ export default function NotificationBell({
 
   const markAll = async () => {
     if (markAllPending) return;
+    impact('light');
     const priorUnread = unread;
     const priorItems = items;
     setMarkAllPending(true);
@@ -326,6 +329,11 @@ export default function NotificationBell({
     } finally {
       setMarkAllPending(false);
     }
+  };
+
+  const retryList = () => {
+    impact('light');
+    loadList();
   };
 
   // ─── SECTION: Render ───
@@ -395,64 +403,50 @@ export default function NotificationBell({
             borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)', overflow: 'hidden',
             }}
           >
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '10px 14px', borderBottom: '1px solid var(--border-light)',
-            }}>
-              <span id="notification-bell-title" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Notifications</span>
+            <div className="notification-bell__header">
+              <span className="notification-bell__heading">
+                <span id="notification-bell-title" className="notification-bell__title">Notifications</span>
+                <span className="notification-bell__subtitle">Recent updates</span>
+              </span>
               {unread > 0 && (
-                <button disabled={markAllPending} onClick={markAll} style={{
-                  border: 'none', background: 'none', cursor: 'pointer',
-                  fontSize: 12, fontWeight: 600, color: 'var(--accent)',
-                }}>
+                <button className="notification-bell__mark-all" disabled={markAllPending} onClick={markAll}>
                   {markAllPending ? 'Marking…' : 'Mark all read'}
                 </button>
               )}
             </div>
 
-            <div style={{ overflowY: 'auto' }}>
+            <div className="notification-bell__list">
               {loading && !hasLoadedListRef.current ? (
                 <TabLoading label="Loading notifications…" />
               ) : listError ? (
-                <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
-                  <div style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: 6 }}>Couldn't load notifications</div>
+                <div className="notification-bell__state">
+                  <div className="notification-bell__error-title">Couldn't load notifications</div>
                   <button
-                    onClick={loadList}
-                    style={{
-                      border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)',
-                      background: 'var(--bg-primary)', color: 'var(--text-primary)',
-                      padding: '6px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                    }}
+                    className="notification-bell__retry"
+                    onClick={retryList}
                   >
                     Try again
                   </button>
                 </div>
               ) : items.length === 0 ? (
-                <div style={{ padding: '32px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>
+                <div className="notification-bell__state notification-bell__state--empty">
                   No notifications yet
                 </div>
               ) : (
-                items.map((item, i) => (
+                items.map((item) => (
                   <button
                     key={item.id}
+                    className="notification-bell__item"
+                    data-unread={item.read_at ? undefined : 'true'}
                     onClick={() => openItem(item)}
-                    style={{
-                      display: 'flex', gap: 10, width: '100%', textAlign: 'left',
-                      padding: '11px 14px', border: 'none', cursor: 'pointer',
-                      borderBottom: i === items.length - 1 ? 'none' : '1px solid var(--border-light)',
-                      background: item.read_at ? 'var(--bg-primary)' : 'var(--accent-light)',
-                    }}
                   >
-                    <span style={{
-                      flexShrink: 0, marginTop: 5, width: 7, height: 7, borderRadius: '50%',
-                      background: item.read_at ? 'transparent' : 'var(--accent)',
-                    }} />
-                    <span style={{ minWidth: 0, flex: 1 }}>
-                      <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{item.title}</span>
+                    <span className="notification-bell__indicator" aria-hidden="true" />
+                    <span className="notification-bell__copy">
+                      <span className="notification-bell__item-title">{item.title}</span>
                       {item.body && (
-                        <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginTop: 1, lineHeight: 1.4 }}>{item.body}</span>
+                        <span className="notification-bell__body">{item.body}</span>
                       )}
-                      <span style={{ display: 'block', fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3 }}>{timeAgo(item.created_at)}</span>
+                      <span className="notification-bell__time">{timeAgo(item.created_at)}</span>
                     </span>
                   </button>
                 ))
