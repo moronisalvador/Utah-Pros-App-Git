@@ -132,9 +132,10 @@ The native field-shell bell now owns one stable popover lifecycle:
 - Reduce Motion establishes the open or closed state immediately.
 
 The behavior is scoped to `:root[data-native='true']` at the mobile breakpoint; the office/PWA bell
-keeps its existing presentation. A 2026-07-28 iPhone 17 Pro simulator frame recording verified a
-multi-frame enter and exit instead of the prior flash. Physical-iPhone feel and VoiceOver remain
-release-device checks.
+keeps its existing presentation. A 2026-07-28 simulator visual check observed multi-frame enter and
+exit instead of the prior flash, but its unsanitized recording was deleted and is not release
+evidence. A sanitized SHA-bound recapture, physical-iPhone feel, and VoiceOver remain release-device
+checks.
 
 ## Gestures
 

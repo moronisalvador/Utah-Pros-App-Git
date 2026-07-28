@@ -49,11 +49,13 @@ not included in the original 37-finding or 11-found-in-flight counts:
   accessible scale/fade enter/exit lifecycle with reduced-motion, focus, Escape, route, and
   persistent-pane handling.
 
-An authenticated iPhone 17 Pro simulator build was installed and exercised from the exact wave
-source: retained-session terminate/relaunch opened the dashboard without a biometric gate, Settings
-showed `Version 1.0.0 (1)`, and a frame recording showed multi-frame bell enter/exit. That is
-simulator evidence, not distribution-signed archive, TestFlight, VoiceOver, or complete
-physical-device qualification.
+An authenticated iPhone 17 Pro simulator build was installed and exercised during the wave:
+retained-session terminate/relaunch opened the dashboard without a biometric gate and Settings
+showed `Version 1.0.0 (1)`. An initial bell recording visually showed multi-frame enter/exit, but it
+contained authenticated notification/customer information and was permanently deleted during
+review; it is not retained release evidence. A sanitized SHA-bound recapture remains required,
+along with distribution-signed archive, TestFlight, VoiceOver, and complete physical-device
+qualification.
 
 ---
 

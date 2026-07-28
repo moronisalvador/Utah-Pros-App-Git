@@ -3431,7 +3431,8 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses a native-only scale/fade enter plus accelerated exit lifecycle, returns focus, closes on
   Escape/click-away/route/inactive-pane changes, and resolves immediately for Reduce Motion. The
-  2026-07-28 iPhone 17 Pro simulator recording verified multi-frame motion; physical-device feel and
+  2026-07-28 simulator visual check observed multi-frame motion, but the recording contained
+  authenticated data and was deleted; sanitized SHA-bound recapture, physical-device feel, and
   VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
 - **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
