@@ -279,20 +279,25 @@ terminated, sign-in/account switch, recovery/signing, and unsaved-work/back beha
 
 ## Native push
 
-Native Push enrollment runs only when `VITE_NATIVE_PUSH_ENABLED` is exactly `true`; the example and
-release posture are `false`. Listener setup is independent of enrollment and never requests
-permission/registers. Foreground receipt emits only a constant refresh signal; an explicit tap
-passes one normalized allowlisted route to the shared native coordinator.
+Native Push enrollment runs only when `VITE_NATIVE_PUSH_ENABLED` is exactly
+`true` and `VITE_APNS_ENV` is exactly `sandbox` or `production`; the example
+release posture remains disabled. Listener setup is independent of enrollment
+and never requests permission/registers. Foreground receipt emits only a
+constant refresh signal; an explicit tap passes one normalized allowlisted
+route to the shared native coordinator.
 
 Registration has generation/cancellation guards. Account cleanup invalidates late registration
 before awaiting, deletes the old installation's server binding while the old authenticated client
 is still available, revokes local delivery, and clears stored token state. Unknown/failed server or
 local detach prevents readiness.
 
-The hardened S1h source makes all raw token tables browser-inaccessible and permits browser
-endpoint/token refresh only for the same current owner; foreign ownership raises `42501`.
-Service-role dispatch/prune compatibility remains. S1h is unapplied and not exact
-database-behavior-verified, so the deployed database contract remains an independent blocker.
+The focused `20260728223000_native_apns_token_boundary.sql` source makes raw
+native tokens browser-inaccessible, derives the current active internal
+employee inside selector-free enrollment/deletion RPCs, and separates sandbox
+from production. Foreign ownership raises `42501`; existing environment-unknown
+rows stay inert. Its isolated behavioral matrix passes. It is not live until a
+separate shared-project apply and catalog verification. The broader S1h source
+remains unapplied and is not required for this focused activation.
 
 Do not enable native push until:
 

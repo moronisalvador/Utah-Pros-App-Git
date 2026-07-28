@@ -332,8 +332,10 @@ Open external/release gates:
 - App Store Connect app record **created** 2026-07-28 as “UPR Field Operations”
   (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
   screenshot fields remain incomplete;
-- APNs key and Cloudflare Preview/Production sender variables are configured, but enrollment stays
-  exact-default-off pending S1h live verification, deployment, and a new signed build;
+- APNs key and Cloudflare Preview/Production sender variables are configured,
+  but enrollment stays exact-default-off pending the focused native-token
+  migration, explicit `VITE_APNS_ENV` bindings, deployment, and a new signed
+  build. Broad S1h is not a Push activation prerequisite;
 - clean-source final archive/IPA verification, internal TestFlight upload/install,
   Universal/custom link, recovery/signing, Push, background/privacy, biometric,
   account-switch, permission, and offline physical-device matrix;

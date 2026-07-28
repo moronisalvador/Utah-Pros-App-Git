@@ -45,6 +45,8 @@ them back into one.
   repository.
 - Production uses `APNS_ENV=production`; Preview uses `APNS_ENV=sandbox`.
 - `VITE_NATIVE_PUSH_ENABLED=false` remains explicit in both environments.
+- The native build additionally requires `VITE_APNS_ENV`: local development
+  and Preview use `sandbox`; TestFlight/App Store use `production`.
 - The first generated key was revoked before use after a secret-handling trace
   exposed it during setup. Its local file and the replacement key's local file
   were permanently removed; only the encrypted Cloudflare copy of the active
@@ -88,21 +90,22 @@ failure rather than an explicit configuration error.
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
 | `APNS_TOPIC` | `com.utahprosrestoration.upr` |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
-| `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until S1h is live-verified |
+| `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until the focused native-token migration is live-verified |
+| `VITE_APNS_ENV` | native debug/Preview: `sandbox`; TestFlight/App Store: `production` |
 
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
 
 ## Remaining activation sequence
 
-1. Complete exact isolated qualification for
-   `20260727022920_mobile_personal_ownership_boundary.sql`, obtain a fresh
-   checksum-pinned owner apply authorization, apply only that migration, and
-   verify it live. Its identity-authority, page-access-provenance, and identity-
-   containment dependencies are already live and must not be replayed.
-2. Change `VITE_NATIVE_PUSH_ENABLED` to the exact string `true` in Cloudflare
-   Preview and Production, and set the same release-environment value for the
-   native archive workflow.
+1. Apply and live-verify the already-isolated
+   `20260728223000_native_apns_token_boundary.sql`. It leaves existing
+   environment-unknown tokens inert, exposes only selector-free redacted RPCs,
+   and does not require the broader unapplied S1h migration.
+2. Set `VITE_APNS_ENV=sandbox` for native Preview/debug builds and
+   `VITE_APNS_ENV=production` for TestFlight/App Store. Change
+   `VITE_NATIVE_PUSH_ENABLED` to exact lowercase `true` only in compatible
+   builds.
 3. Deploy compatible `dev` and production bundles, build the final clean-source
    signed native archive, and verify the archive carries
    `aps-environment=production`. The local qualification archive above proves
@@ -114,6 +117,7 @@ production. Only development-signed device builds use the sandbox.
    registration/delivery/tap proof from the TestFlight install.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
-unset, and every value other than exact lowercase `true` keep enrollment off.
+unset, and every value other than exact lowercase `true` keep enrollment off;
+so does a missing or malformed `VITE_APNS_ENV`.
 Cloudflare changes take effect on the next deployment; the native flag is also a
 build-time value, so an already-installed IPA cannot be activated remotely.
