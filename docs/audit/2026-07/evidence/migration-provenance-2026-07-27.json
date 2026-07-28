@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-27T23:46:53Z",
+  "capturedAt": "2026-07-28T00:28:17Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "45633aea0e01b04d6178b17562555ee5626e4ee5",
+  "captureBaseCommit": "6341ef0ac68773e6fc49482b8e03eeadbdc63ee4",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -179,6 +179,10 @@
     {
       "name": "upsert_employee_page_access_provenance_reconciliation",
       "version": "20260727233845"
+    },
+    {
+      "name": "mobile_employee_identity_containment",
+      "version": "20260728002105"
     }
   ],
   "functions": [

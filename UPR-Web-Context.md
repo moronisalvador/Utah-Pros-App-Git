@@ -8823,12 +8823,50 @@ real authenticated session — a fresh login resolves the RPC and publishes the 
 roster, so an active external account can enumerate the active internal roster (names, roles,
 colors, avatars — no email, no pay). Owner reviewed and approved shipping as-is.
 
-**Still unapplied, and ORDER-CRITICAL:** `20260726182000_mobile_employee_identity_containment.sql`
-revokes `employees` to four columns and restricts reads to the caller's own row. Code on `main`
-reads `employees` directly in 14 files. One database serves both branches, so this must be applied
-only AFTER `dev` is promoted to `main` and production is confirmed serving the new bundle —
-otherwise it breaks the schedule board, timesheets, the team screen and the crew pickers on
-production.
+**APPLIED to the shared database 2026-07-28 (owner-authorized): `20260726182000_mobile_employee_identity_containment.sql`
+→ live ledger version `20260728002105`.** It drops both `employees` policies for a single
+`employees_self_identity_read` (`authenticated`, SELECT, `auth_user_id = auth.uid()`), revokes ALL
+table privileges from `PUBLIC, anon, authenticated`, and re-grants column SELECT on exactly
+`(id, auth_user_id, role, is_active, is_external)`. `get_all_employees()` is now admin/service-only;
+commission read and write gate on the new `can_current_employee_access_settings()` helper
+(EXECUTE granted to `postgres` only — the definers call it internally).
+
+**What it actually closed, measured before the apply:** `anon` held all 8 table privileges plus
+`allow_anon_read_employees` (`FOR SELECT`, `USING (true)`). The publishable key ships in the browser
+bundle, so every employee's name, email, phone, `hourly_rate`, `overtime_rate` and commission was
+readable **without logging in**. Post-apply, `anon` and `authenticated` both fail
+`has_table_privilege(...,'SELECT')`, and reading `hourly_rate` as either role raises
+`permission denied for table employees`.
+
+Verified live in the office shell (2026-07-28, authenticated owner session): schedule board + crew
+filter, `/time-tracking`, `/settings/team` (22 rows incl. rates), `/crm/tasks` assignee picker,
+office and tech appointment crew pickers (16 employees each), `/jobs`, `/production`, job/claim/
+customer pages, and `/settings/commissions`. Negative paths confirmed by direct role calls:
+`get_all_employees()`, `get_employee_commissions()` and `upsert_employee_commission()` all raise
+`NOT_AUTHORIZED` for a non-admin caller, the write raising *before* its `UPDATE`.
+
+> **⚠️ IT BROKE THE INSTALLED CAPACITOR APP, and this is the lesson to carry forward.** The native
+> app ships its web bundle **inside the binary** (`capacitor.config.json` `webDir: "dist"`, no
+> `server.url`), so it does not pick up server-side deploys. The installed bundle predates the RPC
+> refactor and still calls `db.select('employees', 'email=eq.…')` — a `select=*`, which now dies at
+> the column-privilege layer. Login fails with **"Failed to load employee data."** (a string that no
+> longer exists anywhere in `src/`, which is how the stale bundle was identified). Capgo OTA cannot
+> push a fix: `.github/workflows/capgo-deploy.yml` was paused 2026-06-24 on a plan limit. The only
+> remedy is a native rebuild + reinstall; `.github/workflows/ios-release.yml` needs five Apple
+> signing secrets and dispatches only from `main`.
+>
+> **The process failure worth fixing:** the migration carries 27 hash-pinned guard sites that verify
+> the database's internal consistency exactly, and **not one** checks whether a deployed or installed
+> client still reads the table. Its own header lists that as apply-order step 3 — *"resolve old
+> cached/native client compatibility explicitly"* — in prose, unenforced. The predecessor handoff
+> also asserted that none of these four migrations blocks Capacitor, which is false. A grep for
+> direct `employees` reads plus "what bundle is on real devices" would have caught it for free.
+> Recommended before applying migrations 2–4: a CI check that fails on direct browser reads of
+> RPC-only tables. Rollback stays available at
+> `supabase/rollbacks/20260726182000_mobile_employee_identity_containment.rollback.sql`; it re-grants
+> `anon`, so the destructive-SQL guard blocks agents from running it and the owner must run it
+> manually. It does **not** delete the ledger row, so the provenance mapping above stays true either
+> way.
 
 **New routes:** `/tech/legal/privacy`, `/tech/legal/terms`, `/tech/legal/support` render the same
 `PrivacyPolicy`/`TermsOfService`/`Support` components as the office routes, but inside the field
@@ -8892,6 +8930,14 @@ Ledger versions are assigned AT APPLY TIME, not from the filename:
   privileges on `contacts` / `conversations` / `conversation_participants`. Verified after: anon
   policies 8→0, anon grants→0, all 6 `authenticated` policies intact, conversations still loading.
 - `notification_role_defaults_rpc_only` → applied. Table is now RPC-only.
+- `create_notification_service_boundary` → **`20260727233252`**
+- `notify_emit_service_boundary` → **`20260727233704`**
+- `upsert_employee_page_access_provenance_reconciliation` → **`20260727233845`**
+- `mobile_employee_identity_containment` → **`20260728002105`** (2026-07-28). See the containment
+  section above — verified live, and it **broke the installed Capacitor app**, which needs a native
+  rebuild. Three of the mobile-security queue remain unapplied: `20260726183409`,
+  `20260726260000`, `20260727022920`. Each needs its own owner authorization, and each should wait
+  on the client-contract check the containment apply proved is missing.
 
 **`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
 `20260726183409` and `20260726260000` add POLICIES whose predicates read it, and a policy predicate

@@ -266,6 +266,12 @@
       "name": "upsert_employee_page_access_provenance_reconciliation",
       "path": "supabase/migrations/20260727020000_upsert_employee_page_access_provenance_reconciliation.sql",
       "reviewedOriginCommit": "4688ed64"
+    },
+    {
+      "version": "20260728002105",
+      "name": "mobile_employee_identity_containment",
+      "path": "supabase/migrations/20260726182000_mobile_employee_identity_containment.sql",
+      "reviewedOriginCommit": "56f0b13a"
     }
   ],
   "selectedFunctions": [
