@@ -58,6 +58,25 @@ describe('notification target authorization', () => {
     expect(normalize('/invoices/invoice_1')).toBe('/invoices/invoice_1');
     expect(normalize('/jobs/job_1')).toBe('/jobs/job_1');
     expect(normalize('/collections')).toBe('/collections');
+    // PUSH-01: notification rows written before that fix carry the office
+    // appointment path with no data.url. Without this entry they normalized to
+    // the '/tech' fallback and the appointment was unreachable from its push.
+    expect(normalize('/schedule/appointment/appt_123')).toBe('/schedule/appointment/appt_123');
+  });
+
+  // PUSH-01 durable guard. The regression that broke appointment push was a
+  // writer moving to a path the service-worker allowlist did not carry, with
+  // nothing asserting the two agree. Every appointment destination the server
+  // can emit must survive normalization rather than silently degrading to the
+  // '/tech' fallback.
+  it('accepts every appointment destination notify.js can emit', () => {
+    const notify = read('functions/api/notify.js');
+    const emitted = [...notify.matchAll(/`(\/(?:tech|schedule)\/appointment\/\$\{[^}]+\})`/g)]
+      .map(([, tpl]) => tpl.replace(/\$\{[^}]+\}/, 'appt_123'));
+    expect(emitted.length).toBeGreaterThanOrEqual(2);
+    for (const path of new Set(emitted)) {
+      expect(normalize(path), `${path} must not degrade to the fallback`).toBe(path);
+    }
   });
 
   it.each([

@@ -337,6 +337,19 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
     // field path here — which this did while /tech/appointment/:id was the only
     // appointment screen in the app — put desktop dispatchers in the phone UI.
     link: body.link || `/schedule/appointment/${body.appointment_id}`,
+    // PUSH-01. The shell-decides rule above only reaches the IN-APP bell, which
+    // calls linkForCurrentShell. Web Push never touches that code: the service
+    // worker validates the raw URL against its own allowlist (public/sw-target.js),
+    // which carries /tech/appointment/:id and no /schedule/appointment entry — so
+    // an office link normalized to the '/tech' fallback and every tapped
+    // appointment push landed on the field dashboard with no appointment, for
+    // dispatchers as well as techs. dispatchToRecipient prefers data.url, so the
+    // installed app gets an allowlisted field path while `link` above keeps the
+    // bell correct. Same split message.inbound already ships (enrichInboundMessageBody).
+    data: {
+      ...(body.data || {}),
+      url: body.data?.url || `/tech/appointment/${body.appointment_id}`,
+    },
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,
   };

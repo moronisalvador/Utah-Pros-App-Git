@@ -426,8 +426,21 @@ describe('enrichAppointmentBody', () => {
     // open it; the reader's shell translates (src/lib/techShellRoutes.js). Storing the
     // field path put desktop dispatchers in the phone UI.
     expect(out.link).toBe('/schedule/appointment/ap-1');
+    // PUSH-01: the bell keeps the office path, but Web Push must carry an
+    // allowlisted field path — the service worker validates the raw URL and
+    // never runs linkForCurrentShell.
+    expect(out.data.url).toBe('/tech/appointment/ap-1');
     expect(out.entity_type).toBe('appointment');
     expect(out.entity_id).toBe('ap-1');
+  });
+  it('does not clobber a caller-supplied push destination', async () => {
+    const db = makeDb({ apptsById: { 'ap-1': { title: 'X', date: '2026-07-04', time_start: '09:00:00' } } });
+    const out = await enrichAppointmentBody(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
+      data: { url: '/tech/appointment/ap-1?from=test', keep: 'me' },
+    });
+    expect(out.data.url).toBe('/tech/appointment/ap-1?from=test');
+    expect(out.data.keep).toBe('me');
   });
   it('uses the verb alone when the appointment has no title', async () => {
     const db = makeDb({ apptsById: { 'ap-2': { title: null, date: '2026-07-04', time_start: '08:00:00', time_end: null } } });
@@ -461,6 +474,38 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     expect(bell.params.p_title).toBe('New appointment · Water Mitigation');
     expect(bell.params.p_body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
     expect(bell.params.p_link).toBe('/schedule/appointment/ap-1');
+  });
+
+  // PUSH-01 regression guard. Before this, the pushed URL was the office path,
+  // which public/sw-target.js does not allowlist for a bare push destination —
+  // normalizePushTarget fell back to '/tech', so a tapped appointment push
+  // opened the field dashboard with no appointment, for dispatchers as well as
+  // field techs. Assert the exact URL handed to the push sender.
+  it('pushes an allowlisted field appointment path, not the office bell path', async () => {
+    const payloads = [];
+    const sendWebPushImpl = async (_sub, payload) => {
+      payloads.push(JSON.parse(payload));
+      return { ok: true, status: 201 };
+    };
+    const db = makeDb({
+      types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
+      employees: [{ id: 'emp-9' }],
+      apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
+      prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { push: true }) },
+      subsByEmp: { 'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }] },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: { appointment_id: 'ap-1', employee_id: 'emp-9' },
+      sendWebPushImpl,
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].url).toBe('/tech/appointment/ap-1');
+    expect(payloads[0].url).not.toBe('/schedule/appointment/ap-1');
   });
 });
 
