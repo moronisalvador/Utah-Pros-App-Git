@@ -188,3 +188,113 @@ describe('leadSearchText — tolerates the sparse rows this table really has', (
     expect(leadSearchText({ id: 'e', source: '', campaign: '', caller_name: 'Ann' })).toBe('ann');
   });
 });
+
+// ─── SECTION: Composition — search narrowing TOGETHER with the sibling filters ──
+// The search matcher above is proven in isolation. What this covers is the wiring
+// risk: that `filterLeads` ANDs search with the date range and every criteria
+// group, rather than one silently replacing another. vitest runs in plain node
+// here (no jsdom), so this is the closest provable equivalent to typing in the box
+// with filters already set.
+const { filterLeads } = await import('./CrmLeads.jsx');
+
+const DAY = 86400000;
+const iso = daysAgo => new Date(Date.now() - daysAgo * DAY).toISOString();
+
+const noFilters = () => ({
+  sources: new Set(), campaigns: new Set(), sentiments: new Set(),
+  services: new Set(), stageAges: new Set(),
+});
+
+// Two leads that BOTH match the query "smith", so any test that isolates one of
+// them proves the other filter actually applied on top of the search.
+const smithRecentGoogle = {
+  id: 'smith-recent', caller_name: 'Jane Smith', source: 'Google My Business',
+  occurred_at: iso(2), transcript_analysis: { sentiment: { label: 'positive' }, topics: ['water damage'] },
+};
+const smithOldYelp = {
+  id: 'smith-old', caller_name: 'Bob Smith', source: 'Yelp',
+  occurred_at: iso(45), transcript_analysis: { sentiment: { label: 'negative' }, topics: ['mold'] },
+};
+const jonesRecent = {
+  id: 'jones', caller_name: 'Ann Jones', source: 'Google My Business',
+  occurred_at: iso(1), transcript_analysis: { sentiment: { label: 'positive' }, topics: ['water damage'] },
+};
+const all = [smithRecentGoogle, smithOldYelp, jonesRecent];
+
+const ids = rows => rows.map(r => r.id).sort();
+const run = opts => filterLeads(all, { filters: noFilters(), ...opts });
+
+describe('filterLeads — search composes with the other filters', () => {
+  it('returns everything when nothing is set', () => {
+    expect(ids(run({}))).toEqual(['jones', 'smith-old', 'smith-recent']);
+  });
+
+  it('search alone narrows to both Smiths', () => {
+    expect(ids(run({ searchTerms: leadSearchTerms('smith') }))).toEqual(['smith-old', 'smith-recent']);
+  });
+
+  it('search AND date range — the old Smith drops out, Jones stays out', () => {
+    expect(ids(run({
+      searchTerms: leadSearchTerms('smith'),
+      dateRange: { start: Date.now() - 30 * DAY, end: null },
+    }))).toEqual(['smith-recent']);
+  });
+
+  it('search AND source — the Yelp Smith drops out', () => {
+    const filters = noFilters();
+    filters.sources.add('Google My Business');
+    expect(ids(run({ searchTerms: leadSearchTerms('smith'), filters }))).toEqual(['smith-recent']);
+  });
+
+  it('search AND sentiment', () => {
+    const filters = noFilters();
+    filters.sentiments.add('negative');
+    expect(ids(run({ searchTerms: leadSearchTerms('smith'), filters }))).toEqual(['smith-old']);
+  });
+
+  it('search AND service category', () => {
+    const filters = noFilters();
+    filters.services.add('mold');
+    expect(ids(run({ searchTerms: leadSearchTerms('smith'), filters }))).toEqual(['smith-old']);
+  });
+
+  it('a filter that excludes every search hit yields nothing — drives the empty state', () => {
+    const filters = noFilters();
+    filters.sources.add('Facebook');
+    expect(run({ searchTerms: leadSearchTerms('smith'), filters })).toEqual([]);
+  });
+
+  it('search does not override the criteria filters (the wiring bug this guards)', () => {
+    // "jones" matches only Jones, but the source filter allows only Yelp.
+    // If search replaced the filters instead of ANDing, Jones would leak through.
+    const filters = noFilters();
+    filters.sources.add('Yelp');
+    expect(run({ searchTerms: leadSearchTerms('jones'), filters })).toEqual([]);
+  });
+
+  it('an empty query leaves the other filters fully in charge', () => {
+    const filters = noFilters();
+    filters.sources.add('Yelp');
+    expect(ids(run({ searchTerms: leadSearchTerms(''), filters }))).toEqual(['smith-old']);
+  });
+
+  it('falls back to computing the haystack when no prebuilt index is supplied', () => {
+    // The component always passes searchIndex; this pins the documented fallback
+    // so a future caller without one still filters instead of silently matching all.
+    expect(ids(run({ searchTerms: leadSearchTerms('jones'), searchIndex: undefined }))).toEqual(['jones']);
+  });
+
+  it('uses the prebuilt index when one IS supplied', () => {
+    const searchIndex = new Map(all.map(l => [l.id, leadSearchText(l)]));
+    expect(ids(run({ searchTerms: leadSearchTerms('yelp'), searchIndex }))).toEqual(['smith-old']);
+  });
+
+  it('a lead with no occurred_at is excluded by a date range but not by search', () => {
+    const undated = { id: 'undated', caller_name: 'Sam Smith' };
+    expect(ids(filterLeads([undated], { filters: noFilters(), searchTerms: leadSearchTerms('smith') }))).toEqual(['undated']);
+    expect(filterLeads([undated], {
+      filters: noFilters(), searchTerms: leadSearchTerms('smith'),
+      dateRange: { start: Date.now() - 30 * DAY, end: null },
+    })).toEqual([]);
+  });
+});

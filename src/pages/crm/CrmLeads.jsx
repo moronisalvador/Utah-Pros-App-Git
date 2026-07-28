@@ -386,6 +386,39 @@ export function matchesLeadSearch(haystack, terms) {
   return terms.every(t => haystack.includes(t.raw) || (t.digits !== null && haystack.includes(t.digits)));
 }
 
+// The board's single filter predicate — search AND date range AND every
+// criteria group, all narrowing together. Extracted from the component's
+// useMemo so the COMPOSITION is testable, not just the search matcher in
+// isolation: the risk worth pinning is search interacting with the sibling
+// filters (a lead must satisfy all of them), which cannot be exercised
+// otherwise — vitest runs in plain node here, with no DOM to type into.
+// eslint-disable-next-line react-refresh/only-export-components
+export function filterLeads(leads, { searchTerms = [], searchIndex, dateRange, filters, stagePositions = {} }) {
+  const { start = null, end = null } = dateRange || {};
+  return leads.filter(lead => {
+    if (searchTerms.length > 0) {
+      const haystack = searchIndex?.get(lead.id) ?? leadSearchText(lead);
+      if (!matchesLeadSearch(haystack, searchTerms)) return false;
+    }
+    if (start != null || end != null) {
+      const ts = lead.occurred_at ? new Date(lead.occurred_at).getTime() : null;
+      if (ts == null) return false;
+      if (start != null && ts < start) return false;
+      if (end != null && ts > end) return false;
+    }
+    if (filters.sources.size > 0 && !filters.sources.has(lead.source)) return false;
+    if (filters.campaigns.size > 0 && !filters.campaigns.has(lead.campaign)) return false;
+    if (filters.sentiments.size > 0 && !filters.sentiments.has(sentimentKeyFor(lead))) return false;
+    if (filters.services.size > 0 && !serviceKeysFor(lead).some(k => filters.services.has(k))) return false;
+    if (filters.stageAges.size > 0) {
+      const age = daysInStage(stagePositions[lead.id]?.updated_at);
+      const bucket = STAGE_AGE_BUCKETS.find(b => b.test(age));
+      if (!bucket || !filters.stageAges.has(bucket.key)) return false;
+    }
+    return true;
+  });
+}
+
 export default function CrmLeads() {
   const { db, employee } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -541,28 +574,16 @@ export default function CrmLeads() {
     || filters.services.size > 0 || filters.stageAges.size > 0;
   const hasActiveFilters = hasCriteriaFilters || searchTerms.length > 0;
 
-  const filteredLeads = useMemo(() => {
-    const { start, end } = dateRangeFor(datePeriod, customRange);
-    return leads.filter(lead => {
-      if (searchTerms.length > 0 && !matchesLeadSearch(searchIndex.get(lead.id) || '', searchTerms)) return false;
-      if (start != null || end != null) {
-        const ts = lead.occurred_at ? new Date(lead.occurred_at).getTime() : null;
-        if (ts == null) return false;
-        if (start != null && ts < start) return false;
-        if (end != null && ts > end) return false;
-      }
-      if (filters.sources.size > 0 && !filters.sources.has(lead.source)) return false;
-      if (filters.campaigns.size > 0 && !filters.campaigns.has(lead.campaign)) return false;
-      if (filters.sentiments.size > 0 && !filters.sentiments.has(sentimentKeyFor(lead))) return false;
-      if (filters.services.size > 0 && !serviceKeysFor(lead).some(k => filters.services.has(k))) return false;
-      if (filters.stageAges.size > 0) {
-        const age = daysInStage(stagePositions[lead.id]?.updated_at);
-        const bucket = STAGE_AGE_BUCKETS.find(b => b.test(age));
-        if (!bucket || !filters.stageAges.has(bucket.key)) return false;
-      }
-      return true;
-    });
-  }, [leads, datePeriod, customRange, filters, stagePositions, searchTerms, searchIndex]);
+  const filteredLeads = useMemo(
+    () => filterLeads(leads, {
+      searchTerms,
+      searchIndex,
+      dateRange: dateRangeFor(datePeriod, customRange),
+      filters,
+      stagePositions,
+    }),
+    [leads, datePeriod, customRange, filters, stagePositions, searchTerms, searchIndex],
+  );
 
   const grouped = useMemo(() => groupLeadsByStage(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
   const pipelineValue = useMemo(() => weightedPipelineValue(filteredLeads, stages, stagePositions), [filteredLeads, stages, stagePositions]);
