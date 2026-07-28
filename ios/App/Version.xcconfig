@@ -1,0 +1,4 @@
+// UPR native release identity.
+// The human-owned App Store version lives here; CI supplies each upload's
+// unique CURRENT_PROJECT_VERSION build number.
+MARKETING_VERSION = 1.0.0
