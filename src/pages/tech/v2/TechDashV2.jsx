@@ -111,7 +111,13 @@ export default function TechDashV2({ active = true }) {
 
   return (
     <TechV2Page>
-      <DashHeader employee={employee} count={appointments.length} isAdmin={isAdmin} onLogout={logout} />
+      <DashHeader
+        active={active}
+        employee={employee}
+        count={appointments.length}
+        isAdmin={isAdmin}
+        onLogout={logout}
+      />
 
       <PullToRefresh onRefresh={onRefresh}>
         <div className="tv2-dash-body">

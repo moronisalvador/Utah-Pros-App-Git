@@ -34,9 +34,15 @@ import NotificationBell from '@/components/NotificationBell';
 import { adminDashHref } from '@/components/admin-mobile/href';
 
 /**
- * @param {{ employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
+ * @param {{ active: boolean, employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
  */
-export default function DashHeader({ employee, count, isAdmin, onLogout }) {
+export default function DashHeader({
+  active,
+  employee,
+  count,
+  isAdmin,
+  onLogout,
+}) {
   const { t } = useTranslation('dash');
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
@@ -66,7 +72,11 @@ export default function DashHeader({ employee, count, isAdmin, onLogout }) {
       {/* Notification bell — one slot left of Help, matching the icon buttons.
           Its badge + dropdown + realtime toast come from the shared component. */}
       <div style={{ position: 'absolute', top: '10px', right: 'calc(16px + 2 * (var(--tech-min-tap) + 8px))' }}>
-        <NotificationBell align="right" triggerClassName="tv2-dash-header__icon-btn" />
+        <NotificationBell
+          active={active}
+          align="right"
+          triggerClassName="tv2-dash-header__icon-btn"
+        />
       </div>
 
       <button type="button" className="tv2-dash-header__icon-btn" aria-label={t('helpAria')} onClick={() => navigate('/tech/help')}>
