@@ -12583,7 +12583,9 @@ html.ui-glass .tech-nav {
 .crm-lead-note-author { color: var(--crm-text-tertiary); }
 
 /* ─── CRM LEADS SEARCH (standalone 2026-07-27) ───────────────────────────────
-   The Leads board's filter-bar search box. Skins the shared <SearchInput>
+   The Leads board's filter-bar search box, sitting AFTER the date tabs and the
+   Filters button (owner-directed placement, 2026-07-27 — it was first in the
+   row on the initial pass). Skins the shared <SearchInput>
    (src/components/ui/SearchInput.jsx) onto the CRM design kit rather than
    letting its global `.input` styling through — same reasoning the
    .crm-board-period segmented control above already records: reuse the shared

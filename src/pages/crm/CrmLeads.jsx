@@ -16,12 +16,12 @@
  *   lead, a log of every stage it's moved through, and a combined timeline of
  *   every call, text, note, and estimate tied to that contact. A filter bar
  *   above the board narrows
- *   what's shown: a search box, a date-range switch (Week / Month / All time,
- *   or a custom range) plus a criteria panel (source, sentiment, service
- *   needed, time in stage) — all pure client-side filters over the leads
- *   already loaded, no extra fetch. Typing in the search box narrows the board
- *   as you type, matching a lead's name, phone number, source, campaign, the
- *   AI call summary, or a web-form answer.
+ *   what's shown: a date-range switch (Week / Month / All time, or a custom
+ *   range), a criteria panel (source, sentiment, service needed, time in
+ *   stage), and — to the right of both — a search box. All are pure
+ *   client-side filters over the leads already loaded, no extra fetch. Typing
+ *   in the search box narrows the board as you type, matching a lead's name,
+ *   phone number, source, campaign, the AI call summary, or a web-form answer.
  *
  * WHERE IT LIVES:
  *   Route:        /crm/leads
@@ -855,15 +855,6 @@ export default function CrmLeads() {
 
         {leads.length > 0 && (
           <div className="crm-leads-filterbar">
-            <SearchInput
-              className="crm-leads-search"
-              inputClassName="crm-leads-search-input"
-              value={search}
-              onChange={setSearch}
-              placeholder="Search leads…"
-              aria-label="Search leads by name, phone, source or call summary"
-            />
-
             <div className="crm-board-period" role="tablist" aria-label="Date range">
               {DATE_PERIODS.map(p => (
                 <button
@@ -972,6 +963,15 @@ export default function CrmLeads() {
                 </>
               )}
             </div>
+
+            <SearchInput
+              className="crm-leads-search"
+              inputClassName="crm-leads-search-input"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search leads…"
+              aria-label="Search leads by name, phone, source or call summary"
+            />
 
             {hasActiveFilters && (
               <button type="button" className="crm-btn crm-btn-ghost crm-btn-sm" onClick={clearFilters}>
