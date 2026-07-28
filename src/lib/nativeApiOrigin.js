@@ -33,8 +33,11 @@
  *     universal links and copied signing URLs. A build cannot be pointed at an
  *     arbitrary host by setting one environment variable, and there is exactly
  *     one list of trusted hosts rather than two that can drift apart.
- *   - Reused by the build script, which fails the native build outright on an
- *     invalid value rather than letting a misconfigured app ship.
+ *   - vite.config.js imports parseNativeApiOrigin and REFUSES a native build
+ *     whose VITE_NATIVE_API_ORIGIN is present but untrustworthy. It lives in the
+ *     vite config rather than scripts/build-native.mjs because capgo-deploy.yml
+ *     runs `npx vite build` directly and would bypass a build-script-only guard.
+ *     A MISSING value is allowed on purpose — see the default below.
  * ════════════════════════════════════════════════
  */
 import { NATIVE_APP_HTTPS_HOSTS } from './nativeHosts.js';

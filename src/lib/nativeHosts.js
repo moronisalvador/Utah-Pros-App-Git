@@ -23,7 +23,8 @@
  *     its configured API origin against these hosts BEFORE producing a bundle,
  *     so the list had to become importable outside a browser. Duplicating it was
  *     the alternative, and two allowlists that can drift apart is exactly the
- *     failure this file prevents.
+ *     failure this file prevents. vite.config.js imports the parser that reads
+ *     this list, so the check runs at build time for every native build path.
  *   - nativeAppLinks.js re-exports this, so every existing importer is
  *     unchanged and there is still one definition.
  * ════════════════════════════════════════════════
