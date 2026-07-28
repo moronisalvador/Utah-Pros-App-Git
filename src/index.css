@@ -11417,8 +11417,12 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   z-index: 6;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
-  padding: 10px 14px calc(10px + env(safe-area-inset-top, 0px));
-  padding-top: max(10px, env(safe-area-inset-top, 10px));
+  /* SAFE-01: `.tech-layout` is the SOLE owner of the top inset. This pane is an
+     ordinary in-flow flex child inside it, so re-applying the inset here pushed
+     the header down twice — and the old rule spent it on both the bottom
+     padding and the top. Plain geometry only. Keep this file's top-inset usage
+     to exactly two: the token and `.tech-layout`. */
+  padding: 10px 14px;
 }
 .tv2-msgs-list__title { font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
 
@@ -11543,8 +11547,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   flex-shrink: 0;
   min-height: 52px;
-  padding: 0 8px;
-  padding-top: env(safe-area-inset-top, 0px);
+  padding: 0 8px;   /* SAFE-01: inset owned by .tech-layout, not re-applied here */
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border);
 }
@@ -12113,7 +12116,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-new .tv2-msgs-search__input { height: 48px; }
 .tv2-msgs-new__search {
   position: sticky;
-  top: calc(52px + env(safe-area-inset-top, 0px));
+  /* SAFE-01: sticks below the 52px bar. The bar no longer carries an inset of
+     its own (the pane sits inside .tech-layout, which owns it), so adding one
+     here would offset the search field past its own header. */
+  top: 52px;
   z-index: 5;
   padding: 1px 14px 12px;
   background: var(--bg-primary);
