@@ -191,6 +191,13 @@ only when its exact function/ACL guard passes.
 
 ## S1g — notification recipient/read/Realtime boundary
 
+**Applied:** 2026-07-28 as
+`20260728192024_notification_read_recipient_boundary`, from exact migration SHA-256
+`fe6ac1da1e53aa998acf5580786f279f145e606c64d2a3e33a177cfed5b0ffce`.
+The value-free pre/post checks, guarded local forward/rollback sequence, live Moroni read-only
+positive case, foreign/unmapped denials, advisors, and provenance passed. Steps 6–7 remain open for
+two-session Realtime/PostgREST and installed-client proof.
+
 Artifacts:
 
 - preflight: `supabase/tests/notification_read_recipient_boundary_preflight.sql`

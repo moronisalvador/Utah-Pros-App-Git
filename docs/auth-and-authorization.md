@@ -435,7 +435,7 @@ legacy composite RPC responses see only a truthy opaque marker. Authenticated ex
 service ingestion RPC is revoked. The approved CallRail proxy keeps
 the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
 
-## Mobile S1g notification read/mark boundary (authored, not applied)
+## Mobile S1g notification read/mark boundary (live, partial client proof)
 
 The catalog-only S1g capture found the exact four deployed bell RPCs, each owned by `postgres`,
 SQL `SECURITY DEFINER`, `search_path=public`, executable by `authenticated` and `service_role`,
@@ -446,19 +446,19 @@ with no direct database-body caller:
 - `mark_notification_read(uuid) -> void`; and
 - `mark_all_notifications_read(uuid DEFAULT NULL) -> void`.
 
-Their live bodies trust caller-supplied employee/notification IDs. The live
-`notifications_select` policy is authenticated `USING (true)`, so PostgREST and Realtime can expose
-another employee's targeted payload before `NotificationBell` filters it in JavaScript. Broadcasts
-also share one `notifications.read_at`, allowing one caller to clear them for everyone.
+Those captured pre-S1g bodies trusted caller-supplied employee/notification IDs, and the old
+`notifications_select USING (true)` exposed targeted payloads across employees. Migration
+`20260726260000_notification_read_recipient_boundary.sql` closed that boundary on 2026-07-28 as
+ledger entry `20260728192024_notification_read_recipient_boundary`.
 
-Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves all four
+The live replacement preserves all four
 signatures, defaults, results, old `{}`/`{p_limit}` broadcast-only calls, list fields, newest-first
 ordering, and trusted service-role behavior. Authenticated execution instead reconstructs the
 unique active, non-external employee from `auth.uid()` and raises SQLSTATE `42501` for a foreign
 non-null employee parameter or foreign targeted notification. Missing/null mark-one IDs retain the
 deployed void no-op.
 
-Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads` with an explicit
+Broadcast reads use forced-RLS, browser-inaccessible `notification_reads` with an explicit
 authenticated deny-all policy; targeted rows
 retain their existing `read_at`. Already-globally-read legacy broadcasts remain read for every
 employee. `notifications_select` stays the same policy object but becomes active-internal
@@ -472,10 +472,14 @@ containment and recipient-scoped policies, drops receipt history only behind an 
 guard, and disables authenticated bell/Realtime access while retaining gated service-role behavior.
 It never restores the historical anonymous notification-table grant.
 
-This is reviewed source intent, not live proof. S1g requires its own owner-authorized apply,
-catalog post-check, two-session RPC/PostgREST/Realtime negative/positive matrix, advisors, and
-provenance capture. It must not be combined with S1d/S1e/S1f, private media, providers,
-deployment, signing, or device work.
+The exact value-free postcondition passed live. Moroni Salvador's authorized active-internal test
+identity passed list/count and direct-RLS visibility without returning notification contents or
+changing read state; foreign-selector and unmapped callers both failed with SQLSTATE `42501`.
+Anonymous access, authenticated writes, and direct receipt access are denied. Security/performance
+advisors reported no S1g regression, and fresh provenance matched the four functions and three
+policies. Two-session PostgREST/Realtime sockets plus PWA/Capacitor bell behavior remain the
+close-out gate; S1d/S1e/S1f, private media, providers, deployment, signing, and device work remain
+separate.
 
 **S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
 verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
