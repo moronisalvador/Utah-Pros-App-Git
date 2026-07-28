@@ -92,7 +92,10 @@ output containing auth material, production identifiers or realistic identity fi
 manual-only until Apple enrollment and signing secrets are owner-confirmed. GitHub Actions forbids
 using `secrets.*` directly in a step `if`; map the signing gate into job `env` and branch on
 `env.APPLE_TEAM_ID`. `scripts/ios-release-workflow.test.js` preserves both boundaries without
-dispatching a macOS job, signing an app or contacting Apple.
+dispatching a macOS job, signing an app or contacting Apple. A TestFlight-capable
+archive also fails closed unless `VITE_NATIVE_PUSH_ENABLED` is exact lowercase
+`true` and `VITE_APNS_ENV` is exact lowercase `production`; a development
+archive must use a separately built sandbox bundle.
 
 CI should keep unit and database/browser lanes explicit, report unexpected skips, validate required
 environment bindings and retain machine-readable evidence. An isolated database is required before

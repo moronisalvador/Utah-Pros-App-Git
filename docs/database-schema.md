@@ -481,6 +481,16 @@ provenance reconciliation. Browser token conflicts are same-owner refresh only; 
 Push/native token registration and deletion fail closed, while reviewed owner/service maintenance
 remains.
 
+The App Store activation path now uses a smaller pending boundary:
+`20260728223000_native_apns_token_boundary.sql` adds nullable
+`device_tokens.apns_environment`, leaves existing rows inert, and introduces
+selector-free `upsert_my_native_device_token(text,text) -> jsonb` plus
+`delete_my_native_device_token(text) -> void`. The functions derive the active
+internal employee from `auth.uid()`, never return a raw token, reject foreign
+ownership, and are the only native-token RPCs granted to `authenticated`; direct
+table access and legacy selector RPCs are revoked from browser roles. This
+focused source has passed an isolated local behavior test but is not yet live.
+
 The earlier `20260726223610_mobile_personal_ownership_boundary.sql` artifact is rejected evidence,
 not an apply candidate. Its employee self-promotion and raw-token takeover paths are addressed by
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
