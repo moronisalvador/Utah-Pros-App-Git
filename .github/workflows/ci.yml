@@ -5,11 +5,9 @@ name: CI
 # auto-deploys on push). This runs build+test on every PR targeting main OR dev and
 # on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
-# What blocks a merge:  build + test  (both currently green)
-# What does NOT block:   lint          (pre-existing hygiene baseline — full-tree lint
-#                                       and the changed-files ratchet run for visibility
-#                                       via continue-on-error until the baseline is
-#                                       cleaned by the UX-Quality waves, then flip to blocking)
+# What blocks a merge:  build + test + changed-file lint
+# What does NOT block:  full-tree lint  (pre-existing hygiene baseline; changed files are
+#                                        independently ratcheted with zero warning tolerance)
 #
 # NOTE: a passing workflow does not enforce anything by itself. To actually block
 # merges, mark the "verify" check as a Required status check in branch protection
@@ -103,17 +101,14 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      # Changed-files ratchet: surface the new UX-Quality rules (no-alert, no
-      # confirm/prompt, raw upr:toast, db-import) on just the files a PR touches, so
-      # the untouched baseline never blocks. Non-blocking during rollout; flip to
-      # blocking (remove continue-on-error) once the W-waves clean the touched surfaces.
-      - name: Lint changed files (UX-Quality ratchet)
+      # Blocking changed-files ratchet: enforce the UX-Quality and runtime-safety
+      # rules on just the files a PR touches, so untouched baseline debt never blocks.
+      - name: Lint changed files (blocking ratchet)
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}" || true
           CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
-        continue-on-error: true
 
       # Perf-budget trend signal (perf-budget.md). Non-blocking; reports the gzipped
       # JS weight so a regression is visible in the run. Hard-fail ratchet is a follow-up.

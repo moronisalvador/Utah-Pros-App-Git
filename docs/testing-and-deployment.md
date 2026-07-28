@@ -27,7 +27,7 @@ NOTES / GOTCHAS:
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
-| `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
+| `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; PR-changed JS/JSX files are separately blocking with zero warning tolerance |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -76,9 +76,12 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 
 ## CI
 
-`.github/workflows/ci.yml` runs on `dev` and `main` changes. Build and test are intended merge gates;
-lint and bundle-size reporting currently provide non-blocking visibility. GitHub branch protection is
-external configuration and must be checked before relying on a workflow as an enforced gate.
+`.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
+ratchet are intended merge gates. The full-tree lint baseline and bundle-size report remain
+non-blocking. `no-use-before-define` is variables-only at warning level: this preserves untouched
+baseline debt while `--max-warnings 0` makes the rule blocking for every changed JS/JSX file.
+GitHub branch protection is external configuration and must be checked before relying on a workflow
+as an enforced gate.
 
 CI also validates the disconnected Figma permission contract, installs its governed Chromium
 runtime, and runs the guarded browser matrix. The custom Vitest and Playwright runners fail if a
