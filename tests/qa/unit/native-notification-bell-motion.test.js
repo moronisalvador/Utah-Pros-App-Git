@@ -51,12 +51,13 @@ describe('native notification bell motion contract', () => {
     );
   });
 
-  it('preserves rendered rows during realtime and resume reconciliation', () => {
+  it('preserves rendered rows during realtime and limits resume to the count', () => {
     expect(bell).toContain('hasLoadedListRef');
     expect(bell).toContain('listRequestRef');
     expect(bell).toContain('loadList({ silent: true })');
     expect(bell).toContain('request !== listRequestRef.current');
     expect(bell).toContain('loading && !hasLoadedListRef.current');
+    expect(bell).toMatch(/const refreshOnResume = useCallback\(\(\) => \{\s*pollCount\(\);\s*\}/);
   });
 
   it('closes a hidden dashboard pane and exposes accessible panel semantics', () => {
@@ -71,7 +72,9 @@ describe('native notification bell motion contract', () => {
   });
 
   it('routes live feedback through the shared toast entry point', () => {
-    expect(bell).toContain("import { toast } from '@/lib/toast'");
+    expect(bell).toContain("import { err, toast } from '@/lib/toast'");
+    expect(bell).toContain("err('Could not mark that notification as read.')");
+    expect(bell).toContain("err('Could not mark all notifications as read.')");
     expect(bell).not.toContain("dispatchEvent(new CustomEvent('upr:toast'");
   });
 });

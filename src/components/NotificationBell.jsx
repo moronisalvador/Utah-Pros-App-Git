@@ -18,7 +18,8 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext (db), @/lib/realtime (subscribeToNotifications),
  *              @/hooks/useResumeRefetch (hidden-guarded poll + resume edge),
- *              @/components/ui (IconButton press/a11y/haptic contract)
+ *              @/components/ui (IconButton press/a11y/haptic contract),
+ *              @/components/TabLoading, @/lib/toast
  *   Data:      reads  → notifications (via get_notifications / get_unread_notification_count RPCs)
  *              writes → notifications (via mark_notification_read / mark_all_notifications_read RPCs)
  *
@@ -49,9 +50,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToNotifications } from '@/lib/realtime';
 import { linkForCurrentShell } from '@/lib/techShellRoutes';
-import { toast } from '@/lib/toast';
+import { err, toast } from '@/lib/toast';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { IconButton } from '@/components/ui';
+import TabLoading from '@/components/TabLoading';
 
 // Poll backoff: after a failure the count is worth far less than the noise of
 // retrying it every minute forever. Doubles per consecutive failure from the
@@ -105,6 +107,7 @@ export default function NotificationBell({
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
   const [listError, setListError] = useState(false);
+  const [markAllPending, setMarkAllPending] = useState(false);
   const openRef = useRef(false);
   const hasLoadedListRef = useRef(false);
   const listRequestRef = useRef(0);
@@ -181,8 +184,7 @@ export default function NotificationBell({
   // loadCount directly, so they bypass the backoff window on purpose.
   const refreshOnResume = useCallback(() => {
     pollCount();
-    if (openRef.current) loadList({ silent: true });
-  }, [loadList, pollCount]);
+  }, [pollCount]);
   useResumeRefetch({ pollMs: POLL_MS, onResume: refreshOnResume });
 
   // Realtime: bump count, refresh the open list, and fire a live toast — but
@@ -288,9 +290,17 @@ export default function NotificationBell({
   const openItem = async (item) => {
     closePanel({ restoreFocus: false });
     if (!item.read_at) {
+      const priorUnread = unread;
+      const priorItems = items;
       setUnread((u) => Math.max(0, u - 1));
       setItems((prev) => prev.map((n) => (n.id === item.id ? { ...n, read_at: new Date().toISOString() } : n)));
-      try { await dbRef.current.rpc('mark_notification_read', { p_id: item.id }); } catch { /* non-fatal */ }
+      try {
+        await dbRef.current.rpc('mark_notification_read', { p_id: item.id });
+      } catch {
+        setUnread(priorUnread);
+        setItems(priorItems);
+        err('Could not mark that notification as read.');
+      }
     }
     // Keep the tap in the shell the user is standing in. This bell is mounted in
     // the field dash header as well as the office nav, and notification links are
@@ -301,9 +311,21 @@ export default function NotificationBell({
   };
 
   const markAll = async () => {
+    if (markAllPending) return;
+    const priorUnread = unread;
+    const priorItems = items;
+    setMarkAllPending(true);
     setUnread(0);
     setItems((prev) => prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() })));
-    try { await dbRef.current.rpc('mark_all_notifications_read', { p_employee_id: empRef.current }); } catch { /* non-fatal */ }
+    try {
+      await dbRef.current.rpc('mark_all_notifications_read', { p_employee_id: empRef.current });
+    } catch {
+      setUnread(priorUnread);
+      setItems(priorItems);
+      err('Could not mark all notifications as read.');
+    } finally {
+      setMarkAllPending(false);
+    }
   };
 
   // ─── SECTION: Render ───
@@ -379,18 +401,18 @@ export default function NotificationBell({
             }}>
               <span id="notification-bell-title" style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Notifications</span>
               {unread > 0 && (
-                <button onClick={markAll} style={{
+                <button disabled={markAllPending} onClick={markAll} style={{
                   border: 'none', background: 'none', cursor: 'pointer',
                   fontSize: 12, fontWeight: 600, color: 'var(--accent)',
                 }}>
-                  Mark all read
+                  {markAllPending ? 'Marking…' : 'Mark all read'}
                 </button>
               )}
             </div>
 
             <div style={{ overflowY: 'auto' }}>
               {loading && !hasLoadedListRef.current ? (
-                <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-tertiary)' }}>Loading…</div>
+                <TabLoading label="Loading notifications…" />
               ) : listError ? (
                 <div style={{ padding: '24px 14px', textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
                   <div style={{ color: 'var(--danger)', fontWeight: 600, marginBottom: 6 }}>Couldn't load notifications</div>

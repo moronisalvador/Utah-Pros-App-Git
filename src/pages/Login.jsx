@@ -15,7 +15,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/realtime,
- *              @/lib/nativeLoginVerification
+ *              @/lib/nativeLoginVerification, @/lib/toast
  *   Data:      reads  → Supabase Auth session through AuthContext
  *              writes → Supabase Auth session/password-reset request
  *
@@ -32,6 +32,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient } from '@/lib/realtime';
 import { verifyNativeLogin } from '@/lib/nativeLoginVerification';
+import { err as showError } from '@/lib/toast';
 
 export default function Login() {
   const { login, isAuthenticated, isDev, error: authError } = useAuth();
@@ -55,8 +56,10 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password, { beforeSignIn: verifyNativeLogin });
-    } catch (err) {
-      setError(err.message);
+    } catch (loginError) {
+      const message = loginError?.message || 'Sign in failed. Try again.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
@@ -74,8 +77,10 @@ export default function Login() {
       );
       if (resetErr) throw resetErr;
       setResetSent(true);
-    } catch (err) {
-      setError(err.message);
+    } catch (resetError) {
+      const message = resetError?.message || 'Could not send the reset email.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
@@ -93,8 +98,10 @@ export default function Login() {
       await login(devTestEmail, devTestPassword, {
         beforeSignIn: verifyNativeLogin,
       });
-    } catch (err) {
-      setError(err.message);
+    } catch (loginError) {
+      const message = loginError?.message || 'Sign in failed. Try again.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
