@@ -119,7 +119,20 @@ async function gateRecipient(
     ? STAFF_ACCEPTED_CONSENT_CODES
     : STAFF_ACCEPTED_CONSENT_CODES.filter((code) => code === 'GLOBAL_OPT_IN');
   if (isAcceptedConsent(status, acceptedCodes)) {
-    return { blocked: false };
+    if (status.code === 'IMPLIED_CONSENT') {
+      // The owner-approved existing-client exception must leave evidence before
+      // any provider call. This insert is intentionally required: if durable
+      // audit storage is unavailable, the send does not proceed.
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: contact.phone,
+        event_type: 'service_send_allowed_existing_client',
+        source: 'existing_client_service_relationship',
+        details: 'Allowed one-to-one staff service message: reachable client, with no DND, explicit opt-out, or pending STOP. This is not a marketing opt-in.',
+        performed_by: sentBy,
+      });
+    }
+    return { blocked: false, consentCode: status.code };
   }
 
   if (status?.code === 'DND_ACTIVE') {
