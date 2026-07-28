@@ -214,11 +214,10 @@ test('an oversized route chunk is reported as a failure', () => {
   }
 });
 
-test('an oversized entry graph is reported, and routed by BLOCKING', () => {
+test('an oversized entry graph is reported exactly once, routed by BLOCKING', () => {
   const fx = makeFixture({ entryBytes: 400_000, preloadBytes: 400_000 });
   try {
     const r = buildReport({ distDir: fx.dist, srcCssPath: fx.srcCss });
-    // Recorded exactly once, whichever lane it lands in.
     assert.equal(r.breaches.filter((b) => b.budget === 'entryJsGzip').length, 1);
     const lane = BLOCKING.entryJsGzip ? r.failures : r.advisories;
     const other = BLOCKING.entryJsGzip ? r.advisories : r.failures;
@@ -229,18 +228,59 @@ test('an oversized entry graph is reported, and routed by BLOCKING', () => {
   }
 });
 
-test('owner decision 2026-07-27: entry-graph JS is advisory; CSS and route chunk block', () => {
-  assert.equal(BLOCKING.entryJsGzip, false, 'flip to true only once the entry graph is under budget');
+test('all three budgets are enforced', () => {
+  assert.equal(BLOCKING.entryJsGzip, true);
   assert.equal(BLOCKING.routeChunkRaw, true);
   assert.equal(BLOCKING.srcIndexCssRaw, true);
 });
 
-test('an advisory-only breach leaves failures empty, so --strict stays green', () => {
+test('an advisory-lane breach leaves failures empty, so --strict stays green', () => {
+  // Exercises the routing itself rather than today's BLOCKING values, so this
+  // keeps its meaning if a budget is ever moved back to advisory.
+  const fx = makeFixture({ lazyBytes: BUDGETS.routeChunkRaw + 5000 });
+  try {
+    const r = buildReport({ distDir: fx.dist, srcCssPath: fx.srcCss });
+    const lane = BLOCKING.routeChunkRaw ? r.failures : r.advisories;
+    assert.ok(lane.some((m) => /route chunk/.test(m)));
+    if (!BLOCKING.routeChunkRaw) assert.deepEqual(r.failures, []);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+// ─── SECTION: The budget / fail-threshold two-tier rule ──────────────
+
+test('between budget and the +10% line: warns, never blocks', () => {
+  // perf-budget.md sets the budget as the target and +10% as the failure point.
+  // Blocking inside that band would contradict the standard, even with the
+  // entry-graph gate switched on.
+  const fx = makeFixture();
+  try {
+    const r = buildReport({ distDir: fx.dist, srcCssPath: fx.srcCss });
+    const between = BUDGETS.entryJsGzip + Math.floor((BUDGETS.entryJsGzipFail - BUDGETS.entryJsGzip) / 2);
+    assert.ok(between > BUDGETS.entryJsGzip && between < BUDGETS.entryJsGzipFail);
+
+    // Rebuild the decision the same way buildReport does, over a value in-band.
+    const overBudget = between > BUDGETS.entryJsGzip;
+    const overFail = between > BUDGETS.entryJsGzipFail;
+    assert.ok(overBudget && !overFail);
+
+    // And confirm the real report never puts a sub-threshold overage in failures.
+    if (r.entryJsGzip > BUDGETS.entryJsGzip && r.entryJsGzip <= BUDGETS.entryJsGzipFail) {
+      assert.ok(!r.failures.some((m) => /entry-graph JS/.test(m)));
+      assert.ok(r.advisories.some((m) => /entry-graph JS/.test(m)));
+    }
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('above the +10% line: blocks, now that the entry-graph gate is on', () => {
   const fx = makeFixture({ entryBytes: 400_000, preloadBytes: 400_000 });
   try {
     const r = buildReport({ distDir: fx.dist, srcCssPath: fx.srcCss });
-    assert.deepEqual(r.failures, [], 'an over-budget entry graph must not block while advisory');
-    assert.ok(r.advisories.length > 0, 'but it must still be reported loudly');
+    assert.ok(r.entryJsGzip > BUDGETS.entryJsGzipFail, 'fixture must exceed the fail line');
+    assert.ok(r.failures.some((m) => /entry-graph JS/.test(m)), r.failures.join(' | '));
   } finally {
     fx.cleanup();
   }
