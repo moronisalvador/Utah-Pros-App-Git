@@ -22,13 +22,15 @@
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
  *              ../lib/auth.js (active internal admin for the legacy Bearer path),
- *              ../lib/webPush.js (sendWebPush/loadVapidConfig), ../lib/email.js
+ *              ../lib/webPush.js (sendWebPush/loadVapidConfig), ../lib/apns.js,
+ *              ../lib/email.js
  *   Data:      reads  → notification_types (catalog + enabled master switch),
  *                        employees (audience + email), appointment_crew (crew
- *                        audience), push_subscriptions (devices), integration_config
- *                        (webhook secret); get_effective_notification_prefs (RPC)
+ *                        audience), push_subscriptions + device_tokens (devices),
+ *                        integration_config (webhook secret);
+ *                        get_effective_notification_prefs (RPC)
  *              writes → notifications (via create_notification, per recipient);
- *                        prunes dead push_subscriptions (404/410)
+ *                        prunes dead push subscriptions/registrations
  *
  * NOTES / GOTCHAS:
  *   - A type ships enabled=false and is INERT: dispatchEvent returns {skipped} for
@@ -51,6 +53,7 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
+import { sendNativePushToEmployee } from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
 
 // The internal notifications sender identity (distinct from the customer-facing
@@ -166,7 +169,31 @@ export async function resolveAudience(db, typeKey, body = {}) {
  * Deliver one event to one recipient across the channels their EFFECTIVE prefs
  * leave on. Returns a per-recipient summary; never throws.
  */
-export async function dispatchToRecipient({ db, env, recipientId, type, body, vapid, sendWebPushImpl, sendEmailImpl, fetchImpl }) {
+export function nativeNotificationEventKey(type, body, recipientId) {
+  return JSON.stringify([
+    type?.type_key || '',
+    recipientId || '',
+    body?.entity_type || '',
+    body?.entity_id || '',
+    body?.job_id || '',
+    body?.data?.url || body?.link || '',
+    body?.title || '',
+    body?.body || '',
+  ]);
+}
+
+export async function dispatchToRecipient({
+  db,
+  env,
+  recipientId,
+  type,
+  body,
+  vapid,
+  sendWebPushImpl,
+  sendNativePushImpl,
+  sendEmailImpl,
+  fetchImpl,
+}) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
 
   let prefs = [];
@@ -196,6 +223,35 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
 
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
   if (on('push')) {
+    const nativeSender = sendNativePushImpl || sendNativePushToEmployee;
+    try {
+      const native = await nativeSender({
+        db,
+        env,
+        employeeId: recipientId,
+        title: body.title || type.label,
+        body: body.body || '',
+        data: {
+          ...(body.data || {}),
+          url: body.data?.url || body.link || '/',
+        },
+        eventKey: nativeNotificationEventKey(type, body, recipientId),
+        fetchImpl,
+      });
+      result.push.native = native;
+      result.push.sent += native?.sent || 0;
+      result.push.attempted += native?.attempted || 0;
+      result.push.pruned += native?.pruned || 0;
+    } catch {
+      result.push.native = {
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+        skipped: true,
+        reason: 'native_push_failed',
+      };
+    }
+
     let subs = [];
     try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
     catch { subs = []; }
@@ -397,7 +453,16 @@ export async function enrichEstimateBody(db, body = {}) {
  * and wrapped with auth by handleNotify. Returns a summary; never throws for a
  * disabled type (returns { skipped }).
  */
-export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, sendWebPushImpl, sendEmailImpl }) {
+export async function dispatchEvent({
+  db,
+  env,
+  typeKey,
+  body = {},
+  fetchImpl,
+  sendWebPushImpl,
+  sendNativePushImpl,
+  sendEmailImpl,
+}) {
   if (!typeKey) return { skipped: true, reason: 'no_type_key', recipients: 0, results: [] };
 
   let type = null;
@@ -426,7 +491,18 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
 
   const results = [];
   for (const rid of recipientIds) {
-    results.push(await dispatchToRecipient({ db, env, recipientId: rid, type, body, vapid, sendWebPushImpl, sendEmailImpl, fetchImpl }));
+    results.push(await dispatchToRecipient({
+      db,
+      env,
+      recipientId: rid,
+      type,
+      body,
+      vapid,
+      sendWebPushImpl,
+      sendNativePushImpl,
+      sendEmailImpl,
+      fetchImpl,
+    }));
   }
 
   return { type_key: typeKey, recipients: recipientIds.length, results };

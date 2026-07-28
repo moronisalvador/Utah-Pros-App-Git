@@ -29,6 +29,7 @@ import {
   enrichAppointmentBody,
   enrichEstimateBody,
   enrichInboundMessageBody,
+  nativeNotificationEventKey,
 } from './notify.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
@@ -242,6 +243,70 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     const out = await dispatchEvent({ db, env: ENV, typeKey: 'feedback.submitted', body: {}, sendWebPushImpl });
     expect(sends).toEqual(['https://push/1']);
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
+  });
+
+  it('routes native APNs through the same preference-gated dispatcher', async () => {
+    const nativeSends = [];
+    const sendNativePushImpl = vi.fn(async (input) => {
+      nativeSends.push(input);
+      return { sent: 1, attempted: 1, pruned: 0 };
+    });
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
+    });
+    const body = {
+      title: 'New feedback',
+      body: 'A technician sent feedback.',
+      entity_type: 'tech_feedback',
+      entity_id: 'feedback-1',
+      data: { url: '/tech/settings' },
+    };
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body,
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).toHaveBeenCalledOnce();
+    expect(nativeSends[0]).toMatchObject({
+      db,
+      env: ENV,
+      employeeId: 'a1',
+      title: 'New feedback',
+      body: 'A technician sent feedback.',
+      data: { url: '/tech/settings' },
+      eventKey: nativeNotificationEventKey(baseType, body, 'a1'),
+    });
+    expect(out.results[0].push).toMatchObject({
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+      native: { sent: 1, attempted: 1, pruned: 0 },
+    });
+  });
+
+  it('does not invoke native APNs when push preference is off', async () => {
+    const sendNativePushImpl = vi.fn();
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { bell: true }) },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {},
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).not.toHaveBeenCalled();
   });
 
   it('continues fan-out when one push subscription throws and reports the later success', async () => {
