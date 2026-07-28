@@ -5895,7 +5895,7 @@ tr:hover td { background: var(--bg-secondary); }
 
 @media (max-width: 768px) {
   :root[data-native='true'] .notification-bell__panel {
-    top: calc(env(safe-area-inset-top, 0px) + 56px) !important;
+    top: calc(var(--safe-top) + 56px) !important;
     right: var(--space-3) !important;
     left: auto !important;
     width: min(340px, calc(100vw - 2 * var(--space-3))) !important;
