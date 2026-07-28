@@ -53,10 +53,14 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
+import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
 
 export default function TechEditAppointment() {
+  // KB-01: the sticky Save sits behind the keyboard without this.
+  // Native only — 0 on web, where this renders exactly as it does today.
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['apptForm', 'tech']);
   const { id } = useParams();
@@ -715,7 +719,7 @@ export default function TechEditAppointment() {
 
       {/* Sticky save button */}
       <div style={{
-        position: 'fixed', bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))',
+        position: 'fixed', bottom: techStickyCtaBottom(kbInset),
         left: 0, right: 0, padding: '12px 16px',
         background: 'linear-gradient(transparent, var(--bg-primary) 8px)',
         zIndex: 10,

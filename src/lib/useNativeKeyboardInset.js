@@ -34,6 +34,27 @@ import { observeKeyboardInset, KB_INSET_VAR } from './nativeKeyboardLayout.js';
 
 export { KB_INSET_VAR };
 
+/**
+ * Where a tech sticky-CTA bar rests with no keyboard: above the tab bar, clear
+ * of the home indicator. Identical in all four field forms, so it lives here
+ * once rather than being retyped per screen.
+ */
+export const TECH_STICKY_CTA_BOTTOM =
+  'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))';
+
+/**
+ * Bottom offset for a `position: fixed` tech CTA, given the keyboard inset.
+ *
+ * With a keyboard up, the tab bar and the home indicator are both BEHIND it, so
+ * offsetting by either would float the button into the middle of the keyboard.
+ * Sit directly on the keyboard instead, with the same 12px breathing room.
+ *
+ * kbInset 0 (always true on web) returns the resting value unchanged.
+ */
+export function techStickyCtaBottom(kbInset) {
+  return kbInset > 0 ? `${kbInset + 12}px` : TECH_STICKY_CTA_BOTTOM;
+}
+
 export default function useNativeKeyboardInset() {
   const [inset, setInset] = useState(0);
 

@@ -33,7 +33,13 @@ describe('KB-01 — native keyboard handling never reaches the PWA', () => {
     // nativeKeyboardLayout.js ships a tested web adapter on purpose, but wiring
     // the PWA is a separate product decision. Only the native-gated hook may
     // reach the port from UI code.
-    const consumers = ['src/components/tech/EsignRequestSheet.jsx'];
+    const consumers = [
+      'src/components/tech/EsignRequestSheet.jsx',
+      'src/pages/tech/TechNewAppointment.jsx',
+      'src/pages/tech/TechEditAppointment.jsx',
+      'src/pages/tech/TechNewJob.jsx',
+      'src/pages/tech/TechNewCustomer.jsx',
+    ];
     for (const file of consumers) {
       const source = read(file);
       expect(source).not.toContain('observeKeyboardInset');
@@ -51,6 +57,26 @@ describe('KB-01 — native keyboard handling never reaches the PWA', () => {
     // A bare `paddingBottom: kbInset` would emit paddingBottom:0 on web, which
     // is NOT the same as omitting the property once a stylesheet is involved.
     expect(sheet).not.toMatch(/paddingBottom:\s*kbInset\s*[,}]/);
+  });
+
+  it('routes all four field forms through the shared helper, never a literal', () => {
+    // Four hand-copied offsets is how one screen silently keeps the old
+    // behaviour after the others are fixed.
+    const forms = [
+      'src/pages/tech/TechNewAppointment.jsx',
+      'src/pages/tech/TechEditAppointment.jsx',
+      'src/pages/tech/TechNewJob.jsx',
+      'src/pages/tech/TechNewCustomer.jsx',
+    ];
+    for (const form of forms) {
+      const source = read(form);
+      expect(source, form).toContain('bottom: techStickyCtaBottom(kbInset)');
+      // The resting literal must be GONE from the form — it now lives once in
+      // the helper, which is what guarantees all four move together.
+      expect(source, form).not.toContain(
+        "bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))'",
+      );
+    }
   });
 
   it('leaves the on-device-verified ThreadView implementation alone', () => {
