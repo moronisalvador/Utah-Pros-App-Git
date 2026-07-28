@@ -11,13 +11,20 @@
  * DEPENDS ON:
  *   Packages:  vitest, node built-ins
  *   Internal:  S1d migration/rollback/preflight/post-apply SQL, notification caller migrations,
- *              migration provenance manifest and dated live provenance evidence
+ *              and the migration provenance manifest
  *   Data:      reads  → repository files only
  *              writes → none
  *
  * NOTES / GOTCHAS:
- *   - Live application is deliberately outside this test. Representative role checks and any
- *     synthetic trigger canary require a later owner-authorized shared-database window.
+ *   - The migration APPLIED to the shared project on 2026-07-27 as ledger 20260727233704. The
+ *     provenance case therefore asserts the applied mapping. It previously asserted the pre-apply
+ *     state ("not in the manifest") and broke the moment the owner-authorized apply landed —
+ *     encoding a point-in-time operational state as if it were a durable invariant.
+ *   - Manifest-versus-live-evidence agreement is deliberately NOT re-checked here. That belongs to
+ *     `npm run validate:provenance`, which CI runs as its own gate. This test used to read a dated
+ *     evidence snapshot, which is precisely what went stale; do not reintroduce a dated file path.
+ *   - Live role behavior stays outside this test. Representative role checks and any synthetic
+ *     trigger canary require a later owner-authorized shared-database window.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 import { createHash } from 'node:crypto';
@@ -40,9 +47,9 @@ const timesheetCallers = read('supabase/migrations/20260704_notify_timesheet_eve
 const clockCaller = read('supabase/migrations/20260704_notify_clock_abandoned_scan.sql');
 const callerSources = [foundation, estimateCaller, timesheetCallers, clockCaller].join('\n');
 const provenanceManifest = JSON.parse(read('scripts/migration-provenance-manifest.json'));
-const provenanceEvidence = JSON.parse(
-  read('docs/audit/2026-07/evidence/migration-provenance-2026-07-24.json'),
-);
+const migrationPath = `supabase/migrations/${migrationName}`;
+const appliedLedgerVersion = '20260727233704';
+const reviewedOriginCommit = '4688ed64';
 
 const oldMerge =
   "jsonb_build_object('type_key', p_type_key) || COALESCE(p_body, '{}'::jsonb)";
@@ -249,11 +256,23 @@ describe('notify_emit service boundary migration', () => {
     expect(browserRpcCallers).toEqual([]);
   });
 
-  it('does not claim unapplied provenance and retains the d54 ledger reconciliation', () => {
-    const manifestText = JSON.stringify(provenanceManifest);
-    const evidenceText = JSON.stringify(provenanceEvidence);
-    expect(manifestText).not.toContain(migrationName);
-    expect(evidenceText).not.toContain('notify_emit_service_boundary');
+  it('records the applied ledger mapping exactly once and retains the d54 ledger reconciliation', () => {
+    // Applied to the shared project on 2026-07-27 under owner authorization. Exactly one ledger
+    // row may claim this source: a second would mean two applies were attributed to one reviewed
+    // migration, which is how a re-apply hides. Match on path OR name so a mapping that reuses
+    // either half against a different counterpart is caught rather than filtered away.
+    const mappings = provenanceManifest.ledgerMappings.filter(
+      (entry) => entry.path === migrationPath || entry.name === 'notify_emit_service_boundary',
+    );
+
+    expect(mappings).toEqual([
+      {
+        version: appliedLedgerVersion,
+        name: 'notify_emit_service_boundary',
+        path: migrationPath,
+        reviewedOriginCommit,
+      },
+    ]);
 
     const opsHealthMappings = provenanceManifest.ledgerMappings.filter(
       (entry) => entry.name === 'ops_health_alerting',
