@@ -58,8 +58,10 @@
  *     online-only for the initial production release.
  *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
  *     after 3s) — no modal or native confirm dialog.
- *   - The hero banner uses light text, so the screen forces a light status bar on
- *     mount and restores the dark one on unmount (statusBarLight/statusBarDark).
+ *   - The hero banner is a dark gradient, so the screen declares a dark SURFACE
+ *     on mount (giving light status-bar icons) and hands the strip back to the
+ *     theme on unmount — restoreStatusBarBase(), not a hardcoded style, so
+ *     leaving this screen in dark mode no longer strands dark-on-dark.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -81,7 +83,7 @@ import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 export default function TechAppointment() {
@@ -120,8 +122,8 @@ export default function TechAppointment() {
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
     // Division-colored hero = light text on dark gradient
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────

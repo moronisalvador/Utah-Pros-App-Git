@@ -59,7 +59,7 @@ import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, DIV_BORDER_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Hero from '@/components/tech/Hero';
@@ -172,8 +172,8 @@ export default function TechJobDetail() {
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────

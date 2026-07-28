@@ -57,7 +57,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
@@ -229,8 +229,8 @@ export default function TechClaimDetail() {
   // Page entry animation is now the shared View Transitions mechanism (motion-standard §2),
   // not a per-page entering flag — this effect only owns the status-bar tint.
   useEffect(() => {
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
