@@ -145,6 +145,66 @@ describe('send-esign — text delivery', () => {
     expect(out.message).toMatch(/has not consented/i);
   });
 
+  // ESIGN-02. send-message answers 201 with `success: true` even when the
+  // PROVIDER rejects the message — the failure rides inside the body
+  // (send-message.js:669-671). send-esign checked only `sendRes.ok`, so a text
+  // that never left reported as delivered and the sheet toasted "Signing link
+  // texted to the customer." A tech would stand there believing the customer had
+  // the link. Worse than a visible failure, because nobody goes looking.
+  it('reports a provider rejection instead of claiming the text was sent', async () => {
+    installFetch({
+      sendMessage: () => ({
+        ok: true, status: 201,
+        json: async () => ({
+          success: true,
+          message: { id: 'm1', status: 'failed' },
+          error_code: '21610',
+          error_message: 'Unsubscribed recipient',
+        }),
+      }),
+    });
+
+    const res = await onRequestPost({ request: req({ ...BASE, mode: 'sms' }), env: ENV });
+    const out = await res.json();
+
+    expect(out.sms_error).toBe(true);
+    expect(out.sms_error_code).toBe('21610');
+    expect(out.sms_error_detail).toBe('Unsubscribed recipient');
+    // The link still comes back — a failed text must not destroy the request.
+    expect(out.signing_url).toBe('https://dev.utahpros.app/sign/tok-abc');
+    // Distinct copy: pointing a tech at consent when the number is wrong sends
+    // them hunting in the wrong place.
+    expect(out.message).toMatch(/carrier rejected/i);
+    expect(out.message).not.toMatch(/has not consented/i);
+  });
+
+  it('catches a rejection reported only on the per-recipient entry', async () => {
+    // The multi-recipient return carries failures in `twilio[]` rather than at
+    // the top level, so a top-level-only check would miss it.
+    installFetch({
+      sendMessage: () => ({
+        ok: true, status: 201,
+        json: async () => ({
+          success: true,
+          message: { id: 'm1' },
+          twilio: [{ error: true, error_code: '30006', error_message: 'Unreachable' }],
+        }),
+      }),
+    });
+
+    const out = await (await onRequestPost({ request: req({ ...BASE, mode: 'sms' }), env: ENV })).json();
+    expect(out.sms_error).toBe(true);
+    expect(out.message).toMatch(/carrier rejected/i);
+  });
+
+  it('still reports a clean send as sent', async () => {
+    // The guard must not turn every successful text into a false failure.
+    installFetch({ sendMessage: accepted });
+    const out = await (await onRequestPost({ request: req({ ...BASE, mode: 'sms' }), env: ENV })).json();
+    expect(out.sms_error).toBeUndefined();
+    expect(out.mode).toBe('sms');
+  });
+
   it('refuses to text a job with no linked contact instead of guessing a number', async () => {
     installFetch({ sendMessage: mustNotSend });
 
