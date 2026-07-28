@@ -304,6 +304,25 @@ export default function TechLayout({ nativeBuild = false }) {
   const location = useLocation();
   const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
 
+  const { employee, db, isFeatureEnabled } = useAuth();
+  const [taskCount, setTaskCount] = useState(0);
+  const [toasts, setToasts] = useState([]);
+
+  // ── Tech v2 pane host ──
+  // Dashboard and Schedule have no legacy implementation, so their retired
+  // rollout flags must never blank these core routes. Messages retains its web
+  // rollback; native excludes desktop Conversations and always mounts v2.
+  const msgsV2 = nativeBuild
+    || isFeatureEnabled('page:tech_msgs_v2');
+  const dashActive = location.pathname === '/tech';
+  const schedActive = location.pathname === '/tech/schedule';
+  const msgsActive = msgsV2 && location.pathname === '/tech/conversations';
+  const paneCovering = dashActive || schedActive || msgsActive;
+
+  // NOTE: this block must stay BELOW paneCovering. It was originally placed
+  // just after navType, where `paneCovering` in the dependency arrays sat in
+  // the temporal dead zone of its own `const` — a ReferenceError on every
+  // render of TechLayout, so every /tech route fell to the ErrorBoundary.
   // ── MOTION-01: shell scroll restoration ──
   // page-lifecycle.md §5: "New route = top, back = restored", owned by ONE
   // primitive keyed on location.key, never hand-rolled per page.
@@ -348,20 +367,6 @@ export default function TechLayout({ nativeBuild = false }) {
       scrollPositions.current.delete(oldest);
     }
   }, [location.key, navType, paneCovering]);
-  const { employee, db, isFeatureEnabled } = useAuth();
-  const [taskCount, setTaskCount] = useState(0);
-  const [toasts, setToasts] = useState([]);
-
-  // ── Tech v2 pane host ──
-  // Dashboard and Schedule have no legacy implementation, so their retired
-  // rollout flags must never blank these core routes. Messages retains its web
-  // rollback; native excludes desktop Conversations and always mounts v2.
-  const msgsV2 = nativeBuild
-    || isFeatureEnabled('page:tech_msgs_v2');
-  const dashActive = location.pathname === '/tech';
-  const schedActive = location.pathname === '/tech/schedule';
-  const msgsActive = msgsV2 && location.pathname === '/tech/conversations';
-  const paneCovering = dashActive || schedActive || msgsActive;
 
   // COMPOSER-01. The tab bar must disappear while a message thread is open, or
   // the docked composer floats above it with its own safe-area padding as dead
