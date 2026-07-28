@@ -78,6 +78,60 @@ describe('KB-03 — the hook it depends on stays native-only', () => {
   });
 });
 
+// The other half of the sweep: screens that dock a BAR to the tab bar rather than
+// opening a sheet. With the keyboard up the tab bar and the home indicator are both
+// behind it, so the resting offset floats the bar into the middle of the keys.
+const DOCKED_BARS = [
+  ['src/pages/tech/TechDemoSheet.jsx', 2],   // main footer + the review overlay's
+  ['src/pages/tech/TechAppointment.jsx', 1],
+  ['src/pages/tech/TechRoomDetail.jsx', 1],
+  ['src/pages/tech/TechJobAlbum.jsx', 1],
+  ['src/pages/tech/TechClaimAlbum.jsx', 1],
+];
+
+describe.each(DOCKED_BARS)('KB-03 — %s docked bar', (file, count) => {
+  const src = read(file);
+
+  it('sits flush on the keyboard instead of on the hidden tab bar', () => {
+    // Exact count, not "at least one": TechDemoSheet has TWO docked footers (the
+    // sheet's own and the review overlay's) and fixing only one leaves the submit
+    // screen broken while the main screen looks correct.
+    const hits = (src.match(/bottom: ?kbInset > 0 \?/g) || []).length;
+    expect(hits).toBe(count);
+  });
+
+  it('keeps the exact resting offset for the PWA', () => {
+    // Every keyboard-aware bottom keeps its original calc() as the else branch, so
+    // with kbInset 0 the computed value is what shipped.
+    expect(src).toContain('var(--tech-nav-height, 64px)');
+    expect(src).toContain('env(safe-area-inset-bottom');
+  });
+
+  it('reads the inset from the shared native-only hook', () => {
+    expect(src).toContain("import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset'");
+    expect(src).toContain('const kbInset = useNativeKeyboardInset();');
+  });
+});
+
+describe('KB-03 — the Scope Sheet can scroll its fields clear of the keyboard', () => {
+  const src = read('src/pages/tech/TechDemoSheet.jsx');
+
+  it('grows both scroll containers by the keyboard height', () => {
+    // Lifting the footer is not enough on its own: without extra scroll slack a
+    // field near the bottom cannot be brought above the keyboard at all. This is
+    // the same pair of changes KB-01 needed in the four forms.
+    expect(src).toContain('calc(180px + env(safe-area-inset-bottom, 0px) + ${kbInset}px)');
+    expect(src).toContain('env(safe-area-inset-bottom, 0px) + ${kbInset}px)');
+  });
+
+  it('wires the hook into BOTH components that render a docked footer', () => {
+    // ReviewScreen is a separate component with its own fixed footer; missing it
+    // leaves the submit screen broken while the main sheet looks fixed.
+    const hooks = src.split('const kbInset = useNativeKeyboardInset();').length - 1;
+    expect(hooks).toBe(2);
+  });
+});
+
 describe('KB-03 — no fixed-position tech surface with an input is left unhandled', () => {
   it('has keyboard handling on every sheet and form known to need it', () => {
     // The audit that found these four. If a new screen pairs a fixed element with
@@ -93,6 +147,12 @@ describe('KB-03 — no fixed-position tech surface with an input is left unhandl
       'src/pages/tech/TechEditAppointment.jsx',
       'src/pages/tech/TechNewJob.jsx',
       'src/pages/tech/TechNewCustomer.jsx',
+      'src/pages/tech/TechDemoSheet.jsx',
+      'src/pages/tech/TechAppointment.jsx',
+      'src/pages/tech/TechRoomDetail.jsx',
+      'src/pages/tech/TechJobAlbum.jsx',
+      'src/pages/tech/TechClaimAlbum.jsx',
+      'src/pages/tech/v2/messages/ThreadView.jsx',
     ];
     for (const file of WIRED) {
       expect(read(file), file).toMatch(/useNativeKeyboardInset|observeKeyboardInset/);

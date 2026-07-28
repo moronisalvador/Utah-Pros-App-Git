@@ -40,6 +40,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS } from './techConstants';
@@ -51,6 +52,7 @@ import Lightbox from '@/components/tech/Lightbox';
 import { photoDateTime } from '@/lib/techDateUtils';
 
 export default function TechRoomDetail() {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { claimId, roomId } = useParams();
   const navigate = useNavigate();
@@ -415,7 +417,7 @@ export default function TechRoomDetail() {
           style={{
             position: 'fixed',
             left: 0, right: 0,
-            bottom: `calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)))`,
+            bottom: kbInset > 0 ? `${kbInset}px` : `calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)))`,
             padding: '10px var(--space-4) 12px',
             background: 'linear-gradient(to top, var(--bg-primary) 60%, rgba(255,255,255,0))',
             display: 'flex', justifyContent: 'center',

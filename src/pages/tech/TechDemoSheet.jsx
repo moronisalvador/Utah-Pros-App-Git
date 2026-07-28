@@ -61,6 +61,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { toast } from '@/lib/toast';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -484,6 +485,7 @@ function prettySummaryKey(key) {
 // skipped; gated sections answered "No" show as N/A pills. Job totals come
 // from computeSummary.
 function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const sections = schema?.sections || [];
   const jobSections = schema?.jobSections || [];
@@ -507,7 +509,7 @@ function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit
 
   // ─── SECTION: Render ──────────────
   return (
-    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:'calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:`calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px) + ${kbInset}px)` }}>
       <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', position:'sticky', top:0, zIndex:10, display:'flex', alignItems:'center', gap:12 }}>
         <button onClick={onBack} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', flexShrink:0, fontFamily:'var(--font-sans)' }}>← Edit</button>
         <div style={{ flex:1 }}>
@@ -636,7 +638,10 @@ function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit
         )}
       </div>
 
-      <div style={{ position:'fixed', bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
+      {/* KB-03: with the keyboard up the tab bar and home indicator are both behind
+          it, so the resting offset would float this bar into the middle of the keys.
+          Sit flush on the keyboard instead. 0 on web — resting value unchanged. */}
+      <div style={{ position:'fixed', bottom:kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
         <div style={{ fontSize:11, color:C.muted, textAlign:'center', marginBottom:8 }}>
           {encircleLinked ? '⛓ Will email + post note to Encircle' : 'Will email to restoration@utah-pros.com'}
         </div>
@@ -743,6 +748,7 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
 // ─── SECTION: Main page (component) ──────────────
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function TechDemoSheet() {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1355,7 +1361,7 @@ export default function TechDemoSheet() {
   }
 
   return (
-    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(180px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
+    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:`calc(180px + env(safe-area-inset-bottom, 0px) + ${kbInset}px)`, fontFamily:'var(--font-sans)' }}>
       <style>{`
         /* PICK-01: date/time inputs are EXCLUDED. Stripping their appearance
            removes the native control's own affordance while the popup stays
@@ -1529,7 +1535,9 @@ export default function TechDemoSheet() {
         {/* Bottom bar — sits above the bottom nav */}
         <div style={{
           position:'fixed',
-          bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
+          // KB-03: sit flush on the keyboard when it is up — the tab bar and home
+          // indicator it normally clears are both behind it. 0 on web.
+          bottom:kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
           left:0, right:0,
           background:C.headerBg,
           borderTop:`1px solid ${C.border}`,

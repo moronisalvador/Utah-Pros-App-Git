@@ -65,6 +65,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -87,6 +88,7 @@ import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearan
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 export default function TechAppointment() {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['appointment', 'tech']);
   const { id } = useParams();
@@ -1255,7 +1257,7 @@ export default function TechAppointment() {
       {photoToast && (
         <div style={{
           position: 'fixed',
-          bottom: 'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',
+          bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',
           left: 16, right: 16,
           zIndex: 100,
           padding: '10px 14px',
