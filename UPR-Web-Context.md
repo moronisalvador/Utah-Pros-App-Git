@@ -8957,9 +8957,9 @@ money movement, signing, or device action occurred in this reconciliation.
 
 ## Leads board search bar (2026-07-27, owner-directed standalone)
 
-`/crm/leads` gained a free-text **search box** as the first control in its existing filter bar
-(`CrmLeads.jsx`, `.crm-leads-filterbar`) — left of the Last 7 / Last 30 / All time tabs and the
-Filters panel. Owner-directed standalone work, recorded as `.claude/rules/crm-wave-ownership.md`
+`/crm/leads` gained a free-text **search box** in its existing filter bar (`CrmLeads.jsx`,
+`.crm-leads-filterbar`), positioned **after** the Last 7 / Last 30 / All time tabs and the Filters
+panel (owner-directed 2026-07-27; the first pass placed it first in the row). Owner-directed standalone work, recorded as `.claude/rules/crm-wave-ownership.md`
 §12. **Zero schema, zero migrations, no RPC touched, no worker touched.**
 
 - **Pure client-side**, exactly like the date-range and criteria filters beside it: it narrows the
@@ -9000,4 +9000,6 @@ Filters panel. Owner-directed standalone work, recorded as `.claude/rules/crm-wa
   `.crm-board-period` block already records. Height is pinned to the **measured 38px** of the
   segmented control and Filters button beside it (not `.input`'s 40px) so the three share a top and
   bottom edge. Desktop `flex: 0 1 260px` (min 190 / max 300); at ≤768px it takes its own full-width
-  line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus.
+  line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus. Sitting last also
+  costs one row fewer on mobile than the original first-in-row placement did — the date tabs and
+  Filters fit together on one 390px line, with search full-width beneath them.
