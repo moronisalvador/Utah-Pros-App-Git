@@ -23,6 +23,8 @@ NOTES / GOTCHAS:
 **Source head before correction:** `d898091fa74cfff26caa9c6e132e595a916e6053`
 **Fetched origin/dev:** `c9060b299a5a0430ad4814267322de51a2d9e07f`
 **Migration:** `20260726260000_notification_read_recipient_boundary.sql` — not applied
+**Forward source commit:** `3409ef49f20262ec6ba3470132e11bf97488a3c0`
+**Rollback/test commit:** `756415538fcb026bfde2c1ec44018c1b86dca430`
 
 ## Result
 
@@ -62,6 +64,10 @@ Read-only catalog and migration-ledger capture confirmed:
 
 Only catalog metadata was queried. No employee or notification row was read.
 
+After the correction was committed, the exact checked-in value-free preflight was run again against
+the shared project. It passed, the containment migration remained recorded as `20260728002105`, and
+S1g remained absent from the ledger. This was a catalog-only qualification check, not an apply.
+
 ## Exact corrected artifacts
 
 | Artifact | SHA-256 |
@@ -72,8 +78,8 @@ Only catalog metadata was queried. No employee or notification row was read.
 | Isolated behavior | `12f221d0dd8d6f50b1b4cf70ccb0153f7468716fb2ee8d1acee40aa9abbcaada` |
 | Rollback | `df746aff7551faf1a2ad0b9e4242511584e18c9a718efff547b3672027d99a24` |
 
-These hashes identify the corrected working-tree files at the time of this evidence. The release
-commit must recompute and match them before authorization or apply.
+These hashes identify the committed corrected files. They were recomputed after the source commits
+and matched the runbook before authorization.
 
 ## Verification actually performed
 
@@ -107,9 +113,11 @@ running Postgres 17:
   authenticated RPC denial, authenticated table denial, and service-role RPC compatibility.
 
 The local Supabase containers were stopped without backup after verification, and a final container
-list confirmed none remained running. The focused credential-free QA contract passed 6/6, and
-`git diff --check` passed. Independent final migration-safety, least-privilege, and source-contract
-reviews all returned PASS with no remaining source finding.
+list confirmed none remained running. The focused credential-free QA contract passed 6/6, full
+`npm test` passed 3,337/3,337 with zero unexpected skips, the production web build passed with 688
+modules, changed-file ESLint passed, the mobile preflight completed with zero errors and three
+environmental warnings, and `git diff --check` passed. Independent final migration-safety,
+least-privilege, and source-contract reviews all returned PASS with no remaining source finding.
 
 ## Remaining gates
 
@@ -120,11 +128,10 @@ sessions/sockets.
 
 Before a shared-production apply:
 
-1. commit the exact corrected artifacts and recompute the hashes;
-2. obtain fresh owner authorization naming that migration checksum;
-3. refetch `origin/dev` and repeat the value-free ledger/catalog preflight;
-4. apply only S1g through the single-migration mechanism; and
-5. run the post-apply catalog check, advisors, provenance capture, and the authorized multi-identity
+1. obtain fresh owner authorization naming the committed migration checksum;
+2. confirm the committed checksum and value-free ledger/catalog preflight remain unchanged;
+3. apply only S1g through the single-migration mechanism; and
+4. run the post-apply catalog check, advisors, provenance capture, and the authorized multi-identity
    RPC/PostgREST/Realtime matrix.
 
 The earlier authorization named a different migration checksum and is not reusable. No migration,
