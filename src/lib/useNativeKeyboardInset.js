@@ -65,7 +65,30 @@ export default function useNativeKeyboardInset() {
     // The port pushes changes; nothing polls. A keyboard moves a handful of
     // times per session, so a per-frame read would burn 60 callbacks a second
     // to observe almost nothing (motion-standard.md §7, perf-budget.md §5).
-    const unobserve = observeKeyboardInset(setInset);
+    let previous = 0;
+    const unobserve = observeKeyboardInset((px) => {
+      setInset(px);
+      // Reveal the focused field. This is NOT something the browser does for
+      // us here: capacitor.config sets Keyboard.resize "none", so the WKWebView
+      // keeps its full height and only the VISUAL viewport shrinks. Nothing
+      // about the layout changed as far as the page is concerned, so there is
+      // no scroll-into-view — the keyboard simply covers whatever is under it.
+      // Extra bottom padding gives room to scroll but cannot start the scroll.
+      if (px > 0 && previous === 0) {
+        const el = document.activeElement;
+        const editable = el && (
+          el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable
+        );
+        // Next frame: the padding that creates the scrollable room is applied
+        // in the same React commit as this state change.
+        if (editable) {
+          requestAnimationFrame(() => {
+            try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* best effort */ }
+          });
+        }
+      }
+      previous = px;
+    });
     return () => {
       unobserve();
       setInset(0);

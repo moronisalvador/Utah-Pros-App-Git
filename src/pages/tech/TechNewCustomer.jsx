@@ -173,7 +173,7 @@ export default function TechNewCustomer() {
       </div>
 
       {/* Scrollable form */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 + kbInset }}>
 
         {/* Role pills */}
         <div style={{ marginBottom: 20 }}>

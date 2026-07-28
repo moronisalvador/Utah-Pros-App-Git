@@ -450,7 +450,7 @@ export default function TechNewJob() {
       </div>
 
       {/* Scrollable form */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 + kbInset }}>
 
         {/* ═══ CLIENT ═══ */}
         <div style={{ marginBottom: 20 }}>
