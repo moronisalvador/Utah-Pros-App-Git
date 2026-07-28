@@ -335,10 +335,11 @@ Add a ledger mapping and fresh function fingerprint only after an owner-authoriz
 reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
-## Pending notification read receipts and recipient RLS (S1g, 2026-07-26)
+## Live notification read receipts and recipient RLS (S1g, applied 2026-07-28)
 
-`20260726260000_notification_read_recipient_boundary.sql` is authored and locally tested but **not
-applied**. It adds `notification_reads(notification_id, employee_id, read_at)` with cascading
+`20260726260000_notification_read_recipient_boundary.sql` is live as ledger entry
+`20260728192024_notification_read_recipient_boundary`. It adds
+`notification_reads(notification_id, employee_id, read_at)` with cascading
 foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, carries an
 explicit authenticated deny-all policy, and grants no direct browser or service-role table access;
 the owner-run guarded `SECURITY DEFINER` bell RPCs are its only access path.
@@ -358,8 +359,10 @@ preflight pins the current employee
 UUID/active/external columns plus authenticated employee SELECT/RLS policy because that table is an
 explicit dependency of the notification predicate.
 
-This schema description is proposed source state until a separate shared-database apply succeeds.
-The generated live schema/RPC reports and provenance ledger must remain unchanged before then.
+The exact checksum-pinned migration passed its value-free preflight, embedded and standalone
+postconditions, disposable local Supabase forward/behavior/rollback sequence, and shared-project
+catalog/role verification. Generated live schema/RPC reports and migration provenance were
+refreshed after apply.
 Rollback is owner-guarded because it drops receipt history. It fails browser/native bell RPCs and
 Realtime table reads closed, preserves identity containment and recipient-scoped policies, and
 retains only explicitly gated service-role compatibility. It never restores the cross-recipient
