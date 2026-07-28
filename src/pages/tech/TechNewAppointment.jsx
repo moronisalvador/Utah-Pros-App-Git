@@ -46,7 +46,7 @@ import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // Add one hour to an 'HH:MM' time, capped at the last selectable option (22:30).
@@ -213,7 +213,10 @@ export default function TechNewAppointment() {
   };
 
   /* ── Submit ── */
-  const canSubmit = job && date;
+  // PICK-03: an end at or before the start used to insert cleanly — nothing
+  // compared them on this path. Shared with the edit form and TechNewEvent.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
+  const canSubmit = job && date && !timeInvalid;
 
   const handleSubmit = async () => {
     if (!canSubmit || saving) return;
@@ -406,7 +409,11 @@ export default function TechNewAppointment() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: the group heading above is a styled div, not a <label>,
+                so without these two selects announce as identical unlabeled
+                comboboxes. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => { const v = e.target.value; setTimeStart(v); if (!endEdited) setTimeEnd(addOneHour(v)); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -415,6 +422,7 @@ export default function TechNewAppointment() {
             </select>
             <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => { setEndEdited(true); setTimeEnd(e.target.value); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -422,6 +430,11 @@ export default function TechNewAppointment() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
           </div>
+          {timeInvalid && (
+            <div role="alert" style={{ fontSize: 12, color: '#ef4444', marginTop: 6, fontWeight: 500 }}>
+              {t('timeError')}
+            </div>
+          )}
         </div>
 
         {/* ═══ TYPE ═══ */}

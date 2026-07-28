@@ -17,5 +17,7 @@
   "btnCreate": "Create event",
   "btnCreating": "Creating...",
   "toastCreated": "Event created",
-  "toastCreateFailed": "Failed to create event: {{message}}"
+  "toastCreateFailed": "Failed to create event: {{message}}",
+  "startTimeAria": "Start time",
+  "endTimeAria": "End time"
 }

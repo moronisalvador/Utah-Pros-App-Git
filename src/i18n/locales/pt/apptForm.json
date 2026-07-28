@@ -42,5 +42,8 @@
   "privateBadge": "Agendamento privado",
   "btnDelete": "Excluir agendamento",
   "btnDeleteConfirm": "Toque novamente para excluir",
-  "btnDeleting": "Excluindo..."
+  "btnDeleting": "Excluindo...",
+  "timeError": "O horário de término deve ser após o início",
+  "startTimeAria": "Horário de início",
+  "endTimeAria": "Horário de término"
 }

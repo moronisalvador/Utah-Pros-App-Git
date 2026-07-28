@@ -55,7 +55,7 @@ import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
 
 export default function TechEditAppointment() {
   // KB-01: the sticky Save sits behind the keyboard without this.
@@ -226,8 +226,14 @@ export default function TechEditAppointment() {
   };
 
   /* ── Save ── */
+  // PICK-03: shared with TechNewAppointment and TechNewEvent so the rule
+  // cannot drift between the three forms.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
+
   const handleSave = async () => {
-    if (!date || saving) return;
+    // PICK-03: an end at or before the start reached update_appointment
+    // unchecked on this path.
+    if (!date || saving || timeInvalid) return;
     setSaving(true);
     try {
       // 1. Update core appointment fields
@@ -399,7 +405,10 @@ export default function TechEditAppointment() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: the group heading is a styled div, not a <label>, so
+                without these the two selects announce identically. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => setTimeStart(e.target.value)}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -408,6 +417,7 @@ export default function TechEditAppointment() {
             </select>
             <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => setTimeEnd(e.target.value)}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -415,6 +425,11 @@ export default function TechEditAppointment() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
           </div>
+          {timeInvalid && (
+            <div role="alert" style={{ fontSize: 12, color: '#ef4444', marginTop: 6, fontWeight: 500 }}>
+              {t('timeError')}
+            </div>
+          )}
         </div>
 
         {/* ═══ CREW ═══ */}
@@ -727,7 +742,7 @@ export default function TechEditAppointment() {
         <button
           className="btn"
           onClick={handleSave}
-          disabled={!date || saving}
+          disabled={!date || saving || timeInvalid}
           style={{
             width: '100%', height: 52, borderRadius: 'var(--tech-radius-button)',
             background: date && !saving ? 'var(--accent)' : 'var(--bg-tertiary)',
