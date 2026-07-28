@@ -8418,6 +8418,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   --crm-sidebar-text: #9ca3af;
   --crm-sidebar-text-active: #ffffff;
   --crm-accent: #6366f1;
+  /* indigo-50 tint partner to the indigo-500 accent, matching the danger/success/speaker
+     colour+tint pairs below. Reads on BOTH --crm-bg-card (#fff) and --crm-bg-content
+     (#f8fafc), which is why one token serves the pill row and the white side panel.
+     Promoted here from the Phase 6a local scope at `.crm-dir, .crm-detail` (~L9100), which
+     held this same literal only because this block was frozen FOR THE WAVE — a freeze that
+     ended when Wave 1 completed 2026-07-02. Existing `var(--crm-accent-bg, #eef2ff)` call
+     sites are unaffected: they resolved to this identical value via their fallback. */
+  --crm-accent-bg: #eef2ff;
   --crm-bg-content: #f8fafc;
   --crm-bg-card: #ffffff;
   --crm-text-primary: #111827;
@@ -8702,10 +8710,10 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   background: transparent; border: none; border-radius: calc(var(--crm-radius) - 3px); padding: 6px 13px;
   cursor: pointer; transition: background var(--transition-fast), color var(--transition-fast);
 }
-.crm-board-period-btn:hover { background: var(--crm-bg-page); }
+.crm-board-period-btn:hover { background: var(--crm-accent-bg); }
 .crm-board-period-btn.active { color: var(--crm-text-on-accent); background: var(--crm-accent); font-weight: 700; }
 .crm-board-period-divider { width: 1px; align-self: stretch; background: var(--crm-border); margin: 2px 1px; }
-.crm-board-period-calendar.active { color: var(--crm-accent); background: var(--crm-bg-page); }
+.crm-board-period-calendar.active { color: var(--crm-accent); background: var(--crm-accent-bg); }
 
 .crm-leads-filter-wrap { position: relative; }
 /* Match the date-range pill's 38px total height (its tallest child, the 30px
@@ -9279,7 +9287,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .crm-task-delete:hover { color: var(--crm-danger-text); }
 .crm-task-delete svg { width: 16px; height: 16px; }
 .crm-task-confirm { flex-shrink: 0; display: flex; gap: 4px; }
-.crm-task-date-toggle.active { color: var(--crm-accent); background: var(--crm-bg-page); }
+.crm-task-date-toggle.active { color: var(--crm-accent); background: var(--crm-accent-bg); }
 
 /* ── CrmDatePicker / CrmTimePicker — CRM-themed replacements for the native
    <input type="date">/<input type="time"> browser widgets. Own popover

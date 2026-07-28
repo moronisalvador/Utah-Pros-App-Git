@@ -1,18 +1,47 @@
 # Performance Budget Standard
 
-Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.** Baselines are the
-2026-07 measured numbers; the point is to ratchet down, never up. Enforced by the CI bundle-size guard
-(`.github/workflows/ci.yml`) + `page-behavior-checker` (query hygiene). Reference scenario: a field-tech
-PWA cold-start over LTE.
+**Last verified:** 2026-07-27
 
-## 1. Bundle budgets (measured 2026-07-13)
+Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.** Baselines are the
+2026-07 measured numbers; the point is to ratchet down, never up. Query hygiene is enforced by
+`page-behavior-checker`. Reference scenario: a field-tech PWA cold-start over LTE.
+
+> **These budgets are currently enforced by review, NOT by CI (verified 2026-07-27).** This intro
+> used to claim "Enforced by the CI bundle-size guard (`.github/workflows/ci.yml`)". Three things
+> are wrong with that: the `Bundle size report` step is `continue-on-error: true` and its own
+> comment says "Non-blocking; ... Hard-fail ratchet is a follow-up"; it reads `dist/assets/*.js`
+> while Vite emits to `dist/app-assets/`, so it gzips empty input and prints **20 bytes** instead
+> of the real 852,798; and it never measures CSS at all. A budget nobody enforces is how the
+> `index.css` figure below drifted ~157 KB before anyone noticed. Fix the glob and add a CSS line
+> before restoring any "enforced by CI" claim here.
+
+## 1. Bundle budgets (JS measured 2026-07-13 · `index.css` re-baselined 2026-07-27)
 
 - **Entry-graph JS ≤ 232 KB gzip** — CI fails at +10% (255 KB). Record the top-5 chunk deltas from
   `npm run build` in every PR that changes app code.
 - **Any single route chunk ≤ 175 KB raw.** A heavy new dep must be route-lazy (`React.lazy`), never in
   the entry graph.
-- **`index.css` ≤ 400 KB raw** (today 384 KB / 11,446 lines) with ratchet-down intent — new CSS lives in
-  a reserved marker, not scattered.
+- **`index.css` ≤ 595,000 bytes raw** — measured 2026-07-27 at **571,960 bytes / 12,583 lines**
+  (built: 422,482 bytes, 62,391 gzip). The ceiling sits ~4% above current, the same headroom the
+  original 400 KB / 384 KB pair had. **Sizes are stated in bytes on purpose** — the old "400 KB"
+  was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
+  ratchet target: 400 KB (409,600 bytes), unchanged** — the direction of travel is still down; new
+  CSS lives in a reserved marker, not scattered. **Re-derive, never quote:**
+
+  ```bash
+  wc -c src/index.css && wc -l src/index.css && gzip -c dist/app-assets/index-*.css | wc -c
+  ```
+
+  > **RE-BASELINED 2026-07-27 (owner-directed).** This bullet read "≤ 400 KB raw (today 384 KB /
+  > 11,446 lines)" — a 2026-07-13 measurement that had drifted ~157 KB out of date, leaving the
+  > stated budget and reality far enough apart that the rule could not catch a real regression.
+  > Asked to resolve it on 2026-07-27, the owner chose re-baseline-to-measured over declaring an
+  > open breach, keeping the 400 KB ratchet target as the goal rather than the gate. Recorded in
+  > the `db-foundation-wave-ownership.md` §8 format so the loosened ceiling is attributable rather
+  > than silent. **The owner's direction is also what authorized this edit**, which lands inside the
+  > `.claude/**` writer lease that `upr-engineering-foundation-wave-ownership.md` §6 still marks
+  > ACTIVE for `codex/mobile-readiness-current-origin-review`. The JS and font bullets around it
+  > were **not** re-measured and keep their 2026-07-13 provenance.
 - No new **render-blocking** third-party request (today there are 2 Google Fonts stylesheets; W5 self-hosts).
 
 ## 2. Image law
