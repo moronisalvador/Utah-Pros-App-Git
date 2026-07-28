@@ -5879,6 +5879,54 @@ tr:hover td { background: var(--bg-secondary); }
 .tv2-dash-menu__item + .tv2-dash-menu__item { border-top: 1px solid var(--border-light); }
 .tv2-dash-menu__item[data-danger='true'] { color: var(--status-paused-color); }
 
+/* ─── NATIVE NOTIFICATION POLISH RESERVED — BELL-01 ─── */
+@keyframes notificationBellPanelIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes notificationBellPanelOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+@keyframes notificationBellBadgeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+  :root[data-native='true'] .notification-bell__panel {
+    top: calc(env(safe-area-inset-top, 0px) + 56px) !important;
+    right: var(--space-3) !important;
+    left: auto !important;
+    width: min(340px, calc(100vw - 2 * var(--space-3))) !important;
+    max-height: min(70dvh, 560px) !important;
+    z-index: 400 !important;
+    border-radius: var(--radius-xl) !important;
+    box-shadow: var(--shadow-lg) !important;
+    transform-origin: top right;
+  }
+  :root[data-native='true'] .notification-bell__panel[data-state='open'] {
+    animation: notificationBellPanelIn var(--motion-duration-fast) var(--motion-spring-in) both;
+  }
+  :root[data-native='true'] .notification-bell__panel[data-state='closing'] {
+    pointer-events: none;
+    animation: notificationBellPanelOut calc(var(--motion-duration-fast) * 0.75) var(--motion-ease-accelerate) both;
+  }
+  :root[data-native='true'] .notification-bell__badge {
+    animation: notificationBellBadgeIn var(--motion-duration-fast) var(--motion-ease-decelerate) both;
+    transform-origin: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-native='true'] .notification-bell__panel,
+  :root[data-native='true'] .notification-bell__badge {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ── Attention strip (banners) ── */
 .tv2-dash-attention { display: flex; flex-direction: column; gap: 12px; }
 .tv2-dash-attention:empty { display: none; }

@@ -1,0 +1,77 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: native-notification-bell-motion.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Locks the native notification panel's motion, lifecycle, refresh, and
+ *   accessibility source contracts without changing the frozen web styling.
+ *
+ * DEPENDS ON:
+ *   Packages:  node:fs, vitest
+ *   Internal:  NotificationBell.jsx, DashHeader.jsx, TechDashV2.jsx, index.css
+ *   Data:      reads → repository source files
+ *
+ * NOTES / GOTCHAS:
+ *   - This is source-contract coverage. Simulator and device verification own
+ *     the real WKWebView animation and focus evidence.
+ * ════════════════════════════════════════════════
+ */
+
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const read = (path) => readFileSync(path, 'utf8');
+const bell = read('src/components/NotificationBell.jsx');
+const dash = read('src/pages/tech/v2/TechDashV2.jsx');
+const header = read('src/pages/tech/v2/dash/DashHeader.jsx');
+const css = read('src/index.css');
+
+describe('native notification bell motion contract', () => {
+  it('keeps the panel mounted for a native exit and honors reduced motion', () => {
+    expect(bell).toContain('panelPresent');
+    expect(bell).toContain("data-state={open ? 'open' : 'closing'}");
+    expect(bell).toContain('onAnimationEnd');
+    expect(bell).toContain("matchMedia?.('(prefers-reduced-motion: reduce)')");
+    expect(css).toContain('NATIVE NOTIFICATION POLISH RESERVED — BELL-01');
+    expect(css).toContain("notification-bell__panel[data-state='open']");
+    expect(css).toContain("notification-bell__panel[data-state='closing']");
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?notification-bell__panel[\s\S]*?animation: none !important/,
+    );
+  });
+
+  it('scopes the visual treatment to native while using catalog motion tokens', () => {
+    expect(css).toContain(":root[data-native='true'] .notification-bell__panel");
+    expect(css).toContain('var(--motion-duration-fast)');
+    expect(css).toContain('var(--motion-spring-in)');
+    expect(css).toContain('var(--motion-ease-accelerate)');
+    expect(css).not.toMatch(
+      /notificationBellPanel(?:In|Out)[\s\S]*?transition:\s*\d+ms/,
+    );
+  });
+
+  it('preserves rendered rows during realtime and resume reconciliation', () => {
+    expect(bell).toContain('hasLoadedListRef');
+    expect(bell).toContain('listRequestRef');
+    expect(bell).toContain('loadList({ silent: true })');
+    expect(bell).toContain('request !== listRequestRef.current');
+    expect(bell).toContain('loading && !hasLoadedListRef.current');
+  });
+
+  it('closes a hidden dashboard pane and exposes accessible panel semantics', () => {
+    expect(dash).toContain('active={active}');
+    expect(header).toContain('<NotificationBell');
+    expect(header).toContain('active={active}');
+    expect(bell).toContain('aria-expanded={open}');
+    expect(bell).toContain('aria-controls="notification-bell-panel"');
+    expect(bell).toContain('aria-labelledby="notification-bell-title"');
+    expect(bell).toContain("event.key === 'Escape'");
+    expect(bell).toContain('triggerRef.current?.focus()');
+  });
+
+  it('routes live feedback through the shared toast entry point', () => {
+    expect(bell).toContain("import { toast } from '@/lib/toast'");
+    expect(bell).not.toContain("dispatchEvent(new CustomEvent('upr:toast'");
+  });
+});
