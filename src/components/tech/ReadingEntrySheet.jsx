@@ -36,6 +36,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useMemo } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -51,6 +52,7 @@ export default function ReadingEntrySheet({
   onCreateRoom,
   equipmentList = [],
 }) {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const firstStep = defaultRoomId ? 2 : 1;
   const [step, setStep] = useState(firstStep);
@@ -241,6 +243,9 @@ export default function ReadingEntrySheet({
         background: 'rgba(0,0,0,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
+        // KB-03: lift the whole sheet clear of the on-screen keyboard.
+        // 0 on web, where the hook attaches nothing (PWA unchanged).
+        paddingBottom: kbInset || undefined,
         justifyContent: 'center',
         animation: 'tech-fade-in 0.15s ease-out',
       }}
@@ -256,10 +261,10 @@ export default function ReadingEntrySheet({
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: '88dvh',
+          maxHeight: kbInset > 0 ? `calc(88dvh - ${kbInset}px)` : '88dvh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >

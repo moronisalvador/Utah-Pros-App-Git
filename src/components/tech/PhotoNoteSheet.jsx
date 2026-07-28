@@ -35,6 +35,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useMemo } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 import RoomChip from './RoomChip';
@@ -49,6 +50,7 @@ export default function PhotoNoteSheet({
   onCreateRoom,
   onClose,
 }) {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { db } = useAuth();
 
@@ -159,6 +161,9 @@ export default function PhotoNoteSheet({
         background: 'rgba(0,0,0,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
+        // KB-03: lift the whole sheet clear of the on-screen keyboard.
+        // 0 on web, where the hook attaches nothing (PWA unchanged).
+        paddingBottom: kbInset || undefined,
         justifyContent: 'center',
         animation: 'tech-fade-in 0.15s ease-out',
       }}
@@ -174,10 +179,10 @@ export default function PhotoNoteSheet({
           borderTopLeftRadius: 16,
           borderTopRightRadius: 16,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: '70dvh',
+          maxHeight: kbInset > 0 ? `calc(70dvh - ${kbInset}px)` : '70dvh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >

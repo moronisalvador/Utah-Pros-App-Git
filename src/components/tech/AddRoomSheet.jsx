@@ -28,9 +28,11 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
 export default function AddRoomSheet({ open, onClose, onCreate, existingNames = [] }) {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const [creating, setCreating] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -82,6 +84,9 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
         background: 'rgba(0,0,0,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
+        // KB-03: lift the whole sheet clear of the on-screen keyboard.
+        // 0 on web, where the hook attaches nothing (PWA unchanged).
+        paddingBottom: kbInset || undefined,
         justifyContent: 'center',
         animation: 'tech-fade-in 0.15s ease-out',
       }}
@@ -97,10 +102,10 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: '80dvh',
+          maxHeight: kbInset > 0 ? `calc(80dvh - ${kbInset}px)` : '80dvh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >
