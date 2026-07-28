@@ -72,6 +72,7 @@ import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -83,7 +84,7 @@ function formatLossDate(dateStr) {
 
 function nextApptForJob(jobId, appointments) {
   if (!jobId || !appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   return appointments
     .filter(a => a.job_id === jobId && a.date >= today && !['completed', 'cancelled'].includes(a.status))
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''))[0] || null;

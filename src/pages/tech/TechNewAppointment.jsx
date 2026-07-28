@@ -47,6 +47,7 @@ import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // Add one hour to an 'HH:MM' time, capped at the last selectable option (22:30).
 function addOneHour(hhmm) {
@@ -75,7 +76,7 @@ export default function TechNewAppointment() {
   const jobSearchRef = useRef(null);
 
   /* ── Form ── */
-  const [date, setDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(searchParams.get('date') || todayInCompanyTimeZone());
   const [timeStart, setTimeStart] = useState('07:00');
   const [timeEnd, setTimeEnd] = useState('08:00'); // default 1-hour block
   const [endEdited, setEndEdited] = useState(false); // once the end is set by hand, stop auto-following the start

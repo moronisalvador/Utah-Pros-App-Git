@@ -46,7 +46,9 @@
  *     confirmation. Only admins/managers see the kebab menu.
  *   - Appointments come from the claim-wide get_claim_appointments, then are
  *     filtered down to this job's id client-side.
- *   - Sets a light status bar on mount and restores the dark one on unmount.
+ *   - Declares a dark SURFACE on mount (so the status icons go light against the
+ *     gradient hero) and hands the strip back to the theme on unmount — see
+ *     STAT-01; restoring a fixed style stranded dark-on-dark in dark mode.
  *   - The Documents action opens /tech/jobs/:jobId/documents (the e-signature
  *     hub). The "No signed Work Authorization" banner reads sign_requests and
  *     deep-links there with the Work Auth request sheet pre-opened.
@@ -71,6 +73,7 @@ import DetailRow from '@/components/tech/DetailRow';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -566,7 +569,7 @@ export default function TechJobDetail() {
 
       {/* Appointments list — grouped Upcoming / Past */}
       {(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = todayInCompanyTimeZone();
         const upcoming = appointments
           .filter(a => a.date >= today && !['completed', 'cancelled'].includes(a.status))
           .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''));

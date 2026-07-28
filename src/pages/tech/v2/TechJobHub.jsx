@@ -53,8 +53,9 @@ import HubDock from './hub/HubDock.jsx';
 import HubBelowFold from './hub/HubBelowFold.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
 import { selectVisitId } from './hub/hubHelpers.js';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
-const todayISO = () => new Date().toISOString().split('T')[0];
+const todayISO = () => todayInCompanyTimeZone();
 
 export default function TechJobHub() {
   const { t } = useTranslation('hub');

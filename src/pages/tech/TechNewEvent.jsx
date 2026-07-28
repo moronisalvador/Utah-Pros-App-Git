@@ -42,6 +42,7 @@ import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormConstants';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 export default function TechNewEvent() {
   // ─── SECTION: State & hooks ──────────────
@@ -50,7 +51,7 @@ export default function TechNewEvent() {
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
 
-  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const initialDate = searchParams.get('date') || todayInCompanyTimeZone();
 
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
 

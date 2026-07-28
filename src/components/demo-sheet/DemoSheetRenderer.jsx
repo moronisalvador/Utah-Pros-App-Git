@@ -5,6 +5,7 @@
 // stay on the page that owns the sheet.
 
 import { useState, useRef } from 'react';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ── Palette pinned to UPR design tokens (single-light theme) ────────────────
 export const C = {
@@ -33,7 +34,7 @@ export const sInput = { background:C.input, border:`1.5px solid ${C.border}`, bo
 export const sCard  = { background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:'16px 14px', marginBottom:12 };
 
 // ── Schema-driven helpers ────────────────────────────────────────────────────
-export const today = () => new Date().toISOString().split('T')[0];
+export const today = () => todayInCompanyTimeZone();
 export const newRowId = () => Date.now() + Math.random();
 
 export function walkFields(fields, fn, parent = null) {
