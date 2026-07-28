@@ -267,12 +267,15 @@ describe('iOS release workflow authorization boundary', () => {
 
     expect(inputValidation).toContain(
       'VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}',
+      'VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}',
     );
     expect(inputValidation).toContain(
       'if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" ]]',
+      'if [[ "$VITE_APNS_ENV" != "production" ]]',
     );
     expect(nativeBuild).toContain(
       'VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}',
+      'VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}',
     );
   });
 

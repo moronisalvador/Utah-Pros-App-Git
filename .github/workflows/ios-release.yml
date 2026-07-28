@@ -66,6 +66,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
+          VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}
         run: |
           set -euo pipefail
           required_names=(
@@ -77,6 +78,7 @@ jobs:
             VITE_SUPABASE_URL
             VITE_SUPABASE_ANON_KEY
             VITE_NATIVE_PUSH_ENABLED
+            VITE_APNS_ENV
           )
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -86,6 +88,10 @@ jobs:
           done
           if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" ]]; then
             echo "VITE_NATIVE_PUSH_ENABLED must be exactly true for a TestFlight-capable archive." >&2
+            exit 1
+          fi
+          if [[ "$VITE_APNS_ENV" != "production" ]]; then
+            echo "VITE_APNS_ENV must be exactly production for TestFlight/App Store." >&2
             exit 1
           fi
 
@@ -115,6 +121,7 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
+          VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}
         run: node scripts/build-native.mjs
 
       - name: Synchronize the iOS platform
