@@ -107,13 +107,37 @@ case "$norm" in
   *"DROP TABLE"*)                 block "DROP TABLE" ;;
   *"DROP SCHEMA"*)                block "DROP SCHEMA" ;;
   *"DROP DATABASE"*)              block "DROP DATABASE" ;;
-  *"TRUNCATE"*)                   block "TRUNCATE" ;;
   *"DROP COLUMN"*)                block "DROP COLUMN" ;;
   *"DROP CONSTRAINT"*)            block "DROP CONSTRAINT" ;;
   *"RENAME TO"*)                  block "RENAME (table/object)" ;;
   *"RENAME COLUMN"*)              block "RENAME COLUMN" ;;
   *"DISABLE ROW LEVEL SECURITY"*) block "DISABLE ROW LEVEL SECURITY" ;;
 esac
+
+# TRUNCATE — match the STATEMENT, not the privilege NAME.
+# TRUNCATE is also a GRANT-able table privilege, so it appears legitimately in
+# three NON-destructive forms that a bare substring match cannot distinguish
+# from a statement:
+#   1. 'TRUNCATE'                                 — quoted privilege literal
+#   2. 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES' — quoted comma-joined list
+#   3. REVOKE INSERT, UPDATE, TRUNCATE ... ON t   — UNQUOTED, in a GRANT/REVOKE
+# Form 3 is why quote-awareness alone is not enough. The mobile-security
+# migrations that assert ACL state (supabase/migrations/2026072*) hit all three,
+# so the old bare `*"TRUNCATE"*` match refused all four of them AND all four of
+# their rollbacks — every one a false positive. A guard that refuses correct,
+# reviewed work is worse than a narrower one: it trains people to bypass it.
+# Discriminator: a STATEMENT is TRUNCATE + whitespace + optional TABLE/ONLY +
+# a table name. In the three forms above it is followed by a comma or a quote.
+# Verified against all 8 of those files (0 matches) and against TRUNCATE TABLE x,
+# bare TRUNCATE x, ONLY, CASCADE, RESTART IDENTITY, quoted idents, post-`;`, and
+# inside DO $$ ... $$ (all still blocked).
+# KNOWN GAP, accepted 2026-07-27: TRUNCATE inside dynamic SQL, e.g.
+# EXECUTE 'TRUNCATE t'. The bare match caught that; this does not. Judged the
+# better trade because this guard exists to stop unattended ACCIDENTS, and a
+# session hand-rolling dynamic SQL to defeat it is not the threat model.
+if printf '%s' "$norm" | grep -Eq "(^|[^,'A-Z_]) *TRUNCATE +(TABLE +|ONLY +)?[A-Z0-9_.\"]"; then
+  block "TRUNCATE"
+fi
 
 # ALTER COLUMN ... TYPE — retyping a live column.
 if printf '%s' "$norm" | grep -Eq 'ALTER COLUMN [A-Z0-9_"]+ (SET DATA )?TYPE'; then

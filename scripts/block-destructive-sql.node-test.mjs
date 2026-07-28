@@ -55,6 +55,21 @@ const CASES = [
   // ── data-destroying DDL ──
   ['DROP TABLE', sqlCall('mcp__x__execute_sql', 'DROP TABLE contacts;'), 2, false],
   ['TRUNCATE', sqlCall('mcp__x__execute_sql', 'TRUNCATE messages;'), 2, false],
+
+  // ── TRUNCATE: statement vs privilege NAME (2026-07-27) ──
+  // TRUNCATE is a GRANT-able privilege as well as a statement. The guard used a
+  // bare substring match, which refused all four mobile-security migrations and
+  // all four of their rollbacks — every one a false positive, because they only
+  // ever name the privilege. These cases pin BOTH directions so the narrowing
+  // cannot silently widen back, and the statement forms cannot regress to allow.
+  ['TRUNCATE TABLE form still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE TABLE employees;'), 2, false],
+  ['TRUNCATE ONLY form still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE ONLY employees;'), 2, false],
+  ['TRUNCATE multi-table still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE jobs, claims;'), 2, false],
+  ['TRUNCATE RESTART IDENTITY still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE public.jobs RESTART IDENTITY;'), 2, false],
+  ['TRUNCATE CASCADE still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE jobs CASCADE;'), 2, false],
+  ['TRUNCATE quoted identifier still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE "employees";'), 2, false],
+  ['TRUNCATE after a semicolon still blocked', sqlCall('mcp__x__execute_sql', 'SELECT 1; TRUNCATE jobs;'), 2, false],
+  ['TRUNCATE inside DO $$ still blocked', sqlCall('mcp__x__execute_sql', 'DO $$ BEGIN TRUNCATE employees; END $$;'), 2, false],
   ['DROP COLUMN', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs DROP COLUMN notes;'), 2, false],
   ['DROP CONSTRAINT', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs DROP CONSTRAINT jobs_pkey;'), 2, false],
   ['RENAME COLUMN', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs RENAME COLUMN a TO b;'), 2, false],
@@ -91,6 +106,13 @@ const CASES = [
   ['ENABLE RLS', sqlCall('mcp__x__execute_sql', 'ALTER TABLE t ENABLE ROW LEVEL SECURITY;'), 0, false],
   ['apply_migration WITH a ROLLBACK section', { tool_name: 'mcp__x__apply_migration', tool_input: { name: 'm', query: '-- ROLLBACK: DROP TABLE t;\nCREATE TABLE t (id uuid);' } }, 0, true],
   ['upr_delete WITH a filter', { tool_name: 'mcp__x__upr_delete', tool_input: { table: 'contacts', filter: 'id=eq.1' } }, 0, true],
+
+  // ── the three legitimate TRUNCATE-as-privilege-NAME forms must PASS ──
+  // Each is taken from the shape the real mobile-security migrations use.
+  ['quoted TRUNCATE privilege literal passes', sqlCall('mcp__x__execute_sql', "SELECT ARRAY['SELECT','TRUNCATE','UPDATE']::text[];"), 0, false],
+  ['quoted comma-joined privilege list passes', sqlCall('mcp__x__execute_sql', "SELECT 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN';"), 0, false],
+  ['REVOKE naming TRUNCATE as a privilege passes', sqlCall('mcp__x__execute_sql', 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ON TABLE t FROM authenticated;'), 0, false],
+  ['GRANT naming TRUNCATE as a privilege passes', sqlCall('mcp__x__execute_sql', 'GRANT SELECT, INSERT, TRUNCATE, TRIGGER ON TABLE t TO service_role;'), 0, false],
 ]
 
 test('database guard: blocks what it must, permits legitimate work, never exits 1', (t) => {
