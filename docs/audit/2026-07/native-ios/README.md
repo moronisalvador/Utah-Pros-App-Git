@@ -34,6 +34,27 @@ Plus **11 defects found during remediation that the audit did not contain** — 
 [Found in flight](#found-in-flight). One of them, NATIVE-API-01, was breaking
 every Cloudflare Worker call in the installed app.
 
+### 2026-07-28 follow-up
+
+The later `codex/mobile-readiness-native-usability` wave fixed three usability/release gaps that are
+not included in the original 37-finding or 11-found-in-flight counts:
+
+- Face ID moved from the retained-session launch path to the manual native password sign-in
+  boundary. Cold/warm reopen no longer prompts on every app open; cancellation still blocks a new
+  sign-in before Supabase publishes the session.
+- `ios/App/Version.xcconfig` now owns marketing version `1.0.0`, the release workflow assigns a
+  unique build from its run number/attempt, artifact verification pins both values, and native
+  Settings shows the installed `App.getInfo()` version/build.
+- the native notification bell preserves populated rows during silent refresh and uses one
+  accessible scale/fade enter/exit lifecycle with reduced-motion, focus, Escape, route, and
+  persistent-pane handling.
+
+An authenticated iPhone 17 Pro simulator build was installed and exercised from the exact wave
+source: retained-session terminate/relaunch opened the dashboard without a biometric gate, Settings
+showed `Version 1.0.0 (1)`, and a frame recording showed multi-frame bell enter/exit. That is
+simulator evidence, not distribution-signed archive, TestFlight, VoiceOver, or complete
+physical-device qualification.
+
 ---
 
 ## P0 — release blockers
@@ -117,7 +138,11 @@ Not in the audit. Found while remediating, and mostly worse than what was.
 ## Owner decisions still open
 
 - **APNs Auth Key** — blocks all push (PUSH-01).
-- **`CURRENT_PROJECT_VERSION` is pinned at `1`** — Apple rejects duplicate build numbers, so the *second* TestFlight upload will fail. No version is surfaced in the app either. Design work was in flight and did not finish.
+- **App Store build high-water mark** — the local project baseline remains
+  `CURRENT_PROJECT_VERSION = 1`, but the governed release workflow now replaces it with a unique
+  run-number/attempt build and verifies marketing/build identity. Native Settings surfaces the
+  installed values. Before the first upload, the owner still must confirm the workflow build is
+  above any existing App Store Connect/TestFlight build for version `1.0.0`.
 - **Xcode Cloud** needs `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` in its workflow environment.
 - **`RESEND_API_KEY` on the Cloudflare *Preview* set** — the app targets `dev.utahpros.app`, which uses Preview variables, not Production.
 - Four dead `manager` role gates + `BILLING_EDIT_ROLES` (NAV-01 remainder) — granting access is a decision.

@@ -264,8 +264,9 @@ Completed in source, pending final integration/release review:
   build keeps its full route graph;
 - `/privacy`, `/terms`, `/support`, `/sign/:token`, and `/s/:code` are present in native and web;
 - the account-deletion request panel is shared by desktop My Account and field Tech Settings;
-- enrolled biometrics fail closed through account/device cleanup and local sign-out; AppDelegate
-  installs an opaque app-switcher privacy shield before resign/background;
+- manual native password sign-in verifies enrolled biometrics after prior-account cleanup and
+  before session publication; retained sessions reopen without repeated Face ID prompts;
+  AppDelegate installs an opaque app-switcher privacy shield before resign/background;
 - custom scheme, Associated Domains, AASA, App-plugin cold/warm listener, and Push-action routing
   use one deny-by-default route/query resolver; `/tech/admin` is excluded;
 - native Push enrollment is exact-default-off and account cleanup detaches server/local state;
@@ -275,14 +276,17 @@ Completed in source, pending final integration/release review:
   for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;
 - the manual `main`-only archive workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler
   4.0.16, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
-  signing/provisioning/entitlements/privacy/build identity/hashes.
+  signing/provisioning/entitlements/privacy/build identity/hashes;
+- `ios/App/Version.xcconfig` provides one marketing-version source, the workflow assigns a unique
+  build from its run number/attempt, and native Settings displays the installed values through
+  Capacitor `App.getInfo()`;
+- `ios/Gemfile.lock` is checked in and reviewed `cap sync ios` output contains `CapacitorApp`
+  without tracked drift.
 
 Open source/reproducibility gates:
 
-- `ios/Gemfile.lock` is absent; generate and review it only with Ruby 3.3.12/Bundler 4.0.16;
-- `@capacitor/app` is a direct dependency, but the managed
-  `ios/App/CapApp-SPM/Package.swift` has not been synchronized; a reviewed `cap sync ios` is
-  required and must not be replaced by hand-editing the generated file;
+- preserve clean-checkout Ruby/SPM reproducibility for the checked-in lockfiles and reviewed
+  `CapacitorApp` sync; never hand-edit the generated managed package;
 - Supabase session tokens remain in default WebView storage; the owner must approve that optional
   biometric policy or require a Keychain-backed design;
 - rejected authenticated bootstrap, authorization-response typing, and cleanup-gated password
@@ -294,6 +298,17 @@ Open source/reproducibility gates:
   verification and independent review are green, while device proof remains;
 - account-deletion request intake exists, but fulfillment/SLA/retention/audit remains an owner/
   compliance process gate.
+
+Initial-release scope freeze:
+
+- APP-001 ships the current field UI from the release commit first. Do not merge, implement,
+  feature-flag, or retire the Apple Field Pro redesign as part of this release;
+- the redesign is tracked as `UPRF-TECH-REDESIGN-001`. Its clean prototype worktree is 697 commits
+  behind the 2026-07-28 `origin/dev` capture and two prototype-only commits ahead, so it must never
+  be blind-merged;
+- after APP-001 records a live current Capacitor version, recapture current `dev`, review the
+  accepted prototype against the shipped native contracts, and plan a separate selective
+  implementation/rollout.
 
 Open external/release gates:
 
