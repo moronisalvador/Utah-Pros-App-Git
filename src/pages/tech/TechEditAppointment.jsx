@@ -56,6 +56,7 @@ import { toast } from '@/lib/toast';
 import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
 import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
+import { scrollBehavior } from '@/lib/reducedMotion';
 
 export default function TechEditAppointment() {
   // KB-01: the sticky Save sits behind the keyboard without this.
@@ -151,7 +152,7 @@ export default function TechEditAppointment() {
   // Scroll to tasks section if ?section=tasks
   useEffect(() => {
     if (!loading && searchParams.get('section') === 'tasks' && taskSectionRef.current) {
-      setTimeout(() => taskSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      setTimeout(() => taskSectionRef.current.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }), 300);
     }
   }, [loading, searchParams]);
 

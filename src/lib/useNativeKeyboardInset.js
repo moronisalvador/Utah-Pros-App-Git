@@ -31,6 +31,7 @@
 import { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { observeKeyboardInset, KB_INSET_VAR } from './nativeKeyboardLayout.js';
+import { scrollBehavior } from './reducedMotion.js';
 
 export { KB_INSET_VAR };
 
@@ -83,7 +84,9 @@ export default function useNativeKeyboardInset() {
         // in the same React commit as this state change.
         if (editable) {
           requestAnimationFrame(() => {
-            try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* best effort */ }
+            // MOTION-02: 'auto' under Reduce Motion — the field still comes
+            // into view, only the travel is removed.
+            try { el.scrollIntoView({ block: 'center', behavior: scrollBehavior() }); } catch { /* best effort */ }
           });
         }
       }

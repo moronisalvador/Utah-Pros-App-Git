@@ -41,6 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { observeKeyboardInset } from '@/lib/nativeKeyboardLayout';
+import { scrollBehavior } from '@/lib/reducedMotion';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import { getServiceConsentUiState, withoutSupersededFailures } from '@/components/conversations/messageUtils';
@@ -203,7 +204,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     const el = scrollRef.current;
     if (!el) return;
     const go = () => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
-    if (smooth && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (smooth && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: scrollBehavior() });
     else go();
     // A second frame catches synchronous layout; attachment loads notify separately.
     requestAnimationFrame(() => { if (!smooth) go(); });

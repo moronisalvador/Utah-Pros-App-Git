@@ -685,6 +685,57 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-toast { animation: none; }
 }
 
+/* ─── MOTION-02: global Reduce Motion floor ────────────────────────────────
+   motion-standard.md §6 makes a missing prefers-reduced-motion fallback a review
+   failure, and requires it on EVERY transition and keyframe. There are 29
+   hand-written blocks in this file, which is real coverage but not a guarantee:
+   each one had to be remembered, and the next animation someone adds starts out
+   uncovered. This is the floor underneath them — anything they miss still
+   collapses.
+
+   Motion is removed, not the state change. Durations go to ~0 rather than
+   `animation: none` so the END STATE still lands: `none` on an animation that
+   supplies the final appearance (a fade-in from opacity 0) would leave the
+   element invisible. Reduced must not mean broken.
+
+   `!important` is deliberate and is the documented form of this pattern. It has
+   to beat inline styles and per-component rules, which is the entire point of a
+   floor. It applies ONLY inside this media query, so nothing changes for anyone
+   who has not asked for reduced motion — which is also why this is safe for the
+   frozen PWA surface, and why MOTION-02 itself asks for "the same media query
+   and preference handling" on native and PWA alike.
+
+   NOTE: this cannot reach programmatic scrolling. `scrollIntoView({ behavior:
+   'smooth' })` names its behaviour explicitly and per spec overrides the CSS
+   scroll-behavior property, so those call sites ask lib/reducedMotion.js
+   instead. ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Busy indicators are the exception: they carry no spatial information and
+     communicate ONLY by moving. Freezing a spinner turns "working" into "hung",
+     which is worse than the motion it removes. They keep running — slower, and
+     with no travel across the screen. */
+  .spinner,
+  .loading-page .spinner,
+  .tv2-skel,
+  .coll-skel,
+  .ovw-skel-bar,
+  .ovw-live-dot,
+  .coll-chat-dotpulse {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
 /* Slide-in animation for mobile thread */
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes convSlideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }

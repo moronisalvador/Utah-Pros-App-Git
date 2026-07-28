@@ -48,6 +48,7 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { scrollBehavior } from '@/lib/reducedMotion';
 
 export default function TechClaimAlbum() {
   const kbInset = useNativeKeyboardInset();
@@ -109,7 +110,7 @@ export default function TechClaimAlbum() {
   useEffect(() => {
     if (!focusJobId || loading) return;
     const el = document.getElementById(`album-group-${focusJobId}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
   }, [focusJobId, loading]);
 
   // ─── SECTION: Event handlers ──────────────
