@@ -34,7 +34,8 @@
  *     photo.id). Toasts via the upr:toast CustomEvent — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useAuth } from '@/contexts/AuthContext';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -51,6 +52,10 @@ export default function PhotoNoteSheet({
   onClose,
 }) {
   const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open: !!photo, onClose, panelRef });
   // ─── SECTION: State & hooks ──────────────
   const { db } = useAuth();
 
@@ -170,7 +175,8 @@ export default function PhotoNoteSheet({
     >
       <div
         onClick={e => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Photo note and room"
         style={{
           width: '100%',

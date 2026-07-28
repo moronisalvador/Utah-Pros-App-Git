@@ -36,6 +36,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
 import MaterialIcon, { MATERIAL_LABELS } from './MaterialIcon';
@@ -53,6 +54,10 @@ export default function ReadingEntrySheet({
   equipmentList = [],
 }) {
   const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
   // ─── SECTION: State & hooks ──────────────
   const firstStep = defaultRoomId ? 2 : 1;
   const [step, setStep] = useState(firstStep);
@@ -252,7 +257,8 @@ export default function ReadingEntrySheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Add moisture reading"
         style={{
           width: '100%',

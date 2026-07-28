@@ -27,12 +27,17 @@
  *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
 export default function AddRoomSheet({ open, onClose, onCreate, existingNames = [] }) {
   const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
   // ─── SECTION: State & hooks ──────────────
   const [creating, setCreating] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -93,7 +98,8 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
     >
       <div
         onClick={e => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Add a room"
         style={{
           width: '100%',

@@ -40,7 +40,8 @@
  *     not an error: the request still exists and the sheet keeps the link.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
@@ -72,6 +73,10 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
   // recover them. Native only — 0 in a browser, where the sheet renders exactly
   // as it does today (owner decision: the PWA UI is frozen).
   const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
   const [docType, setDocType] = useState(initialDocType);
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
@@ -187,7 +192,8 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Request signature"
         style={{
           width: '100%', maxWidth: 560, background: 'var(--bg-primary)',

@@ -34,7 +34,8 @@
  *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
@@ -62,6 +63,10 @@ export default function EquipmentPlacementSheet({
   onCreateRoom,
 }) {
   const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
   // ─── SECTION: State & hooks ──────────────
   const [step, setStep] = useState(1);
   const [equipmentType, setEquipmentType] = useState('');
@@ -174,7 +179,8 @@ export default function EquipmentPlacementSheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Place equipment"
         style={{
           width: '100%',
