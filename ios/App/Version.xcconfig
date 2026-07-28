@@ -1,4 +1,17 @@
-// UPR native release identity.
-// The human-owned App Store version lives here; CI supplies each upload's
-// unique CURRENT_PROJECT_VERSION build number.
+// ════════════════════════════════════════════════
+// FILE: ios/App/Version.xcconfig
+// ════════════════════════════════════════════════
+//
+// WHAT THIS DOES (plain language):
+//   Provides the one human-owned marketing version for every UPR iOS build.
+//
+// DEPENDS ON:
+//   Internal: App.xcodeproj build configurations, ios/debug.xcconfig,
+//             .github/workflows/ios-release.yml
+//   Data:     none
+//
+// NOTES / GOTCHAS:
+//   - CI supplies a unique CURRENT_PROJECT_VERSION for each governed upload.
+//   - Do not duplicate MARKETING_VERSION in target build settings.
+// ════════════════════════════════════════════════
 MARKETING_VERSION = 1.0.0

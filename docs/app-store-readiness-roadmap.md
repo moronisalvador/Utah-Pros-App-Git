@@ -251,6 +251,9 @@ archive, TestFlight, or representative physical-device verification.
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
 - [ ] Owner: kick off Apple Developer Program + ABM enrollment
 - [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)
+- [x] Owner: native session prompt decision — 2026-07-28. A retained authenticated session may
+  reopen without another Face ID prompt; Face ID belongs at manual password sign-in. This approves
+  removing the former launch gate, not treating WebView token storage as Keychain-equivalent.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
 - [ ] Owner: Xcode build-verify of F1 before any real device sees it
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
@@ -287,8 +290,9 @@ Open source/reproducibility gates:
 
 - preserve clean-checkout Ruby/SPM reproducibility for the checked-in lockfiles and reviewed
   `CapacitorApp` sync; never hand-edit the generated managed package;
-- Supabase session tokens remain in default WebView storage; the owner must approve that optional
-  biometric policy or require a Keychain-backed design;
+- Supabase session tokens remain in default WebView storage. The 2026-07-28 owner decision accepts
+  retained-session reopen without repeated Face ID for this release; Keychain-equivalent storage
+  was not claimed, and lost/shared/reassigned-device proof remains under APP-002;
 - rejected authenticated bootstrap, authorization-response typing, and cleanup-gated password
   recovery are source-fixed; observer work is serialized outside the Supabase Auth lock and the
   independent source review is clean; signed-device account-switch/recovery proof remains;
