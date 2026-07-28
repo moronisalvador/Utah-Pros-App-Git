@@ -287,10 +287,19 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 - Starting a conversation is not consent and never sends a message.
 - Owner decision 2026-07-28: staff-written direct service messages use an opt-out-only model. A
   reachable contact phone with no recorded objection may produce the distinct `IMPLIED_CONSENT`
-  decision for that one-to-one path.
+  decision for that one-to-one path. The worker must durably record
+  `service_send_allowed_existing_client` before it calls a provider; an audit
+  write failure blocks the send.
   DND, explicit opt-out, pending STOP, phone mismatch, missing contact/phone, and an unavailable or
-  unknown server decision still fail closed before provider selection. Automated, scheduled,
-  group, broadcast, bulk, marketing, and campaign traffic still require recorded global opt-in.
+  unknown server decision still fail closed before provider selection.
+- Exact transactional-service exception, owner decision 2026-07-28:
+  `appointment_scheduled`, `appointment_canceled`, and `signature_request` may
+  consume `SERVICE_CONSENT` or `IMPLIED_CONSENT` through
+  `sendAutomatedMessage()`. Each such exception writes
+  `transactional_service_send_allowed` before provider selection. Those names
+  are an allowlist, not examples accepted by a generic bypass. Generic
+  automation, scheduled free-form messages, group, broadcast, bulk, marketing,
+  and campaign traffic still require `GLOBAL_OPT_IN`.
 - Active internal admin/office employees may still attest documented prior service consent, and a
   native UPR Work Authorization with the pinned SMS disclosure may still provide stronger evidence.
   Technicians cannot create either record, and neither evidence path can clear DND/STOP/opt-out.
@@ -305,4 +314,5 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 - The opt-out-only source is committed as
   `20260728000000_sms_consent_opt_out_only.sql` but remains inert until that exact migration is
   separately approved, applied, and verified on the shared project: workers accept
-  `IMPLIED_CONSENT` only for the direct staff path, while the current database does not yet return it.
+  `IMPLIED_CONSENT` only for the direct staff path and the three named
+  transactional-service purposes, while the current database does not yet return it.

@@ -8468,12 +8468,27 @@ The owner-directed 2026-07-28 opt-out-only source removes
 the server remains the final authority when Send is pressed. Active internal admin/office users may
 still record stronger prior-consent evidence; technicians cannot, notes remain available, and no
 attestation auto-sends. The distinct `IMPLIED_CONSENT` code may be accepted only by the
-staff-written direct service-message path. Automated, scheduled, group, broadcast, bulk, marketing,
-and campaign traffic still require `GLOBAL_OPT_IN`. DND, explicit opt-out, pending STOP, phone
+staff-written direct service-message path and the exact
+`appointment_scheduled`, `appointment_canceled`, and `signature_request`
+transactional-service allowlist in `sendAutomatedMessage()`. Direct implied
+service decisions must write `service_send_allowed_existing_client`; the
+allowlisted automated path must write `transactional_service_send_allowed`.
+Both writes occur before provider selection and fail closed. Generic automation,
+scheduled free-form messages, group, broadcast, bulk, marketing, and campaign
+traffic still require `GLOBAL_OPT_IN`. DND, explicit opt-out, pending STOP, phone
 mismatch, missing/unreadable status, worker-only writes, and no-fallback rules are unchanged.
 The source migration `20260728000000_sms_consent_opt_out_only.sql` is not yet live; until its exact
 reviewed body is separately applied, the database never returns `IMPLIED_CONSENT` and live send
 behavior remains opt-in-only.
+
+Native APNs now uses the same `notify.js` audience and employee-preference
+dispatcher as bell, Web Push, and notification email. The focused pending
+`20260728223000_native_apns_token_boundary.sql` migration adds an exact
+`sandbox`/`production` registration attribute, derives the authenticated
+employee inside selector-free RPCs, returns redacted metadata, and removes raw
+browser token access. Existing rows remain `NULL` and inert until a compatible
+client re-registers. The broad unapplied S1h migration is not an activation
+prerequisite for this focused token boundary and remains separately deferred.
 
 Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
 while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped

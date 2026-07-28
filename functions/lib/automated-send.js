@@ -542,7 +542,7 @@ export async function sendGatedSms(env, {
 
   if (
     transactionalPurpose
-    && consentStatus?.code !== 'GLOBAL_OPT_IN'
+    && !isAcceptedConsent(consentStatus, AUTOMATED_ACCEPTED_CONSENT_CODES)
   ) {
     // This evidence is required before the exception can reach a provider.
     // Unlike routine outcome logging, a write failure aborts the send.
