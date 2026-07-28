@@ -12627,3 +12627,41 @@ html.ui-glass .tech-nav {
   .crm-leads-search { flex: 1 1 100%; max-width: none; }
   .crm-leads-search .crm-leads-search-input { height: 40px; }
 }
+
+/* ─── SAFE-02 RESERVED — public/native route shell (2026-07-27) ─────────────
+   Public routes (/login, /sign, /s, /set-password, /privacy, /terms, /support)
+   are registered outside TechRoutes, so none of them is inside `.tech-layout`
+   — the authenticated shell's inset owner. They consumed no safe area at all,
+   and on a Dynamic Island device the signing header collided with the Island.
+
+   `.public-native-shell` is the PUBLIC half's single inset owner. Two owners,
+   one per shell, never nested; tests/qa/unit/safe-area-single-owner.test.js
+   pins exactly that.
+
+   Everything here is scoped to the native root marker, so the PWA and desktop
+   keep today's spacing. env(safe-area-inset-*) already resolves to 0 in a
+   browser — the marker makes that a structural guarantee, not a coincidence. */
+:root[data-native="true"] .public-native-shell {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+}
+
+/* The chrome behind the status strip. Matching it to the route means the strip
+   reads as part of the page rather than a band floating above it — and it is
+   the same value PublicNativeShell hands the status-icon API. */
+:root[data-native="true"] .public-native-shell[data-surface="dark"] {
+  background: var(--sidebar-bg);
+}
+:root[data-native="true"] .public-native-shell[data-surface="light"] {
+  background: var(--bg-primary);
+}
+
+/* These pages set their own full-height box; inside the shell that would add a
+   second viewport-height block below the inset and push content off-screen. */
+:root[data-native="true"] .public-native-shell > .login-page,
+:root[data-native="true"] .public-native-shell > .set-pw-page {
+  min-height: 0;
+  flex: 1;
+}

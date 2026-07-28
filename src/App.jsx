@@ -35,6 +35,7 @@ import { LanguageProvider } from '@/contexts/LanguageContext';
 import '@/i18n'; // initialize the translation engine once, at app entry
 import ProtectedRoute from '@/components/ProtectedRoute';
 import FieldShellRoute from '@/components/FieldShellRoute';
+import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import RouteRestorer from '@/components/RouteRestorer';
@@ -157,6 +158,16 @@ const {
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
+
+// SAFE-02: stamp the native root marker so CSS can scope device-shell rules
+// (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
+// than in an effect so the very first paint already has it — a route that
+// gained its inset one frame late would visibly jump under the Dynamic Island.
+// env(safe-area-inset-*) is 0 in a browser regardless; the marker makes the
+// PWA's exemption structural instead of incidental.
+if (IS_NATIVE && typeof document !== 'undefined') {
+  document.documentElement.setAttribute('data-native', 'true');
+}
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -361,14 +372,20 @@ function NativeRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/sign/:token" element={<SignPage />} />
+        {/* SAFE-02: these sit OUTSIDE TechRoutes, so none of them was inside
+            `.tech-layout` — the only element applying a top inset. On a Dynamic
+            Island device the signing header collided with the Island. The shell
+            is the public half's single inset owner and picks the status-icon
+            colour from the chrome behind it: login and signing are dark, the
+            password and legal pages are light. */}
+        <Route path="/login" element={<PublicNativeShell surface="dark"><Login /></PublicNativeShell>} />
+        <Route path="/sign/:token" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
         {/* Short form. /sign/:token remains for links already sent live. */}
-        <Route path="/s/:code" element={<SignPage />} />
-        <Route path="/set-password" element={<SetPassword />} />
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/terms" element={<TermsOfService />} />
-        <Route path="/support" element={<Support />} />
+        <Route path="/s/:code" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
+        <Route path="/set-password" element={<PublicNativeShell surface="light"><SetPassword /></PublicNativeShell>} />
+        <Route path="/privacy" element={<PublicNativeShell surface="light"><PrivacyPolicy /></PublicNativeShell>} />
+        <Route path="/terms" element={<PublicNativeShell surface="light"><TermsOfService /></PublicNativeShell>} />
+        <Route path="/support" element={<PublicNativeShell surface="light"><Support /></PublicNativeShell>} />
         {TechRoutes()}
         <Route path="/" element={<Navigate to="/tech" replace />} />
         <Route path="*" element={<Navigate to="/tech" replace />} />
