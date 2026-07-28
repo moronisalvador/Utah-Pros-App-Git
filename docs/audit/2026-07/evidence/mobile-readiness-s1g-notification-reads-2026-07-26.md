@@ -18,6 +18,12 @@ NOTES / GOTCHAS:
 
 # Mobile readiness S1g — notification read/recipient boundary
 
+> **Superseded for source qualification on 2026-07-28.** The original forward/rollback contract
+> described below failed final apply qualification and was not applied. See
+> `mobile-readiness-s1g-source-correction-2026-07-28.md` for the corrected checksums, exact-file
+> execution, and remaining live gates. This file remains historical evidence of the 2026-07-26
+> source state.
+
 **Captured:** 2026-07-26 21:12–21:20 UTC
 **Branch:** `codex/mobile-readiness-s1g-notification-reads`
 **Source base:** `a6b139b5d48217a96475b969a63998dce3269573`
