@@ -6,6 +6,10 @@ name: CI
 # on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
 # What blocks a merge:  build + test  (both currently green)
+#                       bundle budgets — src/index.css and route-chunk only
+#                                       (perf-budget.md §1; entry-graph JS is measured
+#                                        and printed but advisory until it is back under
+#                                        budget — see scripts/bundle-size-report.mjs)
 # What does NOT block:   lint          (pre-existing hygiene baseline — full-tree lint
 #                                       and the changed-files ratchet run for visibility
 #                                       via continue-on-error until the baseline is
@@ -115,10 +119,27 @@ jobs:
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
         continue-on-error: true
 
-      # Perf-budget trend signal (perf-budget.md). Non-blocking; reports the gzipped
-      # JS weight so a regression is visible in the run. Hard-fail ratchet is a follow-up.
-      - name: Bundle size report
-        run: |
-          BYTES=$(cat dist/assets/*.js | gzip -c | wc -c)
-          echo "dist JS gzip (concatenated): ${BYTES} bytes  (perf-budget.md entry-graph guide ~232KB, fail intent at +10%)"
-        continue-on-error: true
+      # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
+      # and route-chunk budgets; entry-graph JS is measured and printed loudly but
+      # does not fail (owner decision 2026-07-27 — it was already ~2.7 KB over the
+      # +10% line the moment the measurement was fixed, and gating it same-day would
+      # have turned dev red for unrelated merges). Flip BLOCKING.entryJsGzip in
+      # scripts/bundle-size-report.mjs once the entry graph is back under budget.
+      #
+      # This step replaced a one-liner that globbed `dist/assets/*.js` and gzipped it.
+      # Three defects, in the order they mattered:
+      #   1. It compared a concatenation of ALL chunks (~961 KB gzip, mostly lazy
+      #      routes) against a budget that only ever meant the entry graph. Wrong
+      #      metric from the day it was added (20e12a8f, 2026-07-13).
+      #   2. It never measured CSS, which is why the index.css budget could drift
+      #      ~157 KB unnoticed for its whole life.
+      #   3. On 2026-07-27, 03638752 moved Vite's assetsDir to `app-assets` for the
+      #      iOS cache un-poisoning. The glob then matched nothing and the step
+      #      printed 20 bytes — the gzip header of empty input — with no error.
+      # Being continue-on-error throughout, it never gated regardless. Hence a tested
+      # script that reads the real entry graph out of dist/index.html.
+      - name: Test bundle size report
+        run: npm run test:bundle-size
+
+      - name: Bundle size budgets
+        run: npm run report:bundle-size -- --strict

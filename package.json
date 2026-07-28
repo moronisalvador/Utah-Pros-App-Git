@@ -29,6 +29,8 @@
     "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
     "validate:provenance": "node scripts/check-migration-provenance.mjs",
+    "test:bundle-size": "node --test scripts/bundle-size-report.node-test.mjs",
+    "report:bundle-size": "node scripts/bundle-size-report.mjs",
     "smoke:deploy": "node scripts/smoke-deploy.mjs"
   },
   "dependencies": {

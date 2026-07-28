@@ -6,23 +6,62 @@ Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.*
 2026-07 measured numbers; the point is to ratchet down, never up. Query hygiene is enforced by
 `page-behavior-checker`. Reference scenario: a field-tech PWA cold-start over LTE.
 
-> **These budgets are currently enforced by review, NOT by CI (verified 2026-07-27).** This intro
-> used to claim "Enforced by the CI bundle-size guard (`.github/workflows/ci.yml`)". Three things
-> are wrong with that: the `Bundle size report` step is `continue-on-error: true` and its own
-> comment says "Non-blocking; ... Hard-fail ratchet is a follow-up"; it reads `dist/assets/*.js`
-> while Vite emits to `dist/app-assets/`, so it gzips empty input and prints **20 bytes** instead
-> of the real 852,798; and it never measures CSS at all. A budget nobody enforces is how the
-> `index.css` figure below drifted ~157 KB before anyone noticed. Fix the glob and add a CSS line
-> before restoring any "enforced by CI" claim here.
+**Partially enforced by the CI bundle-size guard** (`.github/workflows/ci.yml` → `Bundle size
+budgets`, which runs `npm run report:bundle-size -- --strict`). **`src/index.css` and the
+route-chunk budget BLOCK a merge. Entry-graph JS does not yet** — it is measured and printed
+loudly, but advisory. Everything else on this page is enforced by review only. Re-derive any
+number here with `npm run build && npm run report:bundle-size`.
 
-## 1. Bundle budgets (JS measured 2026-07-13 · `index.css` re-baselined 2026-07-27)
+> **FIXED 2026-07-27 — and what it exposed.** The guard never enforced anything, for three
+> separate reasons, and it is worth separating them because only one is recent:
+>
+> 1. **Wrong metric from day one** (added `20e12a8f`, 2026-07-13). It concatenated **all** chunks
+>    and gzipped them — ~961,000 bytes across 185 files, most of it lazy routes — then compared
+>    that to a **232 KB entry-graph** budget. Those are different quantities; the comparison could
+>    never have been meaningful.
+> 2. **It never measured CSS at all.** That is the actual reason the `index.css` figure below
+>    drifted ~157 KB unseen — not the glob.
+> 3. **The glob broke on 2026-07-27, hours before this fix.** Commit `03638752` moved Vite's
+>    `assetsDir` to `app-assets` for the iOS cache un-poisoning, so `dist/assets/*.js` suddenly
+>    matched nothing and the step printed **20 bytes**, the gzip header of empty input, with no
+>    error. *(The warning recorded here earlier that day in `db09a6cd` implied this had been the
+>    state all along; it had been true for hours. The step was equally useless before, for
+>    reasons 1 and 2.)*
+>
+> Throughout all of it the step was `continue-on-error: true`, so even a correct number could not
+> have gated a merge.
+>
+> Fixing it exposed a second drift the same day: **entry-graph JS measured 264,072 B gzip against
+> a 261,325 B fail threshold** — over budget, silently, exactly like the CSS, and invisible for as
+> long as reason 1 above stood. The replacement reads the true entry graph — the module script in
+> `dist/index.html` plus its `modulepreload` closure — and sums each file gzipped **separately**,
+> because that is how they travel; concatenating first understates transfer weight by ~9 KB.
+>
+> **Asked to resolve the JS overage on 2026-07-27, the owner chose to gate CSS and route-chunk now
+> and leave entry-graph JS advisory** rather than turn `dev` red for unrelated merges or
+> re-baseline a real budget the way the CSS ceiling was re-baselined earlier that day. The overage
+> is small and genuinely fixable: **26,504 B over the 232 KB budget, 2,747 B over the +10% fail
+> line.** Trim it, then flip `BLOCKING.entryJsGzip` to `true` in
+> `scripts/bundle-size-report.mjs` — that one-line change is the whole remaining step, and
+> `scripts/bundle-size-report.node-test.mjs` pins the current posture so the flip is deliberate.
 
-- **Entry-graph JS ≤ 232 KB gzip** — CI fails at +10% (255 KB). Record the top-5 chunk deltas from
-  `npm run build` in every PR that changes app code.
-- **Any single route chunk ≤ 175 KB raw.** A heavy new dep must be route-lazy (`React.lazy`), never in
-  the entry graph.
-- **`index.css` ≤ 595,000 bytes raw** — measured 2026-07-27 at **571,960 bytes / 12,583 lines**
-  (built: 422,482 bytes, 62,391 gzip). The ceiling sits ~4% above current, the same headroom the
+## 1. Bundle budgets (all figures re-measured 2026-07-27 by the fixed CI guard)
+
+- **Entry-graph JS ≤ 232 KB gzip = 237,568 bytes** — fail threshold +10% = **261,325 bytes**.
+  ⚠️ **Currently in breach and ADVISORY, not blocking:** measured 2026-07-27 at **264,072 bytes**
+  (27 chunks) — 26,504 B over budget, 2,747 B over the fail line. See the callout above.
+  **"Entry graph" means the module script in `dist/index.html` plus its `modulepreload` closure** —
+  the cold-boot download. It is *not* every chunk in `dist/app-assets/` (that is ~961,000 bytes
+  gzip across 185 files, most of it lazy routes, and comparing it to this budget is the mistake the
+  old CI step made). Top-5 entry-chunk deltas are printed by `npm run report:bundle-size`; record
+  them in every PR that changes app code. Today's heaviest: `index` 100,769 · `realtime` 43,289 ·
+  `i18n` 36,225 · `AuthContext` 35,863 · `chunk-LFPYN7LY` 14,273 bytes gzip.
+- **Any single route chunk ≤ 175 KB raw = 179,200 bytes** (enforced; blocks CI). A heavy new dep must
+  be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 163,349 bytes.
+- **`index.css` ≤ 595,000 bytes raw** (enforced; blocks CI) — measured 2026-07-27 at
+  **574,596 bytes / 12,623 lines** (built: 423,398 bytes, 62,503 gzip; re-measured later the same
+  day by the CI-guard fix, which is why it is ~2.6 KB above the first figure recorded below).
+  The ceiling sits ~4% above current, the same headroom the
   original 400 KB / 384 KB pair had. **Sizes are stated in bytes on purpose** — the old "400 KB"
   was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
   ratchet target: 400 KB (409,600 bytes), unchanged** — the direction of travel is still down; new
