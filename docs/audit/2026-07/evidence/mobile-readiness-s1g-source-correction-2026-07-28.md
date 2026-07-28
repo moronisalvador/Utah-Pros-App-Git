@@ -12,7 +12,8 @@ DEPENDS ON:
 
 NOTES / GOTCHAS:
   - No employee, notification, receipt, customer, message, configuration, or secret value was read.
-  - The corrected migration was not applied while producing this evidence.
+  - The source-correction portion preceded apply; the later shared-project section records the
+    separately authorized exact migration and its remaining client/socket gates.
   - Isolated SQL execution is not proof of live Supabase Auth, PostgREST, or Realtime behavior.
 -->
 
@@ -22,7 +23,8 @@ NOTES / GOTCHAS:
 **Branch:** `codex/mobile-readiness-native-usability`
 **Source head before correction:** `d898091fa74cfff26caa9c6e132e595a916e6053`
 **Fetched origin/dev:** `c9060b299a5a0430ad4814267322de51a2d9e07f`
-**Migration:** `20260726260000_notification_read_recipient_boundary.sql` — not applied
+**Migration:** `20260726260000_notification_read_recipient_boundary.sql`
+**Applied ledger row:** `20260728192024_notification_read_recipient_boundary`
 **Forward source commit:** `3409ef49f20262ec6ba3470132e11bf97488a3c0`
 **Rollback/test commit:** `756415538fcb026bfde2c1ec44018c1b86dca430`
 
@@ -126,14 +128,26 @@ The disposable official local stack proves PostgreSQL catalog, role, function, t
 guarded rollback behavior. It does not prove the shared project's Auth, PostgREST, or Realtime
 sessions/sockets.
 
-Before a shared-production apply:
+## Shared-project apply and verification
 
-1. obtain fresh owner authorization naming the committed migration checksum;
-2. confirm the committed checksum and value-free ledger/catalog preflight remain unchanged;
-3. apply only S1g through the single-migration mechanism; and
-4. run the post-apply catalog check, advisors, provenance capture, and the authorized multi-identity
-   RPC/PostgREST/Realtime matrix.
+The owner authorized the exact corrected SHA-256
+`fe6ac1da1e53aa998acf5580786f279f145e606c64d2a3e33a177cfed5b0ffce`.
+Only `notification_read_recipient_boundary` was applied; Supabase recorded version
+`20260728192024`.
 
-The earlier authorization named a different migration checksum and is not reusable. No migration,
-deploy, provider call, message, money movement, signing, or distribution occurred during this
-correction.
+- the migration's embedded postcondition and exact standalone post-apply script passed;
+- the ledger, receipt table, three policies, grants, and four unchanged RPC signatures matched;
+- authenticated writes, direct receipt access, and all anonymous notification/receipt access are
+  denied;
+- Moroni Salvador's authorized active-internal identity passed list/count/direct-RLS visibility
+  with counts only; no notification contents were returned and no read/mark function ran;
+- a foreign recipient selector and an unmapped authenticated identity both failed with SQLSTATE
+  `42501`;
+- Supabase security/performance advisors reported no S1g-related warning or error; and
+- fresh migration provenance passed for 46 ledger mappings, 27 functions, and 8 policies, with only
+  the six pre-existing documented semantic-drift warnings.
+
+The remaining S1g close-out is two-session Auth/PostgREST/Realtime own/broadcast/foreign delivery
+plus PWA/Capacitor bell open/mark/resume/reconnect/account-switch proof. No rollback, notification
+mark, deploy, provider call, message, money movement, signing, or distribution occurred in the
+apply window.

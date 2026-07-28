@@ -272,6 +272,12 @@
       "name": "mobile_employee_identity_containment",
       "path": "supabase/migrations/20260726182000_mobile_employee_identity_containment.sql",
       "reviewedOriginCommit": "56f0b13a"
+    },
+    {
+      "version": "20260728192024",
+      "name": "notification_read_recipient_boundary",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "reviewedOriginCommit": "3409ef49f20262ec6ba3470132e11bf97488a3c0"
     }
   ],
   "selectedFunctions": [
@@ -446,6 +452,22 @@
         "serviceRoleExecute": false,
         "publicExecute": false
       }
+    },
+    {
+      "identity": "get_notifications(integer,uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "get_unread_notification_count(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "mark_all_notifications_read(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "mark_notification_read(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
     }
   ],
   "selectedPolicies": [
@@ -497,6 +519,36 @@
         "authenticated"
       ],
       "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.notification_reads:notification_reads_no_direct_access",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "ALL",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "68934a3e9455fa72420237eb05902327"
+    },
+    {
+      "identity": "public.notifications:notifications_delete_testrows",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.notifications:notifications_select",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "f6a4b946f6d65eadf3bf4764e734d5b1",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     }
   ]
