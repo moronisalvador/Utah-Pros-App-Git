@@ -105,7 +105,7 @@ BEGIN
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
          AND pg_get_expr(policy.polqual, policy.polrelid, true) =
-               '(auth_user_id = auth.uid())'
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR (
@@ -207,7 +207,7 @@ BEGIN
          AND grantee_role.rolname = 'authenticated'
          AND acl.privilege_type = 'SELECT'
      ) IS DISTINCT FROM
-       ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]
+       ARRAY['auth_user_id', 'id', 'is_active', 'is_external', 'role']::text[]
      OR EXISTS (
        SELECT 1
        FROM pg_attribute attribute
@@ -226,7 +226,8 @@ BEGIN
              'id',
              'auth_user_id',
              'role',
-             'is_active'
+             'is_active',
+             'is_external'
            )
            OR acl.is_grantable
          )
