@@ -54,6 +54,8 @@ const archiveLane = section(fastfile, '  lane :archive do', '  desc "Upload');
 const uploadLane = fastfile.slice(fastfile.indexOf('  lane :upload do'));
 const appfile = readRepositoryFile('ios/fastlane/Appfile');
 const project = readRepositoryFile('ios/App/App.xcodeproj/project.pbxproj');
+const versionConfig = readRepositoryFile('ios/App/Version.xcconfig');
+const debugConfig = readRepositoryFile('ios/debug.xcconfig');
 const privacyManifestSource = readRepositoryFile(
   'ios/App/App/PrivacyInfo.xcprivacy',
 );
@@ -161,6 +163,24 @@ describe('iOS release workflow authorization boundary', () => {
     expect(nativeBuildScript).toContain("VITE_BUILD_TARGET: 'native'");
     expect(nativeBuildScript).not.toMatch(
       /spawnSync\([\s\S]*?['"]cap(?:acitor)?['"][\s\S]*?['"]sync['"]/,
+    );
+  });
+
+  it('owns one three-part marketing version and verifies it in both release jobs', () => {
+    expect(versionConfig).toMatch(/^MARKETING_VERSION = \d+\.\d+\.\d+$/m);
+    expect(debugConfig).toContain('#include "App/Version.xcconfig"');
+    expect(debugBuildConfiguration).not.toContain('MARKETING_VERSION =');
+    expect(releaseBuildConfiguration).not.toContain('MARKETING_VERSION =');
+    expect(releaseBuildConfiguration).toContain(
+      'baseConfigurationReference = B91C4E122E5A4B7C9F1032D4',
+    );
+    expect(archiveJob).toContain('ios/App/Version.xcconfig');
+    expect(publishJob).toContain('ios/App/Version.xcconfig');
+    expect(archiveJob).toContain(
+      '--expected-marketing-version "$marketing_version"',
+    );
+    expect(publishJob).toContain(
+      '--expected-marketing-version "$marketing_version"',
     );
   });
 
@@ -325,6 +345,8 @@ describe('native release artifact safety contract', () => {
         'com.example.app',
         '--expected-team-id',
         'TEAM123',
+        '--expected-marketing-version',
+        '1.0.0',
         '--expected-build-number',
         '42.1',
       ]),
@@ -333,6 +355,7 @@ describe('native release artifact safety contract', () => {
       report: 'report.json',
       expectedBundleId: 'com.example.app',
       expectedTeamId: 'TEAM123',
+      expectedMarketingVersion: '1.0.0',
       expectedBuildNumber: '42.1',
     });
     expect(() => parseVerifierArguments(['--ipa', 'UPR.ipa'])).toThrow(

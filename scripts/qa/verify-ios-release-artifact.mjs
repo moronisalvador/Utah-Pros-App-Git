@@ -45,6 +45,7 @@ const VALUE_ARGUMENTS = new Map([
   ['--report', 'report'],
   ['--expected-bundle-id', 'expectedBundleId'],
   ['--expected-team-id', 'expectedTeamId'],
+  ['--expected-marketing-version', 'expectedMarketingVersion'],
   ['--expected-build-number', 'expectedBuildNumber'],
 ]);
 
@@ -53,6 +54,7 @@ const REQUIRED_ARGUMENTS = [
   'report',
   'expectedBundleId',
   'expectedTeamId',
+  'expectedMarketingVersion',
   'expectedBuildNumber',
 ];
 
@@ -297,6 +299,7 @@ function validateReleaseApp({
   appPath,
   expectedBundleId,
   expectedTeamId,
+  expectedMarketingVersion,
   expectedBuildNumber,
   temporaryDirectory,
   label,
@@ -334,6 +337,10 @@ function validateReleaseApp({
   const version = requireNonEmptyString(
     info.CFBundleShortVersionString,
     `${label} marketing version`,
+  );
+  assertCondition(
+    version === expectedMarketingVersion,
+    `${label} marketing version does not match the release request`,
   );
   assertCondition(
     info.ITSAppUsesNonExemptEncryption === false,
@@ -502,6 +509,7 @@ async function verifyReleaseArtifact(rawArguments) {
     const validationInputs = {
       expectedBundleId: argumentsMap.expectedBundleId,
       expectedTeamId: argumentsMap.expectedTeamId,
+      expectedMarketingVersion: argumentsMap.expectedMarketingVersion,
       expectedBuildNumber: argumentsMap.expectedBuildNumber,
       temporaryDirectory,
     };

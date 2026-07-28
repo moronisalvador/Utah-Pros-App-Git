@@ -155,12 +155,16 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
           node scripts/qa/verify-ios-release-artifact.mjs \
             --archive ios/build/UPR.xcarchive \
             --ipa ios/build/UPR.ipa \
             --report ios/build/UPR-release-verification.json \
             --expected-bundle-id "$APP_IDENTIFIER" \
             --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
             --expected-build-number "$BUILD_NUMBER"
 
       - name: Retain verified IPA and sanitized report
@@ -233,11 +237,15 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
           node scripts/qa/verify-ios-release-artifact.mjs \
             --ipa release-artifact/UPR.ipa \
             --report "$RUNNER_TEMP/UPR-publish-verification.json" \
             --expected-bundle-id "$APP_IDENTIFIER" \
             --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
             --expected-build-number "$BUILD_NUMBER"
 
       - name: Setup Ruby 3.3.12 and locked gems
