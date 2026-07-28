@@ -241,8 +241,9 @@ verified, not applied. The attribute-only migration removes browser EXECUTE, ret
 service-role Worker and owner-run midnight-clock caller, and leaves the function body/signature and
 recipient/broadcast behavior unchanged. S1d, S1e, and S1f apply windows remain separate.
 
-S1g notification read/mark recipient authorization is authored and source-verified, not
-applied. It preserves the four deployed RPC identities/results and PWA/Capacitor callers, derives
+S1g notification read/mark recipient authorization is live as
+`20260728192024_notification_read_recipient_boundary`. It preserves the four deployed RPC
+identities/results and PWA/Capacitor callers, derives
 the active internal employee from `auth.uid()`, denies foreign selectors, adds private per-employee
 broadcast receipts, and changes the existing Realtime SELECT policy to own-or-broadcast. Historical
 globally-read broadcasts stay read; targeted read state remains row-local. S1d, S1e, S1f, and S1g
@@ -251,7 +252,9 @@ containment dependency, adds the required explicit deny policy, retains the sent
 inert, and makes rollback preserve authorization while disabling browser access. Credential-free
 contracts pass, and the corrected exact preflight/forward/post-apply/behavior/rollback chain passed
 against both a temporary synthetic PGlite database and a disposable official local Supabase 2.110.0
-stack. Real Auth/PostgREST/Realtime qualification remains an apply-window gate. The unsafe
+stack. The live value-free postcondition, Moroni positive list/count, foreign-selector denial,
+unmapped-caller denial, advisors, and provenance all passed. Two-session PostgREST/Realtime and
+PWA/Capacitor client qualification remain close-out gates. The unsafe
 historical shared/anonymous notification test is retired,
 and its unrelated
 preference-resolver coverage moves to the next shared identity/device/preferences QA slice.

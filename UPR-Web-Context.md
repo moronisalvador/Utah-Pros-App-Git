@@ -8772,7 +8772,8 @@ broad table ACL, authenticated `notifications_select USING (true)`, sentinel-del
 Realtime publication, the authenticated employee SELECT/RLS dependency, employee Auth uniqueness,
 and zero direct database-body callers.
 
-Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves
+Migration `20260726260000_notification_read_recipient_boundary.sql`, live as
+`20260728192024_notification_read_recipient_boundary`, preserves
 `get_notifications(integer,uuid) -> SETOF notifications`,
 `get_unread_notification_count(uuid) -> integer`, `mark_notification_read(uuid) -> void`, and
 `mark_all_notifications_read(uuid) -> void`, including defaults and old broadcast-only call
@@ -8790,12 +8791,14 @@ behavior script (including all service compatibility branches), local-only pgTAP
 credential-free QA contract, and dated evidence accompany S1g. The 2026-07-28 correction aligns
 the five-column identity-containment contract, makes the new receipt and retained delete policies
 explicitly fail closed, and changes rollback to preserve authorization while disabling browser
-access. The corrected exact SQL still needs the governed isolated Supabase runner; live Supabase
-Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical anonymous
-notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
+access. Its exact sequence passed in disposable official local Supabase. The live postcondition,
+Moroni list/count, foreign/unmapped denial, advisors, and provenance passed without returning
+notification contents or changing read state. Two-session PostgREST/Realtime and installed-client
+bell proof remain open. Rollback intentionally keeps the historical anonymous notification-table
+grant revoked. S1d/S1e/S1f applies, emission, QBO telemetry/RLS,
 private media, shared identity/device/preferences, deployment, providers, native signing/devices,
-and final qualification remain separate. No live mutation, notification read/mark, deploy,
-provider action, signing, or distribution occurred in S1g.
+and final qualification remain separate. No notification mark, deploy, provider action, signing,
+or distribution occurred in the S1g apply window.
 
 S1h source began from reviewed S1g tip `f6554ad4`. The authorized governance merge preserves exact
 parents `f6554ad4` and `e9bf8f2`; subsequent history through `e2b7585` keeps the R0→S1g chain and the
@@ -8953,8 +8956,8 @@ Ledger versions are assigned AT APPLY TIME, not from the filename:
 - `upsert_employee_page_access_provenance_reconciliation` → **`20260727233845`**
 - `mobile_employee_identity_containment` → **`20260728002105`** (2026-07-28). See the containment
   section above — verified live, and it **broke the installed Capacitor app**, which needs a native
-  rebuild. Three of the mobile-security queue remain unapplied: `20260726183409`,
-  `20260726260000`, `20260727022920`. Each needs its own owner authorization, and each should wait
+  rebuild. Two of the mobile-security queue remain unapplied: `20260726183409` and
+  `20260727022920`. Each needs its own owner authorization, and each should wait
   on the client-contract check the containment apply proved is missing.
 
 **`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
@@ -8964,7 +8967,7 @@ fails. Both siblings preflight that the column EXISTS, never that it is GRANTED.
 self-identity policy: a caller reads only their own row. The structural fix (route those policies
 through a `SECURITY DEFINER` helper and drop the carve-out) is a roadmap item.
 
-**2026-07-28 S1g qualification correction:** fresh value-free production catalog capture confirmed
+**2026-07-28 S1g qualification and apply:** fresh value-free production catalog capture confirmed
 the containment ledger row, self-only employee policy, exact five authenticated employee columns
 including `is_external`, absence of `notification_reads`, both original notification policies,
 the original four function hashes/ACLs, and `supabase_realtime` publication. No employee or
@@ -8975,9 +8978,13 @@ Corrected source fixes all four defects and passes credential-free contracts. It
 preflight→forward→post-apply→isolated behavior→paired rollback chain passes against both a temporary
 synthetic PGlite database and a disposable official local Supabase 2.110.0 stack. This proves the
 catalog, role, function, transaction, and guarded rollback behavior but not live
-Auth/PostgREST/Realtime sockets. Its checksum changed, so the earlier apply authorization is not
-reusable; fresh checksum-specific owner authorization remains required before the shared database
-changes.
+Auth/PostgREST/Realtime sockets. The owner then authorized the exact corrected checksum; only S1g
+applied, as `20260728192024`. The standalone live postcondition passed. Moroni's authorized
+active-internal identity passed list/count/direct-RLS visibility while foreign-selector and
+unmapped callers failed `42501`; no contents were returned and no read state changed. Browser
+writes, direct receipt access, and anonymous access are denied. Advisors found no S1g regression,
+and fresh provenance matches the ledger, four RPCs, and three policies. Two-session
+PostgREST/Realtime plus PWA/Capacitor bell verification remain open.
 
 The initial production release intentionally has **zero automatic offline command admission or
 replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or
