@@ -21,6 +21,7 @@ import {
   extractBootAssets,
   expectedKind,
   contentTypeOk,
+  classifyFailure,
 } from '../../../scripts/smoke-deploy.mjs';
 
 describe('detects the 2026-07-27 poisoning signature', () => {
@@ -84,5 +85,53 @@ describe('finds every asset the page needs to boot', () => {
   it('ignores third-party scripts', () => {
     // A failing analytics beacon is not a reason to block a release.
     expect(extractBootAssets(html).some((u) => u.includes('cloudflareinsights'))).toBe(false);
+  });
+});
+
+
+// ─── SECTION: the second 2026-07-27 outage — a poisoned STYLESHEET ────────────
+// The first outage hit .js and blanked the app. The second hit .css: every
+// script loaded, React mounted, and every page rendered UNSTYLED. The checker
+// reported PASS throughout, for two reasons now pinned below.
+describe('classifyFailure names the right remedy', () => {
+  const html = { status: 200, ok: true, ct: 'text/html; charset=utf-8' };
+  const css = { status: 200, ok: true, ct: 'text/css; charset=utf-8' };
+
+  it('edge-poisoned when the cached copy is HTML but the origin serves CSS', () => {
+    // Exactly the live state on 2026-07-27: cf-cache HIT returned HTML while a
+    // cache-busted request to the same URL returned valid CSS. A purge fixes
+    // this; a redeploy is not needed.
+    expect(classifyFailure(html, css)).toBe('edge-poisoned');
+  });
+
+  it('origin-serving-html when BOTH the cached and origin copies are HTML', () => {
+    // A purge would NOT fix this one — the deployment itself is wrong. Telling
+    // these two apart is the whole point of the follow-up probe.
+    expect(classifyFailure(html, html)).toBe('origin-serving-html');
+  });
+
+  it('does not claim edge-poisoning when the origin probe could not run', () => {
+    expect(classifyFailure(html, null)).toBe('origin-serving-html');
+  });
+
+  it('unservable for a non-200 or dead response', () => {
+    expect(classifyFailure({ status: 404, ok: false, ct: '' }, null)).toBe('unservable');
+    expect(classifyFailure({ status: 0, ok: false, ct: '' }, null)).toBe('unservable');
+  });
+});
+
+describe('a stylesheet is held to the same bar as a script', () => {
+  it('REJECTS HTML served under a .css URL', () => {
+    // The second outage's exact response. The .js case was already covered;
+    // this pins the .css one so the same gap cannot reopen.
+    expect(contentTypeOk('/app-assets/index-abc.css', 'text/html; charset=utf-8')).toBe(false);
+  });
+
+  it('accepts a correctly served stylesheet', () => {
+    expect(contentTypeOk('/app-assets/index-abc.css', 'text/css; charset=utf-8')).toBe(true);
+  });
+
+  it('knows a .css path must be css', () => {
+    expect(expectedKind('/app-assets/index-abc.css')).toBe('css');
   });
 });
