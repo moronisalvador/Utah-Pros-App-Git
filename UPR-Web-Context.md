@@ -2665,11 +2665,11 @@ APP_BASE_URL                    — Optional; base for the OAuth return redirect
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
 TWILIO_*                        — 7 vars (pending go-live)
-APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
+APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in Cloudflare Preview + Production
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
 APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
-APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (App Store); defaults sandbox
+APNS_ENV                        — "sandbox" (development-signed builds) | "production" (TestFlight/App Store); defaults sandbox
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
@@ -3414,7 +3414,7 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Apple/APNs and Cloudflare sender configuration exist, but enrollment remains exact-default-off pending S1h live verification, compatible deployment, and signed-device proof.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
@@ -3426,8 +3426,9 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   manual-only and no-direct-secret-condition boundaries. `ios/App/Version.xcconfig` is the single
   marketing-version source (`1.0.0`); the workflow supplies a unique build from its run
   number/attempt, and native Settings displays the installed version/build through
-  `App.getInfo()`. It remains owner-gated on Apple enrollment, signing secrets, distribution archive
-  proof, and an explicitly dispatched release.
+  `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
+  archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
+  explicitly authorized release dispatch remain open.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
@@ -8461,10 +8462,18 @@ returns at most 25 contacts projected to `id/name/phone/company`, and calls the 
 non-archived direct threads with no different contact participant. Starting a thread does not send
 or change consent.
 
-Direct mobile threads read `GET /api/attest-sms-consent` and disable customer SMS/MMS while consent
-is loading, unavailable, suppressed, DND, or not allowed. Active internal admin/office users may
-record prior consent through the localized attestation modal; technicians cannot. Notes remain
-available. The server remains the final authority and no attestation auto-sends.
+The owner-directed 2026-07-28 opt-out-only source removes
+`GET /api/attest-sms-consent` from direct-thread open, eliminating the
+“Checking SMS permission…” delay. The thread derives visible DND state from its loaded contact and
+the server remains the final authority when Send is pressed. Active internal admin/office users may
+still record stronger prior-consent evidence; technicians cannot, notes remain available, and no
+attestation auto-sends. The distinct `IMPLIED_CONSENT` code may be accepted only by the
+staff-written direct service-message path. Automated, scheduled, group, broadcast, bulk, marketing,
+and campaign traffic still require `GLOBAL_OPT_IN`. DND, explicit opt-out, pending STOP, phone
+mismatch, missing/unreadable status, worker-only writes, and no-fallback rules are unchanged.
+The source migration `20260728000000_sms_consent_opt_out_only.sql` is not yet live; until its exact
+reviewed body is separately applied, the database never returns `IMPLIED_CONSENT` and live send
+behavior remains opt-in-only.
 
 Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
 while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
@@ -9131,8 +9140,62 @@ PICK-01 (partial), PICK-05, ESIGN-01, MSG-01, MSG-04.
 
 ### Release gates unchanged by this work
 
-Apple Distribution certificate, App Store provisioning profile, App Store
-Connect API key and APNs Auth Key remain absent — `ios/fastlane/Fastfile`
-requires all four. **QUAL-01 (physical-device and iPad qualification) cannot be
-closed from this environment at all.** DATA-01 needs a migration and was
-excluded by owner decision (no applies this session).
+Apple Distribution certificate, App Store provisioning profile, and App Store
+Connect API key remained absent at that audit boundary; the APNs and physical-
+device state changed in the 2026-07-28 activation section below.
+`ios/fastlane/Fastfile` still requires the distribution and provider assets.
+**QUAL-01** remains open for the complete physical-device/iPad matrix even
+though the current signed iPhone Debug slice now has evidence. DATA-01 needs a
+migration and was excluded by the original audit decision.
+
+## Native Push and App Store operational activation (2026-07-28)
+
+The owner-authorized physical-device handoff closed the old “no real device” statement for the
+current Debug slice: the exact verified branch build `1.0.0 (1)` was signed by team `H6ZUT739T9`,
+installed in place over Wi-Fi on the owner's iPhone 17 Pro Max, launched successfully, and retained
+the authenticated session without another Face ID challenge. This is not a distribution archive,
+TestFlight install, or complete device matrix.
+
+Apple Developer and App Store Connect now have real release state:
+
+- bundle `com.utahprosrestoration.upr` has Associated Domains and Push Notifications enabled;
+- APNs Auth Key `JX22945D4T` is team-scoped for Sandbox & Production;
+- Cloudflare Pages project `utah-pros-app-git` has `APNS_P8_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`,
+  `APNS_TOPIC`, `APNS_ENV`, and `VITE_NATIVE_PUSH_ENABLED` in both environments;
+- Preview uses APNs sandbox, Production uses APNs production, and enrollment remains explicit
+  `false` in both; no redeploy or push occurred;
+- the first generated APNs key was revoked before use after trace exposure, both downloaded key
+  files were permanently removed, and only Cloudflare's encrypted copy of the active replacement
+  remains; and
+- App Store Connect app `6795664765` exists as **UPR Field Operations**, version 1.0, bundle
+  `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`. “UPR” alone was unavailable.
+
+The iOS release workflow now treats exact `VITE_NATIVE_PUSH_ENABLED=true` as a mandatory archive
+input and passes it into the native web build; without that release input a TestFlight IPA would
+silently ship enrollment disabled even if Cloudflare were configured.
+
+Apple Distribution certificate `3QA6GT9L28` and App Store profile `UPR App Store 2026` now exist.
+The app-target-scoped signing lane produced a clean Xcode 26.6 archive and exported IPA locally.
+The verifier passed bundle/team/version/build identity, strict signature, production Push
+entitlement, non-debug App Store provisioning, encryption declaration, privacy manifest, and
+archive/IPA parity. The qualification IPA hash is
+`eb022fae79464c25980746e961e80b383958677854ec5eafe1b4365d840b4b41`. Because the worktree was
+dirty, its sanitized report has no source commit and it is evidence for the signing lane, not the
+final upload artifact.
+
+App Store Connect API access is enabled. The unusable first key was revoked, and replacement Admin
+team key `XV5CUK6XLC` is configured in GitHub environment `ios-testflight` as encrypted
+`ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_CONTENT_BASE64` secrets. GitHub confirmed all three
+secret names and timestamps before the downloaded private-key file was removed. This closes the
+App Store Connect authentication-key gate only; the remaining signing/build secrets, clean-source
+artifact, and owner-authorized provider upload are still separate gates. No provider upload
+occurred.
+
+Push remains inactive by design. The three S1h dependencies are already live as
+`20260727154506 mobile_employee_identity_authority`,
+`20260727233845 upsert_employee_page_access_provenance_reconciliation`, and
+`20260728002105 mobile_employee_identity_containment`; never replay them. Only
+`20260727022920_mobile_personal_ownership_boundary.sql` remains absent. Its exact isolated
+forward/post-apply/behavior/guarded-rollback sequence, fresh live preflight, checksum-pinned apply,
+post-apply proof, client deploy, enrollment flip, physical delivery/tap test, signed distribution
+archive, and TestFlight upload/install remain separate gates.

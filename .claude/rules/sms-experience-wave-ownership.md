@@ -342,3 +342,65 @@ admin/office authority, serializes on normalized phone identity, refuses duplica
 pending-provider STOP state, and writes a dedicated service-message consent record plus an
 append-only audit row in one transaction. It never changes `contacts.opt_in_status`. Customer
 re-subscription after revocation remains the inbound START/affirmative written path.
+
+---
+
+## 13. Opt-out-only consent addendum (2026-07-28) — owner-directed
+
+**The owner directed, in conversation on 2026-07-28, that SMS permission become opt-out-only for
+service messaging:**
+*"We already have opt out and DND in place, which should be the only thing that matter. If we have
+their contact info, they gave it to us and requested our service."* Asked to scope it, the owner
+initially chose every send path, then clarified: *"We will not send any bulk marketing text, we're a
+restoration company not a window cleaning company."* The adversarial consent review narrowed the
+implemented exception to staff-written direct 1:1 service SMS. Automated, scheduled, group,
+broadcast, bulk, campaign and marketing traffic remain global-opt-in-only. Recorded here because §6
+and §12 above state the broader opt-in rule and the exact reviewed exception must remain explicit.
+
+**What changed.** `get_service_sms_consent_status(uuid, text)` — signature frozen, body only — now
+returns a new `allowed` code **`IMPLIED_CONSENT`** where it previously returned `NO_CONSENT` for a
+reachable contact with no recorded permission. Migration
+`20260728000000_sms_consent_opt_out_only.sql`, rollback in `supabase/rollbacks/`, CI-visible source
+contract in `tests/qa/unit/sms-consent-opt-out-only.test.js`.
+
+**What did NOT change — every one of these still fails closed:**
+
+- **DND**, **explicit `opt_out_at`**, and a **pending STOP** (an inbound STOP not yet projected)
+  all still refuse the send, at the same point in the flow, with the same audit rows.
+- The **worker remains the sole writer** of `sms_*` rows; the client still inserts only
+  `internal_note`.
+- **No cross-channel and no adapter fallback.** A refused channel is still refused, never retargeted.
+- `skip_compliance` is still gone and must never return.
+- The `{ ok, skipped, reason }` vocabulary is unchanged; `sms_disabled` and `quiet_hours` are still
+  load-bearing for held-retry.
+- **`SERVICE_CONSENT` and `IMPLIED_CONSENT` are staff direct-1:1-only** — automated and
+  scheduled traffic accept `GLOBAL_OPT_IN` only; group and broadcast sends do the same.
+- The function is still `service_role`-only; `anon` and `authenticated` are still revoked.
+- **A2P live sends, provider binding and flag flips remain owner-gated.**
+
+**The direct-staff revert switch needs no database window.** Each send path names its accepted
+codes in `functions/lib/sms-consent.js` (`STAFF_ / AUTOMATED_ / SCHEDULED_ACCEPTED_CONSENT_CODES`).
+Only `STAFF_ACCEPTED_CONSENT_CODES` contains `'IMPLIED_CONSENT'`; removing it returns the direct
+staff path to opt-in-only on the next deploy without touching the shared database. Use the rollback
+migration only to remove the database return code itself.
+
+**Client pre-flight removed.** `GET /api/attest-sms-consent` is no longer called on thread open in
+either shell — that fetch produced the "Checking SMS permission…" delay on every conversation.
+Permission is now derived synchronously from the contact row already on screen. **The server is
+still the authority:** `POST /api/send-message` runs the real gate and refuses with a reason. The
+attestation endpoint itself is unchanged and still serves the attestation flow.
+
+**A pending STOP is enforced silently (owner-directed, same conversation).** It is deliberately not
+surfaced in either shell — it is an internal projection window that clears in seconds and that
+staff can do nothing about, so a banner about it was noise. The block itself is untouched.
+
+**Automation risk is resolved by exclusion.** Automated, scheduled, group, broadcast, bulk,
+campaign and marketing traffic do not consume `IMPLIED_CONSENT`. If any future sender proposes
+that code, this addendum does **not** authorize it; that requires a fresh owner decision and
+adversarial consent review.
+
+**NOT APPLIED.** The migration is authored, reviewed and tested at repository level only. Applying
+it to the shared Supabase project is a separate owner-authorized window per
+`database-standard.md` §0/§5. Until it applies, every send path keeps its current live behaviour —
+the direct staff worker accepts `IMPLIED_CONSENT`, but the database never returns it, so nothing
+changes.
