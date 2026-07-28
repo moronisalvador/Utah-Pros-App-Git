@@ -27,6 +27,8 @@ jobs:
   archive:
     name: Build and verify signed IPA
     runs-on: macos-26
+    # Job timeout covers setup/test Actions. The persistent Xcode/Fastlane
+    # subprocess is separately capped at five minutes with owned-tree cleanup.
     timeout-minutes: 45
     environment: ios-signing
     steps:
@@ -63,6 +65,7 @@ jobs:
           APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
         run: |
           set -euo pipefail
           required_names=(
@@ -73,6 +76,7 @@ jobs:
             APPLE_PROVISIONING_PROFILE_NAME
             VITE_SUPABASE_URL
             VITE_SUPABASE_ANON_KEY
+            VITE_NATIVE_PUSH_ENABLED
           )
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -80,6 +84,10 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" ]]; then
+            echo "VITE_NATIVE_PUSH_ENABLED must be exactly true for a TestFlight-capable archive." >&2
+            exit 1
+          fi
 
       - name: Select and verify Xcode 26.6
         shell: bash
@@ -106,6 +114,7 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
         run: node scripts/build-native.mjs
 
       - name: Synchronize the iOS platform
@@ -136,7 +145,6 @@ jobs:
           chmod 600 "$certificate_path" "$profile_path"
 
       - name: Create signed archive without provider upload
-        working-directory: ios
         shell: bash
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -149,7 +157,10 @@ jobs:
           export KEYCHAIN_PASSWORD="$keychain_password"
           export APPLE_CERTIFICATE_PATH="$RUNNER_TEMP/upr-signing-certificate.p12"
           export APPLE_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/upr-signing-profile.mobileprovision"
-          bundle exec fastlane ios archive
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 290000 \
+            --cwd ios \
+            -- bundle exec fastlane ios archive
 
       - name: Verify archive and exported IPA
         env:
@@ -190,6 +201,8 @@ jobs:
     needs: archive
     if: ${{ inputs.publish_to_testflight }}
     runs-on: macos-26
+    # Job timeout covers Actions setup. The provider subprocess is separately
+    # capped at five minutes with owned-tree cleanup.
     timeout-minutes: 20
     environment: ios-testflight
     steps:
@@ -257,11 +270,14 @@ jobs:
           working-directory: ios
 
       - name: Upload the reverified IPA
-        working-directory: ios
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
           IPA_PATH: ${{ github.workspace }}/release-artifact/UPR.ipa
-        run: bundle exec fastlane ios upload
+        run: |
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 290000 \
+            --cwd ios \
+            -- bundle exec fastlane ios upload

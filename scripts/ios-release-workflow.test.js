@@ -21,6 +21,8 @@
  * ════════════════════════════════════════════════
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -77,7 +79,47 @@ const gemfile = readRepositoryFile('ios/Gemfile');
 const iosGitignore = readRepositoryFile('ios/.gitignore');
 const nativeBuildScript = readRepositoryFile('scripts/build-native.mjs');
 const verifier = readRepositoryFile('scripts/qa/verify-ios-release-artifact.mjs');
+const ownedSubprocessRunner = readRepositoryFile(
+  'scripts/qa/run-owned-subprocess.mjs',
+);
 const capacitorConfig = JSON.parse(readRepositoryFile('capacitor.config.json'));
+const ownedSubprocessRunnerPath = repositoryFile(
+  'scripts/qa/run-owned-subprocess.mjs',
+);
+
+function runOwnedSubprocess(timeoutMs, childSource, { termGraceMs = 50 } = {}) {
+  return spawnSync(
+    process.execPath,
+    [
+      ownedSubprocessRunnerPath,
+      '--timeout-ms',
+      String(timeoutMs),
+      '--term-grace-ms',
+      String(termGraceMs),
+      '--cwd',
+      repositoryFile('.'),
+      '--',
+      process.execPath,
+      '-e',
+      childSource,
+    ],
+    {
+      cwd: repositoryFile('.'),
+      encoding: 'utf8',
+      timeout: 5_000,
+    },
+  );
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ESRCH') return false;
+    throw error;
+  }
+}
 
 describe('iOS release workflow authorization boundary', () => {
   it('remains manual-only and defaults provider publication to false', () => {
@@ -149,6 +191,51 @@ describe('iOS release workflow authorization boundary', () => {
     expect(publishJob).toContain('ASC_KEY_CONTENT_BASE64');
   });
 
+  it('bounds Xcode and provider subprocesses to five minutes and verifies cleanup', () => {
+    for (const job of [archiveJob, publishJob]) {
+      expect(job).toContain('scripts/qa/run-owned-subprocess.mjs');
+      expect(job).toContain('--timeout-ms 290000');
+    }
+    expect(ownedSubprocessRunner).toContain('const MAX_TOTAL_RUNTIME_MS = 300_000');
+    expect(ownedSubprocessRunner).toContain('const MAX_COMMAND_TIMEOUT_MS');
+    expect(ownedSubprocessRunner).toContain('detached: true');
+    expect(ownedSubprocessRunner).toContain("process.kill(-pid, signal)");
+    expect(ownedSubprocessRunner).toContain('verifyProcessGroupGone(pid)');
+  });
+
+  it('dynamically cleans successful and timed-out owned process groups', () => {
+    const success = runOwnedSubprocess(500, 'process.exit(0)');
+    expect(success.status).toBe(0);
+    expect(success.stderr).toContain('Verified owned process group');
+
+    const descendant = runOwnedSubprocess(
+      800,
+      "const { spawn } = require('node:child_process');"
+        + "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],"
+        + "{ stdio: 'ignore' });"
+        + 'process.stdout.write(String(child.pid));'
+        + 'setInterval(() => {}, 1000);',
+    );
+    expect(descendant.status).toBe(124);
+    expect(descendant.stderr).toContain('Verified owned process group');
+    const descendantPid = Number(descendant.stdout);
+    expect(Number.isInteger(descendantPid)).toBe(true);
+    expect(processExists(descendantPid)).toBe(false);
+  });
+
+  it('SIGKILLs TERM-resistant children inside the five-minute total deadline', () => {
+    const startedAt = Date.now();
+    const resistant = runOwnedSubprocess(
+      800,
+      "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+    );
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(resistant.status).toBe(124);
+    expect(resistant.stderr).toContain('Verified owned process group');
+    expect(elapsedMs).toBeLessThan(3_000);
+  });
+
   it('reverifies the transported IPA before the provider lane', () => {
     const verifyIndex = publishJob.indexOf('Reverify downloaded IPA');
     const uploadIndex = publishJob.indexOf('Upload the reverified IPA');
@@ -163,6 +250,29 @@ describe('iOS release workflow authorization boundary', () => {
     expect(nativeBuildScript).toContain("VITE_BUILD_TARGET: 'native'");
     expect(nativeBuildScript).not.toMatch(
       /spawnSync\([\s\S]*?['"]cap(?:acitor)?['"][\s\S]*?['"]sync['"]/,
+    );
+  });
+
+  it('fails closed unless the archived native bundle enables push exactly', () => {
+    const inputValidation = section(
+      archiveJob,
+      '      - name: Validate archive inputs',
+      '      - name: Select and verify Xcode 26.6',
+    );
+    const nativeBuild = section(
+      archiveJob,
+      '      - name: Build the native web bundle',
+      '      - name: Synchronize the iOS platform',
+    );
+
+    expect(inputValidation).toContain(
+      'VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}',
+    );
+    expect(inputValidation).toContain(
+      'if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" ]]',
+    );
+    expect(nativeBuild).toContain(
+      'VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}',
     );
   });
 
@@ -210,14 +320,34 @@ describe('iOS release workflow authorization boundary', () => {
 });
 
 describe('Fastlane signing and provider contracts', () => {
-  it('archives the real project with explicit manual distribution signing', () => {
+  it('keeps manual distribution signing scoped to the app target', () => {
     expect(fastfile).toContain('File.join(IOS_ROOT, "App", "App.xcodeproj")');
     expect(archiveLane).toContain('project: XCODE_PROJECT');
     expect(archiveLane).not.toContain('workspace:');
-    expect(archiveLane).toContain('CODE_SIGN_STYLE');
-    expect(archiveLane).toContain('"Manual"');
-    expect(archiveLane).toContain('"Apple Distribution"');
-    expect(archiveLane).toContain('PROVISIONING_PROFILE_SPECIFIER');
+    expect(archiveLane).not.toContain(
+      'xcode_assignment("PROVISIONING_PROFILE_SPECIFIER"',
+    );
+    expect(archiveLane).not.toContain(
+      'xcode_assignment("CODE_SIGN_STYLE"',
+    );
+    expect(archiveLane).not.toContain('codesigning_identity:');
+    expect(archiveLane).toContain(
+      'xcode_assignment("UPR_RELEASE_PROFILE_NAME", provisioning_profile_name)',
+    );
+    expect(archiveLane).toContain('signingStyle: "manual"');
+    expect(archiveLane).toContain('signingCertificate: "Apple Distribution"');
+    expect(archiveLane).toContain('APP_IDENTIFIER => provisioning_profile_name');
+    expect(releaseBuildConfiguration).toContain(
+      'CODE_SIGN_IDENTITY = "Apple Distribution";',
+    );
+    expect(releaseBuildConfiguration).toContain('CODE_SIGN_STYLE = Manual;');
+    expect(releaseBuildConfiguration).toContain(
+      'PROVISIONING_PROFILE_SPECIFIER = "$(UPR_RELEASE_PROFILE_NAME)";',
+    );
+    expect(debugBuildConfiguration).toContain('CODE_SIGN_STYLE = Automatic;');
+    expect(debugBuildConfiguration).not.toContain(
+      'PROVISIONING_PROFILE_SPECIFIER',
+    );
     expect(archiveLane).toContain('CURRENT_PROJECT_VERSION');
     expect(archiveLane).not.toContain('latest_testflight_build_number');
   });
@@ -308,6 +438,17 @@ describe('native release artifact safety contract', () => {
       },
       'fixture manifest',
     )).toThrow(/cannot be used for tracking/);
+  });
+
+  it('reads only security-relevant provisioning metadata', () => {
+    expect(verifier).toContain(
+      "readPlistJsonKey(\n      decodedProfilePath,\n      'Entitlements'",
+    );
+    expect(verifier).toContain(
+      "readPlistRawKey(\n      decodedProfilePath,\n      'ExpirationDate'",
+    );
+    expect(verifier).not.toContain("'DeveloperCertificates'");
+    expect(verifier).not.toContain("'DER-Encoded-Profile'");
   });
 
   it('uses development push only for Debug and production push for Release', () => {
