@@ -70,7 +70,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
-import { pickerHref } from '@/lib/openInAppThread';
+import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
@@ -254,7 +254,11 @@ export default function TechAppointment() {
   };
 
   // ── Rooms (Phase 1) ───────────────────────────────────────────────────────
+  // Legacy name — this is the appointment's job id generally, not only for rooms.
   const jobIdForRooms = appt?.jobs?.id || appt?.job_id;
+  // MSG-05: Message resolves the job's contact on tap, so it needs a busy state to
+  // stop a second tap firing a second lookup while the first is still in flight.
+  const [openingThread, setOpeningThread] = useState(false);
 
   useEffect(() => {
     if (!roomsEnabled || !jobIdForRooms) { setRooms(null); return; }
@@ -645,13 +649,20 @@ export default function TechAppointment() {
         {/* Message — opens the thread INSIDE UPR, not the phone's SMS app. The old
             sms: link sent from the tech's personal number, so the text never landed
             in the customer's UPR thread and office staff could not see it.
-            get_appointment_detail carries no contact id, so this lands on the in-app
-            contact picker rather than guessing a contact from the phone number. The
-            job and claim screens have the contact and open the thread directly. */}
+            get_appointment_detail carries no contact id, so MSG-05 resolves the job's
+            contact on tap (get_job_contacts) and opens that thread directly — the way
+            iMessage and Housecall Pro do. The picker is still the fallback when the
+            job has no clear single customer; we never guess from the phone number,
+            because two contacts can share one. */}
         {job?.client_phone ? (
           <button
             type="button"
-            onClick={() => navigate(pickerHref())}
+            disabled={openingThread}
+            onClick={async () => {
+              setOpeningThread(true);
+              try { await openJobThread(navigate, jobIdForRooms, db); }
+              finally { setOpeningThread(false); }
+            }}
             style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               gap: 4, background: 'none', border: 'none',
