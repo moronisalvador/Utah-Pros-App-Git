@@ -15,6 +15,8 @@
  * NOTES / GOTCHAS:
  *   - Biometry is not a stored-session launch gate. Normal app reopens trust
  *     the existing authenticated session and do not prompt again.
+ *   - A native bridge error, timeout, or malformed availability response is not
+ *     the same as confirmed missing/unenrolled biometry and must fail closed.
  *   - The legacy preference writer remains only so secure account cleanup can
  *     remove stale enrollment left by older installed builds.
  *   - The iOS app-switcher privacy shield is native AppDelegate code. This
@@ -27,14 +29,35 @@ import { BiometricAuth } from '@aparajita/capacitor-biometric-auth';
 
 const isNative = () => Capacitor.isNativePlatform();
 const KEY = 'upr.biometric.enabled';
+const CHECK_TIMEOUT_MS = 5000;
+const CONFIRMED_UNAVAILABLE_CODES = new Set([
+  'biometryNotAvailable',
+  'biometryNotEnrolled',
+]);
 
-export async function checkBiometricAvailable() {
-  if (!isNative()) return false;
+export async function checkBiometricAvailable({
+  native = isNative(),
+  check = () => BiometricAuth.checkBiometry(),
+  timeoutMs = CHECK_TIMEOUT_MS,
+} = {}) {
+  if (!native) return false;
+  let timeoutId;
   try {
-    const info = await BiometricAuth.checkBiometry();
-    return !!info?.isAvailable;
-  } catch {
-    return false;
+    const timeout = new Promise((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error('Biometric availability check timed out.')),
+        timeoutMs,
+      );
+    });
+    const info = await Promise.race([check(), timeout]);
+    if (typeof info?.isAvailable !== 'boolean') {
+      throw new Error('Biometric availability response was malformed.');
+    }
+    if (info.isAvailable) return true;
+    if (CONFIRMED_UNAVAILABLE_CODES.has(info.code)) return false;
+    throw new Error('Biometric availability could not be verified.');
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
