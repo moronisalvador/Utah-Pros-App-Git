@@ -84,8 +84,14 @@ plutil -lint ios/App/App/App.Release.entitlements
 it only when the signed artifact exists and compare its JSON report with the release manifest.
 
 The repository has no TypeScript/typecheck gate. Lint has a known baseline; report the full result and
-make changed mobile/worker files clean/blocking. Never edit code merely to make an audit command
-green unless remediation was separately authorized.
+make changed mobile/worker files clean. CI keeps full-tree lint non-blocking but blocks a PR when any
+changed JS/JSX file has an error or warning. The variables-only `no-use-before-define` warning is part
+of that ratchet and catches TDZ regressions without activating untouched baseline debt. Never edit
+code merely to make an audit command green unless remediation was separately authorized.
+
+At the 2026-07-28 guardrail checkpoint based on `3435583`, full-tree lint reports 1,118 findings:
+200 errors and 918 warnings, including 808 `no-use-before-define` warnings. This is measured baseline
+debt, not a passing gate; changed-file lint remains the zero-warning acceptance boundary.
 
 ## Runtime harness safety
 
@@ -153,10 +159,10 @@ its separate definer-RPC authorization finding remains open.
 The remediation tests pin zero admission/dispatch, online-only field UI, v3 count-only inspection,
 blocking legacy rollout state, exact-confirmation all-store discard, bounded typed open/
 version-change recovery, generation isolation, and retry-limited time-rotating historical-photo
-cleanup. The focused six-file lane passes 58/58. In the current-origin integration worktree, the
-complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25
-files/206 tests, and web/native builds pass. Full lint reports 310 baseline findings, and preflight
-reports 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
+cleanup. At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), the focused six-file lane
+passed 58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests,
+QA passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings, and
+preflight reported 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
 unavailable). Independent review found no actionable offline P0/P1. The changed-file lint ratchet,
 real browser multi-tab/upgrade, and physical-device execution remain additional release gates.
 

@@ -150,10 +150,10 @@ retry guidance; blocking/version-change callbacks close only their captured conn
 Historical completed-photo cleanup is never sent and uses bounded retry-limited, time-rotating,
 key-only owner maintenance. Hidden documents neither poll nor run maintenance.
 
-Focused zero-replay tests pass 58/58. In the current-origin integration worktree, the complete unit
-lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206 tests, and
-web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet is tracked
-separately. Independent review found no actionable offline P0/P1. Real multi-tab/upgrade and
+At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), focused zero-replay tests passed
+58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests, QA
+passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings; the
+changed-file ratchet was tracked separately. Independent review found no actionable offline P0/P1. Real multi-tab/upgrade and
 representative device proof remain additional gates.
 
 Any broader offline promise requires an owner-approved workflow matrix, private-data threat model,

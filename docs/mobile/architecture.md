@@ -187,10 +187,10 @@ catalog evidence for future idempotency decisions is
 it does not authorize replay and records that authorization inside the three definer RPCs remains a
 separate live database boundary.
 
-The focused zero-replay/legacy-maintenance lane passes 58/58. In the current-origin integration
-worktree, the complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA
-passes 25 files/206 tests, and web/native builds pass. Full lint retains 310 baseline findings, and
-preflight reports 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
+At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), the focused zero-replay/
+legacy-maintenance lane passed 58/58, the complete unit lane passed 90 files/1079 tests, Worker
+passed 99 files/1476 tests, QA passed 25 files/206 tests, and web/native builds passed. Full lint
+reported 310 findings, and preflight reported 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
 unavailable). Independent review found no actionable offline P0/P1. Real multi-tab and
 representative browser/PWA/native device proof remain separate, as do the live definer-RPC
 authorization gap and the changed-file lint ratchet.
