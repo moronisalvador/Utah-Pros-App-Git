@@ -44,6 +44,7 @@ import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { DIV_GRADIENTS } from './techConstants';
 import EsignRequestSheet from '@/components/tech/EsignRequestSheet';
+import { publicSigningUrl } from '@/lib/publicSigningUrl';
 
 // ─── SECTION: Helpers ──────────────
 const DOC_TYPE_LABELS = {
@@ -146,8 +147,11 @@ export default function TechJobDocuments() {
   // ─── SECTION: Event handlers ──────────────
   const pdfUrl = (path) => `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
 
+  // ESIGN-01: window.location.origin is capacitor://localhost inside the app,
+  // so this copied a link no customer could open. publicSigningUrl pins the
+  // origin to a real UPR host.
   const copyLink = (token) => {
-    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
+    navigator.clipboard.writeText(publicSigningUrl(token))
       .then(() => { setCopiedToken(token); setTimeout(() => setCopiedToken(null), 2000); })
       .catch(() => toast('Could not copy link', 'error'));
   };

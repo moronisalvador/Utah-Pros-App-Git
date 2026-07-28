@@ -16,6 +16,7 @@ import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
+import { publicSigningUrl } from '@/lib/publicSigningUrl';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -705,8 +706,11 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
     }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
   const copyLink=(token)=>{
-    // window.location.origin = https://dev.utahpros.app in dev, https://utahpros.app in prod
-    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
+    // ESIGN-01: the old comment assumed the origin is always dev./utahpros.app.
+    // True on the deployed web app, but it is a latent contract violation —
+    // a preview host or any future shell emits a link a customer cannot open.
+    // Same helper as the tech surface, so both stay correct together.
+    navigator.clipboard.writeText(publicSigningUrl(token))
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
   const cancelReq=async(id)=>{
