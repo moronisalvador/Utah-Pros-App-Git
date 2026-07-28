@@ -31,6 +31,38 @@ export function getAccountLandingPath(role) {
 }
 
 /**
+ * AUTH-01 — who may render the field shell (`/tech/*`).
+ *
+ * Owner-ratified 2026-07-27: every INTERNAL role, because office, estimator,
+ * supervisor and project_manager all legitimately use field screens today, and
+ * excluding admin would lock the owner out of the app they support. The single
+ * exclusion is `crm_partner`, the external product identity, which had full
+ * access to job data, claims, customer records and photos.
+ *
+ * This lives beside getAccountLandingPath deliberately: the landing redirect
+ * and the route gate must not drift, and the refusal screen sends a blocked
+ * account to getAccountLandingPath(role) rather than looping.
+ *
+ * NOTE: this is a PRESENTATION boundary. It stops a wrong-shell render; it does
+ * not authorize data. The server-side boundary is the RPC grant surface (see
+ * audit finding DATA-01 — get_claims_list is granted to plain `authenticated`),
+ * which is a separate reviewed database change.
+ */
+export const FIELD_SHELL_ROLES = Object.freeze([
+  'field_tech',
+  'admin',
+  'office',
+  'supervisor',
+  'estimator',
+  'project_manager',
+  'manager',
+]);
+
+export function canUseFieldShell(role) {
+  return FIELD_SHELL_ROLES.includes(role);
+}
+
+/**
  * AuthProvider's latest-transition-wins primitive.
  *
  * React state publication is guarded by a monotonically increasing generation.

@@ -34,6 +34,7 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import '@/i18n'; // initialize the translation engine once, at app entry
 import ProtectedRoute from '@/components/ProtectedRoute';
+import FieldShellRoute from '@/components/FieldShellRoute';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import RouteRestorer from '@/components/RouteRestorer';
@@ -292,8 +293,15 @@ function TechRoutes() {
   return (
     <Route
       element={(
+        // AUTH-01: ProtectedRoute proves WHO you are; FieldShellRoute decides
+        // whether the field shell is yours at all. Before this, any signed-in
+        // account — including the external crm_partner identity — could render
+        // every /tech/* screen by typing the URL, tapping a notification, or
+        // following a Universal Link. The landing redirect only fires on '/'.
         <ProtectedRoute>
-          <TechLayout nativeBuild={IS_NATIVE} />
+          <FieldShellRoute>
+            <TechLayout nativeBuild={IS_NATIVE} />
+          </FieldShellRoute>
         </ProtectedRoute>
       )}
     >
