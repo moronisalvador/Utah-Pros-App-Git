@@ -105,11 +105,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const localizedSuppressionDetail = consentUi.suppressionKey
     ? t(`consent.suppression.${consentUi.suppressionKey}.detail`)
     : null;
-  const consentBlockMessage = consentStatus.loading
-    ? t('consent.checking')
-    : consentStatus.error
-      ? t('consent.unavailable')
-      : localizedSuppressionTitle || t('consent.missing');
+  // No async check since 2026-07-28, so there is no "checking"/"unavailable"
+  // state to render — a block is always a real customer decision (DND or opt-out).
+  const consentBlockMessage = localizedSuppressionTitle || t('consent.missing');
   const handleConsentRequired = useCallback(() => {
     refreshConsent();
   }, [refreshConsent]);
