@@ -4,10 +4,8 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the "is it okay to text this person?" rule: yes only when we have a
- *   number, they haven't been marked Do Not Disturb, AND they have actually
- *   opted in (TCPA is opt-in, so a missing opt-in is a NO). Committed before
- *   the predicate it tests (Phase F test-first).
+ *   Proves the cheap automated-SMS gate requires a phone and recorded opt-in,
+ *   and refuses Do Not Disturb or explicit opt-out.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -45,10 +43,19 @@ describe('consentAllows (SMS/TCPA)', () => {
     })).toBe(false);
   });
 
-  it('blocks when not opted in (TCPA requires prior express consent)', () => {
+  it('blocks automated traffic without recorded opt-in', () => {
     expect(consentAllows({ phone: '+18014471917', opt_in_status: false, dnd: false })).toBe(false);
     expect(consentAllows({ phone: '+18014471917', opt_in_status: null, dnd: false })).toBe(false);
     expect(consentAllows({ phone: '+18014471917' })).toBe(false);
+  });
+
+  it('still blocks an objection even with no recorded opt-in', () => {
+    expect(consentAllows({ phone: '+18014471917', opt_in_status: false, dnd: true })).toBe(false);
+    expect(consentAllows({
+      phone: '+18014471917',
+      opt_in_status: false,
+      opt_out_at: '2026-07-23T18:00:00.000Z',
+    })).toBe(false);
   });
 
   it('blocks a null/undefined row', () => {
