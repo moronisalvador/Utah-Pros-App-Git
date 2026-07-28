@@ -21,8 +21,12 @@ import {
   PWA_ACCOUNT_TRANSITION_KEY,
   RESUME_TTL_MS,
   ROUTE_KEY,
+  LEGACY_UNSCOPED_DRAFT_PREFIXES,
+  OWNED_DRAFT_PREFIX,
   beginPwaOwnerTransition,
+  clearOwnedDrafts,
   clearSavedRoute,
+  ownedDraftStorageKey,
   pickRestoreUrl,
   readSavedRoute,
   routeStorageKey,
@@ -107,6 +111,11 @@ describe('saved route account ownership', () => {
       getItem: (key) => values.get(key) ?? null,
       setItem: (key, value) => values.set(key, value),
       removeItem: (key) => values.delete(key),
+      // Real localStorage is enumerable; the prefix sweep in clearOwnedDrafts
+      // depends on it, so the double must expose it too or the sweep would
+      // no-op here while working in the browser.
+      get length() { return values.size; },
+      key: (index) => Array.from(values.keys())[index] ?? null,
       values,
     };
   }
@@ -156,6 +165,66 @@ describe('saved route account ownership', () => {
     expect(routeStorageKey(ownerA)).not.toBe(routeStorageKey(ownerB));
     expect(routeStorageKey(ownerA)).toContain(encodeURIComponent(ownerA.owner));
     expect(routeStorageKey(ownerA)).toContain(encodeURIComponent(ownerA.epoch));
+  });
+
+  // ─── PRIV-01: durable drafts are account-owned ────────────────────────
+
+  it('scopes a draft key to the owner and epoch, and separates accounts', () => {
+    const a = ownedDraftStorageKey(ownerA, 'conv', 'c1');
+    const b = ownedDraftStorageKey(ownerB, 'conv', 'c1');
+    expect(a).not.toBeNull();
+    expect(a).not.toBe(b);
+    expect(a).toContain(encodeURIComponent(ownerA.owner));
+    expect(a).toContain(encodeURIComponent(ownerA.epoch));
+  });
+
+  it('separates draft families so a conversation and a sheet cannot collide', () => {
+    expect(ownedDraftStorageKey(ownerA, 'conv', 'x'))
+      .not.toBe(ownedDraftStorageKey(ownerA, 'scopesheet', 'x'));
+  });
+
+  it('fails closed without a verified lease, so nothing durable is written', () => {
+    // pwaOwnerLease is null until device state is verified.
+    expect(ownedDraftStorageKey(null, 'conv', 'c1')).toBeNull();
+    expect(ownedDraftStorageKey({ owner: 'employee-123', epoch: 'e1.s' }, 'conv', 'c1')).toBeNull();
+    expect(ownedDraftStorageKey(ownerA, 'conv', '')).toBeNull();
+  });
+
+  it('sweeps owned AND legacy unscoped drafts so a second account reads neither', () => {
+    const legacyConv = `${LEGACY_UNSCOPED_DRAFT_PREFIXES[0]}c1`;
+    const legacySheet = `${LEGACY_UNSCOPED_DRAFT_PREFIXES[1]}pending`;
+    const target = storage({
+      [legacyConv]: 'half-typed customer SMS',
+      [legacySheet]: '{"rooms":[]}',
+      [ownedDraftStorageKey(ownerA, 'conv', 'c1')]: 'A private text',
+      'upr:unrelated-preference': 'keep me',
+    });
+
+    expect(clearOwnedDrafts(ownerA, { storage: target })).toBe(true);
+
+    expect(target.getItem(legacyConv)).toBeNull();
+    expect(target.getItem(legacySheet)).toBeNull();
+    expect(target.getItem(ownedDraftStorageKey(ownerA, 'conv', 'c1'))).toBeNull();
+    // The sweep is prefix-scoped: unrelated device preferences survive.
+    expect(target.getItem('upr:unrelated-preference')).toBe('keep me');
+  });
+
+  it('still sweeps the owned namespace when the lease is already invalidated', () => {
+    // Logout invalidates the lease before cleanup runs, so a lease-gated
+    // sweep would strand exactly the data we are trying to remove.
+    const orphan = `${OWNED_DRAFT_PREFIX}conv:v1.aaaaaaaaaaaa:e1.session-a:c9`;
+    const target = storage({ [orphan]: 'stranded' });
+    expect(clearOwnedDrafts(null, { storage: target })).toBe(true);
+    expect(target.getItem(orphan)).toBeNull();
+  });
+
+  it('reports failure rather than false success on a non-enumerable storage', () => {
+    const opaque = {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {},
+    };
+    expect(clearOwnedDrafts(ownerA, { storage: opaque })).toBe(false);
   });
 
   it('prevents a stale A tab from relabeling or overwriting B after a cross-tab switch', () => {

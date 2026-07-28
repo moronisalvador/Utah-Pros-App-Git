@@ -37,6 +37,7 @@ import {
   PWA_ACCOUNT_OWNER_KEY,
   PWA_ACCOUNT_TRANSITION_KEY,
   beginPwaOwnerTransition,
+  clearOwnedDrafts,
   clearSavedRoute,
   finishPwaOwnerTransition,
   invalidatePwaOwnerLease,
@@ -196,6 +197,7 @@ async function clearOwnedState({
   const clearMemory = cleanup.clearMemory || clearTechQueryMemory;
   const clearPersisted = cleanup.clearPersisted || clearPersistedTechQueries;
   const clearRoute = cleanup.clearRoute || clearSavedRoute;
+  const clearDrafts = cleanup.clearDrafts || clearOwnedDrafts;
   const inspect = cleanup.inspectOffline
     || cleanup.inspectQueue
     || inspectOfflineOwnership;
@@ -214,6 +216,15 @@ async function clearOwnedState({
     routeCleared = false;
   }
 
+  // PRIV-01: drafts are durable business/customer text. They must not survive
+  // an account switch, including drafts written under the pre-ownership keys.
+  let draftsCleared = false;
+  try {
+    draftsCleared = clearDrafts(previousLease) !== false;
+  } catch {
+    draftsCleared = false;
+  }
+
   const [persisted, queue, push] = await Promise.all([
     Promise.resolve()
       .then(() => clearPersisted(previousLease))
@@ -226,6 +237,7 @@ async function clearOwnedState({
   const ready = (
     memoryCleared
     && routeCleared
+    && draftsCleared
     && persisted.ready
     && queue.ready
     && push.ready
@@ -236,6 +248,7 @@ async function clearOwnedState({
     memoryCleared,
     persistedCleared: persisted.ready,
     routeCleared,
+    draftsCleared,
     serverPushCleared: push.serverDetached,
     localPushCleared: push.localDetached,
     pushCleanupReady: push.ready,
