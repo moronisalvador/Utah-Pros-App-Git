@@ -20,6 +20,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import {
+  NATIVE_LOGIN_CHECK_MESSAGE,
   NATIVE_LOGIN_VERIFICATION_MESSAGE,
   verifyNativeLogin,
 } from './nativeLoginVerification.js';
@@ -50,6 +51,21 @@ describe('verifyNativeLogin', () => {
       state: 'skipped',
       reason: 'biometric_unavailable',
     });
+
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['probe rejection', vi.fn().mockRejectedValue(new Error('bridge failed'))],
+    ['malformed probe result', vi.fn().mockResolvedValue('false')],
+  ])('blocks sign-in after biometric %s', async (_label, checkAvailable) => {
+    const verify = vi.fn();
+
+    await expect(verifyNativeLogin({
+      native: true,
+      checkAvailable,
+      verify,
+    })).rejects.toThrow(NATIVE_LOGIN_CHECK_MESSAGE);
 
     expect(verify).not.toHaveBeenCalled();
   });

@@ -29,6 +29,9 @@ import {
 export const NATIVE_LOGIN_VERIFICATION_MESSAGE = (
   'Face ID verification was canceled. Try signing in again.'
 );
+export const NATIVE_LOGIN_CHECK_MESSAGE = (
+  'Face ID could not be checked. Close and reopen UPR, then try again.'
+);
 
 export async function verifyNativeLogin({
   native = Capacitor.isNativePlatform(),
@@ -37,11 +40,14 @@ export async function verifyNativeLogin({
 } = {}) {
   if (!native) return { state: 'skipped', reason: 'web' };
 
-  let available = false;
+  let available;
   try {
     available = await checkAvailable();
   } catch {
-    available = false;
+    throw new Error(NATIVE_LOGIN_CHECK_MESSAGE);
+  }
+  if (typeof available !== 'boolean') {
+    throw new Error(NATIVE_LOGIN_CHECK_MESSAGE);
   }
   if (!available) {
     return { state: 'skipped', reason: 'biometric_unavailable' };
