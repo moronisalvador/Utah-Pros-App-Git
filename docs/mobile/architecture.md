@@ -28,7 +28,7 @@ UPR is one React/Vite application with a shared field route tree and two build t
 ```text
 src/main.jsx
 └─ persisted TanStack Query provider
-   └─ Theme → Language → BrowserRouter → biometric gate → Auth
+   └─ Theme → Language → BrowserRouter → Auth
       └─ account-owned route restoration + native navigation bridge
       ├─ web build: office routes plus TechRoutes
       └─ native build: login/recovery/legal/public signing plus field TechRoutes
@@ -256,7 +256,7 @@ Native-specific calls stay behind wrappers:
 | Location | `nativeGeolocation.js` |
 | Haptics | `nativeHaptics.js` |
 | Keyboard/status/splash/appearance | `nativeKeyboard.js`, native appearance helpers/plugins |
-| Biometric preference | `nativeBiometric.js`, `nativeBiometricGate.js`, and `BiometricGate` |
+| Biometric sign-in verification | `nativeLoginVerification.js` plus `nativeBiometric.js`; invoked only before a native password sign-in |
 | Native URL/push navigation | `nativeAppLinks.js`, `nativeNavigationCoordinator.js`, and `NativeNavigationBridge` |
 | OTA | `nativeUpdater.js`; exact-default-off with no boot acknowledgment |
 | Push registration | `pushNotifications.js`; exact-default-off enrollment plus mounted event listeners |

@@ -247,9 +247,10 @@ On a clean macOS runner:
 
 No App Store/OTA promotion occurs only because an archive compiled.
 
-Before steps 1–2 can be called reproducible, `ios/Gemfile.lock` must be generated/reviewed and the
-managed `ios/App/CapApp-SPM/Package.swift` must be synchronized after adding the direct
-`@capacitor/app` dependency used by the mounted native navigation bridge.
+The checked-in `ios/Gemfile.lock` and managed `ios/App/CapApp-SPM/Package.swift` are synchronized,
+including the direct `@capacitor/app` dependency used by the mounted native navigation bridge.
+Clean-checkout release proof must continue to demonstrate that the locks reproduce without
+unexpected native drift.
 
 ## Database compatibility gate
 
@@ -293,7 +294,9 @@ database migration/provenance snapshot
 feature-flag/kill-switch assumptions
 Cloudflare deployment ID
 PWA manifest/SW hashes
-native app version/build, Xcode/signing/entitlements/privacy manifest
+native marketing version from ios/App/Version.xcconfig
+unique workflow-assigned build number and installed App.getInfo() values
+Xcode/signing/entitlements/privacy manifest
 Capacitor/plugin versions
 Capgo bundle/channel/minimum binary (when used)
 provider environment identifiers without secrets
