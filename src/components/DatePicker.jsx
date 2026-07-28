@@ -90,7 +90,22 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
 
   const prevMonth = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() - 1, 1));
   const nextMonth = () => setViewDate(d => new Date(d.getFullYear(), d.getMonth() + 1, 1));
-  const goToday = () => { setViewDate(new Date()); };
+  // PICK-02. Today must commit the REAL today, never route through
+  // handleSelect. `setViewDate` only queues state, so handleSelect ran against
+  // the stale closure and browsing to March then tapping Today committed March.
+  // Two further failures came free with that path: a stale short month rolled
+  // over (viewDate February + day 30 -> `new Date(y,1,30)` = March 2), and a
+  // min/max violation made Today a silent no-op while the view still jumped.
+  const goToday = () => {
+    const now = new Date();
+    const str = fmt(now);
+    setViewDate(now);
+    // Respect the same bounds handleSelect does — but decide on the real date.
+    if (min && str < min) return;
+    if (max && str > max) return;
+    onChange(str);
+    setOpen(false);
+  };
 
   // Build calendar grid
   const year = viewDate.getFullYear();
@@ -228,7 +243,7 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', borderTop: '1px solid var(--border-light)',
           }}>
-            <button onClick={() => { goToday(); handleSelect(today.getDate()); }}
+            <button onClick={goToday}
               style={{ ...S.footBtn, color: 'var(--accent)', fontWeight: 600 }}>
               Today
             </button>

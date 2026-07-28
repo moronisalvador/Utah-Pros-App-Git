@@ -106,6 +106,19 @@ export default function CrmDatePicker({ value, onChange, min, max, placeholder =
     setOpen(false);
   }, [viewDate, onChange, min, max, setOpen]);
 
+  // PICK-02: identical stale-closure bug to src/components/DatePicker.jsx —
+  // setViewDate only queues, so routing Today through handleSelect committed
+  // the month currently being browsed. Commit the real date directly.
+  const goToday = useCallback(() => {
+    const now = new Date();
+    const str = fmt(now);
+    setViewDate(now);
+    if (min && str < min) return;
+    if (max && str > max) return;
+    onChange(str);
+    setOpen(false);
+  }, [onChange, min, max, setOpen]);
+
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
@@ -173,7 +186,7 @@ export default function CrmDatePicker({ value, onChange, min, max, placeholder =
               </div>
             ))}
             <div className="crm-datepicker-footer">
-              <button type="button" className="crm-transcript-toggle" onClick={() => { setViewDate(new Date()); handleSelect(new Date().getDate()); }}>Today</button>
+              <button type="button" className="crm-transcript-toggle" onClick={goToday}>Today</button>
               {value && <button type="button" className="crm-transcript-toggle" onClick={() => { onChange(''); setOpen(false); }}>Clear</button>}
             </div>
           </div>
