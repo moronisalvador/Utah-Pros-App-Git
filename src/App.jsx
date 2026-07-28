@@ -26,7 +26,7 @@
  *     restoration runs first so a newer external link remains the final intent.
  * ════════════════════════════════════════════════
  */
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { officeToTechPath } from '@/lib/techShellRoutes';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -41,16 +41,6 @@ import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
-import {
-  checkBiometricAvailable,
-  readBiometricPreference,
-  verifyBiometric,
-} from '@/lib/nativeBiometric';
-import { evaluateNativeBiometricLaunch } from '@/lib/nativeBiometricGate';
-import { cleanupAccountDeviceState } from '@/lib/accountDeviceCleanup';
-import { createSupabaseClient } from '@/lib/supabase';
-import { realtimeClient } from '@/lib/realtime';
-import { buildResetUrl } from '@/lib/staleChunkReload';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { isMoroni } from '@/lib/owner';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
@@ -637,119 +627,6 @@ function WebRoutes() {
   );
 }
 
-function resetAfterSecureCleanup() {
-  try {
-    if (sessionStorage.getItem('swReset')) return;
-    sessionStorage.setItem('swReset', '1');
-  } catch {
-    // A blocked session marker must not expose the authenticated route tree.
-  }
-  window.location.replace(
-    buildResetUrl(window.location.pathname + window.location.search),
-  );
-}
-
-// Cold-launch biometric gate. On native, an enrolled stored session stays
-// hidden until Face ID / Touch ID / passcode succeeds. Unavailable or rejected
-// verification runs the same account/device cleanup as logout, then signs out
-// locally. Session/policy/sign-out failures remain on a locked retry surface.
-// Web is passthrough.
-function BiometricGate({ children }) {
-  const [gate, setGate] = useState(() => ({
-    state: IS_NATIVE ? 'checking' : 'open',
-    reason: IS_NATIVE ? 'starting' : 'web',
-  }));
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    if (!IS_NATIVE) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setGate({ state: 'checking', reason: 'verifying' });
-        const result = await evaluateNativeBiometricLaunch({
-          native: true,
-          getSession: () => realtimeClient.auth.getSession(),
-          readPreference: readBiometricPreference,
-          checkAvailable: checkBiometricAvailable,
-          verify: () => verifyBiometric('Unlock UPR'),
-          cleanup: (session) => {
-            if (!session?.access_token) {
-              throw new Error('Authenticated cleanup token is unavailable');
-            }
-            // Bootstrap-only security exception: AuthProvider has not mounted
-            // yet, so cleanup uses the exact stored session token directly.
-            return cleanupAccountDeviceState(
-              createSupabaseClient(session.access_token),
-            );
-          },
-          signOut: (options) => realtimeClient.auth.signOut(options),
-          isCurrent: () => !cancelled,
-        });
-        if (cancelled || result.reason === 'cancelled') return;
-        if (result.signedOut && result.reloadRequired) {
-          resetAfterSecureCleanup();
-          return;
-        }
-        setGate(result);
-      } catch (error) {
-        if (!cancelled) {
-          setGate({
-            state: 'locked',
-            reason: 'gate_error',
-            cause: error,
-          });
-        }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [retry]);
-
-  if (gate.state !== 'open') {
-    const locked = gate.state === 'locked';
-    return (
-      <div style={{
-        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 16,
-        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-        fontFamily: 'var(--font-sans)',
-      }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: 16,
-          background: 'var(--accent)', color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 36, fontWeight: 800, letterSpacing: -1,
-        }}>U</div>
-        <div
-          role="status"
-          aria-live="polite"
-          style={{ fontSize: 14, fontWeight: 600 }}
-        >
-          {locked
-            ? 'UPR stayed locked because device security could not be verified.'
-            : 'Unlocking UPR…'}
-        </div>
-        {locked && (
-          <button
-            onClick={() => setRetry(r => r + 1)}
-            style={{
-              marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
-              color: 'var(--accent)', background: 'transparent', border: 'none',
-              cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            }}
-          >
-            Retry secure unlock
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return children;
-}
-
 // Route persistence is account-owned. Mount only after Auth has published the
 // employee and the immutable opaque owner lease from completed cleanup.
 function AuthenticatedRouteRestorer() {
@@ -801,20 +678,18 @@ export default function App() {
           {/* Sets html[data-nav]=forward|back each navigation so the directional
               View-Transition page push (index.css) reverses on Back. Renders nothing. */}
           <NavDirectionTracker />
-          <BiometricGate>
-            <AuthProvider>
-              {/* Home-screen-PWA eviction recovery is account-owned and remains
-                  inert until Auth publishes a verified opaque owner lease. */}
-              <AuthenticatedRouteRestorer />
-              {/* Restorer runs first; an accepted cold/warm native intent then
-                  wins as the newest route after account readiness. */}
-              <NativeNavigationBridge enabled={IS_NATIVE} />
-              {/* Owner-gated preview classes (page transitions / liquid glass) —
-                  reads feature flags, so must be inside AuthProvider. */}
-              <UiFlagClasses />
-              {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
-            </AuthProvider>
-          </BiometricGate>
+          <AuthProvider>
+            {/* Home-screen-PWA eviction recovery is account-owned and remains
+                inert until Auth publishes a verified opaque owner lease. */}
+            <AuthenticatedRouteRestorer />
+            {/* Restorer runs first; an accepted cold/warm native intent then
+                wins as the newest route after account readiness. */}
+            <NativeNavigationBridge enabled={IS_NATIVE} />
+            {/* Owner-gated preview classes (page transitions / liquid glass) —
+                reads feature flags, so must be inside AuthProvider. */}
+            <UiFlagClasses />
+            {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
+          </AuthProvider>
         </BrowserRouter>
       </LanguageProvider>
     </ThemeProvider>

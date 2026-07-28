@@ -1553,4 +1553,59 @@ describe('AuthProvider latest-account-wins races', () => {
 
     cleanup();
   });
+
+  it('runs native login verification after prior-account cleanup and before sign-in', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    const beforeSignIn = vi.fn().mockResolvedValue(undefined);
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+    harness.cleanupAccountDeviceState.mockResolvedValueOnce({
+      ready: true,
+      reloadRequired: false,
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'synthetic-password',
+      { beforeSignIn },
+    )).resolves.toEqual({});
+
+    expect(beforeSignIn).toHaveBeenCalledOnce();
+    expect(
+      harness.auth.signOut.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      beforeSignIn.mock.invocationCallOrder[0],
+    );
+    expect(
+      beforeSignIn.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      harness.auth.signInWithPassword.mock.invocationCallOrder[0],
+    );
+
+    cleanup();
+  });
+
+  it('does not publish a new session when native login verification is canceled', async () => {
+    const cleanup = await mountProvider();
+    const beforeSignIn = vi.fn().mockRejectedValue(
+      new Error('Face ID verification was canceled. Try signing in again.'),
+    );
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'synthetic-password',
+      { beforeSignIn },
+    )).rejects.toThrow(/Face ID verification was canceled/);
+
+    expect(beforeSignIn).toHaveBeenCalledOnce();
+    expect(harness.auth.signInWithPassword).not.toHaveBeenCalled();
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+
+    cleanup();
+  });
 });
