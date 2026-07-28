@@ -1357,7 +1357,14 @@ export default function TechDemoSheet() {
   return (
     <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(180px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
       <style>{`
-        .demo-sheet input, .demo-sheet select, .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
+        /* PICK-01: date/time inputs are EXCLUDED. Stripping their appearance
+           removes the native control's own affordance while the popup stays
+           browser-controlled, which is what made the Scope Sheet's date field
+           render as a bare box with a desktop-style picker attached. Every
+           other input keeps the flat house style. */
+        .demo-sheet input:not([type="date"]):not([type="time"]):not([type="datetime-local"]),
+        .demo-sheet select,
+        .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
         .demo-sheet input:focus, .demo-sheet select:focus, .demo-sheet textarea:focus { border-color: ${C.accent} !important; outline: none; }
         .demo-sheet button { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; }
         .demo-sheet button:active:not(:disabled) { transform: scale(0.97); }

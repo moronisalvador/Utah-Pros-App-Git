@@ -1,8 +1,30 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { currentLocaleTag } from '@/lib/techDateUtils';
 
-const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
+// PICK-01. These were hardcoded English arrays and a hardcoded 'en-US' display
+// format, so the calendar stayed English for Spanish- and Portuguese-speaking
+// technicians even with the rest of the app translated. Derived from the active
+// locale instead — Intl already knows every name, so there is nothing to
+// translate by hand and nothing to keep in sync across three locale files.
+//
+// A fixed reference week/year is used purely as a vehicle for the names; only
+// the weekday and month labels are read off it, never a date.
+function weekdayLabels(locale) {
+  // timeZone:'UTC' is REQUIRED, not decorative. Intl formats in the device's
+  // zone by default, so a UTC-constructed Sunday renders as the previous
+  // Saturday anywhere west of Greenwich — shifting every column heading by one,
+  // which is worse than leaving them in English.
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' });
+  // 2026-02-01 is a Sunday, matching this calendar's Sunday-first grid.
+  return Array.from({ length: 7 }, (_, i) =>
+    fmt.format(new Date(Date.UTC(2026, 1, 1 + i))).replace(/\.$/, ''));
+}
+
+function monthLabels(locale) {
+  // Same reason, plus day 15 keeps any offset far from a month boundary.
+  const fmt = new Intl.DateTimeFormat(locale, { month: 'long', timeZone: 'UTC' });
+  return Array.from({ length: 12 }, (_, i) => fmt.format(new Date(Date.UTC(2026, i, 15))));
+}
 
 function parseDate(str) {
   if (!str) return null;
@@ -26,7 +48,7 @@ function displayDate(str) {
   if (!str) return '';
   const d = parseDate(str);
   if (!d || isNaN(d)) return str;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return d.toLocaleDateString(currentLocaleTag(), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -108,6 +130,13 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   };
 
   // Build calendar grid
+  // Read the locale at render, not at module load: the language can change
+  // without a reload (LanguageContext), and module-level arrays would freeze
+  // whichever locale happened to be active when the chunk first evaluated.
+  const locale = currentLocaleTag();
+  const DAYS = weekdayLabels(locale);
+  const MONTHS = monthLabels(locale);
+
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const firstDow = new Date(year, month, 1).getDay();
