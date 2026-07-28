@@ -30,7 +30,7 @@
  *     rendered while a v2 pane covers the screen.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, Suspense, lazy } from 'react';
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -303,6 +303,51 @@ export default function TechLayout({ nativeBuild = false }) {
   const { t } = useTranslation('nav');
   const location = useLocation();
   const navType = useNavigationType(); // 'PUSH' | 'POP' | 'REPLACE' — drives slide direction
+
+  // ── MOTION-01: shell scroll restoration ──
+  // page-lifecycle.md §5: "New route = top, back = restored", owned by ONE
+  // primitive keyed on location.key, never hand-rolled per page.
+  //
+  // .tech-content IS the scroller (index.css:4642, overflow-y:auto) and it is
+  // keyed by location.pathname, so EVERY navigation remounts it at scrollTop 0.
+  // Going Back therefore dropped a tech at the top of a long claims or documents
+  // list they had scrolled halfway down — they lost their place every time.
+  //
+  // location.key, not pathname: history entries keep their key, so returning to
+  // the same URL by a different route does not inherit a stale offset.
+  const contentRef = useRef(null);
+  const scrollPositions = useRef(new Map());
+
+  // Track CONTINUOUSLY rather than saving on unmount. WebKit reports scrollTop 0
+  // for an element that is being removed or hidden, so a save-on-unmount always
+  // records 0 — the same trap TechMsgsPane.jsx:32-35 documents for its own layers.
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return undefined;
+    const key = location.key;
+    const onScroll = () => { scrollPositions.current.set(key, el.scrollTop); };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [location.key, paneCovering]);
+
+  // Restore BEFORE paint, so there is no visible jump from top to the anchor.
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    if (navType === 'POP') {
+      const saved = scrollPositions.current.get(location.key);
+      el.scrollTop = typeof saved === 'number' ? saved : 0;
+    } else {
+      el.scrollTop = 0;
+    }
+    // Bound the registry. A long shift is hundreds of navigations, and a Map that
+    // only ever grows is a leak in an app that is meant to stay open all day.
+    const MAX_KEYS = 50;
+    if (scrollPositions.current.size > MAX_KEYS) {
+      const oldest = scrollPositions.current.keys().next().value;
+      scrollPositions.current.delete(oldest);
+    }
+  }, [location.key, navType, paneCovering]);
   const { employee, db, isFeatureEnabled } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
   const [toasts, setToasts] = useState([]);
@@ -463,6 +508,7 @@ export default function TechLayout({ nativeBuild = false }) {
       {!paneCovering && (
         <div
           key={location.pathname}
+          ref={contentRef}
           className={`tech-content tech-content--${navType === 'POP' ? 'back' : 'fwd'}`}
         >
           <Outlet />
