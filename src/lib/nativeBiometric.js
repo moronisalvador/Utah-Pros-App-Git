@@ -4,20 +4,19 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Wraps the native biometric bridge and stores whether this installation
- *   opted into launch-time Face ID, Touch ID, or device-passcode verification.
- *   Browser builds remain passive.
+ *   Wraps the native biometric bridge used at manual sign-in. It also clears
+ *   the retired launch-gate preference during account/device cleanup.
  *
  * DEPENDS ON:
  *   Packages:  @capacitor/core, @aparajita/capacitor-biometric-auth
- *   Internal:  nativeBiometricGate.js consumes the tri-state preference
+ *   Internal:  nativeLoginVerification.js, accountDeviceCleanup.js
  *   Data:      reads/writes → localStorage key upr.biometric.enabled
  *
  * NOTES / GOTCHAS:
- *   - This gate sits on top of the existing Supabase session; it does not move
- *     refresh tokens into Keychain.
- *   - An unreadable preference is distinct from "disabled" so an enrolled
- *     native session can fail closed instead of exposing the app.
+ *   - Biometry is not a stored-session launch gate. Normal app reopens trust
+ *     the existing authenticated session and do not prompt again.
+ *   - The legacy preference writer remains only so secure account cleanup can
+ *     remove stale enrollment left by older installed builds.
  *   - The iOS app-switcher privacy shield is native AppDelegate code. This
  *     module makes no screenshot-prevention claim.
  * ════════════════════════════════════════════════
@@ -39,26 +38,6 @@ export async function checkBiometricAvailable() {
   }
 }
 
-export function isBiometricEnabled() {
-  return readBiometricPreference().enabled;
-}
-
-/**
- * Read enrollment without collapsing blocked/corrupt storage into "disabled".
- * An unreadable policy must fail closed when a stored native session exists.
- */
-export function readBiometricPreference(storage) {
-  try {
-    const target = storage === undefined ? globalThis.localStorage : storage;
-    return {
-      enabled: target?.getItem(KEY) === 'true',
-      readable: !!target,
-    };
-  } catch {
-    return { enabled: false, readable: false };
-  }
-}
-
 export function setBiometricEnabled(enabled) {
   try {
     if (enabled) localStorage.setItem(KEY, 'true');
@@ -71,11 +50,8 @@ export function setBiometricEnabled(enabled) {
   }
 }
 
-// Ceiling on how long a hung native authenticate() call can block the app's
-// BiometricGate. A real Face ID/passcode prompt resolves in a few seconds;
-// this is generous enough to never fire during normal use, and short enough
-// that a stuck native bridge falls through to sign-out → login instead of
-// freezing the launch screen forever (the failure mode this guards against).
+// Ceiling on how long a hung native authenticate() call can block manual
+// sign-in. A real Face ID/passcode prompt resolves in a few seconds.
 const AUTH_TIMEOUT_MS = 20000;
 
 // Shows the iOS Face ID / Touch ID / passcode prompt.
