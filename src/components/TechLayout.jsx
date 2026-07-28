@@ -30,7 +30,7 @@
  *     rendered while a v2 pane covers the screen.
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useCallback, Suspense, lazy } from 'react';
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -138,6 +138,16 @@ function IconMoreDots({ filled, ...props }) {
 }
 
 /* ── Tab definitions ── */
+
+// TOAST-01 timings.
+const TOAST_VISIBLE_MS = 5000;
+// On resume, a toast with less than this left is given a fresh window. It was on
+// screen for a suspended app, which is the same as not being on screen at all.
+const TOAST_RESUME_MIN_MS = 3000;
+// Safety net for the exit animation, mirroring Modal.jsx: unmount is normally
+// driven by onAnimationEnd, but an animation that never fires — a backgrounded
+// tab, a display:none ancestor — must not strand a toast on screen forever.
+const TOAST_EXIT_FALLBACK_MS = 400;
 
 const TABS = [
   { key: 'dash', label: 'Dash', path: '/tech', Icon: IconHome, exact: true },
@@ -323,16 +333,82 @@ export default function TechLayout({ nativeBuild = false }) {
     && /[?&](c=[^&]|new=1)/.test(location.search);
 
   /* ── Global toast listener ── */
+  // TOAST-01. The old form was `setTimeout(remove, 5000)` per toast, which counts
+  // down while the app is BACKGROUNDED. A tech taps Save, switches to the camera
+  // or the phone app, comes back, and the confirmation is already gone — or
+  // vanishes in the instant they return. They never read it. Tracking an
+  // expiry timestamp instead lets the resume handler below give back any toast
+  // that ran out while nobody was looking.
   useEffect(() => {
     const handler = (e) => {
       const { message, type = 'success', title } = e.detail || {};
       if (!message) return;
       const id = Date.now() + Math.random();
-      setToasts(prev => [...prev, { id, message, type, title }]);
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+      setToasts(prev => [...prev, { id, message, type, title, expiresAt: Date.now() + TOAST_VISIBLE_MS }]);
     };
     window.addEventListener('upr:toast', handler);
     return () => window.removeEventListener('upr:toast', handler);
+  }, []);
+
+  // Remove for real. Called by the exit animation's end, or its safety net.
+  const dropToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // Begin the exit. Marking rather than removing is what gives the toast an exit
+  // animation at all; onAnimationEnd then calls dropToast. Idempotent, so a
+  // double-tap on the close button cannot queue two exits.
+  const startLeaving = useCallback((id) => {
+    setToasts(prev => prev.map(t => (t.id === id && !t.leaving ? { ...t, leaving: true } : t)));
+  }, []);
+
+  // Safety net: if the exit animation never fires — a backgrounded tab, a
+  // display:none ancestor — the toast would sit there permanently. Modal.jsx
+  // carries the same backstop for the same reason.
+  useEffect(() => {
+    const leaving = toasts.filter(t => t.leaving);
+    if (!leaving.length) return undefined;
+    const timers = leaving.map(t => setTimeout(() => dropToast(t.id), TOAST_EXIT_FALLBACK_MS));
+    return () => timers.forEach(clearTimeout);
+  }, [toasts, dropToast]);
+
+  // One timer for the NEAREST expiry, rescheduled whenever the set changes.
+  // Cheaper than a timer per toast and, more importantly, it re-derives from the
+  // timestamps every time — so an extension made on resume is honoured.
+  useEffect(() => {
+    const live = toasts.filter(t => !t.leaving);
+    if (!live.length) return undefined;
+    const soonest = Math.min(...live.map(t => t.expiresAt));
+    const timer = setTimeout(() => {
+      const now = Date.now();
+      // startLeaving, not a filter: a timed-out toast animates out exactly like a
+      // hand-dismissed one. Removing it outright would give the app two different
+      // disappearances for the same event.
+      toasts.filter(t => !t.leaving && t.expiresAt <= now).forEach(t => startLeaving(t.id));
+    }, Math.max(0, soonest - Date.now()));
+    return () => clearTimeout(timer);
+  }, [toasts, startLeaving]);
+
+  // Resume: hand back any toast that expired unseen. page-lifecycle.md's minimize
+  // test is the same idea — coming back must not lose what you were shown.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      setToasts(prev => {
+        let changed = false;
+        const next = prev.map(t => {
+          if (t.leaving || t.expiresAt - now >= TOAST_RESUME_MIN_MS) return t;
+          changed = true;
+          return { ...t, expiresAt: now + TOAST_RESUME_MIN_MS };
+        });
+        // Returning `prev` unchanged matters: a fresh array every resume would
+        // re-run the timer effect above for nothing.
+        return changed ? next : prev;
+      });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   useEffect(() => {
@@ -444,34 +520,58 @@ export default function TechLayout({ nativeBuild = false }) {
       </nav>
 
       {/* ── Toast Notifications ── */}
-      {toasts.length > 0 && (
-        <div style={{position:'fixed',bottom:'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}>
-          {toasts.map(toast => (
-            <div key={toast.id}
-              style={{
-                background: toast.type==='error' ? '#fef2f2' : toast.type==='warning' ? '#fffbeb' : '#f0fdf4',
-                border: `1px solid ${toast.type==='error' ? '#fecaca' : toast.type==='warning' ? '#fde68a' : '#bbf7d0'}`,
-                borderLeft: `4px solid ${toast.type==='error' ? '#ef4444' : toast.type==='warning' ? '#f59e0b' : '#22c55e'}`,
-                borderRadius:12,padding:'14px 18px',boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
-                pointerEvents:'all',width:'100%',
-                animation:'slideUp 0.25s ease',
-              }}>
-              <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
-                <span style={{fontSize:20,flexShrink:0,lineHeight:1.2}}>
-                  {toast.type==='error' ? '\u274C' : toast.type==='warning' ? '\u26A0\uFE0F' : '\u2705'}
-                </span>
-                <div style={{flex:1,minWidth:0}}>
-                  {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
-                  <div style={{fontSize:13,color:'#334155',lineHeight:1.5,wordBreak:'break-word',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}}>{toast.message}</div>
-                </div>
-                <button onClick={()=>setToasts(prev=>prev.filter(t=>t.id!==toast.id))}
-                  style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',padding:0,flexShrink:0,lineHeight:1}}>{'\u2715'}</button>
+      {/* TOAST-01: the container is the live region. loading-error-states.md \u00A74 \u2014
+          "Both toast containers carry role='status' aria-live='polite'". Without it
+          a toast is the app's mandated feedback channel and a screen-reader user is
+          told nothing at all. It stays mounted even when empty, because a live
+          region announces only what is inserted INTO an already-present node \u2014
+          mounting the region and its content together announces neither. */}
+      <div
+        role="status"
+        aria-live="polite"
+        style={{position:'fixed',bottom:'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',left:'50%',transform:'translateX(-50%)',zIndex:10000,display:'flex',flexDirection:'column-reverse',gap:10,alignItems:'center',pointerEvents:'none',width:'calc(100% - 32px)',maxWidth:420}}
+      >
+        {toasts.map(toast => (
+          <div key={toast.id}
+            // An error interrupts; a success waits its turn.
+            role={toast.type === 'error' ? 'alert' : undefined}
+            onAnimationEnd={(e) => {
+              if (toast.leaving && e.animationName === 'toastOut') dropToast(toast.id);
+            }}
+            style={{
+              background: toast.type==='error' ? '#fef2f2' : toast.type==='warning' ? '#fffbeb' : '#f0fdf4',
+              border: `1px solid ${toast.type==='error' ? '#fecaca' : toast.type==='warning' ? '#fde68a' : '#bbf7d0'}`,
+              // impeccable side-tab: kept deliberately. tech-mobile-ux.md requires
+              // "status = color from 3 feet away", and this is a status message read
+              // in sunlight with gloves on. The tint and icon carry it too; the bar
+              // is the one that survives glare.
+              borderLeft: `4px solid ${toast.type==='error' ? '#ef4444' : toast.type==='warning' ? '#f59e0b' : '#22c55e'}`,
+              borderRadius:12,padding:'14px 18px',boxShadow:'0 4px 20px rgba(0,0,0,0.12)',
+              pointerEvents:'all',width:'100%',
+              // motion-standard.md \u00A73: every enter has an exit, ~75% of the enter on
+              // the accelerate easing. Previously the node was simply removed.
+              animation: toast.leaving ? 'toastOut 0.18s ease-in forwards' : 'slideUp 0.25s ease',
+            }}>
+            <div style={{display:'flex',alignItems:'flex-start',gap:12}}>
+              <span aria-hidden="true" style={{fontSize:20,flexShrink:0,lineHeight:1.2}}>
+                {toast.type==='error' ? '\u274C' : toast.type==='warning' ? '\u26A0\uFE0F' : '\u2705'}
+              </span>
+              <div style={{flex:1,minWidth:0}}>
+                {toast.title && <div style={{fontWeight:700,fontSize:14,color:'#0f172a',marginBottom:2}}>{toast.title}</div>}
+                <div style={{fontSize:13,color:'#334155',lineHeight:1.5,wordBreak:'break-word',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}}>{toast.message}</div>
               </div>
+              {/* TOAST-01: was padding:0 around a 16px glyph \u2014 about a 16px target,
+                  under the 24px floor tech-mobile-ux.md bans outright. 44px is the
+                  documented-secondary size for a dense control; the glyph itself is
+                  unchanged, only the reachable area. */}
+              <button onClick={()=>startLeaving(toast.id)}
+                aria-label="Dismiss notification"
+                style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#94a3b8',flexShrink:0,lineHeight:1,minWidth:44,minHeight:44,margin:'-14px -18px -14px 0',display:'flex',alignItems:'center',justifyContent:'center',touchAction:'manipulation'}}>{'\u2715'}</button>
             </div>
-          ))}
-        </div>
-      )}
-      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}`}</style>
+          </div>
+        ))}
+      </div>
+      <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(8px)}}`}</style>
     </div>
   );
 }
