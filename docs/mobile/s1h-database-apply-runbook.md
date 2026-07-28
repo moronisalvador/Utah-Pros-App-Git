@@ -34,11 +34,19 @@ subscriptions, and native device-token ownership
 4. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql`
 5. `20260727022920_mobile_personal_ownership_boundary.sql`
 
-**Current state:** source-hardened, not applied, not database-behavior-verified, and not
-`ready_for_apply`. The four reviewed source migrations above are absent from the live ledger. A
-temporary non-retained PGlite experiment modeled the S1h lifecycle and passed a rollback-only
-behavior matrix, but it did not execute the exact checked-in migrations, preflight, post-apply, or
-isolated files; neither its harness nor a complete log was retained.
+**Current state:** the first three database dependencies are live-verified and mapped in
+`scripts/migration-provenance-manifest.json`; only the final personal-ownership boundary is absent
+from the live ledger. The final boundary remains source-hardened, not exact-source
+database-behavior-verified, and not `ready_for_apply`. A temporary non-retained PGlite experiment
+modeled the S1h lifecycle and passed a rollback-only behavior matrix, but it did not execute the
+exact checked-in migration, preflight, post-apply, isolated behavior, and guarded rollback files;
+neither its harness nor a complete log was retained.
+
+Live dependency mappings — do not replay them:
+
+- `20260727154506 mobile_employee_identity_authority`
+- `20260727233845 upsert_employee_page_access_provenance_reconciliation`
+- `20260728002105 mobile_employee_identity_containment`
 
 The prior permission-write dependency is live as
 `20260727012825 permission_write_gates`. Repository governance maps that live ledger entry to
@@ -57,7 +65,7 @@ review. A matching hash is not apply authorization.
 |---|---|
 | Additive identity migration | `4549d7f236b027ed3679b546e1a51aff76243df54617cfea5d41b070ac1ceb9b` |
 | Additive identity rollback | `53bba287800fbdff89bc0e3e2f879a1b89f154732fdf6df18544e736a0b653a4` |
-| Identity containment migration | `64cf8cdea086e71852cc0abf02163b102fe5e8bb579738ecf9f1671004d35f1d` |
+| Identity containment migration | `b0687286c5373a2c085637c76cbab08dc71993e7c37353151068c635e4e6eb46` |
 | Identity containment rollback | `9d82a56277ca4f739c358546996c2e19bb22f9251bda97ff2a5c815b6a427c0f` |
 | Identity isolated wrapper | `0783a2cd73803c6d865ad243f04881d20f3bc885dbef5bfa0f99dc39294b45a4` |
 | Identity isolated behavior | `e633267e77e2de2ad46fee8928439f32076fa367e01392ffe4eba31a991878bd` |
@@ -77,14 +85,14 @@ Stop unless every item is recorded:
 1. The exact reviewed commit is reachable from the designated release branch, the worktree is
    clean, current `origin/dev` has been merged without rewriting history, and active ownership
    leases permit the window.
-2. The additive identity migration has been applied individually and verified, its compatible
-   browser/PWA/native callers are deployed, and the owner has explicitly confirmed retirement or
-   accepted risk for old cached/native clients before containment.
+2. Confirm the live dependency mappings above and the compatible client state. The owner-authorized
+   2026-07-28 physical-device rebuild repaired the stale Capacitor client broken by containment;
+   re-prove current callers rather than treating that one device as global old-client retirement.
 3. The live ledger still contains `20260727012825 permission_write_gates`, and its provenance,
    helper bodies, grants, policies, and apply evidence match the reviewed dependency.
-4. The identity containment and page-access provenance reconciliation have each been applied and
-   verified in their own later window. Every assigned live version and source hash is recorded in
-   `scripts/migration-provenance-manifest.json`.
+4. The identity authority, identity containment, and page-access provenance reconciliation remain
+   verified in their own prior windows. Every assigned live version and current source hash is
+   recorded in `scripts/migration-provenance-manifest.json`.
 5. A fresh value-free catalog capture matches S1h preflight assumptions for the nine RPCs, four
    target tables, employee authority boundary, ACLs, RLS/policies, owners, overloads, triggers,
    publications, views, and direct callers.

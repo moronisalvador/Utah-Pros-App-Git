@@ -339,8 +339,11 @@ support, other user content, device ID, and Other Financial Info for saved OOP q
 and margin. The artifact verifier pins those exact declarations; privacy-owner review against the
 exact signed build and App Store Connect entry remain external gates.
 
-Reviewed `cap sync ios` output contains `CapacitorApp` and is clean. No clean distribution-signed
-archive, TestFlight install, complete physical-device matrix, or App Review proof exists.
+Reviewed `cap sync ios` output contains `CapacitorApp` and is clean. A distribution-signed
+archive/IPA was produced and independently verified from the dirty qualification worktree on
+2026-07-28, proving the local signing lane; its report correctly has no source commit, so it is not
+the final upload artifact. No clean-source distribution artifact, TestFlight install, complete
+physical-device matrix, or App Review proof exists.
 
 Native release requires:
 
