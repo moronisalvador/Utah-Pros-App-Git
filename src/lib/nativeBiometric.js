@@ -77,7 +77,18 @@ export function setBiometricEnabled(enabled) {
 // sign-in. A real Face ID/passcode prompt resolves in a few seconds.
 const AUTH_TIMEOUT_MS = 20000;
 
-// Shows the iOS Face ID / Touch ID / passcode prompt.
+export function biometricAuthenticateOptions(reason = 'Unlock UPR') {
+  return {
+    reason,
+    cancelTitle: 'Cancel',
+    // Manual login confirms the enrolled person, so a device passcode is not
+    // an equivalent fallback. Normal authenticated reopens never call this
+    // function and therefore do not prompt again.
+    allowDeviceCredential: false,
+  };
+}
+
+// Shows the iOS Face ID / Touch ID prompt.
 // Returns true on success, false on cancel, failure, or timeout.
 export async function verifyBiometric(reason = 'Unlock UPR') {
   if (!isNative()) return true;
@@ -86,12 +97,7 @@ export async function verifyBiometric(reason = 'Unlock UPR') {
       setTimeout(() => reject(new Error('verifyBiometric timed out')), AUTH_TIMEOUT_MS);
     });
     await Promise.race([
-      BiometricAuth.authenticate({
-        reason,
-        cancelTitle: 'Cancel',
-        allowDeviceCredential: true, // fall back to device passcode if Face ID unavailable
-        iosFallbackTitle: 'Use Passcode',
-      }),
+      BiometricAuth.authenticate(biometricAuthenticateOptions(reason)),
       timeout,
     ]);
     return true;

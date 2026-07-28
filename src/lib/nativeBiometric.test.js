@@ -18,7 +18,10 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { checkBiometricAvailable } from './nativeBiometric.js';
+import {
+  biometricAuthenticateOptions,
+  checkBiometricAvailable,
+} from './nativeBiometric.js';
 
 describe('checkBiometricAvailable', () => {
   it('does not call the bridge outside native', async () => {
@@ -61,5 +64,15 @@ describe('checkBiometricAvailable', () => {
       check: vi.fn(() => new Promise(() => {})),
       timeoutMs: 1,
     })).rejects.toThrow('timed out');
+  });
+});
+
+describe('biometricAuthenticateOptions', () => {
+  it('uses enrolled biometry only and never offers the device passcode', () => {
+    expect(biometricAuthenticateOptions('Confirm login')).toEqual({
+      reason: 'Confirm login',
+      cancelTitle: 'Cancel',
+      allowDeviceCredential: false,
+    });
   });
 });
