@@ -1208,12 +1208,27 @@ export default function TechDemoSheet() {
             }),
           })
             .then(async r => {
-              encircleOk = r.ok;
-              if (r.ok) {
-                try { const d = await r.json(); encircleNoteId = d?.id || null; } catch { /* ignore */ }
+              // ENCIRCLE-02: `encircleOk = r.ok` alone claimed success for a note
+              // that was never posted. During the native /api origin bug Capacitor
+              // answered this path from the app BUNDLE with a 200 and an HTML
+              // body, so r.ok was true and the sheet reported "Posted to Encircle"
+              // over nothing. The worker returns { ok: true, id } on success and a
+              // non-2xx { error } on every failure, so require that shape — the
+              // same thing the send-demo-sheet and demo-sheet-pdf branches beside
+              // this one already do.
+              let d = null;
+              try { d = await r.json(); } catch { /* non-JSON: not a worker reply */ }
+              encircleOk = r.ok && d?.ok === true;
+              encircleNoteId = d?.id || null;
+              if (!encircleOk) {
+                console.error('[demo-sheet] encircle-upload failed:', d?.error || `HTTP ${r.status}`, d);
               }
             })
-            .catch(() => { /* ignore — best-effort */ }),
+            .catch((e) => {
+              // Best-effort by design — a failed note must not lose the sheet —
+              // but silence is what let this go unnoticed.
+              console.error('[demo-sheet] encircle-upload network error:', e);
+            }),
         );
       }
 
