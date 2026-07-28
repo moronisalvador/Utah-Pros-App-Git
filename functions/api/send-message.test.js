@@ -336,6 +336,40 @@ describe('send-message compliance chain', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects a direct-shaped thread with multiple recipients before implied consent or transport', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001', is_active: true },
+        { contact_id: 'c-2', phone: '+15551110002', is_active: true },
+      ],
+      contactsById: {
+        'c-1': { id: 'c-1', dnd: false, opt_in_status: false, phone: '+15551110001' },
+        'c-2': { id: 'c-2', dnd: false, opt_in_status: false, phone: '+15551110002' },
+      },
+    });
+    h.db.rpc = vi.fn(async (name) => {
+      if (name === 'get_service_sms_consent_status') {
+        return { allowed: true, code: 'IMPLIED_CONSENT' };
+      }
+      return null;
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('DIRECT_PURPOSE_UNSUPPORTED');
+    expect(h.db.rpc).not.toHaveBeenCalled();
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
   it('keeps STOP fail-closed even when a service consent record exists', async () => {
     h.db = makeDb({
       conversation: DIRECT,
