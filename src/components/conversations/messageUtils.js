@@ -251,12 +251,15 @@ export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
   let suppressionCopy = null;
   let suppressionKey = null;
   if (matches && !checking) {
+    // NOTE (2026-07-28): a pending STOP is enforced SILENTLY — it exits here
+    // with no copy at all, and must stay ahead of the generic fallback below so
+    // it cannot inherit a banner. The send is still refused: the block lives in
+    // get_service_sms_consent_status and is applied server-side at send time.
+    // It is an internal projection window that clears in seconds and that staff
+    // can do nothing about, so telling them about it was pure noise.
     if (status.source === 'pending_stop') {
-      suppressionKey = 'pendingStop';
-      suppressionCopy = {
-        title: 'SMS STOP request is still processing',
-        detail: 'Wait for the inbound opt-out to finish processing. Prior permission cannot override STOP.',
-      };
+      suppressionKey = null;
+      suppressionCopy = null;
     } else if (status.source === 'explicit_opt_out') {
       suppressionKey = 'optedOut';
       suppressionCopy = {
