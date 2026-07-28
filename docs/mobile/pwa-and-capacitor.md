@@ -255,8 +255,9 @@ resign/background and removes it only after the app becomes active.
 
 Before native release:
 
-- decide whether default WebView session storage plus sign-in-time biometric verification is the
-  approved release policy or whether Keychain-backed session work is required;
+- preserve the 2026-07-28 owner decision that retained sessions reopen without another biometric
+  prompt and manual password sign-in owns Face ID verification; do not present default WebView
+  token storage as Keychain-equivalent;
 - verify lost/shared/reassigned/disabled-user behavior on signed devices.
 
 ## Deep links and app lifecycle
