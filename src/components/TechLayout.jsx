@@ -392,7 +392,17 @@ export default function TechLayout({ nativeBuild = false }) {
         </div>
       </div>
 
-      <InstallBanner />
+      {/* MSG-01: the installed native app was telling technicians to install
+          the app. InstallBanner's own gate is role + isStandaloneDisplay() +
+          sessionStorage, and isStandaloneDisplay only checks
+          matchMedia('(display-mode: standalone)') and navigator.standalone —
+          neither is true in a Capacitor WKWebView — while the userAgent still
+          matches /iPhone|iPad/. So it rendered, and the sessionStorage dismissal
+          is per-webview-session, which is why it came back after every process
+          restart. Guarded rather than deleted: the install strings, aria-label,
+          48/44px targets and appinstalled diagnostics all still ship for the
+          real PWA, and pwa-source-contract.test.js asserts they remain. */}
+      {!nativeBuild && <InstallBanner />}
       <nav className="tech-nav">
         {TABS.map(tab => {
           const active = isActive(tab);
