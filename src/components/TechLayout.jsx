@@ -308,6 +308,20 @@ export default function TechLayout({ nativeBuild = false }) {
   const msgsActive = msgsV2 && location.pathname === '/tech/conversations';
   const paneCovering = dashActive || schedActive || msgsActive;
 
+  // COMPOSER-01. The tab bar must disappear while a message thread is open, or
+  // the docked composer floats above it with its own safe-area padding as dead
+  // space. That was expressed ONLY as
+  //   .tech-layout:has(.tv2-msgs-pane:not([hidden]) .tv2-msgs-thread-open)
+  // which asks WebKit to re-evaluate a :has() on the layout root when a class
+  // changes several levels down. Measured on the simulator 2026-07-28: the same
+  // deep link, run four times against one build, laid out correctly three times
+  // and left the tab bar visible once — a style-invalidation race, not a code
+  // path. Deriving it here from the URL makes it deterministic: React sets the
+  // class on the element the rule matches, so there is nothing to invalidate.
+  // The :has() rule is kept as a belt-and-braces fallback.
+  const msgsThreadOpen = msgsActive
+    && /[?&](c=[^&]|new=1)/.test(location.search);
+
   /* ── Global toast listener ── */
   useEffect(() => {
     const handler = (e) => {
@@ -340,7 +354,7 @@ export default function TechLayout({ nativeBuild = false }) {
   };
 
   return (
-    <div className="tech-layout">
+    <div className={`tech-layout${msgsThreadOpen ? ' tech-layout--msgs-thread' : ''}`}>
       {/* v2 persistent panes (outside the keyed wrapper so they never remount). */}
       <TechPane active={dashActive}>
         <ErrorBoundary section="Technician dashboard">

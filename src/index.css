@@ -11384,6 +11384,19 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: none;
 }
 
+/* COMPOSER-01 (2026-07-28). The rule above asks WebKit to re-evaluate a :has()
+   on the layout root when a class changes several levels below it, and it does
+   not do so reliably: the same deep link, run four times against one build on
+   the simulator, laid out correctly three times and once left the tab bar
+   visible — leaving the docked composer floating above it with its own
+   safe-area padding as dead space. React now sets this class directly on the
+   element the rule matches (TechLayout, derived from the URL), so there is no
+   invalidation to miss. The :has() rule is kept as a fallback for any path that
+   opens a thread without changing the query string. */
+.tech-layout--msgs-thread > .tech-nav {
+  display: none;
+}
+
 /* Messages-tab unread badge — a small red count pill on the tab icon. Positioned
    within .tech-nav-tab (position: relative). */
 .tv2-msgs-nav-badge {
