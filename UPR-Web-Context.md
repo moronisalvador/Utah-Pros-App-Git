@@ -8952,3 +8952,52 @@ deployment, providers, Apple signing/TestFlight, browser/PWA/device qualificatio
 `dev → main` promotion remain separate owner/external gates. Local source-integration commits and a
 draft PR do not authorize any of them. No database apply, deployment, provider call, notification,
 money movement, signing, or device action occurred in this reconciliation.
+
+---
+
+## Leads board search bar (2026-07-27, owner-directed standalone)
+
+`/crm/leads` gained a free-text **search box** as the first control in its existing filter bar
+(`CrmLeads.jsx`, `.crm-leads-filterbar`) — left of the Last 7 / Last 30 / All time tabs and the
+Filters panel. Owner-directed standalone work, recorded as `.claude/rules/crm-wave-ownership.md`
+§12. **Zero schema, zero migrations, no RPC touched, no worker touched.**
+
+- **Pure client-side**, exactly like the date-range and criteria filters beside it: it narrows the
+  `leads` array already in memory, no extra fetch, no loading flip. It is folded into the existing
+  `filteredLeads` useMemo, so the board, the "N of M leads" subtitle and the empty state cannot
+  disagree.
+- **Matching** — three exported pure helpers in `CrmLeads.jsx`: `leadSearchTerms(query)`,
+  `leadSearchText(lead)`, `matchesLeadSearch(haystack, terms)`. Every whitespace-separated term
+  must match (**AND**, not OR), so "smith water" finds the Smith lead about water damage. Case
+  insensitive. Covered by `src/pages/crm/crmLeads.search.test.js` (22 tests, unit lane).
+- **Fields searched:** linked contact name/phone, `caller_name`, `caller_number`, `source`,
+  `medium`, `campaign`, `transcript_analysis.summary` / `.topics` / `.customer_email` /
+  `.customer_address`, every scalar and array value in a web form's `form_data`, `lost_reason`, and
+  the legacy `notes` column.
+- **Phone-aware:** each lead's numbers are also indexed digits-only, and a query term of 3+ digits
+  is matched digits-only too, so `801-555`, `(801) 555` and `8015551234` all find the same stored
+  `+18015551234`. `normalizePhone()` cannot serve here — it returns `null` below 10 digits, i.e. for
+  every partial query. The 3-digit floor keeps a lone "5" from matching every dollar amount.
+- **Raw `transcription` is deliberately NOT searched**, though the board loads it. This page never
+  renders a transcript (Call Log does), so a transcript-only hit would surface a card with no
+  visible reason for matching. The AI summary and topics are searched instead — both are on the
+  card — so every match stays explainable. Deep transcript search belongs on Call Log.
+- **Truncation is disclosed, not silent.** The board fetches the `BOARD_LEAD_LIMIT` (200) most
+  recent leads. Live non-spam, non-merged count on 2026-07-27 was **75**, so search is currently
+  complete. Once the cap is genuinely reached *and* a search is active, a line under the filter bar
+  says "Searching the 200 most recent leads — older ones aren't loaded on this board"
+  (`loading-error-states.md` §5). **Follow-up, not built:** a real server-side "search all leads"
+  path is what this board needs before it passes 200 — the note is the trigger.
+- **State is component-local, not URL** — consistent with the sibling filters, and opening a lead is
+  an in-page panel rather than a route change, so nothing is lost. Clearing is either the input's own
+  ✕ or the bar's Clear button, which is labelled "Clear search" when only search is set and
+  "Clear filters" otherwise. Search counts toward `hasActiveFilters` but deliberately not toward the
+  Filters badge count, which tracks only the criteria panel.
+- **Perf:** haystacks are built once per `leads` change into a memoized `Map` (`searchIndex`), so a
+  keystroke costs ~200 `String.includes` calls rather than 200 string rebuilds. No debounce needed.
+- **UI:** the shared `SearchInput` primitive (`@/components/ui`) skinned onto the CRM kit via a new
+  `/* ─── CRM LEADS SEARCH ─── */` marker at the end of `src/index.css` — same reasoning the
+  `.crm-board-period` block already records. Height is pinned to the **measured 38px** of the
+  segmented control and Filters button beside it (not `.input`'s 40px) so the three share a top and
+  bottom edge. Desktop `flex: 0 1 260px` (min 190 / max 300); at ≤768px it takes its own full-width
+  line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus.

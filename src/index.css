@@ -12573,3 +12573,36 @@ html.ui-glass .tech-nav {
 .crm-lead-note-body { font-size: var(--text-base); color: var(--crm-text-primary); white-space: pre-wrap; word-break: break-word; margin: 0; }
 .crm-lead-note-meta { font-size: var(--text-xs); color: var(--crm-text-tertiary); margin: var(--space-1) 0 0; }
 .crm-lead-note-author { color: var(--crm-text-tertiary); }
+
+/* ─── CRM LEADS SEARCH (standalone 2026-07-27) ───────────────────────────────
+   The Leads board's filter-bar search box. Skins the shared <SearchInput>
+   (src/components/ui/SearchInput.jsx) onto the CRM design kit rather than
+   letting its global `.input` styling through — same reasoning the
+   .crm-board-period segmented control above already records: reuse the shared
+   component's behaviour and a11y, wear the surface's own kit.
+   Height is pinned to 38px — the MEASURED height of .crm-board-period and
+   .crm-leads-filter-btn beside it — instead of `.input`'s 40px, so search, the
+   date tabs and Filters share a top and bottom edge and read as one toolbar
+   rather than three different heights. ── */
+.crm-leads-search { flex: 0 1 260px; min-width: 190px; max-width: 300px; }
+.crm-leads-search .crm-leads-search-input {
+  height: 38px; font-size: var(--text-sm); padding: 0 30px;
+  color: var(--crm-text-primary); background: var(--crm-bg-content);
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
+}
+.crm-leads-search .crm-leads-search-input:focus { border-color: var(--crm-accent); box-shadow: none; }
+.crm-leads-search .crm-leads-search-input::placeholder { color: var(--crm-text-tertiary); }
+.crm-leads-search .ui-search-icon { left: 9px; color: var(--crm-text-tertiary); }
+.crm-leads-search .ui-search-clear { color: var(--crm-text-tertiary); }
+.crm-leads-search .ui-search-clear:hover { background: var(--crm-border); color: var(--crm-text-primary); }
+
+/* Only rendered at the fetch cap — see CrmLeads.jsx BOARD_LEAD_LIMIT. */
+.crm-leads-search-cap { margin: var(--space-2) 0 0; font-size: var(--text-xs); color: var(--crm-text-tertiary); }
+
+@media (max-width: 768px) {
+  /* Own full-width line: search + date tabs + Filters do not fit a 390px row.
+     The global iOS zoom guard (src/index.css ~155) forces 16px on every input
+     at this width, so the box has to grow to seat that font without clipping. */
+  .crm-leads-search { flex: 1 1 100%; max-width: none; }
+  .crm-leads-search .crm-leads-search-input { height: 40px; }
+}
