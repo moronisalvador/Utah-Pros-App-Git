@@ -11416,7 +11416,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   top: 0;
   z-index: 6;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   /* SAFE-01: `.tech-layout` is the SOLE owner of the top inset. This pane is an
      ordinary in-flow flex child inside it, so re-applying the inset here pushed
      the header down twice — and the old rule spent it on both the bottom
@@ -11433,7 +11433,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   box-sizing: border-box;
   height: 40px;
   padding: 0 14px 0 38px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -11448,7 +11448,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   min-height: 48px; /* tech-mobile-ux 48px floor — gloved hands, no exceptions */
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -11479,7 +11479,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 68px;
   padding: 10px 14px;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   background: var(--bg-primary);
   text-align: left;
   cursor: pointer;
@@ -11549,7 +11549,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 52px;
   padding: 0 8px;   /* SAFE-01: inset owned by .tech-layout, not re-applied here */
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-thread__back {
   display: flex;
@@ -11641,7 +11641,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 /* ── Composer ── */
 .tv2-msgs-composer {
   background: var(--bg-primary);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-color);
   /* Home-indicator inset ONLY when the keyboard is closed. When it's open the keyboard
      covers the indicator, so --tv2-msgs-kb (its height) zeroes this out — otherwise the
      inset becomes dead space between the composer and the keyboard (WhatsApp drops it too;
@@ -11661,7 +11661,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-size: 12px;
   font-weight: 600;
   text-align: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Actions sheet ([+] menu) — always mounted; animates open AND closed via max-height +
@@ -11686,7 +11686,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   max-height: 160px;
   opacity: 1;
   padding: 6px;
-  border-bottom-color: var(--border);
+  border-bottom-color: var(--border-color);
   pointer-events: auto;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -11732,7 +11732,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 22px;
   background: var(--bg-secondary);
 }
@@ -11802,7 +11802,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   min-height: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -11824,7 +11824,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-filter { flex-shrink: 0; }
 
 /* ── Conversation row: wrap + inline overflow action (mark read/unread) ── */
-.tv2-msgs-row-wrap { border-bottom: 1px solid var(--border); background: var(--bg-primary); }
+.tv2-msgs-row-wrap { border-bottom: 1px solid var(--border-color); background: var(--bg-primary); }
 .tv2-msgs-row-line { display: flex; align-items: stretch; }
 /* The row button loses its own border (the wrap carries it) and flexes beside "⋯". */
 .tv2-msgs-row { flex: 1; min-width: 0; border-bottom: none; }
@@ -11849,7 +11849,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-row__action {
   min-height: 48px;
   padding: 0 18px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--accent);
@@ -11905,7 +11905,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 2px;
   padding: 8px 14px 12px;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-info__row {
   display: flex;
@@ -11941,7 +11941,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 48px;
   margin-top: 4px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -12031,7 +12031,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: flex;
   flex-direction: column;
   max-height: 46vh;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   background: var(--bg-primary);
 }
 .tv2-msgs-templates__head {
@@ -12042,7 +12042,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-size: 13px;
   font-weight: 700;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-templates__close {
   display: flex;
@@ -12074,7 +12074,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 48px;
   padding: 8px 14px;
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-color);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -12094,7 +12094,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-retry-btn {
   min-height: 48px;
   padding: 0 24px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
   color: var(--accent);
@@ -12123,7 +12123,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   z-index: 5;
   padding: 1px 14px 12px;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-new__body { min-height: calc(100dvh - 128px); }
 .tv2-msgs-new__rows { display: flex; flex-direction: column; }
@@ -12132,7 +12132,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 68px;
   padding: 10px 14px;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   gap: 12px;
