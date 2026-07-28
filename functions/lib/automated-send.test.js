@@ -156,6 +156,99 @@ describe('sendAutomatedMessage — SMS gate', () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'appointment_scheduled',
+    'appointment_canceled',
+    'signature_request',
+  ])('allows the exact %s service notice without recorded opt-in and audits it before send', async (servicePurpose) => {
+    state.smsEnabled = true;
+    state.contact = { ...OPTED_IN, opt_in_status: false };
+    state.consentStatus = { allowed: true, code: 'IMPLIED_CONSENT' };
+
+    const res = await sendAutomatedMessage(
+      'sms',
+      'c1',
+      null,
+      {},
+      {},
+      {
+        body: 'Service notice',
+        now: DAYTIME,
+        servicePurpose,
+        sentBy: 'employee-1',
+      },
+    );
+
+    expect(res).toMatchObject({ ok: true, skipped: false });
+    expect(sendMessage).toHaveBeenCalledOnce();
+    expect(state.inserts).toContainEqual(expect.objectContaining({
+      table: 'sms_consent_log',
+      data: expect.objectContaining({
+        event_type: 'transactional_service_send_allowed',
+        source: 'existing_client_service_relationship',
+        performed_by: 'employee-1',
+        details: expect.stringContaining(servicePurpose),
+      }),
+    }));
+  });
+
+  it('does not let an unknown service-purpose label bypass opt-in', async () => {
+    state.smsEnabled = true;
+    state.contact = { ...OPTED_IN, opt_in_status: false };
+    state.consentStatus = { allowed: true, code: 'IMPLIED_CONSENT' };
+
+    const res = await sendAutomatedMessage(
+      'sms',
+      'c1',
+      null,
+      {},
+      {},
+      {
+        body: 'Generic automation',
+        now: DAYTIME,
+        servicePurpose: 'project_update',
+      },
+    );
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'no_consent',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps DND and explicit opt-out blocking an allowlisted service notice', async () => {
+    state.smsEnabled = true;
+    state.contact = {
+      ...OPTED_IN,
+      opt_in_status: false,
+      dnd: true,
+      opt_out_at: '2026-07-28T12:00:00.000Z',
+    };
+    state.consentStatus = { allowed: false, code: 'DND_ACTIVE' };
+
+    const res = await sendAutomatedMessage(
+      'sms',
+      'c1',
+      null,
+      {},
+      {},
+      {
+        body: 'Appointment canceled',
+        now: DAYTIME,
+        servicePurpose: 'appointment_canceled',
+      },
+    );
+
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'dnd',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('does NOT text a Do Not Disturb contact even with the switch ON', async () => {
     state.smsEnabled = true;
     state.contact = { ...OPTED_IN, dnd: true };

@@ -74,6 +74,27 @@ export const AUTOMATED_ACCEPTED_CONSENT_CODES = Object.freeze([
   'GLOBAL_OPT_IN',
 ]);
 
+/**
+ * Exact service notices the owner approved without a recorded opt-in. This is
+ * deliberately an allowlist rather than a generic "transactional" bypass.
+ * Additions require an explicit product/compliance review.
+ */
+export const TRANSACTIONAL_SERVICE_SMS_PURPOSES = Object.freeze([
+  'appointment_scheduled',
+  'appointment_canceled',
+  'signature_request',
+]);
+
+export const TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES = Object.freeze([
+  'GLOBAL_OPT_IN',
+  'SERVICE_CONSENT',
+  'IMPLIED_CONSENT',
+]);
+
+export function isTransactionalServiceSmsPurpose(value) {
+  return TRANSACTIONAL_SERVICE_SMS_PURPOSES.includes(value);
+}
+
 /** Scheduled sends drained by process-scheduled.js. */
 export const SCHEDULED_ACCEPTED_CONSENT_CODES = Object.freeze([
   'GLOBAL_OPT_IN',
