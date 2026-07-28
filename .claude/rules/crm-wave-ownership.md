@@ -311,3 +311,30 @@ LOG (staff run several follow-ups per lead and need one note per follow-up).
   test above, and `UPR-Web-Context.md`. `inbound_leads.notes` remains on the table (additive rule) but
   is no longer written or displayed by the Leads UI.
 - Everything else in §§1–10 remains frozen.
+
+---
+
+## 12. Leads-search addendum (2026-07-27) — owner-directed standalone
+
+Recorded so §1's frozen list and §2's ownership matrix stay truthful. §2 assigns
+`src/pages/crm/CrmLeads.jsx` to Session E (Phase 7). Wave 1 is complete (Phase 6b merged
+2026-07-02), no parallel CRM session is in flight, and standalone post-wave edits to this exact file
+are already precedented by §11 (the 2026-07-24 owner-directed lead-notes log). The **owner directed**
+adding a search box to the Leads board.
+
+- **Authorized files (this initiative only):** `src/pages/crm/CrmLeads.jsx` (three exported pure
+  search helpers, one `search` state, a memoized `searchIndex`, the search predicate folded into the
+  existing `filteredLeads` useMemo, the `SearchInput` in the existing `.crm-leads-filterbar`, the
+  cap-disclosure line, and the search-aware empty state); a new
+  `/* ─── CRM LEADS SEARCH (standalone 2026-07-27) ─── */` marker appended to the bottom of
+  `src/index.css` (§5 applies unchanged — nothing outside the marker was touched); a new
+  `src/pages/crm/crmLeads.search.test.js`; and `UPR-Web-Context.md`.
+- **Zero schema, zero migrations, zero RPC touches.** No frozen stub, no shared-RPC `CREATE OR
+  REPLACE`, no worker, no send path, no consent surface, no money path. The board's existing
+  `db.select('inbound_leads', …)` query is unchanged apart from interpolating the new
+  `BOARD_LEAD_LIMIT` constant in place of the literal `200` it already used, so the fetch cap and
+  the UI that discloses it cannot drift apart.
+- **Shared primitive consumed, not edited:** `SearchInput` from `@/components/ui` is imported and
+  skinned through the `className` / `inputClassName` props it already exposes. The F-S2-owned file
+  itself is untouched, per `ux-alignment-wave-ownership.md` §1.
+- Everything else in §§1–11 remains frozen.

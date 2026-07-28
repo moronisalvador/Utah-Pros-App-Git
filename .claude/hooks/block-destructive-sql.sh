@@ -22,7 +22,80 @@
 # ─────────────────────────────────────────────────────────────
 set -uo pipefail
 
+# Repo root, derived from this script's own location so the guard works from any cwd.
+_hook_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(CDPATH= cd -- "$_hook_dir/../.." && pwd)}"
+
+normalize_sql() {
+  printf '%s' "$1" \
+    | sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' \
+    | sed -E 's/--[^\n]*//g' \
+    | tr '\n\t' '  ' | tr -s ' ' | tr '[:lower:]' '[:upper:]'
+}
+
+# ── Is this SQL verbatim a COMMITTED rollback file? ──
+# Measured 2026-07-27: this guard refused 15 of 31 committed rollbacks — DROP
+# TABLE undoing a CREATE TABLE, TRUNCATE, DROP COLUMN undoing an ADD COLUMN,
+# GRANT TO anon undoing a REVOKE. Every one of those is the rollback doing its
+# job. One was even refused for "carries no ROLLBACK section", which is circular.
+# A guard that refuses the undo is worse than the thing it blocks: it left a
+# broken Capacitor login with no agent-runnable fix.
+#
+# The exemption cannot be forged. The SQL must byte-match a file that is TRACKED
+# and identical to HEAD, so an agent cannot write new SQL, drop it in
+# supabase/rollbacks/, and run it — an uncommitted or edited file does not match.
+# This also mirrors database-standard.md §5, which already requires applying only
+# migration source committed to a reviewed commit.
+# Compares RAW text, not the SQL-normalized form, on purpose. A second
+# normalizer would be a second thing to drift, and if the two ever disagreed the
+# match would silently fail and every undo would be refused again. Only line
+# endings and trailing whitespace are canonicalized. Stricter than semantic
+# matching — a reformatted rollback simply does not match and stays blocked,
+# which is the safe direction to fail.
+#
+# Cost matters: this runs inside block(). A first version shelled out to
+# `git show` once per rollback file and made the guard's own test suite take 133
+# seconds. Now: two git calls plus one node pass.
+matched_rollback=""
+is_committed_rollback() {
+  [ -n "${sql:-}" ] || return 1
+  # Cheap pre-filter so the common case — a short ad-hoc statement being refused —
+  # never pays for git or node at all. The smallest committed rollback is 323
+  # bytes; a hand-written DROP/TRUNCATE is 30-80. 256 sits below every real
+  # rollback and above every ad-hoc statement, and erring low only costs time.
+  [ "${#sql}" -ge 256 ] || return 1
+  command -v git >/dev/null 2>&1 || return 1
+  command -v node  >/dev/null 2>&1 || return 1
+  # Worktree copies are only trustworthy as "reviewed source" if they are
+  # identical to HEAD. If anything under rollbacks/ is dirty, grant no exemption.
+  git -C "$REPO_ROOT" diff --quiet HEAD -- supabase/rollbacks 2>/dev/null || return 1
+  local list
+  list="$(git -C "$REPO_ROOT" ls-files 'supabase/rollbacks/*.sql' 2>/dev/null)" || return 1
+  [ -n "$list" ] || return 1
+  matched_rollback="$(printf '%s' "$sql" | node -e '
+    const fs = require("fs"), path = require("path");
+    const repo = process.argv[1];
+    const list = process.argv[2].split("\n").filter(Boolean);
+    const canon = (s) => s.replace(/\r\n?/g, "\n").split("\n")
+      .map((l) => l.replace(/[ \t]+$/, "")).join("\n").trim();
+    const want = canon(fs.readFileSync(0, "utf8"));
+    if (!want) process.exit(1);
+    for (const rel of list) {
+      let body;
+      try { body = fs.readFileSync(path.join(repo, rel), "utf8"); } catch { continue; }
+      if (canon(body) === want) { process.stdout.write(rel); process.exit(0); }
+    }
+    process.exit(1);
+  ' "$REPO_ROOT" "$list" 2>/dev/null)" && [ -n "$matched_rollback" ]
+}
+
 block() {
+  if is_committed_rollback; then
+    echo "ALLOWED — a rule matched (\"$1\"), but this SQL is verbatim" >&2
+    echo "$matched_rollback as committed in HEAD, so it is reviewed rollback source." >&2
+    echo "Undoing a change necessarily looks like the change it undoes." >&2
+    exit 0
+  fi
   echo "BLOCKED — $1" >&2
   echo "One shared Supabase serves dev AND production; this guard refuses it for an" >&2
   echo "unattended or auto-approved session. If genuinely needed: author it as a" >&2
@@ -97,23 +170,53 @@ if [ -z "${sql//[[:space:]]/}" ]; then
 fi
 
 # ── Normalize: strip -- and /* */ comments, collapse whitespace, uppercase ──
-norm="$(printf '%s' "$sql" \
-  | sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' \
-  | sed -E 's/--[^\n]*//g' \
-  | tr '\n\t' '  ' | tr -s ' ' | tr '[:lower:]' '[:upper:]')"
+norm="$(normalize_sql "$sql")"
 
 # ── Data-destroying / live-table-restructuring operations ──
 case "$norm" in
   *"DROP TABLE"*)                 block "DROP TABLE" ;;
   *"DROP SCHEMA"*)                block "DROP SCHEMA" ;;
   *"DROP DATABASE"*)              block "DROP DATABASE" ;;
-  *"TRUNCATE"*)                   block "TRUNCATE" ;;
   *"DROP COLUMN"*)                block "DROP COLUMN" ;;
   *"DROP CONSTRAINT"*)            block "DROP CONSTRAINT" ;;
   *"RENAME TO"*)                  block "RENAME (table/object)" ;;
   *"RENAME COLUMN"*)              block "RENAME COLUMN" ;;
   *"DISABLE ROW LEVEL SECURITY"*) block "DISABLE ROW LEVEL SECURITY" ;;
 esac
+
+# TRUNCATE — match the STATEMENT, not the privilege NAME.
+# TRUNCATE is also a GRANT-able table privilege, so it appears legitimately in
+# three NON-destructive forms that a bare substring match cannot distinguish
+# from a statement:
+#   1. 'TRUNCATE'                                 — quoted privilege literal
+#   2. 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES' — quoted comma-joined list
+#   3. REVOKE INSERT, UPDATE, TRUNCATE ... ON t   — UNQUOTED, in a GRANT/REVOKE
+# Form 3 is why quote-awareness alone is not enough. The mobile-security
+# migrations that assert ACL state (supabase/migrations/2026072*) hit all three,
+# so the old bare `*"TRUNCATE"*` match refused all four of them AND all four of
+# their rollbacks — every one a false positive. A guard that refuses correct,
+# reviewed work is worse than a narrower one: it trains people to bypass it.
+# Discriminator: a STATEMENT is TRUNCATE + whitespace + optional TABLE/ONLY +
+# a table name. In the three forms above it is followed by a comma or a quote.
+# Verified against all 8 of those files (0 matches) and against TRUNCATE TABLE x,
+# bare TRUNCATE x, ONLY, CASCADE, RESTART IDENTITY, quoted idents, post-`;`, and
+# inside DO $$ ... $$ (all still blocked).
+# KNOWN GAP, accepted 2026-07-27: TRUNCATE inside dynamic SQL, e.g.
+# EXECUTE 'TRUNCATE t'. The bare match caught that; this does not. Judged the
+# better trade because this guard exists to stop unattended ACCIDENTS, and a
+# session hand-rolling dynamic SQL to defeat it is not the threat model.
+# FOURTH FORM, found 2026-07-27 by running this guard over real work:
+#   4. REVOKE INSERT, UPDATE, TRUNCATE ON t   — TRUNCATE LAST, directly before ON
+# The comma forms above pass because a comma follows TRUNCATE. Here `ON` follows,
+# and `[A-Z0-9_."]` happily reads it as a table name, so the guard called it a
+# statement. `GRANT SELECT, TRUNCATE ON t TO service_role` blocked the same way.
+# Strip TRUNCATE when it sits in PRIVILEGE position — immediately before ON/FROM/TO
+# — then test the remainder for the statement shape. `TRUNCATE ONLY t` is
+# untouched because `ON ` requires the trailing space that `ONLY` does not have.
+norm_truncate="$(printf '%s' "$norm" | sed -E 's/TRUNCATE +(ON|FROM|TO) /\1 /g')"
+if printf '%s' "$norm_truncate" | grep -Eq "(^|[^,'A-Z_]) *TRUNCATE +(TABLE +|ONLY +)?[A-Z0-9_.\"]"; then
+  block "TRUNCATE"
+fi
 
 # ALTER COLUMN ... TYPE — retyping a live column.
 if printf '%s' "$norm" | grep -Eq 'ALTER COLUMN [A-Z0-9_"]+ (SET DATA )?TYPE'; then

@@ -1,0 +1,38 @@
+{
+  "_readme": [
+    "What code is actually running on real devices.",
+    "",
+    "WHY THIS FILE EXISTS. On 2026-07-27 a migration revoked table privileges on",
+    "`employees`. Every check passed: src/ had zero direct reads, because an earlier",
+    "refactor had moved them to RPCs. But the INSTALLED Capacitor app ships its bundle",
+    "inside the binary (webDir: dist, no server.url), so it never receives a server",
+    "deploy. That bundle predated the refactor, still called db.select('employees', ...),",
+    "and login broke with 'Failed to load employee data.' — a string that no longer",
+    "exists in src/. Capgo OTA could not push a fix; it was paused 2026-06-24 on a plan",
+    "limit. The remedy was a native rebuild.",
+    "",
+    "The migration's own header listed 'check what bundle is on real devices' as an",
+    "apply-order step. It was unenforceable, because nothing recorded the answer.",
+    "This file is the answer. scripts/check-client-compat-migrations.mjs reads it.",
+    "",
+    "UPDATE THIS WHENEVER A NATIVE BUILD IS SHIPPED. One entry per build that may",
+    "still be installed on someone's phone. Remove an entry only when you are",
+    "confident no device is still running it. An empty list disables the check.",
+    "",
+    "`commit` is what makes it useful: it lets a checker grep the code as that build",
+    "actually shipped, instead of guessing from HEAD."
+  ],
+  "builds": [
+    {
+      "version": "unknown",
+      "build": "unknown",
+      "commit": null,
+      "shippedAt": "before 2026-07-27",
+      "status": "installed-and-broken",
+      "note": "The bundle that broke on the employees containment migration. Its exact commit was never recorded, which is the gap this file closes. It predates the employees RPC refactor. Superseded once the rebuild below ships; delete this entry then."
+    }
+  ],
+  "pending": {
+    "note": "Owner is shipping a native rebuild (stated 2026-07-27) to fix the broken login. When it ships, add it to `builds` with its real commit SHA and delete the 'unknown' entry above. Until a commit is recorded, the compat check can only warn."
+  }
+}

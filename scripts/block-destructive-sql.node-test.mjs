@@ -27,7 +27,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 const REPO = path.resolve(import.meta.dirname, '..')
@@ -55,6 +55,21 @@ const CASES = [
   // ── data-destroying DDL ──
   ['DROP TABLE', sqlCall('mcp__x__execute_sql', 'DROP TABLE contacts;'), 2, false],
   ['TRUNCATE', sqlCall('mcp__x__execute_sql', 'TRUNCATE messages;'), 2, false],
+
+  // ── TRUNCATE: statement vs privilege NAME (2026-07-27) ──
+  // TRUNCATE is a GRANT-able privilege as well as a statement. The guard used a
+  // bare substring match, which refused all four mobile-security migrations and
+  // all four of their rollbacks — every one a false positive, because they only
+  // ever name the privilege. These cases pin BOTH directions so the narrowing
+  // cannot silently widen back, and the statement forms cannot regress to allow.
+  ['TRUNCATE TABLE form still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE TABLE employees;'), 2, false],
+  ['TRUNCATE ONLY form still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE ONLY employees;'), 2, false],
+  ['TRUNCATE multi-table still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE jobs, claims;'), 2, false],
+  ['TRUNCATE RESTART IDENTITY still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE public.jobs RESTART IDENTITY;'), 2, false],
+  ['TRUNCATE CASCADE still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE jobs CASCADE;'), 2, false],
+  ['TRUNCATE quoted identifier still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE "employees";'), 2, false],
+  ['TRUNCATE after a semicolon still blocked', sqlCall('mcp__x__execute_sql', 'SELECT 1; TRUNCATE jobs;'), 2, false],
+  ['TRUNCATE inside DO $$ still blocked', sqlCall('mcp__x__execute_sql', 'DO $$ BEGIN TRUNCATE employees; END $$;'), 2, false],
   ['DROP COLUMN', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs DROP COLUMN notes;'), 2, false],
   ['DROP CONSTRAINT', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs DROP CONSTRAINT jobs_pkey;'), 2, false],
   ['RENAME COLUMN', sqlCall('mcp__x__execute_sql', 'ALTER TABLE jobs RENAME COLUMN a TO b;'), 2, false],
@@ -91,6 +106,23 @@ const CASES = [
   ['ENABLE RLS', sqlCall('mcp__x__execute_sql', 'ALTER TABLE t ENABLE ROW LEVEL SECURITY;'), 0, false],
   ['apply_migration WITH a ROLLBACK section', { tool_name: 'mcp__x__apply_migration', tool_input: { name: 'm', query: '-- ROLLBACK: DROP TABLE t;\nCREATE TABLE t (id uuid);' } }, 0, true],
   ['upr_delete WITH a filter', { tool_name: 'mcp__x__upr_delete', tool_input: { table: 'contacts', filter: 'id=eq.1' } }, 0, true],
+
+  // ── the three legitimate TRUNCATE-as-privilege-NAME forms must PASS ──
+  // Each is taken from the shape the real mobile-security migrations use.
+  ['quoted TRUNCATE privilege literal passes', sqlCall('mcp__x__execute_sql', "SELECT ARRAY['SELECT','TRUNCATE','UPDATE']::text[];"), 0, false],
+  ['quoted comma-joined privilege list passes', sqlCall('mcp__x__execute_sql', "SELECT 'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN';"), 0, false],
+  ['REVOKE naming TRUNCATE as a privilege passes', sqlCall('mcp__x__execute_sql', 'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES ON TABLE t FROM authenticated;'), 0, false],
+  ['GRANT naming TRUNCATE as a privilege passes', sqlCall('mcp__x__execute_sql', 'GRANT SELECT, INSERT, TRUNCATE, TRIGGER ON TABLE t TO service_role;'), 0, false],
+
+  // ── FOURTH form, found 2026-07-27 by running the guard over real work ──
+  // The cases above all put a comma after TRUNCATE. When TRUNCATE is the LAST
+  // privilege the next token is ON, and the statement matcher read `ON` as the
+  // table name — so the narrowed guard still refused these two. Note the shapes:
+  // no `TABLE` keyword, TRUNCATE immediately before ON. Both must PASS.
+  ['REVOKE with TRUNCATE last before ON passes', sqlCall('mcp__x__execute_sql', 'REVOKE INSERT, UPDATE, TRUNCATE ON employees FROM anon;'), 0, false],
+  ['GRANT with TRUNCATE last before ON passes', sqlCall('mcp__x__execute_sql', 'GRANT SELECT, TRUNCATE ON t TO service_role;'), 0, false],
+  // ...and the statement form with no TABLE keyword must still be refused.
+  ['bare TRUNCATE x still blocked', sqlCall('mcp__x__execute_sql', 'TRUNCATE employees;'), 2, false],
 ]
 
 test('database guard: blocks what it must, permits legitimate work, never exits 1', (t) => {
@@ -116,6 +148,50 @@ test('database guard: blocks what it must, permits legitimate work, never exits 
       failures.push(`${label}: blocked but gave no "BLOCKED — <reason>" line on stderr`)
     }
   }
+
+  assert.deepEqual(failures, [], `\n  - ${failures.join('\n  - ')}\n`)
+})
+
+// ── Committed ROLLBACK files must never be refused (2026-07-27) ──
+// Measured before the fix: this guard blocked 15 of 31 committed rollbacks —
+// DROP TABLE undoing a CREATE TABLE, TRUNCATE, DROP COLUMN undoing an ADD
+// COLUMN, GRANT TO anon undoing a REVOKE. Undoing a change necessarily looks
+// like the change. One was even refused for "carries no ROLLBACK section",
+// which is circular. That left a broken Capacitor login with no agent-runnable
+// fix, which is the whole argument: a guard that refuses the undo is worse than
+// the thing it blocks.
+test('database guard: every committed rollback is runnable, and the exemption is not forgeable', (t) => {
+  if (!hasBash || !hasNode) { t.skip('bash/node unavailable'); return }
+
+  let tracked = []
+  const ls = spawnSync('git', ['-C', REPO, 'ls-files', 'supabase/rollbacks/*.sql'], { encoding: 'utf8' })
+  if (ls.status !== 0) { t.skip('git unavailable'); return }
+  tracked = (ls.stdout || '').split('\n').filter(Boolean)
+  if (!tracked.length) { t.skip('no committed rollbacks'); return }
+
+  // The exemption only trusts worktree copies that match HEAD. If the tree is
+  // dirty here the suite would report a failure that is really local state.
+  if (spawnSync('git', ['-C', REPO, 'diff', '--quiet', 'HEAD', '--', 'supabase/rollbacks']).status !== 0) {
+    t.skip('supabase/rollbacks has uncommitted changes; exemption intentionally withheld')
+    return
+  }
+
+  const failures = []
+  for (const rel of tracked) {
+    const body = readFileSync(path.join(REPO, rel), 'utf8')
+    const { code, stderr } = run({ tool_name: 'mcp__x__apply_migration', tool_input: { query: body } })
+    if (code !== 0) {
+      failures.push(`${path.basename(rel)}: refused (exit ${code}) — ${(stderr.split('\n')[0] || '').replace('BLOCKED — ', '')}`)
+    }
+  }
+
+  // Forgery: the exemption must require a byte-match against committed source.
+  const sample = readFileSync(path.join(REPO, tracked.find((r) => /anon|containment/.test(r)) || tracked[0]), 'utf8')
+  const tampered = run({ tool_name: 'mcp__x__apply_migration', tool_input: { query: `${sample}\nDROP TABLE employees;\n` } })
+  if (tampered.code !== 2) failures.push(`tampered rollback was permitted (exit ${tampered.code}) — the exemption is forgeable`)
+
+  const uncommitted = run({ tool_name: 'mcp__x__apply_migration', tool_input: { query: `${'-- '.repeat(90)}\nGRANT ALL ON employees TO anon;` } })
+  if (uncommitted.code !== 2) failures.push(`uncommitted rollback-shaped SQL was permitted (exit ${uncommitted.code})`)
 
   assert.deepEqual(failures, [], `\n  - ${failures.join('\n  - ')}\n`)
 })

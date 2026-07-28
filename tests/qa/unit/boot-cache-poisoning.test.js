@@ -135,3 +135,63 @@ describe('boot guard can run when the app cannot', () => {
     expect(indexHtml).toContain('link[rel=modulepreload][href]');
   });
 });
+
+
+// ─── SECTION: the SECOND 2026-07-27 outage — a poisoned STYLESHEET ────────────
+// The guard above exists for a poisoned MODULE, where the app cannot render at
+// all. A poisoned stylesheet is the inverse: every script loads, React mounts,
+// the page renders — completely unstyled, because a browser refuses text/html
+// for a stylesheet under nosniff.
+//
+// That difference made the original guard blind to it. Its silent-path check
+// opens with `if (!root || root.childElementCount > 0) return;` — a rendered
+// #root means it bails before looking at anything. So when dev.utahpros.app
+// served every page unstyled, the guard never fired and nothing reached the
+// console. These pin the stylesheet path so that gap cannot reopen.
+describe('boot guard also covers a poisoned stylesheet', () => {
+  // slice(indexHtml.indexOf(x)) returns the last character when x is absent,
+  // which let two of these assertions pass against an index.html that had no
+  // stylesheet path at all. Locate explicitly so a missing section FAILS.
+  const cssSection = () => {
+    const at = indexHtml.indexOf('link[rel=stylesheet][href]');
+    if (at === -1) throw new Error('no stylesheet path in the boot guard');
+    return indexHtml.slice(at);
+  };
+
+  it('inspects stylesheet links, not only scripts and modulepreloads', () => {
+    expect(indexHtml).toMatch(/link\[rel=stylesheet\]\[href\]/);
+  });
+
+  it('does NOT gate the stylesheet check on an empty #root', () => {
+    // The whole point: with a poisoned stylesheet the app DOES render, so a
+    // childElementCount bail would skip the check entirely — which is exactly
+    // what happened. The stylesheet pass must run regardless.
+    const cssCheck = cssSection();
+    expect(cssCheck).not.toMatch(/childElementCount/);
+  });
+
+  it('expects css and treats anything else as poisoned', () => {
+    const cssCheck = cssSection();
+    expect(cssCheck).toMatch(/indexOf\('css'\)\s*===\s*-1/);
+  });
+
+  it('repairs only our own hashed output, never a third-party sheet', () => {
+    // Google Fonts is cross-origin and not ours to repair; reloading the app
+    // because a font CDN hiccuped would be a self-inflicted outage.
+    const cssCheck = cssSection();
+    expect(cssCheck).toMatch(/isAsset\(/);
+  });
+
+  it('does NOT treat a network failure as poisoning on the stylesheet path', () => {
+    // Unlike the module path, a dropped request must never cost a field tech a
+    // reload when the stylesheet is actually fine — LTE drops are routine.
+    const cssCheck = cssSection();
+    const cssCatch = cssCheck.slice(cssCheck.indexOf("['catch']"), cssCheck.indexOf("['catch']") + 160);
+    expect(cssCatch).not.toMatch(/bad\.push/);
+  });
+
+  it('still reuses the one-attempt-per-tab claim, so it cannot loop', () => {
+    expect(indexHtml).toContain('upr:boot-recovered');
+    expect((indexHtml.match(/repairAndReload\(/g) || []).length).toBeGreaterThanOrEqual(3);
+  });
+});

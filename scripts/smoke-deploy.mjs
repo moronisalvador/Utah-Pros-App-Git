@@ -35,8 +35,28 @@
  *     Measured 2026-07-27: Cloudflare's check went green ~9 minutes before
  *     dev.utahpros.app actually served the new bundle. Checking too early
  *     passes against the OLD deployment and tells you nothing.
- *   - Cache-busts every request. The edge and the runner both cache, and a
- *     cached good copy would hide a poisoned one.
+ *   - Requests each asset EXACTLY AS A BROWSER DOES: no cache-buster, and with
+ *     an `Origin` header. Both matter, and getting either wrong makes this
+ *     script certify a broken site — which is what happened on 2026-07-27.
+ *
+ *     ⚠️ This file used to cache-bust every request, reasoning that "a cached
+ *     good copy would hide a poisoned one". The intent was right; the code did
+ *     the exact opposite. A cache-buster GUARANTEES the request bypasses the
+ *     edge and reads the origin, so an edge-cached poison is the one thing it
+ *     can never see. On 2026-07-27 this script reported PASS while every page
+ *     on dev.utahpros.app rendered unstyled.
+ *
+ *     The `Origin` header matters because Vite emits `<link rel="stylesheet"
+ *     crossorigin>` and `<script type="module" crossorigin>`, so real browsers
+ *     send one. Cloudflare caches that as a SEPARATE variant. Measured the same
+ *     day, on the same URL, seconds apart:
+ *         no Origin  -> text/css    (what the old script saw: PASS)
+ *         w/ Origin  -> text/html   (what every browser got: unstyled site)
+ *
+ *     A failing asset is then re-checked WITH a cache-buster, purely to tell
+ *     the two failures apart, because the fixes are different:
+ *         edge poisoned  (origin fine)  -> purge the Cloudflare cache
+ *         origin broken  (both fail)    -> the deployment itself is bad
  * ════════════════════════════════════════════════
  */
 
@@ -75,6 +95,41 @@ export function contentTypeOk(path, contentType) {
 
 const bust = (url) => url + (url.includes('?') ? '&' : '?') + 'smoke=' + Date.now();
 
+/**
+ * Fetch a deployed URL the way a browser would.
+ *
+ * `origin` sends the CORS `Origin` header that a `crossorigin` tag produces —
+ * Cloudflare caches that as its own variant, so omitting it checks a copy no
+ * browser ever receives. `cacheBust` is for the follow-up probe ONLY; it must
+ * stay off for the real check or the edge cache is bypassed entirely.
+ */
+export async function fetchAsBrowser(url, { origin, cacheBust = false } = {}) {
+  const r = await fetch(cacheBust ? bust(url) : url, {
+    redirect: 'follow',
+    headers: origin ? { Origin: origin } : {},
+  });
+  return {
+    status: r.status,
+    ok: r.ok,
+    ct: r.headers.get('content-type') || '',
+    cache: r.headers.get('cf-cache-status') || '',
+    age: r.headers.get('age') || '',
+  };
+}
+
+/**
+ * Classify a failing asset so the report names the actual remedy.
+ * edge-poisoned = the origin is healthy and only the cached copy is wrong.
+ */
+export function classifyFailure(browserView, originView) {
+  const isHtml = (v) => v && v.status === 200 && (v.ct || '').includes('html');
+  if (isHtml(browserView) && originView && !isHtml(originView) && originView.ok) {
+    return 'edge-poisoned';
+  }
+  if (isHtml(browserView)) return 'origin-serving-html';
+  return 'unservable';
+}
+
 async function main() {
   const base = (process.argv[2] || '').replace(/\/$/, '');
   if (!base) {
@@ -105,34 +160,50 @@ async function main() {
 
   const results = await Promise.all(assets.map(async (path) => {
     try {
-      const r = await fetch(bust(base + path), { redirect: 'follow' });
-      const ct = r.headers.get('content-type') || '';
-      return { path, status: r.status, ct, ok: r.ok && contentTypeOk(path, ct) };
+      // The real check: no cache-buster, with Origin — byte-for-byte the
+      // request a browser makes for a `crossorigin` tag.
+      const view = await fetchAsBrowser(base + path, { origin: base });
+      if (view.ok && contentTypeOk(path, view.ct)) return { path, ok: true };
+
+      // Failed. Re-probe past the edge ONLY to name the right remedy.
+      let originView = null;
+      try {
+        originView = await fetchAsBrowser(base + path, { origin: base, cacheBust: true });
+      } catch { /* origin probe is diagnostic; its absence just means we cannot classify */ }
+      return { path, ok: false, view, originView, kind: classifyFailure(view, originView) };
     } catch (e) {
-      return { path, status: 0, ct: '', ok: false, err: e.message };
+      return { path, ok: false, view: { status: 0, ct: '', err: e.message }, kind: 'unservable' };
     }
   }));
 
+  const REMEDY = {
+    'edge-poisoned': 'EDGE POISONED — origin is healthy, the CACHED copy is HTML. Purge the Cloudflare cache.',
+    'origin-serving-html': 'ORIGIN SERVING HTML — the deployment itself is wrong, a purge will NOT fix it.',
+    unservable: 'UNSERVABLE — no usable response.',
+  };
+
   for (const r of results.filter((x) => !x.ok)) {
-    // The signature of the 2026-07-27 outage: HTTP 200, content-type text/html,
-    // under a .js URL. Name it explicitly so nobody has to rediscover it.
-    const poisoned = r.status === 200 && (r.ct || '').includes('html');
+    const v = r.view || {};
     failures.push(
-      `${r.path} -> ${r.status} "${r.ct || r.err || 'no response'}"` +
-      (poisoned ? '  ← POISONED: HTML served under an asset URL' : '')
+      `${r.path} -> ${v.status || 0} "${v.ct || v.err || 'no response'}"` +
+      (v.cache ? ` [cf-cache:${v.cache}${v.age ? ` age:${v.age}s` : ''}]` : '') +
+      `\n      ${REMEDY[r.kind] || ''}`
     );
   }
 
   if (failures.length) {
     console.error(`\nFAIL (${failures.length})`);
     for (const f of failures) console.error('  ✗ ' + f);
-    console.error('\nIf assets are poisoned: purge the Cloudflare cache, then re-run.');
-    console.error('Devices may still hold poisoned copies; the boot guard in');
-    console.error('index.html repairs those on next load.\n');
+    if (results.some((r) => r.kind === 'edge-poisoned')) {
+      console.error('\nPurge the Cloudflare cache, then re-run this check.');
+      console.error('Devices may still hold poisoned copies; the boot guard in');
+      console.error('index.html repairs those on next load.');
+    }
+    console.error('');
     process.exit(1);
   }
 
-  note('all boot assets servable with correct content types');
+  note('all boot assets servable with correct content types (checked as a browser: no cache-bust, with Origin)');
   console.log('PASS\n');
 }
 

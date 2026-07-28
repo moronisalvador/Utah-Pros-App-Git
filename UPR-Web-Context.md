@@ -8823,12 +8823,50 @@ real authenticated session — a fresh login resolves the RPC and publishes the 
 roster, so an active external account can enumerate the active internal roster (names, roles,
 colors, avatars — no email, no pay). Owner reviewed and approved shipping as-is.
 
-**Still unapplied, and ORDER-CRITICAL:** `20260726182000_mobile_employee_identity_containment.sql`
-revokes `employees` to four columns and restricts reads to the caller's own row. Code on `main`
-reads `employees` directly in 14 files. One database serves both branches, so this must be applied
-only AFTER `dev` is promoted to `main` and production is confirmed serving the new bundle —
-otherwise it breaks the schedule board, timesheets, the team screen and the crew pickers on
-production.
+**APPLIED to the shared database 2026-07-28 (owner-authorized): `20260726182000_mobile_employee_identity_containment.sql`
+→ live ledger version `20260728002105`.** It drops both `employees` policies for a single
+`employees_self_identity_read` (`authenticated`, SELECT, `auth_user_id = auth.uid()`), revokes ALL
+table privileges from `PUBLIC, anon, authenticated`, and re-grants column SELECT on exactly
+`(id, auth_user_id, role, is_active, is_external)`. `get_all_employees()` is now admin/service-only;
+commission read and write gate on the new `can_current_employee_access_settings()` helper
+(EXECUTE granted to `postgres` only — the definers call it internally).
+
+**What it actually closed, measured before the apply:** `anon` held all 8 table privileges plus
+`allow_anon_read_employees` (`FOR SELECT`, `USING (true)`). The publishable key ships in the browser
+bundle, so every employee's name, email, phone, `hourly_rate`, `overtime_rate` and commission was
+readable **without logging in**. Post-apply, `anon` and `authenticated` both fail
+`has_table_privilege(...,'SELECT')`, and reading `hourly_rate` as either role raises
+`permission denied for table employees`.
+
+Verified live in the office shell (2026-07-28, authenticated owner session): schedule board + crew
+filter, `/time-tracking`, `/settings/team` (22 rows incl. rates), `/crm/tasks` assignee picker,
+office and tech appointment crew pickers (16 employees each), `/jobs`, `/production`, job/claim/
+customer pages, and `/settings/commissions`. Negative paths confirmed by direct role calls:
+`get_all_employees()`, `get_employee_commissions()` and `upsert_employee_commission()` all raise
+`NOT_AUTHORIZED` for a non-admin caller, the write raising *before* its `UPDATE`.
+
+> **⚠️ IT BROKE THE INSTALLED CAPACITOR APP, and this is the lesson to carry forward.** The native
+> app ships its web bundle **inside the binary** (`capacitor.config.json` `webDir: "dist"`, no
+> `server.url`), so it does not pick up server-side deploys. The installed bundle predates the RPC
+> refactor and still calls `db.select('employees', 'email=eq.…')` — a `select=*`, which now dies at
+> the column-privilege layer. Login fails with **"Failed to load employee data."** (a string that no
+> longer exists anywhere in `src/`, which is how the stale bundle was identified). Capgo OTA cannot
+> push a fix: `.github/workflows/capgo-deploy.yml` was paused 2026-06-24 on a plan limit. The only
+> remedy is a native rebuild + reinstall; `.github/workflows/ios-release.yml` needs five Apple
+> signing secrets and dispatches only from `main`.
+>
+> **The process failure worth fixing:** the migration carries 27 hash-pinned guard sites that verify
+> the database's internal consistency exactly, and **not one** checks whether a deployed or installed
+> client still reads the table. Its own header lists that as apply-order step 3 — *"resolve old
+> cached/native client compatibility explicitly"* — in prose, unenforced. The predecessor handoff
+> also asserted that none of these four migrations blocks Capacitor, which is false. A grep for
+> direct `employees` reads plus "what bundle is on real devices" would have caught it for free.
+> Recommended before applying migrations 2–4: a CI check that fails on direct browser reads of
+> RPC-only tables. Rollback stays available at
+> `supabase/rollbacks/20260726182000_mobile_employee_identity_containment.rollback.sql`; it re-grants
+> `anon`, so the destructive-SQL guard blocks agents from running it and the owner must run it
+> manually. It does **not** delete the ledger row, so the provenance mapping above stays true either
+> way.
 
 **New routes:** `/tech/legal/privacy`, `/tech/legal/terms`, `/tech/legal/support` render the same
 `PrivacyPolicy`/`TermsOfService`/`Support` components as the office routes, but inside the field
@@ -8892,6 +8930,14 @@ Ledger versions are assigned AT APPLY TIME, not from the filename:
   privileges on `contacts` / `conversations` / `conversation_participants`. Verified after: anon
   policies 8→0, anon grants→0, all 6 `authenticated` policies intact, conversations still loading.
 - `notification_role_defaults_rpc_only` → applied. Table is now RPC-only.
+- `create_notification_service_boundary` → **`20260727233252`**
+- `notify_emit_service_boundary` → **`20260727233704`**
+- `upsert_employee_page_access_provenance_reconciliation` → **`20260727233845`**
+- `mobile_employee_identity_containment` → **`20260728002105`** (2026-07-28). See the containment
+  section above — verified live, and it **broke the installed Capacitor app**, which needs a native
+  rebuild. Three of the mobile-security queue remain unapplied: `20260726183409`,
+  `20260726260000`, `20260727022920`. Each needs its own owner authorization, and each should wait
+  on the client-contract check the containment apply proved is missing.
 
 **`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
 `20260726183409` and `20260726260000` add POLICIES whose predicates read it, and a policy predicate
@@ -8952,3 +8998,54 @@ deployment, providers, Apple signing/TestFlight, browser/PWA/device qualificatio
 `dev → main` promotion remain separate owner/external gates. Local source-integration commits and a
 draft PR do not authorize any of them. No database apply, deployment, provider call, notification,
 money movement, signing, or device action occurred in this reconciliation.
+
+---
+
+## Leads board search bar (2026-07-27, owner-directed standalone)
+
+`/crm/leads` gained a free-text **search box** in its existing filter bar (`CrmLeads.jsx`,
+`.crm-leads-filterbar`), positioned **after** the Last 7 / Last 30 / All time tabs and the Filters
+panel (owner-directed 2026-07-27; the first pass placed it first in the row). Owner-directed standalone work, recorded as `.claude/rules/crm-wave-ownership.md`
+§12. **Zero schema, zero migrations, no RPC touched, no worker touched.**
+
+- **Pure client-side**, exactly like the date-range and criteria filters beside it: it narrows the
+  `leads` array already in memory, no extra fetch, no loading flip. It is folded into the existing
+  `filteredLeads` useMemo, so the board, the "N of M leads" subtitle and the empty state cannot
+  disagree.
+- **Matching** — three exported pure helpers in `CrmLeads.jsx`: `leadSearchTerms(query)`,
+  `leadSearchText(lead)`, `matchesLeadSearch(haystack, terms)`. Every whitespace-separated term
+  must match (**AND**, not OR), so "smith water" finds the Smith lead about water damage. Case
+  insensitive. Covered by `src/pages/crm/crmLeads.search.test.js` (22 tests, unit lane).
+- **Fields searched:** linked contact name/phone, `caller_name`, `caller_number`, `source`,
+  `medium`, `campaign`, `transcript_analysis.summary` / `.topics` / `.customer_email` /
+  `.customer_address`, every scalar and array value in a web form's `form_data`, `lost_reason`, and
+  the legacy `notes` column.
+- **Phone-aware:** each lead's numbers are also indexed digits-only, and a query term of 3+ digits
+  is matched digits-only too, so `801-555`, `(801) 555` and `8015551234` all find the same stored
+  `+18015551234`. `normalizePhone()` cannot serve here — it returns `null` below 10 digits, i.e. for
+  every partial query. The 3-digit floor keeps a lone "5" from matching every dollar amount.
+- **Raw `transcription` is deliberately NOT searched**, though the board loads it. This page never
+  renders a transcript (Call Log does), so a transcript-only hit would surface a card with no
+  visible reason for matching. The AI summary and topics are searched instead — both are on the
+  card — so every match stays explainable. Deep transcript search belongs on Call Log.
+- **Truncation is disclosed, not silent.** The board fetches the `BOARD_LEAD_LIMIT` (200) most
+  recent leads. Live non-spam, non-merged count on 2026-07-27 was **75**, so search is currently
+  complete. Once the cap is genuinely reached *and* a search is active, a line under the filter bar
+  says "Searching the 200 most recent leads — older ones aren't loaded on this board"
+  (`loading-error-states.md` §5). **Follow-up, not built:** a real server-side "search all leads"
+  path is what this board needs before it passes 200 — the note is the trigger.
+- **State is component-local, not URL** — consistent with the sibling filters, and opening a lead is
+  an in-page panel rather than a route change, so nothing is lost. Clearing is either the input's own
+  ✕ or the bar's Clear button, which is labelled "Clear search" when only search is set and
+  "Clear filters" otherwise. Search counts toward `hasActiveFilters` but deliberately not toward the
+  Filters badge count, which tracks only the criteria panel.
+- **Perf:** haystacks are built once per `leads` change into a memoized `Map` (`searchIndex`), so a
+  keystroke costs ~200 `String.includes` calls rather than 200 string rebuilds. No debounce needed.
+- **UI:** the shared `SearchInput` primitive (`@/components/ui`) skinned onto the CRM kit via a new
+  `/* ─── CRM LEADS SEARCH ─── */` marker at the end of `src/index.css` — same reasoning the
+  `.crm-board-period` block already records. Height is pinned to the **measured 38px** of the
+  segmented control and Filters button beside it (not `.input`'s 40px) so the three share a top and
+  bottom edge. Desktop `flex: 0 1 260px` (min 190 / max 300); at ≤768px it takes its own full-width
+  line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus. Sitting last also
+  costs one row fewer on mobile than the original first-in-row placement did — the date tabs and
+  Filters fit together on one 390px line, with search full-width beneath them.
