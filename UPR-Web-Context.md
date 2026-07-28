@@ -9053,3 +9053,47 @@ panel (owner-directed 2026-07-27; the first pass placed it first in the row). Ow
   line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus. Sitting last also
   costs one row fewer on mobile than the original first-in-row placement did — the date tabs and
   Filters fit together on one 390px line, with search full-width beneath them.
+
+## Native iOS audit remediation (2026-07-27, branch `codex/native-ios-remediation`)
+
+Source-side remediation of the 2026-07-27 Native iOS Experience & Release
+Readiness audit (37 findings: 7 P0, 24 P1, 6 P2). Branch is **not merged and not
+pushed**; every commit stands alone with its own verification.
+
+**Closed:** REL-01 (source half), REL-02, PRIV-01, PUSH-01, AUTH-01, KB-01,
+SET-01, STAT-01, RES-01, SAFE-01, SAFE-02, JOB-01, PICK-02, PICK-03,
+PICK-01 (partial), PICK-05, ESIGN-01, MSG-01, MSG-04.
+
+### New shared modules
+
+| Module | Purpose |
+|---|---|
+| `src/lib/companyDate.js` | `todayInCompanyTimeZone()` / `companyDateOf()` — America/Denver calendar dates. Client counterpart to the worker-only `functions/lib/date-mt.js`. Replaces `toISOString().split('T')[0]`, which returns TOMORROW after ~6pm Mountain. |
+| `src/lib/nativeKeyboardLayout.js` | Reference-counted keyboard-inset port. Native adapter uses Capacitor keyboard events; web adapter uses the visualViewport baseline algorithm proven on-device in ThreadView. |
+| `src/lib/useNativeKeyboardInset.js` | React consumer. **Native-only by owner decision** — returns 0 and attaches nothing on web. Also exports `techStickyCtaBottom()`. |
+| `src/lib/publicSigningUrl.js` | Signing links pinned to a real UPR https host. `window.location.origin` is `capacitor://localhost` in the app. |
+| `src/components/FieldShellRoute.jsx` | AUTH-01 role gate on `/tech/*`. Allowlist lives beside `getAccountLandingPath` in `authBootstrap.js` so gate and landing rule cannot drift. |
+| `src/components/PublicNativeShell.jsx` | SAFE-02 safe-area + status surface for the seven public native routes. |
+
+### Contract changes worth knowing
+
+- **`nativeAppearance.js` API replaced.** `statusBarLight`/`statusBarDark` named the TEXT colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted. Now keyed on the SURFACE: `setStatusBarBase` (ThemeContext owns it), `pushStatusBarSurface`, `restoreStatusBarBase`.
+- **`data-native="true"`** is stamped on `documentElement` at module scope in `App.jsx` when `IS_NATIVE`. New native-only CSS scopes to it.
+- **Two safe-area inset owners, one per shell:** `.tech-layout` (authenticated) and `.public-native-shell` (public). They never nest.
+- **`isTimeRangeInvalid`** in `techFormConstants.js` is the single time-range rule for all three scheduling forms.
+
+### Owner decisions still open
+
+1. **`--brand-primary` + 6 sibling tokens are undefined** — referenced from CSS *and* JSX inline styles (`CustomerPage.jsx`); those declarations do not render. Recorded in `KNOWN_UNDEFINED` in `tests/qa/unit/css-token-resolution.test.js`. Choosing values is a design decision.
+2. **Native `UIDatePicker` plugin** (PICK-01 remainder) — new dependency, needs `perf-budget.md` justification. The build-target seam already exists.
+3. **Money date-defaults** still slice UTC: `ClaimBilling`, `recordPayment`, `invoiceMath`.
+4. **`TIME_OPTIONS`** is English-only AM/PM, arbitrary 06:00–22:30.
+5. **`22:30` as a start time** is a dead end; `LAST_SELECTABLE_START` is exported if you want to bound it.
+
+### Release gates unchanged by this work
+
+Apple Distribution certificate, App Store provisioning profile, App Store
+Connect API key and APNs Auth Key remain absent — `ios/fastlane/Fastfile`
+requires all four. **QUAL-01 (physical-device and iPad qualification) cannot be
+closed from this environment at all.** DATA-01 needs a migration and was
+excluded by owner decision (no applies this session).
