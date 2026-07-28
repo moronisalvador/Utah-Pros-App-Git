@@ -108,6 +108,10 @@ validation must:
 - never block unrelated build/static/documentation validation.
 
 Do not kill an unrelated Node/browser process based on name alone; resolve ownership/PID/port first.
+The iOS release workflow applies this contract through
+`scripts/qa/run-owned-subprocess.mjs` around both Fastlane archive/Xcode and
+TestFlight upload commands; the helper owns a process group, enforces the
+five-minute ceiling, terminates survivors, and verifies cleanup.
 
 ## Required automated coverage
 
@@ -380,9 +384,11 @@ The reconciled mobile source now includes:
 
 This is still a source checkpoint, not production readiness. S1h and the other database lanes are
 unapplied; the reviewed current-`origin/dev` no-rewrite integration is local source history prepared
-for draft-PR review, not a `dev` or production release; Capacitor sync and the Ruby lockfile remain
-open; and no deployment, provider, signed archive, TestFlight, or physical-device qualification is
-implied. The identified Auth source
+for review, not a `dev` or production release. Reviewed Capacitor sync and the Ruby lockfile now
+exist, and a distribution-signed archive/IPA from the dirty qualification worktree independently
+proved the local signing lane. Its report correctly has no source commit, so no clean-source final
+artifact, deployment, provider delivery, TestFlight install, or complete physical-device
+qualification is implied. The identified Auth source
 defects are fixed: rejected
 bootstrap strictly proves cleanup/sign-out before Login, bootstrap authorization values are typed,
 and password recovery is cleanup-gated without losing its session. Observer-only expired-session

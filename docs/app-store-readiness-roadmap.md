@@ -239,9 +239,10 @@ archive, TestFlight, or representative physical-device verification.
 
 ## 6. Status
 
-- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; later unsigned generic and
-  iPhone 17 Pro/iOS 26.5 simulator build/install/launch evidence exists, while signed archive,
-  TestFlight, and physical-device proof remain owner/external gates
+- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; a signed Debug build was
+  installed and launched on the owner's iPhone 17 Pro Max over Wi-Fi on 2026-07-28 with the
+  development Push entitlement. A clean distribution archive, TestFlight, and production Push
+  proof remain release gates.
 - [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning. The then-added boot acknowledgment is superseded by the 2026-07-26 exact-default-off OTA contract above.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
@@ -249,13 +250,16 @@ archive, TestFlight, or representative physical-device verification.
   `secrets.*` directly in step conditions (which made GitHub create no-job failures on every push);
   repository tests preserve its valid, manual-only signing gate. No iOS workflow was dispatched.
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
-- [ ] Owner: kick off Apple Developer Program + ABM enrollment
+- [x] Owner: Apple Developer Program team `H6ZUT739T9` active; bundle identifier, development
+  certificate/profile, Associated Domains, and Push capability verified 2026-07-28. ABM is not
+  required for the selected public-App-Store path.
 - [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)
 - [x] Owner: native session prompt decision — 2026-07-28. A retained authenticated session may
   reopen without another Face ID prompt; Face ID belongs at manual password sign-in. This approves
   removing the former launch gate, not treating WebView token storage as Keychain-equivalent.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
-- [ ] Owner: Xcode build-verify of F1 before any real device sees it
+- [x] Owner: signed Debug Xcode build/install/launch of F1 on a physical iPhone, 2026-07-28.
+  Distribution archive verification remains open.
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
 
 ### 2026-07-26 current source reconciliation
@@ -316,10 +320,23 @@ Initial-release scope freeze:
 
 Open external/release gates:
 
-- Apple enrollment/account/team/certificates/profiles and App Store Connect keys;
-- clean signed archive/IPA verification, internal TestFlight upload/install, Universal/custom link,
-  recovery/signing, Push, background/privacy, biometric, account-switch, permission, and offline
-  physical-device matrix;
+- Apple Distribution certificate `3QA6GT9L28` and App Store provisioning
+  profile `UPR App Store 2026` are active. Their local signing lane produced and
+  verified a Release archive/IPA on 2026-07-28; CI environment configuration
+  and a clean-source final artifact remain open;
+- App Store Connect API access is active. The unusable first key was revoked;
+  replacement Admin team key `XV5CUK6XLC` is configured in GitHub environment
+  `ios-testflight` as encrypted `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
+  `ASC_KEY_CONTENT_BASE64` secrets. The downloaded private-key file was removed
+  after GitHub confirmed all three secrets by name and timestamp;
+- App Store Connect app record **created** 2026-07-28 as “UPR Field Operations”
+  (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
+  screenshot fields remain incomplete;
+- APNs key and Cloudflare Preview/Production sender variables are configured, but enrollment stays
+  exact-default-off pending S1h live verification, deployment, and a new signed build;
+- clean-source final archive/IPA verification, internal TestFlight upload/install,
+  Universal/custom link, recovery/signing, Push, background/privacy, biometric,
+  account-switch, permission, and offline physical-device matrix;
 - screenshots, demo credentials, privacy/legal review, App Store Connect entry, distribution, and
   App Review.
 

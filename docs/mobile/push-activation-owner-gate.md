@@ -1,11 +1,11 @@
-# Native push — what is built, and the four owner-only steps left
+# Native push activation and release gate
 
 **Last verified:** 2026-07-28
 
-Native push is wired end to end in the repository. It does not work yet, and the
-only reasons are four actions that require an Apple Developer account and the
-Cloudflare dashboard. **Nothing below can be done by an agent**, which is why this
-is a handoff rather than a task.
+Native push is wired end to end in the repository. Apple and Cloudflare sender
+configuration now exists, but enrollment remains deliberately off until the S1h
+personal-ownership boundary is qualified and separately applied. No deployment,
+device enrollment, provider delivery, or push-tap proof has occurred.
 
 ## Already built — do not rebuild
 
@@ -28,57 +28,92 @@ a build that ships `development` registers against APNs sandbox and every push
 silently fails. The two-file split above is what prevents that, so do not collapse
 them back into one.
 
-## The four owner-only steps
+## External configuration verified 2026-07-28
 
-### 1. Create the APNs Auth Key (Apple Developer portal)
+- Apple Developer Program team `H6ZUT739T9` is active.
+- App ID `com.utahprosrestoration.upr` has Push Notifications and Associated
+  Domains enabled.
+- APNs Auth Key `JX22945D4T` is team-scoped for **Sandbox & Production**.
+- Apple Distribution certificate `3QA6GT9L28` and App Store profile
+  `UPR App Store 2026` are active.
+- App Store Connect Admin team key `XV5CUK6XLC` is configured in GitHub
+  environment `ios-testflight` as encrypted key-id, issuer-id, and private-key
+  secrets. GitHub confirmed the three secret names before the local `.p8`
+  download was removed.
+- Cloudflare Pages project `utah-pros-app-git` contains all six push variables
+  in both Production and Preview. Secret values were not retained in the
+  repository.
+- Production uses `APNS_ENV=production`; Preview uses `APNS_ENV=sandbox`.
+- `VITE_NATIVE_PUSH_ENABLED=false` remains explicit in both environments.
+- The first generated key was revoked before use after a secret-handling trace
+  exposed it during setup. Its local file and the replacement key's local file
+  were permanently removed; only the encrypted Cloudflare copy of the active
+  replacement remains.
 
-Certificates, Identifiers & Profiles → **Keys** → **+** → enable **Apple Push
-Notifications service (APNs)** → Continue → Register → **Download the `.p8`**.
+## Local distribution proof
 
-Apple lets you download this file **once**. Store it in the password manager
-immediately. Note the **Key ID** (10 chars) shown on that page, and the **Team ID**
-(`H6ZUT739T9`).
+The app-target-only manual signing fix produced a clean Xcode 26.6 Release
+archive and exported IPA on 2026-07-28. The repository verifier cross-checked
+the archive and IPA and passed:
 
-### 2. Put four secrets in Cloudflare — BOTH variable sets
+- bundle `com.utahprosrestoration.upr`, team `H6ZUT739T9`;
+- version `1.0.0 (1)`;
+- valid code signature and App Store provisioning profile;
+- `aps-environment=production` and `get-task-allow=false`;
+- the reviewed privacy manifest, no tracking domains, and non-exempt
+  encryption disabled; and
+- IPA SHA-256
+  `eb022fae79464c25980746e961e80b383958677854ec5eafe1b4365d840b4b41`.
 
-Cloudflare Pages keeps **Production and Preview variables separately**. A secret
-added to only one leaves push broken on the other, which reads as "push is flaky"
-rather than "push is unconfigured".
+This is local release qualification, not an upload candidate: the worktree was
+dirty, the report therefore has no source commit, and the final S1h/deploy/
+promotion gates remain open.
+
+The release workflow runs Xcode/Fastlane archive and provider upload commands
+through `scripts/qa/run-owned-subprocess.mjs`: each command owns a distinct
+process group, is capped at five minutes, terminates remaining children, and
+verifies the group is gone. Longer GitHub job watchdogs cover dependency/test
+Actions and are not permission for a persistent child to outlive that bound.
+
+## Environment contract
+
+Cloudflare Pages keeps Production and Preview variables separately. A value
+added to only one leaves push broken on the other, which reads as intermittent
+failure rather than an explicit configuration error.
 
 | Variable | Value |
 |---|---|
-| `APNS_P8_KEY` | full contents of the `.p8`, newlines preserved |
-| `APNS_KEY_ID` | the 10-character Key ID from step 1 |
+| `APNS_P8_KEY` | encrypted secret; full `.p8`, newlines preserved |
+| `APNS_KEY_ID` | `JX22945D4T` |
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
 | `APNS_TOPIC` | `com.utahprosrestoration.upr` |
-| `APNS_ENV` | `sandbox` for TestFlight, `production` for the App Store |
+| `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
+| `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until S1h is live-verified |
 
-Then **redeploy** — Pages Functions pick up new variables only on a new deployment.
+TestFlight is a production-signed distribution build and must use APNs
+production. Only development-signed device builds use the sandbox.
 
-### 3. Turn enrollment on
+## Remaining activation sequence
 
-`VITE_NATIVE_PUSH_ENABLED` must be exactly the string `true`. It is `false` in
-`.env.example` and the check is deliberately fail-closed
-(`isNativePushEnrollmentEnabled`), so any other value — `TRUE`, `1`, unset — keeps
-enrollment off. This is a build-time Vite variable, so it also needs a redeploy.
+1. Complete exact isolated qualification for
+   `20260727022920_mobile_personal_ownership_boundary.sql`, obtain a fresh
+   checksum-pinned owner apply authorization, apply only that migration, and
+   verify it live. Its identity-authority, page-access-provenance, and identity-
+   containment dependencies are already live and must not be replayed.
+2. Change `VITE_NATIVE_PUSH_ENABLED` to the exact string `true` in Cloudflare
+   Preview and Production, and set the same release-environment value for the
+   native archive workflow.
+3. Deploy compatible `dev` and production bundles, build the final clean-source
+   signed native archive, and verify the archive carries
+   `aps-environment=production`. The local qualification archive above proves
+   the signing lane, but does not replace this final-source artifact.
+4. Install the new build on a physical iPhone, accept the permission prompt,
+   confirm an owner-bound `device_tokens` row, trigger one authorized test
+   notification, and prove background banner plus tap-to-route.
+5. Upload that exact verified IPA to internal TestFlight and repeat the
+   registration/delivery/tap proof from the TestFlight install.
 
-Leave it `false` until step 2 is done. Enrolling devices against a sender that
-cannot send just fills `device_tokens` with tokens nothing will ever use.
-
-### 4. Prove it on a real device
-
-The simulator cannot receive push at all — APNs needs real hardware. Install on a
-physical iPhone, accept the permission prompt, confirm a row appears in
-`device_tokens`, then trigger a real notification and confirm both the banner and
-that **tapping it lands on the right screen** (the PUSH-01 fix means an appointment
-push should open `/tech/appointment/<id>`, not the dashboard).
-
-## What is deliberately NOT done
-
-- No key was generated, downloaded, or stored.
-- No Cloudflare variable was set, in either environment.
-- `VITE_NATIVE_PUSH_ENABLED` is untouched and remains `false`.
-- No test push was sent.
-
-Each of those is either owner-only or a live external action needing its own
-authorization.
+`isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
+unset, and every value other than exact lowercase `true` keep enrollment off.
+Cloudflare changes take effect on the next deployment; the native flag is also a
+build-time value, so an already-installed IPA cannot be activated remotely.
