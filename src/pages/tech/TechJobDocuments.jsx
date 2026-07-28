@@ -165,8 +165,16 @@ export default function TechJobDocuments() {
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ sign_request_id: sr.id }),
       });
+      // ESIGN-03: `.catch(() => ({}))` turns ANY non-JSON body into an empty
+      // object, and `res.ok` alone then gated the success toast — so a 200
+      // carrying something that is not this worker's reply reported "Reminder
+      // sent" for an email nobody sent. That is exactly what happened while the
+      // native app answered /api from its own bundle. The worker returns
+      // `success: true` on both its happy path and its email-failure path, so
+      // require it rather than inferring success from a status code.
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to resend');
+      if (json.success !== true) throw new Error(json.error || 'Resend did not complete');
       toast(json.email_error ? `Email failed: ${json.email_error_detail || 'unknown error'}` : `Reminder sent to ${sr.signer_email}`, json.email_error ? 'error' : 'success');
       loadRequests();
     } catch (e) {
