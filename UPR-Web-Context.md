@@ -8777,19 +8777,22 @@ Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` pr
 `get_unread_notification_count(uuid) -> integer`, `mark_notification_read(uuid) -> void`, and
 `mark_all_notifications_read(uuid) -> void`, including defaults and old broadcast-only call
 shapes. Authenticated calls derive one active non-external employee from `auth.uid()` and reject
-foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` provides independent
-broadcast receipts while legacy globally-read broadcasts stay read and targeted rows keep base
-`read_at`. The existing notification SELECT policy object becomes active-internal
-own-or-broadcast, authenticated table access becomes SELECT-only for Realtime, and the obsolete
-test-row DELETE policy is removed. The shared PWA/Capacitor `NotificationBell` and Realtime client
-need no source change; the JavaScript recipient filter remains defense in depth.
+foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` with an explicit
+authenticated deny policy provides independent broadcast receipts while legacy globally-read
+broadcasts stay read and targeted rows keep base `read_at`. The existing notification SELECT
+policy object becomes active-internal own-or-broadcast, authenticated table access becomes
+SELECT-only for Realtime, and the obsolete test-row DELETE policy object is retained but changed
+to `USING (false)`. The shared PWA/Capacitor `NotificationBell` and Realtime client need no source
+change; the JavaScript recipient filter remains defense in depth.
 
 Exact fail-closed rollback, catalog-only pre/post checks, a two-gate rollback-only multi-identity
 behavior script (including all service compatibility branches), local-only pgTAP runner bridge,
-credential-free QA contract, and dated evidence accompany S1g. A temporary in-memory
-PostgreSQL-compatible harness passed preflight, forward, post-apply, behavior, and rollback; live
-Supabase Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical
-anonymous notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
+credential-free QA contract, and dated evidence accompany S1g. The 2026-07-28 correction aligns
+the five-column identity-containment contract, makes the new receipt and retained delete policies
+explicitly fail closed, and changes rollback to preserve authorization while disabling browser
+access. The corrected exact SQL still needs the governed isolated Supabase runner; live Supabase
+Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical anonymous
+notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
 private media, shared identity/device/preferences, deployment, providers, native signing/devices,
 and final qualification remain separate. No live mutation, notification read/mark, deploy,
 provider action, signing, or distribution occurred in S1g.
@@ -8960,6 +8963,21 @@ evaluates with the CALLING role's privileges — ungranted, every authenticated 
 fails. Both siblings preflight that the column EXISTS, never that it is GRANTED. Bounded by the
 self-identity policy: a caller reads only their own row. The structural fix (route those policies
 through a `SECURITY DEFINER` helper and drop the carve-out) is a roadmap item.
+
+**2026-07-28 S1g qualification correction:** fresh value-free production catalog capture confirmed
+the containment ledger row, self-only employee policy, exact five authenticated employee columns
+including `is_external`, absence of `notification_reads`, both original notification policies,
+the original four function hashes/ACLs, and `supabase_realtime` publication. No employee or
+notification row was read. The previously checksum-pinned S1g source incorrectly expected four
+employee columns, created a forced-RLS table without an explicit policy, dropped a live policy
+object, and shipped a rollback that expected the pre-containment state and reopened the BOLA.
+Corrected source fixes all four defects and passes credential-free contracts. Its exact
+preflight→forward→post-apply→isolated behavior→paired rollback chain passes against both a temporary
+synthetic PGlite database and a disposable official local Supabase 2.110.0 stack. This proves the
+catalog, role, function, transaction, and guarded rollback behavior but not live
+Auth/PostgREST/Realtime sockets. Its checksum changed, so the earlier apply authorization is not
+reusable; fresh checksum-specific owner authorization remains required before the shared database
+changes.
 
 The initial production release intentionally has **zero automatic offline command admission or
 replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or

@@ -458,17 +458,19 @@ unique active, non-external employee from `auth.uid()` and raises SQLSTATE `4250
 non-null employee parameter or foreign targeted notification. Missing/null mark-one IDs retain the
 deployed void no-op.
 
-Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads`; targeted rows
+Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads` with an explicit
+authenticated deny-all policy; targeted rows
 retain their existing `read_at`. Already-globally-read legacy broadcasts remain read for every
 employee. `notifications_select` stays the same policy object but becomes active-internal
 own-or-broadcast authorization, authenticated table access becomes SELECT-only for Realtime, and
-the obsolete authenticated sentinel-delete policy is removed. The existing client recipient check
-remains defense in depth.
+the obsolete authenticated sentinel-delete policy object is made inert with `USING (false)`. The
+existing client recipient check remains defense in depth.
 
 The unchanged service-role branch retains the exact deployed base-row list/count, mark-one, and
-null/non-null mark-all semantics. Rollback refuses exact forward-state drift and restores the
-captured authenticated behavior, but it deliberately does not restore the historical anonymous
-notification-table grant because no reviewed public use case exists.
+null/non-null mark-all semantics. Rollback refuses exact forward-state drift, preserves identity
+containment and recipient-scoped policies, drops receipt history only behind an explicit owner
+guard, and disables authenticated bell/Realtime access while retaining gated service-role behavior.
+It never restores the historical anonymous notification-table grant.
 
 This is reviewed source intent, not live proof. S1g requires its own owner-authorized apply,
 catalog post-check, two-session RPC/PostgREST/Realtime negative/positive matrix, advisors, and

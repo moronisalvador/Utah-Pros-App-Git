@@ -339,9 +339,9 @@ reviewed release commit. Sanitized live metadata and the rollout/rollback record
 
 `20260726260000_notification_read_recipient_boundary.sql` is authored and locally tested but **not
 applied**. It adds `notification_reads(notification_id, employee_id, read_at)` with cascading
-foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, has no
-policies, and grants no direct browser or service-role table access; the owner-run guarded
-`SECURITY DEFINER` bell RPCs are its only access path.
+foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, carries an
+explicit authenticated deny-all policy, and grants no direct browser or service-role table access;
+the owner-run guarded `SECURITY DEFINER` bell RPCs are its only access path.
 
 The four existing bell RPC identities and result shapes remain unchanged. For broadcasts they
 project an employee-specific receipt through the existing `notifications.read_at` field; targeted
@@ -353,16 +353,17 @@ The existing Realtime table stays published. Its `notifications_select` policy o
 not dropped, from authenticated `USING (true)` to an active, non-external
 `employees.auth_user_id = auth.uid()` own-or-broadcast predicate. Direct authenticated table access
 becomes SELECT-only; `anon` loses table privileges and the obsolete authenticated
-`notifications_delete_testrows` policy is removed. The apply preflight pins the current employee
+`notifications_delete_testrows` policy object is retained but altered to `USING (false)`. The apply
+preflight pins the current employee
 UUID/active/external columns plus authenticated employee SELECT/RLS policy because that table is an
 explicit dependency of the notification predicate.
 
 This schema description is proposed source state until a separate shared-database apply succeeds.
 The generated live schema/RPC reports and provenance ledger must remain unchanged before then.
-Rollback is owner-guarded because it drops receipt history and deliberately restores the prior
-cross-recipient/shared-read exposure. It restores the exact prior functions and authenticated
-policy behavior but intentionally keeps the historical `anon` notification-table grant revoked;
-notifications have no approved public allowlist use case.
+Rollback is owner-guarded because it drops receipt history. It fails browser/native bell RPCs and
+Realtime table reads closed, preserves identity containment and recipient-scoped policies, and
+retains only explicitly gated service-role compatibility. It never restores the cross-recipient
+BOLA or the historical `anon` notification-table grant.
 
 ## QuickBooks Online attachments tracking (2026-07-24)
 
