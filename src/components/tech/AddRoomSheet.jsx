@@ -102,7 +102,13 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: kbInset > 0 ? `calc(80dvh - ${kbInset}px)` : '80dvh',
+          // KB-03: '100%' of the OVERLAY's content box, which is already
+          // 100dvh - kbInset because the overlay reserves the keyboard with
+          // paddingBottom (index.css sets border-box globally). Subtracting
+          // kbInset from the dvh cap here as well double-counted the keyboard:
+          // on a 17 Pro Max that only wasted space, but on an iPhone 17 and
+          // smaller it pushed this sheet's primary button below the fold.
+          maxHeight: kbInset > 0 ? '100%' : '80dvh',
           display: 'flex',
           flexDirection: 'column',
           paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',

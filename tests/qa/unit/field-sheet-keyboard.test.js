@@ -46,10 +46,16 @@ describe.each(SHEETS)('KB-03 — %s', (file, dvh) => {
     expect(overlay).toContain('paddingBottom: kbInset || undefined');
   });
 
-  it(`clamps the panel height so lifting it does not push the header off the top`, () => {
-    // Without this the sheet keeps its full height, gets pushed up by the
-    // keyboard, and loses its title and close button off the top of the screen.
-    expect(src).toContain(`maxHeight: kbInset > 0 ? \`calc(${dvh} - \${kbInset}px)\` : '${dvh}'`);
+  it('clamps the panel to the space above the keyboard, without double-counting it', () => {
+    // '100%' resolves against the OVERLAY's content box, which the overlay's
+    // paddingBottom has already reduced to 100dvh - kbInset. The first version
+    // subtracted kbInset from the dvh cap TOO, so the keyboard was counted
+    // twice: on a 17 Pro Max that merely wasted space, but on an iPhone 17 and
+    // every smaller phone it pushed PhotoNoteSheet's Save button below the fold
+    // (its primary action sits inside the scroller, unlike the other three).
+    // Still bounded, so the header can never be pushed off the top.
+    expect(src).toContain(`maxHeight: kbInset > 0 ? '100%' : '${dvh}'`);
+    expect(src).not.toContain(`calc(${dvh} - `);
   });
 
   it('drops the home-indicator inset while the keyboard covers it', () => {
@@ -62,6 +68,8 @@ describe.each(SHEETS)('KB-03 — %s', (file, dvh) => {
     // useNativeKeyboardInset returns 0 on web and attaches no listener, so every
     // keyboard-aware value above collapses to exactly what shipped before:
     // paddingBottom omitted, maxHeight the plain dvh string, safe-area inset kept.
+    // Each sheet keeps its OWN cap — a photo note needs less height than a full
+    // reading entry, and flattening them to one value would be a UI change.
     expect(src).toContain(`: '${dvh}'`);
     expect(src).toContain("'max(12px, env(safe-area-inset-bottom, 12px))'");
     expect(src).toContain('kbInset || undefined');
