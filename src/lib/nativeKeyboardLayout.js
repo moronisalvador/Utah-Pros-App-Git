@@ -54,6 +54,8 @@ const RESIDUAL_MIN_PX = 4;
 let inset = 0;
 let subscribers = 0;
 let detach = null;
+/** Consumers wanting the value in JS, not just the CSS variable. */
+const listeners = new Set();
 
 function root() {
   return typeof document !== 'undefined' ? document.documentElement : null;
@@ -61,11 +63,15 @@ function root() {
 
 function publish(next) {
   const value = Number.isFinite(next) && next > 0 ? Math.round(next) : 0;
+  if (value === inset) return;            // no redundant writes or re-renders
   inset = value;
   const el = root();
-  if (!el) return;
-  if (value > 0) el.style.setProperty(KB_INSET_VAR, `${value}px`);
-  else el.style.removeProperty(KB_INSET_VAR);
+  if (el) {
+    if (value > 0) el.style.setProperty(KB_INSET_VAR, `${value}px`);
+    else el.style.removeProperty(KB_INSET_VAR);
+  }
+  // One listener throwing must not strand the others or the CSS variable.
+  listeners.forEach((fn) => { try { fn(value); } catch { /* consumer's problem */ } });
 }
 
 export function readKeyboardInset() {
@@ -120,8 +126,15 @@ function onVisibility() {
 
 /**
  * Start observing. Returns an unsubscribe. Safe to call from several screens.
+ *
+ * `onChange` (optional) receives the inset in px whenever it changes, so a
+ * React consumer does not have to poll a CSS variable on every frame.
  */
-export function observeKeyboardInset() {
+export function observeKeyboardInset(onChange) {
+  if (typeof onChange === 'function') {
+    listeners.add(onChange);
+    if (inset > 0) onChange(inset);      // adopt the current state immediately
+  }
   subscribers += 1;
   if (subscribers === 1) {
     if (Capacitor.isNativePlatform()) {
@@ -163,6 +176,7 @@ export function observeKeyboardInset() {
   return function unobserve() {
     if (released) return;          // idempotent — double-unmount must not underflow
     released = true;
+    if (typeof onChange === 'function') listeners.delete(onChange);
     subscribers = Math.max(0, subscribers - 1);
     if (subscribers === 0) {
       if (typeof document !== 'undefined') {

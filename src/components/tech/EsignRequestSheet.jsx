@@ -45,6 +45,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeader } from '@/lib/realtime';
 import { ok, err } from '@/lib/toast';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 
 // ─── SECTION: Constants ──────────────
 const DOC_TYPES = [
@@ -65,6 +66,12 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function EsignRequestSheet({ open, onClose, job, signerPrefill, employeeId, initialDocType = 'work_auth', onSent }) {
   // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
+  // KB-01. This sheet is bottom-docked with its Collect/Text/Email actions in a
+  // footer OUTSIDE the scrollable body, so when the keyboard covered the bottom
+  // the actions and the focused field were unreachable and scrolling could not
+  // recover them. Native only — 0 in a browser, where the sheet renders exactly
+  // as it does today (owner decision: the PWA UI is frozen).
+  const kbInset = useNativeKeyboardInset();
   const [docType, setDocType] = useState(initialDocType);
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
@@ -173,6 +180,9 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
         position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
         animation: 'tech-fade-in 0.15s ease-out',
+        // The sheet is docked to flex-end, so padding here lifts the whole
+        // sheet clear of the keyboard. 0 on web => identical to today.
+        paddingBottom: kbInset || undefined,
       }}
     >
       <div
@@ -183,8 +193,13 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
           width: '100%', maxWidth: 560, background: 'var(--bg-primary)',
           borderTopLeftRadius: 20, borderTopRightRadius: 20,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: '92dvh', display: 'flex', flexDirection: 'column',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          // Shrink by the same amount the overlay lifted, or a tall sheet would
+          // push its own header off the top of the screen.
+          maxHeight: kbInset ? `calc(92dvh - ${kbInset}px)` : '92dvh',
+          display: 'flex', flexDirection: 'column',
+          // The home-indicator inset is meaningless while a keyboard occupies
+          // that space; collapse it so the actions sit flush on the keyboard.
+          paddingBottom: kbInset ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >

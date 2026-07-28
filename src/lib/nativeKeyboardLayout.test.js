@@ -157,6 +157,50 @@ describe('KB-01 subscriber lifecycle', () => {
   });
 });
 
+describe('KB-01 change subscription', () => {
+  it('pushes changes to a listener instead of making it poll', async () => {
+    const seen = [];
+    const off = observeKeyboardInset((px) => seen.push(px));
+    await Promise.resolve();
+    vv.set(460);
+    vv.set(800);
+    expect(seen).toEqual([340, 0]);
+    off();
+  });
+
+  it('does not re-notify when the value has not actually changed', async () => {
+    const seen = [];
+    const off = observeKeyboardInset((px) => seen.push(px));
+    await Promise.resolve();
+    vv.set(460);
+    vv.emit();                       // same geometry, fires again
+    vv.emit();
+    expect(seen).toEqual([340]);     // one notification, not three
+    off();
+  });
+
+  it('stops notifying a listener after it unsubscribes', async () => {
+    const seen = [];
+    const off = observeKeyboardInset((px) => seen.push(px));
+    const keepAlive = observeKeyboardInset();
+    await Promise.resolve();
+    off();
+    vv.set(460);
+    expect(seen).toEqual([]);
+    keepAlive();
+  });
+
+  it('survives a listener that throws, so the others still update', async () => {
+    const seen = [];
+    const bad = observeKeyboardInset(() => { throw new Error('consumer blew up'); });
+    const good = observeKeyboardInset((px) => seen.push(px));
+    await Promise.resolve();
+    expect(() => vv.set(460)).not.toThrow();
+    expect(seen).toEqual([340]);
+    bad(); good();
+  });
+});
+
 describe('KB-01 native adapter', () => {
   it('never measures on native — it uses the reported height', async () => {
     isNativePlatform.mockReturnValue(true);
