@@ -3802,3 +3802,23 @@ TestFlight installation, production-token registration, and the real-device
 foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
+
+## Admin notification presentation Settings (2026-07-29)
+
+The web build now owns an admin-only `/settings/notification-presentation` page in the Settings
+Team group. It edits only code-allowlisted bell/PWA copy and typed destinations, previews with
+synthetic values, keeps native lock-screen copy privacy-locked, and shows bounded audit history.
+The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
+
+`functions/lib/notificationPresentation.js` remains the single registry shared with the reconciled
+native parity work. Runtime consumers in `notify.js` and `apns.js` accept only a validated
+event/surface override and otherwise use code defaults. No arbitrary URL/path, caller route
+parameters, general template execution, audience/preference/consent/provider change, or native
+privacy expansion is possible.
+
+Migration `20260729163127_notification_presentation_settings.sql` adds forced-RLS, service-only
+`notification_presentation_overrides`, `notification_presentation_audit`, and the sole atomic
+service-role mutation RPC. It has passed migration/anonymous-grant/Worker security review plus
+real `qa-staging` denial, replay, conflict, audit, and simultaneous first-write tests; synthetic
+rows were removed. Production database/apply and deployed page status remain pending until the
+release steps complete.

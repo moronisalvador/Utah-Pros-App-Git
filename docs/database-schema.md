@@ -528,6 +528,28 @@ pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback ch
 retained governed local database. Generated schema/RPC reports must continue describing deployed
 state; none of these source migrations is live or `ready_for_apply`.
 
+## Notification presentation settings (2026-07-29)
+
+Migration `20260729163127_notification_presentation_settings.sql` adds two service-only tables:
+
+- `notification_presentation_overrides`, keyed by `(type_key, surface)`, stores only validated
+  title/body templates, an allowlisted route identifier, contract version, revision, and actor/time;
+- `notification_presentation_audit` stores append-only before/after configuration, action, actor,
+  request UUID, revision, and time. It stores no rendered customer/provider payload.
+
+Both tables use forced RLS, explicit `service_role` SELECT policies, and revoke
+`PUBLIC`/`anon`/`authenticated`. The sole writer,
+`mutate_notification_presentation(uuid,text,text,text,jsonb,bigint,uuid) -> jsonb`, is a
+service-role-only `SECURITY DEFINER` that pins `search_path`, revalidates an active internal admin,
+serializes each event/surface, enforces optimistic revision/idempotency, and writes current state
+plus audit atomically. Browser roles have no direct table or RPC path. The paired rollback is
+`supabase/rollbacks/20260729163127_notification_presentation_settings.rollback.sql`.
+
+The exact migration is applied and behavior-verified on isolated project `qa-staging`
+(`uizgwvkvzyldystqrcsk`): browser-role table/RPC denial, replay, stale revision rejection, atomic
+audit, and simultaneous first-write serialization passed. Synthetic rows were removed afterward.
+Production apply status is recorded separately in the release/context entry.
+
 Rollback is not routine compatibility work. It deliberately restores anonymous page-access
 enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary
 token mutation. It requires its explicit unsafe session flag plus a separate owner decision;

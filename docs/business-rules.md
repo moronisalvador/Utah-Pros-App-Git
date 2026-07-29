@@ -329,3 +329,19 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   separately approved, applied, and verified on the shared project: workers accept
   `IMPLIED_CONSENT` only for the direct staff path and the three named
   transactional-service purposes, while the current database does not yet return it.
+
+## Internal notification presentation
+
+- Presentation settings may change only title/body templates and a typed route identifier for a
+  code-owned event/surface. They cannot change audience, recipients, channel defaults/preferences,
+  consent/DND, delivery occurrence identity, provider, or email behavior.
+- Templates support literal text plus exact event-allowlisted `{{variable_name}}` tokens only.
+  There is no expression/general template execution, HTML/Markdown, payload traversal, or URL
+  interpolation.
+- Routes are code-owned identifiers with server-derived parameter contracts, never saved paths or
+  arbitrary URLs. Missing route context or invalid configuration uses the code default.
+- Native lock-screen copy remains code-owned and exposes no configurable variables. Its privacy
+  budget excludes names, message contents, contact details, identifiers, financial amounts,
+  appointment times, and free-form notes; office-only native destinations remain `/`.
+- Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
+  sends a notification. Every save/reset is revision-checked, idempotent, and audited.

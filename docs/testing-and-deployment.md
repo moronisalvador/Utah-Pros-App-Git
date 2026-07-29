@@ -583,3 +583,20 @@ Passing those tests proves that the initial release does not automatically admit
 command. It does not prove offline mutation support. Web/PWA/Capacitor qualification must verify
 that online writes still work and offline attempts are not presented as saved; a future queue
 requires a separately reviewed end-to-end idempotency and crash-consistency contract.
+
+## Notification presentation release order
+
+The admin presentation control plane uses an additive, backward-compatible release:
+
+1. run Worker/library/UI/static migration tests plus web and native builds;
+2. apply and behavior-test the exact migration on `qa-staging`;
+3. commit reviewed source, deploy compatible Worker/UI code to `dev`, then apply the same committed
+   migration to the shared production database;
+4. verify production RLS/grants/function/catalog and the protected page without saving a live
+   override or sending a notification;
+5. promote reviewed `dev → main` and verify the production page/API.
+
+Old code ignores the additive tables. New runtime code fails safely to code-owned presentation if
+the schema/config read is missing or invalid. Application rollback therefore stops consuming
+overrides first and leaves audit data intact; dropping the tables/audit is a separate destructive
+rollback.

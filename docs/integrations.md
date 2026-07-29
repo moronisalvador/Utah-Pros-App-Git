@@ -76,8 +76,12 @@ bindings and provider consoles.
   cohort is a sanitized retryable failure, so the durable inbound-message outbox replays native
   delivery only and does not resend bell, Web Push, or email.
 - `functions/lib/notificationPresentation.js` is the exhaustive native presentation registry. It
-  provides typed privacy-safe copy and field-route selection for the 15 live event types.
-  Arbitrary producer copy/data still cannot enter the APNs alert or route payload.
+  now also projects separately governed typed bell/PWA definitions for the 15 live event types.
+  Admin overrides are validated against event-specific variables and route identifiers before
+  dispatch. Native copy remains privacy-locked with no configurable variables, and arbitrary
+  producer/admin copy, paths, URLs, data, or route parameters still cannot enter the APNs payload.
+  Presentation lookup uses a bounded service client and fails back to code defaults; preview makes
+  no APNs, Web Push, email, SMS, or other provider call.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:

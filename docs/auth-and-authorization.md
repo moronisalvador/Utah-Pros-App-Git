@@ -542,3 +542,16 @@ unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. 
 `docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
 test, rollback, provider action, signing step, and device qualification remains a separate
 owner-authorized gate.
+
+## Notification presentation administration
+
+The UI `AdminRoute` and web-only Settings navigation are usability gates, not the authorization
+boundary. Every `/api/notification-presentation` action first verifies the Supabase session,
+resolves an active employee through shared auth helpers, requires literal `role='admin'`, and
+rejects `is_external !== false` before reading catalog overrides/history or accepting preview/save/
+reset input. Auth and service database calls use bounded fetches.
+
+The browser cannot query or mutate the presentation tables/RPC. The Worker uses the service role,
+and the database writer independently requires the service-role claim plus the supplied actor's
+active/internal/admin row before its atomic write. Preview is a pure synthetic render and performs
+no configuration write or provider call.
