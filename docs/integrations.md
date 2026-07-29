@@ -64,7 +64,11 @@ bindings and provider consoles.
   token-row deletion/re-registration. Explicit APNs 429/5xx refusals release, reclaim, and receive
   one bounded retry; a durable message-notification outbox keeps an exhausted explicit refusal
   retryable in native-only mode so bell/Web Push/email do not duplicate. Timeout/network ambiguity
-  retains the claim and is never auto-replayed.
+  retains the claim and is never auto-replayed. The inbound-message claim RPC returns the durable
+  outbox `id` but not `provider_event_id`; the worker therefore uses that returned outbox `id` as
+  the stable native occurrence across retries. Protected worker telemetry retains only aggregate
+  native counts and allowlisted skip categories, never employee/device identifiers or upstream
+  provider details.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:

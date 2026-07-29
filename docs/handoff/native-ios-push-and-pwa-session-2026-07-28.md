@@ -728,3 +728,69 @@ lockfile Bundler before archiving.
    carry the on preference into B.
 10. Treat every additional test Push as a separate owner-authorized external
    send; never expose tokens, private keys, or notification contents in evidence.
+
+## 12. 2026-07-29 CallRail inbound native Push follow-up
+
+The owner tested a real inbound CallRail text after the native sandbox self-test
+had succeeded. The installed PWA received the notification; the development-
+signed Capacitor app did not.
+
+Privacy-preserving live inspection established:
+
+- the CallRail event projected into `message_notification_outbox`;
+- the outbox row reached `delivered` on its first attempt;
+- the current sandbox-token owner was inside the server-derived effective
+  audience and had active Web Push subscriptions;
+- Web Push reached the PWA; and
+- no `native_push_delivery_claims` row was created for that occurrence.
+
+This isolated the fault before Apple. Repository and live-contract review then
+found that `claim_message_notification_outbox` returns only the durable outbox
+`id`, `type_key`, `payload`, `delivery_attempts`, and `claim_token`. It does not
+return `provider_event_id` or `message_id`. The worker nevertheless passed
+`row.provider_event_id` as `notification_event_id`; JavaScript therefore passed
+`undefined`, and `dispatchToRecipient` correctly failed native delivery closed
+as `missing_notification_event_id` before APNs configuration, token lookup, or
+claim creation. The earlier tests used an impossible synthetic RPC row that
+included `provider_event_id`, masking the defect.
+
+The reviewed local repair on
+`codex/mobile-readiness-callrail-native-diagnostics`:
+
+- uses the returned durable outbox `id` as the stable native occurrence across
+  retries;
+- keeps the live RPC shape frozen and requires no migration;
+- adds privacy-safe aggregate native outcome telemetry to protected
+  `worker_runs.meta`;
+- allowlists skip categories and maps arbitrary upstream detail to `other`;
+- keeps native-only APNs retry behavior, bell/Web Push/email deduplication,
+  audience rules, notification preferences, and generic APNs copy unchanged;
+  and
+- does not touch CallRail webhook verification, customer sends, consent, DND,
+  STOP/START/HELP, or any provider configuration.
+
+Verification on the uncommitted local repair:
+
+- focused outbox/route/APNs tests: 31/31 passed;
+- complete `npm test`: unit 1,356/1,356; worker 1,550/1,550; QA 564/564;
+- `npm run build`: passed;
+- `npm run build:native`: passed;
+- `npm run test:artifacts`: passed with zero unsafe retained files;
+- `npm run preflight:mobile`: zero errors, with expected dirty-tree, Node 26
+  versus CI Node 22, and optional GitHub-delivery warnings;
+- targeted ESLint on all changed JavaScript/test files: zero findings; and
+- full `npm run lint`: still fails on the pre-existing broad baseline (1,115
+  findings), with no finding in the changed files.
+- independent `worker-security-reviewer`: pass with no P0, P1, or P2 findings;
+  it separately reran 17 focused worker/QA tests, changed-file ESLint, and
+  `git diff --check`.
+
+The focused review packet is
+`docs/handoff/callrail-native-push-occurrence-repair-2026-07-29.md`.
+
+At this checkpoint there has been no commit, push, Cloudflare deployment,
+provider call, notification send, Supabase mutation, or device update for this
+follow-up. The existing installed dev app does not require a new binary for
+this worker-only fix. After separate authorization, commit/push and dev
+deployment must finish before one separately authorized real inbound-message
+test can prove an APNs claim and device presentation.

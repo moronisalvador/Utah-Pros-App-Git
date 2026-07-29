@@ -344,7 +344,7 @@ functions/
     message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
     process-callrail-events.js    — Scheduler-secret HTTP recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. Owner-applied migration `20260724002500_callrail_event_recovery_scheduler.sql` is live as ledger version `20260724002500` and supplies the five-minute exact-URL pg_cron/pg_net invoker outside browser execution. Live PATCH response drift then required `20260724051500_claim_callrail_provider_event.sql`, now live as ledger version `20260724051500`: its service-role-only invoker RPC atomically claims and returns one event so a mutation cannot be mistaken for a lost claim. Read-only role and source-fingerprint verification passed; Worker deployment and one stale-event recovery remain open. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
     recover-message-send-attempts.js — Provider-neutral, scheduler-secret recovery of accepted provider attempts whose canonical message insert failed; RPC-only and never imports a provider adapter.
-    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection. An exact-URL pg_net wake-up runs after outbox insert/commit, backed by a five-minute pg_cron due/stale-work safety net; missing config or an empty queue is inert. The lease prevents concurrent dispatch, while bell/push delivery remains at-least-once across worker crashes. `message.inbound` bell links select `/conversations?c=<id>`; Web Push selects the same thread inside `/tech/conversations?c=<id>`.
+    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection. An exact-URL pg_net wake-up runs after outbox insert/commit, backed by a five-minute pg_cron due/stale-work safety net; missing config or an empty queue is inert. The lease prevents concurrent dispatch, while bell/push delivery remains at-least-once across worker crashes. The live claim RPC returns the durable outbox `id` but not `provider_event_id`; that returned `id` is the native Push occurrence identity across retries, preventing the former fail-closed `missing_notification_event_id` skip. Worker telemetry records only aggregate native attempted/sent/skipped counts and allowlisted skip reasons, never recipient/device identifiers or provider details. `message.inbound` bell links select `/conversations?c=<id>`; Web Push and native Push select the same thread inside `/tech/conversations?c=<id>`.
     twilio.js                     — Twilio helpers
 ```
 
@@ -3766,6 +3766,14 @@ It adds no migration or live-database change.
 - One recovered physical PWA installation was confirmed with Push **On**. The
   existing development-signed iPhone build previously received one authorized
   sandbox Push while backgrounded.
+- CallRail inbound notification projection and Web Push were live, but the
+  outbox worker incorrectly read `provider_event_id` from a claim RPC that does
+  not return that column. Native dispatch therefore stopped before token lookup
+  with `missing_notification_event_id`. Source now uses the returned durable
+  outbox `id` as the stable APNs occurrence and exposes privacy-safe aggregate
+  native outcomes in protected worker-run telemetry. This is a worker-only fix;
+  it adds no migration and does not change CallRail customer-message, consent,
+  audience, bell, Web Push, or email behavior.
 
 Still gated: integration/push to `dev`, hosted PWA verification, reviewed
 `dev → main` promotion, TestFlight workflow dispatch/upload, processed
