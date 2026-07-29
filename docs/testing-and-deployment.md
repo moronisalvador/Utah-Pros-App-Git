@@ -521,21 +521,25 @@ all passed after their findings were resolved.
 `supabase/tests/twilio_inbound_notification_parity_isolated.sql` is the rollback-only behavioral
 proof for the post-migration database. It exercises one canonical/unread/outbox effect, replay
 no-op, duplicate-phone STOP, stale START suppression, visible HELP, private MMS, assigned
-recipient/fallback payloads, and service-role-only execution. It has not run. This worktree has no
-`supabase/config.toml`, the local Colima Docker daemon is not running, and the historic migration
-ledger cannot reconstruct the legacy baseline, so `supabase start`/`npm run test:db:local` is not
-currently a reproducible proof. The seeded
-`qa-staging` branch is the safe hosted target; its dashboard `MIGRATIONS_FAILED` badge records the
-superseded creation replay, not current schema health. No branch mutation was authorized in this
-implementation session.
+recipient/fallback payloads, and service-role-only execution. It ran only against isolated
+`qa-staging`; fixtures were transactionally rolled back. This worktree has no `supabase/config.toml`,
+the local Colima Docker daemon is not running, and the historic migration ledger cannot reconstruct
+the legacy baseline, so `supabase start`/`npm run test:db:local` is not currently a reproducible
+local proof.
 
-The remaining database/release order is exact: approve the reviewed migration and rollback; apply
-and run the isolated proof on `qa-staging`; deploy compatible inactive Worker code to `dev` while
-Twilio inbound/provider switching stays untouched; apply the same committed migration to the
-shared project in a separate low-traffic owner window; verify grants/source/idempotency with no
-live send; then obtain separate authorization for webhook/provider configuration and controlled
-test traffic. Production mode, number routing, provider console, Cloudflare bindings, deployments,
-shared-database applies, and traffic remain independent gates.
+On 2026-07-29 the exact reviewed migration was applied to seeded `qa-staging` under ledger version
+`20260729220202`; the rollback-only proof completed without exception and a post-proof query found
+zero fixture residue. Catalog checks proved invoker mode, pinned search path, service-only ACL,
+caller guard, shared phone lock, and outbox projection. The same source was then applied to the
+shared project under ledger version `20260729221116`; its deployed definition hash
+`58b9d8db71347fb317145e683b8919db`, ACL, and configuration exactly match `qa-staging`. Production
+verification was read-only and sent no traffic.
+
+The remaining release order is exact: keep Twilio inbound/provider switching untouched; obtain
+separate authorization for provider webhook/configuration and controlled test traffic; prove signed
+SMS/MMS and status canaries; then promote compatible code through a reviewed `dev → main` release
+before any production provider switch. Production mode, number routing, provider console,
+Cloudflare binding changes, deployment promotion, and traffic remain independent gates.
 
 ### Mobile messaging release acceptance
 

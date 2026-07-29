@@ -592,10 +592,12 @@ owner approval.
 
 Status (2026-07-29): the inactive repository implementation for Twilio inbound durability is
 authored with an additive projection migration, paired rollback, private MMS ingestion, Worker/QA
-tests, and rollback-only isolated SQL behavior proof. It has not been committed, applied to
-`qa-staging` or production, deployed, provider-bound, or exercised with live traffic. A real
-non-production provider-switch proof remains blocked on review, the separately authorized
-staging/apply/deployment/configuration sequence, and owner-approved test traffic.
+tests, and rollback-only isolated SQL behavior proof. It is committed and deployed inactive on
+`dev` at `8a7fd8e`; the exact migration is behavior-verified on `qa-staging` (ledger
+`20260729220202`) and identically applied/catalog-verified on the shared project (ledger
+`20260729221116`). It is not provider-bound and has not processed live Twilio traffic. A real
+non-production provider-switch proof remains blocked on the separately authorized
+configuration/canary sequence and owner-approved test traffic.
 
 - switch a non-production test environment from CallRail to Twilio using only server mode/config;
 - verify clients, conversations, consent, attempts/events, and automation domain require no rewrite;
@@ -612,16 +614,16 @@ The deployed providers and the inactive repository source must be distinguished:
 - **Previously deployed Twilio path:** signed `twilio-webhook.js` request → canonical message
   persistence → direct best-effort `notifyInboundMessage()` →
   `dispatchEvent('message.inbound')`.
-- **Inactive repository path:** exact signed form → MessageSid-deduplicated
+- **Inactive `dev` path:** exact signed form → MessageSid-deduplicated
   `message_provider_events` claim → private MMS ownership → service-only
   `project_twilio_inbound_event` transaction under the shared per-phone lock → unique
   `message_notification_outbox` row → protected outbox worker. The direct notifier module is
   removed in the same source change.
 
-The repository now uses the provider-neutral durability boundary, but that is not live proof.
-Before a Production switch, apply and behavior-test the exact migration on `qa-staging`, deploy
-compatible code before the shared-production apply, and complete the owner-gated signed
-non-production/live canaries below.
+The code and database now use the provider-neutral durability boundary, with rollback-only behavior
+proof on `qa-staging` and matching production catalog evidence. That is not provider/live-traffic
+proof. Before a Production switch, complete the owner-gated signed non-production/live canaries
+below and promote the compatible code through the normal reviewed `dev → main` release.
 
 The cutover implementation must preserve these exact notification facts:
 
