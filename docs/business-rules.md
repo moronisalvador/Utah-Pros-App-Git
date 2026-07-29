@@ -345,3 +345,7 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   appointment times, and free-form notes; office-only native destinations remain `/`.
 - Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
   sends a notification. Every save/reset is revision-checked, idempotent, and audited.
+- Owner delivery diagnostics are deliberately separate from business-event dispatch. They use
+  fixed privacy-safe copy, target only the authenticated owner, and may test bell, Web Push,
+  native APNs, or transactional email independently of personal notification preferences. They
+  never create a business occurrence and never include SMS/MMS.

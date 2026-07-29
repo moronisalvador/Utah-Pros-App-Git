@@ -3840,3 +3840,21 @@ rejects an unauthenticated request with `401` JSON, the Settings route returns t
 route-specific JavaScript and CSS assets have correct content types, and the deployment smoke
 fetched all 34 boot assets successfully. No live override/configuration was saved and no provider
 or test notification was sent.
+
+### Owner notification delivery tests
+
+Dev Tools → Advanced → Notifications now pairs the presentation editor's synthetic all-event
+preview with fixed owner-self delivery diagnostics. `POST /api/notification-test` accepts only
+`{ channel, request_id }`, requires `requireOwner()`, derives the recipient from the authenticated
+employee, and fixes all copy/routes server-side. The four channels are an owner-targeted bell row,
+the owner's enrolled browser subscriptions, the owner's environment-matched iPhone token, and the
+owner's employee email. SMS/MMS and real business events are structurally absent.
+
+The UI can run one channel or exactly one of each. APNs uses the request UUID as its durable
+delivery identity; the shared email helper now optionally places a caller-supplied stable key in
+Resend's HTTP `Idempotency-Key` header without adding it to the message payload. The additive
+service-only `notification_delivery_diagnostic_claims` ledger claims the employee/channel/request
+tuple before every side effect and replays the bounded result after a lost response. Browser-expired
+subscriptions are pruned; provider errors return only bounded diagnostic reasons. Source and fake
+provider tests do not prove live presentation, and the migration plus compatible Worker/UI must be
+separately authorized, deployed, and verified before the controls are used.

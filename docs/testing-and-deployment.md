@@ -613,3 +613,21 @@ shell, both route-specific notification presentation assets have the correct Jav
 content types, and the 34-asset production deployment smoke passed. During the earlier dev
 verification, the smoke test detected a stale HTML response cached for a JavaScript chunk; a zone
 cache purge removed it, and the complete no-cache-bust smoke rerun passed.
+
+## Notification delivery diagnostic qualification
+
+The owner-only delivery tester has two separate proof layers:
+
+1. Credential-free Worker tests prove denial before side effects, strict request-field and channel
+   allowlists, fixed self-recipient/copy/routes, durable claim/replay before every side effect,
+   browser-subscription pruning, stable APNs and Resend request identities, and sanitized provider
+   failures.
+2. Live delivery remains one separately owner-authorized send per selected channel. A local test
+   double, successful build, or protected endpoint response is not evidence that a bell, browser,
+   iPhone, or inbox presented the notification.
+
+The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
+diagnostic for the owner account. It never expands across every event type and never sends SMS/MMS.
+Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
+migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
+contacting any provider.
