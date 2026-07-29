@@ -619,15 +619,24 @@ cache purge removed it, and the complete no-cache-bust smoke rerun passed.
 The owner-only delivery tester has two separate proof layers:
 
 1. Credential-free Worker tests prove denial before side effects, strict request-field and channel
-   allowlists, fixed self-recipient/copy/routes, durable claim/replay before every side effect,
-   browser-subscription pruning, stable APNs and Resend request identities, and sanitized provider
-   failures.
+   allowlists, the 15-key event allowlist, fixed self-recipient/copy/routes, durable claim/replay
+   before every side effect, browser-subscription pruning, distinct typed identities, stable APNs
+   and Resend request identities, and sanitized provider failures.
 2. Live delivery remains one separately owner-authorized send per selected channel. A local test
    double, successful build, or protected endpoint response is not evidence that a bell, browser,
    iPhone, or inbox presented the notification.
 
 The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
-diagnostic for the owner account. It never expands across every event type and never sends SMS/MMS.
+diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
+authoritative catalog and requires exactly 15 entries, then sends each type to the owner bell, PWA,
+and environment-matched iPhone: 45 event/surface checks. Each PWA check fans out to every enrolled
+owner browser subscription, so the provider delivery count may be greater than 45. It sends no
+email/SMS/MMS and creates no business occurrence. Separate Web Push tags prevent different types
+from collapsing into one displayed notification; three surface calls run in parallel per event
+while events run sequentially to bound Worker/provider concurrency. The synthetic sweep requires
+each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
+qualifies presentation and transport, not whether a source workflow is activated or emits.
+
 Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
 migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
 contacting any provider.
