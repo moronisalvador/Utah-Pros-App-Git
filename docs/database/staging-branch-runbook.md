@@ -7,9 +7,17 @@ production (141 public tables / 400 functions / 219 policies on both), grants ve
 against it on every PR. **Known tail:** `auth.users` is empty on a schema-only seed, so
 identity/fixture-dependent tests fail-as-anon or self-skip — gated by the shrink-only baseline in
 `scripts/qa/db-lane-baseline.json` (21 failed / 204 skipped of 357 at first light; 132 enforced).
-Next step to full green: a reviewed test-fixture seed (test auth users + minimal rows), then
-ratchet the baseline to zero and delete it. The branch's dashboard `MIGRATIONS_FAILED` badge is a
-cosmetic artifact of creation (§1) — the seeded schema is what's real.
+**Fixture identities are seeded** (2026-07-29, `scripts/qa/seed-branch-fixtures.sql`): three
+standing QA people — `qa-admin@` / `qa-office@` / `qa-tech@upr-qa.test` (admin / office /
+field_tech), password in the script, each bound to an active `employees` row, plus one active
+demo-sheet schema. Verified end-to-end: password grant → JWT → `get_my_employee_profile()`
+resolves the fixture employee. Tests authenticate via
+`supabase/tests/helpers/qaFixtures.mjs` (`signInFixture('admin').rpc(...)`) — reference
+conversion: `settings_f_demo_schema_delete.test.js` (3/3 green against the branch). Path to full
+green: convert the remaining anon-era suites with that pattern, add their reference rows to the
+seed script, ratchet the baseline down each time, delete it at zero. The branch's dashboard
+`MIGRATIONS_FAILED` badge is a cosmetic artifact of creation (§1) — the seeded schema is what's
+real.
 
 ## 1. What happened and what we learned (2026-07-29)
 

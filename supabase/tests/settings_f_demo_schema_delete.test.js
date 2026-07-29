@@ -16,8 +16,8 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated REST client — fine for a
- *              script/test, not a component; see CLAUDE.md rule 3)
+ *   Internal:  ./helpers/qaFixtures.mjs (signs in as the QA admin fixture —
+ *              these RPCs are no longer anon-executable post-hardening)
  *   Data:      reads  → demo_sheet_schemas (via get_active_demo_schema)
  *              writes → demo_sheet_schemas (a throwaway draft via
  *                       upsert_demo_schema, deleted again via delete_demo_schema)
@@ -35,12 +35,20 @@
  *     removed again in the same test, so no lasting drift.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { describe, it, expect, beforeAll } from 'vitest';
+import { signInFixture } from './helpers/qaFixtures.mjs';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// These RPCs are (correctly) no longer anon-executable after the anon-closure
+// hardening, so the suite signs in as the standing QA admin fixture
+// (scripts/qa/seed-branch-fixtures.sql) and calls them as the app would.
 describe.skipIf(!hasCreds)('delete_demo_schema — safe deletion (integration)', () => {
+  let db;
+  beforeAll(async () => {
+    db = await signInFixture('admin');
+  });
+
   it('refuses to delete the active version', async () => {
     const rows = await db.rpc('get_active_demo_schema');
     const active = Array.isArray(rows) ? rows[0] : rows;
