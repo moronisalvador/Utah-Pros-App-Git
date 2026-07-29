@@ -16,7 +16,11 @@ bugs that reached techs.
    `npm run check:tooling-generated`, `npm run validate:tooling`, and `npm run test:tooling` — the
    drift check is what makes the neutral-source rule (edit `tooling/`, regenerate; never hand-edit a
    generated `.claude`/`.agents`/`.codex` adapter) mechanically enforced rather than advisory.
-2. **Reviewer gauntlet** (run the ones relevant to the diff; a manifest may add more):
+2. **Reviewer gauntlet** (run the ones relevant to the diff; a manifest may add more).
+   **Preferred mechanism:** the committed `close-out-gauntlet` workflow
+   (`.claude/workflows/close-out-gauntlet.js`) — it maps changed files to the applicable
+   reviewers below, runs them in parallel, adversarially verifies blocker/major findings, and
+   returns one verdict. Invoking the agents individually remains valid for a narrow diff.
    - `upr-pattern-checker` — CLAUDE.md non-negotiables (always, on any `src` change).
    - `design-consistency-checker` — tokens/kits/components (any `src/pages`|`src/components` change).
    - `review-animations` — the **motion feel-gate** · **MANDATORY** for any PR touching
