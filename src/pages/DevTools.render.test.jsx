@@ -54,4 +54,17 @@ describe('DevTools ops-health deep link', () => {
     expect(output).toContain('Provider event queue marker');
     expect(output).not.toContain('Loading flags');
   });
+
+  it('opens the owner notification diagnostics from its exact advanced URL', () => {
+    const output = renderToStaticMarkup(
+      <MemoryRouter initialEntries={['/dev-tools?tab=advanced&sub=notifications']}>
+        <DevTools />
+      </MemoryRouter>,
+    );
+
+    expect(output).toContain('Owner notification delivery tests');
+    expect(output).toContain('Test all four channels');
+    expect(output).toContain('Preview every notification type');
+    expect(output).not.toContain('RPC Test Runner');
+  });
 });
