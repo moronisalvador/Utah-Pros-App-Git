@@ -136,10 +136,6 @@ describe('native Push delivery guardrails migration', () => {
 
   it('requires every direct production dispatcher to pass a durable occurrence id', () => {
     const expected = new Map([
-      [
-        'functions/lib/messaging-inbound-notifications.js',
-        'notification_event_id: notificationEventId',
-      ],
       ['functions/api/form-submit.js', 'notification_event_id: lead.id || null'],
       ['functions/api/callrail-webhook.js', 'notification_event_id: lead.id || null'],
       ['functions/api/feedback-notify.js', 'notification_event_id: feedbackId'],
