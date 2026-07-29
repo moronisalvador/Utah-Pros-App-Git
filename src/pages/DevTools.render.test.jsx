@@ -37,6 +37,9 @@ vi.mock('@/components/ProviderEventOps', () => ({
 vi.mock('@/components/DeliverabilityHealth', () => ({
   default: () => <div>Deliverability marker</div>,
 }));
+vi.mock('@/lib/realtime', () => ({
+  getAuthHeader: async () => ({}),
+}));
 
 const { default: DevTools } = await import('./DevTools.jsx');
 

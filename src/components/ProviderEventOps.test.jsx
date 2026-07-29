@@ -16,6 +16,11 @@
 
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/lib/realtime', () => ({
+  getAuthHeader: async () => ({}),
+}));
+
 import { ProviderEventList } from './ProviderEventOps.jsx';
 
 const EVENT = {
