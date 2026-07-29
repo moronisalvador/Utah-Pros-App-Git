@@ -1,0 +1,7 @@
+{
+  "note": "Blocking bundle budget enforced by scripts/check-bundle-budget.mjs in CI. Measured 2026-07-29: totalJsGzip 859938, entryChunkGzip 103767, indexCssRawBytes 590195, builtCssGzip 64805. Ceilings give ~5-10% headroom except indexCssRawBytes, which is the owner-approved 2026-07-27 ceiling from perf-budget (595000; only ~4.8KB headroom remains — the CSS split initiative is the fix, not a re-baseline). Lowering a ceiling is always welcome; raising one is a conscious, owner-visible act in its own commit.",
+  "totalJsGzipMax": 900000,
+  "entryChunkGzipMax": 115000,
+  "indexCssRawBytesMax": 595000,
+  "builtCssGzipMax": 72000
+}
