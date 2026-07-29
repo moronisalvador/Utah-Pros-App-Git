@@ -54,6 +54,7 @@ const Team = lazyRetry(() => import('@/pages/settings/Team'));
 const Roles = lazyRetry(() => import('@/pages/settings/Roles'));
 const PageAccess = lazyRetry(() => import('@/pages/settings/PageAccess'));
 const NotificationDefaults = lazyRetry(() => import('@/pages/settings/NotificationDefaults'));
+const NotificationPresentation = lazyRetry(() => import('@/pages/settings/NotificationPresentation'));
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
@@ -169,6 +170,7 @@ export default Object.freeze({
   MyAccount,
   NewBuildSimulator,
   NotificationDefaults,
+  NotificationPresentation,
   NotificationsSettings,
   OOPPricing,
   PageAccess,

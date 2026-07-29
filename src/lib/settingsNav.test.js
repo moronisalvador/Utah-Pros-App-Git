@@ -53,6 +53,18 @@ describe('isSettingsItemVisible — per-item gates', () => {
     expect(isSettingsItemVisible(item('Connections', 'integrations'), ctx)).toBe(true);
   });
 
+  it('keeps the desktop-only notification presentation editor out of native Settings', () => {
+    const presentation = item('Team', 'notification_presentation');
+    const ctx = {
+      canAccess: grants('settings'),
+      employee: admin,
+      isMoroni: false,
+      isNativeBuild: true,
+    };
+    expect(isSettingsItemVisible(presentation, ctx)).toBe(false);
+    expect(isSettingsItemVisible(presentation, { ...ctx, isNativeBuild: false })).toBe(true);
+  });
+
   it('non-admin office cannot see admin-only Team', () => {
     const ctx = { canAccess: grants('settings'), employee: office, isMoroni: false };
     expect(isSettingsItemVisible(item('Team', 'team'), ctx)).toBe(false);
