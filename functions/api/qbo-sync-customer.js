@@ -34,8 +34,17 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
   const payload = mapContactToCustomer(contact);
 
   try {
-    // Dedup: match an existing customer by email, then by exact display name.
+    // Dedup: match an existing customer by email, name (both conventions), then phone.
     const match = await findExistingCustomer(env, contact, payload);
+
+    // Distinct QBO customers both look right — never guess on a money path, and
+    // never create a third. Surface it for a human to link manually.
+    if (match?.ambiguous) {
+      const list = match.candidates.map((c) => `${c.DisplayName} (#${c.Id})`).join(', ');
+      const err = `Multiple QuickBooks customers could match: ${list} — link manually.`;
+      if (!dryRun) await db.update('contacts', `id=eq.${contact.id}`, { qbo_sync_error: err.slice(0, 500) });
+      return { id: contact.id, name: contact.name, error: err };
+    }
 
     if (dryRun) {
       return match
@@ -127,6 +136,10 @@ export async function onRequestPost(context) {
         results.push(await syncOne(env, db, c, { dryRun }));
       }
     } else if (body.contact_id) {
+      // Reject non-UUID ids before they reach a PostgREST filter string.
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(body.contact_id))) {
+        return jsonResponse({ error: 'contact_id must be a UUID' }, 400, request, env);
+      }
       const rows = await db.select('contacts', `id=eq.${body.contact_id}&limit=1`);
       if (!rows || !rows[0]) return jsonResponse({ error: 'Contact not found' }, 404, request, env);
       results.push(await syncOne(env, db, rows[0], { dryRun }));
