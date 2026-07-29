@@ -2,11 +2,12 @@
 
 **Last verified:** 2026-07-28
 
-Native push is wired end to end in the repository. Apple and Cloudflare sender
-configuration now exists, but enrollment remains deliberately off until the two
-focused Push migrations are qualified and separately applied. The broader S1h
-program remains deferred. No deployment, device enrollment, provider delivery,
-or push-tap proof has occurred.
+Native push is wired end to end and the focused database boundary is live. Apple
+and Cloudflare sender configuration exists, the compatible `dev` bundle is
+deployed, and the owner's development-signed iPhone build enrolled a fresh APNs
+sandbox token. The broader S1h program remains deferred. One authorized
+background-delivery and tap-to-route proof is the remaining Debug activation
+check; TestFlight remains a separate release gate.
 
 ## Already built — do not rebuild
 
@@ -97,41 +98,48 @@ failure rather than an explicit configuration error.
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
 
+## Live activation evidence
+
+The owner separately authorized and the operator applied the two reviewed
+migrations in order on 2026-07-28:
+
+| Source | Live ledger version | SHA-256 |
+|---|---:|---|
+| `20260728223000_native_apns_token_boundary.sql` | `20260729021021` | `4936264f1fe8484cfb399f4f9fcd3abfeb39ebd2c3c034e27a4d4fbab543666f` |
+| `20260728224000_native_push_delivery_guardrails.sql` | `20260729021050` | `8457889fb77b5681e63e4143728a18a625523483494cecf5e27ee8d00c9df8ca` |
+
+Their reviewed rollback SHA-256 values are respectively
+`b584ecc1f3ed834828030866b98e2cec8c1d19ec26bfd17df17dcf387782e273`
+and
+`a19b40a81e2fa04b453dfdecc0206f970524b75f9cb2393335dd137d135fc079`.
+Live catalog checks passed the new token constraint, selector-free
+authenticated RPC ACLs, anonymous denial, forced RLS, service-only delivery
+claims, fail-closed retained preference policy, and direct-table denial.
+Security advisors retained the intentional authenticated `SECURITY DEFINER`
+warnings for caller-checking RPCs. Performance advisors reported an unindexed
+`native_push_delivery_claims.employee_id` foreign key and an unused new
+`claimed_at` index; those are review follow-ups, not evidence that the boundary
+failed.
+
+Compatible source `d5d08cb48ed083d45108dce018969df760076f55` is deployed
+to `dev`. Cloudflare's hosted web flag remains `false`; this is intentional
+because enrollment is a native-build concern. The locally installed Debug build
+used exact `VITE_NATIVE_PUSH_ENABLED=true` and `VITE_APNS_ENV=sandbox`, carried
+the development APNs entitlement, launched on the owner's iPhone 17 Pro Max, and
+registered a fresh redacted sandbox token. Older environment-less token rows
+remain inert.
+
 ## Remaining activation sequence
 
-1. Apply and live-verify the already-isolated
-   `20260728223000_native_apns_token_boundary.sql`, followed by
-   `20260728224000_native_push_delivery_guardrails.sql`. Together they leave
-   environment-unknown tokens inert, expose only selector-free redacted
-   enrollment, cap installations, contain notification preferences to the
-   authenticated owner, claim each source-event/device-fingerprint delivery
-   durably with a 90-day replay window that survives token-row deletion and
-   bounded expired-claim cleanup, and
-   compare-and-delete only the stale token version Apple rejected.
-   Every production dispatcher must carry its persisted source occurrence;
-   missing identity skips APNs. Explicit Apple 429/5xx rejection receives one
-   release/reclaim retry; the message-notification outbox persists an exhausted
-   explicit refusal as native-only so already-delivered bell/Web Push/email
-   channels do not repeat. A timeout/network ambiguity keeps the claim and is
-   never automatically replayed. The first migration pins the exact legacy RPC
-   contracts and validates its new check constraint through the low-lock
-   `NOT VALID` → `VALIDATE` sequence. The companion retains the legacy
-   preference policy object with fail-closed predicates, gives the private
-   claim table an explicit service-only policy, and refuses every new-object
-   name collision. Its exact-contract rollback is deliberately unsafe and
-   requires an explicit operator session flag.
-2. Set `VITE_APNS_ENV=sandbox` for native Preview/debug builds and
-   `VITE_APNS_ENV=production` for TestFlight/App Store. Change
-   `VITE_NATIVE_PUSH_ENABLED` to exact lowercase `true` only in compatible
-   builds.
-3. Deploy compatible `dev` and production bundles, build the final clean-source
+1. Put the installed Debug app in the background, use the owner-only Dev Tools
+   control exactly once, observe the iOS banner, and tap it to prove
+   `/tech/settings` routing. Record only the bounded result; never expose the
+   token or private key.
+2. Deploy the compatible production bundle, build the final clean-source
    signed native archive, and verify the archive carries
    `aps-environment=production`. The local qualification archive above proves
    the signing lane, but does not replace this final-source artifact.
-4. Install the new build on a physical iPhone, accept the permission prompt,
-   confirm an owner-bound `device_tokens` row, trigger one authorized test
-   notification, and prove background banner plus tap-to-route.
-5. Upload that exact verified IPA to internal TestFlight and repeat the
+3. Upload that exact verified IPA to internal TestFlight and repeat the
    registration/delivery/tap proof from the TestFlight install.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,

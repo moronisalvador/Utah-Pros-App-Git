@@ -9245,18 +9245,36 @@ App Store Connect authentication-key gate only; the remaining signing/build secr
 artifact, and owner-authorized provider upload are still separate gates. No provider upload
 occurred.
 
-Push remains inactive by design. The three S1h dependencies are already live as
+The focused native-push database boundary is now live. The three S1h dependencies were already live as
 `20260727154506 mobile_employee_identity_authority`,
 `20260727233845 upsert_employee_page_access_provenance_reconciliation`, and
 `20260728002105 mobile_employee_identity_containment`; never replay them. Only
 `20260727022920_mobile_personal_ownership_boundary.sql` remains absent and
-deferred. Push instead requires the focused, ordered
+deferred. The focused, ordered
 `20260728223000_native_apns_token_boundary.sql` and
-`20260728224000_native_push_delivery_guardrails.sql`. The latter contains the
+`20260728224000_native_push_delivery_guardrails.sql` applied separately as live
+ledger versions `20260729021021` and `20260729021050`. The latter contains the
 notification-preference owner boundary, durable source-event/device claims,
 bounded fanout, compare-and-delete pruning, and service-role-only claim data.
-After that focused apply, the broad S1h preflight is expected to refuse its old
+Live postconditions proved selector-free authenticated enrollment, anonymous
+denial, forced RLS, service-only claim data, and direct-table denial. A
+compatible `dev` bundle is deployed, and the owner's development-signed iPhone
+build enrolled a fresh APNs sandbox token while older environment-less rows
+remain inert. The one authorized background banner and tap-to-`/tech/settings`
+test is still pending. Production promotion, a clean-source distribution
+archive, TestFlight upload/install, and production APNs proof remain separate
+gates. After this focused apply, the broad S1h preflight is expected to refuse its old
 input state until S1h is deliberately reconciled and re-qualified. Fresh live
-preflight, checksum-pinned apply, post-apply proof, compatible deploy,
-enrollment flip, physical delivery/tap test, signed distribution archive, and
-TestFlight upload/install remain separate gates.
+preflight is required before any future S1h apply.
+
+The reported field PWA `TechMore` failure carried release
+`c9060b299a5a0430ad4814267322de51a2d9e07f`, while current `dev` is
+`d5d08cb48ed083d45108dce018969df760076f55`. Current hosted `TechMore` chunk
+resolution returns JavaScript successfully, the current page renders for field
+and admin-mobile identities in a focused regression test, and the Web Push
+feature flag, VAPID endpoint, authenticated subscription RPC ACLs, and the
+owner's existing subscriptions remain present. This evidence points to an old
+installed-PWA shell/chunk rather than the native APNs boundary disabling Web
+Push. The existing **Clear cache & reload** recovery preserves authentication
+and subscription state; physical PWA confirmation after that recovery remains
+the release-facing proof.
