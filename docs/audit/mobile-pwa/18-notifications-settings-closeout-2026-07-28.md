@@ -7,7 +7,9 @@ surface. This is local Chromium evidence, not iPhone/TestFlight proof.
 # Notifications Settings browser close-out — 2026-07-28
 
 **Branch:** `codex/mobile-readiness-native-usability`
-**Base / local `origin/dev`:** `bf45ae00fd96e8b115220fab2d2920472b9ca533`
+**Original base:** `bf45ae00fd96e8b115220fab2d2920472b9ca533`
+**Reconciled `origin/dev`:** `8e1cf9cceba72f027caf91debded4afb6841b276`
+**Merge commit:** `10d8c70ec4cb1582cfa7644ef1e9862290e78bf8`
 **Viewport:** 390 × 844, touch/mobile context, reduced motion
 **Data boundary:** synthetic in-memory modules; every non-local request blocked
 
@@ -83,11 +85,34 @@ only the repository's explicit credential-free child environment.
 The owned wrapper reported `Verified owned process group ... is gone.` after
 the browser and Vite server closed.
 
+The exact command was rerun after the final `origin/dev` merge and after the
+motion feel-gate refinement. Both post-merge runs retained the same contract:
+390×844, 48px actions, zero clipping/overflow, real resume hook, 31 seconds
+hidden, zero scroll drift, press transform present under ordinary motion and
+absent under reduced motion, zero allowed external requests, and verified
+owned-process cleanup.
+
+## Motion feel-gate
+
+| Before | After | Why |
+| --- | --- | --- |
+| Settings buttons transitioned `transform`, background, border, and text color | Transition only `transform` for 120ms using the existing strong custom curve | The purpose is tactile press feedback. Removing paint-triggering color transitions keeps this high-frequency interaction crisp and GPU-only. |
+
+**Verdict: Approve.** The final press feedback has one justified purpose,
+uses an interruptible CSS transition, stays inside the 100–160ms button budget,
+scales from 1 to 0.97, and removes movement under reduced motion. It has no
+keyframe, weak/ease-in curve, layout-property animation, hover motion, or
+trigger-origin problem. Chromium proves the behavior and regression contract;
+real WKWebView feel remains part of the TestFlight device matrix.
+
 ## Corrected attempts
 
 - The first sandboxed attempt could not bind `127.0.0.1:4176` (`EPERM`); the
   approved final runner uses the repository's governed
   `http://127.0.0.1:4173` fixture origin.
+- The first post-merge sandboxed attempt likewise could not bind
+  `127.0.0.1:4173` and verified its owned process group was gone. The exact
+  approved localhost rerun passed.
 - The first approved launch found no Playwright-managed browser; the runner now
   uses installed Chrome on this Mac and falls back to Playwright Chromium when
   available elsewhere.

@@ -558,8 +558,8 @@ were intentional overlapping contracts: the lean `UPR-Web-Context.md`
 restructure and lazy Spanish/Portuguese locale loading in the native
 notification Settings test. Resolution preserves `dev`'s lean context and
 `ensureLanguage()` behavior while retaining the reviewed native Push controls
-and tests. Post-merge verification and the exact merge tip are recorded with
-the publication outcome.
+and tests. The reconciled merge commit is
+`10d8c70ec4cb1582cfa7644ef1e9862290e78bf8`.
 
 The final TestFlight workflow now builds the native bundle only with
 `VITE_NATIVE_API_ORIGIN=https://utahpros.app` and
@@ -608,9 +608,10 @@ Focused post-remediation and final integrated verification:
 - APNs/notification-dispatch worker lane — 83 passed;
 - native navigation QA lane — 9 passed;
 - targeted ESLint across changed executable files — zero findings;
-- `npm test` — 1,348 unit, 1,548 Worker, and 564 QA tests passed
+- `npm test` — 1,356 unit, 1,548 Worker, and 564 QA tests passed
   with zero unexpected skips after the static navigation contract was updated
-  to require the employee-bound action resolver;
+  to require the employee-bound action resolver and the reconciled locale test
+  adopted `dev`'s lazy `ensureLanguage()` contract;
 - repository-wide `npm run lint` still fails the unrelated baseline with 2,964
   findings (1,375 errors, 1,589 warnings); the explicit changed-file ratchet
   above is clean;
@@ -634,8 +635,8 @@ Focused post-remediation and final integrated verification:
   +3,030 B (+4,019 B gzip), `TechSettings` +2,156 B (+685 B gzip), `index`
   +1,751 B (+929 B gzip), and `realtime` +240 B (+222 B gzip; tied at
   +240 B raw with `supabase` and `SignPage`); the final scoped 48px
-  failure-action and tokenized press-motion rules added 522 B raw / 84 B gzip
-  to the built CSS. Source `index.css` is 590,813 B, below the 595,000 B
+  failure-action and GPU-only press-motion rules added 420 B raw / 63 B gzip
+  to the built CSS. Source `index.css` is 590,687 B, below the 595,000 B
   ceiling, and no new render-blocking asset was emitted;
 - production-configured native Vite build — passed with exact production API,
   Push enabled, production APNs, and a local preflight release marker;
@@ -648,10 +649,30 @@ Focused post-remediation and final integrated verification:
   in
   `docs/audit/mobile-pwa/17-native-push-testflight-preflight-2026-07-28.md`.
 
+Post-merge requalification against `origin/dev` `8e1cf9c`:
+
+- focused lazy-locale/native Settings test — 13 passed; targeted ESLint clean;
+- `npm run build` — passed with 693 modules;
+- blocking `npm run report:bundle-size -- --strict` — passed. Entry-graph
+  JavaScript is advisory-over-target at 258,516 B gzip but remains 2,809 B
+  below the failure line; the heaviest route is 163,412 B raw under 179,200 B;
+  final built CSS is 433,174 B raw / 63,191 B gzip;
+- the exact bounded 390×844 browser harness passed again after the merge and
+  final motion refinement with 48px actions, zero clipping/overflow, real
+  31-second resume, zero scroll drift, ordinary/reduced-motion behavior, zero
+  allowed external requests, and verified owned-process cleanup;
+- L0 bridge — 14/14 passed; tooling adapters current; tooling governance had
+  zero errors/warnings; tooling tests 23/23 passed; and
+- the newly inherited `review-animations` feel-gate found and removed
+  paint-triggering color transitions from the Settings press feedback. Final
+  verdict: **Approve**. Exact table and device limitation are retained in
+  `docs/audit/mobile-pwa/18-notifications-settings-closeout-2026-07-28.md`.
+
 The continuation source is committed in the 16 small logical commits listed
-above. This report is finalized in the following documentation commit; its
-single owner-authorized branch push is intentionally performed only after that
-commit, so the real remote outcome must be reported alongside this packet.
+above, the evidence handoff commit `2b94522`, and the ordinary current-`dev`
+merge `10d8c70`. The final motion/evidence commit follows this report update;
+the single owner-authorized branch push is intentionally performed only after
+that commit, so the real remote outcome must be reported alongside this packet.
 This continuation has not been integrated into `dev`, deployed, promoted to
 `main`, or uploaded to TestFlight. After the reviewed source verification, the
 owner separately authorized a physical-device update.
