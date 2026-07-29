@@ -136,6 +136,10 @@ export async function onRequestPost(context) {
         results.push(await syncOne(env, db, c, { dryRun }));
       }
     } else if (body.contact_id) {
+      // Reject non-UUID ids before they reach a PostgREST filter string.
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(body.contact_id))) {
+        return jsonResponse({ error: 'contact_id must be a UUID' }, 400, request, env);
+      }
       const rows = await db.select('contacts', `id=eq.${body.contact_id}&limit=1`);
       if (!rows || !rows[0]) return jsonResponse({ error: 'Contact not found' }, 404, request, env);
       results.push(await syncOne(env, db, rows[0], { dryRun }));

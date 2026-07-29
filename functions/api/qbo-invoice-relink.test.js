@@ -50,7 +50,7 @@ vi.mock('../lib/quickbooks.js', () => ({
 }));
 
 const baseInvoice = {
-  id: 'inv-1', job_id: 'job-1', contact_id: 'c-1', qbo_invoice_id: null,
+  id: '00000000-0000-4000-8000-00000000aaaa', job_id: 'job-1', contact_id: 'c-1', qbo_invoice_id: null,
   total: 100, adjusted_total: null, status: 'draft', sent_at: null, due_date: null,
   estimate_id: null, claim_number: null, qbo_doc_number: null,
 };
@@ -60,7 +60,7 @@ vi.mock('../lib/supabase.js', () => ({
   supabase: () => ({
     select: async (table, q) => {
       if (table === 'invoices' && q.startsWith('id=eq.')) return [invoiceRow];
-      if (table === 'invoices') return [{ id: 'inv-1', created_at: '2026-07-01' }];
+      if (table === 'invoices') return [{ id: '00000000-0000-4000-8000-00000000aaaa', created_at: '2026-07-01' }];
       if (table === 'jobs') return [{ division: 'water', job_number: 'W-2607-002', claim_id: null, address: null, city: null, state: null, zip: null, date_of_loss: null }];
       if (table === 'contacts') return [{ qbo_customer_id: '583', name: 'Emily Bailey' }];
       if (table === 'invoice_line_items') return [];
@@ -81,7 +81,7 @@ const STALE = () => {
 };
 const req = () => ({
   url: 'https://dev.utahpros.app/api/qbo-invoice',
-  json: async () => ({ invoice_id: 'inv-1' }),
+  json: async () => ({ invoice_id: '00000000-0000-4000-8000-00000000aaaa' }),
   headers: new Headers(),
 });
 

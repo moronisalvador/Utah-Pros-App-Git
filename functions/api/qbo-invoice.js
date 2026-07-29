@@ -61,6 +61,11 @@ export async function onRequestPost(context) {
   try { body = await request.json(); } catch { /* empty */ }
   const invoiceId = body.invoice_id;
   if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
+  // Reject non-UUID ids before they reach a PostgREST filter string (a value
+  // containing '&' would splice extra query params into the filter).
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(invoiceId))) {
+    return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
+  }
 
   const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
   if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);

@@ -243,15 +243,29 @@ function escQ(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-// Runs a Customer query, returns all matches (or [] on no match / error).
+// Runs a Customer query, returns all matches ([] means QBO answered "none").
+// FAILS CLOSED: a non-OK response or unparseable body THROWS — it must never
+// read as "no match", because callers decide create-vs-link on this result and
+// a swallowed transient failure would silently mint a duplicate customer
+// (worker-security-reviewer finding, 2026-07-29).
 export async function queryCustomers(env, whereClause, max = 10) {
   const q = `SELECT Id, DisplayName, GivenName, FamilyName, PrimaryEmailAddr, PrimaryPhone FROM Customer WHERE ${whereClause} MAXRESULTS ${max}`;
   const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const tid = res.headers.get('intuit_tid') || null;
   if (!res.ok) {
-    console.warn('QBO customer query failed', JSON.stringify({ status: res.status, intuit_tid: res.headers.get('intuit_tid') || null }));
-    return [];
+    const e = new Error(`QBO customer query failed (${res.status}) — cannot decide link-vs-create, try again`);
+    e.status = res.status;
+    e.intuitTid = tid;
+    throw e;
   }
-  const data = await res.json().catch(() => ({}));
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    const e = new Error('QBO customer query returned an unreadable body — cannot decide link-vs-create, try again');
+    e.intuitTid = tid;
+    throw e;
+  }
   return data?.QueryResponse?.Customer || [];
 }
 
@@ -285,20 +299,25 @@ export function displayNameVariants(name) {
 //   1. exact email;
 //   2. exact DisplayName in either convention ("First Last" / "Last, First");
 //   3. same family name + same phone digits (candidate scan).
-// Returns { customer, matchedBy } on ONE confident match, null on none, and
-// { ambiguous: true, candidates } when distinct customers both look right —
-// a money path never guesses between two people.
-export async function findExistingCustomer(env, contact, payload) {
+// Returns { customer, matchedBy } on ONE confident match, null when QBO
+// answered "none" for every signal, and { ambiguous: true, candidates } when
+// distinct customers both look right — a money path never guesses between two
+// people. A FAILED query throws (see queryCustomers) — never reads as "none".
+// `deps` is test injection only; production callers pass nothing.
+export async function findExistingCustomer(env, contact, payload, deps = {}) {
+  const many = deps.queryCustomers || queryCustomers;
+  const one = deps.queryCustomer || ((e, w) => many(e, w, 1).then((r) => r[0] || null));
+
   const email = (contact.email || '').trim();
   if (email) {
-    const byEmail = await queryCustomers(env, `PrimaryEmailAddr = '${escQ(email)}'`);
+    const byEmail = await many(env, `PrimaryEmailAddr = '${escQ(email)}'`);
     if (byEmail.length === 1) return { customer: byEmail[0], matchedBy: 'email' };
     if (byEmail.length > 1) return { ambiguous: true, candidates: byEmail };
   }
 
   const nameHits = [];
   for (const variant of displayNameVariants(payload.DisplayName)) {
-    const hit = await queryCustomer(env, `DisplayName = '${escQ(variant)}'`);
+    const hit = await one(env, `DisplayName = '${escQ(variant)}'`);
     if (hit && !nameHits.some((c) => c.Id === hit.Id)) nameHits.push(hit);
   }
   if (nameHits.length === 1) return { customer: nameHits[0], matchedBy: 'name' };
@@ -307,7 +326,7 @@ export async function findExistingCustomer(env, contact, payload) {
   const phone = normalizePhoneDigits(contact.phone);
   const family = normalizeWhitespace(contact.name).split(' ').pop();
   if (phone.length === 10 && family) {
-    const candidates = await queryCustomers(env, `FamilyName = '${escQ(family)}'`);
+    const candidates = await many(env, `FamilyName = '${escQ(family)}'`);
     const byPhone = candidates.filter(
       (c) => normalizePhoneDigits(c?.PrimaryPhone?.FreeFormNumber) === phone,
     );

@@ -16,11 +16,12 @@
  *   Data:      reads → none · writes → none
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   normalizePhoneDigits,
   displayNameVariants,
   isStaleCustomerRef,
+  findExistingCustomer,
 } from './quickbooks.js';
 
 describe('normalizePhoneDigits', () => {
@@ -50,6 +51,62 @@ describe('displayNameVariants', () => {
   it('normalizes whitespace and handles empty', () => {
     expect(displayNameVariants('  Emily   Bailey ')).toEqual(['Emily Bailey', 'Bailey, Emily']);
     expect(displayNameVariants('')).toEqual([]);
+  });
+});
+
+describe('findExistingCustomer (tiered matching, injected queries)', () => {
+  const contact = { name: 'Emily Bailey', email: 'baileyfam@gmail.com', phone: '(801) 555-0142' };
+  const payload = { DisplayName: 'Emily Bailey' };
+  const cust = (Id, DisplayName, phone) => ({
+    Id, DisplayName, ...(phone ? { PrimaryPhone: { FreeFormNumber: phone } } : {}),
+  });
+
+  it('matches a single customer by exact email first', async () => {
+    const many = vi.fn(async (env, where) =>
+      where.startsWith('PrimaryEmailAddr') ? [cust('121', 'Bailey, Emily')] : []);
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many });
+    expect(r).toMatchObject({ matchedBy: 'email', customer: { Id: '121' } });
+  });
+
+  it('refuses to guess between two email matches', async () => {
+    const many = vi.fn(async () => [cust('1', 'A'), cust('2', 'B')]);
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many });
+    expect(r.ambiguous).toBe(true);
+    expect(r.candidates).toHaveLength(2);
+  });
+
+  it('falls back to the "Last, First" display-name convention', async () => {
+    const many = vi.fn(async () => []);
+    const one = vi.fn(async (env, where) =>
+      where.includes("'Bailey, Emily'") ? cust('121', 'Bailey, Emily') : null);
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
+    expect(r).toMatchObject({ matchedBy: 'name', customer: { Id: '121' } });
+  });
+
+  it('matches by family name + phone digits when email and name miss', async () => {
+    const many = vi.fn(async (env, where) => {
+      if (where.startsWith('FamilyName')) {
+        return [cust('7', 'Em B.', '801.555.0142'), cust('8', 'Other Bailey', '801-555-9999')];
+      }
+      return [];
+    });
+    const one = vi.fn(async () => null);
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
+    expect(r).toMatchObject({ matchedBy: 'phone', customer: { Id: '7' } });
+  });
+
+  it('returns null only when QBO answered "none" for every signal', async () => {
+    const many = vi.fn(async () => []);
+    const one = vi.fn(async () => null);
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
+    expect(r).toBeNull();
+  });
+
+  it('FAILS CLOSED: a failed query propagates instead of reading as "no match"', async () => {
+    const many = vi.fn(async () => { throw new Error('QBO customer query failed (429)'); });
+    await expect(
+      findExistingCustomer({}, contact, payload, { queryCustomers: many }),
+    ).rejects.toThrow(/query failed/);
   });
 });
 
