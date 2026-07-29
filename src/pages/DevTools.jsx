@@ -1680,6 +1680,12 @@ const NOTIFICATION_TEST_CHANNELS = [
   },
 ];
 
+const NOTIFICATION_TYPE_TEST_CHANNELS = [
+  { key: 'bell', label: 'Bell' },
+  { key: 'web_push', label: 'PWA' },
+  { key: 'native_push', label: 'iPhone' },
+];
+
 function resultLabel(result) {
   if (result?.state === 'sending') return 'Sending';
   if (result?.ok) {
@@ -1694,7 +1700,15 @@ export function NotificationDeliveryDiagnostic() {
   const requestIdsRef = useRef({});
   const [sending, setSending] = useState([]);
   const [results, setResults] = useState({});
-  const busy = sending.length > 0;
+  const [typeSweep, setTypeSweep] = useState({
+    state: 'idle',
+    completed: 0,
+    total: 15,
+    events: [],
+    error: '',
+  });
+  const typeSweepRunning = typeSweep.state === 'sending';
+  const busy = sending.length > 0 || typeSweepRunning;
 
   const sendChannels = async (channels) => {
     if (busy) return;
@@ -1763,6 +1777,115 @@ export function NotificationDeliveryDiagnostic() {
       err(message);
     } finally {
       setSending([]);
+    }
+  };
+
+  const sendAllNotificationTypes = async () => {
+    if (busy) return;
+    setTypeSweep({
+      state: 'sending',
+      completed: 0,
+      total: 15,
+      events: [],
+      error: '',
+    });
+    try {
+      if (typeof crypto?.randomUUID !== 'function') {
+        throw new Error('This browser cannot create stable notification test IDs.');
+      }
+      const auth = await getAuthHeader();
+      if (!auth.Authorization) {
+        throw new Error('Your session is unavailable. Sign in again and retry.');
+      }
+
+      const catalogResponse = await fetch('/api/notification-presentation?action=catalog', {
+        cache: 'no-store',
+        headers: auth,
+      });
+      const catalogPayload = await catalogResponse.json().catch(() => ({}));
+      if (!catalogResponse.ok) {
+        throw new Error(
+          catalogPayload.error || `Notification catalog failed (${catalogResponse.status}).`,
+        );
+      }
+      const events = Array.isArray(catalogPayload.events) ? catalogPayload.events : [];
+      if (events.length !== 15) {
+        throw new Error(`Expected 15 notification types, but the server returned ${events.length}.`);
+      }
+
+      const completedEvents = [];
+      for (const event of events) {
+        const surfaceResults = {};
+        await Promise.all(NOTIFICATION_TYPE_TEST_CHANNELS.map(async (channel) => {
+          const requestKey = `type:${channel.key}:${event.type_key}`;
+          const requestId = requestIdsRef.current[requestKey] || crypto.randomUUID();
+          requestIdsRef.current[requestKey] = requestId;
+          try {
+            const response = await fetch('/api/notification-test', {
+              method: 'POST',
+              headers: {
+                ...auth,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                channel: channel.key,
+                request_id: requestId,
+                type_key: event.type_key,
+              }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(payload.error || `Test failed (${response.status}).`);
+            }
+            surfaceResults[channel.key] = payload;
+            if (payload.settled) delete requestIdsRef.current[requestKey];
+          } catch (error) {
+            surfaceResults[channel.key] = {
+              channel: channel.key,
+              type_key: event.type_key,
+              ok: false,
+              error: error instanceof Error ? error.message : 'Test failed.',
+            };
+          }
+        }));
+
+        completedEvents.push({
+          type_key: event.type_key,
+          label: event.label || event.type_key,
+          surfaces: surfaceResults,
+        });
+        setTypeSweep({
+          state: 'sending',
+          completed: completedEvents.length,
+          total: events.length,
+          events: [...completedEvents],
+          error: '',
+        });
+      }
+
+      const passed = completedEvents.filter((event) => (
+        NOTIFICATION_TYPE_TEST_CHANNELS.every((channel) => event.surfaces[channel.key]?.ok)
+      )).length;
+      setTypeSweep({
+        state: 'complete',
+        completed: completedEvents.length,
+        total: events.length,
+        events: completedEvents,
+        error: '',
+      });
+      if (passed === events.length) {
+        ok('All 15 notification types passed on bell, PWA, and iPhone.');
+      } else {
+        err(`${passed} of ${events.length} notification types passed on all three surfaces.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Notification type sweep failed.';
+      setTypeSweep((current) => ({
+        ...current,
+        state: 'error',
+        error: message,
+      }));
+      err(message);
     }
   };
 
@@ -1891,9 +2014,116 @@ export function NotificationDeliveryDiagnostic() {
             color: 'var(--text-tertiary)',
           }}
         >
-          “Test all” sends one fixed test per channel, not one per event type.
+          This sends one generic test per channel.
         </span>
       </div>
+
+      <section
+        style={{
+          marginTop: 'var(--space-5)',
+          paddingTop: 'var(--space-5)',
+          borderTop: '1px solid var(--border-color)',
+        }}
+      >
+        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>
+          Real-world 15-type delivery sweep
+        </div>
+        <p style={{
+          margin: 'var(--space-2) 0 var(--space-4)',
+          maxWidth: 760,
+          fontSize: 'var(--text-sm)',
+          lineHeight: 1.5,
+          color: 'var(--text-secondary)',
+        }}>
+          Sends one safe synthetic example of every catalog event to your bell, PWA, and iPhone:
+          45 owner-only type/surface checks. PWA checks fan out to every browser subscription
+          enrolled for your account. This proves presentation and transport, not the source
+          business trigger. It never creates business records or sends email, SMS, or MMS.
+        </p>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}>
+          <button
+            className="btn btn-primary btn-lg"
+            type="button"
+            disabled={busy}
+            onClick={sendAllNotificationTypes}
+          >
+            {typeSweepRunning
+              ? `Sending type ${Math.min(typeSweep.completed + 1, typeSweep.total)} of ${typeSweep.total}…`
+              : 'Test all 15 notification types'}
+          </button>
+          <span
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: 'var(--text-sm)',
+              color: typeSweep.error ? 'var(--danger)' : 'var(--text-secondary)',
+            }}
+          >
+            {typeSweep.error
+              || (typeSweep.state === 'complete'
+                ? `${typeSweep.completed} of ${typeSweep.total} types completed.`
+                : typeSweepRunning
+                  ? `${typeSweep.completed} of ${typeSweep.total} types completed.`
+                  : 'Put both Push apps in the background before starting.')}
+          </span>
+        </div>
+
+        {typeSweep.events.length > 0 && (
+          <div style={{
+            display: 'grid',
+            gap: 'var(--space-2)',
+            marginTop: 'var(--space-4)',
+          }}>
+            {typeSweep.events.map((event) => (
+              <div
+                key={event.type_key}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-3) var(--space-4)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-secondary)',
+                }}
+              >
+                <div>
+                  <div style={{
+                    fontSize: 'var(--text-sm)',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                  }}>
+                    {event.label}
+                  </div>
+                  <code style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                    {event.type_key}
+                  </code>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {NOTIFICATION_TYPE_TEST_CHANNELS.map((channel) => {
+                    const result = event.surfaces[channel.key];
+                    return (
+                      <StatusPill
+                        key={channel.key}
+                        tone={result?.ok ? 'success' : 'danger'}
+                        label={`${channel.label}: ${result?.ok ? 'Passed' : 'Needs attention'}`}
+                        dot
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

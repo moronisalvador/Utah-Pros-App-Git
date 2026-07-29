@@ -5,7 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves an ops-health deep link opens Dev Tools on the Provider Events panel
- *   instead of leaving the owner on the default Feature Flags tab.
+ *   instead of leaving the owner on the default Feature Flags tab, and keeps
+ *   both owner notification delivery controls reachable from their exact URL.
  *
  * DEPENDS ON:
  *   Packages:  react-dom/server, react-router-dom, vitest
@@ -64,6 +65,9 @@ describe('DevTools ops-health deep link', () => {
 
     expect(output).toContain('Owner notification delivery tests');
     expect(output).toContain('Test all four channels');
+    expect(output).toContain('Real-world 15-type delivery sweep');
+    expect(output).toContain('Test all 15 notification types');
+    expect(output).toContain('45 owner-only type/surface checks');
     expect(output).toContain('Preview every notification type');
     expect(output).not.toContain('RPC Test Runner');
   });
