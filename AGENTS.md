@@ -214,9 +214,12 @@ deployment conventions, update the corresponding canonical doc in the same commi
   both, plus a redeploy. Counts (pages, workers, migrations) drift — derive them, never quote a
   doc.
 
-**Starting a task:** read the real files first; check `git status` and preserve unrelated changes
-(other sessions share this tree — stage by explicit path); identify every caller, route, RPC,
-worker and test the change touches before editing; check
+**Starting a task:** `git fetch origin` FIRST and base new work on `origin/dev` (or the
+designated branch's remote tip) — never on the shared checkout's current local state; local
+branches go stale when sessions run in parallel, and a stale base costs a full reconciliation
+(2026-07-29 P0 collision). Then: read the real files first; check `git status` and preserve
+unrelated changes (other sessions share this tree — stage by explicit path); identify every
+caller, route, RPC, worker and test the change touches before editing; check
 `.claude/rules/initiative-status.md` before touching a shared hotspot; search unmerged branches
 before designing something new (prefer finishing or retiring an existing path over building a
 parallel one); state assumptions when live configuration is not evidenced locally — repository
