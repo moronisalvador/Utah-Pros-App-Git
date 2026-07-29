@@ -340,6 +340,25 @@ contract:
 - detach/revoke on logout/account/device lifecycle;
 - no sensitive lock-screen payload beyond approved privacy policy.
 
+The current native APNs implementation satisfies the initial privacy floor with
+fixed generic alert copy (`Utah Pros notification` /
+`Open Utah Pros for details.`) and data reduced
+to one allowlisted route plus an opaque deterministic recipient binding. The
+same pure route policy used by the app runs in the worker before serialization;
+admin/external paths, encoded paths, oversized input, credential fragments, and
+unsupported or sensitive query shapes fall back to `/` before Apple sees them.
+The Push policy additionally rejects the public signing bearer paths
+`/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
+bearer capability is never provider payload data. A native action is rejected
+unless the binding matches the currently verified employee. Rich lock-screen
+copy remains out of scope until a separately approved privacy policy and
+payload contract exist.
+
+Appointment notification audiences are structural rather than caller-selected:
+`appointment.assigned` intersects the named employee with the appointment's
+current crew, while updated/canceled events resolve the current crew. Supplied
+`recipient_ids` cannot widen any appointment audience.
+
 S1c implements only the HTTP identity/object portion. An exact stored secret remains first and
 keeps the full deployed trigger payload; trusted Workers continue to call `dispatchEvent`
 in-process. A human Bearer must be an active internal admin and may supply only the IDs for

@@ -6,8 +6,8 @@ Native push is wired end to end and the focused database boundary is live. Apple
 and Cloudflare sender configuration exists, the compatible `dev` bundle is
 deployed, and the owner's development-signed iPhone build enrolled a fresh APNs
 sandbox token. The broader S1h program remains deferred. One authorized
-background-delivery and tap-to-route proof is the remaining Debug activation
-check; TestFlight remains a separate release gate.
+background delivery succeeded; tap routing and the production-signed matrix
+remain separate TestFlight gates.
 
 ## Already built — do not rebuild
 
@@ -18,11 +18,46 @@ check; TestFlight remains a separate release gate.
 | Release entitlement | `ios/App/App/App.Release.entitlements` → `aps-environment: production` | correct |
 | Per-config wiring | `project.pbxproj` — Debug uses `App.entitlements`, Release uses `App.Release.entitlements` | correct |
 | Registration | `src/lib/pushNotifications.js` → `registerPushForEmployee()` | fail-closed |
-| Tap → route | `resolveNativePushActionTarget()` + `NativeNavigationBridge` | wired |
+| User controls | Settings → Notifications; separate Web Push and native APNs Turn on/Turn off paths | wired in source |
+| Tap → route | opaque recipient-bound `resolveNativePushActionTarget()` + `NativeNavigationBridge` | wired |
 | Token storage | `device_tokens` via `upsert_my_native_device_token` | wired |
 | Sender | `functions/api/notify.js` → `functions/lib/apns.js`; owner-only self-test at `send-push.js` | wired |
 | Deep link | `functions/api/notify.js` writes `data.url` per notification | fixed 2026-07-27 (PUSH-01) |
 | Unenroll | `detachNativePushDevice()` on logout / account switch | wired |
+
+The Settings controls are channel-specific. Browser/PWA Turn on/Turn off owns
+only the Web Push service-worker subscription. Native Turn on/Turn off owns
+only this Capacitor installation's APNs binding. Native intent is durable and
+bound to the current opaque owner lease, so another account on the same phone
+defaults off. An explicit off is persisted before detach begins and blocks
+automatic enrollment on restart. A legacy boolean migrates on only for the
+verified owner of an existing local binding. Overlapping enrollment/detach is single-flight and
+journaled until the potentially committed upsert settles, after which the
+owner-scoped delete runs again. Provisional and confirmed markers are distinct:
+only the exact foreign-token ownership refusal releases a provisional attempt;
+other authorization failures retain it. A
+network-ambiguous write remains journaled across its immediate delete until a
+later same-owner reconciliation after the 60-second safety window. Native
+Settings rechecks iOS permission on app resume and never labels denied,
+unknown, or cleanup-pending delivery as On. It does not expose the token.
+Account cleanup also asks iOS to remove delivered banners as defense in depth.
+The foreign-owner discriminator parses the top-level PostgREST body and
+requires the exact `42501` code plus the full canonical SQL message; nested,
+partial, malformed, or merely similar text never clears the journal.
+
+Every native APNs payload now uses generic `Utah Pros notification` /
+`Open Utah Pros for details.` alert copy and an opaque deterministic recipient binding. Caller/customer,
+appointment, message, and financial text are never serialized into the native
+provider payload. The worker applies the same pure native route/query policy
+before serialization and replaces unsafe input with `/`. The Push-only policy
+also rejects `/sign/:token` and `/s/:code`, which remain valid Universal/App
+Links but contain bearer capabilities that must never reach Apple. A tap is
+ignored unless that binding matches the currently verified employee and the
+route passes the native allowlist.
+
+Appointment events cannot widen their audience with `recipient_ids`:
+assignment intersects the named employee with current appointment crew, and
+updated/canceled events resolve current crew directly.
 
 The **Release entitlement detail matters more than it looks**. A TestFlight build
 is signed with a distribution profile and must carry `aps-environment: production`;
@@ -78,6 +113,9 @@ through `scripts/qa/run-owned-subprocess.mjs`: each command owns a distinct
 process group, is capped at five minutes, terminates remaining children, and
 verifies the group is gone. Longer GitHub job watchdogs cover dependency/test
 Actions and are not permission for a persistent child to outlive that bound.
+It also hard-pins `VITE_NATIVE_API_ORIGIN=https://utahpros.app` and
+`VITE_RELEASE_SHA` to the exact `main` commit so a production-signed build
+cannot silently call Preview/dev Workers or lose its runtime release identity.
 
 ## Environment contract
 
@@ -129,18 +167,68 @@ the development APNs entitlement, launched on the owner's iPhone 17 Pro Max, and
 registered a fresh redacted sandbox token. Older environment-less token rows
 remain inert.
 
+After the device-local Turn on/Turn off controls passed source review, the owner
+separately authorized an in-place physical-device update. On 2026-07-28 the
+uncommitted reviewed batch was rebuilt against `https://dev.utahpros.app` with
+native Push enabled for sandbox, synchronized with no tracked native-project
+drift, signed as Debug, installed over Wi-Fi, and launched. Device tooling
+confirmed UPR `1.0.0 (1)` installed and running. The physical control-state,
+restart-persistence, background-banner, and tap-route observations remain
+pending and must not be inferred from install/launch.
+
+The owner then separately authorized one bounded Dev Tools delivery to that
+Debug installation. The API accepted the test and the owner observed the iOS
+notification while the app was in the background. Value-free live evidence at
+that point showed one sandbox token and no production token for the owner.
+Ordinary appointment delivery targets the production worker and therefore
+cannot reach this development-signed sandbox installation. The latest inbound
+message evidence also showed its in-app notification row and a native delivery
+claim; delivery presentation still depends on the installation environment and
+app state.
+
+Foreground presentation is now explicit in `capacitor.config.json`: iOS may
+show badge, sound, and the generic privacy-safe alert while the native app is
+open. The JavaScript foreground callback remains content-private and emits only
+the constant refresh signal. Appointment audience remains the existing business
+rule: only employees assigned to the appointment receive appointment Push.
+
+## Pilot stop and rollback
+
+The release owner/on-call is the Utah Pros owner-admin. Stop internal rollout
+immediately for cross-account delivery/routing, sensitive notification copy,
+wrong-environment delivery, repeated/duplicate notifications, login/session
+regression, or a crash/blocker in the field shell.
+
+The server-side Push stop is to set `APNS_ENV` to a value other than exact
+`sandbox`/`production` (or remove the APNs signing key) in the affected
+Cloudflare Preview/Production environment and redeploy. `readApnsConfig()`
+then fails closed before token lookup or Apple. This operational action is
+owner-gated and must be applied separately to Preview and Production.
+
+After a stop:
+
+1. verify a bounded notification event returns `apns_not_configured` and no
+   Apple request is attempted;
+2. preserve in-app bell/Web Push behavior and do not delete token rows as a
+   substitute kill switch;
+3. correct the source, increment the build number, and ship a replacement
+   through the same clean-`main` verified workflow;
+4. keep the prior TestFlight build unavailable to new testers and direct
+   existing testers to update/remove it; and
+5. re-enable the APNs environment only after the replacement passes
+   account-switch, privacy, foreground/background/terminated, and tap checks.
+
 ## Remaining activation sequence
 
-1. Put the installed Debug app in the background, use the owner-only Dev Tools
-   control exactly once, observe the iOS banner, and tap it to prove
-   `/tech/settings` routing. Record only the bounded result; never expose the
-   token or private key.
-2. Deploy the compatible production bundle, build the final clean-source
-   signed native archive, and verify the archive carries
+1. Re-enable Web Push independently in each reinstalled PWA and accept the
+   system permission prompt when offered.
+2. Build the final clean-source signed native archive and verify the archive
+   carries
    `aps-environment=production`. The local qualification archive above proves
    the signing lane, but does not replace this final-source artifact.
-3. Upload that exact verified IPA to internal TestFlight and repeat the
-   registration/delivery/tap proof from the TestFlight install.
+3. Upload that exact verified IPA to internal TestFlight. Install it, turn on
+   Push so the installation registers a production token, then verify a real
+   assigned-appointment event in foreground and background plus its tap route.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
 unset, and every value other than exact lowercase `true` keep enrollment off;
