@@ -190,6 +190,17 @@ current active, non-external employee directory before bell, push, or email fan-
 external, deleted, or unknown employee ID is not trusted merely because it arrived in an internal
 event payload or still has a historical push subscription.
 
+The inactive Twilio inbound route is public by provider necessity but not anonymous in authority:
+before any event, Storage, consent, canonical-message, unread, or notification work, it requires
+`MESSAGING_SCHEMA_MODE=foundation`, a configured account/token, and an
+`X-Twilio-Signature` valid for the exact public URL plus every received form parameter. AccountSid
+must match the configured account. Before signature success, database access is limited to the
+exact Twilio token row and AccountSid key; outbound sender configuration is not read and no
+telemetry/domain write occurs. Its atomic `project_twilio_inbound_event(uuid,boolean)` RPC is
+`SECURITY INVOKER`, rejects every `current_user` except `service_role`, and explicitly revokes
+execution from `PUBLIC`, `anon`, and `authenticated`. Browser roles have no path to manufacture a
+provider event projection or message notification.
+
 `GET /api/messaging-setup` and its `action=callrail-options` discovery mode use the same strict
 integration-administrator boundary: valid Supabase session, resolved employee, `role='admin'`,
 `is_active=true`, and `is_external=false`. Authorization completes before service-role reads or
