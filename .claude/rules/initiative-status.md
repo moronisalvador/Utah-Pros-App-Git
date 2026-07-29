@@ -27,11 +27,10 @@ before promoting.
   everything automated/bulk/marketing is global-opt-in-only. Authority:
   `.claude/rules/sms-experience-wave-ownership.md` §13 (kept in place — a CI contract test reads
   it).
-- **Staging database:** Supabase branch `qa-staging` — **pending one owner seeding action**
-  (the live migration ledger is not replayable: died at entry 4/419, so the branch must be
-  created "with data" or seeded from a schema dump). Runbook:
-  `docs/database/staging-branch-runbook.md`. Once seeded it is the only hosted DB agents may
-  iterate against.
+- **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — created,
+  **pending the owner schema-only seed** (runbook §2 Path B; the live ledger is not replayable
+  and data branches are gated behind PITR + compute upgrades). Once seeded it is the only hosted
+  DB agents may iterate against.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)

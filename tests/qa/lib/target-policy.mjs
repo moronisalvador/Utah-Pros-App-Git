@@ -26,11 +26,11 @@ export const LOCAL_BROWSER_ORIGIN = 'http://127.0.0.1:4173';
 export const LOCAL_SUPABASE_ORIGIN = 'http://127.0.0.1:54321';
 export const LOCAL_DATABASE_SENTINEL = 'upr-local-only-v1';
 
-// The seeded qa-staging Supabase branch (docs/database/staging-branch-runbook.md).
-// null until the owner seeds the branch and commits its ref here — a reviewed code
-// change, per this file's no-env-fallback rule. While null, every hosted-QA runner
-// refuses to start.
-export const QA_BRANCH_PROJECT_REF = null;
+// The qa-staging Supabase branch (docs/database/staging-branch-runbook.md).
+// Created 2026-07-29; seeding is the owner action in runbook §2. Committed here
+// per this file's no-env-fallback rule — a different branch requires a reviewed
+// code change to this constant.
+export const QA_BRANCH_PROJECT_REF = 'uizgwvkvzyldystqrcsk';
 export const QA_BRANCH_SENTINEL = 'upr-qa-branch-only-v1';
 
 const HUMAN_PROFILE_MARKERS = [

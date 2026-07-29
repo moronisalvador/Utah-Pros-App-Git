@@ -1,6 +1,8 @@
 # Staging Database Runbook — the `qa-staging` Supabase branch
 
-**Last verified:** 2026-07-29 · Status: **pending one owner seeding action** (see §2).
+**Last verified:** 2026-07-29 · Status: branch **created** (ref `uizgwvkvzyldystqrcsk`,
+~$0.01344/hr) — **pending the owner seeding action in §2**. The branch's `MIGRATIONS_FAILED`
+status is expected (see §1) and harmless: the seed in §2 replaces the schema wholesale.
 
 ## 1. What happened and what we learned (2026-07-29)
 
@@ -19,36 +21,52 @@ branch was deleted so it would not bill for nothing.
 This is also the disaster-recovery gap in miniature: if the project were lost, the schema could
 not be rebuilt from the repo. Fixing it once fixes staging, CI, and DR together.
 
-## 2. The one-time owner action (≈5 minutes, needs credentials only the owner has)
+## 2. The one-time owner action (≈10 minutes, needs credentials only the owner has)
 
-Either path produces a working staging branch:
+**Path A — dashboard data branch — was found gated (2026-07-29):** "Include data" requires
+7-day PITR (**$100/month**) plus a production compute upgrade Nano → Small (~$15/month), because
+data branches clone via point-in-time restore. That is not worth paying for a test target;
+schema-only (Path B, below) covers everything the db lane and migration iteration need. Decide
+PITR separately, on its own merits as production disaster-recovery insurance — not as a branching
+prerequisite.
 
-**Path A — dashboard data branch (preferred).** Supabase Dashboard → project → Branches →
-Create branch → name it `qa-staging` → enable **“Include data”** (a data branch clones the live
-schema AND data via point-in-time restore, sidestepping the ledger entirely). Cost is the same
-~$0.014/hour (~$10/month) compute as any branch.
-
-**Path B — schema-only seed.** Create a plain branch (dashboard or MCP `create_branch`), then
-from any machine with `pg_dump`/`psql` and the two database passwords:
+**Path B — schema-only seed (the plan of record).** The plain branch already exists
+(ref `uizgwvkvzyldystqrcsk`). From any machine with `psql`/`pg_dump` (or the Supabase CLI):
 
 ```bash
-pg_dump  "$PROD_DB_URL"   --schema-only --no-owner > schema.sql
-psql     "$BRANCH_DB_URL" -f schema.sql
+# Connection strings: Dashboard → Connect (top bar) → select the branch or production.
+# Use the "Session pooler" URI if your network blocks direct :5432.
+
+# 1. Dump the production public schema (read-only against prod).
+pg_dump "$PROD_DB_URL" --schema-only --schema=public --no-owner > schema.sql
+
+# 2. Clear the branch's partial public schema (the failed ledger replay left 4
+#    migrations' worth of objects) and restore baseline grants.
+psql "$BRANCH_DB_URL" -c 'drop schema public cascade; create schema public;'
+psql "$BRANCH_DB_URL" -c 'grant usage, create on schema public to postgres, anon, authenticated, service_role;'
+
+# 3. Load the schema. Pre-existing extension/type notices are fine; real errors are not.
+psql "$BRANCH_DB_URL" -f schema.sql
 ```
+
+Known limitation: a `--schema=public` dump omits objects living in other schemas (e.g. a trigger
+ON `auth.users` such as a handle-new-user hook). If a db test fails on such an object, dump that
+schema's object individually and apply it — do not dump `auth`/`storage` wholesale onto the
+branch (they already exist there).
 
 **Then wire it up (owner, ~5 more minutes):**
 
-1. Commit the branch's project ref into `tests/qa/lib/target-policy.mjs`
-   (`QA_BRANCH_PROJECT_REF` — currently `null`, which makes every hosted-QA runner refuse).
-2. Add three GitHub Actions repository secrets so the CI db lane goes live:
-   - `UPR_QA_SUPABASE_URL` — `https://<branch-ref>.supabase.co`
-   - `UPR_QA_SUPABASE_ANON_KEY` — the branch's anon key
+1. ~~Commit the branch's project ref into `tests/qa/lib/target-policy.mjs`~~ **DONE 2026-07-29**
+   (`QA_BRANCH_PROJECT_REF = 'uizgwvkvzyldystqrcsk'`).
+2. Add three GitHub Actions repository secrets so the CI db lane goes live
+   (GitHub → Settings → Secrets and variables → Actions):
+   - `UPR_QA_SUPABASE_URL` — `https://uizgwvkvzyldystqrcsk.supabase.co`
+   - `UPR_QA_SUPABASE_ANON_KEY` — the branch's anon key (Dashboard → branch → Settings → API)
    - `UPR_QA_SUPABASE_SERVICE_KEY` — the branch's privileged server key (**the branch's, never
      production's**; the runner maps this to the canonical env name the tests read — that name is
      deliberately not spelled here because `.claude/hooks/block-secrets.sh` guards the literal)
-3. Update `.claude/rules/initiative-status.md` (staging line) and, after the first green CI
-   db-lane run, delete `tests/qa/unit/db-lane-coverage.test.js` — that file exists only to make
-   the dark lane loud, and its own header says to delete it then.
+3. After the first green CI db-lane run, delete `tests/qa/unit/db-lane-coverage.test.js` — that
+   file exists only to make the dark lane loud, and its own header says to delete it then.
 
 ## 3. How agents use the branch once it exists
 
