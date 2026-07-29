@@ -170,15 +170,17 @@ export async function resolveAudience(db, typeKey, body = {}) {
  * leave on. Returns a per-recipient summary; never throws.
  */
 export function nativeNotificationEventKey(type, body, recipientId) {
+  const occurrenceId = body?.notification_event_id;
+  if (
+    !['string', 'number'].includes(typeof occurrenceId)
+    || String(occurrenceId).trim() === ''
+  ) {
+    return null;
+  }
   return JSON.stringify([
     type?.type_key || '',
     recipientId || '',
-    body?.entity_type || '',
-    body?.entity_id || '',
-    body?.job_id || '',
-    body?.data?.url || body?.link || '',
-    body?.title || '',
-    body?.body || '',
+    String(occurrenceId).trim(),
   ]);
 }
 
@@ -193,6 +195,7 @@ export async function dispatchToRecipient({
   sendNativePushImpl,
   sendEmailImpl,
   fetchImpl,
+  nativeRetryOnly = false,
 }) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
 
@@ -203,7 +206,7 @@ export async function dispatchToRecipient({
   const on = (ch) => forType.some((p) => p.channel === ch && p.enabled);
 
   // Channel 1 — in-app bell (per-recipient row).
-  if (on('bell')) {
+  if (on('bell') && !nativeRetryOnly) {
     try {
       await db.rpc('create_notification', {
         p_type: type.type_key,
@@ -224,59 +227,71 @@ export async function dispatchToRecipient({
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
   if (on('push')) {
     const nativeSender = sendNativePushImpl || sendNativePushToEmployee;
-    try {
-      const native = await nativeSender({
-        db,
-        env,
-        employeeId: recipientId,
-        title: body.title || type.label,
-        body: body.body || '',
-        data: {
-          ...(body.data || {}),
-          url: body.data?.url || body.link || '/',
-        },
-        eventKey: nativeNotificationEventKey(type, body, recipientId),
-        fetchImpl,
-      });
-      result.push.native = native;
-      result.push.sent += native?.sent || 0;
-      result.push.attempted += native?.attempted || 0;
-      result.push.pruned += native?.pruned || 0;
-    } catch {
+    const eventKey = nativeNotificationEventKey(type, body, recipientId);
+    if (!eventKey) {
       result.push.native = {
         sent: 0,
         attempted: 0,
         pruned: 0,
         skipped: true,
-        reason: 'native_push_failed',
+        reason: 'missing_notification_event_id',
       };
+    } else {
+      try {
+        const native = await nativeSender({
+          db,
+          env,
+          employeeId: recipientId,
+          title: body.title || type.label,
+          body: body.body || '',
+          data: {
+            url: body.data?.url || body.link || '/',
+          },
+          eventKey,
+          fetchImpl,
+        });
+        result.push.native = native;
+        result.push.sent += native?.sent || 0;
+        result.push.attempted += native?.attempted || 0;
+        result.push.pruned += native?.pruned || 0;
+      } catch {
+        result.push.native = {
+          sent: 0,
+          attempted: 0,
+          pruned: 0,
+          skipped: true,
+          reason: 'native_push_failed',
+        };
+      }
     }
 
-    let subs = [];
-    try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
-    catch { subs = []; }
-    const pushBody = JSON.stringify({
-      title: body.title || type.label,
-      body: body.body || '',
-      url: body.data?.url || body.link || '/',
-      data: body.data || {},
-    });
-    const send = sendWebPushImpl || sendWebPush;
-    for (const s of subs || []) {
-      result.push.attempted++;
-      try {
-        const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
-        if (res.skipped) { result.push.vapidMissing = true; continue; }
-        if (res.ok) { result.push.sent++; continue; }
-        if (res.status === 404 || res.status === 410) {
-          try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
-        }
-      } catch { /* one bad subscription never breaks the fan-out */ }
+    if (!nativeRetryOnly) {
+      let subs = [];
+      try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
+      catch { subs = []; }
+      const pushBody = JSON.stringify({
+        title: body.title || type.label,
+        body: body.body || '',
+        url: body.data?.url || body.link || '/',
+        data: body.data || {},
+      });
+      const send = sendWebPushImpl || sendWebPush;
+      for (const s of subs || []) {
+        result.push.attempted++;
+        try {
+          const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
+          if (res.skipped) { result.push.vapidMissing = true; continue; }
+          if (res.ok) { result.push.sent++; continue; }
+          if (res.status === 404 || res.status === 410) {
+            try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
+          }
+        } catch { /* one bad subscription never breaks the fan-out */ }
+      }
     }
   }
 
   // Channel 3 — transactional email (skips + reports a NULL address).
-  if (on('email')) {
+  if (on('email') && !nativeRetryOnly) {
     let email = null;
     try {
       const rows = await db.select('employees', `id=eq.${recipientId}&select=email,full_name`);
@@ -462,6 +477,7 @@ export async function dispatchEvent({
   sendWebPushImpl,
   sendNativePushImpl,
   sendEmailImpl,
+  nativeRetryOnly = false,
 }) {
   if (!typeKey) return { skipped: true, reason: 'no_type_key', recipients: 0, results: [] };
 
@@ -502,6 +518,7 @@ export async function dispatchEvent({
       sendNativePushImpl,
       sendEmailImpl,
       fetchImpl,
+      nativeRetryOnly,
     }));
   }
 

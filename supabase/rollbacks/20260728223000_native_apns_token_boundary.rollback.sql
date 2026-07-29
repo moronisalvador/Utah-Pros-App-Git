@@ -14,7 +14,7 @@ REVOKE EXECUTE ON FUNCTION public.upsert_my_native_device_token(text, text)
 REVOKE EXECUTE ON FUNCTION public.delete_my_native_device_token(text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.delete_my_native_device_token(text)
-  TO authenticated;
+  TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.upsert_device_token(uuid, text, text)
   FROM PUBLIC, anon, authenticated, service_role;
@@ -30,4 +30,3 @@ ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_tokens FORCE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.device_tokens
   FROM PUBLIC, anon, authenticated;
-

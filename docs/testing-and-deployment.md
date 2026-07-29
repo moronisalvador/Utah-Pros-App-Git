@@ -97,6 +97,20 @@ archive also fails closed unless `VITE_NATIVE_PUSH_ENABLED` is exact lowercase
 `true` and `VITE_APNS_ENV` is exact lowercase `production`; a development
 archive must use a separately built sandbox bundle.
 
+Native Push activation also requires the two focused migrations to pass in
+order against a disposable local Supabase database. The behavior proof must
+show that employee A cannot read or change employee B's notification
+preferences, the service role can resolve a target employee's effective
+preference, browser roles have no direct preference/token/claim-table access,
+a repeated source-event/device delivery cannot be claimed twice, and an APNs
+rejection cannot delete a newer token registration. Enrollment must reject a
+missing environment and retain at most five iOS tokens per
+employee/environment. Worker tests additionally pin exact sandbox/production
+routing, bounded fanout, sanitized route-only payload data, durable delivery
+identity, and fail-closed missing configuration. None of this local proof
+authorizes a shared-database apply, Cloudflare deployment, Apple provider
+request, physical-device installation, or TestFlight upload.
+
 CI should keep unit and database/browser lanes explicit, report unexpected skips, validate required
 environment bindings and retain machine-readable evidence. An isolated database is required before
 database mutation tests can safely become a complete blocking gate.
@@ -182,20 +196,22 @@ The final contract pass also proves a thrown push subscription does not prevent 
 subscription from succeeding or remove the per-channel summary, and positively exercises all four
 human HTTP event shapes after exact object proof.
 
-The S1d database-dispatcher apply candidate is recorded in
+The live S1d database-dispatcher boundary is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Its credential-free
 contract suite proves exact live-body rollback, one-expression trusted-key hardening,
 `PUBLIC`/`anon`/`authenticated` denial, `service_role` retention, six-function/seven-call-site
 compatibility, trigger/cron metadata, no in-body role assertion, no browser caller, fail-closed
-drift checks, catalog-only pre/post-apply checks, and correct unapplied provenance treatment. The
+drift checks and catalog-only pre/post-apply checks. It is live as ledger entry
+`20260727233704 notify_emit_service_boundary`; a 2026-07-28 read-only recapture confirmed the
+reviewed body hash and owner/service-only EXECUTE. The
 tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
 authenticated denial, service-role retention, and sole owner-run database caller without invoking
-`create_notification` or reading notification rows. S1d, S1e, and S1f require separate explicit
-apply selections rather than a chronological all-pending command.
+`create_notification` or reading notification rows. S1e and S1f still require separate explicit
+apply selections rather than a chronological all-pending command; S1d must not be replayed.
 
 The S1g notification read/recipient boundary is live as
 `20260728192024_notification_read_recipient_boundary`; its corrected qualification is recorded in
@@ -244,17 +260,10 @@ Authorization rollback normally uses a reviewed forward fix because reverting a 
 reopens the bypass. An S1c emergency rollback must first disable the affected HTTP entrypoint or
 CallRail playback/notification trigger, then revert only the reviewed S1c source commits while
 explicitly accepting that any-employee recording or arbitrary-Bearer notification access reopens.
-No rollback rotates secrets or changes the shared database by implication. The separate
-authenticated `notify_emit` ACL residual now has an authored S1d migration and exact rollback but
-still needs its own owner-authorized apply/verification window. Immediately before apply, run
-`supabase/tests/notify_emit_service_boundary_preflight.sql` and confirm the reviewed hashes, ACL,
-six callers, three triggers, and one cron row. Apply only
-`20260726110000_notify_emit_service_boundary.sql` from the reviewed release commit; then run
-`supabase/tests/notify_emit_service_boundary_post_apply.sql`, representative role-denial checks,
-fresh provenance capture, and database advisors without invoking a real notification. Any
-synthetic trigger/service canary requires separate explicit authorization and non-customer
-fixtures. Rollback uses the paired SQL only after its forward-body drift guard passes and must
-record that authenticated arbitrary-emission capability was re-opened.
+No rollback rotates secrets or changes the shared database by implication. S1d is already live and
+must not be replayed. Its exact rollback remains emergency-only and must record that it re-opens
+authenticated arbitrary-emission capability. Any synthetic trigger/service canary still requires
+separate explicit authorization and a non-customer fixture.
 
 The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
 dual-form path normalization and authorized delivery before a bucket flip; then recapture exact
@@ -552,6 +561,15 @@ harness nor a complete log. It is exploratory feedback, not reproducible verific
 governed local SQL execution and live Auth/PostgREST verification remain open. Shared-database
 apply, deployment, providers, signing, and device qualification remain separate owner/external
 gates.
+
+The focused native Push qualification additionally proves that every direct
+production dispatcher supplies a durable occurrence identity; missing identity
+fails closed for APNs; two identical-copy events with different occurrences
+both deliver; a retry of one occurrence collapses; token deletion plus
+re-registration does not reopen a claimed delivery; an explicit APNs 429/5xx
+is release/reclaim retried once; an exhausted message-outbox refusal persists
+as native-only without repeating bell/Web Push/email; and a timeout retains its
+claim rather than double-sending.
 
 ### Initial mobile offline qualification
 

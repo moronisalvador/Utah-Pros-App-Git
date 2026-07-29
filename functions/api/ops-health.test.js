@@ -122,6 +122,8 @@ describe('ops-health run — alerting', () => {
     const body = dispatchImpl.mock.calls[0][0].body;
     expect(body.body).toContain('385-314-5700');
     expect(body.title).toContain('Ops alert');
+    expect(body.notification_event_id)
+      .toMatch(/^provider_events_failed:2026-07-25:[0-9a-f]{8}$/);
   });
 
   it('emits through the internal notification type, never a customer channel', async () => {

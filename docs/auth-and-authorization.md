@@ -371,17 +371,19 @@ The authenticated-executable `create_notification` definer is another direct bel
 outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
 browser execution and retains `service_role`; it is not live until its separate owner apply.
 
-## Mobile S1d notification dispatcher RPC boundary (2026-07-26)
+## Mobile S1d notification dispatcher RPC boundary (live 2026-07-27)
 
 A fresh read-only catalog capture confirmed one live
 `public.notify_emit(p_type_key text,p_body jsonb) RETURNS void` function owned by `postgres`, with
-`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants to `authenticated` and
-`service_role` while `PUBLIC`/`anon` are denied. No browser or Pages Worker source caller was found.
+`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants then held by `authenticated`
+and `service_role` while `PUBLIC`/`anon` were denied. No browser or Pages Worker source caller was
+found.
 The exact database graph is six owner-run definer functions/seven calls: appointment assignment,
 appointment update/cancel, estimate acceptance, timesheet request/review, and the abandoned-clock
 scan reached by its `postgres` cron job.
 
-The reviewed but unapplied `20260726110000_notify_emit_service_boundary.sql` revokes
+The applied `20260726110000_notify_emit_service_boundary.sql`, recorded as live ledger entry
+`20260727233704 notify_emit_service_boundary`, revokes
 `PUBLIC`, `anon`, and `authenticated` after the body replacement and grants only `service_role`.
 Owner-executed trigger/RPC/cron chains remain compatible through PostgreSQL ownership; adding an
 in-body session-role assertion would break those intended database callers and is forbidden for
@@ -389,8 +391,9 @@ this contract. The body replacement changes only JSON object merge order, making
 `p_type_key` authoritative while retaining URL/secret lookup, headers, `net.http_post`, ignored
 response, no-op gates, signature, result, security mode, and search path.
 
-This is local apply readiness, not live containment: until the shared migration is applied in a
-separate owner-authorized window, `authenticated` can still execute the deployed function.
+A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
+`27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
+`service_role`; `authenticated` can no longer execute the function.
 `create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
 and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
 evidence are recorded in

@@ -7,11 +7,13 @@
  *   Answers one preliminary question for automated texts: does this contact
  *   have a phone, recorded opt-in, and no Do Not Disturb or explicit opt-out?
  *   Staff-written one-to-one service messages have a separately reviewed
- *   implied-permission code, but automation never consumes it.
+ *   implied-permission code. Only the exact typed transactional-service
+ *   producers named below may consume that code; generic automation cannot.
  *
  *   This file also holds the lists of "allowed" answers each send path will
  *   accept from the database. Only the staff one-to-one list accepts
- *   `IMPLIED_CONSENT`; automated and scheduled traffic require global opt-in.
+ *   `IMPLIED_CONSENT` generally; the exact service-notice list is the narrow
+ *   automated exception. Scheduled free-form traffic requires global opt-in.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (server-side helper, not a page)
@@ -32,16 +34,17 @@
  *
  * NOTES / GOTCHAS:
  *   - `IMPLIED_CONSENT` is restricted to staff-written one-to-one service
- *     messages. Automation and scheduled sends still require GLOBAL_OPT_IN.
+ *     messages and exact typed transactional service notices. Generic
+ *     automation and scheduled free-form sends still require GLOBAL_OPT_IN.
  *   - This predicate is a CHEAP PRE-FILTER, not the authority. The authority is
  *     get_service_sms_consent_status() in the database, which is the only thing
  *     that sees duplicate-phone suppression and inbound STOPs that have not been
  *     filed yet. Never send on this predicate alone.
  *   - Still fails closed on no phone / missing automated opt-in / DND /
  *     explicit opt-out, and callers treat unreadable database status as refusal.
- *   - SERVICE_CONSENT stays staff-only on purpose. It is a purpose-scoped
- *     attestation for one-to-one service messages; automated and scheduled
- *     traffic has never consumed it and still does not.
+ *   - SERVICE_CONSENT is purpose-scoped. Staff direct service messages and the
+ *     three typed service notices may consume it; generic automation and
+ *     scheduled free-form traffic do not.
  *   - The kill-switch (automation_settings.sms_sending_enabled) is a SEPARATE,
  *     higher gate checked in automated-send.js.
  * ════════════════════════════════════════════════
@@ -60,7 +63,8 @@ export function consentAllows(row) {
 }
 
 // ─── SECTION: accepted consent codes ───────────────────────────────────────
-// The staff exception is deliberately absent from automation and scheduling.
+// The direct-staff and typed-service exceptions are absent from generic
+// automation and free-form scheduling.
 
 /** Staff person-to-person sends via POST /api/send-message. */
 export const STAFF_ACCEPTED_CONSENT_CODES = Object.freeze([
@@ -75,9 +79,10 @@ export const AUTOMATED_ACCEPTED_CONSENT_CODES = Object.freeze([
 ]);
 
 /**
- * Exact service notices the owner approved without a recorded opt-in. This is
- * deliberately an allowlist rather than a generic "transactional" bypass.
- * Additions require an explicit product/compliance review.
+ * Exact service notices the owner approved without a recorded opt-in. This
+ * registry does not grant the generic automation chokepoint a bypass: each
+ * notice needs a dedicated typed producer that derives purpose and copy from a
+ * server-owned appointment/signature record. Additions require explicit review.
  */
 export const TRANSACTIONAL_SERVICE_SMS_PURPOSES = Object.freeze([
   'appointment_scheduled',

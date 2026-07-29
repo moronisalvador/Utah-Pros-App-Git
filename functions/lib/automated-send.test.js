@@ -85,6 +85,10 @@ import {
   sendSmsWithBackoff,
 } from './automated-send.js';
 import { sendMessage } from './twilio.js';
+import {
+  isTransactionalServiceSmsPurpose,
+  TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES,
+} from './sms-consent.js';
 // Non-owned held-retry consumers — Phase D must not break their dependence on the
 // frozen return vocabulary (sms-experience-wave-ownership §3/§8).
 import { planStepOutcome } from '../api/process-sequences.js';
@@ -113,6 +117,18 @@ beforeEach(() => {
 });
 
 describe('sendAutomatedMessage — SMS gate', () => {
+  it('reserves implied service permission for the three reviewed transactional producers', () => {
+    expect([
+      'appointment_scheduled',
+      'appointment_canceled',
+      'signature_request',
+    ].every(isTransactionalServiceSmsPurpose)).toBe(true);
+    expect(isTransactionalServiceSmsPurpose('project_update')).toBe(false);
+    expect(TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES).toContain(
+      'IMPLIED_CONSENT',
+    );
+  });
+
   it('does NOT text when the kill-switch is OFF (default)', async () => {
     const res = await sendAutomatedMessage('sms', 'c1', null, {}, {}, { body: 'hi' });
     expect(res.skipped).toBe(true);
@@ -160,7 +176,7 @@ describe('sendAutomatedMessage — SMS gate', () => {
     'appointment_scheduled',
     'appointment_canceled',
     'signature_request',
-  ])('allows the exact %s service notice without recorded opt-in and audits it before send', async (servicePurpose) => {
+  ])('does not let generic automation assert the %s service exception', async (servicePurpose) => {
     state.smsEnabled = true;
     state.contact = { ...OPTED_IN, opt_in_status: false };
     state.consentStatus = { allowed: true, code: 'IMPLIED_CONSENT' };
@@ -179,17 +195,12 @@ describe('sendAutomatedMessage — SMS gate', () => {
       },
     );
 
-    expect(res).toMatchObject({ ok: true, skipped: false });
-    expect(sendMessage).toHaveBeenCalledOnce();
-    expect(state.inserts).toContainEqual(expect.objectContaining({
-      table: 'sms_consent_log',
-      data: expect.objectContaining({
-        event_type: 'transactional_service_send_allowed',
-        source: 'existing_client_service_relationship',
-        performed_by: 'employee-1',
-        details: expect.stringContaining(servicePurpose),
-      }),
-    }));
+    expect(res).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'no_consent',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it('does not let an unknown service-purpose label bypass opt-in', async () => {

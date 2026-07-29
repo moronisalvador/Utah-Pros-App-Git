@@ -6,26 +6,33 @@
  * WHAT THIS DOES (plain language):
  *   Delivers an employee notification to the iPhones registered for the exact
  *   Apple environment being used. It refuses incomplete configuration, limits
- *   simultaneous Apple calls, and removes only permanently invalid registrations.
+ *   simultaneous Apple calls, claims each source-event/device delivery before
+ *   contacting Apple, and removes only registrations proven stale.
  *
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ./http.js
  *   Data:      reads  → device_tokens
- *              writes → device_tokens (permanent-token cleanup only)
+ *              writes → native_push_delivery_claims (claim/release);
+ *                       device_tokens (permanent-token cleanup only)
  *
  * NOTES / GOTCHAS:
  *   - APNS_ENV is mandatory and must be sandbox or production. There is no
  *     default because a wrong guess makes one environment delete another's token.
  *   - Results never include raw APNs tokens.
- *   - A stable content-derived apns-id makes retrying an uncertain delivery
- *     reuse Apple's idempotency identity instead of creating a second alert.
+ *   - A stable source-event occurrence is claimed durably before provider use.
+ *     The same identity is also sent as apns-collapse-id so Apple merges a
+ *     repeated request rather than displaying a second copy.
+ *   - Explicit 429/5xx refusal is safe to retry after releasing/reclaiming.
+ *     Network/timeout ambiguity retains the claim and is never auto-replayed.
  * ════════════════════════════════════════════════
  */
 import { fetchWithTimeout } from './http.js';
 
 const APNS_TIMEOUT_MS = 15_000;
 const APNS_CONCURRENCY = 5;
+const APNS_PROVIDER_ATTEMPTS = 2;
+export const APNS_MAX_TOKENS_PER_EMPLOYEE = 5;
 const jwtCache = new Map();
 
 export function readApnsConfig(env = {}) {
@@ -110,24 +117,70 @@ export async function stableApnsId(value) {
   ].join('-');
 }
 
-async function responseReason(response) {
+async function responseDetails(response) {
   try {
     const parsed = JSON.parse(await response.text());
-    return typeof parsed?.reason === 'string'
-      ? parsed.reason.slice(0, 120)
-      : 'APNs rejected notification';
+    return {
+      reason: typeof parsed?.reason === 'string'
+        ? parsed.reason.slice(0, 120)
+        : 'APNs rejected notification',
+      timestamp: parsed?.timestamp,
+    };
   } catch {
-    return 'APNs rejected notification';
+    return {
+      reason: 'APNs rejected notification',
+      timestamp: null,
+    };
   }
 }
 
-async function mapBounded(items, limit, fn) {
-  const results = [];
-  for (let index = 0; index < items.length; index += limit) {
-    const batch = items.slice(index, index + limit);
-    results.push(...await Promise.all(batch.map(fn)));
+function apnsInvalidatedAt(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const milliseconds = numeric < 1_000_000_000_000
+    ? numeric * 1_000
+    : numeric;
+  const parsed = new Date(milliseconds);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function safeNativeData(data) {
+  const url = typeof data?.url === 'string'
+    && data.url.startsWith('/')
+    && !data.url.startsWith('//')
+    ? data.url
+    : '/';
+  return { url };
+}
+
+async function releaseDeliveryClaim(db, deliveryKey) {
+  try {
+    return await db.rpc('release_native_push_delivery_claim', {
+      p_delivery_key: deliveryKey,
+    }) === true;
+  } catch {
+    // A failed release stays claimed. That safely prevents an uncertain retry
+    // from producing a duplicate alert, at the cost of a missed retry.
+    return false;
   }
-  return results;
+}
+
+async function claimDelivery(db, {
+  deliveryKey,
+  employeeId,
+  deviceTokenId,
+  deviceFingerprint,
+}) {
+  try {
+    return await db.rpc('claim_native_push_delivery', {
+      p_delivery_key: deliveryKey,
+      p_employee_id: employeeId,
+      p_device_token_id: deviceTokenId,
+      p_device_fingerprint: deviceFingerprint,
+    }) === true;
+  } catch {
+    return false;
+  }
 }
 
 export async function sendNativePushToEmployee({
@@ -168,7 +221,9 @@ export async function sendNativePushToEmployee({
       `employee_id=eq.${employeeId}`
         + `&platform=eq.ios`
         + `&apns_environment=eq.${config.environment}`
-        + '&select=id,token',
+        + '&select=id,token,updated_at'
+        + '&order=updated_at.desc'
+        + `&limit=${APNS_MAX_TOKENS_PER_EMPLOYEE}`,
     );
   } catch {
     return {
@@ -204,55 +259,157 @@ export async function sendNativePushToEmployee({
       alert: { title, body: body || '' },
       sound: 'default',
     },
-    data,
+    data: safeNativeData(data),
   });
 
-  const results = await mapBounded(tokens, APNS_CONCURRENCY, async (row) => {
-    const apnsId = await stableApnsId(`${eventKey}:${employeeId}:${row.id}`);
-    try {
-      const response = await fetchImpl(
-        `${host}/3/device/${row.token}`,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `bearer ${jwt}`,
-            'apns-topic': config.topic,
-            'apns-push-type': 'alert',
-            'apns-priority': '10',
-            'apns-expiration': '0',
-            'apns-id': apnsId,
-          },
-          body: payload,
-        },
-        APNS_TIMEOUT_MS,
-      );
-      if (response.ok) return { id: row.id, ok: true, status: response.status };
-
-      const reason = await responseReason(response);
-      const permanent = response.status === 410
-        || (response.status === 400 && reason === 'BadDeviceToken');
-      let pruned = false;
-      if (permanent) {
-        try {
-          await db.delete(
-            'device_tokens',
-            `id=eq.${row.id}&apns_environment=eq.${config.environment}`,
-          );
-          pruned = true;
-        } catch {
-          pruned = false;
-        }
-      }
-      return { id: row.id, ok: false, status: response.status, reason, pruned };
-    } catch {
-      return { id: row.id, ok: false, status: 0, reason: 'provider_unavailable' };
+  const results = await Promise.all(tokens.slice(0, APNS_CONCURRENCY).map(async (row) => {
+    // Token row ids are registration lifecycle details: logout/cap pruning can
+    // delete them. Hash the token into a non-reversible stable fingerprint so a
+    // delete + re-register cannot erase the 90-day source-event replay fence.
+    const deviceFingerprint = await stableApnsId(
+      `apns-token:${config.environment}:${row.token}`,
+    );
+    const apnsId = await stableApnsId(
+      `${eventKey}:${employeeId}:${config.environment}:${deviceFingerprint}`,
+    );
+    let claimed = await claimDelivery(db, {
+      deliveryKey: apnsId,
+      employeeId,
+      deviceTokenId: row.id,
+      deviceFingerprint,
+    });
+    if (!claimed) {
+      return {
+        id: row.id,
+        ok: false,
+        status: 0,
+        reason: 'delivery_already_claimed',
+      };
     }
-  });
+
+    for (let providerAttempt = 1; providerAttempt <= APNS_PROVIDER_ATTEMPTS; providerAttempt++) {
+      try {
+        const response = await fetchImpl(
+          `${host}/3/device/${row.token}`,
+          {
+            method: 'POST',
+            headers: {
+              authorization: `bearer ${jwt}`,
+              'apns-topic': config.topic,
+              'apns-push-type': 'alert',
+              'apns-priority': '10',
+              'apns-expiration': '0',
+              'apns-id': apnsId,
+              'apns-collapse-id': apnsId,
+            },
+            body: payload,
+          },
+          APNS_TIMEOUT_MS,
+        );
+        if (response.ok) {
+          return {
+            id: row.id,
+            ok: true,
+            status: response.status,
+            provider_attempts: providerAttempt,
+          };
+        }
+
+        const { reason, timestamp } = await responseDetails(response);
+        const permanent = response.status === 410
+          || (response.status === 400 && reason === 'BadDeviceToken');
+        let pruned = false;
+        if (permanent) {
+          const invalidatedAt = response.status === 410
+            ? apnsInvalidatedAt(timestamp)
+            : null;
+          try {
+            pruned = response.status !== 410 || invalidatedAt
+              ? await db.rpc('prune_stale_native_device_token', {
+                  p_device_token_id: row.id,
+                  p_token: row.token,
+                  p_apns_environment: config.environment,
+                  p_observed_updated_at: row.updated_at,
+                  p_invalidated_at: invalidatedAt,
+                }) === true
+              : false;
+          } catch {
+            pruned = false;
+          }
+        }
+
+        const retryable = response.status === 429 || response.status >= 500;
+        if (!retryable) {
+          return {
+            id: row.id,
+            ok: false,
+            status: response.status,
+            reason,
+            pruned,
+            provider_attempts: providerAttempt,
+          };
+        }
+
+        const released = await releaseDeliveryClaim(db, apnsId);
+        if (!released) {
+          return {
+            id: row.id,
+            ok: false,
+            status: response.status,
+            reason: 'claim_release_failed',
+            ambiguous: true,
+            provider_attempts: providerAttempt,
+          };
+        }
+        if (providerAttempt === APNS_PROVIDER_ATTEMPTS) {
+          return {
+            id: row.id,
+            ok: false,
+            status: response.status,
+            reason,
+            retryable: true,
+            provider_attempts: providerAttempt,
+          };
+        }
+
+        claimed = await claimDelivery(db, {
+          deliveryKey: apnsId,
+          employeeId,
+          deviceTokenId: row.id,
+          deviceFingerprint,
+        });
+        if (!claimed) {
+          return {
+            id: row.id,
+            ok: false,
+            status: response.status,
+            reason: 'retry_claim_unavailable',
+            provider_attempts: providerAttempt,
+          };
+        }
+      } catch {
+        // A timeout/network error is ambiguous: Apple may have accepted the
+        // request. Retain the claim and never automatically double-send.
+        return {
+          id: row.id,
+          ok: false,
+          status: 0,
+          reason: 'provider_unavailable',
+          ambiguous: true,
+          provider_attempts: providerAttempt,
+        };
+      }
+    }
+
+    return { id: row.id, ok: false, status: 0, reason: 'provider_unavailable' };
+  }));
 
   return {
     sent: results.filter((result) => result.ok).length,
     attempted: results.length,
     pruned: results.filter((result) => result.pruned).length,
+    retryable: results.some((result) => result.retryable),
+    ambiguous: results.some((result) => result.ambiguous),
     results,
   };
 }

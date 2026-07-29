@@ -3,9 +3,10 @@
 **Last verified:** 2026-07-28
 
 Native push is wired end to end in the repository. Apple and Cloudflare sender
-configuration now exists, but enrollment remains deliberately off until the S1h
-personal-ownership boundary is qualified and separately applied. No deployment,
-device enrollment, provider delivery, or push-tap proof has occurred.
+configuration now exists, but enrollment remains deliberately off until the two
+focused Push migrations are qualified and separately applied. The broader S1h
+program remains deferred. No deployment, device enrollment, provider delivery,
+or push-tap proof has occurred.
 
 ## Already built — do not rebuild
 
@@ -17,8 +18,8 @@ device enrollment, provider delivery, or push-tap proof has occurred.
 | Per-config wiring | `project.pbxproj` — Debug uses `App.entitlements`, Release uses `App.Release.entitlements` | correct |
 | Registration | `src/lib/pushNotifications.js` → `registerPushForEmployee()` | fail-closed |
 | Tap → route | `resolveNativePushActionTarget()` + `NativeNavigationBridge` | wired |
-| Token storage | `device_tokens` via `upsert_device_token` | wired |
-| Sender | `functions/api/send-push.js` (APNs HTTP/2, JWT-signed) | wired |
+| Token storage | `device_tokens` via `upsert_my_native_device_token` | wired |
+| Sender | `functions/api/notify.js` → `functions/lib/apns.js`; owner-only self-test at `send-push.js` | wired |
 | Deep link | `functions/api/notify.js` writes `data.url` per notification | fixed 2026-07-27 (PUSH-01) |
 | Unenroll | `detachNativePushDevice()` on logout / account switch | wired |
 
@@ -68,8 +69,8 @@ the archive and IPA and passed:
   `eb022fae79464c25980746e961e80b383958677854ec5eafe1b4365d840b4b41`.
 
 This is local release qualification, not an upload candidate: the worktree was
-dirty, the report therefore has no source commit, and the final S1h/deploy/
-promotion gates remain open.
+dirty, the report therefore has no source commit, and the final focused
+database/deploy/promotion gates remain open.
 
 The release workflow runs Xcode/Fastlane archive and provider upload commands
 through `scripts/qa/run-owned-subprocess.mjs`: each command owns a distinct
@@ -99,9 +100,26 @@ production. Only development-signed device builds use the sandbox.
 ## Remaining activation sequence
 
 1. Apply and live-verify the already-isolated
-   `20260728223000_native_apns_token_boundary.sql`. It leaves existing
-   environment-unknown tokens inert, exposes only selector-free redacted RPCs,
-   and does not require the broader unapplied S1h migration.
+   `20260728223000_native_apns_token_boundary.sql`, followed by
+   `20260728224000_native_push_delivery_guardrails.sql`. Together they leave
+   environment-unknown tokens inert, expose only selector-free redacted
+   enrollment, cap installations, contain notification preferences to the
+   authenticated owner, claim each source-event/device-fingerprint delivery
+   durably with a 90-day replay window that survives token-row deletion and
+   bounded expired-claim cleanup, and
+   compare-and-delete only the stale token version Apple rejected.
+   Every production dispatcher must carry its persisted source occurrence;
+   missing identity skips APNs. Explicit Apple 429/5xx rejection receives one
+   release/reclaim retry; the message-notification outbox persists an exhausted
+   explicit refusal as native-only so already-delivered bell/Web Push/email
+   channels do not repeat. A timeout/network ambiguity keeps the claim and is
+   never automatically replayed. The first migration pins the exact legacy RPC
+   contracts and validates its new check constraint through the low-lock
+   `NOT VALID` → `VALIDATE` sequence. The companion retains the legacy
+   preference policy object with fail-closed predicates, gives the private
+   claim table an explicit service-only policy, and refuses every new-object
+   name collision. Its exact-contract rollback is deliberately unsafe and
+   requires an explicit operator session flag.
 2. Set `VITE_APNS_ENV=sandbox` for native Preview/debug builds and
    `VITE_APNS_ENV=production` for TestFlight/App Store. Change
    `VITE_NATIVE_PUSH_ENABLED` to exact lowercase `true` only in compatible
@@ -121,3 +139,8 @@ unset, and every value other than exact lowercase `true` keep enrollment off;
 so does a missing or malformed `VITE_APNS_ENV`.
 Cloudflare changes take effect on the next deployment; the native flag is also a
 build-time value, so an already-installed IPA cannot be activated remotely.
+
+The focused preference migration intentionally changes the state that the
+deferred broad S1h preflight expects. S1h must therefore be reconciled and
+re-qualified before a future apply; its refusal is a safety guard, not a reason
+to replay or bypass the focused migration.

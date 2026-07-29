@@ -35,7 +35,11 @@ const CONFIG = {
 function dbWithTokens(tokens) {
   return {
     select: vi.fn(async () => tokens),
-    delete: vi.fn(async () => null),
+    rpc: vi.fn(async (fn) => [
+      'claim_native_push_delivery',
+      'release_native_push_delivery_claim',
+      'prune_stale_native_device_token',
+    ].includes(fn)),
   };
 }
 
@@ -69,7 +73,11 @@ describe('stableApnsId', () => {
 
 describe('sendNativePushToEmployee', () => {
   it('does not read tokens or call Apple when configuration is incomplete', async () => {
-    const db = dbWithTokens([{ id: 'token-1', token: 'private-token' }]);
+    const db = dbWithTokens([{
+      id: 'token-1',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
     const fetchImpl = vi.fn();
 
     await expect(sendNativePushToEmployee({
@@ -91,7 +99,11 @@ describe('sendNativePushToEmployee', () => {
   });
 
   it('queries and calls only the exact configured environment', async () => {
-    const db = dbWithTokens([{ id: 'token-1', token: 'private-token' }]);
+    const db = dbWithTokens([{
+      id: 'token-1',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
     const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
 
     const result = await sendNativePushToEmployee({
@@ -109,7 +121,8 @@ describe('sendNativePushToEmployee', () => {
     expect(db.select).toHaveBeenCalledWith(
       'device_tokens',
       'employee_id=eq.employee-1&platform=eq.ios'
-        + '&apns_environment=eq.sandbox&select=id,token',
+        + '&apns_environment=eq.sandbox&select=id,token,updated_at'
+        + '&order=updated_at.desc&limit=5',
     );
     expect(fetchImpl).toHaveBeenCalledOnce();
     const [url, options, timeout] = fetchImpl.mock.calls[0];
@@ -119,13 +132,21 @@ describe('sendNativePushToEmployee', () => {
       'apns-topic': 'com.example.upr',
       'apns-push-type': 'alert',
       'apns-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'apns-collapse-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
     expect(timeout).toBe(15_000);
     expect(result).toEqual({
       sent: 1,
       attempted: 1,
       pruned: 0,
-      results: [{ id: 'token-1', ok: true, status: 200 }],
+      retryable: false,
+      ambiguous: false,
+      results: [{
+        id: 'token-1',
+        ok: true,
+        status: 200,
+        provider_attempts: 1,
+      }],
     });
     expect(JSON.stringify(result)).not.toContain('private-token');
   });
@@ -134,9 +155,16 @@ describe('sendNativePushToEmployee', () => {
     [410, 'Unregistered'],
     [400, 'BadDeviceToken'],
   ])('prunes permanent %s failures only inside the matching environment', async (status, reason) => {
-    const db = dbWithTokens([{ id: 'token-dead', token: 'private-token' }]);
+    const db = dbWithTokens([{
+      id: 'token-dead',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
     const fetchImpl = vi.fn(async () => new Response(
-      JSON.stringify({ reason }),
+      JSON.stringify({
+        reason,
+        ...(status === 410 ? { timestamp: 1_775_000_000_000 } : {}),
+      }),
       { status },
     ));
 
@@ -151,20 +179,31 @@ describe('sendNativePushToEmployee', () => {
       signJwtImpl: vi.fn(async () => 'signed-jwt'),
     });
 
-    expect(db.delete).toHaveBeenCalledWith(
-      'device_tokens',
-      'id=eq.token-dead&apns_environment=eq.production',
+    expect(db.rpc).toHaveBeenCalledWith(
+      'prune_stale_native_device_token',
+      expect.objectContaining({
+        p_device_token_id: 'token-dead',
+        p_token: 'private-token',
+        p_apns_environment: 'production',
+        p_observed_updated_at: '2026-07-28T12:00:00.000Z',
+      }),
     );
     expect(result.pruned).toBe(1);
     expect(JSON.stringify(result)).not.toContain('private-token');
   });
 
-  it('does not prune transient provider failures', async () => {
-    const db = dbWithTokens([{ id: 'token-retry', token: 'private-token' }]);
-    const fetchImpl = vi.fn(async () => new Response(
-      JSON.stringify({ reason: 'TooManyRequests' }),
-      { status: 429 },
-    ));
+  it('releases, reclaims, and retries an explicit transient provider refusal', async () => {
+    const db = dbWithTokens([{
+      id: 'token-retry',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ reason: 'TooManyRequests' }),
+        { status: 429 },
+      ))
+      .mockResolvedValueOnce(new Response('', { status: 200 }));
 
     const result = await sendNativePushToEmployee({
       db,
@@ -177,7 +216,209 @@ describe('sendNativePushToEmployee', () => {
       signJwtImpl: vi.fn(async () => 'signed-jwt'),
     });
 
-    expect(db.delete).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ sent: 0, attempted: 1, pruned: 0 });
+    expect(db.rpc).not.toHaveBeenCalledWith(
+      'prune_stale_native_device_token',
+      expect.anything(),
+    );
+    expect(db.rpc).toHaveBeenCalledWith(
+      'release_native_push_delivery_claim',
+      expect.objectContaining({ p_delivery_key: expect.any(String) }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+      retryable: false,
+      ambiguous: false,
+    });
+    expect(result.results[0]).toMatchObject({ provider_attempts: 2 });
+  });
+
+  it('retains an ambiguous timeout claim and refuses an automatic replay', async () => {
+    const claimed = new Set();
+    const db = {
+      select: vi.fn(async () => [{
+        id: 'token-timeout',
+        token: 'private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      rpc: vi.fn(async (fn, params) => {
+        if (fn !== 'claim_native_push_delivery') return false;
+        if (claimed.has(params.p_delivery_key)) return false;
+        claimed.add(params.p_delivery_key);
+        return true;
+      }),
+    };
+    const fetchImpl = vi.fn(async () => {
+      throw new Error('timeout');
+    });
+    const input = {
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Ambiguous',
+      eventKey: 'same-timeout-event',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    };
+
+    const first = await sendNativePushToEmployee(input);
+    const replay = await sendNativePushToEmployee(input);
+
+    expect(first).toMatchObject({ sent: 0, ambiguous: true });
+    expect(replay.results[0].reason).toBe('delivery_already_claimed');
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(db.rpc).not.toHaveBeenCalledWith(
+      'release_native_push_delivery_claim',
+      expect.anything(),
+    );
+  });
+
+  it('keeps a delivered occurrence claimed across token-row re-registration', async () => {
+    let tokenRowId = 'token-row-before-logout';
+    const claimed = new Set();
+    const claimCalls = [];
+    const db = {
+      select: vi.fn(async () => [{
+        id: tokenRowId,
+        token: 'same-private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      rpc: vi.fn(async (fn, params) => {
+        if (fn !== 'claim_native_push_delivery') return false;
+        claimCalls.push(params);
+        if (claimed.has(params.p_delivery_key)) return false;
+        claimed.add(params.p_delivery_key);
+        return true;
+      }),
+    };
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const input = {
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Stable registration',
+      eventKey: 'same-source-event',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    };
+
+    await sendNativePushToEmployee(input);
+    tokenRowId = 'token-row-after-reregister';
+    const replay = await sendNativePushToEmployee(input);
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(replay.results[0].reason).toBe('delivery_already_claimed');
+    expect(claimCalls[0].p_device_token_id).not.toBe(
+      claimCalls[1].p_device_token_id,
+    );
+    expect(claimCalls[0].p_device_fingerprint).toBe(
+      claimCalls[1].p_device_fingerprint,
+    );
+    expect(claimCalls[0].p_delivery_key).toBe(claimCalls[1].p_delivery_key);
+  });
+
+  it('strips arbitrary producer data before sending the native payload', async () => {
+    const db = dbWithTokens([{
+      id: 'token-privacy',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Private event',
+      body: 'Open UPR',
+      data: {
+        url: '/tech/messages',
+        phone: '+18015550123',
+        provider_id: 'secret-provider-id',
+        recovery: 'private',
+      },
+      eventKey: 'privacy:1',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.data).toEqual({ url: '/tech/messages' });
+  });
+
+  it('fails closed before Apple when a durable delivery claim cannot be acquired', async () => {
+    const db = dbWithTokens([{
+      id: 'token-claimed',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    db.rpc.mockResolvedValue(false);
+    const fetchImpl = vi.fn();
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Duplicate',
+      eventKey: 'same-source-event',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.results[0].reason).toBe('delivery_already_claimed');
+  });
+
+  it('bounds total fanout to five newest tokens', async () => {
+    const tokens = Array.from({ length: 9 }, (_, index) => ({
+      id: `token-${index}`,
+      token: `private-token-${index}`,
+      updated_at: `2026-07-28T12:00:0${index}.000Z`,
+    }));
+    const db = dbWithTokens(tokens);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Bounded',
+      eventKey: 'bounded:1',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(result.attempted).toBe(5);
+  });
+
+  it('does not prune a 410 without Apple invalidation time evidence', async () => {
+    const db = dbWithTokens([{
+      id: 'token-refreshed',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response(
+      JSON.stringify({ reason: 'Unregistered' }),
+      { status: 410 },
+    ));
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Stale response',
+      eventKey: 'stale:1',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(db.rpc).not.toHaveBeenCalledWith(
+      'prune_stale_native_device_token',
+      expect.anything(),
+    );
+    expect(result.pruned).toBe(0);
   });
 });

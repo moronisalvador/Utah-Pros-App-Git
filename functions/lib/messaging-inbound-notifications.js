@@ -9,6 +9,7 @@ export async function notifyInboundMessage({
   contact,
   from,
   text,
+  notificationEventId,
   dispatchImpl,
 }) {
   if (typeof dispatchImpl !== 'function') return;
@@ -21,6 +22,7 @@ export async function notifyInboundMessage({
       env,
       typeKey: 'message.inbound',
       body: {
+        notification_event_id: notificationEventId,
         title: `New text from ${who}`,
         body: preview || '[Media]',
         link: '/conversations',

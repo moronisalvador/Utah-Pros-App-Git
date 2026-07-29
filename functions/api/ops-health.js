@@ -284,6 +284,9 @@ export async function runOpsHealth(db, env, { now = new Date(), dispatchImpl = d
         env,
         typeKey: NOTIFICATION_TYPE,
         body: {
+          // The alert marker and native delivery share one occurrence identity.
+          // A retry today reuses it; tomorrow's alert gets a new Denver-date key.
+          notification_event_id: dedupeKey,
           title: `Ops alert · ${condition.title}`,
           body: condition.body,
           link: '/devtools',

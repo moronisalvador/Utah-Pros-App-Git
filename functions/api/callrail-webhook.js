@@ -104,6 +104,7 @@ export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEven
       db, env,
       typeKey: 'lead.new',
       body: {
+        notification_event_id: lead.id || null,
         title: 'New lead',
         body: `Call from ${caller}${src}.`,
         link: leadsLink,

@@ -273,11 +273,17 @@ authorization branch. It changes no table, column, policy, grant, or business ro
 service-role-only execution.
 
 An `allowed=true` response is not sufficient authorization to send: every service-role caller must
-allowlist the returned code for its exact purpose. Only the staff-written direct 1:1 service-message
-path accepts `IMPLIED_CONSENT`. Automated, scheduled, group, broadcast, bulk, campaign, and
-marketing paths accept `GLOBAL_OPT_IN` only; `SERVICE_CONSENT` also remains direct-staff-only.
-The concrete rollback restores `NO_CONSENT`. Until the exact migration is separately reviewed,
-authorized, applied, and verified, the live database does not return `IMPLIED_CONSENT`.
+allowlist the returned code for its exact purpose. The staff-written direct 1:1 service-message path
+accepts `IMPLIED_CONSENT`. A separate typed transactional-service registry initially allows
+`appointment_scheduled`, `appointment_canceled`, and `signature_request` producers to accept
+`SERVICE_CONSENT` or `IMPLIED_CONSENT`; these are reviewed registry entries, not a caller-controlled
+label bypass. Each producer must derive its purpose, destination and approved copy from the
+server-owned appointment or signature record, use a stable source-record/event delivery identity,
+and durably audit `transactional_service_send_allowed` before provider selection. No automated
+producer is live yet. Generic automation, scheduled free-form, group, broadcast, bulk, campaign,
+and marketing paths accept `GLOBAL_OPT_IN` only. The concrete rollback restores `NO_CONSENT`.
+Until the exact migration is separately reviewed, authorized, applied, and verified, the live
+database does not return `IMPLIED_CONSENT`.
 
 ## Known limits
 
@@ -328,11 +334,11 @@ backslashes all remain fail-closed. It is live under ledger version `20260724200
 live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
 remain unchanged with `outbound_unmatched`.
 
-## Pending mobile notification dispatcher boundary (S1d, 2026-07-26)
+## Live mobile notification dispatcher boundary (S1d, applied 2026-07-27)
 
-`20260726110000_notify_emit_service_boundary.sql` is authored and locally tested but **not
-applied**. It changes no table, trigger, schedule, policy, configuration row, URL, secret, header,
-or response shape. It preserves
+`20260726110000_notify_emit_service_boundary.sql` is live as ledger entry
+`20260727233704 notify_emit_service_boundary`. It changed no table, trigger, schedule, policy,
+configuration row, URL, secret, header, or response shape. It preserves
 `public.notify_emit(p_type_key text,p_body jsonb) RETURNS void`, owner `postgres`,
 `SECURITY DEFINER`, `search_path=public`, the catalog/URL no-op gates, and the existing
 `net.http_post` transport. Its only body change reverses the top-level object merge so the trusted
@@ -347,9 +353,9 @@ caller. The forward and rollback scripts fail closed on the captured target/call
 metadata. The rollback restores the exact prior body and `authenticated` grant and therefore
 re-opens the browser capability.
 
-Because the migration is unapplied, it is intentionally absent from the live provenance manifest.
-Add a ledger mapping and fresh function fingerprint only after an owner-authorized apply from the
-reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
+A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
+`27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
+`service_role`. Sanitized live metadata and the rollout/rollback record are in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
 ## Live notification read receipts and recipient RLS (S1g, applied 2026-07-28)
@@ -490,6 +496,30 @@ internal employee from `auth.uid()`, never return a raw token, reject foreign
 ownership, and are the only native-token RPCs granted to `authenticated`; direct
 table access and legacy selector RPCs are revoked from browser roles. This
 focused source has passed an isolated local behavior test but is not yet live.
+
+The ordered focused companion
+`20260728224000_native_push_delivery_guardrails.sql` preserves the deployed
+notification preference RPC signatures and return shapes while deriving browser
+ownership from `auth.uid()`, removes the authenticated `notification_prefs_all`
+policy's access additively by altering its predicates to false, removes direct
+browser grants, and keeps service-role recipient resolution compatible.
+It also adds private `native_push_delivery_claims` plus service-role-only
+claim/release/compare-and-prune RPCs. Claims are keyed by the real source-event
+occurrence and a non-reversible stable token/environment fingerprint; the
+claim table has no token-row foreign key, so logout, cap pruning, stale-token
+cleanup, and re-registration cannot erase replay history. Provider cleanup
+still matches the observed token row/environment/`updated_at`, and a 410
+deletion additionally requires Apple invalidation time not older than the
+registration. A claimed-at index supports bounded cleanup
+of at most 1,000 claims older than 90 days during each new claim, retaining a
+long retry window without unbounded table growth. The claim table has an
+explicit service-role-only RLS policy. Both focused migrations fail closed on
+complete live function/ACL/overload contracts and new-object collisions; the
+APNs environment check uses `NOT VALID` followed by `VALIDATE CONSTRAINT`.
+The companion rollback requires an explicit unsafe session flag before restoring
+the four exact prior RPC bodies/ACLs, because that compatibility rollback
+deliberately re-opens the selector defect. This focused boundary means the deferred broad
+S1h preflight will intentionally refuse until it is reconciled and re-qualified.
 
 The earlier `20260726223610_mobile_personal_ownership_boundary.sql` artifact is rejected evidence,
 not an apply candidate. Its employee self-promotion and raw-token takeover paths are addressed by

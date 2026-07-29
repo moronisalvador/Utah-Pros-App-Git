@@ -292,12 +292,18 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   write failure blocks the send.
   DND, explicit opt-out, pending STOP, phone mismatch, missing contact/phone, and an unavailable or
   unknown server decision still fail closed before provider selection.
-- Exact transactional-service exception, owner decision 2026-07-28:
-  `appointment_scheduled`, `appointment_canceled`, and `signature_request` may
-  consume `SERVICE_CONSENT` or `IMPLIED_CONSENT` through
-  `sendAutomatedMessage()`. Each such exception writes
-  `transactional_service_send_allowed` before provider selection. Those names
-  are an allowlist, not examples accepted by a generic bypass. Generic
+- Typed transactional-service exception, owner decision 2026-07-28. The initial reviewed registry
+  entries are
+  `appointment_scheduled`, `appointment_canceled`, and `signature_request`. They may
+  consume `SERVICE_CONSENT` or `IMPLIED_CONSENT` only through a dedicated typed
+  producer that derives its purpose and copy from the server-owned appointment
+  or signature record and records `transactional_service_send_allowed` before
+  provider selection. The generic `sendAutomatedMessage()` path cannot assert
+  one of those labels or accept implied consent. No such automated producer is
+  live yet; the existing staff-initiated signature text continues through
+  `/api/send-message`. Those names are a policy allowlist, not examples accepted
+  by a generic bypass; additional service-notice purposes require a reviewed
+  registry change. Generic
   automation, scheduled free-form messages, group, broadcast, bulk, marketing,
   and campaign traffic still require `GLOBAL_OPT_IN`.
 - Active internal admin/office employees may still attest documented prior service consent, and a

@@ -98,16 +98,20 @@ describe('sms consent: opt-out-only migration source contract', () => {
 describe('sms consent: send-path accepted-code contract', () => {
   const lib = read('functions/lib/sms-consent.js');
 
-  it('restricts implied permission to staff person-to-person sends', () => {
+  it('keeps implied permission out of generic automated and scheduled sends', () => {
     for (const name of [
       'STAFF_ACCEPTED_CONSENT_CODES',
       'AUTOMATED_ACCEPTED_CONSENT_CODES',
       'SCHEDULED_ACCEPTED_CONSENT_CODES',
+      'TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES',
     ]) {
       const declAt = lib.indexOf(`export const ${name}`);
       expect(declAt).toBeGreaterThan(-1);
       const block = lib.slice(declAt, lib.indexOf(']', declAt));
-      if (name === 'STAFF_ACCEPTED_CONSENT_CODES') {
+      if (
+        name === 'STAFF_ACCEPTED_CONSENT_CODES'
+        || name === 'TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES'
+      ) {
         expect(block).toContain('IMPLIED_CONSENT');
       } else {
         expect(block).not.toContain('IMPLIED_CONSENT');
@@ -130,6 +134,32 @@ describe('sms consent: send-path accepted-code contract', () => {
       expect(block).not.toContain('SERVICE_CONSENT');
       expect(block).not.toContain('IMPLIED_CONSENT');
     }
+  });
+
+  it('keeps the typed service exception in a reviewed registry', () => {
+    const purposeAt = lib.indexOf(
+      'export const TRANSACTIONAL_SERVICE_SMS_PURPOSES',
+    );
+    expect(purposeAt).toBeGreaterThan(-1);
+    const purposeBlock = lib.slice(purposeAt, lib.indexOf(']', purposeAt));
+    expect(purposeBlock).toContain('appointment_scheduled');
+    expect(purposeBlock).toContain('appointment_canceled');
+    expect(purposeBlock).toContain('signature_request');
+
+    const acceptedAt = lib.indexOf(
+      'export const TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES',
+    );
+    const acceptedBlock = lib.slice(acceptedAt, lib.indexOf(']', acceptedAt));
+    expect(acceptedBlock).toContain('GLOBAL_OPT_IN');
+    expect(acceptedBlock).toContain('SERVICE_CONSENT');
+    expect(acceptedBlock).toContain('IMPLIED_CONSENT');
+  });
+
+  it('does not let the generic automation API assert a service-purpose bypass', () => {
+    const generic = read('functions/lib/automated-send.js');
+    expect(generic).toContain('AUTOMATED_ACCEPTED_CONSENT_CODES');
+    expect(generic).not.toContain('servicePurpose');
+    expect(generic).not.toContain('TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES');
   });
 
   it('still fails closed locally on no phone, no opt-in, DND and opt-out', () => {
@@ -194,13 +224,25 @@ describe('sms consent: the client no longer pre-flights', () => {
 });
 
 describe('sms consent: canonical caller contract', () => {
-  it('documents exact-code allowlisting and every excluded send purpose', () => {
-    const schema = read('docs/database-schema.md');
-    expect(schema).toContain('IMPLIED_CONSENT');
-    expect(schema).toContain('An `allowed=true` response is not sufficient');
-    expect(schema).toContain(
-      'Automated, scheduled, group, broadcast, bulk, campaign, and',
-    );
-    expect(schema).toContain('marketing paths accept `GLOBAL_OPT_IN` only');
+  it('documents the typed exception, its hard boundary, and current live truth', () => {
+    for (const path of [
+      '.claude/rules/sms-experience-wave-ownership.md',
+      'docs/database-schema.md',
+      'docs/integrations.md',
+    ]) {
+      const doc = read(path);
+      const normalized = doc.replace(/\s+/g, ' ');
+      expect(normalized).toContain('appointment_scheduled');
+      expect(normalized).toContain('appointment_canceled');
+      expect(normalized).toContain('signature_request');
+      expect(normalized).toContain('server-owned appointment or signature record');
+      expect(normalized).toContain('stable source-record/event delivery identity');
+      expect(normalized).toContain('transactional_service_send_allowed');
+      expect(normalized).toMatch(
+        /No (?:such )?automated producer (?:for these notices )?is live yet/,
+      );
+      expect(normalized).toContain('Generic automation');
+      expect(normalized).toContain('`GLOBAL_OPT_IN`');
+    }
   });
 });

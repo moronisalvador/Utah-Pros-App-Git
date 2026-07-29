@@ -45,7 +45,17 @@ const MINOR_VERSION = '70';
 // webhook and the hourly reconciliation cron cover the same event. INERT until
 // the catalog type is enabled, and wrapped so a notify failure can NEVER throw
 // into the payment-recording path (a lost notification must not lose a payment).
-export async function notifyPaymentReceived({ db, env, amount, invoiceId, jobId, source, reference, dispatchImpl = dispatchEvent }) {
+export async function notifyPaymentReceived({
+  db,
+  env,
+  amount,
+  invoiceId,
+  jobId,
+  source,
+  reference,
+  paymentEventId,
+  dispatchImpl = dispatchEvent,
+}) {
   try {
     const amt = Number(amount);
     const money = Number.isFinite(amt) ? `$${amt.toFixed(2)}` : 'A payment';
@@ -53,6 +63,7 @@ export async function notifyPaymentReceived({ db, env, amount, invoiceId, jobId,
       db, env,
       typeKey: 'payment.received',
       body: {
+        notification_event_id: paymentEventId || null,
         title: 'Payment received',
         body: `${money} recorded${source ? ` via ${source}` : ''}${reference ? ` · ${reference}` : ''}.`,
         link: invoiceId ? `/invoices/${invoiceId}` : '/collections',
@@ -247,6 +258,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     await notifyPaymentReceived({
       db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
       source: 'QuickBooks', reference: `QBO Payment #${qboPaymentId}`,
+      paymentEventId: `qbo:${qboPaymentId}:${inv.id}`,
     });
     results.push({ qboInvoiceId, invoice_id: inv.id, amount: applied, recorded: true });
   }

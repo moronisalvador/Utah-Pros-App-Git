@@ -333,9 +333,11 @@ Open external/release gates:
   (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
   screenshot fields remain incomplete;
 - APNs key and Cloudflare Preview/Production sender variables are configured,
-  but enrollment stays exact-default-off pending the focused native-token
-  migration, explicit `VITE_APNS_ENV` bindings, deployment, and a new signed
-  build. Broad S1h is not a Push activation prerequisite;
+  but enrollment stays exact-default-off pending the ordered focused native-token
+  and delivery-guardrail migrations, explicit `VITE_APNS_ENV` bindings,
+  deployment, and a new signed build. Broad S1h is not a Push activation
+  prerequisite; its preflight must be reconciled after the focused preference
+  boundary is live;
 - clean-source final archive/IPA verification, internal TestFlight upload/install,
   Universal/custom link, recovery/signing, Push, background/privacy, biometric,
   account-switch, permission, and offline physical-device matrix;

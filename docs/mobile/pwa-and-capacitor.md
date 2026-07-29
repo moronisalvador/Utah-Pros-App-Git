@@ -295,11 +295,20 @@ The focused `20260728223000_native_apns_token_boundary.sql` source makes raw
 native tokens browser-inaccessible, derives the current active internal
 employee inside selector-free enrollment/deletion RPCs, and separates sandbox
 from production. Foreign ownership raises `42501`; existing environment-unknown
-rows stay inert. Its isolated behavioral matrix passes. It is not live until a
-separate shared-project apply and catalog verification. The broader S1h source
-remains unapplied and is not required for this focused activation.
+rows stay inert. The ordered
+`20260728224000_native_push_delivery_guardrails.sql` source additionally closes
+cross-employee preference mutation, bounds installations/fanout, durably claims
+each source-event/device-fingerprint delivery independently of registration-row
+deletion, and compare-and-deletes stale tokens. Direct producers must provide a
+durable occurrence ID; explicit APNs 429/5xx refusal is retried once after
+release/reclaim, and an exhausted outbox refusal persists as native-only to
+avoid repeating other channels, while network ambiguity stays claimed. Their
+isolated behavioral matrices pass. Neither is live until a separate
+shared-project apply and catalog verification. The broader S1h source remains
+unapplied and is not required for this focused activation; its preflight must
+be reconciled after the focused preference boundary changes the expected input.
 
-Do not enable native push until:
+Do not enable native push until both focused migrations are live and:
 
 - installation/account/APNs environment are bound;
 - token rotation/logout/revocation/reinstall are handled;

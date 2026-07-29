@@ -24,7 +24,7 @@
  *     Normal notification delivery goes through notify.js so audience and
  *     employee preferences remain authoritative.
  *   - request_id is client-created and stable across retries; it becomes the
- *     APNs idempotency identity for this one diagnostic action.
+ *     durable delivery claim and APNs collapse identity for this diagnostic.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';

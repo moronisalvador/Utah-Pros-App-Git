@@ -2669,7 +2669,7 @@ APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
 APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
-APNS_ENV                        — "sandbox" (development-signed builds) | "production" (TestFlight/App Store); defaults sandbox
+APNS_ENV                        — exact "sandbox" (development-signed builds) | "production" (TestFlight/App Store); missing/unknown fails closed
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
@@ -3414,7 +3414,7 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Apple/APNs and Cloudflare sender configuration exist, but enrollment remains exact-default-off pending S1h live verification, compatible deployment, and signed-device proof.
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
@@ -8468,12 +8468,16 @@ The owner-directed 2026-07-28 opt-out-only source removes
 the server remains the final authority when Send is pressed. Active internal admin/office users may
 still record stronger prior-consent evidence; technicians cannot, notes remain available, and no
 attestation auto-sends. The distinct `IMPLIED_CONSENT` code may be accepted only by the
-staff-written direct service-message path and the exact
+staff-written direct service-message path and the initial reviewed
 `appointment_scheduled`, `appointment_canceled`, and `signature_request`
-transactional-service allowlist in `sendAutomatedMessage()`. Direct implied
-service decisions must write `service_send_allowed_existing_client`; the
-allowlisted automated path must write `transactional_service_send_allowed`.
-Both writes occur before provider selection and fail closed. Generic automation,
+transactional-service policy registry. Those are initial examples; additional
+service-notice purposes require a reviewed registry change. Direct implied service decisions must
+write `service_send_allowed_existing_client`. A future automated exception must
+use a dedicated typed producer that derives purpose/copy from the server-owned
+appointment or signature record and writes
+`transactional_service_send_allowed` before provider selection. The generic
+`sendAutomatedMessage()` path cannot assert the exception, and no such automated
+producer is live yet. Generic automation,
 scheduled free-form messages, group, broadcast, bulk, marketing, and campaign
 traffic still require `GLOBAL_OPT_IN`. DND, explicit opt-out, pending STOP, phone
 mismatch, missing/unreadable status, worker-only writes, and no-fallback rules are unchanged.
@@ -8486,9 +8490,34 @@ dispatcher as bell, Web Push, and notification email. The focused pending
 `20260728223000_native_apns_token_boundary.sql` migration adds an exact
 `sandbox`/`production` registration attribute, derives the authenticated
 employee inside selector-free RPCs, returns redacted metadata, and removes raw
-browser token access. Existing rows remain `NULL` and inert until a compatible
-client re-registers. The broad unapplied S1h migration is not an activation
-prerequisite for this focused token boundary and remains separately deferred.
+browser token access. Its preflight pins the exact legacy token RPC metadata,
+bodies, overload counts, and ACLs, requires the new column/RPC identities to be
+absent, and adds the check constraint `NOT VALID` before a separate validation
+step to minimize the strong-lock interval. Existing rows remain `NULL` and inert
+until a compatible client re-registers. The ordered
+`20260728224000_native_push_delivery_guardrails.sql` companion contains
+notification preferences to the authenticated owner, caps token fanout at five,
+adds a private durable source-event/device-fingerprint claim, sends an APNs
+collapse identity, allowlists only the native route payload, and
+compare-and-deletes only the stale token version Apple rejected. The
+non-reversible token/environment fingerprint is independent of the
+`device_tokens` row, so logout, cap pruning, stale cleanup, and re-registration
+cannot erase a 90-day replay boundary. Bounded cleanup prevents unbounded claim
+growth. The legacy preference policy object is retained but altered to
+fail-closed predicates; the new forced-RLS claim table has an explicit
+service-role policy. The guarded rollback restores the exact four prior RPC
+bodies/ACLs only with an explicit unsafe session flag, because doing so
+deliberately re-opens the prior selector defect. Every production dispatcher now carries its persisted source
+occurrence; missing identity skips native delivery. Explicit APNs 429/5xx
+refusals release/reclaim for one bounded retry. An exhausted explicit refusal
+from the durable message-notification outbox remains retryable in native-only
+mode, so bell/Web Push/email do not repeat; network/timeout ambiguity retains
+the claim and cannot double-send. Database events, inbound-message
+outbox rows, recurring ops alerts, inbound SMS, leads, feedback, melds,
+payments, and signed documents carry stable occurrence identities, so retries
+collapse while two separate events with identical copy do not. The broad unapplied S1h migration is not
+an activation prerequisite and remains separately deferred; its preflight must
+be reconciled after the focused preference state changes.
 
 Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
 while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
@@ -9210,7 +9239,14 @@ Push remains inactive by design. The three S1h dependencies are already live as
 `20260727154506 mobile_employee_identity_authority`,
 `20260727233845 upsert_employee_page_access_provenance_reconciliation`, and
 `20260728002105 mobile_employee_identity_containment`; never replay them. Only
-`20260727022920_mobile_personal_ownership_boundary.sql` remains absent. Its exact isolated
-forward/post-apply/behavior/guarded-rollback sequence, fresh live preflight, checksum-pinned apply,
-post-apply proof, client deploy, enrollment flip, physical delivery/tap test, signed distribution
-archive, and TestFlight upload/install remain separate gates.
+`20260727022920_mobile_personal_ownership_boundary.sql` remains absent and
+deferred. Push instead requires the focused, ordered
+`20260728223000_native_apns_token_boundary.sql` and
+`20260728224000_native_push_delivery_guardrails.sql`. The latter contains the
+notification-preference owner boundary, durable source-event/device claims,
+bounded fanout, compare-and-delete pruning, and service-role-only claim data.
+After that focused apply, the broad S1h preflight is expected to refuse its old
+input state until S1h is deliberately reconciled and re-qualified. Fresh live
+preflight, checksum-pinned apply, post-apply proof, compatible deploy,
+enrollment flip, physical delivery/tap test, signed distribution archive, and
+TestFlight upload/install remain separate gates.

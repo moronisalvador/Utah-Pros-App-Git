@@ -24,28 +24,212 @@
 --   intentionally not a safe rollback.
 -- ════════════════════════════════════════════════
 
-ALTER TABLE public.device_tokens
-  ADD COLUMN IF NOT EXISTS apns_environment text;
+DO $preflight$
+DECLARE
+  v_expected record;
+  v_oid oid;
+  v_execute_grantees text[];
+BEGIN
+  IF to_regclass('public.device_tokens') IS NULL THEN
+    RAISE EXCEPTION
+      'native APNs token preflight: device_tokens is missing';
+  END IF;
 
-DO $migration$
+  IF EXISTS (
+    SELECT 1
+    FROM pg_attribute
+    WHERE attrelid = 'public.device_tokens'::regclass
+      AND attname = 'apns_environment'
+      AND attnum > 0
+      AND NOT attisdropped
+  )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_constraint
+       WHERE conrelid = 'public.device_tokens'::regclass
+         AND conname = 'device_tokens_apns_environment_check'
+     ) THEN
+    RAISE EXCEPTION
+      'native APNs token preflight: additive column/constraint already exists';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_proc function_record
+    JOIN pg_namespace namespace_record
+      ON namespace_record.oid = function_record.pronamespace
+    WHERE namespace_record.nspname = 'public'
+      AND function_record.proname IN (
+        'upsert_my_native_device_token',
+        'delete_my_native_device_token'
+      )
+  ) THEN
+    RAISE EXCEPTION
+      'native APNs token preflight: new RPC identity already exists';
+  END IF;
+
+  FOR v_expected IN
+    SELECT *
+    FROM (
+      VALUES
+        (
+          'public.upsert_device_token(uuid,text,text)',
+          'upsert_device_token',
+          'p_employee_id uuid, p_token text, p_platform text',
+          'device_tokens',
+          'plpgsql',
+          'v'::"char",
+          ARRAY['search_path=public']::text[],
+          '5d5a405a4f83b0bceeada7c1e68f9759',
+          ARRAY['authenticated','postgres','service_role']::text[]
+        ),
+        (
+          'public.delete_device_token(text)',
+          'delete_device_token',
+          'p_token text',
+          'void',
+          'plpgsql',
+          'v'::"char",
+          ARRAY['search_path=public']::text[],
+          '08f895e2f310f23e1ca131a527a0d358',
+          ARRAY['authenticated','postgres','service_role']::text[]
+        )
+    ) AS expected(
+      identity,
+      function_name,
+      arguments,
+      result_type,
+      language_name,
+      volatility,
+      runtime_config,
+      body_md5,
+      execute_grantees
+    )
+  LOOP
+    IF (
+      SELECT count(*)
+      FROM pg_proc function_record
+      JOIN pg_namespace namespace_record
+        ON namespace_record.oid = function_record.pronamespace
+      WHERE namespace_record.nspname = 'public'
+        AND function_record.proname = v_expected.function_name
+    ) IS DISTINCT FROM 1 THEN
+      RAISE EXCEPTION
+        'native APNs token preflight: overload drift for %',
+        v_expected.function_name;
+    END IF;
+
+    v_oid := to_regprocedure(v_expected.identity);
+    IF v_oid IS NULL THEN
+      RAISE EXCEPTION
+        'native APNs token preflight: missing %',
+        v_expected.identity;
+    END IF;
+
+    SELECT array_agg(
+             COALESCE(grantee_role.rolname, 'PUBLIC')
+             ORDER BY COALESCE(grantee_role.rolname, 'PUBLIC')
+           )
+      INTO v_execute_grantees
+    FROM pg_proc function_record
+    CROSS JOIN LATERAL aclexplode(
+      COALESCE(
+        function_record.proacl,
+        acldefault('f', function_record.proowner)
+      )
+    ) acl
+    LEFT JOIN pg_roles grantee_role
+      ON grantee_role.oid = acl.grantee
+    WHERE function_record.oid = v_oid
+      AND acl.privilege_type = 'EXECUTE';
+
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_proc function_record
+      JOIN pg_language language_record
+        ON language_record.oid = function_record.prolang
+      WHERE function_record.oid = v_oid
+        AND pg_get_userbyid(function_record.proowner) = 'postgres'
+        AND language_record.lanname = v_expected.language_name
+        AND function_record.prosecdef
+        AND NOT function_record.proisstrict
+        AND NOT function_record.proleakproof
+        AND function_record.provolatile = v_expected.volatility
+        AND function_record.proparallel = 'u'::"char"
+        AND function_record.prokind = 'f'::"char"
+        AND function_record.proconfig = v_expected.runtime_config
+        AND pg_get_function_arguments(function_record.oid)
+              = v_expected.arguments
+        AND pg_get_function_result(function_record.oid)
+              = v_expected.result_type
+        AND md5(function_record.prosrc) = v_expected.body_md5
+    )
+       OR v_execute_grantees IS DISTINCT FROM
+            v_expected.execute_grantees
+       OR has_function_privilege('anon', v_oid, 'EXECUTE')
+       OR NOT has_function_privilege(
+         'authenticated',
+         v_oid,
+         'EXECUTE'
+       )
+       OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+      RAISE EXCEPTION
+        'native APNs token preflight: legacy RPC contract drift for %',
+        v_expected.identity;
+    END IF;
+  END LOOP;
+END;
+$preflight$;
+
+ALTER TABLE public.device_tokens
+  ADD COLUMN apns_environment text;
+
+ALTER TABLE public.device_tokens
+  ADD CONSTRAINT device_tokens_apns_environment_check
+  CHECK (
+    apns_environment IS NULL
+    OR apns_environment IN ('sandbox', 'production')
+  ) NOT VALID;
+
+ALTER TABLE public.device_tokens
+  VALIDATE CONSTRAINT device_tokens_apns_environment_check;
+
+DO $constraint_postcondition$
 BEGIN
   IF NOT EXISTS (
+    SELECT 1
+    FROM pg_attribute attribute_record
+    LEFT JOIN pg_attrdef default_record
+      ON default_record.adrelid = attribute_record.attrelid
+     AND default_record.adnum = attribute_record.attnum
+    WHERE attribute_record.attrelid = 'public.device_tokens'::regclass
+      AND attribute_record.attname = 'apns_environment'
+      AND attribute_record.attnum > 0
+      AND NOT attribute_record.attisdropped
+      AND format_type(
+        attribute_record.atttypid,
+        attribute_record.atttypmod
+      ) = 'text'
+      AND NOT attribute_record.attnotnull
+      AND default_record.oid IS NULL
+  )
+     OR NOT EXISTS (
     SELECT 1
     FROM pg_constraint
     WHERE conrelid = 'public.device_tokens'::regclass
       AND conname = 'device_tokens_apns_environment_check'
+      AND contype = 'c'
+      AND convalidated
+      AND pg_get_constraintdef(oid, true)
+            = 'CHECK (apns_environment IS NULL OR (apns_environment = ANY (ARRAY[''sandbox''::text, ''production''::text])))'
   ) THEN
-    ALTER TABLE public.device_tokens
-      ADD CONSTRAINT device_tokens_apns_environment_check
-      CHECK (
-        apns_environment IS NULL
-        OR apns_environment IN ('sandbox', 'production')
-      );
+    RAISE EXCEPTION
+      'native APNs token postcondition: column/constraint drift';
   END IF;
 END;
-$migration$;
+$constraint_postcondition$;
 
-CREATE OR REPLACE FUNCTION public.upsert_my_native_device_token(
+CREATE FUNCTION public.upsert_my_native_device_token(
   p_token text,
   p_apns_environment text
 )
@@ -60,6 +244,7 @@ DECLARE
 BEGIN
   IF NULLIF(btrim(p_token), '') IS NULL
      OR length(p_token) > 4096
+     OR p_apns_environment IS NULL
      OR p_apns_environment NOT IN ('sandbox', 'production') THEN
     RAISE EXCEPTION
       'token and an exact APNs environment are required'
@@ -114,6 +299,26 @@ BEGIN
       USING errcode = '42501';
   END IF;
 
+  -- Bound one employee/environment to the five newest installations. The
+  -- delivery worker uses the same cap, so one account cannot hold a Worker open
+  -- across an unbounded sequence of APNs calls.
+  DELETE FROM public.device_tokens stale_token
+  WHERE stale_token.id IN (
+    SELECT ranked.id
+    FROM (
+      SELECT
+        token_row.id,
+        row_number() OVER (
+          ORDER BY token_row.updated_at DESC, token_row.id DESC
+        ) AS position
+      FROM public.device_tokens token_row
+      WHERE token_row.employee_id = v_employee_id
+        AND token_row.platform = 'ios'
+        AND token_row.apns_environment = p_apns_environment
+    ) ranked
+    WHERE ranked.position > 5
+  );
+
   RETURN jsonb_build_object(
     'id', v_row.id,
     'platform', v_row.platform,
@@ -123,7 +328,7 @@ BEGIN
 END;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.delete_my_native_device_token(p_token text)
+CREATE FUNCTION public.delete_my_native_device_token(p_token text)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -183,12 +388,12 @@ ALTER FUNCTION public.delete_my_native_device_token(text)
 REVOKE EXECUTE ON FUNCTION public.upsert_my_native_device_token(text, text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.upsert_my_native_device_token(text, text)
-  TO authenticated;
+  TO authenticated, service_role;
 
 REVOKE EXECUTE ON FUNCTION public.delete_my_native_device_token(text)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.delete_my_native_device_token(text)
-  TO authenticated;
+  TO authenticated, service_role;
 
 -- The legacy functions accept or expose employee-selected/raw token data. Keep
 -- them for deployed server compatibility, but remove them from browser roles.
@@ -206,3 +411,126 @@ ALTER TABLE public.device_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.device_tokens FORCE ROW LEVEL SECURITY;
 REVOKE ALL PRIVILEGES ON TABLE public.device_tokens
   FROM PUBLIC, anon, authenticated;
+
+DO $postcondition$
+DECLARE
+  v_expected record;
+  v_oid oid;
+  v_execute_grantees text[];
+BEGIN
+  FOR v_expected IN
+    SELECT *
+    FROM (
+      VALUES
+        (
+          'public.upsert_my_native_device_token(text,text)',
+          'upsert_my_native_device_token',
+          'p_token text, p_apns_environment text',
+          'jsonb'
+        ),
+        (
+          'public.delete_my_native_device_token(text)',
+          'delete_my_native_device_token',
+          'p_token text',
+          'void'
+        )
+    ) AS expected(
+      identity,
+      function_name,
+      arguments,
+      result_type
+    )
+  LOOP
+    IF (
+      SELECT count(*)
+      FROM pg_proc function_record
+      JOIN pg_namespace namespace_record
+        ON namespace_record.oid = function_record.pronamespace
+      WHERE namespace_record.nspname = 'public'
+        AND function_record.proname = v_expected.function_name
+    ) IS DISTINCT FROM 1 THEN
+      RAISE EXCEPTION
+        'native APNs token postcondition: overload drift for %',
+        v_expected.function_name;
+    END IF;
+
+    v_oid := to_regprocedure(v_expected.identity);
+
+    SELECT array_agg(
+             COALESCE(grantee_role.rolname, 'PUBLIC')
+             ORDER BY COALESCE(grantee_role.rolname, 'PUBLIC')
+           )
+      INTO v_execute_grantees
+    FROM pg_proc function_record
+    CROSS JOIN LATERAL aclexplode(
+      COALESCE(
+        function_record.proacl,
+        acldefault('f', function_record.proowner)
+      )
+    ) acl
+    LEFT JOIN pg_roles grantee_role
+      ON grantee_role.oid = acl.grantee
+    WHERE function_record.oid = v_oid
+      AND acl.privilege_type = 'EXECUTE';
+
+    IF v_oid IS NULL
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_proc function_record
+         JOIN pg_language language_record
+           ON language_record.oid = function_record.prolang
+         WHERE function_record.oid = v_oid
+           AND pg_get_userbyid(function_record.proowner) = 'postgres'
+           AND language_record.lanname = 'plpgsql'
+           AND function_record.prosecdef
+           AND NOT function_record.proisstrict
+           AND NOT function_record.proleakproof
+           AND function_record.provolatile = 'v'::"char"
+           AND function_record.proparallel = 'u'::"char"
+           AND function_record.prokind = 'f'::"char"
+           AND function_record.proconfig = ARRAY['search_path=""']::text[]
+           AND pg_get_function_arguments(function_record.oid)
+                 = v_expected.arguments
+           AND pg_get_function_result(function_record.oid)
+                 = v_expected.result_type
+       )
+       OR v_execute_grantees IS DISTINCT FROM
+            ARRAY['authenticated','postgres','service_role']::text[]
+       OR has_function_privilege('anon', v_oid, 'EXECUTE') THEN
+      RAISE EXCEPTION
+        'native APNs token postcondition: new RPC contract drift for %',
+        v_expected.identity;
+    END IF;
+  END LOOP;
+
+  IF has_function_privilege(
+       'authenticated',
+       'public.upsert_device_token(uuid,text,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.delete_device_token(text)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.upsert_device_token(uuid,text,text)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.delete_device_token(text)',
+       'EXECUTE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.device_tokens',
+       'SELECT'
+     )
+     OR has_table_privilege('anon', 'public.device_tokens', 'SELECT') THEN
+    RAISE EXCEPTION
+      'native APNs token postcondition: legacy/table ACL boundary drift';
+  END IF;
+END;
+$postcondition$;

@@ -257,6 +257,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
     });
     const body = {
+      notification_event_id: 'feedback-event-1',
       title: 'New feedback',
       body: 'A technician sent feedback.',
       entity_type: 'tech_feedback',
@@ -307,6 +308,151 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     });
 
     expect(sendNativePushImpl).not.toHaveBeenCalled();
+  });
+
+  it('uses the source-event occurrence to separate identical notification copy', () => {
+    const type = {
+      type_key: 'appointment.updated',
+      label: 'Appointment updated',
+    };
+    const first = nativeNotificationEventKey(type, {
+      notification_event_id: '11111111-1111-4111-8111-111111111111',
+      entity_type: 'appointment',
+      entity_id: 'appointment-1',
+      title: 'Appointment updated',
+      body: 'Tomorrow at 9',
+    }, 'employee-1');
+    const replay = nativeNotificationEventKey(type, {
+      notification_event_id: '11111111-1111-4111-8111-111111111111',
+      entity_type: 'appointment',
+      entity_id: 'appointment-1',
+      title: 'Appointment updated',
+      body: 'Tomorrow at 9',
+    }, 'employee-1');
+    const distinct = nativeNotificationEventKey(type, {
+      notification_event_id: '22222222-2222-4222-8222-222222222222',
+      entity_type: 'appointment',
+      entity_id: 'appointment-1',
+      title: 'Appointment updated',
+      body: 'Tomorrow at 9',
+    }, 'employee-1');
+
+    expect(replay).toBe(first);
+    expect(distinct).not.toBe(first);
+    expect(nativeNotificationEventKey(type, {
+      entity_id: 'appointment-1',
+      title: 'Appointment updated',
+    }, 'employee-1')).toBeNull();
+  });
+
+  it('skips native APNs when the producer omits a stable occurrence id', async () => {
+    const sendNativePushImpl = vi.fn();
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: { title: 'No occurrence identity' },
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).not.toHaveBeenCalled();
+    expect(out.results[0].push.native).toMatchObject({
+      skipped: true,
+      reason: 'missing_notification_event_id',
+    });
+  });
+
+  it('retries native delivery without duplicating bell, Web Push, or email', async () => {
+    const sendNativePushImpl = vi.fn(async () => ({
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+    }));
+    const sendWebPushImpl = vi.fn(async () => ({ ok: true, status: 201 }));
+    const sendEmailImpl = vi.fn(async () => ({ ok: true }));
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: {
+        a1: prefRows('feedback.submitted', {
+          bell: true,
+          push: true,
+          email: true,
+        }),
+      },
+      subsByEmp: {
+        a1: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+      },
+      emailByEmp: { a1: 'admin@example.test' },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {
+        notification_event_id: 'feedback-native-retry-1',
+        title: 'Retry only native',
+      },
+      nativeRetryOnly: true,
+      sendNativePushImpl,
+      sendWebPushImpl,
+      sendEmailImpl,
+    });
+
+    expect(sendNativePushImpl).toHaveBeenCalledOnce();
+    expect(sendWebPushImpl).not.toHaveBeenCalled();
+    expect(sendEmailImpl).not.toHaveBeenCalled();
+    expect(db.rpcCalls.filter((call) => call.fn === 'create_notification')).toHaveLength(0);
+    expect(out.results[0]).toMatchObject({
+      bell: false,
+      email: 'off',
+      push: { native: { sent: 1 } },
+    });
+  });
+
+  it('forwards only the reviewed native route, not arbitrary producer data', async () => {
+    const sendNativePushImpl = vi.fn(async () => ({
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+    }));
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: {
+        a1: prefRows('feedback.submitted', { push: true }),
+      },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {
+        notification_event_id: 'feedback-event-2',
+        entity_type: 'tech_feedback',
+        entity_id: 'feedback-1',
+        data: {
+          url: '/tech/settings',
+          phone: '+18015550123',
+          provider_id: 'private',
+        },
+      },
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { url: '/tech/settings' },
+      }),
+    );
   });
 
   it('continues fan-out when one push subscription throws and reports the later success', async () => {

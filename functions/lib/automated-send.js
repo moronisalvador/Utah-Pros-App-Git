@@ -97,10 +97,8 @@ import { sendEmail } from './email.js';
 import { emailAllows } from './email-consent.js';
 import {
   AUTOMATED_ACCEPTED_CONSENT_CODES,
-  TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES,
   consentAllows,
   isAcceptedConsent,
-  isTransactionalServiceSmsPurpose,
 } from './sms-consent.js';
 import { sendMessage } from './twilio.js';
 import { normalizePhone } from './phone.js';
@@ -480,7 +478,6 @@ export async function sendGatedSms(env, {
   sentBy,
   recordBody,
   markWaitingOnClient,
-  servicePurpose,
 } = {}) {
   const db = supabase(env);
   const phone = normalizePhone(contact?.phone);
@@ -492,24 +489,18 @@ export async function sendGatedSms(env, {
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }
 
-  // Gate 2: consent. Generic automated traffic accepts GLOBAL_OPT_IN only. The
-  // three owner-approved service notices may consume SERVICE_CONSENT or
-  // IMPLIED_CONSENT, but still fail closed on no phone, DND, explicit opt-out,
-  // or a durable-but-unprojected STOP returned by the database.
-  const transactionalPurpose = isTransactionalServiceSmsPurpose(servicePurpose)
-    ? servicePurpose
-    : null;
+  // Gate 2: consent. This generic automation/campaign chokepoint accepts
+  // GLOBAL_OPT_IN only. The owner-approved service-notice policy is deliberately
+  // not caller-assertable here: each appointment/signature producer must get a
+  // dedicated typed wrapper that derives its purpose and copy from server-owned
+  // records before it can consume implied consent.
   const localConsentRow = {
     phone,
     opt_in_status: contact?.opt_in_status,
     opt_out_at: contact?.opt_out_at,
     dnd: contact?.dnd,
   };
-  const locallyAllowed = transactionalPurpose
-    ? !!localConsentRow.phone
-      && !localConsentRow.dnd
-      && !localConsentRow.opt_out_at
-    : consentAllows(localConsentRow);
+  const locallyAllowed = consentAllows(localConsentRow);
   let consentStatus = null;
   if (locallyAllowed && contact?.id) {
     try {
@@ -524,10 +515,10 @@ export async function sendGatedSms(env, {
       consentStatus = null;
     }
   }
-  const acceptedCodes = transactionalPurpose
-    ? TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES
-    : AUTOMATED_ACCEPTED_CONSENT_CODES;
-  if (!locallyAllowed || !isAcceptedConsent(consentStatus, acceptedCodes)) {
+  if (
+    !locallyAllowed
+    || !isAcceptedConsent(consentStatus, AUTOMATED_ACCEPTED_CONSENT_CODES)
+  ) {
     const reason = !phone
       ? 'no_phone'
       : contact?.dnd || consentStatus?.code === 'DND_ACTIVE'
@@ -538,22 +529,6 @@ export async function sendGatedSms(env, {
       : reason === 'no_consent' ? 'send_blocked_no_consent' : 'send_blocked_no_phone';
     await logSmsConsent(db, contact, eventType, `Automated SMS skipped: ${reason}`);
     return { ok: false, skipped: true, reason };
-  }
-
-  if (
-    transactionalPurpose
-    && !isAcceptedConsent(consentStatus, AUTOMATED_ACCEPTED_CONSENT_CODES)
-  ) {
-    // This evidence is required before the exception can reach a provider.
-    // Unlike routine outcome logging, a write failure aborts the send.
-    await db.insert('sms_consent_log', {
-      contact_id: contact?.id || null,
-      phone: contact?.phone || null,
-      event_type: 'transactional_service_send_allowed',
-      source: 'existing_client_service_relationship',
-      details: `Allowed ${transactionalPurpose} service notice with ${consentStatus.code}; DND, opt-out, and pending STOP were clear.`,
-      performed_by: sentBy || null,
-    });
   }
 
   // Gate 3: TCPA quiet-hours (8am–9pm recipient-local). DEFERRED, not dropped —
@@ -649,7 +624,6 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
       sentBy: extra.sentBy,
       recordBody: extra.recordBody,
       markWaitingOnClient: extra.markWaitingOnClient,
-      servicePurpose: extra.servicePurpose,
     });
   }
 
