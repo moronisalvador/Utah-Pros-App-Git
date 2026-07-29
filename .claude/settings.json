@@ -116,9 +116,7 @@
       "mcp__github__list_branches",
       "mcp__github__get_job_logs",
       "mcp__github__actions_get",
-      "mcp__github__actions_list",
-      "mcp__Supabase__execute_sql",
-      "mcp__Supabase__apply_migration"
+      "mcp__github__actions_list"
     ],
     "deny": [
       "Read(.env)",
@@ -145,6 +143,8 @@
       "mcp__*__qbo_sales_delete_recurring_invoice"
     ],
     "ask": [
+      "mcp__*__apply_migration",
+      "mcp__*__execute_sql",
       "mcp__*__merge_pull_request",
       "mcp__*__github_merge_pr",
       "mcp__*__stripe_create_payout",
