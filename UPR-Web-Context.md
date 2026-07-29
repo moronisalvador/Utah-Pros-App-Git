@@ -8486,8 +8486,9 @@ reviewed body is separately applied, the database never returns `IMPLIED_CONSENT
 behavior remains opt-in-only.
 
 Native APNs now uses the same `notify.js` audience and employee-preference
-dispatcher as bell, Web Push, and notification email. The focused pending
-`20260728223000_native_apns_token_boundary.sql` migration adds an exact
+dispatcher as bell, Web Push, and notification email. The focused
+`20260728223000_native_apns_token_boundary.sql` migration applied live on
+2026-07-28 and adds an exact
 `sandbox`/`production` registration attribute, derives the authenticated
 employee inside selector-free RPCs, returns redacted metadata, and removes raw
 browser token access. Its preflight pins the exact legacy token RPC metadata,
@@ -8495,7 +8496,8 @@ bodies, overload counts, and ACLs, requires the new column/RPC identities to be
 absent, and adds the check constraint `NOT VALID` before a separate validation
 step to minimize the strong-lock interval. Existing rows remain `NULL` and inert
 until a compatible client re-registers. The ordered
-`20260728224000_native_push_delivery_guardrails.sql` companion contains
+`20260728224000_native_push_delivery_guardrails.sql` companion applied
+immediately afterward and contains
 notification preferences to the authenticated owner, caps token fanout at five,
 adds a private durable source-event/device-fingerprint claim, sends an APNs
 collapse identity, allowlists only the native route payload, and
@@ -9206,8 +9208,16 @@ Apple Developer and App Store Connect now have real release state:
 - APNs Auth Key `JX22945D4T` is team-scoped for Sandbox & Production;
 - Cloudflare Pages project `utah-pros-app-git` has `APNS_P8_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`,
   `APNS_TOPIC`, `APNS_ENV`, and `VITE_NATIVE_PUSH_ENABLED` in both environments;
-- Preview uses APNs sandbox, Production uses APNs production, and enrollment remains explicit
-  `false` in both; no redeploy or push occurred;
+- Preview uses APNs sandbox and Production uses APNs production. The compatible source SHA
+  `dc8120797b273c1c5aa944659005aec56b7bbcf3c` deployed to the `dev` Preview target before the
+  two focused migrations applied; the Cloudflare-hosted enrollment flag remains explicit `false`;
+- the owner iPhone Debug build was rebuilt locally with native enrollment explicitly enabled,
+  reinstalled in place, and registered a fresh redacted `sandbox` token after both migration
+  postconditions passed. Older environment-less rows remain inert;
+- the owner-only Dev Tools → Advanced → Native Push control calls the fixed
+  `POST /api/send-push` diagnostic seam with a stable UUID. The server fixes the recipient to the
+  authenticated owner, copy, and `/tech/settings` route, so the UI cannot choose another employee
+  or arbitrary payload;
 - the first generated APNs key was revoked before use after trace exposure, both downloaded key
   files were permanently removed, and only Cloudflare's encrypted copy of the active replacement
   remains; and
