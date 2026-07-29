@@ -526,8 +526,14 @@ migration; verify via `upr_schema`/`upr_describe` MCP tools rather than trusting
 > orientation reference; the map supersedes them for counts and for anything load-bearing. Two
 > headline findings: only **37 of 223 policies do real authorization work** (139 are always-true
 > band-aids), and **67 tables / 87 functions have no CREATE in any migration**
-> (`docs/schema-v2/provenance-drift-2026-07-29.txt`). The map's dead lists are a **review queue,
-> not a kill list** — see its §2 for the verification gap that is still open.
+> (`docs/schema-v2/provenance-drift-2026-07-29.txt`). Classifications survived three passes —
+> mapping, adversarial dead-claim verification, and a sweep against four non-app-code surfaces
+> (executed runbooks, repair migrations, external-consumer annotations, doc-designated contracts)
+> that reclassified 59 claims. Final: **18 dead tables, 268 dead columns, 17 dead RPCs**, plus 92
+> uncertain columns and 15 uncertain RPCs awaiting owner answers. Still a **review queue, not a
+> kill list**: §8 carries 55 kill-notes naming what a future DROP must carry — above all
+> `merge_jobs()`, which sweeps a dozen dead tables by name and breaks at runtime if one is dropped
+> without replacing it in the same migration.
 
 ### Core Business
 ```
