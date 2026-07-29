@@ -117,7 +117,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}" || true
-          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
+          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' ':(exclude).claude/workflows/**' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
 
       # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
