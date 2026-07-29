@@ -17,7 +17,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, ensureQboCustomer } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, ensureQboCustomer, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
 
 // Snap a money value to whole cents. QBO rejects line Amounts with more than 2
 // decimals ("...has more precision than allowed"), and a qty×unit_price fallback
@@ -228,7 +228,7 @@ export async function onRequestPost(context) {
         : createInvoice(env, { CustomerRef: { value: String(contact.qbo_customer_id) }, Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...extra });
 
     const mode = inv.qbo_invoice_id ? 'updated' : 'created';
-    let qboInv, onlinePayWarning = null;
+    let qboInv, onlinePayWarning = null, customerRelink = null;
     try {
       qboInv = await pushInvoice(onlinePay);
     } catch (e) {
@@ -244,6 +244,16 @@ export async function onRequestPost(context) {
         // and the writeback below captures whatever it lands on. Keeps Save from hard-failing.
         docNumber = null;
         qboInv = await pushInvoice(onlinePay);
+      } else if (!inv.qbo_invoice_id && inv.contact_id && isStaleCustomerRef(e)) {
+        // The stored qbo_customer_id points at a customer QBO no longer has (deleted/merged
+        // duplicate, cross-realm id — the INV-000104 incident). Self-heal: re-match the contact
+        // against QBO on every signal (email, both name formats, phone), or create the customer
+        // if truly absent, write the mapping back, and retry ONCE. Ambiguous matches throw a
+        // clear "link manually" error instead of guessing — this is a money path.
+        const relink = await relinkQboCustomer(env, db, inv.contact_id);
+        contact.qbo_customer_id = relink.id;
+        qboInv = await pushInvoice(onlinePay);
+        customerRelink = `QuickBooks customer was re-linked automatically (matched by ${relink.matchedBy}).`;
       } else {
         throw e;
       }
@@ -264,7 +274,7 @@ export async function onRequestPost(context) {
     if (inv.status === 'draft') patch.status = 'saved';
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
     await logRun(db, 'completed', 1, null, startedAt);
-    return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning }, 200, request, env);
+    return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning, customer_relink: customerRelink }, 200, request, env);
   } catch (e) {
     await db.update('invoices', `id=eq.${invoiceId}`, { qbo_sync_error: (e.message || 'push failed').slice(0, 500) });
     await logRun(db, 'error', 0, e.message, startedAt);

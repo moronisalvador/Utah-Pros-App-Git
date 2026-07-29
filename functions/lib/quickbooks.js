@@ -243,31 +243,128 @@ function escQ(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-// Runs a Customer query, returns the first match (or null on no match / error).
-export async function queryCustomer(env, whereClause) {
-  const q = `SELECT Id, DisplayName, PrimaryEmailAddr FROM Customer WHERE ${whereClause}`;
+// Runs a Customer query, returns all matches (or [] on no match / error).
+export async function queryCustomers(env, whereClause, max = 10) {
+  const q = `SELECT Id, DisplayName, GivenName, FamilyName, PrimaryEmailAddr, PrimaryPhone FROM Customer WHERE ${whereClause} MAXRESULTS ${max}`;
   const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
   if (!res.ok) {
     console.warn('QBO customer query failed', JSON.stringify({ status: res.status, intuit_tid: res.headers.get('intuit_tid') || null }));
-    return null;
+    return [];
   }
   const data = await res.json().catch(() => ({}));
-  return data?.QueryResponse?.Customer?.[0] || null;
+  return data?.QueryResponse?.Customer || [];
 }
 
-// Dedup lookup before creating: match on email first, then exact (normalized,
-// case-insensitive) display name. Returns { customer, matchedBy } or null.
+// Runs a Customer query, returns the first match (or null on no match / error).
+export async function queryCustomer(env, whereClause) {
+  return (await queryCustomers(env, whereClause, 1))[0] || null;
+}
+
+// Last-10-digits phone normalization — QBO stores free-form numbers, so phone
+// equality is compared on digits, never on formatting.
+export function normalizePhoneDigits(s) {
+  const digits = String(s || '').replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+// Both display-name conventions seen in the realm: "First Last" (synced) and
+// "Last, First" (hand-entered in QuickBooks — the format that caused the Emily
+// Bailey stale-link incident).
+export function displayNameVariants(name) {
+  const n = normalizeWhitespace(name);
+  if (!n) return [];
+  const variants = [n];
+  const parts = n.split(' ');
+  if (parts.length > 1 && !n.includes(',')) {
+    variants.push(`${parts[parts.length - 1]}, ${parts.slice(0, -1).join(' ')}`);
+  }
+  return variants;
+}
+
+// Dedup lookup before creating — every signal we hold, strongest first:
+//   1. exact email;
+//   2. exact DisplayName in either convention ("First Last" / "Last, First");
+//   3. same family name + same phone digits (candidate scan).
+// Returns { customer, matchedBy } on ONE confident match, null on none, and
+// { ambiguous: true, candidates } when distinct customers both look right —
+// a money path never guesses between two people.
 export async function findExistingCustomer(env, contact, payload) {
   const email = (contact.email || '').trim();
   if (email) {
-    const byEmail = await queryCustomer(env, `PrimaryEmailAddr = '${escQ(email)}'`);
-    if (byEmail) return { customer: byEmail, matchedBy: 'email' };
+    const byEmail = await queryCustomers(env, `PrimaryEmailAddr = '${escQ(email)}'`);
+    if (byEmail.length === 1) return { customer: byEmail[0], matchedBy: 'email' };
+    if (byEmail.length > 1) return { ambiguous: true, candidates: byEmail };
   }
-  if (payload.DisplayName) {
-    const byName = await queryCustomer(env, `DisplayName = '${escQ(payload.DisplayName)}'`);
-    if (byName) return { customer: byName, matchedBy: 'name' };
+
+  const nameHits = [];
+  for (const variant of displayNameVariants(payload.DisplayName)) {
+    const hit = await queryCustomer(env, `DisplayName = '${escQ(variant)}'`);
+    if (hit && !nameHits.some((c) => c.Id === hit.Id)) nameHits.push(hit);
+  }
+  if (nameHits.length === 1) return { customer: nameHits[0], matchedBy: 'name' };
+  if (nameHits.length > 1) return { ambiguous: true, candidates: nameHits };
+
+  const phone = normalizePhoneDigits(contact.phone);
+  const family = normalizeWhitespace(contact.name).split(' ').pop();
+  if (phone.length === 10 && family) {
+    const candidates = await queryCustomers(env, `FamilyName = '${escQ(family)}'`);
+    const byPhone = candidates.filter(
+      (c) => normalizePhoneDigits(c?.PrimaryPhone?.FreeFormNumber) === phone,
+    );
+    if (byPhone.length === 1) return { customer: byPhone[0], matchedBy: 'phone' };
+    if (byPhone.length > 1) return { ambiguous: true, candidates: byPhone };
   }
   return null;
+}
+
+// True when QBO rejected a transaction because its CustomerRef points at a
+// customer that no longer exists in the realm (deleted/merged duplicate, or a
+// cross-realm id) — e.g. "Invalid Reference Id : Names element id 583 not found".
+export function isStaleCustomerRef(err) {
+  const msg = String(err?.message || '');
+  return /invalid reference id/i.test(msg) && /names element/i.test(msg);
+}
+
+// Repair a contact whose stored qbo_customer_id no longer resolves: re-match
+// against QBO on every signal (email / name variants / phone), or create the
+// customer if it genuinely is not there, then write the mapping back. Refuses
+// to guess between multiple plausible customers. Returns { id, matchedBy }.
+export async function relinkQboCustomer(env, db, contactId) {
+  const contact = (await db.select('contacts', `id=eq.${contactId}&limit=1`))?.[0];
+  if (!contact) throw new Error('Contact not found for QuickBooks relink');
+  const payload = mapContactToCustomer(contact);
+
+  const match = await findExistingCustomer(env, contact, payload);
+  if (match?.ambiguous) {
+    const list = match.candidates.map((c) => `${c.DisplayName} (#${c.Id})`).join(', ');
+    throw new Error(
+      `Multiple QuickBooks customers could match ${contact.name}: ${list} — open the contact and link the right one manually.`,
+    );
+  }
+
+  let customer = match?.customer || null;
+  let matchedBy = match?.matchedBy || 'created';
+  if (!customer) {
+    try {
+      customer = await createCustomer(env, payload);
+    } catch (e) {
+      // 6240 = duplicate DisplayName: someone created the customer between our
+      // search and the create. Re-query the exact name and adopt it.
+      if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
+        customer = await queryCustomer(env, `DisplayName = '${escQ(payload.DisplayName)}'`);
+        matchedBy = 'name';
+      }
+      if (!customer) throw e;
+    }
+  }
+
+  await db.update('contacts', `id=eq.${contactId}`, {
+    qbo_customer_id: String(customer.Id),
+    qbo_synced_at: new Date().toISOString(),
+    qbo_sync_error: null,
+  });
+  console.log('QBO customer relinked', JSON.stringify({ contact_id: contactId, qbo_customer_id: customer.Id, matched_by: matchedBy }));
+  return { id: String(customer.Id), matchedBy };
 }
 
 export async function createCustomer(env, payload) {

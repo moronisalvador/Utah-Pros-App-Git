@@ -34,8 +34,17 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
   const payload = mapContactToCustomer(contact);
 
   try {
-    // Dedup: match an existing customer by email, then by exact display name.
+    // Dedup: match an existing customer by email, name (both conventions), then phone.
     const match = await findExistingCustomer(env, contact, payload);
+
+    // Distinct QBO customers both look right — never guess on a money path, and
+    // never create a third. Surface it for a human to link manually.
+    if (match?.ambiguous) {
+      const list = match.candidates.map((c) => `${c.DisplayName} (#${c.Id})`).join(', ');
+      const err = `Multiple QuickBooks customers could match: ${list} — link manually.`;
+      if (!dryRun) await db.update('contacts', `id=eq.${contact.id}`, { qbo_sync_error: err.slice(0, 500) });
+      return { id: contact.id, name: contact.name, error: err };
+    }
 
     if (dryRun) {
       return match
