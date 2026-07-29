@@ -1,0 +1,62 @@
+{
+  "capturedAt": "2026-07-29",
+  "scope": "Existing dev findings at the first production promotion after the blocking ratchet was enabled. Shrink only; never raise.",
+  "findings": {
+    "functions/api/submit-esign.js": {
+      "warning:no-use-before-define": 1
+    },
+    "src/components/DatePicker.jsx": {
+      "error:react-hooks/set-state-in-effect": 2,
+      "warning:no-use-before-define": 4
+    },
+    "src/components/demo-sheet/DemoSheetRenderer.jsx": {
+      "error:react-refresh/only-export-components": 23
+    },
+    "src/components/tech/AddRoomSheet.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/tech/EquipmentPlacementSheet.jsx": {
+      "error:react-refresh/only-export-components": 1,
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/tech/NowNextTile.jsx": {
+      "error:react-refresh/only-export-components": 1
+    },
+    "src/components/tech/PhotoNoteSheet.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/components/tech/ReadingEntrySheet.jsx": {
+      "warning:no-restricted-syntax": 1,
+      "warning:no-use-before-define": 1
+    },
+    "src/contexts/AuthContext.jsx": {
+      "warning:no-use-before-define": 11
+    },
+    "src/contexts/ThemeContext.jsx": {
+      "error:react-refresh/only-export-components": 4
+    },
+    "src/pages/Conversations.jsx": {
+      "warning:no-use-before-define": 6
+    },
+    "src/pages/DevTools.jsx": {
+      "error:no-unused-vars": 16,
+      "warning:no-use-before-define": 25
+    },
+    "src/pages/JobPage.jsx": {
+      "error:no-empty": 2,
+      "error:no-unused-vars": 8,
+      "warning:no-restricted-syntax": 8,
+      "warning:no-use-before-define": 13,
+      "warning:react-hooks/exhaustive-deps": 4
+    },
+    "src/pages/tech/TechNewCustomer.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/tech/TechNewJob.jsx": {
+      "warning:no-restricted-syntax": 1
+    },
+    "src/pages/tech/v2/messages/ThreadView.jsx": {
+      "warning:no-use-before-define": 2
+    }
+  }
+}
