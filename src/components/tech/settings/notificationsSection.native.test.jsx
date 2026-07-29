@@ -1,18 +1,33 @@
 /**
- * SET-01 — the tech Settings notifications card must not show Web Push copy
- * inside the installed native app.
+ * ════════════════════════════════════════════════
+ * FILE: notificationsSection.native.test.jsx
+ * ════════════════════════════════════════════════
  *
- * Before this guard, WKWebView exposed no PushManager (so `supported` was
- * false) while the iOS userAgent regex still matched, which rendered the
- * Add-to-Home-Screen instructions to a technician already using the installed
- * app, beside a disabled "Turn On" button.
+ * WHAT THIS DOES (plain language):
+ *   Proves Settings keeps PWA Web Push and native APNs controls separate,
+ *   renders truthful native delivery states, and never shows Home-Screen
+ *   installation guidance inside the installed app.
  *
- * `@capacitor/core` is mocked rather than `@/lib/pushNotifications` so the real
- * `canRegisterPush()` runs — that keeps the test honest if the helper's
- * implementation changes. Uses renderToStaticMarkup like its sibling
- * settingsCards.render.test.jsx (no jsdom in this lane).
+ * DEPENDS ON:
+ *   Packages:  vitest, react-dom/server
+ *   Internal:  NotificationsSection, nativePushPresentation, i18n
+ *   Data:      none (Capacitor, Push, Auth, storage, and matrix are fakes)
+ *
+ * NOTES / GOTCHAS:
+ *   - Static rendering cannot run effects, so async delivery-state decisions
+ *     are tested through the pure presentation helper used by the component.
+ *   - Capacitor core is mocked, not the push helper, so the real native
+ *     detection and build-gate code still run.
+ * ════════════════════════════════════════════════
  */
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import {
+  beforeEach,
+  describe,
+  it,
+  expect,
+  afterEach,
+  vi,
+} from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const isNativePlatform = vi.fn(() => false);
@@ -20,7 +35,11 @@ const isNativePlatform = vi.fn(() => false);
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => isNativePlatform() },
 }));
-vi.mock('@capacitor/push-notifications', () => ({ PushNotifications: {} }));
+vi.mock('@capacitor/push-notifications', () => ({
+  PushNotifications: {
+    checkPermissions: vi.fn(async () => ({ receive: 'granted' })),
+  },
+}));
 
 // The matrix hits the database; this test is only about the push card copy.
 vi.mock('@/components/settings/NotificationPrefsMatrix', () => ({
@@ -32,6 +51,7 @@ vi.mock('@/contexts/AuthContext', () => ({
     db: {},
     employee: { id: 'emp-1', role: 'field_tech' },
     isFeatureEnabled: () => true,
+    pwaOwnerLease: { owner: 'v1.owner-fixture-token' },
   }),
 }));
 
@@ -46,13 +66,40 @@ vi.mock('@/lib/webPushClient', () => ({
 }));
 
 const { default: i18n } = await import('@/i18n');
+const {
+  NATIVE_PUSH_BINDING_KEY,
+  NATIVE_PUSH_USER_ENABLED_KEY,
+} = await import('@/lib/pushNotifications');
 const { default: NotificationsSection } = await import(
   '@/components/tech/settings/NotificationsSection'
 );
+const {
+  getNativePushPresentation,
+  runDevicePushAction,
+} = await import(
+  '@/components/tech/settings/nativePushPresentation'
+);
+
+function memoryStorage(initial = {}) {
+  const values = new Map(Object.entries(initial));
+  return {
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => values.set(key, value),
+    removeItem: (key) => values.delete(key),
+  };
+}
+
+beforeEach(() => {
+  vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', '');
+  vi.stubEnv('VITE_APNS_ENV', '');
+  vi.stubGlobal('localStorage', memoryStorage());
+});
 
 afterEach(() => {
   i18n.changeLanguage('en');
   isNativePlatform.mockReturnValue(false);
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 function render(lang = 'en') {
@@ -75,11 +122,44 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).toContain('nothing to set up here');
   });
 
-  it('offers no Turn On / Turn Off control on native', () => {
+  it('keeps controls hidden while the native build activation gate is off', () => {
     isNativePlatform.mockReturnValue(true);
     const out = render('en');
-    expect(out).not.toContain('Turn On');
-    expect(out).not.toContain('Turn Off');
+    expect(out).not.toContain('Turn on');
+    expect(out).not.toContain('Turn off');
+  });
+
+  it('offers Turn on for an explicitly disabled native installation', () => {
+    isNativePlatform.mockReturnValue(true);
+    vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
+    vi.stubEnv('VITE_APNS_ENV', 'sandbox');
+    vi.stubGlobal('localStorage', memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: 'false',
+    }));
+
+    const out = render('en');
+
+    expect(out).toContain('Not on yet for this phone.');
+    expect(out).toContain('Turn on');
+    expect(out).toContain('Turn push on here');
+    expect(out).not.toMatch(/Home Screen/i);
+  });
+
+  it('offers Turn off for a bound native installation', () => {
+    isNativePlatform.mockReturnValue(true);
+    vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
+    vi.stubEnv('VITE_APNS_ENV', 'sandbox');
+    vi.stubGlobal('localStorage', memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: 'synthetic-device-token',
+      [NATIVE_PUSH_USER_ENABLED_KEY]: 'true',
+    }));
+
+    const out = render('en');
+
+    expect(out).toContain('On here — checking iPhone notification access.');
+    expect(out).toContain('Turn off');
+    expect(out).toContain('checking whether iPhone Settings');
+    expect(out).not.toContain('Turn on');
   });
 
   it('keeps the web/PWA card unchanged when not native', () => {
@@ -94,10 +174,94 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).not.toContain('nothing to set up here');
   });
 
-  it('renders the native copy in all three locales', () => {
+  it('renders the activation-gated native copy in all three locales', () => {
     isNativePlatform.mockReturnValue(true);
     expect(render('en')).toContain('coming in an app update');
     expect(render('es')).toContain('llegarán en una actualización');
     expect(render('pt')).toContain('virá em uma atualização do app');
+  });
+});
+
+describe('native Push presentation fails closed', () => {
+  const base = {
+    activationReady: true,
+    bound: true,
+    intentEnabled: true,
+    pending: false,
+  };
+
+  it('never calls an unknown permission state deliverable', () => {
+    expect(getNativePushPresentation({
+      ...base,
+      effectiveEnabled: false,
+      permission: 'unknown',
+    })).toEqual({
+      hintKey: 'notifications.nativePermissionCheckingHint',
+      statusKey: 'notifications.statusNativeChecking',
+    });
+  });
+
+  it('keeps a denied binding controllable without calling it deliverable', () => {
+    expect(getNativePushPresentation({
+      ...base,
+      effectiveEnabled: false,
+      permission: 'denied',
+    })).toEqual({
+      hintKey: 'notifications.blockedHint',
+      statusKey: 'notifications.statusNativeBlocked',
+    });
+  });
+
+  it('surfaces pending cleanup ahead of a stale binding marker', () => {
+    expect(getNativePushPresentation({
+      ...base,
+      effectiveEnabled: false,
+      pending: true,
+      permission: 'granted',
+    })).toEqual({
+      hintKey: 'notifications.nativeCleanupPendingHint',
+      statusKey: 'notifications.statusNativeCleanupPending',
+    });
+  });
+
+  it('calls native Push on only after effective delivery is verified', () => {
+    expect(getNativePushPresentation({
+      ...base,
+      effectiveEnabled: true,
+      permission: 'granted',
+    })).toEqual({
+      hintKey: 'notifications.nativeManagedHint',
+      statusKey: 'notifications.statusOn',
+    });
+  });
+});
+
+describe('device Push actions never cross channels', () => {
+  it('runs only Web Push actions in the PWA', async () => {
+    const nativeAction = vi.fn(async () => ({ ok: true }));
+    const webAction = vi.fn(async () => ({ ok: true }));
+
+    await runDevicePushAction({
+      isNativeApp: false,
+      nativeAction,
+      webAction,
+    });
+
+    expect(webAction).toHaveBeenCalledOnce();
+    expect(nativeAction).not.toHaveBeenCalled();
+  });
+
+  it('runs only APNs actions in the native app', async () => {
+    const nativeAction = vi.fn(async () => ({ ok: true }));
+    const webAction = vi.fn(async () => ({ ok: true }));
+
+    await runDevicePushAction({
+      isNativeApp: true,
+      nativeAction,
+      webAction,
+    });
+
+    expect(nativeAction).toHaveBeenCalledOnce();
+    expect(webAction).not.toHaveBeenCalled();
   });
 });

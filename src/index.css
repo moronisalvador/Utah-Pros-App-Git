@@ -4727,6 +4727,26 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-settings-btn:disabled { opacity: 0.5; cursor: default; }
 .tech-settings-btn--primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .tech-settings-btn[data-confirm="true"] { background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border); }
+@media (max-width: 768px) {
+  .tech-layout .tech-settings-btn {
+    transition:
+      transform var(--motion-duration-fast) var(--motion-ease-standard),
+      background var(--transition-fast),
+      border-color var(--transition-fast),
+      color var(--transition-fast);
+  }
+  .tech-layout .tech-settings-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .tech-layout .tech-settings-card .ui-error-state .btn {
+    min-height: var(--tech-min-tap);
+  }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .tech-layout .tech-settings-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
 .tech-settings-seg {
   display: flex; gap: 8px; padding: 4px; border-radius: var(--tech-radius-button);
   background: var(--bg-secondary); border: 1px solid var(--border-light);
