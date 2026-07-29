@@ -21,11 +21,12 @@ NOTES / GOTCHAS:
 
 # Messaging Provider Cutover Proof and Runbook
 
-**Created / last verified:** 2026-07-23
+**Created / last verified:** 2026-07-29
 
 **Initiative:** `messaging-transport`
 
-**Status:** Phase 6 design; not executed and not an activation record
+**Status:** inactive Twilio inbound-parity source authored; not applied, deployed, executed, or an
+activation record
 
 ## 1. Purpose and hard boundary
 
@@ -61,10 +62,12 @@ Do not begin the proof until all conditions have current evidence:
 5. CallRail cannot be imported or selected by scheduled, automated, group, broadcast, bulk,
    campaign, or retry-daemon paths.
 6. The CallRail text webhook and Twilio inbound/status webhooks have independent signature
-   validation, event dedupe, worker-run visibility, and provider-specific fixtures.
-7. CallRail inbound MMS is either copied immediately into private UPR-owned storage and rendered
-   through an authorized resolver, or current provider evidence proves MMS can be disabled for the
-   selected number. MMS-body STOP/START/HELP must still reach canonical consent handling.
+   validation, event dedupe, worker-run visibility, and provider-specific fixtures. Twilio inbound
+   must be behind the applied `project_twilio_inbound_event` plus unique notification-outbox
+   boundary; the old direct notifier must be absent from the deployed source.
+7. CallRail and Twilio inbound MMS are copied immediately into private UPR-owned storage and
+   rendered through the authorized resolver. MMS-body STOP/START/HELP must still reach canonical
+   consent handling even when media capture retries.
 8. Every unresolved `prepared`, `submitting`, `accepted`, or `ambiguous` attempt is visible to the operator, and
    reconciliation can complete without resubmitting.
 9. Preview and Production server bindings have been inventoried by name and presence without
@@ -159,7 +162,7 @@ Provider routes coexist during proof, drain, rollback, and the late-event window
 | Provider event | Dedicated route | Authentication | Domain behavior |
 |---|---|---|---|
 | CallRail SMS Received/Sent | `/api/callrail-text-webhook` | `Signature` over exact raw body plus timestamp/replay check | Normalize and dedupe by CallRail identity |
-| Twilio inbound SMS | `/api/twilio-webhook` | `X-Twilio-Signature` using exact URL and all received parameters | Normalize and dedupe by Twilio Message SID |
+| Twilio inbound SMS/MMS | `/api/twilio-webhook` | `X-Twilio-Signature` using exact URL and all received parameters | Retain/dedupe by MessageSid, privately own MMS, then atomically project consent/message/unread/outbox |
 | Twilio status callback | `/api/twilio-status` | `X-Twilio-Signature` using exact URL and all received parameters | Advance only valid Twilio lifecycle state |
 
 The active outbound mode does not decide whether an authenticated provider event is accepted.

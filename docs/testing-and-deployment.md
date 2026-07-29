@@ -500,6 +500,43 @@ and verification that a stale retained event becomes processed or durably retrya
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
 
+### Twilio inbound durability verification
+
+The 2026-07-29 inactive Twilio parity source has credential-free Worker and QA coverage for exact
+and invalid signatures, future/repeated form parameters, schema/credential/account fail-closed
+gates, SMS/MMS normalization, MessageSid replay and concurrent duplicate behavior, transient
+projection retry, STOP/START/HELP ordering and TwiML, Advanced Opt-Out silence, private-media
+authentication/redirect/type/byte/size bounds, assigned/fallback audience, exact thread links, and
+stable outbox/native occurrence identity. The focused run passed 98 Worker tests plus 19 QA source
+contracts using the repository-pinned dependency tree from the primary checkout; this does not
+prove a database effect.
+
+Final repository verification passed `npm test` with 1,362 unit, 1,670 Worker, and 590 QA tests
+and zero unexpected skips; `npm run build`; changed-file eslint; migration hygiene (3 checked,
+0 failures); and `git diff --check`. The strict bundle report exited successfully but retained the
+existing advisory entry-graph overage: 259,110 bytes gzip, 2,215 bytes below its blocking line.
+The required consent-path, Worker-security, migration-safety, anon-grant, and UPR-pattern reviews
+all passed after their findings were resolved.
+
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql` is the rollback-only behavioral
+proof for the post-migration database. It exercises one canonical/unread/outbox effect, replay
+no-op, duplicate-phone STOP, stale START suppression, visible HELP, private MMS, assigned
+recipient/fallback payloads, and service-role-only execution. It has not run. This worktree has no
+`supabase/config.toml`, the local Colima Docker daemon is not running, and the historic migration
+ledger cannot reconstruct the legacy baseline, so `supabase start`/`npm run test:db:local` is not
+currently a reproducible proof. The seeded
+`qa-staging` branch is the safe hosted target; its dashboard `MIGRATIONS_FAILED` badge records the
+superseded creation replay, not current schema health. No branch mutation was authorized in this
+implementation session.
+
+The remaining database/release order is exact: approve the reviewed migration and rollback; apply
+and run the isolated proof on `qa-staging`; deploy compatible inactive Worker code to `dev` while
+Twilio inbound/provider switching stays untouched; apply the same committed migration to the
+shared project in a separate low-traffic owner window; verify grants/source/idempotency with no
+live send; then obtain separate authorization for webhook/provider configuration and controlled
+test traffic. Production mode, number routing, provider console, Cloudflare bindings, deployments,
+shared-database applies, and traffic remain independent gates.
+
 ### Mobile messaging release acceptance
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
