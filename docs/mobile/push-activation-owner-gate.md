@@ -133,6 +133,7 @@ failure rather than an explicit configuration error.
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
 | `APNS_TOPIC` | `com.utahprosrestoration.upr` |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
+| `NATIVE_RICH_NOTIFICATION_PRESENTATION` | unset = typed rich copy enabled (fail-open by design); exact string `false` reverts native copy to the generic fallback WITHOUT disabling push delivery — this is the copy-level rollback seam |
 | `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until the focused native-token migration is live-verified |
 | `VITE_APNS_ENV` | native debug/Preview: `sandbox`; TestFlight/App Store: `production` |
 
@@ -212,6 +213,12 @@ Cloudflare Preview/Production environment and redeploy. `readApnsConfig()`
 then fails closed before token lookup or Apple. This operational action is
 owner-gated and must be applied separately to Preview and Production.
 
+For sensitive or wrong notification COPY specifically, the narrower stop is
+setting `NATIVE_RICH_NOTIFICATION_PRESENTATION` to the exact string `false` in
+the affected Cloudflare environment and redeploying: typed rich copy reverts to
+the generic fallback while push delivery itself stays up. Reach for the
+`APNS_ENV` stop only when delivery itself must halt.
+
 After a stop:
 
 1. verify a bounded notification event returns `apns_not_configured` and no
@@ -225,6 +232,27 @@ After a stop:
 5. re-enable the APNs environment only after the replacement passes
    account-switch, privacy, foreground/background/terminated, and tap checks.
 
+## GitHub release environments (verified 2026-07-29 — names only, never values)
+
+`.github/workflows/ios-release.yml` reads from two GitHub environments. As of
+2026-07-29 only `ios-testflight`'s three secrets are documented as confirmed;
+**`ios-signing` is nowhere evidenced as configured**, and the workflow's
+current `workflow_dispatch`-only form has never been dispatched (100 historical
+push-triggered runs all failed at startup). The archive job fails closed at
+"Validate archive inputs" until `ios-signing` exists with all nine secrets:
+
+| Environment | Required secrets |
+|---|---|
+| `ios-signing` (archive job) | `APPLE_TEAM_ID`, `APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_PROVISIONING_PROFILE_BASE64`, `APPLE_PROVISIONING_PROFILE_NAME`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_NATIVE_PUSH_ENABLED` (exact string `true`), `VITE_APNS_ENV` (exact string `production`) |
+| `ios-testflight` (publish job) | `ASC_ISSUER_ID`, `ASC_KEY_ID`, `ASC_KEY_CONTENT_BASE64` |
+
+Note the deliberate split: the *Cloudflare hosted* `VITE_NATIVE_PUSH_ENABLED`
+stays `false` (enrollment is a native-build concern), while the *`ios-signing`
+build-time* value must be exact `true` for the TestFlight build. These are
+different stores; do not "fix" one to match the other. First dispatch should
+run with `publish_to_testflight: false` to prove the archive/signing lane
+before any upload is attempted.
+
 ## Remaining activation sequence
 
 1. Re-enable Web Push independently in each reinstalled PWA and accept the
@@ -236,6 +264,14 @@ After a stop:
 3. Upload that exact verified IPA to internal TestFlight. Install it, turn on
    Push so the installation registers a production token, then verify a real
    assigned-appointment event in foreground and background plus its tap route.
+
+The Dev Tools → Notifications diagnostic is single-environment BY DESIGN: it
+targets only tokens matching the worker's currently configured `APNS_ENV`, so
+it proves the exact installed build it reaches and nothing more. A green
+diagnostic is NOT evidence that the cross-environment production fan-out works,
+and a TestFlight (production-token) device exercised against Preview will read
+`no_tokens` as a false failure. First-TestFlight push proof is a real
+assigned-appointment event on `utahpros.app`, per step 3.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
 unset, and every value other than exact lowercase `true` keep enrollment off;
