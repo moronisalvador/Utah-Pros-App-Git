@@ -13,6 +13,9 @@ apply, deploy, send, upload, promote, or change provider state.
 **Starting `origin/dev`:** `c9060b299a5a0430ad4814267322de51a2d9e07f`  
 **Reviewed integration commit:** `dc8120797b273c1c5aa944659005aec56b7bbcf3`  
 **Current deployed `dev` at this checkpoint:** `d5d08cb48ed083d45108dce018969df760076f55`  
+**Current continuation base / `origin/dev`:** `bf45ae00fd96e8b115220fab2d2920472b9ca533`
+**Reviewed continuation source commits:** `64f2d86` through `81f9dac` (16
+small logical commits; exact list in section 10)
 **Production `main` was not changed.**
 
 This packet is intentionally explicit so another agent can challenge the work
@@ -291,9 +294,10 @@ Evidence collected:
 The evidence does not support the hypothesis that the focused APNs migrations
 disabled PWA Web Push. It supports a stale installed-PWA shell/chunk. The
 existing **Clear cache & reload** action uses the `/reset` cache-only recovery,
-preserving login and subscription state. Final physical confirmation of More,
-Settings, and the Web Push control after recovery must be recorded before
-calling the incident closed.
+preserving login and subscription state. On 2026-07-28, after reinstall/recovery,
+the owner enabled mobile notifications on one physical PWA installation and
+confirmed that Settings reported Push **On**. If a second PWA installation is
+still in use, its independent subscription state remains to be confirmed.
 
 ## 6. Verification actually performed
 
@@ -440,17 +444,254 @@ dc81207 Harden native push readiness and SMS consent
 d5d08cb feat(dev-tools): add owner native push test
 ```
 
-## 10. Safe continuation
+## 10. Device push controls added after the checkpoint
 
-1. Authenticate the owner in the UPR side-panel without exposing credentials.
-2. Put the installed app in the background.
-3. Use Dev Tools → Advanced → Native Push exactly once.
-4. Record the bounded API outcome, phone banner, and tap route.
-5. Recover the installed PWA with **Clear cache & reload** and verify More →
-   Settings → Notifications.
-6. Re-run the focused tests/build after final documentation changes.
-7. Commit by explicit path, push the wave branch and `dev`, and confirm the
-   resulting Cloudflare Preview deployment.
-8. Only then prepare a clean-source production archive and ask for a separate
-   TestFlight upload authorization.
+The final source batch adds device-local Turn on/Turn off controls to Settings
+→ Notifications on both supported clients without merging the channels:
 
+- browser and installed-PWA controls continue to use only the Web Push
+  service-worker subscription;
+- Capacitor controls use only this app installation's APNs registration and
+  selector-free owner RPCs;
+- new native installations default off; the preference is a versioned,
+  owner-bound record; a legacy local `true` may migrate on only when the
+  existing device binding proves the same owner; and an explicit off survives
+  restart;
+- an account switch cannot carry account A's native-on preference into account
+  B: account B performs no permission, APNs, or enrollment RPC work until that
+  account explicitly turns Push on;
+- native off is persisted before any await, so Auth bootstrap cannot race it
+  back on;
+- a registration that overlaps off writes an owner-bound detach marker before
+  upsert, retains it until the possibly committed request settles, and runs a
+  final owner-scoped delete afterward;
+- same-owner Settings/Auth enrollment joins one in-flight attempt instead of
+  misclassifying its marker as stale cleanup;
+- the v2 journal distinguishes provisional enrollment from confirmed cleanup:
+  only SQLSTATE `42501` with the exact foreign-owner RPC phrase can release a
+  provisional marker, while generic authorization failures and
+  network-ambiguous upserts remain journaled through immediate cleanup until a
+  later same-owner reconciliation after a 60-second safety window;
+- failed explicit native enable returns the durable intent to off;
+- native Settings checks current iOS permission on load and silently on resume,
+  never calls denied, unknown, or cleanup-pending delivery On, and never
+  returns or renders the raw token;
+- logout/detach best-effort clears already-delivered native notifications from
+  the device;
+- native APNs banners always use fixed generic copy (`Utah Pros notification` /
+  `Open Utah Pros for details.`); customer, appointment, message, and financial text is never
+  serialized into the APNs alert;
+- APNs data carries only an allowlisted route plus a stable opaque recipient
+  binding, and a tap is routed only when that binding matches the current
+  employee; a notification delivered for account A cannot route under account
+  B; and
+- English, Spanish, and Portuguese Settings copy describes the two native
+  states and pending cleanup.
+
+Files in this reviewed continuation batch:
+
+- `.github/workflows/ios-release.yml`
+- `.github/workflows/capgo-deploy.yml`
+- `capacitor.config.json`
+- `functions/api/notify.js`
+- `functions/api/notify.test.js`
+- `functions/lib/apns.js`
+- `functions/lib/apns.test.js`
+- `scripts/ios-release-workflow.test.js`
+- `scripts/qa/run-owned-subprocess.mjs`
+- `scripts/qa/verify-notifications-settings-ui.mjs`
+- `src/components/NativeNavigationBridge.jsx`
+- `src/components/NativeNavigationBridge.test.jsx`
+- `src/lib/nativeAppLinks.js`
+- `src/lib/nativeAppLinks.test.js`
+- `src/lib/nativeNavigationTarget.js`
+- `src/lib/pushNotifications.js`
+- `src/lib/pushNotifications.test.js`
+- `tests/qa/unit/native-navigation-source.test.js`
+- `tests/qa/fixtures/notifications-settings.html`
+- `tests/qa/fixtures/notifications-settings.jsx`
+- `tests/qa/fixtures/notifications-settings-mocks/*`
+- `src/components/tech/settings/NotificationsSection.jsx`
+- `src/components/tech/settings/nativePushPresentation.js`
+- `src/components/tech/settings/notificationsSection.native.test.jsx`
+- `src/i18n/locales/{en,es,pt}/settings.json`
+- `src/index.css`
+- `UPR-Web-Context.md`
+- `docs/app-store-readiness-roadmap.md`
+- `docs/audit/mobile-pwa/16-validation-log.md`
+- `docs/audit/mobile-pwa/17-native-push-testflight-preflight-2026-07-28.md`
+- `docs/audit/mobile-pwa/18-notifications-settings-closeout-2026-07-28.md`
+- `docs/audit/2026-07/native-ios/README.md`
+- `docs/mobile-production-readiness-roadmap.md`
+- `docs/mobile-production-readiness-setup.md`
+- `docs/mobile/data-contracts.md`
+- `docs/mobile/pwa-and-capacitor.md`
+- `docs/mobile/push-activation-owner-gate.md`
+- `docs/mobile/testing-and-release.md`
+- this handoff
+
+Reviewed source commit sequence:
+
+1. `64f2d86` — Harden native notification routes
+2. `6840b20` — Bind native notification navigation
+3. `2c8bf52` — Harden native push registration
+4. `5917304` — Separate native and web push settings
+5. `f84324e` — Clarify notification settings copy
+6. `491b27f` — Add notification settings QA fixture
+7. `05abce1` — Mock notification fixture dependencies
+8. `b256168` — Verify mobile notification settings UI
+9. `363253a` — Record notification settings closeout
+10. `b913800` — Minimize APNs notification payloads
+11. `b86aaaa` — Scope appointment push recipients
+12. `23240a0` — Harden TestFlight release workflow
+13. `d759571` — Disable dormant native OTA publishing
+14. `49b2a72` — Document native push contracts
+15. `46d9a6f` — Update mobile release guidance
+16. `81f9dac` — Record native TestFlight preflight
+
+The final TestFlight workflow now builds the native bundle only with
+`VITE_NATIVE_API_ORIGIN=https://utahpros.app` and
+`VITE_RELEASE_SHA=${{ github.sha }}`. A source gate refuses any other API
+origin or SHA. Both archive and publish jobs install Bundler `2.5.22`, matching
+`ios/Gemfile.lock`; the workflow source tests lock all three contracts.
+
+The first independent mobile security review requested four major fixes:
+owner-bind the durable on/off preference, distinguish exact foreign-token
+proof from generic `42501`, bind notification taps to the current employee,
+and remove private content from foreground-visible APNs alerts. The first
+release audit requested production API/SHA workflow inputs, lockfile-consistent
+Bundler, removal or full proof of the newly proposed CSS motion, current
+canonical release documentation, retained exact Xcode preflight evidence, and
+an explicit Push pilot stop/rollback plan. All requested changes are present
+in this working tree.
+
+The final security re-review then requested four further major fixes: parse the
+exact structured PostgREST ownership error instead of searching serialized
+text; reuse the native route/query policy in the APNs worker before provider
+serialization; make appointment audiences structurally crew-scoped even when
+trusted callers supply `recipient_ids`; and hard-disable plus API-pin the
+dormant Capgo workflow. These changes and negative tests are also present.
+The next pass caught that the shared navigation policy still admitted the
+public signing bearer paths `/sign/:token` and `/s/:code` into Push data. The
+Push-only resolver now rejects both to `/`, while ordinary Universal/App Links
+retain them; APNs tests prove neither bearer value reaches serialized provider
+data. The same review tightened the browser proof to the shared egress guard
+and a scrubbed child environment. The release auditor rejected the first
+resume proof because it mocked the hook, omitted 48px/clipping assertions, and
+failed exact scroll equality by two pixels. The final fixture uses the real
+tech shell and real resume hook, checks all three states, reports an explicit
+failure above two pixels, and passed the exact bounded command twice with zero
+measured drift on the current source.
+Final independent close-out then passed without a blocker, major, or minor
+finding in all six lanes: mobile Push security, notification contract,
+TestFlight release readiness, UPR source patterns, design/motion consistency,
+and page lifecycle behavior. The UPR pattern reviewer initially questioned a
+duplicate refresh, then explicitly withdrew that concern after confirming the
+native and Web Push branches are mutually exclusive. Final integrated tests
+and independent re-reviews are recorded below before publication.
+
+Focused post-remediation and final integrated verification:
+
+- native Push/bridge/Settings/release-workflow unit lane — 114 passed;
+- APNs/notification-dispatch worker lane — 83 passed;
+- native navigation QA lane — 9 passed;
+- targeted ESLint across changed executable files — zero findings;
+- `npm test` — 1,348 unit, 1,548 Worker, and 564 QA tests passed
+  with zero unexpected skips after the static navigation contract was updated
+  to require the employee-bound action resolver;
+- repository-wide `npm run lint` still fails the unrelated baseline with 2,964
+  findings (1,375 errors, 1,589 warnings); the explicit changed-file ratchet
+  above is clean;
+- the real Notifications Settings component passed the credential-free
+  390×844 forced loading/error/ready check twice and a 31-second silent resume
+  check through the real hook under controlled visibility events; route, input,
+  ready state, and scroll were preserved with zero measured drift on both
+  final current-source runs (the runner fails above two pixels), visible
+  actions were at least 48px, ordinary press feedback and its reduced-motion
+  fallback were both verified, horizontal overflow/clipping was zero, local
+  POST/external WebSocket probes were denied, zero external requests were
+  allowed, and the scrubbed child environment was used; both owned
+  browser/server process groups were verified gone and the limitations are
+  retained in
+  `docs/audit/mobile-pwa/18-notifications-settings-closeout-2026-07-28.md`;
+- the release subprocess tree test was made deterministic under the full
+  parallel unit lane by using a lightweight POSIX child tree; it still proves
+  timeout status `124`, whole-group cleanup, and descendant process removal;
+- `npm run build` — passed; compared with base `bf45ae0`, the five largest
+  named JavaScript deltas were `AuthContext` +3,416 B (+1,529 B gzip), `i18n`
+  +3,030 B (+4,019 B gzip), `TechSettings` +2,156 B (+685 B gzip), `index`
+  +1,751 B (+929 B gzip), and `realtime` +240 B (+222 B gzip; tied at
+  +240 B raw with `supabase` and `SignPage`); the final scoped 48px
+  failure-action and tokenized press-motion rules added 522 B raw / 84 B gzip
+  to the built CSS. Source `index.css` is 590,813 B, below the 595,000 B
+  ceiling, and no new render-blocking asset was emitted;
+- production-configured native Vite build — passed with exact production API,
+  Push enabled, production APNs, and a local preflight release marker;
+- `cap sync ios` — passed with ten plugins and no tracked `ios/` drift;
+- bounded unsigned generic-iOS Release build with Xcode 26.6 — passed; the
+  owned process group was verified gone and temporary DerivedData was removed;
+  and
+- exact commands, bundle/version/build, privacy manifest, generated Push
+  presentation options, release marker, limitations, and cleanup are retained
+  in
+  `docs/audit/mobile-pwa/17-native-push-testflight-preflight-2026-07-28.md`.
+
+The continuation source is committed in the 16 small logical commits listed
+above. This report is finalized in the following documentation commit; its
+single owner-authorized branch push is intentionally performed only after that
+commit, so the real remote outcome must be reported alongside this packet.
+This continuation has not been integrated into `dev`, deployed, promoted to
+`main`, or uploaded to TestFlight. After the reviewed source verification, the
+owner separately authorized a physical-device update.
+The native bundle was rebuilt with
+`VITE_NATIVE_API_ORIGIN=https://dev.utahpros.app`,
+`VITE_NATIVE_PUSH_ENABLED=true`, and `VITE_APNS_ENV=sandbox`; `cap sync ios`
+completed with no tracked native-project drift. Xcode 26.6 produced a signed
+Debug app carrying the development Push entitlement, and the app was installed
+in place over Wi-Fi on the owner's iPhone 17 Pro Max. Device tooling confirmed
+UPR `1.0.0 (1)` installed, launched, and remained running. The owner later
+authorized one bounded Dev Tools send and observed the notification while the
+Debug app was in the background. That proves sandbox APNs delivery to this
+development-signed installation; it does not prove production delivery or the
+TestFlight foreground/background/tap matrix.
+
+A final local release preflight built the native bundle with exact
+`VITE_NATIVE_PUSH_ENABLED=true` and `VITE_APNS_ENV=production`, synchronized
+Capacitor with no tracked `ios/App` drift, verified the generated foreground
+presentation options, and completed an unsigned generic-iOS Release build with
+Xcode 26.6. The production-signed artifact remains deliberately delegated to
+the `main`-only GitHub release workflow and its protected signing environment.
+The repository-wide lint command still reports the large pre-existing baseline
+outside this batch; changed executable files have zero findings (the JSON
+config is outside the targeted ESLint configuration). Local macOS still has
+Ruby 2.6 and Bundler 1.17.2, so a local clean Bundler 2.5.22 dependency check
+was not possible; the protected workflow installs Ruby 3.3 and the exact
+lockfile Bundler before archiving.
+
+## 11. Safe continuation
+
+1. One recovered physical PWA installation now reports Push **On**. Confirm
+   the second installation separately only if it remains in use.
+2. Keep the existing appointment audience rule: only assigned employees
+   receive appointment Push.
+3. Preserve the completed integrated tests, browser close-out evidence,
+   successful Xcode 26.6 unsigned Release preflight, and native foreground
+   alert/badge/sound source contract through independent security/release
+   re-review.
+4. Complete the already-authorized single push of the reviewed wave branch
+   after the final documentation commit, and record its exact remote tip.
+5. After a separate owner authorization, reconcile the wave into `dev`, push
+   `dev`, and verify the deployed PWA before production promotion.
+6. After another separate owner authorization, open and merge the reviewed
+   `dev → main` release PR without rewriting history.
+7. Reauthenticate GitHub CLI if needed, then—only after separate TestFlight
+   upload authorization—dispatch the `main`-only iOS release workflow with
+   publishing enabled. The workflow performs the production-signed archive,
+   export, artifact checks, and App Store Connect upload.
+8. Install the processed TestFlight build, turn on native Push to register a
+   production token, and verify assigned-appointment and inbound-message
+   delivery in foreground, background, terminated, and tap-open states.
+9. Exercise an account A→B switch and verify an A notification cannot route or
+   carry the on preference into B.
+10. Treat every additional test Push as a separate owner-authorized external
+   send; never expose tokens, private keys, or notification contents in evidence.
