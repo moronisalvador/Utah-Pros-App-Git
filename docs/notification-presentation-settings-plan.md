@@ -23,8 +23,8 @@ NOTES / GOTCHAS:
 
 # Notification Presentation Settings — Safe Design and Implementation Plan
 
-**Status:** implemented and adversarially reviewed; isolated `qa-staging` behavior verified;
-production database applied and dev deployment verified; production web promotion pending
+**Status:** live; implemented and adversarially reviewed; isolated `qa-staging` behavior verified;
+production database applied; exact production web deployment and protected API verified
 
 **Artifact tier:** Tier 1 (one sequenced implementation plan)
 
@@ -86,7 +86,7 @@ preview/test/real notification or widen native routes beyond the approved field-
 | Existing notification defaults page changes channels/locks | HAVE | `NotificationDefaultsTab.jsx` | Presentation belongs on a separate page and must not alter preference precedence. |
 | A reviewed native presentation registry exists | HAVE | reconciled local commit `9febb9d` (equivalent parent source commit `ff77044`); `functions/lib/notificationPresentation.js`; parent handoff `docs/handoff/native-notification-parity-2026-07-29.md` | Extend this exact registry; retain APNs provider-boundary enforcement. |
 | Audited presentation override storage exists | HAVE (source + hosted databases) | migration/rollback `20260729163127_notification_presentation_settings`; isolated `qa-staging` behavior proof; production ledger `20260729171946` and post-apply grant/RLS/catalog proof on 2026-07-29 | Production has zero override/audit rows; no live configuration was changed. |
-| Deployed Worker/database/provider/device behavior for this feature is proven | PARTIAL | local Worker/UI/build tests, isolated staging behavior, production database verification, and exact-SHA dev deployment/smoke are green | Production web promotion remains separate; no provider/device send is necessary. |
+| Deployed Worker/database behavior for this feature is proven | HAVE | local Worker/UI/build tests, isolated staging behavior, production database verification, exact production merge SHA, protected API denial, route chunks, and production smoke are green | No provider/device send is necessary or authorized by this configuration-only validation. |
 | Exact parent native registry contract is known | HAVE | `functions/lib/notificationPresentation.js` exports `NATIVE_NOTIFICATION_TYPE_KEYS` and `buildNativeNotificationPresentation(typeKey, body)`; `functions/lib/apns.js` exports the single- and cross-environment senders | Extend these exports after the commit SHA lands; do not create a second native registry or bypass APNs enforcement. |
 | Typed PWA/bell presentation context exists | HAVE | shared configurable catalog and runtime resolver in `functions/lib/notificationPresentation.js`; consumption in `functions/api/notify.js` | Email remains separately governed and unchanged. |
 
@@ -475,7 +475,7 @@ validated override and otherwise uses the code default. Do not change producers,
 preferences, delivery identity, consent, provider selection, native route policy, or channel retry
 behavior.
 
-### P5 — close-out (release promotion in progress)
+### P5 — close-out (complete)
 
 - targeted tests/lint;
 - full `npm test` and `npm run build`;
@@ -487,14 +487,20 @@ behavior.
 - report the exact production migration/deployment state; provider/device sending remains
   intentionally unexercised because the pure synthetic preview path requires none.
 
-Release evidence captured before production web promotion:
+Release evidence:
 
 - shared production migration ledger: `20260729171946 notification_presentation_settings`;
 - forced RLS, service-only table reads/RPC execution, and zero production override/audit rows
   verified after apply;
-- dev exact release: `5849d84c8bff6fcdc0d51fcc791c6ad43b17cb02`;
-- unauthenticated dev API request: `401 Missing Authorization header`;
-- dev deployment smoke: all 34 boot assets returned expected content types after a zone cache
+- reviewed production PR: `#547`, merged as
+  `3f456810162dad8c4407d354b36085778d138ae2`;
+- production `AuthContext` bundle embeds that exact merge SHA;
+- unauthenticated production API request: `401` JSON;
+- production Settings route: `200` SPA shell;
+- production route chunks: `NotificationPresentation-CB5NEoBq.js` served as JavaScript and
+  `NotificationPresentation-DefNoeei.css` served as CSS;
+- production deployment smoke: all 34 boot assets returned expected content types;
+- earlier dev deployment smoke also passed after a zone cache
   purge removed a stale HTML response previously cached for a JavaScript asset.
 
 ## Dependency graph
