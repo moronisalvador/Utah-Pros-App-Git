@@ -280,8 +280,10 @@ latest protected Universal Link until the verified employee plus owner lease is 
 account change, requires an already-ready account for Push actions, and uses generic foreground
 Push feedback without exposing notification content. `capacitor.config.json` additionally requests
 iOS badge, sound, and alert presentation for a notification received while the native app is in the
-foreground. Native APNs alert copy is generic and the action carries only an
-allowlisted route plus an opaque recipient binding. The worker applies the same
+foreground. Native APNs alert copy comes from the exhaustive typed,
+privacy-conscious event presentation catalog and the action carries only an
+allowlisted route plus an opaque recipient binding. Raw producer copy is not an
+APNs presentation input. The worker applies the same
 pure route/query policy before provider serialization, with an additional
 Push-only rejection for the public signing bearer paths `/sign/:token` and
 `/s/:code`; unsafe or credential-bearing routes fall back to `/`, so client
@@ -310,6 +312,13 @@ Generic SQLSTATE `42501` is not treated as foreign-token proof—only a parsed
 PostgREST body whose top-level `code` and full canonical `message` exactly match
 the foreign-owner response may release a provisional cleanup marker. Serialized,
 nested, partial-code, or unrelated error text remains journaled.
+
+Server delivery fans one trusted occurrence out to both exact APNs cohorts:
+development-signed sandbox tokens and TestFlight/App Store production tokens.
+The two provider calls retain separate token selection, hosts, fingerprints,
+delivery claims and stale-token pruning. `APNS_ENV` remains mandatory on the
+Worker as a fail-closed activation signal; dual delivery does not merge token
+environments or change the native build's exact `VITE_APNS_ENV`.
 
 Registration has generation/cancellation guards. Account cleanup invalidates late registration
 before awaiting, deletes the old installation's server binding while the old authenticated client

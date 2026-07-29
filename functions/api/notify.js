@@ -53,7 +53,7 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
-import { sendNativePushToEmployee } from '../lib/apns.js';
+import { sendNativePushToEmployeeAcrossEnvironments } from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
 
 // The internal notifications sender identity (distinct from the customer-facing
@@ -243,7 +243,8 @@ export async function dispatchToRecipient({
 
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
   if (on('push')) {
-    const nativeSender = sendNativePushImpl || sendNativePushToEmployee;
+    const nativeSender = sendNativePushImpl
+      || sendNativePushToEmployeeAcrossEnvironments;
     const eventKey = nativeNotificationEventKey(type, body, recipientId);
     if (!eventKey) {
       result.push.native = {
@@ -255,18 +256,18 @@ export async function dispatchToRecipient({
       };
     } else {
       try {
-        const native = await nativeSender({
+        const nativeInput = {
           db,
           env,
           employeeId: recipientId,
-          title: body.title || type.label,
-          body: body.body || '',
-          data: {
-            url: body.data?.url || body.link || '/',
-          },
+          typeKey: type.type_key,
+          notificationBody: body,
           eventKey,
-          fetchImpl,
-        });
+        };
+        // The real APNs sender owns its bounded fetchWithTimeout default.
+        // Only an explicitly injected sender receives the caller's fake fetch.
+        if (sendNativePushImpl && fetchImpl) nativeInput.fetchImpl = fetchImpl;
+        const native = await nativeSender(nativeInput);
         result.push.native = native;
         result.push.sent += native?.sent || 0;
         result.push.attempted += native?.attempted || 0;

@@ -45,10 +45,12 @@ The foreign-owner discriminator parses the top-level PostgREST body and
 requires the exact `42501` code plus the full canonical SQL message; nested,
 partial, malformed, or merely similar text never clears the journal.
 
-Every native APNs payload now uses generic `Utah Pros notification` /
-`Open Utah Pros for details.` alert copy and an opaque deterministic recipient binding. Caller/customer,
-appointment, message, and financial text are never serialized into the native
-provider payload. The worker applies the same pure native route/query policy
+Every native APNs payload now uses the exhaustive typed presentation catalog
+and an opaque deterministic recipient binding. Unknown types retain generic
+`Utah Pros notification` / `Open Utah Pros for details.` copy. Customer message
+contents, names, addresses, identifiers, financial amounts, appointment times
+and free-form notes are never serialized into native alert copy. Appointment
+alerts contain only the event state plus generic action copy. The worker applies the same pure native route/query policy
 before serialization and replaces unsafe input with `/`. The Push-only policy
 also rejects `/sign/:token` and `/s/:code`, which remain valid Universal/App
 Links but contain bearer capabilities that must never reach Apple. A tap is
@@ -180,14 +182,17 @@ The owner then separately authorized one bounded Dev Tools delivery to that
 Debug installation. The API accepted the test and the owner observed the iOS
 notification while the app was in the background. Value-free live evidence at
 that point showed one sandbox token and no production token for the owner.
-Ordinary appointment delivery targets the production worker and therefore
-cannot reach this development-signed sandbox installation. The latest inbound
-message evidence also showed its in-app notification row and a native delivery
-claim; delivery presentation still depends on the installation environment and
-app state.
+The source repair now fans every trusted occurrence to both exact APNs cohorts,
+so production-worker appointment events can target that development-signed
+sandbox installation without weakening token/environment separation. This
+source statement is not live delivery evidence until the reviewed Worker is
+deployed and the real event/device matrix passes. The latest inbound message
+evidence also showed its in-app notification row and a native delivery claim;
+delivery presentation still depends on the installation environment and app
+state.
 
 Foreground presentation is now explicit in `capacitor.config.json`: iOS may
-show badge, sound, and the generic privacy-safe alert while the native app is
+show badge, sound, and the typed privacy-safe alert while the native app is
 open. The JavaScript foreground callback remains content-private and emits only
 the constant refresh signal. Appointment audience remains the existing business
 rule: only employees assigned to the appointment receive appointment Push.

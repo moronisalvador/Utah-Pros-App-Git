@@ -173,6 +173,13 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   existing fan-out; they do not make an arbitrary browser payload trusted.
 - Every final notification audience is intersected with active, non-external employees before bell,
   push or email. Per-channel failure remains best-effort and is reported in the existing summary.
+- Native lock-screen presentation is selected by trusted event type, not caller-supplied copy or
+  paths. Every live type has explicit privacy-conscious title/body rules and a field-route
+  selection; unknown types and office-only destinations fall back to generic copy or native home.
+  Web Push, bell and email retain their separately governed richer presentation.
+- Resolving feedback and sending `feedback.resolved` as the company is admin-only server-side.
+  The submitting technician is the sole recipient and may configure the event, but a valid
+  technician session cannot invoke the sender.
 - Staff recording playback is company-wide only for an active internal admin or the explicit
   `crm_call_log` capability. The Worker must bind the UUID to an actual call row, match its stored
   provider call ID to its stored allowlisted URL, and complete those checks before credential or

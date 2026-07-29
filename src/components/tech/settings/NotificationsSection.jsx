@@ -78,8 +78,13 @@ import {
 const TECH_CATEGORIES = ['appointments', 'messaging'];
 // Plus a few individual types from otherwise-admin categories that DO reach the
 // employee themselves: the outcome of a timesheet-change request they filed, and
-// the "you may have forgotten to clock out" nudge for their own open clock.
-const TECH_EXTRA_TYPES = ['timesheet.change_reviewed', 'clock.abandoned'];
+// the "you may have forgotten to clock out" nudge for their own open clock,
+// and the resolution of feedback they personally submitted.
+const TECH_EXTRA_TYPES = [
+  'timesheet.change_reviewed',
+  'clock.abandoned',
+  'feedback.resolved',
+];
 const PUSH_OFF_CONFIRM_KEY = 'device-push-off';
 
 export default function NotificationsSection() {

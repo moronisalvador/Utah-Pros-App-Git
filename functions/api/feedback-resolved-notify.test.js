@@ -5,10 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the "tell the tech their feedback was resolved" worker behaves. It
- *   checks the pure payload/email helpers and that the request handler rejects a
- *   login-less request, 404s a missing feedback row, skips a row with no
- *   submitter, and otherwise hands off to the shared notification dispatcher
- *   aimed STRAIGHT at the submitter (recipient_ids), never the admin role.
+ *   checks the pure payload/email helpers and that the request handler enforces
+ *   the admin role, 404s a missing feedback row, skips a row with no submitter,
+ *   and otherwise hands off to the shared notification dispatcher aimed
+ *   STRAIGHT at the submitter (recipient_ids), never the admin role.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -38,10 +38,10 @@ function makeDb({ feedback } = {}) {
   };
 }
 
-const authFetch = ({ authOk = true } = {}) => async (url) =>
-  String(url).includes('/auth/v1/user')
-    ? { ok: authOk, status: authOk ? 200 : 401 }
-    : { ok: false, status: 404 };
+const allowAdmin = async () => ({
+  user: { id: 'user-admin' },
+  employee: { id: 'employee-admin', role: 'admin' },
+});
 
 function makeRequest({ auth, body = { feedback_id: 'fb-1' } } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -81,21 +81,57 @@ describe('buildResolvedEmailHtml', () => {
 describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
   const feedback = { id: 'fb-1', employee_id: 'tech-1', type: 'bug', title: 'Photos wont save', status: 'resolved' };
 
-  it('401s without a Bearer token (before dispatching)', async () => {
+  it('returns the admin role gate denial before dispatching', async () => {
     let called = false;
     const dispatchImpl = async () => { called = true; return { recipients: 0 }; };
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: null }), env: ENV, db: makeDb({ feedback }),
-      fetchImpl: authFetch(), dispatchImpl,
+      dispatchImpl,
+      authorizeImpl: async () => ({
+        error: 'Missing Authorization header',
+        status: 401,
+      }),
     });
     expect(res.status).toBe(401);
     expect(called).toBe(false);
   });
 
+  it('403s a valid non-admin employee before reading feedback or dispatching', async () => {
+    let selected = false;
+    let dispatched = false;
+    const db = {
+      async select() {
+        selected = true;
+        return [feedback];
+      },
+    };
+    const res = await handleFeedbackResolvedNotify({
+      request: makeRequest({ auth: 'Bearer tech' }),
+      env: ENV,
+      db,
+      authorizeImpl: async (_request, _env, _db, roles) => {
+        expect(roles).toEqual(['admin']);
+        return { error: 'Insufficient role', status: 403 };
+      },
+      dispatchImpl: async () => {
+        dispatched = true;
+        return { recipients: 1 };
+      },
+    });
+
+    expect(res).toEqual({
+      status: 403,
+      data: { error: 'Insufficient role' },
+    });
+    expect(selected).toBe(false);
+    expect(dispatched).toBe(false);
+  });
+
   it('404s when the feedback row is missing', async () => {
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: 'Bearer tok' }), env: ENV, db: makeDb({ feedback: null }),
-      fetchImpl: authFetch(), dispatchImpl: async () => ({ recipients: 0 }),
+      authorizeImpl: allowAdmin,
+      dispatchImpl: async () => ({ recipients: 0 }),
     });
     expect(res.status).toBe(404);
   });
@@ -106,7 +142,7 @@ describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: 'Bearer tok' }),
       env: ENV, db: makeDb({ feedback: { ...feedback, status: 'new' } }),
-      fetchImpl: authFetch(), dispatchImpl,
+      authorizeImpl: allowAdmin, dispatchImpl,
     });
     expect(res.status).toBe(409);
     expect(called).toBe(false);
@@ -118,7 +154,7 @@ describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: 'Bearer tok' }),
       env: ENV, db: makeDb({ feedback: { ...feedback, employee_id: null } }),
-      fetchImpl: authFetch(), dispatchImpl,
+      authorizeImpl: allowAdmin, dispatchImpl,
     });
     expect(res.status).toBe(200);
     expect(res.data.skipped).toBe('no_submitter');
@@ -130,7 +166,7 @@ describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
     const dispatchImpl = async (args) => { captured = args; return { recipients: 1, results: [] }; };
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: 'Bearer tok' }), env: ENV, db: makeDb({ feedback }),
-      fetchImpl: authFetch(), dispatchImpl,
+      authorizeImpl: allowAdmin, dispatchImpl,
     });
     expect(res.status).toBe(200);
     expect(captured.typeKey).toBe('feedback.resolved');
@@ -144,7 +180,7 @@ describe('handleFeedbackResolvedNotify — delegates to the dispatcher', () => {
     const dispatchImpl = async () => { throw new Error('dispatch boom'); };
     const res = await handleFeedbackResolvedNotify({
       request: makeRequest({ auth: 'Bearer tok' }), env: ENV, db: makeDb({ feedback }),
-      fetchImpl: authFetch(), dispatchImpl,
+      authorizeImpl: allowAdmin, dispatchImpl,
     });
     expect(res.status).toBe(200);
   });

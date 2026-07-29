@@ -56,6 +56,12 @@ Money, payroll, PII, campaigns, company messaging, credentials and administrativ
 the same or stronger role boundary server-side as the UI. Perform authorization before provider
 calls or service-role reads/writes. Record the actor for sensitive state changes.
 
+`POST /api/feedback-resolved-notify` mirrors the Feedback Inbox's `AdminRoute`
+with `requireRole(['admin'])` before reading the feedback row or dispatching
+bell, Web Push, native Push, or email as the company. A technician may receive
+and configure their own `feedback.resolved` notification, but cannot invoke the
+administrative sender.
+
 ## Database authorization
 
 - RLS and RPC bodies are the final data boundary for browser-accessible paths.

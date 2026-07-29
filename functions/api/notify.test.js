@@ -317,11 +317,11 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       db,
       env: ENV,
       employeeId: 'a1',
-      title: 'New feedback',
-      body: 'A technician sent feedback.',
-      data: { url: '/tech/settings' },
+      typeKey: 'feedback.submitted',
+      notificationBody: body,
       eventKey: nativeNotificationEventKey(baseType, body, 'a1'),
     });
+    expect(nativeSends[0]).not.toHaveProperty('fetchImpl');
     expect(out.results[0].push).toMatchObject({
       sent: 1,
       attempted: 1,
@@ -456,7 +456,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     });
   });
 
-  it('forwards only the reviewed native route, not arbitrary producer data', async () => {
+  it('uses the typed native destination instead of arbitrary producer data', async () => {
     const sendNativePushImpl = vi.fn(async () => ({
       sent: 1,
       attempted: 1,
@@ -489,7 +489,11 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
 
     expect(sendNativePushImpl).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { url: '/tech/settings' },
+        typeKey: 'feedback.submitted',
+        notificationBody: expect.objectContaining({
+          entity_type: 'tech_feedback',
+          entity_id: 'feedback-1',
+        }),
       }),
     );
   });

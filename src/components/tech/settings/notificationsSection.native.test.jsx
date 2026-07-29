@@ -31,6 +31,7 @@ import {
 import { renderToStaticMarkup } from 'react-dom/server';
 
 const isNativePlatform = vi.fn(() => false);
+const matrixProps = vi.hoisted(() => []);
 
 vi.mock('@capacitor/core', () => ({
   Capacitor: { isNativePlatform: () => isNativePlatform() },
@@ -43,7 +44,10 @@ vi.mock('@capacitor/push-notifications', () => ({
 
 // The matrix hits the database; this test is only about the push card copy.
 vi.mock('@/components/settings/NotificationPrefsMatrix', () => ({
-  default: () => null,
+  default: (props) => {
+    matrixProps.push(props);
+    return null;
+  },
 }));
 
 vi.mock('@/contexts/AuthContext', () => ({
@@ -90,6 +94,7 @@ function memoryStorage(initial = {}) {
 }
 
 beforeEach(() => {
+  matrixProps.length = 0;
   vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', '');
   vi.stubEnv('VITE_APNS_ENV', '');
   vi.stubGlobal('localStorage', memoryStorage());
@@ -109,6 +114,12 @@ async function render(lang = 'en') {
 }
 
 describe('SET-01 — native app never shows Web Push / install guidance', () => {
+  it('offers the resolved-feedback preference to a field technician', async () => {
+    await render('en');
+
+    expect(matrixProps.at(-1)?.typeFilter).toContain('feedback.resolved');
+  });
+
   it('does not tell a native user to add the app to their Home Screen', async () => {
     isNativePlatform.mockReturnValue(true);
     const out = await render('en');

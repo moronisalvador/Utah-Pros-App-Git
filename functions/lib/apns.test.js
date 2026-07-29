@@ -17,10 +17,11 @@
  *   - No provider credential, real token, or external request is used.
  * ════════════════════════════════════════════════
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   readApnsConfig,
   sendNativePushToEmployee,
+  sendNativePushToEmployeeAcrossEnvironments,
   stableApnsId,
 } from './apns.js';
 
@@ -42,6 +43,10 @@ function dbWithTokens(tokens) {
     ].includes(fn)),
   };
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('readApnsConfig', () => {
   it('requires an exact sandbox or production environment', () => {
@@ -72,6 +77,30 @@ describe('stableApnsId', () => {
 });
 
 describe('sendNativePushToEmployee', () => {
+  it('uses the bounded default HTTP client when a caller does not inject one', async () => {
+    const globalFetch = vi.fn(async (_url, options) => {
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      return new Response('', { status: 200 });
+    });
+    vi.stubGlobal('fetch', globalFetch);
+
+    const result = await sendNativePushToEmployee({
+      db: dbWithTokens([{
+        id: 'token-bounded-fetch',
+        token: 'private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Bounded request',
+      eventKey: 'bounded-request:1',
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(result.sent).toBe(1);
+    expect(globalFetch).toHaveBeenCalledOnce();
+  });
+
   it('does not read tokens or call Apple when configuration is incomplete', async () => {
     const db = dbWithTokens([{
       id: 'token-1',
@@ -110,9 +139,8 @@ describe('sendNativePushToEmployee', () => {
       db,
       env: CONFIG,
       employeeId: 'employee-1',
-      title: 'Appointment updated',
-      body: 'Tomorrow',
-      data: { url: '/tech/appointment/1' },
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: '1' },
       eventKey: 'appointment.updated:1',
       fetchImpl,
       signJwtImpl: vi.fn(async () => 'signed-jwt'),
@@ -138,8 +166,8 @@ describe('sendNativePushToEmployee', () => {
     const expectedRecipient = await stableApnsId('native-recipient:employee-1');
     expect(payload.aps).toEqual({
       alert: {
-        title: 'Utah Pros notification',
-        body: 'Open Utah Pros for details.',
+        title: 'Appointment updated',
+        body: 'Tap to review the changes.',
       },
       sound: 'default',
     });
@@ -347,10 +375,20 @@ describe('sendNativePushToEmployee', () => {
       db,
       env: CONFIG,
       employeeId: 'employee-1',
-      title: 'Private event for Ada Lovelace',
-      body: 'Call +18015550123 about claim 01742',
+      typeKey: 'appointment.updated',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        title: 'Private event for Ada Lovelace',
+        body: 'Call +18015550123 about claim 01742',
+        address: '1 Main Street',
+        notes: 'Free-form private review notes',
+      },
+      alert: {
+        title: 'Private alert for Ada Lovelace',
+        body: 'Call +18015550123 at 1 Main Street',
+      },
       data: {
-        url: '/tech/messages',
+        url: '/tech/messages?token=private',
         phone: '+18015550123',
         provider_id: 'secret-provider-id',
         recovery: 'private',
@@ -364,13 +402,13 @@ describe('sendNativePushToEmployee', () => {
     const expectedRecipient = await stableApnsId('native-recipient:employee-1');
     expect(payload.aps).toEqual({
       alert: {
-        title: 'Utah Pros notification',
-        body: 'Open Utah Pros for details.',
+        title: 'Appointment updated',
+        body: 'Tap to review the changes.',
       },
       sound: 'default',
     });
     expect(payload.data).toEqual({
-      url: '/',
+      url: '/tech/appointment/appointment-1',
       recipient: expectedRecipient,
     });
     expect(payload.data.recipient).toMatch(
@@ -380,6 +418,8 @@ describe('sendNativePushToEmployee', () => {
     expect(serializedPayload).not.toContain('Private event for Ada Lovelace');
     expect(serializedPayload).not.toContain('Call +18015550123 about claim 01742');
     expect(serializedPayload).not.toContain('+18015550123');
+    expect(serializedPayload).not.toContain('1 Main Street');
+    expect(serializedPayload).not.toContain('Free-form private review notes');
     expect(serializedPayload).not.toContain('secret-provider-id');
   });
 
@@ -499,5 +539,105 @@ describe('sendNativePushToEmployee', () => {
       expect.anything(),
     );
     expect(result.pruned).toBe(0);
+  });
+});
+
+describe('sendNativePushToEmployeeAcrossEnvironments', () => {
+  it('delivers the same trusted occurrence to sandbox and production cohorts', async () => {
+    const sendImpl = vi.fn(async ({ env }) => (
+      env.APNS_ENV === 'sandbox'
+        ? { sent: 1, attempted: 1, pruned: 0, retryable: false, ambiguous: false }
+        : { sent: 2, attempted: 2, pruned: 1, retryable: true, ambiguous: false }
+    ));
+
+    const result = await sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Appointment updated',
+      body: 'Tomorrow',
+      eventKey: 'appointment.updated:dual',
+      sendImpl,
+    });
+
+    expect(sendImpl).toHaveBeenCalledTimes(2);
+    expect(sendImpl.mock.calls.map(([input]) => input.env.APNS_ENV))
+      .toEqual(['sandbox', 'production']);
+    expect(result).toMatchObject({
+      sent: 3,
+      attempted: 3,
+      pruned: 1,
+      retryable: true,
+      ambiguous: false,
+      skipped: false,
+      environments: {
+        sandbox: { sent: 1, attempted: 1 },
+        production: { sent: 2, attempted: 2 },
+      },
+    });
+  });
+
+  it('fails closed before either cohort when shared APNs configuration is incomplete', async () => {
+    const sendImpl = vi.fn();
+
+    await expect(sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: { ...CONFIG, APNS_ENV: '' },
+      employeeId: 'employee-1',
+      title: 'Appointment updated',
+      eventKey: 'appointment.updated:missing-config',
+      sendImpl,
+    })).resolves.toMatchObject({
+      sent: 0,
+      attempted: 0,
+      skipped: true,
+      reason: 'apns_not_configured',
+    });
+
+    expect(sendImpl).not.toHaveBeenCalled();
+  });
+
+  it('still attempts production when the sandbox cohort throws', async () => {
+    const sendImpl = vi.fn(async ({ env }) => {
+      if (env.APNS_ENV === 'sandbox') throw new Error('private sandbox fault');
+      return {
+        sent: 1,
+        attempted: 1,
+        pruned: 0,
+        retryable: false,
+        ambiguous: false,
+      };
+    });
+
+    const result = await sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: 'appointment-1' },
+      eventKey: 'appointment.updated:partial',
+      sendImpl,
+    });
+
+    expect(sendImpl).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      sent: 1,
+      attempted: 1,
+      retryable: true,
+      skipped: false,
+      environments: {
+        sandbox: {
+          sent: 0,
+          skipped: false,
+          retryable: true,
+          reason: 'native_push_failed',
+        },
+        production: {
+          sent: 1,
+          attempted: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('private sandbox fault');
   });
 });

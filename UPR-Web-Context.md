@@ -3754,9 +3754,21 @@ It adds no migration or live-database change.
   has explicit **Turn on** / **Turn off** controls, owner-bound versioned local
   intent, permission checks on load/resume, exact token cleanup journaling, and
   delivered-notification cleanup during detach.
-- APNs banners use generic copy only. Data contains an allowlisted route and
-  opaque employee binding; public signing bearer routes are reduced to `/`,
-  and tap navigation fails closed when the current employee does not match.
+- APNs banners use an exhaustive typed presentation catalog. The approved
+  lock-screen budget excludes customer message contents, names, addresses,
+  identifiers, amounts, appointment times and free-form notes; appointment
+  alerts show only event state plus generic action copy. Unknown types retain
+  generic copy.
+  Data contains an allowlisted route and opaque employee binding; public
+  signing bearer routes are reduced to `/`, and tap navigation fails closed
+  when the current employee does not match.
+- Each trusted occurrence fans out to both exact APNs cohorts: sandbox
+  development installs and production TestFlight/App Store installs. Token
+  queries, Apple hosts, fingerprints, delivery claims, pruning and the
+  five-device bound remain environment-specific; Worker `APNS_ENV` is still a
+  required fail-closed activation signal. A thrown cohort is reported as a
+  sanitized retryable failure so the inbound-message outbox preserves its
+  native-only retry instead of closing the occurrence as a harmless skip.
 - Appointment Push resolves the appointment first and is structurally limited
   to currently assigned employees; supplied recipient IDs cannot widen it.
 - The main-only iOS workflow pins the production API and release SHA, uses the
@@ -3774,6 +3786,15 @@ It adds no migration or live-database change.
   native outcomes in protected worker-run telemetry. This is a worker-only fix;
   it adds no migration and does not change CallRail customer-message, consent,
   audience, bell, Web Push, or email behavior.
+- Native notification destinations are type-owned. Messages open the exact
+  field conversation, appointments the exact field appointment, signed
+  documents the native Job Hub, and resolved feedback the field feedback page.
+  Office-only admin events safely open native home until a separately approved
+  native admin route exists. Field technicians can now configure
+  `feedback.resolved` alongside their other self-recipient event types. The
+  corresponding sender now repeats the Feedback Inbox's admin-only gate
+  server-side with `requireRole(['admin'])` before any service-role read or
+  channel dispatch.
 
 Still gated: integration/push to `dev`, hosted PWA verification, reviewed
 `dev → main` promotion, TestFlight workflow dispatch/upload, processed

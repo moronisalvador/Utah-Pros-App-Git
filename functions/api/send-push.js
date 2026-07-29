@@ -69,9 +69,7 @@ export async function onRequestPost(context) {
     db,
     env,
     employeeId: auth.employee.id,
-    title: 'UPR notifications are ready',
-    body: 'This iPhone can receive UPR alerts.',
-    data: { url: '/tech/settings' },
+    typeKey: 'owner.native_push_test',
     eventKey: `owner-native-push-test:${payload.request_id}`,
   });
 
