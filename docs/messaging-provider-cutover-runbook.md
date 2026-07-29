@@ -25,8 +25,8 @@ NOTES / GOTCHAS:
 
 **Initiative:** `messaging-transport`
 
-**Status:** inactive Twilio inbound-parity source authored; not applied, deployed, executed, or an
-activation record
+**Status:** inactive Twilio inbound parity deployed on `dev`; database projection applied and
+verified on `qa-staging` and the shared project; provider activation and live traffic remain gated
 
 ## 1. Purpose and hard boundary
 

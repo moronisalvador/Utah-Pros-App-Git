@@ -97,10 +97,12 @@ bindings and provider consoles.
   `message_provider_events`, privately owns MMS bytes, then projects consent, canonical message,
   unread state, and one `message_notification_outbox` occurrence under the same per-phone lock as
   CallRail. The former direct `notifyInboundMessage()` module/path is removed, so the durable
-  outbox is the only `message.inbound` route. This is inactive source only: migration
-  `20260729211728_twilio_inbound_notification_parity.sql` is unapplied, the Worker is undeployed,
-  and no Twilio webhook/provider setting changed. Phase 6 in
-  `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
+  outbox is the only `message.inbound` route. The compatible inactive Worker is deployed on `dev`,
+  and migration `20260729211728_twilio_inbound_notification_parity.sql` is applied and
+  rollback-proof-verified on isolated `qa-staging` (ledger `20260729220202`). The identical
+  definition and service-only ACL are applied/catalog-verified on the shared project (ledger
+  `20260729221116`). No Twilio webhook/provider setting changed and no live traffic ran. Phase 6
+  in `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send

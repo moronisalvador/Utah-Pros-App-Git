@@ -195,7 +195,8 @@ returns exactly one due event. It adds no table, column, provider send, or brows
 Read-only catalog verification confirmed the exact source fingerprint, empty `search_path`,
 `SECURITY INVOKER` mode and service-role-only execution.
 
-Twilio inbound parity is repository-only and unapplied. Migration
+Twilio inbound parity is deployed inactive on `dev`, behavior-verified on isolated `qa-staging`,
+and catalog-verified on the shared production project. Migration
 `20260729211728_twilio_inbound_notification_parity.sql` adds no table, column, trigger, policy, or
 provider configuration. It defines one `SECURITY INVOKER`,
 service-role-only `project_twilio_inbound_event(uuid, boolean DEFAULT false)` projection over the
@@ -206,9 +207,19 @@ and inserts at most one outbox row keyed by `provider_event_id`. MMS is refused 
 reference is under private `upr-storage://message-attachments/twilio/` ownership. The paired
 rollback drops only this new function after compatible Worker code is rolled back; retained
 event/message/outbox history is not deleted. The isolated behavioral source is
-`supabase/tests/twilio_inbound_notification_parity_isolated.sql`; it has not run because this
-worktree has no reproducible local Supabase config/baseline and `qa-staging` mutation was not
-authorized.
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql`. On 2026-07-29 the exact reviewed
+migration (source SHA-256
+`4f3859baba80d2f9d4d9801f7eaaba9e5cbfec564ed092eac575d1592cd6cf3f`) was applied only to
+`qa-staging` under ledger version `20260729220202`. Catalog verification proved invoker mode,
+`search_path=pg_catalog, public`, service-role-only execution, no `anon`/`authenticated` execution,
+the internal service-role guard, shared phone lock, and outbox projection. The rollback-only SQL
+proof completed without exception and a post-proof query found zero fixture residue across
+employees, contacts, conversations, provider events, messages, outbox, and consent rows. The same
+reviewed source was applied to the shared project under ledger version `20260729221116`. Its
+deployed definition hash (`58b9d8db71347fb317145e683b8919db`), ACL, invoker mode, pinned search
+path, caller guard, phone lock, and outbox markers exactly match `qa-staging`. Production received
+read-only catalog verification only—no live write fixture or provider traffic. Local database
+behavior remains unverified because the repository cannot reconstruct the legacy baseline.
 
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
