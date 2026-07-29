@@ -555,3 +555,19 @@ The browser cannot query or mutate the presentation tables/RPC. The Worker uses 
 and the database writer independently requires the service-role claim plus the supplied actor's
 active/internal/admin row before its atomic write. Preview is a pure synthetic render and performs
 no configuration write or provider call.
+
+## Owner notification delivery diagnostics
+
+`POST /api/notification-test` is a separate fixed-scope diagnostic boundary. It requires
+`requireOwner()` before reading an address/subscription or causing any side effect. The
+authenticated employee is the only possible recipient; the request accepts only an allowlisted
+channel and a client-created UUID. Title, body, destination, sender, provider, and recipient are
+server-owned.
+
+The endpoint can create one owner-targeted bell row or send one owner-only Web Push, native APNs,
+or transactional email test. It cannot send SMS/MMS, select another employee, provide arbitrary
+content, or create a real business event. Before any channel side effect, the Worker claims the
+owner/channel/request tuple through the service-only diagnostic ledger and stores the bounded
+result; a lost HTTP response therefore replays the prior result instead of sending again. APNs and
+Resend additionally consume the UUID as their provider-specific stable identity. Provider errors
+are reduced to allowlisted diagnostic reasons and never return upstream details.
