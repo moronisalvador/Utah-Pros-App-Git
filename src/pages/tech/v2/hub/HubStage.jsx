@@ -44,6 +44,7 @@ import { isOnCrew, stageBucket, shouldShowElsewhere } from './hubStageState.js';
 import StageClock from './StageClock.jsx';
 import HubChecklist from './HubChecklist.jsx';
 import HubTools from './HubTools.jsx';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 function fmtMinutes(min) {
   if (min == null) return '—';
@@ -91,7 +92,7 @@ export default function HubStage({
   const typeLabel = titleCase(visit?.type);
 
   // Next visit on this job (WRAPPED "what's next" card).
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   const nextVisit = appointments
     .filter((a) => a.id !== apptId && a.date >= today && !['completed', 'cancelled'].includes(a.status))
     .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time_start || '').localeCompare(b.time_start || ''))[0] || null;

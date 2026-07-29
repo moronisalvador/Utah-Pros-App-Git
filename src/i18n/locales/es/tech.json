@@ -103,5 +103,10 @@
     "noteSaved": "Nota guardada",
     "noteSaveFailed": "Error al guardar la nota: {{message}}",
     "actionFailed": "Error en la acción: {{message}}"
+  },
+  "fieldShell": {
+    "blockedTitle": "Esta cuenta no usa la app de campo",
+    "blockedSub": "La app de campo es para los equipos que trabajan en obra. Tu cuenta tiene sus propias pantallas con todo lo que necesitas.",
+    "blockedAction": "Ir a mis pantallas"
   }
 }

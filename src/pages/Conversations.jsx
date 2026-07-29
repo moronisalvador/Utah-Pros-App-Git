@@ -267,7 +267,6 @@ export default function Conversations({ replyAssist } = {}) {
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
   const prependAnchorRef = useRef(null);   // first-visible message anchor for history/image layout
   const isPrependingRef = useRef(false);
-  const consentStatusRequestRef = useRef(0);
 
   const unresolvedMessageAuthorIds = useMemo(
     () => missingMessageAuthorMessageIds(messages, employeeDirectory),
@@ -616,124 +615,68 @@ export default function Conversations({ replyAssist } = {}) {
     activeConv?.type === 'direct'
     && (employee?.role === 'admin' || employee?.role === 'office')
   ) && employee?.is_external !== true;
-  const {
-    matches: statusMatchesActive,
-    checking: serviceConsentChecking,
-    canAttest: serviceConsentCanBeAttested,
-    suppressionCopy: serviceConsentSuppressionCopy,
-  } = getServiceConsentUiState({
+  // Only `matches` is still consumed. The checking/canAttest/suppressionCopy
+  // fields described the removed pre-flight fetch (2026-07-28) and have no
+  // remaining render path.
+  const { matches: statusMatchesActive } = getServiceConsentUiState({
     status: serviceConsentStatus,
     contact: activeContact,
   });
   const hasExplicitSmsOptOut = !!activeContact?.opt_out_at
-    || (statusMatchesActive && serviceConsentStatus.code === 'CONTACT_OPTED_OUT');
-  const hasRecordedSmsPermission = activeContact?.opt_in_status === true
-    || (
-      activeConv?.type === 'direct'
-      && statusMatchesActive
-      && serviceConsentStatus.allowed === true
-    );
+    || (statusMatchesActive
+      && (serviceConsentStatus.code === 'CONTACT_OPTED_OUT'
+        || serviceConsentStatus.source === 'explicit_opt_out'));
   const hasPendingSmsStop = statusMatchesActive
     && (serviceConsentStatus.code === 'CONTACT_PENDING_STOP'
       || serviceConsentStatus.source === 'pending_stop');
   const hasEffectiveDnd = !!activeContact?.dnd
     || (statusMatchesActive && serviceConsentStatus.code === 'DND_ACTIVE');
+
+  // CHANGED 2026-07-28 (owner-directed, adversarially narrowed): permission is
+  // implied only for a direct staff-written service message. Scheduled traffic
+  // still requires global opt-in, and neither path performs the removed
+  // per-thread pre-flight request.
+  const hasNoSmsObjection = !hasEffectiveDnd && !hasExplicitSmsOptOut && !hasPendingSmsStop;
   const hasGlobalSmsPermission = activeContact?.opt_in_status === true
-    || (statusMatchesActive
-      && serviceConsentStatus.allowed === true
-      && serviceConsentStatus.code === 'GLOBAL_OPT_IN');
-  const hasRequiredSmsPermission = showSchedule
-    ? hasGlobalSmsPermission
-    : hasRecordedSmsPermission;
+    || (statusMatchesActive && serviceConsentStatus.code === 'GLOBAL_OPT_IN');
   const customerSmsBlocked = !!activeContact && (
-    hasEffectiveDnd
-    || !statusMatchesActive
-    || serviceConsentChecking
-    || !!serviceConsentStatus.error
-    || hasExplicitSmsOptOut
-    || hasPendingSmsStop
-    || !hasRequiredSmsPermission
+    !hasNoSmsObjection
+    || (showSchedule && !hasGlobalSmsPermission)
   );
 
-  const loadServiceConsentStatus = useCallback(async ({ silent = false } = {}) => {
-    const requestId = consentStatusRequestRef.current + 1;
-    consentStatusRequestRef.current = requestId;
+  const loadServiceConsentStatus = useCallback(() => {
     const contactId = activeContact?.id;
     const phone = activeContact?.phone || null;
-    if (
-      !contactId
-      || activeConv?.type !== 'direct'
-      || activeContact?.dnd
-      || activeContact?.opt_out_at
-      || activeContact?.opt_in_status === true
-    ) {
-      setServiceConsentStatus({
-        contactId: contactId || null,
-        phone,
-        allowed: false,
-        loading: false,
-        checked: false,
-        error: null,
-        code: null,
-        source: null,
-      });
-      return;
-    }
 
-    setServiceConsentStatus(prev => {
-      const matches = prev.contactId === contactId && prev.phone === phone;
-      if (silent && matches && prev.checked && !prev.error) return prev;
-      return {
-        contactId,
-        phone,
-        allowed: false,
-        loading: true,
-        checked: false,
-        error: null,
-        code: null,
-        source: null,
-      };
+    // CHANGED 2026-07-28 (owner-directed): this used to fetch
+    // GET /api/attest-sms-consent on every thread open, which rendered
+    // "Checking SMS permission…" and held the composer. It now derives the
+    // answer synchronously from the contact row already on screen. The server
+    // is still the authority — POST /api/send-message runs the real gate and
+    // refuses with a reason, which is what onConsentRequired surfaces.
+    setServiceConsentStatus({
+      contactId: contactId || null,
+      phone,
+      allowed: !!contactId
+        && !activeContact?.dnd
+        && !activeContact?.opt_out_at,
+      loading: false,
+      checked: !!contactId,
+      error: null,
+      code: !contactId
+        ? null
+        : activeContact?.dnd
+          ? 'DND_ACTIVE'
+          : activeContact?.opt_out_at
+            ? 'NO_CONSENT'
+            : activeContact?.opt_in_status === true
+              ? 'GLOBAL_OPT_IN'
+              : 'IMPLIED_CONSENT',
+      source: activeContact?.opt_out_at ? 'explicit_opt_out' : null,
     });
-
-    try {
-      const authHeader = await getAuthHeader();
-      const response = await fetch(
-        `/api/attest-sms-consent?contact_id=${encodeURIComponent(contactId)}`,
-        { headers: authHeader },
-      );
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data.error || 'Could not verify SMS permission');
-      }
-      if (consentStatusRequestRef.current !== requestId) return;
-      setServiceConsentStatus({
-        contactId,
-        phone,
-        allowed: data.status?.allowed === true,
-        loading: false,
-        checked: true,
-        error: null,
-        code: data.status?.code || null,
-        source: data.status?.source || null,
-      });
-    } catch (error) {
-      if (consentStatusRequestRef.current !== requestId) return;
-      console.error('Load SMS permission status error:', error);
-      setServiceConsentStatus({
-        contactId,
-        phone,
-        allowed: false,
-        loading: false,
-        checked: false,
-        error: 'Could not verify SMS permission. Try again before recording or sending.',
-        code: 'CONSENT_STATUS_FAILED',
-        source: null,
-      });
-    }
   }, [
     activeContact?.id,
     activeContact?.phone,
-    activeConv?.type,
     activeContact?.dnd,
     activeContact?.opt_out_at,
     activeContact?.opt_in_status,
@@ -741,15 +684,12 @@ export default function Conversations({ replyAssist } = {}) {
 
   useEffect(() => {
     loadServiceConsentStatus();
-    return () => {
-      consentStatusRequestRef.current += 1;
-    };
   }, [loadServiceConsentStatus]);
 
   const refreshAfterResume = useCallback(() => {
     loadConversations({ silent: true });
     reloadActiveMessages();
-    loadServiceConsentStatus({ silent: true });
+    loadServiceConsentStatus();
   }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus]);
 
   useResumeRefetch({
@@ -1073,19 +1013,15 @@ export default function Conversations({ replyAssist } = {}) {
     const text = (el ? (el.innerText || '') : compose).trim();
 
     if (!isNote && customerSmsBlocked) {
-      const reason = showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
-        ? 'Scheduled SMS requires the contact’s full SMS opt-in'
-        : serviceConsentStatus.loading
-          ? 'SMS permission is still being verified'
-          : serviceConsentStatus.error
-            ? 'SMS permission could not be verified'
-            : hasExplicitSmsOptOut
-              ? 'Contact opted out of SMS'
-              : hasPendingSmsStop
-                ? 'A STOP request is still being processed'
-                : hasEffectiveDnd
-                  ? 'Contact has Do Not Disturb enabled'
-                  : 'Record verified SMS permission before sending';
+      const reason = hasExplicitSmsOptOut
+        ? 'Contact opted out of SMS'
+        : hasPendingSmsStop
+          ? 'A STOP request is still being processed'
+          : hasEffectiveDnd
+            ? 'Contact has Do Not Disturb enabled'
+            : showSchedule && !hasGlobalSmsPermission
+              ? 'Scheduled SMS requires the contact’s full SMS opt-in'
+              : 'Outbound SMS is blocked for this contact';
       emitToast(reason, 'error');
       return;
     }
@@ -1529,79 +1465,27 @@ export default function Conversations({ replyAssist } = {}) {
                 <span>🚫</span> DND is on — outbound messages blocked. Switch to internal note or disable DND in contact info.
               </div>
             )}
-            {activeContact && !hasEffectiveDnd && !hasRequiredSmsPermission && !isNote && (
-              <div
-                className="conv-consent-banner"
-                role={serviceConsentStatus.error ? 'alert' : 'status'}
-                aria-live={serviceConsentStatus.error ? 'assertive' : 'polite'}
-              >
+            {/* Opt-out is always actionable. Missing global opt-in is surfaced
+                only after staff explicitly opens scheduling because immediate
+                direct 1:1 service SMS uses the reviewed implied-permission
+                exception. A pending STOP remains silently server-enforced. */}
+            {activeContact
+              && !hasEffectiveDnd
+              && (hasExplicitSmsOptOut || (showSchedule && !hasGlobalSmsPermission))
+              && !isNote && (
+              <div className="conv-consent-banner" role="status" aria-live="polite">
                 <div>
                   <strong>
                     {hasExplicitSmsOptOut
                       ? 'This contact opted out of SMS'
-                      : serviceConsentChecking
-                        ? 'Checking SMS permission'
-                        : statusMatchesActive && serviceConsentStatus.error
-                          ? 'SMS permission status unavailable'
-                          : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
-                            ? 'Scheduled SMS requires full opt-in'
-                          : serviceConsentSuppressionCopy?.title
-                            ? serviceConsentSuppressionCopy.title
-                          : 'SMS permission is not recorded'}
+                      : 'Scheduled SMS requires full opt-in'}
                   </strong>
                   <span>
                     {hasExplicitSmsOptOut
                       ? 'They must text START before staff can send another message.'
-                      : serviceConsentChecking
-                        ? 'Confirming the current service-message consent record.'
-                        : statusMatchesActive && serviceConsentStatus.error
-                          ? serviceConsentStatus.error
-                          : showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission
-                            ? 'Verified service-message permission allows immediate staff replies only. Send now or record full SMS opt-in before scheduling.'
-                          : serviceConsentSuppressionCopy?.detail
-                            ? serviceConsentSuppressionCopy.detail
-                          : 'Verify prior service-message permission before texting this contact.'}
+                      : 'Send a direct service reply now, or record full SMS opt-in before scheduling.'}
                   </span>
                 </div>
-                {!hasExplicitSmsOptOut
-                  && statusMatchesActive
-                  && serviceConsentStatus.error ? (
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      impact('light');
-                      loadServiceConsentStatus();
-                    }}
-                  >
-                    Retry verification
-                  </button>
-                ) : !hasExplicitSmsOptOut
-                  && serviceConsentCanBeAttested
-                  && !hasPendingSmsStop
-                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
-                  && canAttestPriorConsent ? (
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    type="button"
-                    onClick={() => {
-                      impact('light');
-                      setConsentPrompt({
-                        contactId: activeContact.id,
-                        convId: activeId,
-                      });
-                    }}
-                    disabled={serviceConsentStatus.loading}
-                  >
-                    Record verified permission
-                  </button>
-                ) : !hasExplicitSmsOptOut
-                  && serviceConsentCanBeAttested
-                  && !hasPendingSmsStop
-                  && !(showSchedule && hasRecordedSmsPermission && !hasGlobalSmsPermission)
-                  && !serviceConsentStatus.loading ? (
-                  <span className="conv-consent-role-note">Office or admin approval required</span>
-                ) : null}
               </div>
             )}
 
@@ -1708,9 +1592,9 @@ export default function Conversations({ replyAssist } = {}) {
                     <div className="conv-dnd-desc">
                       {activeContact.dnd
                         ? 'All outbound messages blocked'
-                        : hasRecordedSmsPermission
-                          ? 'DND off and SMS permission recorded'
-                          : 'DND off; SMS permission not recorded'}
+                        : hasExplicitSmsOptOut
+                          ? 'DND off, but this contact opted out of SMS'
+                          : 'DND off — outbound messages allowed'}
                     </div>
                   </div>
                   <button

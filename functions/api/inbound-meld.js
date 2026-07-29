@@ -127,6 +127,7 @@ export async function notifyNewMelds(db, env, newMelds, dispatchImpl = dispatchE
         env,
         typeKey: 'meld.received',
         body: {
+          notification_event_id: m.meldNumber || null,
           recipient_ids: [ownerId],
           title,
           body: [addr, m.meldNumber ? `#${m.meldNumber}` : ''].filter(Boolean).join(' · '),

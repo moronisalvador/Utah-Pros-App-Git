@@ -340,6 +340,30 @@ contract:
 - detach/revoke on logout/account/device lifecycle;
 - no sensitive lock-screen payload beyond approved privacy policy.
 
+The native APNs implementation uses an exhaustive typed presentation catalog:
+each live event receives explicit privacy-conscious title/body copy, while
+unknown events retain the generic `Utah Pros notification` /
+`Open Utah Pros for details.` fallback. Raw producer copy is never the APNs
+presentation contract. Data remains reduced to one allowlisted route plus an
+opaque deterministic recipient binding. The same pure route policy used by the
+app runs in the worker before serialization;
+admin/external paths, encoded paths, oversized input, credential fragments, and
+unsupported or sensitive query shapes fall back to `/` before Apple sees them.
+The Push policy additionally rejects the public signing bearer paths
+`/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
+bearer capability is never provider payload data. A native action is rejected
+unless the binding matches the currently verified employee. The approved
+initial rich-copy budget excludes customer message contents, customer/contact
+names, addresses, claim/reference identifiers, financial amounts, appointment
+times and free-form review notes. Appointment notifications expose only their
+event state plus generic action copy. Expanding that variable budget requires
+a separately reviewed presentation-contract change.
+
+Appointment notification audiences are structural rather than caller-selected:
+`appointment.assigned` intersects the named employee with the appointment's
+current crew, while updated/canceled events resolve the current crew. Supplied
+`recipient_ids` cannot widen any appointment audience.
+
 S1c implements only the HTTP identity/object portion. An exact stored secret remains first and
 keeps the full deployed trigger payload; trusted Workers continue to call `dispatchEvent`
 in-process. A human Bearer must be an active internal admin and may supply only the IDs for
@@ -436,10 +460,10 @@ existing `SECURITY DEFINER` bodies.
 
 IndexedDB v3 publishes bounded typed blocked/timeout/version-change recovery state. Blocking and
 version-change callbacks close only the captured connection generation; an inspection failure
-blocks rollout. Focused tests pass 58/58. In the current-origin integration worktree, the complete
-unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206
-tests, and web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet
-is tracked separately. Independent review found no actionable offline P0/P1. Browser/device
+blocks rollout. At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), focused tests passed
+58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests, QA
+passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings; the
+changed-file ratchet was tracked separately. Independent review found no actionable offline P0/P1. Browser/device
 qualification and the separate live RPC authorization boundary remain.
 
 ## Change checklist

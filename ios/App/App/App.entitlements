@@ -8,6 +8,8 @@
 	<array>
 		<string>applinks:utahpros.app</string>
 		<string>applinks:dev.utahpros.app</string>
+		<string>webcredentials:utahpros.app</string>
+		<string>webcredentials:dev.utahpros.app</string>
 	</array>
 </dict>
 </plist>

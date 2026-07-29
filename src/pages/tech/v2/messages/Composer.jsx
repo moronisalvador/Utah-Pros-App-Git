@@ -315,11 +315,18 @@ export default function Composer({
           />
         </div>
 
+        {/* MSG-06: Send needs keepKeyboard exactly like the two buttons above it.
+            Without it, tapping Send moves focus off the textarea, iOS starts
+            dismissing the keyboard, and the rAF refocus in doSend re-presents it
+            one frame later — a visible flash of the keyboard and, since KB-02,
+            of the whole thread as --tv2-msgs-kb drops to 0 and back. The rAF was
+            compensating for a blur that should never have happened. */}
         <button
           type="button"
           className="tv2-msgs-send"
           aria-label={t('composer.send')}
           disabled={!canSend}
+          onMouseDown={keepKeyboard}
           onClick={doSend}
         >
           <IconSend width={20} height={20} />

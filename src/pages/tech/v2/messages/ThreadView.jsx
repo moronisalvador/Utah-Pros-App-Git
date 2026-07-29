@@ -38,7 +38,10 @@
 import React, { useRef, useMemo, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
+import { observeKeyboardInset } from '@/lib/nativeKeyboardLayout';
+import { scrollBehavior } from '@/lib/reducedMotion';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import { getServiceConsentUiState, withoutSupersededFailures } from '@/components/conversations/messageUtils';
@@ -102,11 +105,9 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const localizedSuppressionDetail = consentUi.suppressionKey
     ? t(`consent.suppression.${consentUi.suppressionKey}.detail`)
     : null;
-  const consentBlockMessage = consentStatus.loading
-    ? t('consent.checking')
-    : consentStatus.error
-      ? t('consent.unavailable')
-      : localizedSuppressionTitle || t('consent.missing');
+  // No async check since 2026-07-28, so there is no "checking"/"unavailable"
+  // state to render — a block is always a real customer decision (DND or opt-out).
+  const consentBlockMessage = localizedSuppressionTitle || t('consent.missing');
   const handleConsentRequired = useCallback(() => {
     refreshConsent();
   }, [refreshConsent]);
@@ -135,7 +136,31 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     if (!active) return undefined;
     const vv = window.visualViewport;
     const pane = rootRef.current?.closest('.tv2-msgs-pane');
-    if (!vv || !pane) return undefined;
+    if (!pane) return undefined;
+
+    // NATIVE takes a different measurement entirely. capacitor.config.json sets
+    // Keyboard.resize "none", so the WKWebView keeps its FULL height when the
+    // keyboard opens — only the visual viewport shrinks, and in the installed app
+    // visualViewport reports no occlusion at all. The web algorithm below therefore
+    // computes a 0px lift and the composer stays parked underneath the keyboard,
+    // invisible and unreachable (owner-reported on-device 2026-07-28). The Capacitor
+    // plugin reports the exact keyboardHeight, so measure nothing and trust it. No
+    // offsetTop residual either: with resize "none" the webview never pans, so the
+    // whole keyboard height is the lift.
+    if (Capacitor.isNativePlatform()) {
+      const unobserve = observeKeyboardInset((px) => {
+        pane.style.setProperty('--tv2-msgs-kb', `${px}px`);
+        pane.classList.toggle('tv2-msgs-kb-open', px > 0);
+        if (px > 0 && atBottomRef.current) scrollToBottom(false);
+      });
+      return () => {
+        unobserve();
+        pane.style.removeProperty('--tv2-msgs-kb');
+        pane.classList.remove('tv2-msgs-kb-open');
+      };
+    }
+
+    if (!vv) return undefined;
     // Keyboard-CLOSED viewport height. window.innerHeight is unreliable on iOS 26 — it
     // tracks the VISUAL viewport, so innerHeight === vv.height with the keyboard up and
     // the old `innerHeight - vv.height` formula computed 0 (verified on-device 2026-07-10:
@@ -177,7 +202,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
     const el = scrollRef.current;
     if (!el) return;
     const go = () => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
-    if (smooth && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    if (smooth && el.scrollTo) el.scrollTo({ top: el.scrollHeight, behavior: scrollBehavior() });
     else go();
     // A second frame catches synchronous layout; attachment loads notify separately.
     requestAnimationFrame(() => { if (!smooth) go(); });

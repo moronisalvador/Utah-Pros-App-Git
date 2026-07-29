@@ -8,8 +8,8 @@
   "trackedInventory": {
     "asOf": "2026-07-26",
     "skills": 25,
-    "agents": 19,
-    "rules": 23,
+    "agents": 15,
+    "rules": 13,
     "hooks": 4
   },
   "adapterStrategy": {
@@ -201,36 +201,6 @@
       "riskTier": "red",
       "reviewPolicy": "blocking",
       "triggerDomain": "database-phase-review",
-      "triggerRole": "reviewer"
-    },
-    {
-      "path": ".claude/agents/sms-experience-phase-reviewer.md",
-      "owner": "UPR platform engineering",
-      "provenance": "UPR-authored",
-      "status": "conditional-active",
-      "riskTier": "red",
-      "reviewPolicy": "blocking",
-      "triggerDomain": "messaging-phase-review",
-      "triggerRole": "reviewer"
-    },
-    {
-      "path": ".claude/agents/admin-mobile-phase-reviewer.md",
-      "owner": "UPR platform engineering",
-      "provenance": "UPR-authored",
-      "status": "conditional-active",
-      "riskTier": "red",
-      "reviewPolicy": "blocking",
-      "triggerDomain": "money-phase-review",
-      "triggerRole": "reviewer"
-    },
-    {
-      "path": ".claude/agents/settings-phase-reviewer.md",
-      "owner": "UPR platform engineering",
-      "provenance": "UPR-authored",
-      "status": "conditional-active",
-      "riskTier": "red",
-      "reviewPolicy": "blocking",
-      "triggerDomain": "settings-auth-review",
       "triggerRole": "reviewer"
     },
     {

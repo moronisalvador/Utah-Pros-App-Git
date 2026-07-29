@@ -209,7 +209,10 @@ describe('getServiceConsentUiState', () => {
     ['mismatched contact', { contactId: 'contact-2' }, { matches: false, checking: true, suppressionKey: null }],
     ['mismatched phone', { phone: '+18015550999' }, { matches: false, checking: true, suppressionKey: null }],
     ['loading', { loading: true }, { matches: true, checking: true, suppressionKey: null }],
-    ['pending STOP', { source: 'pending_stop' }, { matches: true, checking: false, suppressionKey: 'pendingStop' }],
+    // 2026-07-28: a pending STOP is enforced server-side but deliberately NOT
+    // surfaced in the UI — it is an internal projection window staff cannot act
+    // on. It must still never enable attestation (asserted via canAttest below).
+    ['pending STOP', { source: 'pending_stop' }, { matches: true, checking: false, suppressionKey: null }],
     ['explicit opt-out', { source: 'explicit_opt_out' }, { matches: true, checking: false, suppressionKey: 'optedOut' }],
     ['DND', { code: 'DND_ACTIVE' }, { matches: true, checking: false, suppressionKey: 'dnd' }],
   ])('keeps %s authoritative over recorded global opt-in', (_label, statusPatch, expected) => {
@@ -221,7 +224,8 @@ describe('getServiceConsentUiState', () => {
   });
 
   it.each([
-    ['pending_stop', 'NO_CONSENT', 'SMS STOP request is still processing'],
+    // `title` is null where the state is enforced silently (see 2026-07-28 note).
+    ['pending_stop', 'NO_CONSENT', null],
     ['explicit_opt_out', 'NO_CONSENT', 'This phone number opted out of SMS'],
     [null, 'DND_ACTIVE', 'SMS is blocked by Do Not Disturb'],
   ])('blocks attestation for %s / %s', (source, code, title) => {
@@ -230,7 +234,7 @@ describe('getServiceConsentUiState', () => {
       contact,
     });
     expect(state.canAttest).toBe(false);
-    expect(state.suppressionCopy?.title).toBe(title);
+    expect(state.suppressionCopy?.title ?? null).toBe(title);
   });
 });
 

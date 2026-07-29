@@ -6,7 +6,7 @@
  * WHAT THIS DOES (plain language):
  *   Lets an authorized UPR user sign in or ask for a password-reset email.
  *   It also provides public Privacy, Terms, and Support links before sign-in and
- *   enables the native biometric preference after a successful supported login.
+ *   verifies supported native biometrics at the manual sign-in boundary.
  *
  * WHERE IT LIVES:
  *   Route:        /login
@@ -14,10 +14,10 @@
  *
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
- *   Internal:  @/contexts/AuthContext, @/lib/realtime, @/lib/nativeBiometric
+ *   Internal:  @/contexts/AuthContext, @/lib/realtime,
+ *              @/lib/nativeLoginVerification, @/lib/toast
  *   Data:      reads  → Supabase Auth session through AuthContext
- *              writes → Supabase Auth session/password-reset request and the
- *                       device-local biometric preference
+ *              writes → Supabase Auth session/password-reset request
  *
  * NOTES / GOTCHAS:
  *   - The real-data development button appears only when the dedicated local
@@ -31,7 +31,8 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { realtimeClient } from '@/lib/realtime';
-import { checkBiometricAvailable, setBiometricEnabled } from '@/lib/nativeBiometric';
+import { verifyNativeLogin } from '@/lib/nativeLoginVerification';
+import { err as showError } from '@/lib/toast';
 
 export default function Login() {
   const { login, isAuthenticated, isDev, error: authError } = useAuth();
@@ -54,12 +55,11 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      // On native, if Face ID / Touch ID is enrolled, enable the gate for next launch.
-      // checkBiometricAvailable() is a no-op (returns false) on web.
-      if (await checkBiometricAvailable()) setBiometricEnabled(true);
-    } catch (err) {
-      setError(err.message);
+      await login(email, password, { beforeSignIn: verifyNativeLogin });
+    } catch (loginError) {
+      const message = loginError?.message || 'Sign in failed. Try again.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
@@ -77,8 +77,10 @@ export default function Login() {
       );
       if (resetErr) throw resetErr;
       setResetSent(true);
-    } catch (err) {
-      setError(err.message);
+    } catch (resetError) {
+      const message = resetError?.message || 'Could not send the reset email.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
@@ -93,9 +95,13 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(devTestEmail, devTestPassword);
-    } catch (err) {
-      setError(err.message);
+      await login(devTestEmail, devTestPassword, {
+        beforeSignIn: verifyNativeLogin,
+      });
+    } catch (loginError) {
+      const message = loginError?.message || 'Sign in failed. Try again.';
+      setError(message);
+      showError(message);
     } finally {
       setLoading(false);
     }
@@ -252,11 +258,8 @@ export default function Login() {
             <Link
               key={to}
               to={to}
+              className="btn btn-ghost btn-lg"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                minHeight: 'var(--tech-min-tap, 44px)',
-                padding: '0 var(--space-2)',
                 color: 'var(--accent)',
                 fontSize: 'var(--text-sm)',
                 fontWeight: 500,

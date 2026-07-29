@@ -96,8 +96,8 @@ lane:
 | iOS simulator runtime | iOS 26.5 and an iPhone 17 Pro simulator passed unsigned validation; this is not physical-device proof |
 | Node/npm dependencies | `npm ci`, then the repository `build:ios`/Capacitor commands as declared |
 | Ruby | Exact source pin: Ruby 3.3.12 in `ios/.ruby-version`, `ios/Gemfile`, and the release workflow |
-| Bundler/Fastlane | Release workflow pins Bundler 4.0.16 and `ios/Gemfile` pins Fastlane 2.237.0; `ios/Gemfile.lock` is absent and must be generated/reviewed on that exact toolchain |
-| Capacitor App plugin | Direct `@capacitor/app` package source exists, but the managed `CapApp-SPM/Package.swift` is not synchronized; run/review `cap sync ios` only in its separately authorized lane |
+| Bundler/Fastlane | Release workflow and `ios/Gemfile.lock` pin Bundler 2.5.22; `ios/Gemfile`/lock pin Fastlane 2.237.0 on Ruby 3.3.12 |
+| Capacitor App plugin | Direct `@capacitor/app` source and the managed `CapApp-SPM/Package.swift` are synchronized; every release still rejects unexpected `cap sync ios` drift |
 | Apple team/certificate/profile | Required for signed archive/device/TestFlight work and supplied only through an owner-controlled gate |
 | Physical devices | Named supported iPhone/iPad models and OS versions for the signed release matrix |
 

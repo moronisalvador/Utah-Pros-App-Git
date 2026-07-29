@@ -1,3 +1,6 @@
+---
+paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-size-report.mjs"]
+---
 # Performance Budget Standard
 
 **Last verified:** 2026-07-27
@@ -6,23 +9,44 @@ Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.*
 2026-07 measured numbers; the point is to ratchet down, never up. Query hygiene is enforced by
 `page-behavior-checker`. Reference scenario: a field-tech PWA cold-start over LTE.
 
-> **These budgets are currently enforced by review, NOT by CI (verified 2026-07-27).** This intro
-> used to claim "Enforced by the CI bundle-size guard (`.github/workflows/ci.yml`)". Three things
-> are wrong with that: the `Bundle size report` step is `continue-on-error: true` and its own
-> comment says "Non-blocking; ... Hard-fail ratchet is a follow-up"; it reads `dist/assets/*.js`
-> while Vite emits to `dist/app-assets/`, so it gzips empty input and prints **20 bytes** instead
-> of the real 852,798; and it never measures CSS at all. A budget nobody enforces is how the
-> `index.css` figure below drifted ~157 KB before anyone noticed. Fix the glob and add a CSS line
-> before restoring any "enforced by CI" claim here.
+**Enforced by the CI bundle-size guard** (`.github/workflows/ci.yml` → `Bundle size budgets`, which
+runs `npm run report:bundle-size -- --strict`). **All three bundle budgets in §1 BLOCK a merge:**
+entry-graph JS, the route-chunk ceiling, and `src/index.css`. Everything else on this page is
+enforced by review only. Re-derive any number here with
+`npm run build && npm run report:bundle-size`.
 
-## 1. Bundle budgets (JS measured 2026-07-13 · `index.css` re-baselined 2026-07-27)
+**Two tiers, deliberately.** The budget is the *target*; the +10% line is the *failure point*. In
+between, the guard prints a warning and does not block — that band is a signal to ratchet down, not
+headroom to spend. Entry-graph JS sits in that band today.
 
-- **Entry-graph JS ≤ 232 KB gzip** — CI fails at +10% (255 KB). Record the top-5 chunk deltas from
-  `npm run build` in every PR that changes app code.
-- **Any single route chunk ≤ 175 KB raw.** A heavy new dep must be route-lazy (`React.lazy`), never in
-  the entry graph.
-- **`index.css` ≤ 595,000 bytes raw** — measured 2026-07-27 at **571,960 bytes / 12,583 lines**
-  (built: 422,482 bytes, 62,391 gzip). The ceiling sits ~4% above current, the same headroom the
+> **History (2026-07-27, compressed):** the previous CI guard never enforced anything (wrong
+> metric since day one, never measured CSS, glob broke when `assetsDir` moved, and it was
+> `continue-on-error` throughout) — which is how the CSS ceiling drifted ~157 KB and entry-graph
+> JS went over budget silently. Fixed the same day: the tested `bundle-size-report.mjs` reads the
+> true entry graph from `dist/index.html`, the pt/es locales were made genuinely lazy (−13 KB),
+> and all three §1 budgets now block. Full forensics: git history of this file + PR #540.
+> **Entry-graph JS is still above target and deliberately visible** — the guard warns every run;
+> the next reduction should come from the entry chunk (100,783 B) or `realtime` (43,289 B). Do
+> not treat the gap to the fail line as spendable.
+
+## 1. Bundle budgets (all figures re-measured 2026-07-27 by the fixed CI guard)
+
+- **Entry-graph JS ≤ 232 KB gzip = 237,568 bytes** — fail threshold +10% = **261,325 bytes**
+  (**ENFORCED; blocks CI above the fail line**). ⚠️ **Over target, under the fail line:** measured
+  2026-07-27 at **250,951 bytes** across 27 chunks — 13,383 B over budget, 10,374 B of headroom.
+  The guard warns on every run; ratchet it down rather than spending the gap.
+  **"Entry graph" means the module script in `dist/index.html` plus its `modulepreload` closure** —
+  the cold-boot download. It is *not* every chunk in `dist/app-assets/` (that is ~968,000 bytes
+  gzip across 187 files, most of it lazy routes, and comparing it to this budget is the mistake the
+  old CI step made). Top-5 entry-chunk deltas are printed by `npm run report:bundle-size`; record
+  them in every PR that changes app code. Today's heaviest: `index` 100,783 · `realtime` 43,289 ·
+  `AuthContext` 35,866 · `i18n` 23,085 · `chunk-LFPYN7LY` 14,273 bytes gzip.
+- **Any single route chunk ≤ 175 KB raw = 179,200 bytes** (enforced; blocks CI). A heavy new dep must
+  be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 163,349 bytes.
+- **`index.css` ≤ 595,000 bytes raw** (enforced; blocks CI) — measured 2026-07-27 at
+  **574,596 bytes / 12,623 lines** (built: 423,398 bytes, 62,503 gzip; re-measured later the same
+  day by the CI-guard fix, which is why it is ~2.6 KB above the first figure recorded below).
+  The ceiling sits ~4% above current, the same headroom the
   original 400 KB / 384 KB pair had. **Sizes are stated in bytes on purpose** — the old "400 KB"
   was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
   ratchet target: 400 KB (409,600 bytes), unchanged** — the direction of travel is still down; new
@@ -32,16 +56,9 @@ Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.*
   wc -c src/index.css && wc -l src/index.css && gzip -c dist/app-assets/index-*.css | wc -c
   ```
 
-  > **RE-BASELINED 2026-07-27 (owner-directed).** This bullet read "≤ 400 KB raw (today 384 KB /
-  > 11,446 lines)" — a 2026-07-13 measurement that had drifted ~157 KB out of date, leaving the
-  > stated budget and reality far enough apart that the rule could not catch a real regression.
-  > Asked to resolve it on 2026-07-27, the owner chose re-baseline-to-measured over declaring an
-  > open breach, keeping the 400 KB ratchet target as the goal rather than the gate. Recorded in
-  > the `db-foundation-wave-ownership.md` §8 format so the loosened ceiling is attributable rather
-  > than silent. **The owner's direction is also what authorized this edit**, which lands inside the
-  > `.claude/**` writer lease that `upr-engineering-foundation-wave-ownership.md` §6 still marks
-  > ACTIVE for `codex/mobile-readiness-current-origin-review`. The JS and font bullets around it
-  > were **not** re-measured and keep their 2026-07-13 provenance.
+  > **Re-baselined 2026-07-27 (owner-directed):** the ceiling was moved from the drifted 400 KB
+  > figure to measured+4%; the 400 KB ratchet target stays the goal, not the gate. Detail: git
+  > history.
 - No new **render-blocking** third-party request (today there are 2 Google Fonts stylesheets; W5 self-hosts).
 
 ## 2. Image law
@@ -69,8 +86,14 @@ Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.*
 ## 4. Fonts & locales
 
 - Self-hosted subsetted `woff2` (Inter 500/600/700), `font-display: swap`; secondary families scoped to
-  the chunk that needs them (Public Sans → CRM). Non-default i18n locales (`pt`, `es`) are **lazy-loaded**,
-  not eager in the i18n chunk (~34 KB gz today).
+  the chunk that needs them (Public Sans → CRM).
+- **Non-default i18n locales (`pt`, `es`) are lazy-loaded, not eager in the i18n chunk.**
+  ✅ **True as of 2026-07-27** — it was not before: both were statically imported, ~78 KB raw, in
+  every boot. Each language now lives behind a barrel (`src/i18n/locales/<lang>/index.js`) reached
+  only through `ensureLanguage()` in `src/i18n/index.js`, so Vite emits one chunk per language
+  (`pt` 9,858 B gzip, `es` 9,956 B gzip). **A static import of a `pt`/`es` barrel from app code
+  silently undoes this** — the entry-graph gate is what would catch it. English stays bundled: it
+  is the default and the `fallbackLng`, so init must remain synchronous.
 - App shells never statically import interaction-gated components (modals that open on click are lazy).
 
 ## 5. Re-render hygiene

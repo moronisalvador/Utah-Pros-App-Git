@@ -25,7 +25,7 @@
  *     (tech-mobile-ux: sticky headers don't move).
  * ════════════════════════════════════════════════
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { impact } from '@/lib/nativeHaptics';
@@ -34,16 +34,51 @@ import NotificationBell from '@/components/NotificationBell';
 import { adminDashHref } from '@/components/admin-mobile/href';
 
 /**
- * @param {{ employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
+ * @param {{ active: boolean, employee: object, count: number, isAdmin: boolean, onLogout: () => void }} props
  */
-export default function DashHeader({ employee, count, isAdmin, onLogout }) {
+export default function DashHeader({
+  active,
+  employee,
+  count,
+  isAdmin,
+  onLogout,
+}) {
   const { t } = useTranslation('dash');
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
+  const [menuPresent, setMenuPresent] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
   const logoutTimer = useRef(null);
+  const menuOpen = showMenu && active;
 
   useEffect(() => () => { if (logoutTimer.current) clearTimeout(logoutTimer.current); }, []);
+
+  const finishMenuClose = useCallback(() => {
+    setMenuPresent(false);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    setShowMenu(false);
+  }, []);
+
+  // Keep the popover mounted long enough to play the standard accelerated exit.
+  // The timeout only protects against a lost animationend event.
+  useEffect(() => {
+    if (!menuPresent || menuOpen) return undefined;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const timer = window.setTimeout(finishMenuClose, reduced ? 0 : 160);
+    return () => window.clearTimeout(timer);
+  }, [finishMenuClose, menuOpen, menuPresent]);
+
+  const toggleMenu = () => {
+    if (menuOpen) {
+      closeMenu();
+      return;
+    }
+    setMenuPresent(true);
+    setShowMenu(true);
+    impact('light');
+  };
 
   const handleLogoutTap = () => {
     if (!confirmLogout) {
@@ -66,7 +101,11 @@ export default function DashHeader({ employee, count, isAdmin, onLogout }) {
       {/* Notification bell — one slot left of Help, matching the icon buttons.
           Its badge + dropdown + realtime toast come from the shared component. */}
       <div style={{ position: 'absolute', top: '10px', right: 'calc(16px + 2 * (var(--tech-min-tap) + 8px))' }}>
-        <NotificationBell align="right" triggerClassName="tv2-dash-header__icon-btn" />
+        <NotificationBell
+          active={active}
+          align="right"
+          triggerClassName="tv2-dash-header__icon-btn"
+        />
       </div>
 
       <button type="button" className="tv2-dash-header__icon-btn" aria-label={t('helpAria')} onClick={() => navigate('/tech/help')}>
@@ -75,23 +114,39 @@ export default function DashHeader({ employee, count, isAdmin, onLogout }) {
         </svg>
       </button>
 
-      <div className="tv2-dash-header__menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setShowMenu(false); }}>
-        <button type="button" className="tv2-dash-header__icon-btn" data-active={showMenu ? 'true' : undefined} aria-label={t('moreAria')} onClick={() => setShowMenu((v) => !v)}>
+      <div className="tv2-dash-header__menu" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) closeMenu(); }}>
+        <button
+          type="button"
+          className="tv2-dash-header__icon-btn"
+          data-active={menuOpen ? 'true' : undefined}
+          aria-label={t('moreAria')}
+          aria-expanded={menuOpen}
+          aria-controls="tv2-dash-menu"
+          onClick={toggleMenu}
+        >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>
         </button>
-        {showMenu && (
-          <div className="tv2-dash-menu">
+        {menuPresent && (
+          <div
+            id="tv2-dash-menu"
+            className="tv2-dash-menu"
+            data-state={menuOpen ? 'open' : 'closing'}
+            role="menu"
+            onAnimationEnd={(event) => {
+              if (event.target === event.currentTarget && !menuOpen) finishMenuClose();
+            }}
+          >
             {isAdmin && (
-              <button type="button" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowMenu(false); navigate(adminDashHref()); }}>
+              <button type="button" role="menuitem" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { closeMenu(); navigate(adminDashHref()); }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
                 {t('menu.adminView')}
               </button>
             )}
-            <button type="button" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { setShowMenu(false); navigate('/tech/feedback'); }}>
+            <button type="button" role="menuitem" className="tv2-dash-menu__item" onMouseDown={(e) => e.preventDefault()} onClick={() => { closeMenu(); navigate('/tech/feedback'); }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
               {t('menu.sendFeedback')}
             </button>
-            <button type="button" className="tv2-dash-menu__item" data-danger={confirmLogout ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }} onClick={() => { if (confirmLogout) setShowMenu(false); handleLogoutTap(); }}>
+            <button type="button" role="menuitem" className="tv2-dash-menu__item" data-danger={confirmLogout ? 'true' : undefined} onMouseDown={(e) => e.preventDefault()} onBlur={() => { setConfirmLogout(false); if (logoutTimer.current) clearTimeout(logoutTimer.current); }} onClick={() => { if (confirmLogout) closeMenu(); handleLogoutTap(); }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
               {confirmLogout ? t('menu.signOutConfirm') : t('menu.signOut')}
             </button>

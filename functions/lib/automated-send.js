@@ -95,7 +95,11 @@
 
 import { sendEmail } from './email.js';
 import { emailAllows } from './email-consent.js';
-import { consentAllows } from './sms-consent.js';
+import {
+  AUTOMATED_ACCEPTED_CONSENT_CODES,
+  consentAllows,
+  isAcceptedConsent,
+} from './sms-consent.js';
 import { sendMessage } from './twilio.js';
 import { normalizePhone } from './phone.js';
 import { supabase } from './supabase.js';
@@ -485,15 +489,18 @@ export async function sendGatedSms(env, {
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }
 
-  // Gate 2: TCPA consent. The database decision also sees duplicate-contact
-  // suppression and durable-but-unprojected STOP events. Automated traffic
-  // accepts GLOBAL_OPT_IN only; staff-only SERVICE_CONSENT is never consumed.
-  const locallyAllowed = consentAllows({
+  // Gate 2: consent. This generic automation/campaign chokepoint accepts
+  // GLOBAL_OPT_IN only. The owner-approved service-notice policy is deliberately
+  // not caller-assertable here: each appointment/signature producer must get a
+  // dedicated typed wrapper that derives its purpose and copy from server-owned
+  // records before it can consume implied consent.
+  const localConsentRow = {
     phone,
     opt_in_status: contact?.opt_in_status,
     opt_out_at: contact?.opt_out_at,
     dnd: contact?.dnd,
-  });
+  };
+  const locallyAllowed = consentAllows(localConsentRow);
   let consentStatus = null;
   if (locallyAllowed && contact?.id) {
     try {
@@ -510,8 +517,7 @@ export async function sendGatedSms(env, {
   }
   if (
     !locallyAllowed
-    || consentStatus?.allowed !== true
-    || consentStatus?.code !== 'GLOBAL_OPT_IN'
+    || !isAcceptedConsent(consentStatus, AUTOMATED_ACCEPTED_CONSENT_CODES)
   ) {
     const reason = !phone
       ? 'no_phone'

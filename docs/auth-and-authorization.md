@@ -56,6 +56,12 @@ Money, payroll, PII, campaigns, company messaging, credentials and administrativ
 the same or stronger role boundary server-side as the UI. Perform authorization before provider
 calls or service-role reads/writes. Record the actor for sensitive state changes.
 
+`POST /api/feedback-resolved-notify` mirrors the Feedback Inbox's `AdminRoute`
+with `requireRole(['admin'])` before reading the feedback row or dispatching
+bell, Web Push, native Push, or email as the company. A technician may receive
+and configure their own `feedback.resolved` notification, but cannot invoke the
+administrative sender.
+
 ## Database authorization
 
 - RLS and RPC bodies are the final data boundary for browser-accessible paths.
@@ -371,17 +377,19 @@ The authenticated-executable `create_notification` definer is another direct bel
 outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
 browser execution and retains `service_role`; it is not live until its separate owner apply.
 
-## Mobile S1d notification dispatcher RPC boundary (2026-07-26)
+## Mobile S1d notification dispatcher RPC boundary (live 2026-07-27)
 
 A fresh read-only catalog capture confirmed one live
 `public.notify_emit(p_type_key text,p_body jsonb) RETURNS void` function owned by `postgres`, with
-`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants to `authenticated` and
-`service_role` while `PUBLIC`/`anon` are denied. No browser or Pages Worker source caller was found.
+`SECURITY DEFINER`, `search_path=public`, and direct EXECUTE grants then held by `authenticated`
+and `service_role` while `PUBLIC`/`anon` were denied. No browser or Pages Worker source caller was
+found.
 The exact database graph is six owner-run definer functions/seven calls: appointment assignment,
 appointment update/cancel, estimate acceptance, timesheet request/review, and the abandoned-clock
 scan reached by its `postgres` cron job.
 
-The reviewed but unapplied `20260726110000_notify_emit_service_boundary.sql` revokes
+The applied `20260726110000_notify_emit_service_boundary.sql`, recorded as live ledger entry
+`20260727233704 notify_emit_service_boundary`, revokes
 `PUBLIC`, `anon`, and `authenticated` after the body replacement and grants only `service_role`.
 Owner-executed trigger/RPC/cron chains remain compatible through PostgreSQL ownership; adding an
 in-body session-role assertion would break those intended database callers and is forbidden for
@@ -389,8 +397,9 @@ this contract. The body replacement changes only JSON object merge order, making
 `p_type_key` authoritative while retaining URL/secret lookup, headers, `net.http_post`, ignored
 response, no-op gates, signature, result, security mode, and search path.
 
-This is local apply readiness, not live containment: until the shared migration is applied in a
-separate owner-authorized window, `authenticated` can still execute the deployed function.
+A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
+`27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
+`service_role`; `authenticated` can no longer execute the function.
 `create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
 and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
 evidence are recorded in
@@ -435,7 +444,7 @@ legacy composite RPC responses see only a truthy opaque marker. Authenticated ex
 service ingestion RPC is revoked. The approved CallRail proxy keeps
 the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
 
-## Mobile S1g notification read/mark boundary (authored, not applied)
+## Mobile S1g notification read/mark boundary (live, partial client proof)
 
 The catalog-only S1g capture found the exact four deployed bell RPCs, each owned by `postgres`,
 SQL `SECURITY DEFINER`, `search_path=public`, executable by `authenticated` and `service_role`,
@@ -446,34 +455,40 @@ with no direct database-body caller:
 - `mark_notification_read(uuid) -> void`; and
 - `mark_all_notifications_read(uuid DEFAULT NULL) -> void`.
 
-Their live bodies trust caller-supplied employee/notification IDs. The live
-`notifications_select` policy is authenticated `USING (true)`, so PostgREST and Realtime can expose
-another employee's targeted payload before `NotificationBell` filters it in JavaScript. Broadcasts
-also share one `notifications.read_at`, allowing one caller to clear them for everyone.
+Those captured pre-S1g bodies trusted caller-supplied employee/notification IDs, and the old
+`notifications_select USING (true)` exposed targeted payloads across employees. Migration
+`20260726260000_notification_read_recipient_boundary.sql` closed that boundary on 2026-07-28 as
+ledger entry `20260728192024_notification_read_recipient_boundary`.
 
-Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves all four
+The live replacement preserves all four
 signatures, defaults, results, old `{}`/`{p_limit}` broadcast-only calls, list fields, newest-first
 ordering, and trusted service-role behavior. Authenticated execution instead reconstructs the
 unique active, non-external employee from `auth.uid()` and raises SQLSTATE `42501` for a foreign
 non-null employee parameter or foreign targeted notification. Missing/null mark-one IDs retain the
 deployed void no-op.
 
-Future broadcast reads use forced-RLS, browser-inaccessible `notification_reads`; targeted rows
+Broadcast reads use forced-RLS, browser-inaccessible `notification_reads` with an explicit
+authenticated deny-all policy; targeted rows
 retain their existing `read_at`. Already-globally-read legacy broadcasts remain read for every
 employee. `notifications_select` stays the same policy object but becomes active-internal
 own-or-broadcast authorization, authenticated table access becomes SELECT-only for Realtime, and
-the obsolete authenticated sentinel-delete policy is removed. The existing client recipient check
-remains defense in depth.
+the obsolete authenticated sentinel-delete policy object is made inert with `USING (false)`. The
+existing client recipient check remains defense in depth.
 
 The unchanged service-role branch retains the exact deployed base-row list/count, mark-one, and
-null/non-null mark-all semantics. Rollback refuses exact forward-state drift and restores the
-captured authenticated behavior, but it deliberately does not restore the historical anonymous
-notification-table grant because no reviewed public use case exists.
+null/non-null mark-all semantics. Rollback refuses exact forward-state drift, preserves identity
+containment and recipient-scoped policies, drops receipt history only behind an explicit owner
+guard, and disables authenticated bell/Realtime access while retaining gated service-role behavior.
+It never restores the historical anonymous notification-table grant.
 
-This is reviewed source intent, not live proof. S1g requires its own owner-authorized apply,
-catalog post-check, two-session RPC/PostgREST/Realtime negative/positive matrix, advisors, and
-provenance capture. It must not be combined with S1d/S1e/S1f, private media, providers,
-deployment, signing, or device work.
+The exact value-free postcondition passed live. Moroni Salvador's authorized active-internal test
+identity passed list/count and direct-RLS visibility without returning notification contents or
+changing read state; foreign-selector and unmapped callers both failed with SQLSTATE `42501`.
+Anonymous access, authenticated writes, and direct receipt access are denied. Security/performance
+advisors reported no S1g regression, and fresh provenance matched the four functions and three
+policies. Two-session PostgREST/Realtime sockets plus PWA/Capacitor bell behavior remain the
+close-out gate; S1d/S1e/S1f, private media, providers, deployment, signing, and device work remain
+separate.
 
 **S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
 verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
@@ -527,3 +542,16 @@ unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. 
 `docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
 test, rollback, provider action, signing step, and device qualification remains a separate
 owner-authorized gate.
+
+## Notification presentation administration
+
+The UI `AdminRoute` and web-only Settings navigation are usability gates, not the authorization
+boundary. Every `/api/notification-presentation` action first verifies the Supabase session,
+resolves an active employee through shared auth helpers, requires literal `role='admin'`, and
+rejects `is_external !== false` before reading catalog overrides/history or accepting preview/save/
+reset input. Auth and service database calls use bounded fetches.
+
+The browser cannot query or mutate the presentation tables/RPC. The Worker uses the service role,
+and the database writer independently requires the service-role claim plus the supplied actor's
+active/internal/admin row before its atomic write. Preview is a pure synthetic render and performs
+no configuration write or provider call.

@@ -173,6 +173,13 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   existing fan-out; they do not make an arbitrary browser payload trusted.
 - Every final notification audience is intersected with active, non-external employees before bell,
   push or email. Per-channel failure remains best-effort and is reported in the existing summary.
+- Native lock-screen presentation is selected by trusted event type, not caller-supplied copy or
+  paths. Every live type has explicit privacy-conscious title/body rules and a field-route
+  selection; unknown types and office-only destinations fall back to generic copy or native home.
+  Web Push, bell and email retain their separately governed richer presentation.
+- Resolving feedback and sending `feedback.resolved` as the company is admin-only server-side.
+  The submitting technician is the sole recipient and may configure the event, but a valid
+  technician session cannot invoke the sender.
 - Staff recording playback is company-wide only for an active internal admin or the explicit
   `crm_call_log` capability. The Worker must bind the UUID to an actual call row, match its stored
   provider call ID to its stored allowlisted URL, and complete those checks before credential or
@@ -285,16 +292,56 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 ## Mobile person-to-person messaging
 
 - Starting a conversation is not consent and never sends a message.
-- A contact's presence in UPR is not consent evidence. Direct SMS/MMS stays blocked until the
-  authoritative consent decision allows it; loading, read failure, DND, STOP, phone mismatch, and
-  missing evidence fail closed.
-- Active internal admin/office employees may attest documented prior service consent. Technicians
-  may view the blocked state but cannot create the evidence record.
-- A native UPR Work Authorization with the pinned SMS disclosure may satisfy the same narrow status
-  decision without a manual employee attestation; it still cannot clear DND/STOP/opt-out or create
-  global, automated, group, broadcast or campaign consent.
+- Owner decision 2026-07-28: staff-written direct service messages use an opt-out-only model. A
+  reachable contact phone with no recorded objection may produce the distinct `IMPLIED_CONSENT`
+  decision for that one-to-one path. The worker must durably record
+  `service_send_allowed_existing_client` before it calls a provider; an audit
+  write failure blocks the send.
+  DND, explicit opt-out, pending STOP, phone mismatch, missing contact/phone, and an unavailable or
+  unknown server decision still fail closed before provider selection.
+- Typed transactional-service exception, owner decision 2026-07-28. The initial reviewed registry
+  entries are
+  `appointment_scheduled`, `appointment_canceled`, and `signature_request`. They may
+  consume `SERVICE_CONSENT` or `IMPLIED_CONSENT` only through a dedicated typed
+  producer that derives its purpose and copy from the server-owned appointment
+  or signature record and records `transactional_service_send_allowed` before
+  provider selection. The generic `sendAutomatedMessage()` path cannot assert
+  one of those labels or accept implied consent. No such automated producer is
+  live yet; the existing staff-initiated signature text continues through
+  `/api/send-message`. Those names are a policy allowlist, not examples accepted
+  by a generic bypass; additional service-notice purposes require a reviewed
+  registry change. Generic
+  automation, scheduled free-form messages, group, broadcast, bulk, marketing,
+  and campaign traffic still require `GLOBAL_OPT_IN`.
+- Active internal admin/office employees may still attest documented prior service consent, and a
+  native UPR Work Authorization with the pinned SMS disclosure may still provide stronger evidence.
+  Technicians cannot create either record, and neither evidence path can clear DND/STOP/opt-out.
+- The mobile thread no longer performs a consent-status request on open. It derives the visible
+  DND state from the already-loaded contact and leaves the server as the final authority at Send.
+  An explicit server refusal never falls back to another channel.
 - Recording consent never automatically sends or retries a draft. Staff must explicitly press Send,
   and the server rechecks the complete consent/DND boundary.
 - Internal notes remain available when customer messaging is blocked because they do not leave UPR.
 - CallRail is person-to-person only. Scheduled, automated, group, bulk, campaign, and broadcast
   sends never use it.
+- The opt-out-only source is committed as
+  `20260728000000_sms_consent_opt_out_only.sql` but remains inert until that exact migration is
+  separately approved, applied, and verified on the shared project: workers accept
+  `IMPLIED_CONSENT` only for the direct staff path and the three named
+  transactional-service purposes, while the current database does not yet return it.
+
+## Internal notification presentation
+
+- Presentation settings may change only title/body templates and a typed route identifier for a
+  code-owned event/surface. They cannot change audience, recipients, channel defaults/preferences,
+  consent/DND, delivery occurrence identity, provider, or email behavior.
+- Templates support literal text plus exact event-allowlisted `{{variable_name}}` tokens only.
+  There is no expression/general template execution, HTML/Markdown, payload traversal, or URL
+  interpolation.
+- Routes are code-owned identifiers with server-derived parameter contracts, never saved paths or
+  arbitrary URLs. Missing route context or invalid configuration uses the code default.
+- Native lock-screen copy remains code-owned and exposes no configurable variables. Its privacy
+  budget excludes names, message contents, contact details, identifiers, financial amounts,
+  appointment times, and free-form notes; office-only native destinations remain `/`.
+- Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
+  sends a notification. Every save/reset is revision-checked, idempotent, and audited.

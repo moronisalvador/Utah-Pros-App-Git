@@ -65,6 +65,57 @@ export async function resolveConversationId(contactId, fetchFn = (...a) => fetch
 }
 
 /**
+ * Pick the contact a job's Message button should open.
+ *
+ * The job screens know a job_id but not a contact id — get_appointment_detail
+ * does not return one — so the Message button used to dump the tech on the
+ * picker every time, even when the job has exactly one obvious customer.
+ *
+ * `is_primary` first, then the only contact if there is only one. Anything
+ * ambiguous returns null so the caller lands on the picker and the TECH
+ * chooses. We never infer a contact from a phone number: two contacts can
+ * share a number (a couple, an office line), and picking the wrong one sends
+ * a customer's message into a stranger's thread.
+ */
+export function primaryJobContactId(contacts) {
+  const list = Array.isArray(contacts) ? contacts : [];
+  const chosen = list.find(c => c?.is_primary) || (list.length === 1 ? list[0] : null);
+  return chosen?.contact_id || chosen?.id || null;
+}
+
+/**
+ * Navigate to the in-app thread for a JOB, resolving its contact on tap.
+ *
+ * Lazy on purpose: the job screens should not pay for an extra RPC on every
+ * render just in case the tech taps Message.
+ *
+ * @param navigate react-router navigate function
+ * @param jobId    the job whose customer thread to open
+ * @param db       the authenticated client from useAuth (Rule 3)
+ */
+export async function openJobThread(navigate, jobId, db, deps = {}) {
+  if (!jobId || !db) {
+    navigate(pickerHref());
+    return;
+  }
+  let contactId = null;
+  try {
+    const contacts = await db.rpc('get_job_contacts', { p_job_id: jobId });
+    contactId = primaryJobContactId(contacts);
+  } catch {
+    // Fall through to the picker: a lookup failure must not strand the tech,
+    // and it must not silently open the WRONG thread either.
+    navigate(pickerHref());
+    return;
+  }
+  if (!contactId) {
+    navigate(pickerHref());
+    return;
+  }
+  await openInAppThread(navigate, contactId, deps);
+}
+
+/**
  * Navigate to the in-app thread for a contact.
  *
  * @param navigate  react-router navigate function

@@ -256,11 +256,34 @@ is refused when the signing request has no server-observed signer IP. The broadl
 
 The service-role-only `complete_sign_request_with_work_authorization_sms_consent(...)` invoker RPC
 calls the existing deployed completion function and inserts qualifying evidence in the same
-transaction. `get_service_sms_consent_status(uuid,text)` keeps its signature and existing response
-vocabulary, checks DND/opt-out/pending STOP/global state first, and then accepts either the existing
-staff-attested service row or matching signed-authorization evidence. The migration never updates
-`contacts.opt_in_status`. A concrete rollback restores the read-only-captured pre-change status
-body before removing the wrapper/table. None of this is live until separately applied and verified.
+transaction. In that earlier migration, `get_service_sms_consent_status(uuid,text)` keeps its
+signature and then-existing response vocabulary, checks DND/opt-out/pending STOP/global state first,
+and accepts either the existing staff-attested service row or matching signed-authorization
+evidence. The migration never updates `contacts.opt_in_status`. A concrete rollback restores the
+read-only-captured pre-change status body before removing the wrapper/table. None of this is live
+until separately applied and verified.
+
+### Direct-service implied SMS decision (repository only; not applied)
+
+Migration `20260728000000_sms_consent_opt_out_only.sql` keeps the frozen
+`get_service_sms_consent_status(uuid,text) -> jsonb` signature and adds the distinct
+`IMPLIED_CONSENT` response code after every existing DND, explicit opt-out, pending STOP,
+duplicate-phone, phone-mismatch/change, global-opt-in, service-attestation, and signed-work-
+authorization branch. It changes no table, column, policy, grant, or business row and reasserts
+service-role-only execution.
+
+An `allowed=true` response is not sufficient authorization to send: every service-role caller must
+allowlist the returned code for its exact purpose. The staff-written direct 1:1 service-message path
+accepts `IMPLIED_CONSENT`. A separate typed transactional-service registry initially allows
+`appointment_scheduled`, `appointment_canceled`, and `signature_request` producers to accept
+`SERVICE_CONSENT` or `IMPLIED_CONSENT`; these are reviewed registry entries, not a caller-controlled
+label bypass. Each producer must derive its purpose, destination and approved copy from the
+server-owned appointment or signature record, use a stable source-record/event delivery identity,
+and durably audit `transactional_service_send_allowed` before provider selection. No automated
+producer is live yet. Generic automation, scheduled free-form, group, broadcast, bulk, campaign,
+and marketing paths accept `GLOBAL_OPT_IN` only. The concrete rollback restores `NO_CONSENT`.
+Until the exact migration is separately reviewed, authorized, applied, and verified, the live
+database does not return `IMPLIED_CONSENT`.
 
 ## Known limits
 
@@ -311,11 +334,11 @@ backslashes all remain fail-closed. It is live under ledger version `20260724200
 live tests proved valid frozen rows confirm through the attempt-less fallback and malformed rows
 remain unchanged with `outbound_unmatched`.
 
-## Pending mobile notification dispatcher boundary (S1d, 2026-07-26)
+## Live mobile notification dispatcher boundary (S1d, applied 2026-07-27)
 
-`20260726110000_notify_emit_service_boundary.sql` is authored and locally tested but **not
-applied**. It changes no table, trigger, schedule, policy, configuration row, URL, secret, header,
-or response shape. It preserves
+`20260726110000_notify_emit_service_boundary.sql` is live as ledger entry
+`20260727233704 notify_emit_service_boundary`. It changed no table, trigger, schedule, policy,
+configuration row, URL, secret, header, or response shape. It preserves
 `public.notify_emit(p_type_key text,p_body jsonb) RETURNS void`, owner `postgres`,
 `SECURITY DEFINER`, `search_path=public`, the catalog/URL no-op gates, and the existing
 `net.http_post` transport. Its only body change reverses the top-level object merge so the trusted
@@ -330,18 +353,19 @@ caller. The forward and rollback scripts fail closed on the captured target/call
 metadata. The rollback restores the exact prior body and `authenticated` grant and therefore
 re-opens the browser capability.
 
-Because the migration is unapplied, it is intentionally absent from the live provenance manifest.
-Add a ledger mapping and fresh function fingerprint only after an owner-authorized apply from the
-reviewed release commit. Sanitized live metadata and the rollout/rollback record are in
+A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
+`27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
+`service_role`. Sanitized live metadata and the rollout/rollback record are in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
-## Pending notification read receipts and recipient RLS (S1g, 2026-07-26)
+## Live notification read receipts and recipient RLS (S1g, applied 2026-07-28)
 
-`20260726260000_notification_read_recipient_boundary.sql` is authored and locally tested but **not
-applied**. It adds `notification_reads(notification_id, employee_id, read_at)` with cascading
-foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, has no
-policies, and grants no direct browser or service-role table access; the owner-run guarded
-`SECURITY DEFINER` bell RPCs are its only access path.
+`20260726260000_notification_read_recipient_boundary.sql` is live as ledger entry
+`20260728192024_notification_read_recipient_boundary`. It adds
+`notification_reads(notification_id, employee_id, read_at)` with cascading
+foreign keys and primary key `(notification_id, employee_id)`. The table is forced-RLS, carries an
+explicit authenticated deny-all policy, and grants no direct browser or service-role table access;
+the owner-run guarded `SECURITY DEFINER` bell RPCs are its only access path.
 
 The four existing bell RPC identities and result shapes remain unchanged. For broadcasts they
 project an employee-specific receipt through the existing `notifications.read_at` field; targeted
@@ -353,16 +377,19 @@ The existing Realtime table stays published. Its `notifications_select` policy o
 not dropped, from authenticated `USING (true)` to an active, non-external
 `employees.auth_user_id = auth.uid()` own-or-broadcast predicate. Direct authenticated table access
 becomes SELECT-only; `anon` loses table privileges and the obsolete authenticated
-`notifications_delete_testrows` policy is removed. The apply preflight pins the current employee
+`notifications_delete_testrows` policy object is retained but altered to `USING (false)`. The apply
+preflight pins the current employee
 UUID/active/external columns plus authenticated employee SELECT/RLS policy because that table is an
 explicit dependency of the notification predicate.
 
-This schema description is proposed source state until a separate shared-database apply succeeds.
-The generated live schema/RPC reports and provenance ledger must remain unchanged before then.
-Rollback is owner-guarded because it drops receipt history and deliberately restores the prior
-cross-recipient/shared-read exposure. It restores the exact prior functions and authenticated
-policy behavior but intentionally keeps the historical `anon` notification-table grant revoked;
-notifications have no approved public allowlist use case.
+The exact checksum-pinned migration passed its value-free preflight, embedded and standalone
+postconditions, disposable local Supabase forward/behavior/rollback sequence, and shared-project
+catalog/role verification. Generated live schema/RPC reports and migration provenance were
+refreshed after apply.
+Rollback is owner-guarded because it drops receipt history. It fails browser/native bell RPCs and
+Realtime table reads closed, preserves identity containment and recipient-scoped policies, and
+retains only explicitly gated service-role compatibility. It never restores the cross-recipient
+BOLA or the historical `anon` notification-table grant.
 
 ## QuickBooks Online attachments tracking (2026-07-24)
 
@@ -460,12 +487,72 @@ provenance reconciliation. Browser token conflicts are same-owner refresh only; 
 Push/native token registration and deletion fail closed, while reviewed owner/service maintenance
 remains.
 
+The App Store activation path now uses a smaller pending boundary:
+`20260728223000_native_apns_token_boundary.sql` adds nullable
+`device_tokens.apns_environment`, leaves existing rows inert, and introduces
+selector-free `upsert_my_native_device_token(text,text) -> jsonb` plus
+`delete_my_native_device_token(text) -> void`. The functions derive the active
+internal employee from `auth.uid()`, never return a raw token, reject foreign
+ownership, and are the only native-token RPCs granted to `authenticated`; direct
+table access and legacy selector RPCs are revoked from browser roles. This
+focused source has passed an isolated local behavior test but is not yet live.
+
+The ordered focused companion
+`20260728224000_native_push_delivery_guardrails.sql` preserves the deployed
+notification preference RPC signatures and return shapes while deriving browser
+ownership from `auth.uid()`, removes the authenticated `notification_prefs_all`
+policy's access additively by altering its predicates to false, removes direct
+browser grants, and keeps service-role recipient resolution compatible.
+It also adds private `native_push_delivery_claims` plus service-role-only
+claim/release/compare-and-prune RPCs. Claims are keyed by the real source-event
+occurrence and a non-reversible stable token/environment fingerprint; the
+claim table has no token-row foreign key, so logout, cap pruning, stale-token
+cleanup, and re-registration cannot erase replay history. Provider cleanup
+still matches the observed token row/environment/`updated_at`, and a 410
+deletion additionally requires Apple invalidation time not older than the
+registration. A claimed-at index supports bounded cleanup
+of at most 1,000 claims older than 90 days during each new claim, retaining a
+long retry window without unbounded table growth. The claim table has an
+explicit service-role-only RLS policy. Both focused migrations fail closed on
+complete live function/ACL/overload contracts and new-object collisions; the
+APNs environment check uses `NOT VALID` followed by `VALIDATE CONSTRAINT`.
+The companion rollback requires an explicit unsafe session flag before restoring
+the four exact prior RPC bodies/ACLs, because that compatibility rollback
+deliberately re-opens the selector defect. This focused boundary means the deferred broad
+S1h preflight will intentionally refuse until it is reconciled and re-qualified.
+
 The earlier `20260726223610_mobile_personal_ownership_boundary.sql` artifact is rejected evidence,
 not an apply candidate. Its employee self-promotion and raw-token takeover paths are addressed by
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
 pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
 retained governed local database. Generated schema/RPC reports must continue describing deployed
 state; none of these source migrations is live or `ready_for_apply`.
+
+## Notification presentation settings (2026-07-29)
+
+Migration `20260729163127_notification_presentation_settings.sql` adds two service-only tables:
+
+- `notification_presentation_overrides`, keyed by `(type_key, surface)`, stores only validated
+  title/body templates, an allowlisted route identifier, contract version, revision, and actor/time;
+- `notification_presentation_audit` stores append-only before/after configuration, action, actor,
+  request UUID, revision, and time. It stores no rendered customer/provider payload.
+
+Both tables use forced RLS, explicit `service_role` SELECT policies, and revoke
+`PUBLIC`/`anon`/`authenticated`. The sole writer,
+`mutate_notification_presentation(uuid,text,text,text,jsonb,bigint,uuid) -> jsonb`, is a
+service-role-only `SECURITY DEFINER` that pins `search_path`, revalidates an active internal admin,
+serializes each event/surface, enforces optimistic revision/idempotency, and writes current state
+plus audit atomically. Browser roles have no direct table or RPC path. The paired rollback is
+`supabase/rollbacks/20260729163127_notification_presentation_settings.rollback.sql`.
+
+The exact migration is applied and behavior-verified on isolated project `qa-staging`
+(`uizgwvkvzyldystqrcsk`): browser-role table/RPC denial, replay, stale revision rejection, atomic
+audit, and simultaneous first-write serialization passed. Synthetic rows were removed afterward.
+The same committed migration is applied to shared production under ledger version
+`20260729171946`. Post-apply inspection confirmed forced RLS on both tables, SELECT and RPC
+execution denied to `anon`/`authenticated`, service-role-only access, the pinned definer
+`search_path`, and zero override/audit rows. Application deployment status is recorded separately
+in `UPR-Web-Context.md`.
 
 Rollback is not routine compatibility work. It deliberately restores anonymous page-access
 enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary

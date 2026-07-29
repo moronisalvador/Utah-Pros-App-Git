@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // .claude/workflows are Claude Code workflow DSL scripts (top-level return/await,
+  // injected globals like agent()/phase()) — not parseable as standard modules.
+  globalIgnores(['dist', '.claude/workflows']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -24,6 +26,13 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Runtime TDZ guard. WARN preserves the existing baseline while CI's changed-files
+      // `--max-warnings 0` ratchet blocks new or touched variable-before-definition defects.
+      'no-use-before-define': ['warn', {
+        variables: true,
+        functions: false,
+        classes: false,
+      }],
       // CLAUDE.md Rule 2 — mechanically enforced (zero existing violations, so error-level is safe).
       // Feedback is the upr:toast CustomEvent via src/lib/toast.js; destructive actions use two-click confirm.
       'no-alert': 'error',

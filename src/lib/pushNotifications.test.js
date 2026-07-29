@@ -27,6 +27,7 @@ const native = vi.hoisted(() => ({
     requestPermissions: vi.fn(async () => ({ receive: 'granted' })),
     addListener: vi.fn(),
     register: vi.fn(),
+    removeAllDeliveredNotifications: vi.fn(async () => {}),
     unregister: vi.fn(async () => {}),
   },
 }));
@@ -42,8 +43,17 @@ vi.mock('@capacitor/push-notifications', () => ({
 import {
   NATIVE_PUSH_BINDING_KEY,
   NATIVE_PUSH_PENDING_DETACH_KEY,
+  NATIVE_PUSH_PROVISIONAL_RECONCILE_MS,
+  NATIVE_PUSH_USER_ENABLED_KEY,
   detachNativePushDevice,
+  disableNativePushForDevice,
+  enableNativePushForEmployee,
+  getNativePushStatus,
+  hasNativePushDeviceBinding,
   isNativePushEnrollmentEnabled,
+  isNativePushUserEnabled,
+  nativeApnsEnvironment,
+  nativePushRecipientBinding,
   registerPushForEmployee,
   resolveNativePushActionTarget,
   retryPendingNativePushDetach,
@@ -64,8 +74,29 @@ function deferred() {
   return { promise, reject, resolve };
 }
 
-function memoryStorage(initial = {}) {
-  const values = new Map(Object.entries(initial));
+function preferenceValue(ownerKey = OWNER_A, enabled = true) {
+  return JSON.stringify({
+    version: 2,
+    ownerKey,
+    enabled,
+  });
+}
+
+function memoryStorage(initial = {}, {
+  includePreference = true,
+  preferenceOwner = OWNER_A,
+} = {}) {
+  const values = new Map(Object.entries({
+    ...(includePreference
+      ? {
+        [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(
+          preferenceOwner,
+          true,
+        ),
+      }
+      : {}),
+    ...initial,
+  }));
   return {
     getItem: vi.fn((key) => values.get(key) ?? null),
     setItem: vi.fn((key, value) => values.set(key, value)),
@@ -74,14 +105,20 @@ function memoryStorage(initial = {}) {
   };
 }
 
+function readPreference(storage) {
+  return JSON.parse(storage.getItem(NATIVE_PUSH_USER_ENABLED_KEY));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
+  vi.stubEnv('VITE_APNS_ENV', 'sandbox');
   native.listeners.clear();
   native.listenerHandles.length = 0;
   native.isNativePlatform.mockReturnValue(true);
   native.push.checkPermissions.mockResolvedValue({ receive: 'granted' });
   native.push.requestPermissions.mockResolvedValue({ receive: 'granted' });
+  native.push.removeAllDeliveredNotifications.mockResolvedValue();
   native.push.unregister.mockResolvedValue();
   native.push.addListener.mockImplementation(async (event, callback) => {
     native.listeners.set(event, callback);
@@ -107,6 +144,70 @@ afterEach(() => {
 });
 
 describe('registerPushForEmployee', () => {
+  it('honors a durable user opt-out before permission, APNs, or database work', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: 'false',
+    });
+    vi.stubGlobal('localStorage', storage);
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(
+      registerPushForEmployee(
+        db,
+        'employee-fixture-a',
+        { storage, ownerKey: OWNER_A },
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'user_disabled',
+    });
+
+    expect(isNativePushUserEnabled(storage, OWNER_A)).toBe(false);
+    expect(hasNativePushDeviceBinding(storage)).toBe(false);
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+    expect(native.push.requestPermissions).not.toHaveBeenCalled();
+    expect(native.push.register).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('migrates missing intent on only for an already verified local binding', () => {
+    const fresh = memoryStorage({}, { includePreference: false });
+    const legacyBound = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    }, { includePreference: false });
+
+    expect(isNativePushUserEnabled(fresh, OWNER_A)).toBe(false);
+    expect(isNativePushUserEnabled(legacyBound, OWNER_A)).toBe(true);
+    expect(readPreference(legacyBound)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: true,
+    });
+  });
+
+  it('fails closed when durable preference storage is unavailable', async () => {
+    const throwingStorage = {
+      getItem: vi.fn(() => { throw new Error('storage blocked'); }),
+      setItem: vi.fn(() => { throw new Error('storage blocked'); }),
+      removeItem: vi.fn(() => { throw new Error('storage blocked'); }),
+    };
+    const db = { rpc: vi.fn(async () => null) };
+
+    expect(isNativePushUserEnabled(null, OWNER_A)).toBe(false);
+    expect(isNativePushUserEnabled(throwingStorage, OWNER_A)).toBe(false);
+    await expect(registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage: throwingStorage, ownerKey: OWNER_A },
+    )).resolves.toEqual({
+      ok: false,
+      reason: 'user_disabled',
+    });
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
   it('defaults enrollment off unless the reviewed native build explicitly enables it', async () => {
     const storage = memoryStorage();
     vi.stubGlobal('localStorage', storage);
@@ -116,10 +217,18 @@ describe('registerPushForEmployee', () => {
     expect(isNativePushEnrollmentEnabled({})).toBe(false);
     expect(isNativePushEnrollmentEnabled({
       VITE_NATIVE_PUSH_ENABLED: 'TRUE',
+      VITE_APNS_ENV: 'sandbox',
     })).toBe(false);
     expect(isNativePushEnrollmentEnabled({
       VITE_NATIVE_PUSH_ENABLED: 'true',
+      VITE_APNS_ENV: 'sandbox',
     })).toBe(true);
+    expect(isNativePushEnrollmentEnabled({
+      VITE_NATIVE_PUSH_ENABLED: 'true',
+      VITE_APNS_ENV: 'staging',
+    })).toBe(false);
+    expect(nativeApnsEnvironment({ VITE_APNS_ENV: 'production' }))
+      .toBe('production');
     await expect(
       registerPushForEmployee(db, 'employee-fixture-a'),
     ).resolves.toEqual({
@@ -139,25 +248,47 @@ describe('registerPushForEmployee', () => {
     vi.stubGlobal('localStorage', storage);
     const db = { rpc: vi.fn(async () => null) };
 
-    const result = await registerPushForEmployee(db, 'employee-fixture-a');
+    const result = await registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
 
     expect(result).toEqual({ ok: true, token: DEVICE_TOKEN });
-    expect(db.rpc).toHaveBeenCalledWith('upsert_device_token', {
-      p_employee_id: 'employee-fixture-a',
+    expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
-      p_platform: 'ios',
+      p_apns_environment: 'sandbox',
     });
     expect(storage.setItem).toHaveBeenCalledWith(
       NATIVE_PUSH_BINDING_KEY,
       DEVICE_TOKEN,
     );
-    expect([...storage.values.keys()]).toEqual([NATIVE_PUSH_BINDING_KEY]);
+    expect([...storage.values.keys()]).toEqual([
+      NATIVE_PUSH_USER_ENABLED_KEY,
+      NATIVE_PUSH_BINDING_KEY,
+    ]);
     expect([...storage.values.keys()].join(' ')).not.toContain(
       'employee-fixture-a',
     );
     expect([...storage.values.values()].join(' ')).not.toContain(
       'employee-fixture-a',
     );
+  });
+
+  it('does not touch APNs or the database when the environment is malformed', async () => {
+    vi.stubEnv('VITE_APNS_ENV', 'staging');
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(
+      registerPushForEmployee(db, 'employee-fixture-a'),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'native_push_misconfigured',
+    });
+
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+    expect(native.push.register).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
   });
 
   it('unregisters and does not persist when the owner binding fails normally', async () => {
@@ -169,31 +300,46 @@ describe('registerPushForEmployee', () => {
       }),
     };
 
-    const result = await registerPushForEmployee(db, 'employee-fixture-a');
+    const result = await registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
 
     expect(result).toMatchObject({ ok: false });
-    expect(storage.setItem).not.toHaveBeenCalled();
-    expect(native.push.unregister).toHaveBeenCalledOnce();
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    )).toMatchObject({
+      ownerKey: OWNER_A,
+      token: DEVICE_TOKEN,
+      localDetached: true,
+    });
+    expect(native.push.unregister).toHaveBeenCalled();
   });
 
   it('fails closed and unregisters when SQLSTATE 42501 reports foreign ownership', async () => {
     const storage = memoryStorage({
       [NATIVE_PUSH_BINDING_KEY]: 'previous-approved-token',
-    });
+    }, { preferenceOwner: OWNER_B });
     vi.stubGlobal('localStorage', storage);
     const ownershipError = Object.assign(
-      new Error('RPC upsert_device_token: 403 {"code":"42501"}'),
+      new Error('RPC upsert_my_native_device_token: 403 {"code":"42501"}'),
       {
         status: 403,
         body: JSON.stringify({
           code: '42501',
-          message: 'device token belongs to another employee',
+          message: 'NOT_AUTHORIZED: device token belongs to another employee',
         }),
       },
     );
     const db = { rpc: vi.fn(async () => { throw ownershipError; }) };
 
-    const result = await registerPushForEmployee(db, 'employee-fixture-b');
+    const result = await registerPushForEmployee(
+      db,
+      'employee-fixture-b',
+      { storage, ownerKey: OWNER_B },
+    );
 
     expect(result).toEqual({ ok: false, reason: 'ownership_conflict' });
     expect(native.push.unregister).toHaveBeenCalledOnce();
@@ -211,7 +357,7 @@ describe('registerPushForEmployee', () => {
     const db = {
       rpc: vi.fn(async (name, args) => {
         calls.push([name, args]);
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await upsertRelease.promise;
         }
       }),
@@ -220,16 +366,17 @@ describe('registerPushForEmployee', () => {
     const enrollment = registerPushForEmployee(
       db,
       'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
     );
     await vi.waitFor(() => {
-      expect(db.rpc).toHaveBeenCalledWith('upsert_device_token', {
-        p_employee_id: 'employee-fixture-a',
+      expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
         p_token: DEVICE_TOKEN,
-        p_platform: 'ios',
+        p_apns_environment: 'sandbox',
       });
     });
 
     const detach = await detachNativePushDevice(db, {
+      ownerKey: OWNER_A,
       storage,
       timeoutMs: 50,
     });
@@ -245,12 +392,13 @@ describe('registerPushForEmployee', () => {
     });
 
     expect(calls.map(([name]) => name)).toEqual([
-      'upsert_device_token',
-      'delete_device_token',
+      'upsert_my_native_device_token',
+      'delete_my_native_device_token',
+      'delete_my_native_device_token',
     ]);
     expect(calls[1][1]).toEqual({ p_token: DEVICE_TOKEN });
-    expect(storage.setItem).not.toHaveBeenCalled();
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);
   });
 
   it('does not let stale cleanup delete a newer native enrollment', async () => {
@@ -259,7 +407,7 @@ describe('registerPushForEmployee', () => {
     const firstUpsertRelease = deferred();
     const firstDb = {
       rpc: vi.fn(async (name) => {
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await firstUpsertRelease.promise;
         }
       }),
@@ -269,14 +417,16 @@ describe('registerPushForEmployee', () => {
     const firstEnrollment = registerPushForEmployee(
       firstDb,
       'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
     );
     await vi.waitFor(() => {
       expect(firstDb.rpc).toHaveBeenCalledWith(
-        'upsert_device_token',
+        'upsert_my_native_device_token',
         expect.any(Object),
       );
     });
     await detachNativePushDevice(firstDb, {
+      ownerKey: OWNER_A,
       storage,
       timeoutMs: 50,
     });
@@ -284,7 +434,11 @@ describe('registerPushForEmployee', () => {
     await expect(registerPushForEmployee(
       secondDb,
       'employee-fixture-b',
-    )).resolves.toEqual({ ok: true, token: DEVICE_TOKEN });
+      { storage, ownerKey: OWNER_B },
+    )).resolves.toEqual({
+      ok: false,
+      reason: 'user_disabled',
+    });
 
     firstUpsertRelease.resolve();
     await expect(firstEnrollment).resolves.toEqual({
@@ -292,11 +446,21 @@ describe('registerPushForEmployee', () => {
       reason: 'cancelled',
     });
 
-    expect(firstDb.rpc).toHaveBeenCalledOnce();
-    expect(secondDb.rpc).toHaveBeenCalledWith('upsert_device_token', {
-      p_employee_id: 'employee-fixture-b',
+    await expect(registerPushForEmployee(
+      secondDb,
+      'employee-fixture-b',
+      { storage, ownerKey: OWNER_B },
+    )).resolves.toEqual({ ok: false, reason: 'user_disabled' });
+    expect(secondDb.rpc).not.toHaveBeenCalled();
+
+    await expect(enableNativePushForEmployee(
+      secondDb,
+      'employee-fixture-b',
+      { storage, ownerKey: OWNER_B },
+    )).resolves.toEqual({ ok: true, token: DEVICE_TOKEN });
+    expect(secondDb.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
-      p_platform: 'ios',
+      p_apns_environment: 'sandbox',
     });
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
   });
@@ -309,7 +473,7 @@ describe('registerPushForEmployee', () => {
     const db = {
       rpc: vi.fn(async (name, args) => {
         calls.push([name, args]);
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await upsertResponse.promise;
         }
       }),
@@ -318,9 +482,14 @@ describe('registerPushForEmployee', () => {
     const enrollment = registerPushForEmployee(
       db,
       'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
     );
     await vi.waitFor(() => expect(calls).toHaveLength(1));
-    await detachNativePushDevice(db, { storage, timeoutMs: 50 });
+    await detachNativePushDevice(db, {
+      ownerKey: OWNER_A,
+      storage,
+      timeoutMs: 50,
+    });
 
     upsertResponse.reject(new Error('response disconnected after commit'));
     await expect(enrollment).resolves.toEqual({
@@ -329,15 +498,550 @@ describe('registerPushForEmployee', () => {
     });
 
     expect(calls.map(([name]) => name)).toEqual([
-      'upsert_device_token',
-      'delete_device_token',
+      'upsert_my_native_device_token',
+      'delete_my_native_device_token',
+      'delete_my_native_device_token',
     ]);
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
-    expect(native.push.unregister).toHaveBeenCalledTimes(2);
+    expect(native.push.unregister).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('user-controlled native Push preference', () => {
+  it('does not carry one account push opt-in into another account', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, true),
+    });
+    const db = { rpc: vi.fn(async () => null) };
+
+    expect(isNativePushUserEnabled(storage, OWNER_A)).toBe(true);
+    expect(isNativePushUserEnabled(storage, OWNER_B)).toBe(false);
+    await expect(registerPushForEmployee(
+      db,
+      'employee-fixture-b',
+      { storage, ownerKey: OWNER_B },
+    )).resolves.toEqual({
+      ok: false,
+      reason: 'user_disabled',
+    });
+
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+    expect(native.push.requestPermissions).not.toHaveBeenCalled();
+    expect(native.push.register).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('reports current iOS permission without exposing the device token', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, true),
+    });
+    native.push.checkPermissions.mockResolvedValue({ receive: 'denied' });
+
+    const status = await getNativePushStatus({
+      storage,
+      timeoutMs: 50,
+      ownerKey: OWNER_A,
+    });
+
+    expect(status).toEqual({
+      available: true,
+      bound: true,
+      enabled: false,
+      intentEnabled: true,
+      native: true,
+      pending: false,
+      permission: 'denied',
+    });
+    expect(JSON.stringify(status)).not.toContain(DEVICE_TOKEN);
+  });
+
+  it('treats a permission check failure as unknown instead of claiming delivery', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    native.push.checkPermissions.mockRejectedValue(
+      new Error('native bridge unavailable'),
+    );
+
+    await expect(getNativePushStatus({
+      storage,
+      timeoutMs: 50,
+      ownerKey: OWNER_A,
+    })).resolves.toMatchObject({
+      bound: true,
+      enabled: false,
+      intentEnabled: true,
+      permission: 'unknown',
+    });
+  });
+
+  it('enables by persisting intent and then binding the APNs token', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, false),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(enableNativePushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toEqual({ ok: true, token: DEVICE_TOKEN });
+
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: true,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
+    expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
+      p_token: DEVICE_TOKEN,
+      p_apns_environment: 'sandbox',
+    });
+  });
+
+  it('joins the same-owner Auth enrollment instead of treating its marker as stale cleanup', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, true),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const upsertRelease = deferred();
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === 'upsert_my_native_device_token') {
+          await upsertRelease.promise;
+        }
+        return null;
+      }),
+    };
+
+    const authEnrollment = registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
+    await vi.waitFor(() => {
+      expect(JSON.parse(
+        storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+      )).toMatchObject({
+        ownerKey: OWNER_A,
+        phase: 'enrolling_provisional',
+      });
+    });
+
+    const settingsEnrollment = enableNativePushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
+    upsertRelease.resolve();
+
+    await expect(authEnrollment).resolves.toEqual({
+      ok: true,
+      token: DEVICE_TOKEN,
+    });
+    await expect(settingsEnrollment).resolves.toEqual({
+      ok: true,
+      token: DEVICE_TOKEN,
+    });
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: true,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
+    expect(db.rpc.mock.calls.filter(
+      ([name]) => name === 'upsert_my_native_device_token',
+    )).toHaveLength(1);
+    expect(db.rpc).not.toHaveBeenCalledWith(
+      'delete_my_native_device_token',
+      expect.anything(),
+    );
+  });
+
+  it('returns failed explicit enrollment to durable off', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, false),
+    });
+    vi.stubGlobal('localStorage', storage);
+    native.push.checkPermissions.mockResolvedValue({ receive: 'denied' });
+    native.push.requestPermissions.mockResolvedValue({ receive: 'denied' });
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(enableNativePushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toEqual({
+      ok: false,
+      reason: 'permission_denied',
+    });
+
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(native.push.register).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it('returns a response-lost explicit enrollment to off and deletes a possible late commit', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, false),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const calls = [];
+    const db = {
+      rpc: vi.fn(async (name, args) => {
+        calls.push([name, args]);
+        if (name === 'upsert_my_native_device_token') {
+          throw new Error('response disconnected after commit');
+        }
+        return null;
+      }),
+    };
+
+    await expect(enableNativePushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toMatchObject({
+      ok: false,
+      reason: 'response disconnected after commit',
+    });
+
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    const provisional = JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    );
+    expect(provisional).toMatchObject({
+      ownerKey: OWNER_A,
+      token: DEVICE_TOKEN,
+      localDetached: true,
+      phase: 'enrolling_provisional',
+    });
+    expect(calls).toEqual([
+      [
+        'upsert_my_native_device_token',
+        {
+          p_token: DEVICE_TOKEN,
+          p_apns_environment: 'sandbox',
+        },
+      ],
+      [
+        'delete_my_native_device_token',
+        { p_token: DEVICE_TOKEN },
+      ],
+    ]);
+    expect(native.push.unregister).toHaveBeenCalled();
+
+    await expect(retryPendingNativePushDetach(db, {
+      storage,
+      ownerKey: OWNER_A,
+      now: (
+        provisional.createdAt
+        + NATIVE_PUSH_PROVISIONAL_RECONCILE_MS
+        + 1
+      ),
+    })).resolves.toMatchObject({
+      ready: true,
+      provisionalMature: true,
+    });
+    expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);
+    expect(calls.at(-1)).toEqual([
+      'delete_my_native_device_token',
+      { p_token: DEVICE_TOKEN },
+    ]);
+  });
+
+  it('persists off before detaching so a restart cannot auto-enroll', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, true),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const observedPreference = [];
+    const db = {
+      rpc: vi.fn(async () => {
+        observedPreference.push(
+          readPreference(storage),
+        );
+      }),
+    };
+
+    await expect(disableNativePushForDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+    })).resolves.toMatchObject({
+      ok: true,
+      ready: true,
+      preferenceStored: true,
+      localDetached: true,
+      localStateCleared: true,
+    });
+
+    expect(observedPreference).toEqual([{
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    }]);
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    await expect(registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toEqual({
+      ok: false,
+      reason: 'user_disabled',
+    });
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+  });
+
+  it('lets an explicit disable win over an in-flight enrollment', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_USER_ENABLED_KEY]: preferenceValue(OWNER_A, true),
+    });
+    vi.stubGlobal('localStorage', storage);
+    const upsertRelease = deferred();
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === 'upsert_my_native_device_token') {
+          await upsertRelease.promise;
+        }
+      }),
+    };
+
+    const enrollment = registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
+    await vi.waitFor(() => {
+      expect(db.rpc).toHaveBeenCalledWith(
+        'upsert_my_native_device_token',
+        expect.any(Object),
+      );
+    });
+
+    await disableNativePushForDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+    });
+    upsertRelease.resolve();
+
+    await expect(enrollment).resolves.toEqual({
+      ok: false,
+      reason: 'cancelled',
+    });
+    expect(readPreference(storage)).toEqual({
+      version: 2,
+      ownerKey: OWNER_A,
+      enabled: false,
+    });
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+    expect(db.rpc).toHaveBeenCalledWith(
+      'delete_my_native_device_token',
+      { p_token: DEVICE_TOKEN },
+    );
+  });
+
+  it('does not claim off when durable preference storage fails', async () => {
+    const values = new Map([
+      [NATIVE_PUSH_BINDING_KEY, DEVICE_TOKEN],
+      [
+        NATIVE_PUSH_USER_ENABLED_KEY,
+        preferenceValue(OWNER_A, true),
+      ],
+    ]);
+    const storage = {
+      getItem: vi.fn((key) => values.get(key) ?? null),
+      setItem: vi.fn((key, value) => {
+        if (key === NATIVE_PUSH_USER_ENABLED_KEY) {
+          throw new Error('storage blocked');
+        }
+        values.set(key, value);
+      }),
+      removeItem: vi.fn((key) => values.delete(key)),
+    };
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(disableNativePushForDevice(db, {
+      storage,
+      ownerKey: OWNER_A,
+    })).resolves.toMatchObject({
+      ok: false,
+      ready: false,
+      preferenceStored: false,
+      localDetached: true,
+      localStateCleared: true,
+    });
   });
 });
 
 describe('detachNativePushDevice', () => {
+  it('clears a crashed provisional marker when 42501 proves the attempted owner never acquired it', async () => {
+    const createdAt = Date.now();
+    const storage = memoryStorage({
+      [NATIVE_PUSH_PENDING_DETACH_KEY]: JSON.stringify({
+        version: 2,
+        ownerKey: OWNER_B,
+        token: DEVICE_TOKEN,
+        localDetached: false,
+        phase: 'enrolling_provisional',
+        createdAt,
+      }),
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw Object.assign(
+          new Error(
+            'NOT_AUTHORIZED: device token belongs to another employee',
+          ),
+          {
+            code: '42501',
+            body: JSON.stringify({
+              code: '42501',
+              message: 'NOT_AUTHORIZED: device token belongs to another employee',
+            }),
+          },
+        );
+      }),
+    };
+
+    await expect(retryPendingNativePushDetach(db, {
+      storage,
+      ownerKey: OWNER_B,
+      now: createdAt + 1,
+    })).resolves.toMatchObject({
+      ready: true,
+      markerCleared: true,
+      provisionalMature: false,
+      provisionalOwnershipCleared: true,
+    });
+    expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);
+    expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
+  });
+
+  it.each([
+    ['malformed body', '{"code":'],
+    [
+      'nested fields',
+      JSON.stringify({
+        error: {
+          code: '42501',
+          message: 'NOT_AUTHORIZED: device token belongs to another employee',
+        },
+      }),
+    ],
+    [
+      'partial code',
+      JSON.stringify({
+        code: '142501',
+        message: 'NOT_AUTHORIZED: device token belongs to another employee',
+      }),
+    ],
+    [
+      'unrelated message',
+      JSON.stringify({
+        code: '42501',
+        message: 'NOT_AUTHORIZED: active internal employee required',
+      }),
+    ],
+  ])('retains a provisional marker for %s despite spoofed error text', async (_label, body) => {
+    const createdAt = Date.now();
+    const storage = memoryStorage({
+      [NATIVE_PUSH_PENDING_DETACH_KEY]: JSON.stringify({
+        version: 2,
+        ownerKey: OWNER_A,
+        token: DEVICE_TOKEN,
+        localDetached: false,
+        phase: 'enrolling_provisional',
+        createdAt,
+      }),
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw Object.assign(
+          new Error(
+            '42501 NOT_AUTHORIZED: device token belongs to another employee',
+          ),
+          { code: '42501', body },
+        );
+      }),
+    };
+
+    await expect(retryPendingNativePushDetach(db, {
+      storage,
+      ownerKey: OWNER_A,
+      now: createdAt + 1,
+    })).resolves.toMatchObject({
+      ready: false,
+      markerCleared: false,
+      provisionalOwnershipCleared: false,
+      serverDetached: false,
+    });
+    expect(JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    )).toMatchObject({
+      ownerKey: OWNER_A,
+      token: DEVICE_TOKEN,
+      phase: 'enrolling_provisional',
+    });
+  });
+
+  it('retains a provisional marker for a non-ownership 42501 denial', async () => {
+    const createdAt = Date.now();
+    const storage = memoryStorage({
+      [NATIVE_PUSH_PENDING_DETACH_KEY]: JSON.stringify({
+        version: 2,
+        ownerKey: OWNER_A,
+        token: DEVICE_TOKEN,
+        localDetached: false,
+        phase: 'enrolling_provisional',
+        createdAt,
+      }),
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw Object.assign(
+          new Error('NOT_AUTHORIZED: active internal employee required'),
+          { code: '42501' },
+        );
+      }),
+    };
+
+    await expect(retryPendingNativePushDetach(db, {
+      storage,
+      ownerKey: OWNER_A,
+      now: createdAt + 1,
+    })).resolves.toMatchObject({
+      ready: false,
+      markerCleared: false,
+      provisionalOwnershipCleared: false,
+      serverDetached: false,
+    });
+    expect(JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    )).toMatchObject({
+      ownerKey: OWNER_A,
+      token: DEVICE_TOKEN,
+      phase: 'enrolling_provisional',
+    });
+  });
+
   it('deletes the owner-scoped server token before unregistering locally', async () => {
     const storage = memoryStorage({
       [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
@@ -357,7 +1061,7 @@ describe('detachNativePushDevice', () => {
       timeoutMs: 50,
     });
 
-    expect(db.rpc).toHaveBeenCalledWith('delete_device_token', {
+    expect(db.rpc).toHaveBeenCalledWith('delete_my_native_device_token', {
       p_token: DEVICE_TOKEN,
     });
     expect(order).toEqual(['server', 'local']);
@@ -515,7 +1219,7 @@ describe('detachNativePushDevice', () => {
     });
     expect(db.rpc).toHaveBeenCalledTimes(2);
     expect(db.rpc).toHaveBeenLastCalledWith(
-      'delete_device_token',
+      'delete_my_native_device_token',
       { p_token: DEVICE_TOKEN },
     );
     expect(native.push.unregister).toHaveBeenCalledTimes(2);
@@ -581,7 +1285,7 @@ describe('detachNativePushDevice', () => {
       markerCleared: true,
     });
     expect(reloadedOwnerDb.rpc).toHaveBeenCalledWith(
-      'delete_device_token',
+      'delete_my_native_device_token',
       { p_token: DEVICE_TOKEN },
     );
     expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);
@@ -646,7 +1350,12 @@ describe('native Push event listeners', () => {
 
   it('routes a background notification tap through the canonical native resolver', async () => {
     const onTarget = vi.fn();
-    const lifecycle = startNativePushEventListeners({ onTarget });
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    const lifecycle = startNativePushEventListeners({
+      employeeId,
+      onTarget,
+    });
 
     await lifecycle.ready;
     native.listeners.get('pushNotificationActionPerformed')?.({
@@ -656,50 +1365,86 @@ describe('native Push event listeners', () => {
           aps: { alert: { title: 'Private title' } },
           data: {
             url: '/tech/conversations?c=conversation-1',
+            recipient,
           },
         },
       },
     });
+    await vi.waitFor(() => expect(onTarget).toHaveBeenCalledOnce());
 
-    expect(onTarget).toHaveBeenCalledOnce();
     expect(onTarget).toHaveBeenCalledWith(
       '/tech/conversations?c=conversation-1',
       { source: 'native_push_action' },
     );
   });
 
-  it('rejects dismissals, unsafe targets, and conflicting payload locations', () => {
-    expect(resolveNativePushActionTarget({
+  it('rejects dismissals, unsafe targets, and conflicting payload locations', async () => {
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
+    await expect(resolveNativePushActionTarget({
       actionId: 'dismiss',
-      notification: { data: { url: '/tech/tasks' } },
-    })).toBe(null);
-    expect(resolveNativePushActionTarget({
+      notification: { data: { url: '/tech/tasks', recipient } },
+    }, { employeeId })).resolves.toBe(null);
+    await expect(resolveNativePushActionTarget({
       actionId: 'tap',
-      notification: { data: { url: 'https://example.com/tech' } },
-    })).toBe(null);
-    expect(resolveNativePushActionTarget({
+      notification: {
+        data: { url: 'https://example.com/tech', recipient },
+      },
+    }, { employeeId })).resolves.toBe(null);
+    await expect(resolveNativePushActionTarget({
       actionId: 'tap',
       notification: {
         data: {
           url: '/tech/tasks',
-          data: { url: '/tech/jobs/job-1' },
+          recipient,
+          data: { url: '/tech/jobs/job-1', recipient },
         },
       },
-    })).toBe(null);
-    expect(resolveNativePushActionTarget({
+    }, { employeeId })).resolves.toBe(null);
+    await expect(resolveNativePushActionTarget({
       actionId: 'tap',
       notification: {
         data: {
           url: '/tech/admin/users',
+          recipient,
         },
       },
-    })).toBe(null);
+    }, { employeeId })).resolves.toBe(null);
+  });
+
+  it('drops a notification tap addressed to a different employee', async () => {
+    const onTarget = vi.fn();
+    const employeeARecipient = await nativePushRecipientBinding(
+      'employee-fixture-a',
+    );
+    const lifecycle = startNativePushEventListeners({
+      employeeId: 'employee-fixture-b',
+      onTarget,
+    });
+
+    await lifecycle.ready;
+    await native.listeners.get('pushNotificationActionPerformed')?.({
+      actionId: 'tap',
+      notification: {
+        data: {
+          data: {
+            url: '/tech/tasks',
+            recipient: employeeARecipient,
+          },
+        },
+      },
+    });
+
+    expect(onTarget).not.toHaveBeenCalled();
   });
 
   it('stops both listeners and suppresses callbacks retained by a late native event', async () => {
     const onForeground = vi.fn();
     const onTarget = vi.fn();
+    const employeeId = 'employee-fixture-a';
+    const recipient = await nativePushRecipientBinding(employeeId);
     const lifecycle = startNativePushEventListeners({
+      employeeId,
       onForeground,
       onTarget,
     });
@@ -712,8 +1457,13 @@ describe('native Push event listeners', () => {
     foreground?.({ body: 'must stay private' });
     action?.({
       actionId: 'tap',
-      notification: { data: { data: { url: '/tech/tasks' } } },
+      notification: {
+        data: {
+          data: { url: '/tech/tasks', recipient },
+        },
+      },
     });
+    await Promise.resolve();
 
     expect(onForeground).not.toHaveBeenCalled();
     expect(onTarget).not.toHaveBeenCalled();

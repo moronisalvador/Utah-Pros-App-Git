@@ -22,13 +22,15 @@
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
  *              ../lib/auth.js (active internal admin for the legacy Bearer path),
- *              ../lib/webPush.js (sendWebPush/loadVapidConfig), ../lib/email.js
+ *              ../lib/webPush.js (sendWebPush/loadVapidConfig), ../lib/apns.js,
+ *              ../lib/email.js
  *   Data:      reads  → notification_types (catalog + enabled master switch),
  *                        employees (audience + email), appointment_crew (crew
- *                        audience), push_subscriptions (devices), integration_config
- *                        (webhook secret); get_effective_notification_prefs (RPC)
+ *                        audience), push_subscriptions + device_tokens (devices),
+ *                        integration_config (webhook secret);
+ *                        get_effective_notification_prefs (RPC)
  *              writes → notifications (via create_notification, per recipient);
- *                        prunes dead push_subscriptions (404/410)
+ *                        prunes dead push subscriptions/registrations
  *
  * NOTES / GOTCHAS:
  *   - A type ships enabled=false and is INERT: dispatchEvent returns {skipped} for
@@ -51,7 +53,12 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
+import { sendNativePushToEmployeeAcrossEnvironments } from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import {
+  resolveConfiguredNotificationPresentation,
+} from '../lib/notificationPresentation.js';
 
 // The internal notifications sender identity (distinct from the customer-facing
 // "Utah Pros Restoration" default in email.js).
@@ -74,6 +81,11 @@ const ROLE_AUDIENCE = {
 
 const NOTIFY_BROWSER_ROLES = ['admin'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const APPOINTMENT_AUDIENCE_TYPES = new Set([
+  'appointment.assigned',
+  'appointment.updated',
+  'appointment.canceled',
+]);
 
 // There is no checked-in browser caller for POST /api/notify. Keep the legacy
 // Bearer capability deliberately narrow: only events whose recipient and
@@ -111,20 +123,40 @@ async function filterActiveInternalEmployeeIds(db, employeeIds) {
     .map((employee) => employee.id));
 }
 
+async function resolveAppointmentAudience(db, typeKey, body) {
+  if (!body.appointment_id) return [];
+  let crew = [];
+  try {
+    crew = await db.select(
+      'appointment_crew',
+      `appointment_id=eq.${body.appointment_id}&select=employee_id`,
+    );
+  } catch {
+    return [];
+  }
+  let crewIds = uniq((crew || []).map((row) => row.employee_id));
+  if (typeKey === 'appointment.assigned') {
+    if (!body.employee_id) return [];
+    crewIds = crewIds.filter((id) => id === body.employee_id);
+  }
+  return filterActiveInternalEmployeeIds(db, crewIds);
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
- *  1. explicit body.recipient_ids win after active/internal validation;
- *  2. appointment/employee-scoped types resolve from the payload / crew;
+ *  1. appointment types always resolve from current assignment/crew state;
+ *  2. other explicit body.recipient_ids win after active/internal validation;
  *  3. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
+  if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
+    return resolveAppointmentAudience(db, typeKey, body);
+  }
+
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {
     return filterActiveInternalEmployeeIds(db, body.recipient_ids);
   }
 
-  if (typeKey === 'appointment.assigned' && body.employee_id) {
-    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
-  }
   if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
     return filterActiveInternalEmployeeIds(db, [body.employee_id]);
   }
@@ -141,14 +173,6 @@ export async function resolveAudience(db, typeKey, body = {}) {
       [...(admins || []).filter((e) => e.is_external !== true).map((e) => e.id), tech],
     );
   }
-  if ((typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') && body.appointment_id) {
-    let crew = [];
-    try {
-      crew = await db.select('appointment_crew', `appointment_id=eq.${body.appointment_id}&select=employee_id`);
-    } catch { crew = []; }
-    return filterActiveInternalEmployeeIds(db, (crew || []).map((c) => c.employee_id));
-  }
-
   const roles = ROLE_AUDIENCE[typeKey] || ['admin'];
   let emps = [];
   try {
@@ -166,7 +190,34 @@ export async function resolveAudience(db, typeKey, body = {}) {
  * Deliver one event to one recipient across the channels their EFFECTIVE prefs
  * leave on. Returns a per-recipient summary; never throws.
  */
-export async function dispatchToRecipient({ db, env, recipientId, type, body, vapid, sendWebPushImpl, sendEmailImpl, fetchImpl }) {
+export function nativeNotificationEventKey(type, body, recipientId) {
+  const occurrenceId = body?.notification_event_id;
+  if (
+    !['string', 'number'].includes(typeof occurrenceId)
+    || String(occurrenceId).trim() === ''
+  ) {
+    return null;
+  }
+  return JSON.stringify([
+    type?.type_key || '',
+    recipientId || '',
+    String(occurrenceId).trim(),
+  ]);
+}
+
+export async function dispatchToRecipient({
+  db,
+  env,
+  recipientId,
+  type,
+  body,
+  vapid,
+  sendWebPushImpl,
+  sendNativePushImpl,
+  sendEmailImpl,
+  fetchImpl,
+  nativeRetryOnly = false,
+}) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
 
   let prefs = [];
@@ -174,15 +225,37 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
   catch { prefs = []; }
   const forType = (prefs || []).filter((p) => p.type_key === type.type_key);
   const on = (ch) => forType.some((p) => p.channel === ch && p.enabled);
+  const bellPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'bell',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.link || '/',
+    },
+  });
+  const pwaPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'pwa_push',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.data?.url || body.link || '/',
+    },
+  });
 
   // Channel 1 — in-app bell (per-recipient row).
-  if (on('bell')) {
+  if (on('bell') && !nativeRetryOnly) {
     try {
       await db.rpc('create_notification', {
         p_type: type.type_key,
-        p_title: body.title || type.label,
-        p_body: body.body || null,
-        p_link: body.link || null,
+        p_title: bellPresentation.title,
+        p_body: bellPresentation.body || null,
+        p_link: bellPresentation.url || null,
         p_entity_type: body.entity_type || null,
         p_entity_id: body.entity_id || null,
         p_job_id: body.job_id || null,
@@ -196,31 +269,76 @@ export async function dispatchToRecipient({ db, env, recipientId, type, body, va
 
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
   if (on('push')) {
-    let subs = [];
-    try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
-    catch { subs = []; }
-    const pushBody = JSON.stringify({
-      title: body.title || type.label,
-      body: body.body || '',
-      url: body.data?.url || body.link || '/',
-      data: body.data || {},
-    });
-    const send = sendWebPushImpl || sendWebPush;
-    for (const s of subs || []) {
-      result.push.attempted++;
+    const nativeSender = sendNativePushImpl
+      || sendNativePushToEmployeeAcrossEnvironments;
+    const eventKey = nativeNotificationEventKey(type, body, recipientId);
+    if (!eventKey) {
+      result.push.native = {
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+        skipped: true,
+        reason: 'missing_notification_event_id',
+      };
+    } else {
       try {
-        const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
-        if (res.skipped) { result.push.vapidMissing = true; continue; }
-        if (res.ok) { result.push.sent++; continue; }
-        if (res.status === 404 || res.status === 410) {
-          try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
-        }
-      } catch { /* one bad subscription never breaks the fan-out */ }
+        const nativeInput = {
+          db,
+          env,
+          employeeId: recipientId,
+          typeKey: type.type_key,
+          notificationBody: body,
+          eventKey,
+        };
+        // The real APNs sender owns its bounded fetchWithTimeout default.
+        // Only an explicitly injected sender receives the caller's fake fetch.
+        if (sendNativePushImpl && fetchImpl) nativeInput.fetchImpl = fetchImpl;
+        const native = await nativeSender(nativeInput);
+        result.push.native = native;
+        result.push.sent += native?.sent || 0;
+        result.push.attempted += native?.attempted || 0;
+        result.push.pruned += native?.pruned || 0;
+      } catch {
+        result.push.native = {
+          sent: 0,
+          attempted: 0,
+          pruned: 0,
+          skipped: true,
+          reason: 'native_push_failed',
+        };
+      }
+    }
+
+    if (!nativeRetryOnly) {
+      let subs = [];
+      try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
+      catch { subs = []; }
+      const pushBody = JSON.stringify({
+        title: pwaPresentation.title,
+        body: pwaPresentation.body,
+        url: pwaPresentation.url,
+        // The typed presentation resolver is the only authority for tap
+        // navigation. Never forward producer metadata: older producers carry a
+        // data.url that can conflict with an admin-selected route.
+        data: { url: pwaPresentation.url },
+      });
+      const send = sendWebPushImpl || sendWebPush;
+      for (const s of subs || []) {
+        result.push.attempted++;
+        try {
+          const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
+          if (res.skipped) { result.push.vapidMissing = true; continue; }
+          if (res.ok) { result.push.sent++; continue; }
+          if (res.status === 404 || res.status === 410) {
+            try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
+          }
+        } catch { /* one bad subscription never breaks the fan-out */ }
+      }
     }
   }
 
   // Channel 3 — transactional email (skips + reports a NULL address).
-  if (on('email')) {
+  if (on('email') && !nativeRetryOnly) {
     let email = null;
     try {
       const rows = await db.select('employees', `id=eq.${recipientId}&select=email,full_name`);
@@ -337,6 +455,24 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
     // field path here — which this did while /tech/appointment/:id was the only
     // appointment screen in the app — put desktop dispatchers in the phone UI.
     link: body.link || `/schedule/appointment/${body.appointment_id}`,
+    // PUSH-01. The shell-decides rule above only reaches the IN-APP bell, which
+    // calls linkForCurrentShell. Web Push never touches that code: the service
+    // worker validates the raw URL against its own allowlist (public/sw-target.js),
+    // which carries /tech/appointment/:id and no /schedule/appointment entry — so
+    // an office link normalized to the '/tech' fallback and every tapped
+    // appointment push landed on the field dashboard with no appointment, for
+    // dispatchers as well as techs. dispatchToRecipient prefers data.url, so the
+    // installed app gets an allowlisted field path while `link` above keeps the
+    // bell correct. Same split message.inbound already ships (enrichInboundMessageBody).
+    data: {
+      ...(body.data || {}),
+      url: body.data?.url || `/tech/appointment/${body.appointment_id}`,
+    },
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      appointment_title: what,
+      appointment_when: when,
+    },
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,
   };
@@ -375,6 +511,16 @@ export async function enrichEstimateBody(db, body = {}) {
     entity_type: body.entity_type || 'estimate',
     entity_id: body.entity_id || body.estimate_id,
     job_id: body.job_id ?? est.job_id ?? null,
+    payload: {
+      ...(body.payload || {}),
+      amount: Number.isFinite(amt) ? amt : null,
+    },
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      estimate_number: num,
+      amount: money,
+      customer_name: client,
+    },
   };
 }
 
@@ -384,7 +530,17 @@ export async function enrichEstimateBody(db, body = {}) {
  * and wrapped with auth by handleNotify. Returns a summary; never throws for a
  * disabled type (returns { skipped }).
  */
-export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, sendWebPushImpl, sendEmailImpl }) {
+export async function dispatchEvent({
+  db,
+  env,
+  typeKey,
+  body = {},
+  fetchImpl,
+  sendWebPushImpl,
+  sendNativePushImpl,
+  sendEmailImpl,
+  nativeRetryOnly = false,
+}) {
   if (!typeKey) return { skipped: true, reason: 'no_type_key', recipients: 0, results: [] };
 
   let type = null;
@@ -413,7 +569,19 @@ export async function dispatchEvent({ db, env, typeKey, body = {}, fetchImpl, se
 
   const results = [];
   for (const rid of recipientIds) {
-    results.push(await dispatchToRecipient({ db, env, recipientId: rid, type, body, vapid, sendWebPushImpl, sendEmailImpl, fetchImpl }));
+    results.push(await dispatchToRecipient({
+      db,
+      env,
+      recipientId: rid,
+      type,
+      body,
+      vapid,
+      sendWebPushImpl,
+      sendNativePushImpl,
+      sendEmailImpl,
+      fetchImpl,
+      nativeRetryOnly,
+    }));
   }
 
   return { type_key: typeKey, recipients: recipientIds.length, results };
@@ -573,6 +741,11 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const { status, data } = await handleNotify({ request, env, db: supabase(env), fetchImpl: fetch });
+  const { status, data } = await handleNotify({
+    request,
+    env,
+    db: supabase(env, fetchWithTimeout),
+    fetchImpl: fetch,
+  });
   return jsonResponse(data, status, request, env);
 }

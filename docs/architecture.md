@@ -151,3 +151,17 @@ The browser receives a bounded contact projection and never executes the privile
 uses the service role for contact search or one direct-thread creation. It does not send, infer
 consent, or change DND. Once a thread exists, both mobile and office clients continue to use the
 single `/api/send-message` chokepoint.
+
+## Notification presentation control plane
+
+`functions/lib/notificationPresentation.js` is the one typed event/surface/variable/route catalog
+for notification presentation. Browser bell/PWA and privacy-locked native definitions live in that
+registry; dispatchers may consume a validated override but do not accept caller-defined templates,
+paths, URLs, route parameters, or provider payloads. A missing, stale, invalid, over-budget, or
+unrenderable override falls back per surface to the code-owned presentation.
+
+The desktop-only `/settings/notification-presentation` page calls the protected
+`/api/notification-presentation` Worker. The Worker authenticates an active internal literal admin
+before any config read, validates exact typed input, previews only synthetic registry values, and
+mutates through one service-only audited RPC. Audience, recipient preferences, consent, occurrence
+identity, provider selection, and email presentation remain outside this control plane.

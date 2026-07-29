@@ -361,6 +361,7 @@ async function persistInboundMessage(context, db, env, { contact, from, to, body
     contact,
     from,
     text: body,
+    notificationEventId: messageSid,
     dispatchImpl: dispatchEvent,
   }));
 

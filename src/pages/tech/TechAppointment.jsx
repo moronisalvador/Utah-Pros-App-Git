@@ -58,16 +58,19 @@
  *     online-only for the initial production release.
  *   - Equipment removal uses an inline two-tap confirm (button turns red, resets
  *     after 3s) — no modal or native confirm dialog.
- *   - The hero banner uses light text, so the screen forces a light status bar on
- *     mount and restores the dark one on unmount (statusBarLight/statusBarDark).
+ *   - The hero banner is a dark gradient, so the screen declares a dark SURFACE
+ *     on mount (giving light status-bar icons) and hands the strip back to the
+ *     theme on unmount — restoreStatusBarBase(), not a hardcoded style, so
+ *     leaving this screen in dark mode no longer strands dark-on-dark.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { relativeTime, currentLocaleTag } from '@/lib/techDateUtils';
-import { pickerHref } from '@/lib/openInAppThread';
+import { openJobThread } from '@/lib/openInAppThread';
 import PullToRefresh from '@/components/PullToRefresh';
 import TimeTracker from '@/components/tech/TimeTracker';
 import PhotoNoteSheet from '@/components/tech/PhotoNoteSheet';
@@ -81,10 +84,11 @@ import { DIV_GRADIENTS, DIV_PILL_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
 
 export default function TechAppointment() {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['appointment', 'tech']);
   const { id } = useParams();
@@ -120,8 +124,8 @@ export default function TechAppointment() {
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
     // Division-colored hero = light text on dark gradient
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
@@ -250,7 +254,11 @@ export default function TechAppointment() {
   };
 
   // ── Rooms (Phase 1) ───────────────────────────────────────────────────────
+  // Legacy name — this is the appointment's job id generally, not only for rooms.
   const jobIdForRooms = appt?.jobs?.id || appt?.job_id;
+  // MSG-05: Message resolves the job's contact on tap, so it needs a busy state to
+  // stop a second tap firing a second lookup while the first is still in flight.
+  const [openingThread, setOpeningThread] = useState(false);
 
   useEffect(() => {
     if (!roomsEnabled || !jobIdForRooms) { setRooms(null); return; }
@@ -641,13 +649,20 @@ export default function TechAppointment() {
         {/* Message — opens the thread INSIDE UPR, not the phone's SMS app. The old
             sms: link sent from the tech's personal number, so the text never landed
             in the customer's UPR thread and office staff could not see it.
-            get_appointment_detail carries no contact id, so this lands on the in-app
-            contact picker rather than guessing a contact from the phone number. The
-            job and claim screens have the contact and open the thread directly. */}
+            get_appointment_detail carries no contact id, so MSG-05 resolves the job's
+            contact on tap (get_job_contacts) and opens that thread directly — the way
+            iMessage and Housecall Pro do. The picker is still the fallback when the
+            job has no clear single customer; we never guess from the phone number,
+            because two contacts can share one. */}
         {job?.client_phone ? (
           <button
             type="button"
-            onClick={() => navigate(pickerHref())}
+            disabled={openingThread}
+            onClick={async () => {
+              setOpeningThread(true);
+              try { await openJobThread(navigate, jobIdForRooms, db); }
+              finally { setOpeningThread(false); }
+            }}
             style={{
               flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
               gap: 4, background: 'none', border: 'none',
@@ -1253,7 +1268,7 @@ export default function TechAppointment() {
       {photoToast && (
         <div style={{
           position: 'fixed',
-          bottom: 'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',
+          bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + max(12px, env(safe-area-inset-bottom, 12px)) + 12px)',
           left: 16, right: 16,
           zIndex: 100,
           padding: '10px 14px',

@@ -207,18 +207,41 @@ export async function onRequestPost(context) {
       let sendJson = null;
       try { sendJson = await sendRes.json(); } catch { /* non-JSON body handled below */ }
 
-      if (!sendRes.ok) {
+      // send-message answers 201 even when the PROVIDER rejects the message: an
+      // unroutable number or a carrier block rides inside the body as
+      // error_code/error_message, or as `error` on a per-recipient twilio entry
+      // (see its single-recipient return, send-message.js:669-671). Checking only
+      // sendRes.ok therefore reported a text that never left, and the sheet
+      // toasted "Signing link texted to the customer" over a silent failure.
+      const providerErrorCode = sendJson?.error_code || null;
+      const providerErrorDetail = sendJson?.error_message || null;
+      const providerRejected = Boolean(
+        providerErrorCode
+        || providerErrorDetail
+        || (Array.isArray(sendJson?.twilio) && sendJson.twilio.some((r) => r && r.error)),
+      );
+
+      if (!sendRes.ok || providerRejected) {
         // A consent/DND block is an expected outcome, not a server fault: the
         // request still exists and staff can deliver the link another way.
+        const consentBlocked = sendJson?.code === 'DND_ACTIVE' || sendJson?.code === 'NO_CONSENT';
+        let message;
+        if (consentBlocked) {
+          message = 'This contact has not consented to texts (or has Do Not Disturb on), so the link was not sent. Copy it below or send by email.';
+        } else if (providerRejected) {
+          // Distinct copy on purpose: the number is the thing to look at, and
+          // "failed to send" would send a tech hunting for a consent problem.
+          message = 'The carrier rejected the text, so the link was not delivered. Check the phone number, then copy the signing link below or send it by email.';
+        } else {
+          message = 'Sign request created but the text failed to send. Copy the signing link below and send it manually.';
+        }
         return jsonResponse({
           success: true, sms_error: true,
           sign_request_id, token, signing_url: signingUrl, mode: 'sms',
           sms_status: sendRes.status,
-          sms_error_code: sendJson?.code || null,
-          sms_error_detail: sendJson?.error || `HTTP ${sendRes.status}`,
-          message: sendJson?.code === 'DND_ACTIVE' || sendJson?.code === 'NO_CONSENT'
-            ? 'This contact has not consented to texts (or has Do Not Disturb on), so the link was not sent. Copy it below or send by email.'
-            : 'Sign request created but the text failed to send. Copy the signing link below and send it manually.',
+          sms_error_code: sendJson?.code || providerErrorCode || null,
+          sms_error_detail: sendJson?.error || providerErrorDetail || `HTTP ${sendRes.status}`,
+          message,
         }, 200, request, env);
       }
 

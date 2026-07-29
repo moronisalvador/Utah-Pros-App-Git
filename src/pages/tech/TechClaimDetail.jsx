@@ -57,7 +57,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
@@ -72,6 +72,7 @@ import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -83,7 +84,7 @@ function formatLossDate(dateStr) {
 
 function nextApptForJob(jobId, appointments) {
   if (!jobId || !appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   return appointments
     .filter(a => a.job_id === jobId && a.date >= today && !['completed', 'cancelled'].includes(a.status))
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''))[0] || null;
@@ -229,8 +230,8 @@ export default function TechClaimDetail() {
   // Page entry animation is now the shared View Transitions mechanism (motion-standard §2),
   // not a per-page entering flag — this effect only owns the status-bar tint.
   useEffect(() => {
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────

@@ -156,6 +156,7 @@ async function handlePaymentIntent(env, db, pi) {
     await notifyPaymentReceived({
       db, env, amount: gross, invoiceId: inv.id, jobId: inv.job_id || null,
       source: 'Stripe', reference: inv.invoice_number ? `Invoice ${inv.invoice_number}` : chargeId,
+      paymentEventId: pay?.id || `stripe:${chargeId}`,
     });
   }
 

@@ -34,6 +34,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS } from './techConstants';
@@ -44,6 +45,7 @@ import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
 
 export default function TechJobAlbum() {
+  const kbInset = useNativeKeyboardInset();
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { db, employee } = useAuth();
@@ -291,7 +293,7 @@ export default function TechJobAlbum() {
       {/* Pinned Add Photo */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
-        bottom: 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
+        bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
         padding: '10px var(--space-4)',
         background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--bg-primary) 40%)',
         pointerEvents: 'none',

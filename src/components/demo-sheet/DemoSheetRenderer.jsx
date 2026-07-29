@@ -5,6 +5,7 @@
 // stay on the page that owns the sheet.
 
 import { useState, useRef } from 'react';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ── Palette pinned to UPR design tokens (single-light theme) ────────────────
 export const C = {
@@ -33,7 +34,7 @@ export const sInput = { background:C.input, border:`1.5px solid ${C.border}`, bo
 export const sCard  = { background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:'16px 14px', marginBottom:12 };
 
 // ── Schema-driven helpers ────────────────────────────────────────────────────
-export const today = () => new Date().toISOString().split('T')[0];
+export const today = () => todayInCompanyTimeZone();
 export const newRowId = () => Date.now() + Math.random();
 
 export function walkFields(fields, fn, parent = null) {
@@ -371,12 +372,20 @@ export function Stepper({ value, onChange, step=1, unit, small }) {
   const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState('');
   const ref = useRef();
-  const sz = small ? 42 : 50;
+  // PICK-05: the small variant was 42px, under the 44px documented-secondary
+  // floor in tech-mobile-ux.md. These are tapped repeatedly, with gloves.
+  const sz = small ? 44 : 50;
   const start = () => { setRaw(value===0?'':String(value)); setEditing(true); setTimeout(()=>ref.current?.select(),40); };
   const finish = () => { const p=parseFloat(raw); onChange(isNaN(p)||p<0?0:p); setEditing(false); };
   return (
     <div style={{ display:'flex', alignItems:'center', borderRadius:8, overflow:'hidden', border:`1.5px solid ${C.border}`, background:C.input }}>
-      <button onClick={()=>onChange(Math.max(0,value-step))} style={{ width:sz, height:sz, background:'transparent', border:'none', color:C.muted, fontSize:small?20:22, cursor:'pointer', flexShrink:0 }}>−</button>
+      {/* PICK-05: the glyphs are bare text; without labels both announce as
+          "button". The unit gives the label meaning when several steppers sit
+          in one row. */}
+      <button type="button" aria-label={unit ? `Decrease ${unit}` : 'Decrease'}
+        onClick={()=>onChange(Math.max(0,value-step))} style={{ width:sz, height:sz, background:'transparent', border:'none', color:C.muted, fontSize:small?20:22, cursor:'pointer', flexShrink:0 }}>
+        <span aria-hidden="true">−</span>
+      </button>
       <div style={{ flex:1, textAlign:'center' }}>
         {editing
           ? <input ref={ref} type="number" inputMode="decimal" value={raw} onChange={e=>setRaw(e.target.value)} onBlur={finish} onKeyDown={e=>e.key==='Enter'&&finish()} style={{ background:'transparent', border:'none', color:C.text, fontSize:small?15:17, fontWeight:700, width:'100%', textAlign:'center', outline:'none', padding:'0 4px', fontFamily:'var(--font-sans)' }} autoFocus />
@@ -384,7 +393,10 @@ export function Stepper({ value, onChange, step=1, unit, small }) {
               {value>0?value.toLocaleString():'0'}{unit&&<span style={{ fontSize:10, color:C.muted, fontWeight:400, marginLeft:3 }}>{unit}</span>}
             </div>}
       </div>
-      <button onClick={()=>onChange(value+step)} style={{ width:sz, height:sz, background:'transparent', border:'none', color:C.accent, fontSize:small?20:22, cursor:'pointer', flexShrink:0 }}>+</button>
+      <button type="button" aria-label={unit ? `Increase ${unit}` : 'Increase'}
+        onClick={()=>onChange(value+step)} style={{ width:sz, height:sz, background:'transparent', border:'none', color:C.accent, fontSize:small?20:22, cursor:'pointer', flexShrink:0 }}>
+        <span aria-hidden="true">+</span>
+      </button>
     </div>
   );
 }

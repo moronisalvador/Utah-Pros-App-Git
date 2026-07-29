@@ -39,6 +39,7 @@ import {
   resolveNativeNavigationTarget,
   startNativeAppLinkListeners,
 } from './nativeAppLinks.js';
+import { resolveNativePushRoute } from './nativeNavigationTarget.js';
 
 function deferred() {
   let resolve;
@@ -197,6 +198,15 @@ describe('resolveNativeNavigationTarget', () => {
     for (const target of rejected) {
       expect(resolveNativeNavigationTarget(target)).toBe(null);
     }
+  });
+});
+
+describe('resolveNativePushRoute', () => {
+  it('keeps credential-free app routes and drops every signing bearer route', () => {
+    expect(resolveNativePushRoute('/tech/appointment/appt-1'))
+      .toBe('/tech/appointment/appt-1');
+    expect(resolveNativePushRoute('/sign/private-signing-token')).toBe('/');
+    expect(resolveNativePushRoute('/s/private-signing-code')).toBe('/');
   });
 });
 

@@ -96,10 +96,11 @@ single-migration mechanism, using the repository filename as the migration ident
 | S1f preflight | `9dc4b4cb4db922fd67f3f6d069994f27912d0735e04b287fb15e926f9b27588a` |
 | S1f post-apply | `629c61be5614e9a7103198b8ebf9c4e36d69340fa0687f925d8c5395d50276d9` |
 | S1f rollback | `a90e7c21e29db5ea9c1e1663045ff651e6feb8336ddd14a986e1e20c290f515d` |
-| S1g migration | `3019404bf33b74d12f0289c95091ee0d6652b2baba42296f2e64c5d201a83796` |
-| S1g preflight | `ee15fbe0fc08539a9683822135e2dd808a9d44ae78ee34eacdd2e31c91b4d3a7` |
-| S1g post-apply | `f577d857471319dbf4135178998d1c1d1e48199a10cb07fa82a9e0c859b1aba1` |
-| S1g rollback | `615096cfe650c6ac6ddcb5f11a594f4f32fac4231fc9659c8b9cf000555889a8` |
+| S1g migration | `fe6ac1da1e53aa998acf5580786f279f145e606c64d2a3e33a177cfed5b0ffce` |
+| S1g preflight | `6bf8850f46d0583daabe6a800dde24910db349f040e84961c5fb60c1c6da208a` |
+| S1g post-apply | `5cd23e7e12d86239357231d7f45182e29dd1ca210e37ce4dde140a6b417cb684` |
+| S1g isolated behavior | `12f221d0dd8d6f50b1b4cf70ccb0153f7468716fb2ee8d1acee40aa9abbcaada` |
+| S1g rollback | `df746aff7551faf1a2ad0b9e4242511584e18c9a718efff547b3672027d99a24` |
 
 ## S1d — `notify_emit` service boundary
 
@@ -190,6 +191,13 @@ only when its exact function/ACL guard passes.
 
 ## S1g — notification recipient/read/Realtime boundary
 
+**Applied:** 2026-07-28 as
+`20260728192024_notification_read_recipient_boundary`, from exact migration SHA-256
+`fe6ac1da1e53aa998acf5580786f279f145e606c64d2a3e33a177cfed5b0ffce`.
+The value-free pre/post checks, guarded local forward/rollback sequence, live Moroni read-only
+positive case, foreign/unmapped denials, advisors, and provenance passed. Steps 6–7 remain open for
+two-session Realtime/PostgREST and installed-client proof.
+
 Artifacts:
 
 - preflight: `supabase/tests/notification_read_recipient_boundary_preflight.sql`
@@ -218,11 +226,12 @@ Apply sequence:
 7. Exercise the PWA and Capacitor bell against those fixtures, record exact deployed clients and
    socket results, then close the window.
 
-The rollback reopens cross-recipient reads and mutations, broad Realtime payloads, sentinel
-deletion, and shared broadcast-read state, and it destroys post-S1g receipt history. Prefer a
+The rollback destroys post-S1g receipt history and disables authenticated PWA/native bell RPCs and
+Realtime table reads. It preserves identity containment, recipient-scoped policies, inert sentinel
+deletion, and service-role compatibility; it never restores the cross-recipient BOLA. Prefer a
 forward repair. It requires explicit owner acceptance plus
-`SET upr.allow_unsafe_s1g_rollback = 'on'` in the same dedicated session, and it still refuses any
-forward-state drift.
+`SET upr.allow_s1g_receipt_loss_rollback = 'on'` in the same dedicated session, and it still
+refuses any forward-state drift.
 
 ## Window close-out record
 

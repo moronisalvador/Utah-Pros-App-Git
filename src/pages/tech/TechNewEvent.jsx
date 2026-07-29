@@ -41,7 +41,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, getInitials, isTimeRangeInvalid } from './techFormConstants';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 export default function TechNewEvent() {
   // ─── SECTION: State & hooks ──────────────
@@ -50,7 +51,7 @@ export default function TechNewEvent() {
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
 
-  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const initialDate = searchParams.get('date') || todayInCompanyTimeZone();
 
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
 
@@ -83,7 +84,9 @@ export default function TechNewEvent() {
     });
   };
 
-  const timeInvalid = timeStart && timeEnd && timeEnd <= timeStart;
+  // PICK-03: was the only correct implementation of this rule; now the shared
+  // one, so the three forms cannot diverge again.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
   const canSubmit = title.trim() && date && !timeInvalid;
 
   const handleSubmit = async () => {
@@ -183,7 +186,11 @@ export default function TechNewEvent() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: this form already validated the range correctly; it was
+                the two appointment forms that did not. It shared the missing
+                labels, though — the heading above is a styled div. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => setTimeStart(e.target.value)}
               style={{ ...inputStyle, flex: 1 }}
@@ -191,6 +198,7 @@ export default function TechNewEvent() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => setTimeEnd(e.target.value)}
               style={{ ...inputStyle, flex: 1 }}

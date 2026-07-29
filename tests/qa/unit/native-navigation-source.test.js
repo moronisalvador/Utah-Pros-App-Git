@@ -63,7 +63,7 @@ describe('native URL declarations', () => {
     expect(association.applinks?.apps).toEqual([]);
     expect(details).toHaveLength(1);
     expect(details[0].appID).toBe(
-      'P93U4Z4DJB.com.utahprosrestoration.upr',
+      'H6ZUT739T9.com.utahprosrestoration.upr',
     );
     expect(details[0].paths.slice(0, 2)).toEqual([
       'NOT /tech/admin',
@@ -80,10 +80,15 @@ describe('native URL declarations', () => {
       '/terms',
       '/support',
     ]));
-    // This lane adds app links without silently changing the pre-existing
-    // password-autofill association, whose legacy identity is separately owned.
+    // REL-01: the password-autofill association now names the paid team's real
+    // application identifier. The prior value, 'com.utahpros.mobile', was left
+    // in place by an earlier lane as a "separately owned" legacy identity, but
+    // it is not a valid webcredentials entry — Apple requires TEAMID.bundleid,
+    // so that value could never have validated. Revert this pair (here and in
+    // public/.well-known/apple-app-site-association) if a genuinely separate
+    // app under that identifier turns out to need the association.
     expect(association.webcredentials).toEqual({
-      apps: ['com.utahpros.mobile'],
+      apps: ['H6ZUT739T9.com.utahprosrestoration.upr'],
     });
   });
 
@@ -98,7 +103,9 @@ describe('native URL declarations', () => {
 describe('native cold, warm, foreground, and action source wiring', () => {
   const app = read('src/App.jsx');
   const links = read('src/lib/nativeAppLinks.js');
+  const targetPolicy = read('src/lib/nativeNavigationTarget.js');
   const push = read('src/lib/pushNotifications.js');
+  const apns = read('functions/lib/apns.js');
   const delegate = read('ios/App/App/AppDelegate.swift');
 
   it('mounts the account-aware bridge after route restoration and preserves both signing routes', () => {
@@ -130,13 +137,33 @@ describe('native cold, warm, foreground, and action source wiring', () => {
   it('keeps foreground receipt non-navigating and tap actions resolver-gated', () => {
     expect(push).toContain("'pushNotificationReceived'");
     expect(push).toContain("'pushNotificationActionPerformed'");
-    expect(push).toContain('resolveNativePushActionTarget(action)');
+    expect(push).toContain('resolveNativePushActionTarget(action, {');
+    expect(push).toMatch(
+      /resolveNativePushActionTarget\(action,\s*\{\s*employeeId,\s*\}\)/,
+    );
     expect(push).toContain(
       "source: 'native_push_foreground'",
     );
     expect(push).not.toMatch(
       /pushNotificationReceived[\s\S]{0,500}resolveNativeNavigationTarget/,
     );
+  });
+
+  it('applies one pure route policy before APNs serialization and tap routing', () => {
+    expect(links).toContain(
+      "from './nativeNavigationTarget.js'",
+    );
+    expect(push).toContain(
+      "from './nativeNavigationTarget.js'",
+    );
+    expect(apns).toContain(
+      "from '../../src/lib/nativeNavigationTarget.js'",
+    );
+    expect(apns).toContain('url: resolveNativePushRoute(data?.url)');
+    expect(targetPolicy).toContain(
+      'export function resolveNativePushRoute(value)',
+    );
+    expect(targetPolicy).toContain("value.includes('#')");
   });
 
   it('does not log raw link or notification payloads', () => {

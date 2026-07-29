@@ -44,8 +44,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
+import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // Add one hour to an 'HH:MM' time, capped at the last selectable option (22:30).
 function addOneHour(hhmm) {
@@ -55,6 +57,9 @@ function addOneHour(hhmm) {
 }
 
 export default function TechNewAppointment() {
+  // KB-01: the sticky Save sits behind the keyboard without this.
+  // Native only — 0 on web, where this renders exactly as it does today.
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['apptForm', 'tech']);
   const navigate = useNavigate();
@@ -71,7 +76,7 @@ export default function TechNewAppointment() {
   const jobSearchRef = useRef(null);
 
   /* ── Form ── */
-  const [date, setDate] = useState(searchParams.get('date') || new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(searchParams.get('date') || todayInCompanyTimeZone());
   const [timeStart, setTimeStart] = useState('07:00');
   const [timeEnd, setTimeEnd] = useState('08:00'); // default 1-hour block
   const [endEdited, setEndEdited] = useState(false); // once the end is set by hand, stop auto-following the start
@@ -208,7 +213,10 @@ export default function TechNewAppointment() {
   };
 
   /* ── Submit ── */
-  const canSubmit = job && date;
+  // PICK-03: an end at or before the start used to insert cleanly — nothing
+  // compared them on this path. Shared with the edit form and TechNewEvent.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
+  const canSubmit = job && date && !timeInvalid;
 
   const handleSubmit = async () => {
     if (!canSubmit || saving) return;
@@ -287,7 +295,7 @@ export default function TechNewAppointment() {
       </div>
 
       {/* Scrollable form */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 + kbInset }}>
 
         {/* ═══ JOB SEARCH ═══ */}
         <div style={{ marginBottom: 20 }}>
@@ -401,7 +409,11 @@ export default function TechNewAppointment() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: the group heading above is a styled div, not a <label>,
+                so without these two selects announce as identical unlabeled
+                comboboxes. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => { const v = e.target.value; setTimeStart(v); if (!endEdited) setTimeEnd(addOneHour(v)); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -410,6 +422,7 @@ export default function TechNewAppointment() {
             </select>
             <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => { setEndEdited(true); setTimeEnd(e.target.value); }}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -417,6 +430,11 @@ export default function TechNewAppointment() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
           </div>
+          {timeInvalid && (
+            <div role="alert" style={{ fontSize: 12, color: '#ef4444', marginTop: 6, fontWeight: 500 }}>
+              {t('timeError')}
+            </div>
+          )}
         </div>
 
         {/* ═══ TYPE ═══ */}
@@ -699,7 +717,7 @@ export default function TechNewAppointment() {
 
       {/* Sticky submit */}
       <div style={{
-        position: 'fixed', bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))',
+        position: 'fixed', bottom: techStickyCtaBottom(kbInset),
         left: 0, right: 0, padding: '12px 16px',
         background: 'linear-gradient(transparent, var(--bg-primary) 8px)',
         zIndex: 10,

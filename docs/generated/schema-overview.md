@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 135 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-24T04:04:20.854338.
+Snapshot: 140 public tables. Source: live catalog (read-only introspection). Captured: 2026-07-28T19:26:06.781248.
 
 ## Tables
 
@@ -20,7 +20,7 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | appointment_status_history | 14 | yes | 1 | no |
 | appointments | 22 | yes | 4 | ⚠️ yes |
 | automation_rules | 16 | yes | 5 | no |
-| automation_settings | 9 | yes | 1 | ⚠️ yes |
+| automation_settings | 9 | yes | 0 | no |
 | billing_2fa_codes | 7 | yes | 0 | no |
 | campaign_recipients | 8 | yes | 1 | no |
 | campaigns | 19 | yes | 2 | no |
@@ -30,16 +30,17 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | contact_addresses | 11 | yes | 4 | no |
 | contact_jobs | 7 | yes | 4 | no |
 | contact_tags | 3 | yes | 1 | no |
-| contacts | 41 | yes | 7 | ⚠️ yes |
-| conversation_participants | 9 | yes | 3 | ⚠️ yes |
+| contacts | 41 | yes | 4 | no |
+| conversation_participants | 9 | yes | 1 | no |
 | conversation_reads | 3 | yes | 1 | no |
 | conversation_tags | 3 | yes | 1 | no |
-| conversations | 17 | yes | 4 | ⚠️ yes |
+| conversations | 17 | yes | 1 | no |
 | crm_automation_runs | 13 | yes | 1 | ⚠️ yes |
 | crm_automations | 11 | yes | 1 | ⚠️ yes |
 | crm_build_phases | 5 | yes | 1 | no |
 | crm_build_stages | 5 | yes | 1 | no |
 | crm_import_batches | 13 | yes | 1 | no |
+| crm_lead_notes | 7 | yes | 0 | no |
 | crm_orgs | 4 | yes | 1 | no |
 | crm_segments | 8 | yes | 1 | no |
 | crm_sequence_enrollments | 12 | yes | 1 | no |
@@ -57,15 +58,16 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | email_campaign_recipients | 9 | yes | 1 | ⚠️ yes |
 | email_campaigns | 17 | yes | 1 | ⚠️ yes |
 | email_inbound_events | 3 | yes | 1 | no |
-| email_suppressions | 7 | yes | 1 | ⚠️ yes |
+| email_suppressions | 7 | yes | 0 | no |
 | email_sync_log | 7 | yes | 1 | no |
 | employee_page_access | 6 | yes | 2 | ⚠️ yes |
-| employees | 21 | yes | 2 | ⚠️ yes |
+| employees | 21 | yes | 1 | no |
 | equipment_placements | 14 | yes | 1 | no |
 | escalation_log | 9 | yes | 1 | no |
 | estimate_line_items | 14 | yes | 1 | no |
 | estimates | 33 | yes | 1 | no |
 | feature_flags | 9 | yes | 2 | ⚠️ yes |
+| fixed_automation_claims | 8 | yes | 0 | no |
 | form_definition_versions | 9 | yes | 1 | no |
 | form_definitions | 11 | yes | 1 | no |
 | form_submissions | 13 | yes | 1 | no |
@@ -75,10 +77,10 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | homebuilding_chat_messages | 5 | yes | 0 | no |
 | homebuilding_chats | 4 | yes | 0 | no |
 | homebuilding_estimates | 6 | yes | 0 | no |
-| inbound_leads | 30 | yes | 1 | no |
+| inbound_leads | 31 | yes | 1 | no |
 | insurance_carriers | 7 | yes | 2 | no |
 | integration_config | 3 | yes | 0 | no |
-| integration_credentials | 11 | yes | 0 | no |
+| integration_credentials | 14 | yes | 0 | no |
 | invoice_adjustments | 12 | yes | 1 | no |
 | invoice_line_items | 22 | yes | 1 | no |
 | invoice_status_history | 5 | yes | 1 | no |
@@ -104,17 +106,18 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | lead_score_factors | 8 | yes | 1 | no |
 | lead_stage_history | 9 | yes | 1 | no |
 | message_notification_outbox | 17 | yes | 0 | no |
-| message_provider_events | 35 | yes | 0 | no |
+| message_provider_events | 37 | yes | 0 | no |
 | message_send_attempts | 31 | yes | 0 | no |
 | message_templates | 13 | yes | 2 | no |
 | messages | 34 | yes | 1 | no |
 | moisture_readings | 22 | yes | 1 | no |
-| nav_permissions | 5 | yes | 2 | ⚠️ yes |
+| nav_permissions | 5 | yes | 3 | ⚠️ yes |
 | notification_employee_overrides | 7 | yes | 1 | no |
 | notification_prefs | 6 | yes | 1 | no |
 | notification_queue | 18 | yes | 3 | no |
-| notification_role_defaults | 8 | yes | 1 | no |
-| notification_types | 11 | yes | 1 | no |
+| notification_reads | 3 | yes | 1 | no |
+| notification_role_defaults | 8 | yes | 0 | no |
+| notification_types | 11 | yes | 0 | no |
 | notifications | 13 | yes | 2 | no |
 | on_call_schedule | 4 | yes | 1 | no |
 | oop_quotes | 29 | yes | 2 | no |
@@ -122,6 +125,7 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | pipeline_stages | 11 | yes | 1 | no |
 | property_meld_melds | 29 | yes | 1 | no |
 | push_subscriptions | 8 | yes | 0 | no |
+| qbo_attachments | 12 | yes | 1 | no |
 | qbo_events | 7 | yes | 0 | no |
 | referral_sources | 6 | yes | 2 | no |
 | rooms | 12 | yes | 1 | no |
@@ -147,24 +151,19 @@ Snapshot: 135 public tables. Source: live catalog (read-only introspection). Cap
 | user_google_accounts | 8 | yes | 0 | no |
 | vendor_invoices | 15 | yes | 1 | no |
 | vendors | 7 | yes | 1 | no |
+| work_authorization_sms_consents | 12 | yes | 2 | no |
 | worker_runs | 9 | yes | 3 | no |
 
 ## Tables granting `anon` a policy (review against `database-standard.md` §2 allowlist)
 
 - appointments
-- automation_settings
 - claims
-- contacts
-- conversation_participants
-- conversations
 - crm_automation_runs
 - crm_automations
 - email_campaign_exclusions
 - email_campaign_recipients
 - email_campaigns
-- email_suppressions
 - employee_page_access
-- employees
 - feature_flags
 - job_phase_history
 - jobs

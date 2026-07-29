@@ -193,8 +193,8 @@ describe('S1g notification read/recipient boundary', () => {
     expect(sql).toContain(
       'REVOKE ALL PRIVILEGES ON TABLE public.notification_reads FROM PUBLIC, anon, authenticated, service_role;',
     );
-    expect(sql).not.toMatch(
-      /CREATE POLICY [^;]+ ON public\.notification_reads/i,
+    expect(sql).toContain(
+      'CREATE POLICY notification_reads_no_direct_access ON public.notification_reads FOR ALL TO authenticated USING (false) WITH CHECK (false);',
     );
     expect(sql).toContain(
       'THEN COALESCE(notification.read_at, receipt.read_at)',
@@ -247,7 +247,7 @@ describe('S1g notification read/recipient boundary', () => {
       'notifications.recipient_id IS NULL OR notifications.recipient_id = employee.id',
     );
     expect(sql).toContain(
-      'DROP POLICY notifications_delete_testrows ON public.notifications;',
+      'ALTER POLICY notifications_delete_testrows ON public.notifications TO authenticated USING (false);',
     );
     expect(sql).toContain(
       'REVOKE ALL PRIVILEGES ON TABLE public.notifications FROM PUBLIC, anon, authenticated;',
@@ -266,7 +266,7 @@ describe('S1g notification read/recipient boundary', () => {
         "migration.name = 'mobile_employee_identity_containment'",
       );
       expect(sqlSource).toContain('employees_self_identity_read');
-      expect(sqlSource).toContain('(auth_user_id = auth.uid())');
+      expect(sqlSource).toContain('auth_user_id = auth.uid()');
       expect(sqlSource).not.toContain(
         "migration.name = 'mobile_employee_identity_authority'",
       );
@@ -279,7 +279,10 @@ describe('S1g notification read/recipient boundary', () => {
       expect(sqlSource).toContain("grantee_role.rolname = 'authenticated'");
       expect(sqlSource).toContain("acl.privilege_type = 'SELECT'");
       expect(sqlSource).toContain(
-        "ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]",
+        "ARRAY['auth_user_id', 'id', 'is_active', 'is_external', 'role']::text[]",
+      );
+      expect(sqlSource).toMatch(
+        /attribute\.attname NOT IN \(\s*'id',\s*'auth_user_id',\s*'role',\s*'is_active',\s*'is_external'\s*\)/,
       );
       expect(sqlSource).toContain('ARRAY[]::text[]');
     }
@@ -369,33 +372,38 @@ describe('S1g notification read/recipient boundary', () => {
     ))).toBe(false);
   });
 
-  it('guards rollback fidelity and makes unsafe receipt loss explicit', () => {
+  it('guards rollback fidelity and fails browser access closed', () => {
     expect(rollback).toContain(
-      "current_setting('upr.allow_unsafe_s1g_rollback', true)",
+      "current_setting('upr.allow_s1g_receipt_loss_rollback', true)",
     );
-    expect(rollback).toMatch(/reopens cross-recipient notification reads/i);
-    expect(rollback).toMatch(/drops every[\s\S]*per-employee broadcast receipt/i);
+    expect(rollback).toMatch(/browser\/native bell[\s\S]*closed/i);
+    expect(rollback).toMatch(/per-employee broadcast receipt[\s\S]*destroyed/i);
+    expect(executable(rollback)).not.toMatch(/USING\s*\(true\)/i);
+    expect(rollback).not.toContain('allow_authenticated_employees');
+    expect(rollback).toContain('employees_self_identity_read');
     expect(rollback).toContain(
-      "ALTER POLICY notifications_select\n  ON public.notifications\n  TO authenticated\n  USING (true);",
+      "migration.name = 'mobile_employee_identity_containment'",
     );
-    expect(rollback).toContain('CREATE POLICY notifications_delete_testrows');
+    expect(rollback).toContain(
+      "ARRAY[\n         'auth_user_id',\n         'id',\n         'is_active',\n         'is_external',\n         'role'\n       ]::text[]",
+    );
     expect(rollback).toContain('DROP TABLE public.notification_reads;');
-    expect(rollback).toContain('a66659f2c54bc0b7bdc2b60949fdb883');
-    expect(rollback).toContain('b15c8a180f65586d6bd3c4f75d1c6f9e');
-    expect(rollback).toContain('4ba9b450a720c65bb2149d45f6ea53f1');
-    expect(rollback).toContain('389254cd40d74bdec30f23c7ebeb498e');
+    expect(rollback).toContain('b288c11dbb35d86f1f6c07924b27afd4');
+    expect(rollback).toContain('299cbf9155468ef388d57af37dcfd045');
+    expect(rollback).toContain('f903c472344be23c98ea6a046dffe1dc');
     expect(rollback).toContain('5ae62afd8335deffffb81c9aa98f62be');
     expect(rollback).toContain('f6a4b946f6d65eadf3bf4764e734d5b1');
-    expect(rollback).toContain('c821903bc39dd59e6ac6b60d039a731d');
-    expect(rollback).toContain('30224ec8c0a49e4f2e7a8e23544660ed');
-    expect(rollback).toContain('acl.grantor <> relation.relowner');
-    expect(rollback).toContain('attacl');
+    expect(rollback.match(/NOT_AUTHORIZED: service role required/g))
+      .toHaveLength(5);
     expect(executable(rollback)).toContain(
-      'GRANT ALL PRIVILEGES ON TABLE public.notifications TO authenticated, service_role;',
+      'REVOKE EXECUTE ON FUNCTION public.get_notifications(integer, uuid) FROM PUBLIC, anon, authenticated;',
+    );
+    expect(executable(rollback)).toContain(
+      'GRANT ALL PRIVILEGES ON TABLE public.notifications TO service_role;',
     );
     expect(executable(rollback)).not.toContain(
-      'GRANT ALL PRIVILEGES ON TABLE public.notifications TO anon, authenticated, service_role;',
+      'GRANT ALL PRIVILEGES ON TABLE public.notifications TO authenticated',
     );
-    expect(rollback).toMatch(/historical anon table grant is intentionally not restored/i);
+    expect(rollback).toMatch(/never restores cross-recipient browser reads/i);
   });
 });

@@ -1202,7 +1202,7 @@ export function AuthProvider({ children }) {
   };
 
   // ── Login ──
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, options = {}) => {
     const generation = authLifecycle.begin();
     authLifecycle.commit(generation, () => {
       setError(null);
@@ -1276,6 +1276,10 @@ export function AuthProvider({ children }) {
           explicitLogoutRef.current = null;
         }
         if (!clearPublishedPrincipal(generation)) return null;
+      }
+      if (typeof options.beforeSignIn === 'function') {
+        await options.beforeSignIn();
+        if (!authLifecycle.isCurrent(generation)) return null;
       }
       const { data, error: authError } = await realtimeClient.auth.signInWithPassword({
         email,

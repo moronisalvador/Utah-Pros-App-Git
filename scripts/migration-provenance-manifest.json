@@ -272,6 +272,30 @@
       "name": "mobile_employee_identity_containment",
       "path": "supabase/migrations/20260726182000_mobile_employee_identity_containment.sql",
       "reviewedOriginCommit": "56f0b13a"
+    },
+    {
+      "version": "20260728192024",
+      "name": "notification_read_recipient_boundary",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "reviewedOriginCommit": "3409ef49f20262ec6ba3470132e11bf97488a3c0"
+    },
+    {
+      "version": "20260729021021",
+      "name": "native_apns_token_boundary",
+      "path": "supabase/migrations/20260728223000_native_apns_token_boundary.sql",
+      "reviewedOriginCommit": "dc8120797b273c1c5aa944659005aec56b7bbcf3"
+    },
+    {
+      "version": "20260729021050",
+      "name": "native_push_delivery_guardrails",
+      "path": "supabase/migrations/20260728224000_native_push_delivery_guardrails.sql",
+      "reviewedOriginCommit": "dc8120797b273c1c5aa944659005aec56b7bbcf3"
+    },
+    {
+      "version": "20260729171946",
+      "name": "notification_presentation_settings",
+      "path": "supabase/migrations/20260729163127_notification_presentation_settings.sql",
+      "reviewedOriginCommit": "c5ba2bb0dda01a001f8e465eb6f6c46cc0ae33e9"
     }
   ],
   "selectedFunctions": [
@@ -446,6 +470,22 @@
         "serviceRoleExecute": false,
         "publicExecute": false
       }
+    },
+    {
+      "identity": "get_notifications(integer,uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "get_unread_notification_count(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "mark_all_notifications_read(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
+    },
+    {
+      "identity": "mark_notification_read(uuid)",
+      "path": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql"
     }
   ],
   "selectedPolicies": [
@@ -497,6 +537,36 @@
         "authenticated"
       ],
       "usingMd5": "a5f249e5148231d3d74eff49dafd2395",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.notification_reads:notification_reads_no_direct_access",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "ALL",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "68934a3e9455fa72420237eb05902327"
+    },
+    {
+      "identity": "public.notifications:notifications_delete_testrows",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "DELETE",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "identity": "public.notifications:notifications_select",
+      "sourcePath": "supabase/migrations/20260726260000_notification_read_recipient_boundary.sql",
+      "command": "SELECT",
+      "roles": [
+        "authenticated"
+      ],
+      "usingMd5": "f6a4b946f6d65eadf3bf4764e734d5b1",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     }
   ]

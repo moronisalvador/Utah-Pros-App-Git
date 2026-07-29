@@ -1,3 +1,6 @@
+---
+paths: ["functions/**"]
+---
 # Cloudflare Workers Standard
 
 **Last verified:** 2026-07-23

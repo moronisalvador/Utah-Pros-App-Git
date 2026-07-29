@@ -22,11 +22,15 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
   FASTLANE_HIDE_CHANGELOG: "1"
   FASTLANE_SKIP_UPDATE_CHECK: "1"
+  VITE_NATIVE_API_ORIGIN: https://utahpros.app
+  VITE_RELEASE_SHA: "${{ github.sha }}"
 
 jobs:
   archive:
     name: Build and verify signed IPA
     runs-on: macos-26
+    # Job timeout covers setup/test Actions. The persistent Xcode/Fastlane
+    # subprocess is separately capped at five minutes with owned-tree cleanup.
     timeout-minutes: 45
     environment: ios-signing
     steps:
@@ -52,6 +56,14 @@ jobs:
             echo "Generated BUILD_NUMBER is not a valid Apple bundle version." >&2
             exit 1
           fi
+          if [[ "$VITE_NATIVE_API_ORIGIN" != "https://utahpros.app" ]]; then
+            echo "TestFlight must use the production native API origin." >&2
+            exit 1
+          fi
+          if [[ "$VITE_RELEASE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Native release identity must match the archived commit." >&2
+            exit 1
+          fi
 
       - name: Validate archive inputs
         shell: bash
@@ -63,6 +75,8 @@ jobs:
           APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
+          VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}
         run: |
           set -euo pipefail
           required_names=(
@@ -73,6 +87,8 @@ jobs:
             APPLE_PROVISIONING_PROFILE_NAME
             VITE_SUPABASE_URL
             VITE_SUPABASE_ANON_KEY
+            VITE_NATIVE_PUSH_ENABLED
+            VITE_APNS_ENV
           )
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -80,6 +96,14 @@ jobs:
               exit 1
             fi
           done
+          if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" ]]; then
+            echo "VITE_NATIVE_PUSH_ENABLED must be exactly true for a TestFlight-capable archive." >&2
+            exit 1
+          fi
+          if [[ "$VITE_APNS_ENV" != "production" ]]; then
+            echo "VITE_APNS_ENV must be exactly production for TestFlight/App Store." >&2
+            exit 1
+          fi
 
       - name: Select and verify Xcode 26.6
         shell: bash
@@ -106,6 +130,8 @@ jobs:
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_NATIVE_PUSH_ENABLED: ${{ secrets.VITE_NATIVE_PUSH_ENABLED }}
+          VITE_APNS_ENV: ${{ secrets.VITE_APNS_ENV }}
         run: node scripts/build-native.mjs
 
       - name: Synchronize the iOS platform
@@ -118,7 +144,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.3.12
-          bundler: 4.0.16
+          bundler: 2.5.22
           bundler-cache: true
           working-directory: ios
 
@@ -136,7 +162,6 @@ jobs:
           chmod 600 "$certificate_path" "$profile_path"
 
       - name: Create signed archive without provider upload
-        working-directory: ios
         shell: bash
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -149,18 +174,25 @@ jobs:
           export KEYCHAIN_PASSWORD="$keychain_password"
           export APPLE_CERTIFICATE_PATH="$RUNNER_TEMP/upr-signing-certificate.p12"
           export APPLE_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/upr-signing-profile.mobileprovision"
-          bundle exec fastlane ios archive
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 290000 \
+            --cwd ios \
+            -- bundle exec fastlane ios archive
 
       - name: Verify archive and exported IPA
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
           node scripts/qa/verify-ios-release-artifact.mjs \
             --archive ios/build/UPR.xcarchive \
             --ipa ios/build/UPR.ipa \
             --report ios/build/UPR-release-verification.json \
             --expected-bundle-id "$APP_IDENTIFIER" \
             --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
             --expected-build-number "$BUILD_NUMBER"
 
       - name: Retain verified IPA and sanitized report
@@ -186,6 +218,8 @@ jobs:
     needs: archive
     if: ${{ inputs.publish_to_testflight }}
     runs-on: macos-26
+    # Job timeout covers Actions setup. The provider subprocess is separately
+    # capped at five minutes with owned-tree cleanup.
     timeout-minutes: 20
     environment: ios-testflight
     steps:
@@ -233,27 +267,34 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
           node scripts/qa/verify-ios-release-artifact.mjs \
             --ipa release-artifact/UPR.ipa \
             --report "$RUNNER_TEMP/UPR-publish-verification.json" \
             --expected-bundle-id "$APP_IDENTIFIER" \
             --expected-team-id "$APPLE_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
             --expected-build-number "$BUILD_NUMBER"
 
       - name: Setup Ruby 3.3.12 and locked gems
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.3.12
-          bundler: 4.0.16
+          bundler: 2.5.22
           bundler-cache: true
           working-directory: ios
 
       - name: Upload the reverified IPA
-        working-directory: ios
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_CONTENT_BASE64: ${{ secrets.ASC_KEY_CONTENT_BASE64 }}
           IPA_PATH: ${{ github.workspace }}/release-artifact/UPR.ipa
-        run: bundle exec fastlane ios upload
+        run: |
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 290000 \
+            --cwd ios \
+            -- bundle exec fastlane ios upload

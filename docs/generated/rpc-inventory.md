@@ -7,7 +7,7 @@
 > surface; fix the doc, then regenerate. Never hand-edit this file — your edits will be silently
 > overwritten the next time someone regenerates it.
 
-Snapshot: 376 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-24T04:04:20.854338.
+Snapshot: 393 public functions. Source: live catalog (read-only introspection). Captured: 2026-07-28T19:26:06.781248.
 
 ## Functions
 
@@ -16,6 +16,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | add_adhoc_job_task | yes | no | yes |
 | add_custom_schedule_phase | yes | no | yes |
 | add_homebuilding_chat_message | yes | no | yes |
+| add_lead_note | yes | no | yes |
 | add_related_job | yes | no | yes |
 | admin_clock_out_entry | yes | no | yes |
 | admin_upsert_time_entry | yes | no | yes |
@@ -26,8 +27,11 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | attest_prior_sms_consent | no | no | no |
 | bust_postgrest_cache | yes | no | yes |
 | calc_time_entry_cost | no | no | yes |
+| can_current_employee_access_settings | yes | no | no |
 | capture_claim_status_history | yes | no | yes |
 | capture_invoice_status_history | yes | no | yes |
+| claim_callrail_provider_event | no | no | no |
+| claim_fixed_automation | no | no | no |
 | claim_inbound_email | yes | no | yes |
 | claim_message_notification_outbox | no | no | no |
 | claim_message_recipient_attempt | no | no | no |
@@ -39,6 +43,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | clock_omw_precheck | yes | no | yes |
 | close_open_clocks_on_appt_delete | yes | no | yes |
 | complete_sign_request | yes | no | yes |
+| complete_sign_request_with_work_authorization_sms_consent | no | no | no |
 | convert_estimate_to_invoice | yes | no | yes |
 | create_draft_invoice_for_job | yes | no | yes |
 | create_estimate_for_contact | yes | no | yes |
@@ -47,7 +52,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | create_invoice_for_job | yes | no | yes |
 | create_job_with_contact | yes | no | yes |
 | create_manual_lead | yes | no | yes |
-| create_notification | yes | no | yes |
+| create_notification | yes | no | no |
 | create_room | yes | no | yes |
 | create_room_for_claim | yes | no | yes |
 | create_sign_request | yes | no | yes |
@@ -97,7 +102,8 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | enqueue_automation_run | yes | no | yes |
 | enroll_in_sequence | yes | no | yes |
 | exec_read_sql | yes | no | no |
-| find_or_create_conversation | yes | no | yes |
+| finalize_fixed_automation_claim | no | no | no |
+| find_or_create_conversation | no | no | no |
 | finish_appointment | yes | no | yes |
 | generate_claim_number | no | no | yes |
 | generate_estimate_number | yes | no | yes |
@@ -161,6 +167,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | get_effective_notification_prefs | yes | no | yes |
 | get_email_campaigns | yes | no | yes |
 | get_employee_commissions | yes | no | yes |
+| get_employee_directory | yes | no | yes |
 | get_employee_notification_overrides | yes | no | yes |
 | get_employee_page_access | yes | ⚠️ yes | yes |
 | get_estimate_aging | yes | no | yes |
@@ -191,10 +198,13 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | get_jobs_completed | yes | no | yes |
 | get_jobs_list | yes | no | yes |
 | get_lead_activity | yes | no | yes |
+| get_lead_notes | yes | no | yes |
 | get_managed_credentials_status | yes | no | yes |
+| get_message_author_directory | yes | no | yes |
 | get_message_log | yes | no | yes |
 | get_my_account_deletion_request | yes | no | yes |
 | get_my_appointments_today | yes | no | yes |
+| get_my_employee_profile | yes | no | yes |
 | get_my_notification_prefs | yes | no | yes |
 | get_my_push_subscriptions | yes | no | yes |
 | get_notification_defaults | yes | no | yes |
@@ -250,6 +260,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | insert_job_document | yes | no | yes |
 | insert_reading | yes | no | yes |
 | insert_tech_feedback | yes | no | yes |
+| is_active_internal_admin | yes | no | yes |
 | is_crm_partner | yes | no | yes |
 | is_time_admin | yes | no | yes |
 | link_contact_to_job | yes | no | yes |
@@ -272,7 +283,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | move_photo_to_room | yes | no | yes |
 | mt_date | no | no | yes |
 | mt_today | no | no | yes |
-| notify_emit | yes | no | yes |
+| notify_emit | yes | no | no |
 | notify_google_calendar_sync | yes | no | yes |
 | notify_qbo_customer_sync | yes | no | yes |
 | omni_verify_foundation | yes | no | yes |
@@ -285,18 +296,22 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | project_callrail_reconcile_outcome | no | no | no |
 | promote_lead_to_contact | yes | no | yes |
 | publish_demo_schema | yes | no | yes |
+| qbo_payments_sync_poll | yes | no | no |
 | queue_email_campaign | yes | no | yes |
+| rearm_callrail_provider_event | no | no | no |
 | recompute_estimate_from_lines | yes | no | yes |
 | recompute_invoice_from_lines | yes | no | yes |
 | record_email_campaign_send | yes | no | yes |
 | record_email_open | yes | no | yes |
 | record_email_suppression | yes | no | no |
 | record_job_real_flag_change | yes | no | yes |
+| release_fixed_automation_claim | no | no | no |
 | remove_equipment | yes | no | yes |
 | rename_homebuilding_build_project | yes | no | yes |
 | rename_homebuilding_chat | yes | no | yes |
 | rename_homebuilding_estimate | yes | no | yes |
 | request_account_deletion | yes | no | yes |
+| resolve_provider_event | no | no | no |
 | review_time_entry_change_request | yes | no | yes |
 | save_dashboard_layout | yes | no | yes |
 | save_demo_sheet | yes | no | yes |
@@ -378,7 +393,7 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | upsert_insurance_carrier | yes | no | yes |
 | upsert_lead_attribution | yes | no | yes |
 | upsert_lead_from_callrail | yes | no | yes |
-| upsert_lead_from_form | yes | ⚠️ yes | yes |
+| upsert_lead_from_form | yes | no | no |
 | upsert_oop_quote | yes | no | yes |
 | upsert_permission | yes | no | yes |
 | upsert_pipeline_stage | yes | no | yes |
@@ -388,7 +403,9 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 | upsert_segment | yes | no | yes |
 | upsert_sequence | yes | no | yes |
 | upsert_time_entry | yes | no | yes |
+| wake_callrail_event_recovery_worker | yes | no | no |
 | wake_message_notification_outbox_worker | yes | no | no |
+| wake_ops_health_worker | yes | no | no |
 
 ## Functions granting `anon` EXECUTE (review against `database-standard.md` §2 allowlist)
 
@@ -397,4 +414,3 @@ Snapshot: 376 public functions. Source: live catalog (read-only introspection). 
 - get_feature_flags
 - get_sign_document_templates
 - get_sign_request_by_token
-- upsert_lead_from_form

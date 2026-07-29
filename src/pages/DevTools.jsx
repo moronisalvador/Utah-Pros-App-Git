@@ -1,14 +1,48 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: DevTools.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Gives the company owner one place to inspect system health, messaging
+ *   failures, data checks, and internal feature settings. It also provides
+ *   carefully limited controls for retrying or acknowledging operational work.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /dev-tools
+ *   Rendered by:  src/App.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  AuthContext, realtime auth, toast, feature flags, employee
+ *              directory, DeliverabilityHealth, ProviderEventOps
+ *   Data:      reads  → feature_flags, contacts, claims, message_templates,
+ *                       scheduled_messages, worker_runs, message_provider_events,
+ *                       and owner-selected diagnostic tables
+ *              writes → feature_flags, scheduled_messages, and
+ *                       message_provider_events through owner-gated workers
+ *
+ * NOTES / GOTCHAS:
+ *   - The route is owner-only, and sensitive worker actions enforce that gate
+ *     again on the server.
+ *   - Messaging tabs live in the URL so an operations alert can open the exact
+ *     panel without a full-page reload.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
+import ProviderEventOps from '@/components/ProviderEventOps';
 
 /* ── Toast helpers ── */
-const ok  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
-const err = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error'   } }));
+const ok  = (msg) => toast(msg, 'success');
+const err = (msg) => toast(msg, 'error');
 
 /* ── Icons ── */
 function IconFlag(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>; }
@@ -1115,13 +1149,26 @@ function DuplicateDetector() {
    MESSAGING TAB — Phase 5
    ════════════════════════════════════════════════════ */
 function MessagingTab() {
-  const [subTab, setSubTab] = useState('templates');
+  const [searchParams, setSearchParams] = useSearchParams();
   const subs = [
+    { key: 'events', label: 'Provider Events' },
     { key: 'templates', label: 'Template Preview' },
     { key: 'log', label: 'Message Log' },
     { key: 'queue', label: 'Scheduled Queue' },
     { key: 'deliverability', label: 'Deliverability' },
   ];
+  const requestedSubTab = searchParams.get('sub');
+  const subTab = subs.some((item) => item.key === requestedSubTab)
+    ? requestedSubTab
+    : 'templates';
+
+  const selectSubTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'messaging');
+    next.set('sub', key);
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -1130,17 +1177,27 @@ function MessagingTab() {
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Template preview, message log, and scheduled queue.</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        {subs.map(s => (
-          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
-            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
-            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
-            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
-            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
-          }}>{s.label}</button>
-        ))}
+      <div className="devtools-messaging-subtabs">
+        <div className="ui-seg devtools-messaging-seg" aria-label="Messaging tools">
+          <span
+            aria-hidden="true"
+            className={`ui-seg-indicator devtools-messaging-indicator is-position-${subs.findIndex((item) => item.key === subTab)}`}
+          />
+          {subs.map(s => (
+            <button
+              key={s.key}
+              type="button"
+              aria-pressed={subTab === s.key}
+              data-active={subTab === s.key}
+              className="ui-seg-btn"
+              onClick={() => selectSubTab(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {subTab === 'events' && <ProviderEventOps />}
       {subTab === 'templates' && <TemplatePreview />}
       {subTab === 'log' && <MessageLog />}
       {subTab === 'queue' && <ScheduledQueue />}
@@ -1538,6 +1595,7 @@ function AdvancedTab() {
     { key: 'rpc', label: 'RPC Runner' },
     { key: 'tables', label: 'Tables' },
     { key: 'cache', label: 'Cache' },
+    { key: 'push', label: 'Native Push' },
   ];
   return (
     <div>
@@ -1570,6 +1628,112 @@ function AdvancedTab() {
             The "Bust Schema Cache" button is available in the <strong>Health</strong> tab.
             Switch to the Health tab and click "Bust Schema Cache" to reload PostgREST's schema after creating new tables or columns.
           </div>
+        </div>
+      )}
+      {subTab === 'push' && <NativePushDiagnostic />}
+    </div>
+  );
+}
+
+function NativePushDiagnostic() {
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const sendTest = async () => {
+    setSending(true);
+    setResult(null);
+    try {
+      if (typeof crypto?.randomUUID !== 'function') {
+        throw new Error('This browser cannot create a stable push test ID.');
+      }
+
+      const auth = await getAuthHeader();
+      if (!auth.Authorization) {
+        throw new Error('Your session is unavailable. Sign in again and retry.');
+      }
+
+      const response = await fetch('/api/send-push', {
+        method: 'POST',
+        headers: {
+          ...auth,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ request_id: crypto.randomUUID() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || `Push test failed (${response.status}).`);
+      }
+
+      setResult(payload);
+      if (payload.sent > 0 && !payload.skipped) {
+        ok('Test notification sent to your enrolled iPhone.');
+      } else {
+        err(`Test notification was not sent: ${payload.reason || 'unknown reason'}.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Push test failed.';
+      setResult({ ok: false, error: message });
+      err(message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{
+      padding: 20,
+      border: '1px solid var(--border-color)',
+      borderRadius: 'var(--radius-lg)',
+      background: 'var(--bg-primary)',
+    }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+        Owner iPhone delivery test
+      </div>
+      <p style={{
+        margin: '6px 0 16px',
+        maxWidth: 640,
+        fontSize: 13,
+        lineHeight: 1.5,
+        color: 'var(--text-secondary)',
+      }}>
+        Put your enrolled iPhone in the background before sending. The server fixes the recipient,
+        message, and destination route; this control cannot notify another employee.
+      </p>
+      <button
+        type="button"
+        onClick={sendTest}
+        disabled={sending}
+        style={{
+          minHeight: 44,
+          padding: '10px 16px',
+          border: 0,
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--accent)',
+          color: 'var(--text-inverse)',
+          font: 'inherit',
+          fontWeight: 700,
+          cursor: sending ? 'wait' : 'pointer',
+          opacity: sending ? 0.7 : 1,
+        }}
+      >
+        {sending ? 'Sending test…' : 'Send iPhone test notification'}
+      </button>
+      {result && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginTop: 14,
+            fontSize: 12,
+            color: result.sent > 0 && !result.skipped
+              ? 'var(--success)'
+              : 'var(--danger)',
+          }}
+        >
+          {result.sent > 0 && !result.skipped
+            ? `Delivered to ${result.sent || 0} enrolled device${result.sent === 1 ? '' : 's'}.`
+            : `Not sent: ${result.reason || result.error || 'unknown reason'}.`}
         </div>
       )}
     </div>
@@ -2462,8 +2626,19 @@ const TAB_COMPONENTS = {
 
 export default function DevTools() {
   const { employee } = useAuth();
-  const [activeTab, setActiveTab] = useState('flags');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab = Object.hasOwn(TAB_COMPONENTS, requestedTab)
+    ? requestedTab
+    : 'flags';
   const ActiveComponent = TAB_COMPONENTS[activeTab] || FlagsTab;
+
+  const selectTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', key);
+    if (key !== 'messaging') next.delete('sub');
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 20px 48px' }}>
@@ -2492,7 +2667,8 @@ export default function DevTools() {
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              className="devtools-tab"
+              onClick={() => selectTab(tab.key)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '9px 14px', border: 'none', background: 'none',
@@ -2500,7 +2676,6 @@ export default function DevTools() {
                 color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
                 fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: isActive ? 600 : 400,
                 cursor: 'pointer', whiteSpace: 'nowrap', marginBottom: -1,
-                transition: 'color 0.12s, border-color 0.12s',
               }}
             >
               <Icon style={{ width: 14, height: 14 }} />
