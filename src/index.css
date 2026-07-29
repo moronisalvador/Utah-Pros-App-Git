@@ -11416,6 +11416,49 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
 
+/* DevTools tabs: token motion, contained mobile scroll, ≥44px touch targets. */
+.devtools-tab {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard),
+              border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.devtools-messaging-subtabs {
+  max-width: 100%; margin-bottom: var(--space-5);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.devtools-messaging-seg {
+  display: inline-grid; grid-template-columns: repeat(5, minmax(max-content, 1fr));
+  min-width: max-content;
+}
+.devtools-messaging-seg .ui-seg-btn {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.devtools-tab:active:not(:disabled),
+.devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: scale(0.97); }
+.devtools-messaging-indicator {
+  left: 3px; width: calc((100% - 14px) / 5);
+}
+.devtools-messaging-indicator.is-position-0 { transform: translateX(0); }
+.devtools-messaging-indicator.is-position-1 { transform: translateX(calc(100% + 2px)); }
+.devtools-messaging-indicator.is-position-2 { transform: translateX(calc(200% + 4px)); }
+.devtools-messaging-indicator.is-position-3 { transform: translateX(calc(300% + 6px)); }
+.devtools-messaging-indicator.is-position-4 { transform: translateX(calc(400% + 8px)); }
+@media (prefers-reduced-motion: reduce) {
+  .devtools-tab,
+  .devtools-messaging-seg .ui-seg-btn,
+  .devtools-messaging-indicator { transition: none; }
+  .devtools-tab:active:not(:disabled),
+  .devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: none; }
+}
+@media (max-width: 768px) {
+  .devtools-tab,
+  .devtools-messaging-seg .ui-seg-btn,
+  .provider-event-action { min-height: 44px; }
+}
+
 /* ─── SETTINGS OVERHAUL RESERVED — P10 (Lists & Values · Session K) ─── */
 
 /* Page wrapper padding so the content clears the settings rail (matches the
