@@ -28,18 +28,27 @@
 - **Process:** one mapper agent per domain classified every assigned object with an explicit evidence trail; a per-domain **adversarial verifier** then attacked every "dead" claim — name variants, camelCase, dynamically-constructed table names, PostgREST embeds, function bodies, trigger/view definitions, cron commands, realtime publications, `upr-mcp`/scripts/CI callers — before the claim was allowed to stand. 22 claims were overturned and reclassified.
 - **Classification precedence** when several labels fit: dead > band-aid > duplicated > used. A "band-aid" or "duplicated" object is still live; the label records the structural fact. Columns with generic names on used tables are counted **uncertain** rather than guessed. Test-only references count as dead with a note — a contract test keeps a signature alive artificially, which is not business usage.
 
-## 2. Verification status — read before acting on the dead list
+## 2. Verification status — three passes, all complete
 
-The dead list is **evidence-backed but not yet decision-ready in full.** Two things qualify it:
+Every classification survived three independent passes:
 
-1. **The billing verifier found a systemic blind spot, and it is only closed for billing.** Code-only checking misses objects kept alive by four non-code surfaces: (1) repo-root runbooks *executed* against production (`UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` contains the canonical `INSERT INTO invoices` an owner runs by hand); (2) recent data-repair migrations that are *writes*, not just DDL (`20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql`, two days before this map); (3) `UPR-Web-Context.md` annotations naming **external** consumers this repository cannot see (line 669: `vendor_invoices` "also used by Netlify vendor app"); (4) doc-designated computation contracts whose callers are unobservable because `track_functions` is off (`get_commissions` — "the one place commissions are ever computed"). Re-checking billing against these four surfaces moved **21 of 45** confirmed-dead items to uncertain.
-2. **The equivalent sweep for the other seven domains did not run** — it was launched and every agent failed on a session usage limit. So for jobs, scheduling, messaging, CRM, tech, auth and documents, the dead lists are *code-verified and adversarially confirmed, but not yet checked against those four surfaces.* Billing's ~47% reclassification rate on one domain is the honest prior for how much might move.
+1. **Mapping** — one agent per domain, classifying each object with an explicit evidence trail from application code.
+2. **Adversarial verification** — a second agent per domain tried to *refute* every "dead" claim: name variants, camelCase, dynamically-built table names, PostgREST embeds, function bodies, trigger/view definitions, cron commands, realtime publications, `upr-mcp`/scripts/CI callers. **22 claims were overturned.**
+3. **Non-app-code blind-spot sweep** — prompted by the billing verifier's discovery that code-only checking has a systematic gap. Four surfaces keep objects alive invisibly: (1) repo-root and `docs/` runbooks *executed* against production (`UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` carries the canonical `INSERT INTO invoices` the owner runs by hand); (2) recent data-repair migrations that are *writes*, not just DDL (`20260727222000_dorothy_killian_downstairs_reconstruction_repair.sql`, two days before this map); (3) `UPR-Web-Context.md` annotations naming **external** consumers this repository cannot inspect (line 669: `vendor_invoices` "also used by Netlify vendor app"); (4) doc-designated computation contracts whose callers are unobservable because `track_functions` is off in production (`get_commissions` — "the one place commissions are ever computed"). **A further 38 claims were reclassified**, on top of billing's 21 from the pass that discovered the gap.
 
-**Consequence:** treat the per-domain dead lists as a **review queue, not a kill list.** The sweep is one bounded session (7 agents, four named surfaces, method in [`domains/billing.md`](domains/billing.md)) and should run before anything is dropped in P5.
+**Net effect of pass 3:** dead tables 23 → 18, dead columns 306 → 268, dead RPCs 32 → 17, dead policies 34 → 33. Reclassification rates varied by domain in a way that makes sense — scheduling 15 (a fossil ring the owner had explicitly ruled "keep dormant"), messaging 11, billing 21, but **CRM 0 of 24**, because its dead set is genuinely un-shipped product rather than operational surface the owner touches by hand.
+
+**What "uncertain" means here.** 15 RPCs, 5 tables and 92 columns now sit in an honest uncertain bucket rather than on a kill list. Most resolve with a single owner answer — see §7's question 17, which names the objects whose only possible callers live outside this repository.
+
+**Still true:** these lists are a **review queue, not a kill list.** Pass 3 also produced **55 kill-notes** — dependencies a future `DROP` must carry so P5 does not break something live. See §8.
 
 ## 3. Prerequisite deviations from the plan, disclosed
 
-`docs/schema-v2-plan.md` §1 requires a committed `db/baseline/schema.sql` before P0. **It does not exist.** Only `db/baseline/live-schema-snapshot.json` does, and it was stale — 125 tables / 332 functions against the live 141 / 400. This session's fresh extraction supersedes it for P0 purposes, but the baseline capture (WIP inventory item #12) is still open and still the right next infrastructure step. Of the §7 refresh checklist: items 1–2 (re-research Anthropic/Supabase guidance) are satisfied by the plan being authored the same day, 2026-07-29; item 3 is partially met (staging branch seeded ✓, committed baseline ✗, WIP reduced ✓ on gate day); item 4 (re-read the WIP inventory) is done.
+`docs/schema-v2-plan.md` §1 requires a committed `db/baseline/schema.sql` before P0. **It is not in the repository.** Only `db/baseline/live-schema-snapshot.json` is, and it was stale — 125 tables / 332 functions against the live 141 / 400.
+
+To be precise about why, because it is not a skipped step: the owner *did* run a schema-only `pg_dump` on 2026-07-29 — it is step 1 of the staging runbook's §2 Path B, and it is what seeded the `qa-staging` branch. But that command writes `schema.sql` to the working directory and the next line feeds it straight to `psql`; **committing it as the repo baseline lives in §4 of the runbook as a follow-up**, not in the Path B steps that were executed. The artifact did its job and was never moved into the repo. Regenerating it is one `pg_dump`, and it remains WIP inventory item #12 — the thing that makes the schema reproducible without a live clone.
+
+This session's fresh extraction supersedes the stale snapshot for P0 purposes and is strictly better evidence than replaying a three-week-old file would have been. Of the §7 refresh checklist: items 1–2 (re-research Anthropic/Supabase guidance) are satisfied by the plan being authored the same day, 2026-07-29; item 3 is partially met (staging branch seeded ✓, committed baseline ✗, WIP reduced ✓ on gate day); item 4 (re-read the WIP inventory) is done.
 
 ## 4. Provenance headline — the schema cannot rebuild itself
 
@@ -53,25 +62,25 @@ Measured this session with `scripts/db-drift-check.mjs` against the fresh snapsh
 
 ## 5. Summary — counts per classification per domain
 
-Every column sums to the live catalog totals (141 tables / 1,746 columns / 400 RPCs / 223 policies / 52 triggers). **U** = used, **Unc** = uncertain, **De** = dead, **Du** = duplicated, **B** = band-aid.
+**Final, after all three verification passes.** Every row sums to the live catalog totals (141 tables / 1,746 columns / 400 RPCs / 223 policies / 52 triggers). **U** = used, **Unc** = uncertain, **De** = dead, **Du** = duplicated, **B** = band-aid.
 
-| Domain | Tables U/De/Du/B | Columns U/Unc/De/Du/B | RPCs U/De/Du/B | Policies U/De/Du/B | Triggers U/De/Du/B |
+| Domain | Tables U/Unc/De | Columns U/Unc/De/Du/B | RPCs U/Unc/De/Du/B | Policies U/Unc/De/Du/B | Triggers U/De/Du/B |
 |---|---|---|---|---|---|
-| Jobs & Claims | 18/4/0/0 | 221/12/64/2/0 | 65/8/0/1 | 5/4/6/25 | 12/2/0/1 |
-| Scheduling | 11/6/0/0 | 98/16/61/0/0 | 21/6/1/0 | 0/10/0/36 | 9/0/0/0 |
-| Billing / QBO / Stripe | 11/3/0/0 | 184/6/56/1/0 | 30/4/0/2 | 6/3/0/8 | 10/0/0/1 |
-| Messaging & Consent | 28/6/0/0 | 307/14/84/1/0 | 57/5/0/1 | 9/13/5/14 | 2/0/0/0 |
-| CRM & Leads | 29/2/0/0 | 346/2/15/1/1 | 86/5/0/1 | 6/2/1/30 | 4/0/0/0 |
-| Tech App & Time | 6/1/0/0 | 83/1/12/0/0 | 26/1/0/0 | 1/1/0/5 | 2/0/0/0 |
-| Auth / Employees / Admin | 12/0/0/0 | 97/0/4/0/0 | 61/3/3/1 | 8/0/0/6 | 1/0/0/0 |
-| Documents & Storage | 3/1/0/0 | 43/3/10/1/0 | 12/0/0/0 | 2/1/1/15 | 8/0/0/0 |
-| **TOTAL** | **118/23/0/0** | **1379/54/306/6/1** | **358/32/4/6** | **37/34/13/139** | **48/2/0/2** |
+| Jobs & Claims | 18/0/4 | 221/15/61/2/0 | 65/2/6/0/1 | 5/0/4/6/25 | 12/2/0/1 |
+| Scheduling | 11/2/4 | 98/25/52/0/0 | 21/4/2/1/0 | 0/0/10/0/36 | 9/0/0/0 |
+| Billing / QBO / Stripe | 11/1/2 | 184/24/38/1/0 | 30/1/3/0/2 | 6/1/2/0/8 | 10/0/0/1 |
+| Messaging & Consent | 28/2/4 | 307/19/79/1/0 | 57/4/1/0/1 | 9/0/13/5/14 | 2/0/0/0 |
+| CRM & Leads | 29/0/2 | 346/2/15/1/1 | 86/0/5/0/1 | 6/0/2/1/30 | 4/0/0/0 |
+| Tech App & Time | 6/0/1 | 83/1/12/0/0 | 26/1/0/0/0 | 1/0/1/0/5 | 2/0/0/0 |
+| Auth / Employees / Admin | 12/0/0 | 97/2/2/0/0 | 61/3/0/3/1 | 8/0/0/0/6 | 1/0/0/0 |
+| Documents & Storage | 3/0/1 | 43/4/9/1/0 | 12/0/0/0/0 | 2/0/1/1/15 | 8/0/0/0 |
+| **TOTAL** | **118/5/18** | **1379/92/268/6/1** | **358/15/17/4/6** | **37/1/33/13/139** | **48/2/0/2** |
 
 ### What the totals say
 
-- **23 of 141 tables (16%) are dead** — and that is before the §2 sweep, which will move some back to uncertain.
-- **306 of 1,746 columns (18%) are dead**, though 190 of those are dead-by-inheritance from dead tables; roughly 116 are individually-dead columns on live tables. Another 54 are honestly **uncertain** rather than guessed.
-- **32 of 400 RPCs are dead** — a low share, but the live 358 include 6 band-aids and a very large ungated `SECURITY DEFINER` surface (see §6).
+- **18 of 141 tables (13%) are dead**, down from 23 before the blind-spot sweep; 5 more are uncertain pending an owner answer.
+- **268 of 1,746 columns (15%) are dead**, of which roughly 170 are dead-by-inheritance from dead tables. A further **92 are honestly uncertain** rather than guessed either way.
+- **Only 17 of 400 RPCs are dead** — the sweep more than halved this from 32. Dormant-but-designated contracts (owner-run reconciliation RPCs, CI-executed shape freezes, ops scalpels held for a live open incident) are indistinguishable from dead code when you search application code alone.
 - **The policy row is the headline: only 37 of 223 policies (17%) do real authorization work.** 139 are band-aids — overwhelmingly `USING (true)` always-true policies — 34 sit on dead tables, and 13 are redundant duplicate generations. **This is the single worst number in the map** and it matches the live audit's independent count of 146 always-true policies.
 - **48 of 52 triggers are used** and doing real work. The trigger layer is the healthiest part of v1.
 
@@ -173,7 +182,23 @@ Six dead scheduling tables (`on_call_schedule`, `schedule_blocks`, `selection_di
 
 ---
 
-## 8. What P1 should carry forward
+## 8. Kill-notes — what a future DROP must carry (Phase P5)
+
+The blind-spot sweep produced **55 kill-notes**: objects that survive as genuinely dead, but whose eventual removal has a dependency. Full per-object detail is in each domain report's amendment section. The patterns that matter:
+
+**`merge_jobs()` is the single highest-leverage blocker.** It mechanically sweeps a dozen dead or dying tables by name — `job_costs`, `job_assignments`, `document_requests`, `schedule_blocks`, `selection_dispatches`, `selection_responses`, `sub_confirmations` — and COALESCEs 30+ `jobs` columns including several dead ones (`lead_source_detail`, `lead_tech`). plpgsql resolves relations at execution time, so a `DROP TABLE` without a paired `CREATE OR REPLACE FUNCTION merge_jobs(...)` **in the same migration** makes every job merge throw at runtime. `merge_jobs` is live and user-invoked (`MergeModal.jsx:62`) and is also executed during owner reconciliation work. `merge_contacts` has the same property for `campaign_recipients` and `sub_confirmations`.
+
+**The CI db lane executes objects that look dead.** `get_payroll_summary` is called by `supabase/tests/db_foundation_p6_timezone_rpcs.test.js` with a frozen 12-column assertion; `get_jobs_list` and `save_estimate_lines` are called by `uxq_fb_rpcs`. The lane runs against the seeded `qa-staging` branch on every PR, so dropping any of them reddens CI rather than failing silently.
+
+**The five `rv_*` reporting views project "dead" columns.** `jobs.lead_converted_at` (twice — raw and as `mt_date(...) AS converted_day`), `payments.is_depreciation_release`, `invoices.carrier_name`. `ALTER TABLE ... DROP COLUMN` fails without `CASCADE`, and `CASCADE` would silently take the view and its P6 db-lane test with it.
+
+**Committed rollback blocks reference objects by name.** The four `appointment_dependencies` policies are re-created by name in the ROLLBACK block of `20260708_dbf_p3_anon_policy_closure.sql`. Dropping them makes that rollback un-runnable, so P5 must explicitly supersede it rather than leave a rollback that cannot execute.
+
+**Ordering traps.** `job_checklists.template_id` must go before `checklist_templates` (inbound FK on a live table). `selection_responses` before `selection_dispatches`. Never emit a `DROP POLICY` after its table's `DROP TABLE`. And per `database-standard.md` §3/§6, every one of these is a destructive change needing a `-- destructive-approved:` marker plus a paired rollback — CI enforces both.
+
+**Docs that must change in the same commit.** `docs/generated/schema-overview.md` is regenerated, never hand-edited. `UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` §8's FK map is a procedure the owner *executes*; dropping `document_requests` removes a delete-blocker it names, so leaving it stale misleads the next operator.
+
+## 9. What P1 should carry forward
 
 - The **five modeling wins** with the clearest payoff: one consent projection per phone (#3), claim-identity normalization off `jobs` (#5), server-derived actor identity everywhere (#6), one writer per history table (#7), and database-enforced privacy/expiry instead of reader-side filtering (#8).
 - The **authorization model is the rebuild's main justification** (#1, #2). v2's least-privilege-by-construction principle should be specified as an RLS matrix and a definer-caller-check rule that CI enforces, not prose.
