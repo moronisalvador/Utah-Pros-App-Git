@@ -518,6 +518,17 @@ maps. This dashboard keeps its own scoped palette (above).
 ## Database — All Tables (91 base tables live as of Jul 1 2026 — table count drifts fast with every
 migration; verify via `upr_schema`/`upr_describe` MCP tools rather than trusting this number)
 
+> **Fresh full inventory (2026-07-29): `docs/schema-v2/v1-map.md`.** Schema-v2 Phase P0 mapped
+> every live object — **141 tables, 1,746 columns, 400 RPCs, 223 policies, 52 triggers** (extracted
+> from the parity-verified `qa-staging` branch, corroborated with read-only production statistics)
+> — and classified each as used / dead / duplicated / band-aid from the code that touches it, with
+> per-object evidence in `docs/schema-v2/domains/`. The per-table lists below remain the quick
+> orientation reference; the map supersedes them for counts and for anything load-bearing. Two
+> headline findings: only **37 of 223 policies do real authorization work** (139 are always-true
+> band-aids), and **67 tables / 87 functions have no CREATE in any migration**
+> (`docs/schema-v2/provenance-drift-2026-07-29.txt`). The map's dead lists are a **review queue,
+> not a kill list** — see its §2 for the verification gap that is still open.
+
 ### Core Business
 ```
 jobs                    — 65 rows — Core job records
