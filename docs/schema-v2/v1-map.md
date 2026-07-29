@@ -42,13 +42,15 @@ Every classification survived three independent passes:
 
 **Still true:** these lists are a **review queue, not a kill list.** Pass 3 also produced **55 kill-notes** — dependencies a future `DROP` must carry so P5 does not break something live. See §8.
 
-## 3. Prerequisite deviations from the plan, disclosed
+## 3. Prerequisite state, and one correction
 
-`docs/schema-v2-plan.md` §1 requires a committed `db/baseline/schema.sql` before P0. **It is not in the repository.** Only `db/baseline/live-schema-snapshot.json` is, and it was stale — 125 tables / 332 functions against the live 141 / 400.
+`docs/schema-v2-plan.md` §1 requires a committed `db/baseline/schema.sql` before P0. **It exists and the prerequisite is met.** Commit `8e1cf9cc` ("db: commit production schema baseline (DR + local replay seed)"), 2026-07-28 23:43 — 1,218,319 bytes, produced by `pg_dump 18.4` against PostgreSQL 17.6, containing 141 tables, 400 functions, 219 public policies and 13 custom types. Those numbers match this map's independently-extracted catalog exactly, which is a useful cross-check in both directions: the baseline is complete, and the extraction is faithful.
 
-To be precise about why, because it is not a skipped step: the owner *did* run a schema-only `pg_dump` on 2026-07-29 — it is step 1 of the staging runbook's §2 Path B, and it is what seeded the `qa-staging` branch. But that command writes `schema.sql` to the working directory and the next line feeds it straight to `psql`; **committing it as the repo baseline lives in §4 of the runbook as a follow-up**, not in the Path B steps that were executed. The artifact did its job and was never moved into the repo. Regenerating it is one `pg_dump`, and it remains WIP inventory item #12 — the thing that makes the schema reproducible without a live clone.
+> **Correction (2026-07-29).** Earlier revisions of this section stated the baseline did not exist. That was wrong. The checkout's `origin/dev` reference was stale — pinned at `e54afcce`, 21 commits behind — so a branch-wide search for the file read a snapshot of the repository that predated the baseline commit and returned nothing. The stale ref was not detected because the search trusted local remote-tracking refs without fetching. Recorded here rather than silently edited, because "verify against the live catalog, never memory" is this map's own method and a stale git ref is the same failure in a different store.
 
-This session's fresh extraction supersedes the stale snapshot for P0 purposes and is strictly better evidence than replaying a three-week-old file would have been. Of the §7 refresh checklist: items 1–2 (re-research Anthropic/Supabase guidance) are satisfied by the plan being authored the same day, 2026-07-29; item 3 is partially met (staging branch seeded ✓, committed baseline ✗, WIP reduced ✓ on gate day); item 4 (re-read the WIP inventory) is done.
+The older `db/baseline/live-schema-snapshot.json` remains in place and is genuinely stale — 125 tables / 332 functions against the live 141 / 400 — so `scripts/db-drift-check.mjs`'s baseline diff (§4) reports drift against it, not against `schema.sql`. Refreshing that snapshot is the small remaining follow-up; the DR-grade artifact is committed.
+
+Of the §7 refresh checklist: items 1–2 (re-research Anthropic/Supabase guidance) are satisfied by the plan being authored the same day, 2026-07-29; **item 3 is fully met** (staging branch seeded ✓, committed baseline ✓, WIP reduced ✓ on gate day); item 4 (re-read the WIP inventory) is done. **WIP inventory item #12 is complete** and its row should be closed on the next inventory rewrite.
 
 ## 4. Provenance headline — the schema cannot rebuild itself
 
