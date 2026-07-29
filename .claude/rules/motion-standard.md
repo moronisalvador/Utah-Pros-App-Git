@@ -1,3 +1,6 @@
+---
+paths: ["src/**"]
+---
 # Motion & Transitions Standard
 
 **Last-verified: 2026-07-13** (v2 — frequency-tier reversal, exit-animation rule, `--motion-spring-in`

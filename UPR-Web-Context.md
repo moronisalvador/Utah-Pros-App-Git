@@ -1,12 +1,36 @@
 # UPR Web Platform — Context Document
-Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair applied;
-current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
-signed Work Authorization SMS consent and current `origin/dev` additions preserved; see git history
-for earlier accuracy-audit findings)
+Last updated: July 29, 2026 (workflow/technical-debt restructure: CI gates made blocking, agent
+law compacted, staging-branch plumbing; see the 2026-07-29 section below)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
+
+## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
+
+No feature code, schema, or provider behaviour changed. What changed:
+
+- **CI now blocks** on a real bundle budget (`scripts/check-bundle-budget.mjs` +
+  `scripts/bundle-budget.json`; the old report read `dist/assets/`, which Vite never emits to) and
+  on migration hygiene (`scripts/check-migration-hygiene.mjs`: paired rollback, anon-grant
+  justification, `REVOKE FROM PUBLIC` with `SECURITY DEFINER`, destructive-DDL markers; all 257
+  pre-existing migrations grandfathered via `scripts/migration-hygiene-baseline.json`).
+- **Agent law compacted:** `AGENTS.md`/`CLAUDE.md` rewritten (Rules 1–12 verbatim, numbering
+  frozen, `check-l0-bridge` 14/14); 11 completed/dormant wave manifests archived to
+  `docs/archive/rules/`; live coordination state consolidated into
+  `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
+  they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
+- **Staging database:** attempted `qa-staging` Supabase branch; discovered the live migration
+  ledger is NOT replayable (failed at entry 4/419 — ~73 tables/~101 functions predate
+  schema-as-code), deleted the broken branch, and shipped the full plumbing
+  (`docs/database/staging-branch-runbook.md`, `npm run test:db:branch`, target-policy `qa-branch`
+  mode, CI `db-lane` job) so one owner seeding action (data branch or `pg_dump` seed) activates
+  it. Production is refused unconditionally by the new runner.
+- **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
+
+Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
+initiative once current leases close), any destructive schema cleanup (needs the seeded staging
+branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (separate owner window).
 
 ## Dorothy Killian downstairs reconstruction A/R repair (2026-07-27)
 

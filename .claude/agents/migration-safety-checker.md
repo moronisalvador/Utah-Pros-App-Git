@@ -34,7 +34,7 @@ never edit; your final message IS the report. Check every new/changed file under
    signature tightening; demand a committed test that the existing shipped caller
    still succeeds.
 6. **Frozen-stub compliance (roadmap v3 wave phases).** Only when the current task is an active CRM
-   wave phase governed by `.claude/rules/crm-wave-ownership.md`, its migrations may ONLY
+   wave phase governed by `docs/archive/rules/crm-wave-ownership.md`, its migrations may ONLY
    `CREATE OR REPLACE` function BODIES of
    stubs that Phase F created AND that the ownership matrix assigns to this phase —
    zero `CREATE TABLE`/`ALTER TABLE`/new-function-name, and zero signature changes.

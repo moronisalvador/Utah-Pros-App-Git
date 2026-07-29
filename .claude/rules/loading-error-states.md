@@ -1,3 +1,6 @@
+---
+paths: ["src/pages/**", "src/components/**", "src/hooks/**"]
+---
 # Loading, Error & Empty States Standard
 
 Linked from `CLAUDE.md`. **The law for what a page shows while loading, on failure, and when empty.**

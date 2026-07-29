@@ -45,6 +45,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Blocking. Every migration added after 2026-07-29 must ship a paired
+      # rollback, justify any anon grant, revoke PUBLIC on definers, and mark
+      # destructive DDL. Existing migrations are grandfathered by baseline.
+      - name: Migration hygiene (blocking)
+        run: node scripts/check-migration-hygiene.mjs
+
       - name: Validate repository tooling governance
         run: npm run validate:tooling
 
@@ -110,10 +116,41 @@ jobs:
           CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
 
-      # Perf-budget trend signal (perf-budget.md). Non-blocking; reports the gzipped
-      # JS weight so a regression is visible in the run. Hard-fail ratchet is a follow-up.
-      - name: Bundle size report
+      # Blocking bundle budget (perf-budget.md). Replaces the old non-blocking
+      # report, which read dist/assets/ — a directory Vite does not emit to — and
+      # measured 20 bytes of nothing. Ceilings live in scripts/bundle-budget.json;
+      # raising one is a conscious, visible commit.
+      - name: Bundle budget (blocking)
+        run: node scripts/check-bundle-budget.mjs
+
+  # The behavioral database lane (supabase/tests/**) against the seeded qa-staging
+  # Supabase branch. Until the owner seeds the branch and adds the three secrets
+  # (docs/database/staging-branch-runbook.md §2), this job reports NOT CONFIGURED
+  # loudly and tests/qa/unit/db-lane-coverage.test.js keeps counting the dark
+  # tests. Once the first green run exists, delete that counter file.
+  db-lane:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run db lane against qa-staging branch
+        env:
+          UPR_QA_SUPABASE_URL: ${{ secrets.UPR_QA_SUPABASE_URL }}
+          UPR_QA_SUPABASE_ANON_KEY: ${{ secrets.UPR_QA_SUPABASE_ANON_KEY }}
+          UPR_QA_SUPABASE_SERVICE_KEY: ${{ secrets.UPR_QA_SUPABASE_SERVICE_KEY }}
         run: |
-          BYTES=$(cat dist/assets/*.js | gzip -c | wc -c)
-          echo "dist JS gzip (concatenated): ${BYTES} bytes  (perf-budget.md entry-graph guide ~232KB, fail intent at +10%)"
-        continue-on-error: true
+          if [ -z "$UPR_QA_SUPABASE_URL" ]; then
+            echo "::warning title=DB lane NOT CONFIGURED::The qa-staging branch is not seeded/wired. supabase/tests/** does NOT run in CI. See docs/database/staging-branch-runbook.md §2."
+            exit 0
+          fi
+          npm run test:db:branch

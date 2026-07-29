@@ -1,3 +1,6 @@
+---
+paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-budget.json"]
+---
 # Performance Budget Standard
 
 **Last verified:** 2026-07-27
