@@ -7,9 +7,13 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-| Lease | Holder | Scope | State |
-|---|---|---|---|
-| Mobile current-origin reconciliation (APP-2/APP-3) | `codex/mobile-readiness-current-origin-review` | `.claude/**`, `AGENTS.md`, `CLAUDE.md`, `tooling/**`, mobile integration seams incl. `src/pages/Conversations.jsx`, `src/pages/tech/v2/messages/*`, `TechLayout.jsx` | ACTIVE until the owner accepts the locally verified handback. Sole writer for those seams. |
+**None.** No file or seam in this repository is currently under a sole-writer lease.
+
+*(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
+`AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the
+handback. Its work landed in `dev` via PR #525, merged 2026-07-27; the holder branch
+`codex/mobile-readiness-current-origin-review` had zero commits not already in `dev` at
+acceptance.)*
 
 The 2026-07-27 `dev → main` promotion hold is **RELEASED** (owner-authorized). Promote from a
 quiet `dev` and re-check `git rev-list --left-right --count origin/main...origin/dev` immediately
@@ -37,7 +41,6 @@ before promoting.
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| Mobile readiness (current-origin) | ACTIVE (lease above) | `docs/archive/rules/upr-engineering-foundation-wave-ownership.md` §6 |
 | SMS experience | Tail: unapplied migration above | manifest still in `.claude/rules/` |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
