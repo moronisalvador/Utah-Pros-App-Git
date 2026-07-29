@@ -3828,5 +3828,11 @@ Migration `20260729163127_notification_presentation_settings.sql` adds forced-RL
 `notification_presentation_overrides`, `notification_presentation_audit`, and the sole atomic
 service-role mutation RPC. It has passed migration/anonymous-grant/Worker security review plus
 real `qa-staging` denial, replay, conflict, audit, and simultaneous first-write tests; synthetic
-rows were removed. Production database/apply and deployed page status remain pending until the
-release steps complete.
+rows were removed. The same committed source is applied to the shared production project under
+ledger version `20260729171946`: both tables retain forced RLS, only `service_role` can select or
+execute the mutation RPC, and production contains zero overrides and zero audit rows.
+
+Dev runs reviewed release `5849d84c8bff6fcdc0d51fcc791c6ad43b17cb02`; the protected API rejects
+an unauthenticated request with `401`, and the deployment smoke test fetched all 34 boot assets
+with the expected content types after the `utahpros.app` Cloudflare cache was purged. Production
+web promotion through the required reviewed `dev → main` gate remains pending until verified.

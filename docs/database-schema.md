@@ -548,7 +548,11 @@ plus audit atomically. Browser roles have no direct table or RPC path. The paire
 The exact migration is applied and behavior-verified on isolated project `qa-staging`
 (`uizgwvkvzyldystqrcsk`): browser-role table/RPC denial, replay, stale revision rejection, atomic
 audit, and simultaneous first-write serialization passed. Synthetic rows were removed afterward.
-Production apply status is recorded separately in the release/context entry.
+The same committed migration is applied to shared production under ledger version
+`20260729171946`. Post-apply inspection confirmed forced RLS on both tables, SELECT and RPC
+execution denied to `anon`/`authenticated`, service-role-only access, the pinned definer
+`search_path`, and zero override/audit rows. Application deployment status is recorded separately
+in `UPR-Web-Context.md`.
 
 Rollback is not routine compatibility work. It deliberately restores anonymous page-access
 enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary

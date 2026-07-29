@@ -23,8 +23,8 @@ NOTES / GOTCHAS:
 
 # Notification Presentation Settings — Safe Design and Implementation Plan
 
-**Status:** implemented and adversarially reviewed; isolated `qa-staging` migration/authorization/
-concurrency behavior verified; production release pending
+**Status:** implemented and adversarially reviewed; isolated `qa-staging` behavior verified;
+production database applied and dev deployment verified; production web promotion pending
 
 **Artifact tier:** Tier 1 (one sequenced implementation plan)
 
@@ -85,8 +85,8 @@ preview/test/real notification or widen native routes beyond the approved field-
 | UI `AdminRoute` exists for Settings admin pages | HAVE | `src/App.jsx` | It is presentation only; a new Worker and database mutation boundary must repeat the admin gate. |
 | Existing notification defaults page changes channels/locks | HAVE | `NotificationDefaultsTab.jsx` | Presentation belongs on a separate page and must not alter preference precedence. |
 | A reviewed native presentation registry exists | HAVE | reconciled local commit `9febb9d` (equivalent parent source commit `ff77044`); `functions/lib/notificationPresentation.js`; parent handoff `docs/handoff/native-notification-parity-2026-07-29.md` | Extend this exact registry; retain APNs provider-boundary enforcement. |
-| Audited presentation override storage exists | HAVE (source + staging) | migration/rollback `20260729163127_notification_presentation_settings`; isolated `qa-staging` apply and behavior proof on 2026-07-29 | Production remains a separate release step until recorded below/canonical docs. |
-| Deployed Worker/database/provider/device behavior for this feature is proven | PARTIAL | local Worker/UI/build tests and isolated staging database behavior are green | Deployment and production catalog verification remain separate; no provider/device send is necessary. |
+| Audited presentation override storage exists | HAVE (source + hosted databases) | migration/rollback `20260729163127_notification_presentation_settings`; isolated `qa-staging` behavior proof; production ledger `20260729171946` and post-apply grant/RLS/catalog proof on 2026-07-29 | Production has zero override/audit rows; no live configuration was changed. |
+| Deployed Worker/database/provider/device behavior for this feature is proven | PARTIAL | local Worker/UI/build tests, isolated staging behavior, production database verification, and exact-SHA dev deployment/smoke are green | Production web promotion remains separate; no provider/device send is necessary. |
 | Exact parent native registry contract is known | HAVE | `functions/lib/notificationPresentation.js` exports `NATIVE_NOTIFICATION_TYPE_KEYS` and `buildNativeNotificationPresentation(typeKey, body)`; `functions/lib/apns.js` exports the single- and cross-environment senders | Extend these exports after the commit SHA lands; do not create a second native registry or bypass APNs enforcement. |
 | Typed PWA/bell presentation context exists | HAVE | shared configurable catalog and runtime resolver in `functions/lib/notificationPresentation.js`; consumption in `functions/api/notify.js` | Email remains separately governed and unchanged. |
 
@@ -475,7 +475,7 @@ validated override and otherwise uses the code default. Do not change producers,
 preferences, delivery identity, consent, provider selection, native route policy, or channel retry
 behavior.
 
-### P5 — close-out (in progress)
+### P5 — close-out (release promotion in progress)
 
 - targeted tests/lint;
 - full `npm test` and `npm run build`;
@@ -486,6 +486,16 @@ behavior.
   roadmap/current mobile evidence as applicable, and `UPR-Web-Context.md`;
 - report the exact production migration/deployment state; provider/device sending remains
   intentionally unexercised because the pure synthetic preview path requires none.
+
+Release evidence captured before production web promotion:
+
+- shared production migration ledger: `20260729171946 notification_presentation_settings`;
+- forced RLS, service-only table reads/RPC execution, and zero production override/audit rows
+  verified after apply;
+- dev exact release: `5849d84c8bff6fcdc0d51fcc791c6ad43b17cb02`;
+- unauthenticated dev API request: `401 Missing Authorization header`;
+- dev deployment smoke: all 34 boot assets returned expected content types after a zone cache
+  purge removed a stale HTML response previously cached for a JavaScript asset.
 
 ## Dependency graph
 

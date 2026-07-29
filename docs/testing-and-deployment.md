@@ -600,3 +600,10 @@ Old code ignores the additive tables. New runtime code fails safely to code-owne
 the schema/config read is missing or invalid. Application rollback therefore stops consuming
 overrides first and leaves audit data intact; dropping the tables/audit is a separate destructive
 rollback.
+
+Steps 1–4 completed on 2026-07-29. The exact migration is recorded in production as
+`20260729171946`, with post-apply RLS/grant/function checks and zero live override/audit rows.
+Dev release `5849d84c8bff6fcdc0d51fcc791c6ad43b17cb02` returned `401` from the protected API without
+authorization and passed the 34-asset deployment smoke test. During that verification, the smoke
+test detected a stale HTML response cached for a JavaScript chunk; a zone cache purge removed it,
+and the complete no-cache-bust smoke rerun passed. Step 5 remains the production web gate.
