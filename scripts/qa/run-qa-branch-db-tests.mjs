@@ -60,6 +60,27 @@ if (!url || !anonKey || !serviceKey) {
   try {
     assertQaBranchTarget({ mode: 'qa-branch', projectRef, supabaseUrl: url });
 
+    // Seed preflight: a freshly created branch has a near-empty public schema until
+    // the owner runs the runbook §2 seed. Running 350+ tests against that produces a
+    // wall of PGRST202/PGRST205 noise and a false-red CI on unrelated PRs — so an
+    // unseeded branch is reported loudly and skipped (exit 0), exactly like unset
+    // secrets. A misconfiguration (bad key, network) still refuses with exit 2.
+    const probe = await fetch(`${url}/rest/v1/employees?select=id&limit=1`, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (probe.status === 404) {
+      process.stdout.write(
+        '::warning title=DB lane SEED PENDING::qa-staging branch is reachable and secrets are '
+        + 'valid, but the schema is not seeded yet (core table missing). supabase/tests/** did '
+        + 'NOT run. Seed per docs/database/staging-branch-runbook.md §2 Path B.\n',
+      );
+      process.exit(0);
+    }
+    if (!probe.ok) {
+      throw new Error(`branch preflight failed: HTTP ${probe.status} from rest/v1 (check keys/URL)`);
+    }
+
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
     const vitest = path.join(root, 'node_modules', 'vitest', 'vitest.mjs');
     const reportPath = path.join(os.tmpdir(), `upr-vitest-db-branch-${process.pid}.json`);

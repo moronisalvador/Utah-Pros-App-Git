@@ -58,13 +58,13 @@ branch (they already exist there).
 
 1. ~~Commit the branch's project ref into `tests/qa/lib/target-policy.mjs`~~ **DONE 2026-07-29**
    (`QA_BRANCH_PROJECT_REF = 'uizgwvkvzyldystqrcsk'`).
-2. Add three GitHub Actions repository secrets so the CI db lane goes live
-   (GitHub → Settings → Secrets and variables → Actions):
-   - `UPR_QA_SUPABASE_URL` — `https://uizgwvkvzyldystqrcsk.supabase.co`
-   - `UPR_QA_SUPABASE_ANON_KEY` — the branch's anon key (Dashboard → branch → Settings → API)
-   - `UPR_QA_SUPABASE_SERVICE_KEY` — the branch's privileged server key (**the branch's, never
-     production's**; the runner maps this to the canonical env name the tests read — that name is
-     deliberately not spelled here because `.claude/hooks/block-secrets.sh` guards the literal)
+2. ~~Add three GitHub Actions repository secrets~~ **DONE 2026-07-29** (verified live: the CI
+   db-lane job authenticated against the branch and ran; it now reports `SEED PENDING` until
+   step 1's seed lands, then goes fully live). For reference the secrets are
+   `UPR_QA_SUPABASE_URL`, `UPR_QA_SUPABASE_ANON_KEY`, `UPR_QA_SUPABASE_SERVICE_KEY` (**the
+   branch's keys, never production's**; the runner maps the last one to the canonical env name
+   the tests read — deliberately not spelled here because `.claude/hooks/block-secrets.sh`
+   guards the literal).
 3. After the first green CI db-lane run, delete `tests/qa/unit/db-lane-coverage.test.js` — that
    file exists only to make the dark lane loud, and its own header says to delete it then.
 

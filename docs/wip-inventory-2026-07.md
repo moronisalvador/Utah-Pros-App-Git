@@ -21,6 +21,7 @@ Recommended WIP limit going forward: **one initiative in flight, two at absolute
 | 10 | **Agent QA access P2+** | P1 shipped; P2a gated on a local runtime that never landed | Little — but its hosted-QA design (P2b) is now partially delivered by the qa-staging branch work | **FOLD IN.** Retire the phase plan; the staging-branch runbook + target-policy extension are the living successors. |
 | 11 | **CSS split (new)** | Proposed 2026-07-29 (this restructure) — split `src/index.css` (13,003 lines, 99.2% of budget) by route/feature | Every UI initiative shares one file via marker treaties; budget nearly breached | **QUEUE as the first UI initiative once #1 and #2 close.** |
 | 12 | **Schema baseline capture (new)** | Proposed 2026-07-29 — commit `pg_dump --schema-only` as `db/baseline/schema.sql` | Until then: no DR, no local replay, staging depends on live clone | **QUEUE immediately after the staging branch is seeded** (same credentials, same sitting). |
+| 13 | **Schema v2 / clean rebuild (multi-tenant)** | Baseline plan on file: `docs/schema-v2-plan.md` — QUEUED, owner-gated start | Nothing yet (deliberately); wants the repo nearly to itself when it starts | **Design (P0–P1) before the UI redesign's data-flow work; the UI redesign is then the module-by-module delivery vehicle.** Run the plan's §7 refresh checklist on start day. |
 
 ## Suggested sequence
 
