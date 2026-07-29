@@ -558,3 +558,20 @@ Rollback is not routine compatibility work. It deliberately restores anonymous p
 enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary
 token mutation. It requires its explicit unsafe session flag plus a separate owner decision;
 forward repair is preferred. See `docs/mobile/s1h-database-apply-runbook.md`.
+
+## Notification delivery diagnostic claims (repository only; not applied)
+
+Migration `20260729181049_notification_delivery_diagnostic_claims.sql` proposes one additive
+service-only ledger keyed by `(employee_id, channel, request_id)`. The four channels are fixed to
+bell, Web Push, native APNs, and transactional email. A pending row is inserted before the Worker
+causes any delivery side effect; the bounded channel result is then stored as complete. A retry
+returns the stored result, while a request left pending by an uncertain Worker failure remains a
+no-op instead of risking a duplicate notification.
+
+The table enables and forces RLS, grants no browser access, and stores no address, notification
+copy, customer/provider payload, or credential. Its two `SECURITY INVOKER` RPCs pin an empty
+`search_path`, assert `service_role`, revalidate an active internal admin for the claim, accept only
+the fixed channels/result vocabulary, and are executable only by `service_role`. Claim cleanup is
+bounded to 1,000 rows older than 90 days per new claim. The paired rollback removes both RPCs and
+the additive history after compatible code stops calling them. This source has not been applied to
+`qa-staging` or the shared production project.

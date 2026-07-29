@@ -350,3 +350,10 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   disabling ordinary Push.
 - Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
   sends a notification. Every save/reset is revision-checked, idempotent, and audited.
+- Owner delivery diagnostics are deliberately separate from business-event dispatch. They use
+  fixed privacy-safe copy, target only the authenticated owner, and may test bell, Web Push,
+  native APNs, or transactional email independently of personal notification preferences. The
+  optional 15-type sweep renders each code-owned catalog event with synthetic values on bell,
+  Web Push, and native APNs only, independently of the real-event master enable switch. It proves
+  presentation/transport rather than source-workflow activation, never creates a business
+  occurrence, and never includes email, SMS, or MMS in that sweep.

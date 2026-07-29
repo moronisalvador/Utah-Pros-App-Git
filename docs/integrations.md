@@ -88,6 +88,12 @@ bindings and provider consoles.
   `presentation_context.invoice_number`; provider charge/payment references remain a separate
   `payload.reference` value. Both are display-only typed presentation variables, including native,
   and neither changes payment recording, idempotency, QuickBooks behavior, or recipients.
+- The owner-only delivery diagnostic may render each of those 15 registry types with synthetic
+  values and deliver it to the owner's bell, enrolled Web Push subscriptions, and
+  environment-matched iPhone tokens. Each event/surface gets its own stable diagnostic identity;
+  Web Push also gets a unique tag so the service worker does not collapse separate types. This
+  diagnostic is independent of the source event's master enable switch, creates no source
+  business event, and never enters email, SMS, or MMS transport.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:

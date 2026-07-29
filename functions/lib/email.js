@@ -23,7 +23,8 @@
  *              writes → none (calls the Resend HTTP API)
  *
  * EXPORTS:
- *   sendEmail(env, { to, subject, html, text, replyTo, attachments, from, headers })
+ *   sendEmail(env, { to, subject, html, text, replyTo, attachments, from,
+ *                    headers, idempotencyKey })
  *     → Promise<{ ok, status, id, error }>  (normalized; never throws on an
  *       HTTP-level failure — inspect `ok`)
  *
@@ -86,9 +87,23 @@ function toAddressList(to) {
  * @param {string} [opts.replyTo]                 override reply-to (else env.EMAIL_REPLY_TO / default)
  * @param {Array}  [opts.attachments]             [{ filename, content (base64), contentType }]
  * @param {object} [opts.headers]                 extra headers (e.g. List-Unsubscribe) — bulk/marketing sends only
+ * @param {string} [opts.idempotencyKey]           stable Resend request identity (max 256 chars)
  * @returns {Promise<{ok:boolean,status:number,id:string|null,error:string|null}>}
  */
-export async function sendEmail(env, { to, subject, html, text, from, replyTo, attachments, headers } = {}) {
+export async function sendEmail(
+  env,
+  {
+    to,
+    subject,
+    html,
+    text,
+    from,
+    replyTo,
+    attachments,
+    headers,
+    idempotencyKey,
+  } = {},
+) {
   // DB-first (integration_credentials), env fallback — see functions/lib/credentials.js
   const { apiKey } = await resolveCredential(env, null, 'resend');
   if (!apiKey) {
@@ -98,6 +113,16 @@ export async function sendEmail(env, { to, subject, html, text, from, replyTo, a
   const toList = toAddressList(to);
   if (!toList.length) {
     return { ok: false, status: 0, id: null, error: 'No recipient (to) provided' };
+  }
+  if (
+    idempotencyKey !== undefined
+    && (
+      typeof idempotencyKey !== 'string'
+      || idempotencyKey.length < 1
+      || idempotencyKey.length > 256
+    )
+  ) {
+    return { ok: false, status: 0, id: null, error: 'Invalid idempotency key' };
   }
 
   const payload = {
@@ -125,12 +150,14 @@ export async function sendEmail(env, { to, subject, html, text, from, replyTo, a
 
   let res;
   try {
+    const requestHeaders = {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type':  'application/json',
+    };
+    if (idempotencyKey) requestHeaders['Idempotency-Key'] = idempotencyKey;
     res = await fetchWithTimeout(RESEND_ENDPOINT, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type':  'application/json',
-      },
+      headers: requestHeaders,
       body: JSON.stringify(payload),
     });
   } catch (e) {
