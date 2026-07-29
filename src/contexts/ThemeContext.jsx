@@ -16,7 +16,7 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  @/lib/nativeAppearance (statusBarLight/statusBarDark — no-op on web)
+ *   Internal:  @/lib/nativeAppearance (setStatusBarBase — no-op on web)
  *   Data:      reads/writes localStorage key `upr_theme_pref` only (no DB)
  *
  * NOTES / GOTCHAS:
@@ -32,7 +32,7 @@
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useEffect, useMemo, useState, useCallback } from 'react';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { setStatusBarBase } from '@/lib/nativeAppearance';
 
 // ─── SECTION: Constants & pure helpers (exported for tests) ──────────────
 
@@ -106,8 +106,12 @@ export function ThemeProvider({ children }) {
   // Apply the theme to <html> + coordinate the native status bar.
   useEffect(() => {
     try { document.documentElement.setAttribute('data-theme', effective); } catch { /* SSR/none */ }
-    // Native shell only (no-op on web/PWA): dark bg → light status-bar text.
-    if (effective === 'dark') statusBarLight(); else statusBarDark();
+    // Native shell only (no-op on web/PWA). The theme is the status-bar OWNER;
+    // a screen may override for its own hero but must hand it back here.
+    // `effective` IS the surface behind the strip, so it maps straight across —
+    // the old call pair named the text colour instead and was inverted in both
+    // branches (STAT-01), painting white-on-white in light theme.
+    setStatusBarBase(effective === 'dark' ? 'dark' : 'light');
   }, [effective]);
 
   const setMode = useCallback((next) => {

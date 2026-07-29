@@ -114,6 +114,7 @@ export async function notifyEsignSigned({ db, env, job, docLabel, docType, signe
       db, env,
       typeKey: 'esign.signed',
       body: {
+        notification_event_id: jobDocumentId || null,
         title, body,
         link:        `/jobs/${job?.id}`,
         entity_type: 'job',

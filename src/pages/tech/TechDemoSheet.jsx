@@ -61,6 +61,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { toast } from '@/lib/toast';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 
@@ -484,6 +485,7 @@ function prettySummaryKey(key) {
 // skipped; gated sections answered "No" show as N/A pills. Job totals come
 // from computeSummary.
 function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit, sending, encircleLinked, schema }) {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const sections = schema?.sections || [];
   const jobSections = schema?.jobSections || [];
@@ -507,7 +509,7 @@ function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit
 
   // ─── SECTION: Render ──────────────
   return (
-    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:'calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))' }}>
+    <div style={{ position:'fixed', inset:0, background:C.bg, zIndex:50, overflowY:'auto', paddingBottom:`calc(120px + var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px) + ${kbInset}px)` }}>
       <div style={{ background:C.headerBg, borderBottom:`1px solid ${C.border}`, padding:'14px 16px', position:'sticky', top:0, zIndex:10, display:'flex', alignItems:'center', gap:12 }}>
         <button onClick={onBack} style={{ background:'transparent', border:`1.5px solid ${C.border}`, borderRadius:8, color:C.muted, padding:'8px 14px', fontSize:13, cursor:'pointer', flexShrink:0, fontFamily:'var(--font-sans)' }}>← Edit</button>
         <div style={{ flex:1 }}>
@@ -636,7 +638,10 @@ function ReviewScreen({ rooms, jobInfo, jobData, hasSketchDone, onBack, onSubmit
         )}
       </div>
 
-      <div style={{ position:'fixed', bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
+      {/* KB-03: with the keyboard up the tab bar and home indicator are both behind
+          it, so the resting offset would float this bar into the middle of the keys.
+          Sit flush on the keyboard instead. 0 on web — resting value unchanged. */}
+      <div style={{ position:'fixed', bottom:kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))', left:0, right:0, background:C.headerBg, borderTop:`1px solid ${C.border}`, padding:'12px 13px 12px', zIndex:60 }}>
         <div style={{ fontSize:11, color:C.muted, textAlign:'center', marginBottom:8 }}>
           {encircleLinked ? '⛓ Will email + post note to Encircle' : 'Will email to restoration@utah-pros.com'}
         </div>
@@ -743,6 +748,7 @@ function ResultScreen({ result, onStartNew, onBack, onClose }) {
 // ─── SECTION: Main page (component) ──────────────
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function TechDemoSheet() {
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1202,12 +1208,27 @@ export default function TechDemoSheet() {
             }),
           })
             .then(async r => {
-              encircleOk = r.ok;
-              if (r.ok) {
-                try { const d = await r.json(); encircleNoteId = d?.id || null; } catch { /* ignore */ }
+              // ENCIRCLE-02: `encircleOk = r.ok` alone claimed success for a note
+              // that was never posted. During the native /api origin bug Capacitor
+              // answered this path from the app BUNDLE with a 200 and an HTML
+              // body, so r.ok was true and the sheet reported "Posted to Encircle"
+              // over nothing. The worker returns { ok: true, id } on success and a
+              // non-2xx { error } on every failure, so require that shape — the
+              // same thing the send-demo-sheet and demo-sheet-pdf branches beside
+              // this one already do.
+              let d = null;
+              try { d = await r.json(); } catch { /* non-JSON: not a worker reply */ }
+              encircleOk = r.ok && d?.ok === true;
+              encircleNoteId = d?.id || null;
+              if (!encircleOk) {
+                console.error('[demo-sheet] encircle-upload failed:', d?.error || `HTTP ${r.status}`, d);
               }
             })
-            .catch(() => { /* ignore — best-effort */ }),
+            .catch((e) => {
+              // Best-effort by design — a failed note must not lose the sheet —
+              // but silence is what let this go unnoticed.
+              console.error('[demo-sheet] encircle-upload network error:', e);
+            }),
         );
       }
 
@@ -1355,9 +1376,16 @@ export default function TechDemoSheet() {
   }
 
   return (
-    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:'calc(180px + env(safe-area-inset-bottom, 0px))', fontFamily:'var(--font-sans)' }}>
+    <div style={{ background:C.bg, minHeight:'100dvh', color:C.text, paddingBottom:`calc(180px + env(safe-area-inset-bottom, 0px) + ${kbInset}px)`, fontFamily:'var(--font-sans)' }}>
       <style>{`
-        .demo-sheet input, .demo-sheet select, .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
+        /* PICK-01: date/time inputs are EXCLUDED. Stripping their appearance
+           removes the native control's own affordance while the popup stays
+           browser-controlled, which is what made the Scope Sheet's date field
+           render as a bare box with a desktop-style picker attached. Every
+           other input keeps the flat house style. */
+        .demo-sheet input:not([type="date"]):not([type="time"]):not([type="datetime-local"]),
+        .demo-sheet select,
+        .demo-sheet textarea { -webkit-appearance: none; appearance: none; }
         .demo-sheet input:focus, .demo-sheet select:focus, .demo-sheet textarea:focus { border-color: ${C.accent} !important; outline: none; }
         .demo-sheet button { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); touch-action: manipulation; }
         .demo-sheet button:active:not(:disabled) { transform: scale(0.97); }
@@ -1522,7 +1550,9 @@ export default function TechDemoSheet() {
         {/* Bottom bar — sits above the bottom nav */}
         <div style={{
           position:'fixed',
-          bottom:'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
+          // KB-03: sit flush on the keyboard when it is up — the tab bar and home
+          // indicator it normally clears are both behind it. 0 on web.
+          bottom:kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
           left:0, right:0,
           background:C.headerBg,
           borderTop:`1px solid ${C.border}`,

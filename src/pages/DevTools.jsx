@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { toast } from '@/lib/toast';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
 
 /* ── Toast helpers ── */
-const ok  = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
-const err = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error'   } }));
+const ok  = (msg) => toast(msg, 'success');
+const err = (msg) => toast(msg, 'error');
 
 /* ── Icons ── */
 function IconFlag(p)    { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>; }
@@ -1538,6 +1539,7 @@ function AdvancedTab() {
     { key: 'rpc', label: 'RPC Runner' },
     { key: 'tables', label: 'Tables' },
     { key: 'cache', label: 'Cache' },
+    { key: 'push', label: 'Native Push' },
   ];
   return (
     <div>
@@ -1570,6 +1572,112 @@ function AdvancedTab() {
             The "Bust Schema Cache" button is available in the <strong>Health</strong> tab.
             Switch to the Health tab and click "Bust Schema Cache" to reload PostgREST's schema after creating new tables or columns.
           </div>
+        </div>
+      )}
+      {subTab === 'push' && <NativePushDiagnostic />}
+    </div>
+  );
+}
+
+function NativePushDiagnostic() {
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const sendTest = async () => {
+    setSending(true);
+    setResult(null);
+    try {
+      if (typeof crypto?.randomUUID !== 'function') {
+        throw new Error('This browser cannot create a stable push test ID.');
+      }
+
+      const auth = await getAuthHeader();
+      if (!auth.Authorization) {
+        throw new Error('Your session is unavailable. Sign in again and retry.');
+      }
+
+      const response = await fetch('/api/send-push', {
+        method: 'POST',
+        headers: {
+          ...auth,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ request_id: crypto.randomUUID() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(payload.error || `Push test failed (${response.status}).`);
+      }
+
+      setResult(payload);
+      if (payload.sent > 0 && !payload.skipped) {
+        ok('Test notification sent to your enrolled iPhone.');
+      } else {
+        err(`Test notification was not sent: ${payload.reason || 'unknown reason'}.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Push test failed.';
+      setResult({ ok: false, error: message });
+      err(message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div style={{
+      padding: 20,
+      border: '1px solid var(--border-color)',
+      borderRadius: 'var(--radius-lg)',
+      background: 'var(--bg-primary)',
+    }}>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+        Owner iPhone delivery test
+      </div>
+      <p style={{
+        margin: '6px 0 16px',
+        maxWidth: 640,
+        fontSize: 13,
+        lineHeight: 1.5,
+        color: 'var(--text-secondary)',
+      }}>
+        Put your enrolled iPhone in the background before sending. The server fixes the recipient,
+        message, and destination route; this control cannot notify another employee.
+      </p>
+      <button
+        type="button"
+        onClick={sendTest}
+        disabled={sending}
+        style={{
+          minHeight: 44,
+          padding: '10px 16px',
+          border: 0,
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--accent)',
+          color: 'var(--text-inverse)',
+          font: 'inherit',
+          fontWeight: 700,
+          cursor: sending ? 'wait' : 'pointer',
+          opacity: sending ? 0.7 : 1,
+        }}
+      >
+        {sending ? 'Sending test…' : 'Send iPhone test notification'}
+      </button>
+      {result && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginTop: 14,
+            fontSize: 12,
+            color: result.sent > 0 && !result.skipped
+              ? 'var(--success)'
+              : 'var(--danger)',
+          }}
+        >
+          {result.sent > 0 && !result.skipped
+            ? `Delivered to ${result.sent || 0} enrolled device${result.sent === 1 ? '' : 's'}.`
+            : `Not sent: ${result.reason || result.error || 'unknown reason'}.`}
         </div>
       )}
     </div>

@@ -46,7 +46,9 @@
  *     confirmation. Only admins/managers see the kebab menu.
  *   - Appointments come from the claim-wide get_claim_appointments, then are
  *     filtered down to this job's id client-side.
- *   - Sets a light status bar on mount and restores the dark one on unmount.
+ *   - Declares a dark SURFACE on mount (so the status icons go light against the
+ *     gradient hero) and hands the strip back to the theme on unmount — see
+ *     STAT-01; restoring a fixed style stranded dark-on-dark in dark mode.
  *   - The Documents action opens /tech/jobs/:jobId/documents (the e-signature
  *     hub). The "No signed Work Authorization" banner reads sign_requests and
  *     deep-links there with the Work Auth request sheet pre-opened.
@@ -59,7 +61,7 @@ import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_PILL_COLORS, DIV_BORDER_COLORS, APPT_STATUS_COLORS } from './techConstants';
 import { toast } from '@/lib/toast';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import Hero from '@/components/tech/Hero';
@@ -71,6 +73,7 @@ import DetailRow from '@/components/tech/DetailRow';
 import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -172,13 +175,24 @@ export default function TechJobDetail() {
 
   useEffect(() => {
     requestAnimationFrame(() => setEntering(true));
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // JOB-01. `silent` refetches WITHOUT re-gating the page.
+  //
+  // The page-level gate below renders a short spinner in place of the whole
+  // page. `.tech-content` (the shell) owns the scroll, and `.tech-page` declares
+  // no overflow — so collapsing this child to a spinner clamps the shell's
+  // scrollTop, and the page comes back near the hero instead of where the tech
+  // was working. Every save, upload and pull-to-refresh did that.
+  //
+  // page-lifecycle.md §1: the gate is cold-start only — `loading` starts true
+  // and is only ever set false. §3: mutations patch in place. Precedent:
+  // src/pages/crm/CrmCallLog.jsx.
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       const rows = await db.select('jobs', `id=eq.${jobId}&select=*`);
@@ -254,7 +268,7 @@ export default function TechJobDetail() {
       });
       impact('light');
       toast(t('tech:toast.photoUploaded'));
-      load();
+      load({ silent: true });   // JOB-01: keep the photo grid and scroll in place
     } catch (err) {
       toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
@@ -316,7 +330,11 @@ export default function TechJobDetail() {
       toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteOpen(false);
-      load();
+      // JOB-01: silent — the note list refreshes without collapsing the page
+      // and losing the tech's scroll position. On failure this line is never
+      // reached, so the draft and the open editor both survive (tech-mobile-ux.md
+      // online-only rule: a save must fail visibly with the text intact).
+      load({ silent: true });
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {
@@ -417,7 +435,9 @@ export default function TechJobDetail() {
         </button>
       )}
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      {/* JOB-01 / loading-error-states.md §6: pull-to-refresh is ALWAYS the
+          silent load. Gating it unmounted the page mid-gesture. */}
+      <PullToRefresh onRefresh={() => load({ silent: true })} style={{ flex: 1 }}>
       {/* Claim breadcrumb — division-tinted, division-bordered card.
           Visually signals "this job lives inside a claim". */}
       {claim && (() => {
@@ -549,7 +569,7 @@ export default function TechJobDetail() {
 
       {/* Appointments list — grouped Upcoming / Past */}
       {(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const today = todayInCompanyTimeZone();
         const upcoming = appointments
           .filter(a => a.date >= today && !['completed', 'cancelled'].includes(a.status))
           .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''));

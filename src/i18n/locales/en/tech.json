@@ -103,5 +103,10 @@
     "noteSaved": "Note saved",
     "noteSaveFailed": "Failed to save note: {{message}}",
     "actionFailed": "Action failed: {{message}}"
+  },
+  "fieldShell": {
+    "blockedTitle": "This account doesn’t use the field app",
+    "blockedSub": "The field app is for crews working jobs on site. Your account has its own screens with everything you need.",
+    "blockedAction": "Go to my screens"
   }
 }

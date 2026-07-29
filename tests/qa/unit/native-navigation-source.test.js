@@ -63,7 +63,7 @@ describe('native URL declarations', () => {
     expect(association.applinks?.apps).toEqual([]);
     expect(details).toHaveLength(1);
     expect(details[0].appID).toBe(
-      'P93U4Z4DJB.com.utahprosrestoration.upr',
+      'H6ZUT739T9.com.utahprosrestoration.upr',
     );
     expect(details[0].paths.slice(0, 2)).toEqual([
       'NOT /tech/admin',
@@ -80,10 +80,15 @@ describe('native URL declarations', () => {
       '/terms',
       '/support',
     ]));
-    // This lane adds app links without silently changing the pre-existing
-    // password-autofill association, whose legacy identity is separately owned.
+    // REL-01: the password-autofill association now names the paid team's real
+    // application identifier. The prior value, 'com.utahpros.mobile', was left
+    // in place by an earlier lane as a "separately owned" legacy identity, but
+    // it is not a valid webcredentials entry — Apple requires TEAMID.bundleid,
+    // so that value could never have validated. Revert this pair (here and in
+    // public/.well-known/apple-app-site-association) if a genuinely separate
+    // app under that identifier turns out to need the association.
     expect(association.webcredentials).toEqual({
-      apps: ['com.utahpros.mobile'],
+      apps: ['H6ZUT739T9.com.utahprosrestoration.upr'],
     });
   });
 

@@ -34,6 +34,7 @@ import { StatusChip } from '@/components/tech/v2';
 import GenerateReportButton from '@/components/tech/GenerateReportButton';
 import JobClaimSection from './JobClaimSection.jsx';
 import PhotosNotes from './PhotosNotes.jsx';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 const DONE = ['completed', 'cancelled'];
 
@@ -70,7 +71,7 @@ export default function HubBelowFold({
 }) {
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
 
   const upcoming = appointments
     .filter((a) => a.date >= today && !DONE.includes(a.status))

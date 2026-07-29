@@ -27,10 +27,17 @@
  *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
  * ════════════════════════════════════════════════
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { ROOM_TEMPLATES } from '@/pages/tech/techConstants';
 
 export default function AddRoomSheet({ open, onClose, onCreate, existingNames = [] }) {
+  const kbInset = useNativeKeyboardInset();
+  // MODAL-01: focus trap, focus return, Escape, aria-modal — the same
+  // contract Modal.jsx provides, without restructuring this sheet's markup.
+  const panelRef = useRef(null);
+  const dialogProps = useDialogLifecycle({ open, onClose, panelRef });
   // ─── SECTION: State & hooks ──────────────
   const [creating, setCreating] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -82,13 +89,17 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
         background: 'rgba(0,0,0,0.4)',
         display: 'flex',
         alignItems: 'flex-end',
+        // KB-03: lift the whole sheet clear of the on-screen keyboard.
+        // 0 on web, where the hook attaches nothing (PWA unchanged).
+        paddingBottom: kbInset || undefined,
         justifyContent: 'center',
         animation: 'tech-fade-in 0.15s ease-out',
       }}
     >
       <div
         onClick={e => e.stopPropagation()}
-        role="dialog"
+        ref={panelRef}
+        {...dialogProps}
         aria-label="Add a room"
         style={{
           width: '100%',
@@ -97,10 +108,16 @@ export default function AddRoomSheet({ open, onClose, onCreate, existingNames = 
           borderTopLeftRadius: 20,
           borderTopRightRadius: 20,
           boxShadow: '0 -8px 24px rgba(0,0,0,0.15)',
-          maxHeight: '80dvh',
+          // KB-03: '100%' of the OVERLAY's content box, which is already
+          // 100dvh - kbInset because the overlay reserves the keyboard with
+          // paddingBottom (index.css sets border-box globally). Subtracting
+          // kbInset from the dvh cap here as well double-counted the keyboard:
+          // on a 17 Pro Max that only wasted space, but on an iPhone 17 and
+          // smaller it pushed this sheet's primary button below the fold.
+          maxHeight: kbInset > 0 ? '100%' : '80dvh',
           display: 'flex',
           flexDirection: 'column',
-          paddingBottom: 'max(12px, env(safe-area-inset-bottom, 12px))',
+          paddingBottom: kbInset > 0 ? 12 : 'max(12px, env(safe-area-inset-bottom, 12px))',
           animation: 'tech-slide-up 0.22s ease-out',
         }}
       >

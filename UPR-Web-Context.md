@@ -1,12 +1,36 @@
 # UPR Web Platform — Context Document
-Last updated: July 27, 2026 (Dorothy Killian downstairs reconstruction A/R repair applied;
-current-origin, no-commit mobile/PWA/Capacitor source reconciliation;
-signed Work Authorization SMS consent and current `origin/dev` additions preserved; see git history
-for earlier accuracy-audit findings)
+Last updated: July 29, 2026 (workflow/technical-debt restructure: CI gates made blocking, agent
+law compacted, staging-branch plumbing; see the 2026-07-29 section below)
 
 ## Project Overview
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
+
+## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
+
+No feature code, schema, or provider behaviour changed. What changed:
+
+- **CI now blocks** on a real bundle budget (`scripts/bundle-size-report.mjs --strict`, which superseded the interim `check-bundle-budget.mjs` +
+  `scripts/bundle-budget.json`; the old report read `dist/assets/`, which Vite never emits to) and
+  on migration hygiene (`scripts/check-migration-hygiene.mjs`: paired rollback, anon-grant
+  justification, `REVOKE FROM PUBLIC` with `SECURITY DEFINER`, destructive-DDL markers; all 257
+  pre-existing migrations grandfathered via `scripts/migration-hygiene-baseline.json`).
+- **Agent law compacted:** `AGENTS.md`/`CLAUDE.md` rewritten (Rules 1–12 verbatim, numbering
+  frozen, `check-l0-bridge` 14/14); 11 completed/dormant wave manifests archived to
+  `docs/archive/rules/`; live coordination state consolidated into
+  `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
+  they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
+- **Staging database:** attempted `qa-staging` Supabase branch; discovered the live migration
+  ledger is NOT replayable (failed at entry 4/419 — ~73 tables/~101 functions predate
+  schema-as-code), deleted the broken branch, and shipped the full plumbing
+  (`docs/database/staging-branch-runbook.md`, `npm run test:db:branch`, target-policy `qa-branch`
+  mode, CI `db-lane` job) so one owner seeding action (data branch or `pg_dump` seed) activates
+  it. Production is refused unconditionally by the new runner.
+- **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
+
+Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
+initiative once current leases close), any destructive schema cleanup (needs the seeded staging
+branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (separate owner window).
 
 ## Dorothy Killian downstairs reconstruction A/R repair (2026-07-27)
 
@@ -810,9 +834,9 @@ src/
       TechScheduleV2.jsx below.
     TechTasks.jsx                 — Field tech tasks: swipe-to-complete, collapsible job groups. Reached via More tab (demoted from primary nav Apr 16 2026).
     TechClaims.jsx                — Field tech claims: 200ms debounced instant search. Scope toggle ("Mine"/"All") defaults to All, sticky per-device via localStorage `upr:tech-claims-scope`.
-    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, statusBarLight on mount.
+    TechClaimDetail.jsx           — Field tech claim detail (purpose-built mobile, replaces desktop ClaimPage at /tech/claims/:claimId). Division-gradient hero (loss emoji, insured name, tappable address, loss meta), 3-button action bar (Call/Navigate/Message as native tel:/maps/sms:), context-aware Now-Next appointment tile (4 cases: now_active/today/next/hidden), Jobs-as-tiles with inline task progress + next-appt label, Photos & Notes grouped by job with 3-up thumbnail strips + overflow count + "See all →" (navigates to /photos album), full-screen lightbox pager, Add Photo / Add Note with bottom-sheet job picker on multi-job claims, collapsed Claim details reference block (carrier/policy/insured/adjuster), admin kebab (Merge/Delete via MergeModal + DELETE-to-confirm dialog), slide-in entry animation, pull-to-refresh, pushStatusBarSurface('dark') on mount, restoreStatusBarBase() on unmount.
     TechClaimAlbum.jsx            — Field tech claim photo album at /tech/claims/:claimId/photos. Slim sticky top bar (back + "Photos" + claim#/insured subtitle + count badge), division-tinted accent strip, 2-column thumbnail grid (~160×160) with per-job grouping on multi-job claims, absolute date + time caption under each thumbnail ("Mar 28, 2026" / "9:52 AM"), pinned bottom Add Photo button with multi-job sheet picker. Imports shared Lightbox from components/tech/.
-    TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, statusBarLight.
+    TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount.
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
     TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
@@ -2289,7 +2313,11 @@ job-rooted surface at **`/tech/job/:jobId?appt=<id>`**, behind `page:tech_job_hu
   `page:tech_equipment`, `page:tech_rooms`). Job-wide: `JobPhotos` (grouped gallery + Lightbox
   + notes), `ClaimBreadcrumb`, collapsible `JobDetailsPanel`, `AdminJobMenu` (role-gated merge +
   typed-DELETE soft delete). Work-auth logic extracted ONCE (`WorkAuthBanner` + `showWorkAuthBanner`).
-  Exactly ONE `statusBarLight`/`Dark` effect pair (in `TechJobHub`).
+  Status bar: `TechJobHub` sets none. The three hero routes that do —
+  `TechAppointment`, `TechClaimDetail`, `TechJobDetail` — call
+  `pushStatusBarSurface('dark')` on mount and `restoreStatusBarBase()` on unmount
+  (corrected 2026-07-27, STAT-01: this line previously claimed exactly one pair,
+  in `TechJobHub`, which contains zero status-bar references).
 - **Selected-visit detail** via `get_appointment_detail(selectedId)`; **job-wide docs** via
   `job_documents` (`buildDocsQuery` preserves the legacy `or=(appointment_id,job_id)` fallback
   shape). Mutations invalidate the shared dash/schedule caches via `invalidateTech`.
@@ -2661,11 +2689,11 @@ APP_BASE_URL                    — Optional; base for the OAuth return redirect
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
 TWILIO_*                        — 7 vars (pending go-live)
-APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM) — blocked on Apple Developer enrollment
+APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in Cloudflare Preview + Production
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
 APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
-APNS_ENV                        — "sandbox" (TestFlight/dev) | "production" (App Store); defaults sandbox
+APNS_ENV                        — exact "sandbox" (development-signed builds) | "production" (TestFlight/App Store); missing/unknown fails closed
 ```
 
 **jsonResponse signature:** `jsonResponse(data, status, request, env)`
@@ -3397,10 +3425,11 @@ Zero migrations, zero CRM-file edits.
 
 ---
 
-## Native iOS App (Capacitor) — mostly shipped
+## Native iOS App (Capacitor) — source-hardened, release gates remain
 
-Camera, push registration, geolocation, biometric gate, and the Capgo OTA updater below are all
-live, not in-progress. Only the privacy-screen plugin (see Deferred below) is genuinely still pending.
+Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
+popover are integrated in source. Push enrollment and Capgo OTA remain exact-default-off, and
+distribution signing/TestFlight/App Review remain separate owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3409,19 +3438,33 @@ live, not in-progress. Only the privacy-screen plugin (see Deferred below) is ge
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js` — blocked on Apple Developer enrollment + `APNS_*` env vars
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
-  - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (statusBarLight/Dark, hideSplash). Splash held until React mounts, status bar flips to light on TechAppointment's gradient hero and back to dark elsewhere.
-  - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeBiometric.js` + `<BiometricGate>` in App.jsx. Cold-launch gate on native: if a Supabase session exists and the flag is set, show "Unlocking UPR…" lock screen and prompt Face ID / Touch ID / passcode. Cancel or failure → sign out + show login. Flag is enabled in Login.jsx after a successful password login on native, cleared in AuthContext.logout. Token still lives in localStorage — full Keychain migration is future hardening.
-  - `@capgo/capacitor-updater` — OTA React/CSS/HTML updates without App Store resubmit. `src/lib/nativeUpdater.js` exposes `markBundleReady()` (called on App.jsx mount — critical, Capgo rolls back otherwise), plus `checkForUpdate` and `getCurrentBundleInfo` helpers. `capacitor.config.json` plugin config: `autoUpdate: true`, `defaultChannel: production`, auto-cleanup on success/fail.
+  - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
+  - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
+  - `@capgo/capacitor-updater` — OTA React/CSS/HTML support remains exact-default-off. `src/lib/nativeUpdater.js` exposes guarded helpers, but `CapacitorUpdater.autoUpdate` is `false`, `VITE_NATIVE_OTA_ENABLED` must be exactly `true`, and no boot path calls `notifyAppReady()` pending a real health checkpoint.
 - **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
-  manual-only and no-direct-secret-condition boundaries. It remains owner-gated on Apple enrollment,
-  signing secrets, Xcode archive/device proof, and an explicitly dispatched release.
+  manual-only and no-direct-secret-condition boundaries. `ios/App/Version.xcconfig` is the single
+  marketing-version source (`1.0.0`); the workflow supplies a unique build from its run
+  number/attempt, and native Settings displays the installed version/build through
+  `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
+  archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
+  explicitly authorized release dispatch remain open.
+- **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
+  uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
+  focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
+  Reduce Motion. Its native surface now uses the field-tech card radius, readable typography,
+  non-shrinking wrapped cards, and a bounded scrolling list; the dashboard three-dot menu consumes
+  the same tokenized enter/exit motion instead of flashing in and disappearing instantly. The
+  2026-07-28 simulator visual checks observed both populated notification cards and the matching
+  menu motion, but the recordings contained authenticated data and were deleted; sanitized
+  SHA-bound recapture, physical-device feel, and VoiceOver remain release checks.
 - **Permission strings in Info.plist:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSPhotoLibraryAddUsageDescription`, `NSLocationWhenInUseUsageDescription`, `NSFaceIDUsageDescription`
-- **Deferred:** `@capacitor-community/privacy-screen` (app-switcher blur) — published version targets Capacitor 7, incompatible with our Capacitor 8 plugins. Re-enable when a Cap-8 compatible version ships; `enablePrivacyScreen()` is already a no-op stub.
+- **Privacy shield:** `AppDelegate.swift` installs an opaque native app-switcher shield before
+  resign/background and removes it after the app becomes active.
 - **Task tracker:** `CAPACITOR-TASK.md` — already removed (all phases shipped), per the Task File Protocol in `CLAUDE.md`.
 
 ---
@@ -8443,10 +8486,64 @@ returns at most 25 contacts projected to `id/name/phone/company`, and calls the 
 non-archived direct threads with no different contact participant. Starting a thread does not send
 or change consent.
 
-Direct mobile threads read `GET /api/attest-sms-consent` and disable customer SMS/MMS while consent
-is loading, unavailable, suppressed, DND, or not allowed. Active internal admin/office users may
-record prior consent through the localized attestation modal; technicians cannot. Notes remain
-available. The server remains the final authority and no attestation auto-sends.
+The owner-directed 2026-07-28 opt-out-only source removes
+`GET /api/attest-sms-consent` from direct-thread open, eliminating the
+“Checking SMS permission…” delay. The thread derives visible DND state from its loaded contact and
+the server remains the final authority when Send is pressed. Active internal admin/office users may
+still record stronger prior-consent evidence; technicians cannot, notes remain available, and no
+attestation auto-sends. The distinct `IMPLIED_CONSENT` code may be accepted only by the
+staff-written direct service-message path and the initial reviewed
+`appointment_scheduled`, `appointment_canceled`, and `signature_request`
+transactional-service policy registry. Those are initial examples; additional
+service-notice purposes require a reviewed registry change. Direct implied service decisions must
+write `service_send_allowed_existing_client`. A future automated exception must
+use a dedicated typed producer that derives purpose/copy from the server-owned
+appointment or signature record and writes
+`transactional_service_send_allowed` before provider selection. The generic
+`sendAutomatedMessage()` path cannot assert the exception, and no such automated
+producer is live yet. Generic automation,
+scheduled free-form messages, group, broadcast, bulk, marketing, and campaign
+traffic still require `GLOBAL_OPT_IN`. DND, explicit opt-out, pending STOP, phone
+mismatch, missing/unreadable status, worker-only writes, and no-fallback rules are unchanged.
+The source migration `20260728000000_sms_consent_opt_out_only.sql` is not yet live; until its exact
+reviewed body is separately applied, the database never returns `IMPLIED_CONSENT` and live send
+behavior remains opt-in-only.
+
+Native APNs now uses the same `notify.js` audience and employee-preference
+dispatcher as bell, Web Push, and notification email. The focused
+`20260728223000_native_apns_token_boundary.sql` migration applied live on
+2026-07-28 and adds an exact
+`sandbox`/`production` registration attribute, derives the authenticated
+employee inside selector-free RPCs, returns redacted metadata, and removes raw
+browser token access. Its preflight pins the exact legacy token RPC metadata,
+bodies, overload counts, and ACLs, requires the new column/RPC identities to be
+absent, and adds the check constraint `NOT VALID` before a separate validation
+step to minimize the strong-lock interval. Existing rows remain `NULL` and inert
+until a compatible client re-registers. The ordered
+`20260728224000_native_push_delivery_guardrails.sql` companion applied
+immediately afterward and contains
+notification preferences to the authenticated owner, caps token fanout at five,
+adds a private durable source-event/device-fingerprint claim, sends an APNs
+collapse identity, allowlists only the native route payload, and
+compare-and-deletes only the stale token version Apple rejected. The
+non-reversible token/environment fingerprint is independent of the
+`device_tokens` row, so logout, cap pruning, stale cleanup, and re-registration
+cannot erase a 90-day replay boundary. Bounded cleanup prevents unbounded claim
+growth. The legacy preference policy object is retained but altered to
+fail-closed predicates; the new forced-RLS claim table has an explicit
+service-role policy. The guarded rollback restores the exact four prior RPC
+bodies/ACLs only with an explicit unsafe session flag, because doing so
+deliberately re-opens the prior selector defect. Every production dispatcher now carries its persisted source
+occurrence; missing identity skips native delivery. Explicit APNs 429/5xx
+refusals release/reclaim for one bounded retry. An exhausted explicit refusal
+from the durable message-notification outbox remains retryable in native-only
+mode, so bell/Web Push/email do not repeat; network/timeout ambiguity retains
+the claim and cannot double-send. Database events, inbound-message
+outbox rows, recurring ops alerts, inbound SMS, leads, feedback, melds,
+payments, and signed documents carry stable occurrence identities, so retries
+collapse while two separate events with identical copy do not. The broad unapplied S1h migration is not
+an activation prerequisite and remains separately deferred; its preflight must
+be reconciled after the focused preference state changes.
 
 Live CallRail evidence exposed two repository defects: sent webhooks used a ten-digit NANP recipient
 while UPR attempts stored `+1` E.164, and current MMS history returned an account-scoped
@@ -8757,27 +8854,33 @@ broad table ACL, authenticated `notifications_select USING (true)`, sentinel-del
 Realtime publication, the authenticated employee SELECT/RLS dependency, employee Auth uniqueness,
 and zero direct database-body callers.
 
-Unapplied migration `20260726260000_notification_read_recipient_boundary.sql` preserves
+Migration `20260726260000_notification_read_recipient_boundary.sql`, live as
+`20260728192024_notification_read_recipient_boundary`, preserves
 `get_notifications(integer,uuid) -> SETOF notifications`,
 `get_unread_notification_count(uuid) -> integer`, `mark_notification_read(uuid) -> void`, and
 `mark_all_notifications_read(uuid) -> void`, including defaults and old broadcast-only call
 shapes. Authenticated calls derive one active non-external employee from `auth.uid()` and reject
-foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` provides independent
-broadcast receipts while legacy globally-read broadcasts stay read and targeted rows keep base
-`read_at`. The existing notification SELECT policy object becomes active-internal
-own-or-broadcast, authenticated table access becomes SELECT-only for Realtime, and the obsolete
-test-row DELETE policy is removed. The shared PWA/Capacitor `NotificationBell` and Realtime client
-need no source change; the JavaScript recipient filter remains defense in depth.
+foreign selectors. Forced-RLS, browser-inaccessible `notification_reads` with an explicit
+authenticated deny policy provides independent broadcast receipts while legacy globally-read
+broadcasts stay read and targeted rows keep base `read_at`. The existing notification SELECT
+policy object becomes active-internal own-or-broadcast, authenticated table access becomes
+SELECT-only for Realtime, and the obsolete test-row DELETE policy object is retained but changed
+to `USING (false)`. The shared PWA/Capacitor `NotificationBell` and Realtime client need no source
+change; the JavaScript recipient filter remains defense in depth.
 
 Exact fail-closed rollback, catalog-only pre/post checks, a two-gate rollback-only multi-identity
 behavior script (including all service compatibility branches), local-only pgTAP runner bridge,
-credential-free QA contract, and dated evidence accompany S1g. A temporary in-memory
-PostgreSQL-compatible harness passed preflight, forward, post-apply, behavior, and rollback; live
-Supabase Auth/PostgREST/Realtime remains unproved. Rollback intentionally keeps the historical
-anonymous notification-table grant revoked. S1d/S1e/S1f/S1g applies, emission, QBO telemetry/RLS,
+credential-free QA contract, and dated evidence accompany S1g. The 2026-07-28 correction aligns
+the five-column identity-containment contract, makes the new receipt and retained delete policies
+explicitly fail closed, and changes rollback to preserve authorization while disabling browser
+access. Its exact sequence passed in disposable official local Supabase. The live postcondition,
+Moroni list/count, foreign/unmapped denial, advisors, and provenance passed without returning
+notification contents or changing read state. Two-session PostgREST/Realtime and installed-client
+bell proof remain open. Rollback intentionally keeps the historical anonymous notification-table
+grant revoked. S1d/S1e/S1f applies, emission, QBO telemetry/RLS,
 private media, shared identity/device/preferences, deployment, providers, native signing/devices,
-and final qualification remain separate. No live mutation, notification read/mark, deploy,
-provider action, signing, or distribution occurred in S1g.
+and final qualification remain separate. No notification mark, deploy, provider action, signing,
+or distribution occurred in the S1g apply window.
 
 S1h source began from reviewed S1g tip `f6554ad4`. The authorized governance merge preserves exact
 parents `f6554ad4` and `e9bf8f2`; subsequent history through `e2b7585` keeps the R0→S1g chain and the
@@ -8935,8 +9038,8 @@ Ledger versions are assigned AT APPLY TIME, not from the filename:
 - `upsert_employee_page_access_provenance_reconciliation` → **`20260727233845`**
 - `mobile_employee_identity_containment` → **`20260728002105`** (2026-07-28). See the containment
   section above — verified live, and it **broke the installed Capacitor app**, which needs a native
-  rebuild. Three of the mobile-security queue remain unapplied: `20260726183409`,
-  `20260726260000`, `20260727022920`. Each needs its own owner authorization, and each should wait
+  rebuild. Two of the mobile-security queue remain unapplied: `20260726183409` and
+  `20260727022920`. Each needs its own owner authorization, and each should wait
   on the client-contract check the containment apply proved is missing.
 
 **`employees.is_external` is a named carve-out, not a widening** (PR #528). The sibling migrations
@@ -8945,6 +9048,25 @@ evaluates with the CALLING role's privileges — ungranted, every authenticated 
 fails. Both siblings preflight that the column EXISTS, never that it is GRANTED. Bounded by the
 self-identity policy: a caller reads only their own row. The structural fix (route those policies
 through a `SECURITY DEFINER` helper and drop the carve-out) is a roadmap item.
+
+**2026-07-28 S1g qualification and apply:** fresh value-free production catalog capture confirmed
+the containment ledger row, self-only employee policy, exact five authenticated employee columns
+including `is_external`, absence of `notification_reads`, both original notification policies,
+the original four function hashes/ACLs, and `supabase_realtime` publication. No employee or
+notification row was read. The previously checksum-pinned S1g source incorrectly expected four
+employee columns, created a forced-RLS table without an explicit policy, dropped a live policy
+object, and shipped a rollback that expected the pre-containment state and reopened the BOLA.
+Corrected source fixes all four defects and passes credential-free contracts. Its exact
+preflight→forward→post-apply→isolated behavior→paired rollback chain passes against both a temporary
+synthetic PGlite database and a disposable official local Supabase 2.110.0 stack. This proves the
+catalog, role, function, transaction, and guarded rollback behavior but not live
+Auth/PostgREST/Realtime sockets. The owner then authorized the exact corrected checksum; only S1g
+applied, as `20260728192024`. The standalone live postcondition passed. Moroni's authorized
+active-internal identity passed list/count/direct-RLS visibility while foreign-selector and
+unmapped callers failed `42501`; no contents were returned and no read state changed. Browser
+writes, direct receipt access, and anonymous access are denied. Advisors found no S1g regression,
+and fresh provenance matches the ledger, four RPCs, and three policies. Two-session
+PostgREST/Realtime plus PWA/Capacitor bell verification remain open.
 
 The initial production release intentionally has **zero automatic offline command admission or
 replay**. `PRODUCTION_QUEUE_TYPES` is empty, no production component exposes enqueue/retry or
@@ -9049,3 +9171,134 @@ panel (owner-directed 2026-07-27; the first pass placed it first in the row). Ow
   line at 40px, where the global iOS guard forces 16px and prevents zoom-on-focus. Sitting last also
   costs one row fewer on mobile than the original first-in-row placement did — the date tabs and
   Filters fit together on one 390px line, with search full-width beneath them.
+
+## Native iOS audit remediation (2026-07-27, branch `codex/native-ios-remediation`)
+
+Source-side remediation of the 2026-07-27 Native iOS Experience & Release
+Readiness audit (37 findings: 7 P0, 24 P1, 6 P2). Branch is **not merged and not
+pushed**; every commit stands alone with its own verification.
+
+**Closed:** REL-01 (source half), REL-02, PRIV-01, PUSH-01, AUTH-01, KB-01,
+SET-01, STAT-01, RES-01, SAFE-01, SAFE-02, JOB-01, PICK-02, PICK-03,
+PICK-01 (partial), PICK-05, ESIGN-01, MSG-01, MSG-04.
+
+### New shared modules
+
+| Module | Purpose |
+|---|---|
+| `src/lib/companyDate.js` | `todayInCompanyTimeZone()` / `companyDateOf()` — America/Denver calendar dates. Client counterpart to the worker-only `functions/lib/date-mt.js`. Replaces `toISOString().split('T')[0]`, which returns TOMORROW after ~6pm Mountain. |
+| `src/lib/nativeKeyboardLayout.js` | Reference-counted keyboard-inset port. Native adapter uses Capacitor keyboard events; web adapter uses the visualViewport baseline algorithm proven on-device in ThreadView. |
+| `src/lib/useNativeKeyboardInset.js` | React consumer. **Native-only by owner decision** — returns 0 and attaches nothing on web. Also exports `techStickyCtaBottom()`. |
+| `src/lib/publicSigningUrl.js` | Signing links pinned to a real UPR https host. `window.location.origin` is `capacitor://localhost` in the app. |
+| `src/components/FieldShellRoute.jsx` | AUTH-01 role gate on `/tech/*`. Allowlist lives beside `getAccountLandingPath` in `authBootstrap.js` so gate and landing rule cannot drift. |
+| `src/components/PublicNativeShell.jsx` | SAFE-02 safe-area + status surface for the seven public native routes. |
+
+### Contract changes worth knowing
+
+- **`nativeAppearance.js` API replaced.** `statusBarLight`/`statusBarDark` named the TEXT colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted. Now keyed on the SURFACE: `setStatusBarBase` (ThemeContext owns it), `pushStatusBarSurface`, `restoreStatusBarBase`.
+- **`data-native="true"`** is stamped on `documentElement` at module scope in `App.jsx` when `IS_NATIVE`. New native-only CSS scopes to it.
+- **Two safe-area inset owners, one per shell:** `.tech-layout` (authenticated) and `.public-native-shell` (public). They never nest.
+- **`isTimeRangeInvalid`** in `techFormConstants.js` is the single time-range rule for all three scheduling forms.
+
+### Owner decisions still open
+
+1. **`--brand-primary` + 6 sibling tokens are undefined** — referenced from CSS *and* JSX inline styles (`CustomerPage.jsx`); those declarations do not render. Recorded in `KNOWN_UNDEFINED` in `tests/qa/unit/css-token-resolution.test.js`. Choosing values is a design decision.
+2. **Native `UIDatePicker` plugin** (PICK-01 remainder) — new dependency, needs `perf-budget.md` justification. The build-target seam already exists.
+3. **Money date-defaults** still slice UTC: `ClaimBilling`, `recordPayment`, `invoiceMath`.
+4. **`TIME_OPTIONS`** is English-only AM/PM, arbitrary 06:00–22:30.
+5. **`22:30` as a start time** is a dead end; `LAST_SELECTABLE_START` is exported if you want to bound it.
+
+### Release gates unchanged by this work
+
+Apple Distribution certificate, App Store provisioning profile, and App Store
+Connect API key remained absent at that audit boundary; the APNs and physical-
+device state changed in the 2026-07-28 activation section below.
+`ios/fastlane/Fastfile` still requires the distribution and provider assets.
+**QUAL-01** remains open for the complete physical-device/iPad matrix even
+though the current signed iPhone Debug slice now has evidence. DATA-01 needs a
+migration and was excluded by the original audit decision.
+
+## Native Push and App Store operational activation (2026-07-28)
+
+The owner-authorized physical-device handoff closed the old “no real device” statement for the
+current Debug slice: the exact verified branch build `1.0.0 (1)` was signed by team `H6ZUT739T9`,
+installed in place over Wi-Fi on the owner's iPhone 17 Pro Max, launched successfully, and retained
+the authenticated session without another Face ID challenge. This is not a distribution archive,
+TestFlight install, or complete device matrix.
+
+Apple Developer and App Store Connect now have real release state:
+
+- bundle `com.utahprosrestoration.upr` has Associated Domains and Push Notifications enabled;
+- APNs Auth Key `JX22945D4T` is team-scoped for Sandbox & Production;
+- Cloudflare Pages project `utah-pros-app-git` has `APNS_P8_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`,
+  `APNS_TOPIC`, `APNS_ENV`, and `VITE_NATIVE_PUSH_ENABLED` in both environments;
+- Preview uses APNs sandbox and Production uses APNs production. The compatible source SHA
+  `dc8120797b273c1c5aa944659005aec56b7bbcf3c` deployed to the `dev` Preview target before the
+  two focused migrations applied; the Cloudflare-hosted enrollment flag remains explicit `false`;
+- the owner iPhone Debug build was rebuilt locally with native enrollment explicitly enabled,
+  reinstalled in place, and registered a fresh redacted `sandbox` token after both migration
+  postconditions passed. Older environment-less rows remain inert;
+- the owner-only Dev Tools → Advanced → Native Push control calls the fixed
+  `POST /api/send-push` diagnostic seam with a stable UUID. The server fixes the recipient to the
+  authenticated owner, copy, and `/tech/settings` route, so the UI cannot choose another employee
+  or arbitrary payload;
+- the first generated APNs key was revoked before use after trace exposure, both downloaded key
+  files were permanently removed, and only Cloudflare's encrypted copy of the active replacement
+  remains; and
+- App Store Connect app `6795664765` exists as **UPR Field Operations**, version 1.0, bundle
+  `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`. “UPR” alone was unavailable.
+
+The iOS release workflow now treats exact `VITE_NATIVE_PUSH_ENABLED=true` as a mandatory archive
+input and passes it into the native web build; without that release input a TestFlight IPA would
+silently ship enrollment disabled even if Cloudflare were configured.
+
+Apple Distribution certificate `3QA6GT9L28` and App Store profile `UPR App Store 2026` now exist.
+The app-target-scoped signing lane produced a clean Xcode 26.6 archive and exported IPA locally.
+The verifier passed bundle/team/version/build identity, strict signature, production Push
+entitlement, non-debug App Store provisioning, encryption declaration, privacy manifest, and
+archive/IPA parity. The qualification IPA hash is
+`eb022fae79464c25980746e961e80b383958677854ec5eafe1b4365d840b4b41`. Because the worktree was
+dirty, its sanitized report has no source commit and it is evidence for the signing lane, not the
+final upload artifact.
+
+App Store Connect API access is enabled. The unusable first key was revoked, and replacement Admin
+team key `XV5CUK6XLC` is configured in GitHub environment `ios-testflight` as encrypted
+`ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_CONTENT_BASE64` secrets. GitHub confirmed all three
+secret names and timestamps before the downloaded private-key file was removed. This closes the
+App Store Connect authentication-key gate only; the remaining signing/build secrets, clean-source
+artifact, and owner-authorized provider upload are still separate gates. No provider upload
+occurred.
+
+The focused native-push database boundary is now live. The three S1h dependencies were already live as
+`20260727154506 mobile_employee_identity_authority`,
+`20260727233845 upsert_employee_page_access_provenance_reconciliation`, and
+`20260728002105 mobile_employee_identity_containment`; never replay them. Only
+`20260727022920_mobile_personal_ownership_boundary.sql` remains absent and
+deferred. The focused, ordered
+`20260728223000_native_apns_token_boundary.sql` and
+`20260728224000_native_push_delivery_guardrails.sql` applied separately as live
+ledger versions `20260729021021` and `20260729021050`. The latter contains the
+notification-preference owner boundary, durable source-event/device claims,
+bounded fanout, compare-and-delete pruning, and service-role-only claim data.
+Live postconditions proved selector-free authenticated enrollment, anonymous
+denial, forced RLS, service-only claim data, and direct-table denial. A
+compatible `dev` bundle is deployed, and the owner's development-signed iPhone
+build enrolled a fresh APNs sandbox token while older environment-less rows
+remain inert. The one authorized background banner and tap-to-`/tech/settings`
+test is still pending. Production promotion, a clean-source distribution
+archive, TestFlight upload/install, and production APNs proof remain separate
+gates. After this focused apply, the broad S1h preflight is expected to refuse its old
+input state until S1h is deliberately reconciled and re-qualified. Fresh live
+preflight is required before any future S1h apply.
+
+The reported field PWA `TechMore` failure carried release
+`c9060b299a5a0430ad4814267322de51a2d9e07f`, while current `dev` is
+`d5d08cb48ed083d45108dce018969df760076f55`. Current hosted `TechMore` chunk
+resolution returns JavaScript successfully, the current page renders for field
+and admin-mobile identities in a focused regression test, and the Web Push
+feature flag, VAPID endpoint, authenticated subscription RPC ACLs, and the
+owner's existing subscriptions remain present. This evidence points to an old
+installed-PWA shell/chunk rather than the native APNs boundary disabling Web
+Push. The existing **Clear cache & reload** recovery preserves authentication
+and subscription state; physical PWA confirmation after that recovery remains
+the release-facing proof.

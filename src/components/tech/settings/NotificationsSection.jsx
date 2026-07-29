@@ -40,6 +40,7 @@ import {
   isPushSupported, getExistingSubscription, getVapidPublicKey,
   pushPermission, enablePush, disablePush,
 } from '@/lib/webPushClient';
+import { canRegisterPush, isNativePushEnrollmentEnabled } from '@/lib/pushNotifications';
 import NotificationPrefsMatrix from '@/components/settings/NotificationPrefsMatrix';
 
 // Non-admin roles (field techs, office, supervisors) are the audience only for
@@ -84,6 +85,15 @@ export default function NotificationsSection() {
   const isStandalone = typeof window !== 'undefined' &&
     (window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true);
 
+  // SET-01: inside the Capacitor app none of the Web Push machinery applies.
+  // WKWebView exposes no PushManager, so `supported` is false and the iOS
+  // userAgent regex above still matches — which previously rendered the
+  // Add-to-Home-Screen guide to someone already using the installed app, next
+  // to a disabled Turn On button. Native push rides APNs, not Web Push, so the
+  // native branches below own this surface entirely.
+  const isNativeApp = canRegisterPush();
+  const nativeEnrollmentOn = isNativePushEnrollmentEnabled();
+
   // ─── Event handlers ──────────────
   const enable = async () => {
     setBusy(true);
@@ -124,12 +134,18 @@ export default function NotificationsSection() {
         <div className="tech-settings-row-main">
           <div className="tech-settings-row-label">{t('notifications.rowLabel')}</div>
           <div className="tech-settings-row-value">
-            {loading ? t('common:checking')
+            {isNativeApp ? (
+              nativeEnrollmentOn
+                ? t('notifications.statusNativeManaged')
+                : t('notifications.statusNativePending')
+            )
+              : loading ? t('common:checking')
               : subscribed ? t('notifications.statusOn')
               : t('notifications.statusOff')}
           </div>
         </div>
-        {!loading && subscribed && (
+        {/* Web Push controls are web-only: the native app enrolls through APNs. */}
+        {!isNativeApp && !loading && subscribed && (
           <button
             type="button"
             className="tech-settings-btn"
@@ -141,7 +157,7 @@ export default function NotificationsSection() {
             {confirmOff ? t('notifications.tapAgain') : busy ? t('common:working') : t('notifications.turnOff')}
           </button>
         )}
-        {!loading && !subscribed && (
+        {!isNativeApp && !loading && !subscribed && (
           <button
             type="button"
             className="tech-settings-btn tech-settings-btn--primary"
@@ -153,24 +169,32 @@ export default function NotificationsSection() {
         )}
       </div>
 
-      {/* Contextual guidance */}
-      {!flagOn && (
+      {/* Contextual guidance — native first, so no web-only copy can leak into
+          the installed app. Every branch below the native one is web/PWA. */}
+      {isNativeApp && (
+        <div className="tech-settings-hint">
+          {nativeEnrollmentOn
+            ? t('notifications.nativeManagedHint')
+            : t('notifications.nativePendingHint')}
+        </div>
+      )}
+      {!isNativeApp && !flagOn && (
         <div className="tech-settings-hint">
           {t('notifications.hintRollout')}
         </div>
       )}
-      {flagOn && !supported && isIOS && !isStandalone && (
+      {!isNativeApp && flagOn && !supported && isIOS && !isStandalone && (
         <div className="tech-settings-note">
           <Trans t={t} i18nKey="notifications.iosGuide" components={{ b: <b /> }} />
         </div>
       )}
-      {flagOn && !supported && !isIOS && (
+      {!isNativeApp && flagOn && !supported && !isIOS && (
         <div className="tech-settings-hint">{t('notifications.cantReceive')}</div>
       )}
-      {flagOn && supported && !configured && (
+      {!isNativeApp && flagOn && supported && !configured && (
         <div className="tech-settings-hint">{t('notifications.serverNotSet')}</div>
       )}
-      {flagOn && supported && configured && permission === 'denied' && (
+      {!isNativeApp && flagOn && supported && configured && permission === 'denied' && (
         <div className="tech-settings-hint">
           {t('notifications.blockedHint')}
         </div>

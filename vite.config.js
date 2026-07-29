@@ -42,6 +42,7 @@ import {
   assertNativeBundleBoundary,
   resolveBuildTarget,
 } from './scripts/native-bundle-boundary.mjs'
+import { parseNativeApiOrigin } from './src/lib/nativeApiOrigin.js'
 
 // This config is ESM, so `__dirname` does not exist at runtime — it only worked
 // before because Vite transpiles the config file. Deriving it from import.meta
@@ -123,6 +124,29 @@ export default defineConfig(({ command, mode }) => {
     throw new Error(
       'Governed release build refused: inject VITE_RELEASE_SHA, '
       + 'CF_PAGES_COMMIT_SHA, or GITHUB_SHA.',
+    )
+  }
+
+  // Where the installed app sends its /api calls. Validated HERE rather than in
+  // scripts/build-native.mjs so it covers EVERY path that can produce a native
+  // bundle, not just the one script. capgo-deploy.yml already runs `npx vite
+  // build` directly and would bypass a build-script-only guard — that workflow
+  // is dormant today (no Capgo subscription, and CapacitorUpdater ships with
+  // autoUpdate false), but the owner intends to adopt it, and a guard that
+  // silently stops covering a path the day it is switched on is worthless.
+  //
+  // A MISSING value is fine — nativeApiOrigin.js deliberately defaults to dev, so
+  // an accident points a build at the test site rather than at production. A
+  // PRESENT but untrustworthy value is refused, because silently falling back
+  // would mean a release built for production quietly talking to dev.
+  const nativeApiOrigin = process.env.VITE_NATIVE_API_ORIGIN
+    || loadedEnv.VITE_NATIVE_API_ORIGIN
+    || ''
+  if (buildTarget === 'native' && nativeApiOrigin && !parseNativeApiOrigin(nativeApiOrigin)) {
+    throw new Error(
+      `Native build refused: VITE_NATIVE_API_ORIGIN="${nativeApiOrigin}" is not a `
+      + 'bare https origin on an allowlisted host (see src/lib/nativeHosts.js). '
+      + 'Leave it unset to use the dev default.',
     )
   }
 

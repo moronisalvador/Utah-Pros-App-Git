@@ -84,8 +84,14 @@ plutil -lint ios/App/App/App.Release.entitlements
 it only when the signed artifact exists and compare its JSON report with the release manifest.
 
 The repository has no TypeScript/typecheck gate. Lint has a known baseline; report the full result and
-make changed mobile/worker files clean/blocking. Never edit code merely to make an audit command
-green unless remediation was separately authorized.
+make changed mobile/worker files clean. CI keeps full-tree lint non-blocking but blocks a PR when any
+changed JS/JSX file has an error or warning. The variables-only `no-use-before-define` warning is part
+of that ratchet and catches TDZ regressions without activating untouched baseline debt. Never edit
+code merely to make an audit command green unless remediation was separately authorized.
+
+At the 2026-07-28 guardrail checkpoint based on `3435583`, full-tree lint reports 1,118 findings:
+200 errors and 918 warnings, including 808 `no-use-before-define` warnings. This is measured baseline
+debt, not a passing gate; changed-file lint remains the zero-warning acceptance boundary.
 
 ## Runtime harness safety
 
@@ -102,6 +108,10 @@ validation must:
 - never block unrelated build/static/documentation validation.
 
 Do not kill an unrelated Node/browser process based on name alone; resolve ownership/PID/port first.
+The iOS release workflow applies this contract through
+`scripts/qa/run-owned-subprocess.mjs` around both Fastlane archive/Xcode and
+TestFlight upload commands; the helper owns a process group, enforces the
+five-minute ceiling, terminates survivors, and verifies cleanup.
 
 ## Required automated coverage
 
@@ -153,10 +163,10 @@ its separate definer-RPC authorization finding remains open.
 The remediation tests pin zero admission/dispatch, online-only field UI, v3 count-only inspection,
 blocking legacy rollout state, exact-confirmation all-store discard, bounded typed open/
 version-change recovery, generation isolation, and retry-limited time-rotating historical-photo
-cleanup. The focused six-file lane passes 58/58. In the current-origin integration worktree, the
-complete unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25
-files/206 tests, and web/native builds pass. Full lint reports 310 baseline findings, and preflight
-reports 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
+cleanup. At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), the focused six-file lane
+passed 58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests,
+QA passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings, and
+preflight reported 0 errors/2 expected warnings (dirty integration tree and optional GitHub delivery
 unavailable). Independent review found no actionable offline P0/P1. The changed-file lint ratchet,
 real browser multi-tab/upgrade, and physical-device execution remain additional release gates.
 
@@ -241,9 +251,10 @@ On a clean macOS runner:
 
 No App Store/OTA promotion occurs only because an archive compiled.
 
-Before steps 1–2 can be called reproducible, `ios/Gemfile.lock` must be generated/reviewed and the
-managed `ios/App/CapApp-SPM/Package.swift` must be synchronized after adding the direct
-`@capacitor/app` dependency used by the mounted native navigation bridge.
+The checked-in `ios/Gemfile.lock` and managed `ios/App/CapApp-SPM/Package.swift` are synchronized,
+including the direct `@capacitor/app` dependency used by the mounted native navigation bridge.
+Clean-checkout release proof must continue to demonstrate that the locks reproduce without
+unexpected native drift.
 
 ## Database compatibility gate
 
@@ -287,7 +298,9 @@ database migration/provenance snapshot
 feature-flag/kill-switch assumptions
 Cloudflare deployment ID
 PWA manifest/SW hashes
-native app version/build, Xcode/signing/entitlements/privacy manifest
+native marketing version from ios/App/Version.xcconfig
+unique workflow-assigned build number and installed App.getInfo() values
+Xcode/signing/entitlements/privacy manifest
 Capacitor/plugin versions
 Capgo bundle/channel/minimum binary (when used)
 provider environment identifiers without secrets
@@ -371,9 +384,11 @@ The reconciled mobile source now includes:
 
 This is still a source checkpoint, not production readiness. S1h and the other database lanes are
 unapplied; the reviewed current-`origin/dev` no-rewrite integration is local source history prepared
-for draft-PR review, not a `dev` or production release; Capacitor sync and the Ruby lockfile remain
-open; and no deployment, provider, signed archive, TestFlight, or physical-device qualification is
-implied. The identified Auth source
+for review, not a `dev` or production release. Reviewed Capacitor sync and the Ruby lockfile now
+exist, and a distribution-signed archive/IPA from the dirty qualification worktree independently
+proved the local signing lane. Its report correctly has no source commit, so no clean-source final
+artifact, deployment, provider delivery, TestFlight install, or complete physical-device
+qualification is implied. The identified Auth source
 defects are fixed: rejected
 bootstrap strictly proves cleanup/sign-out before Login, bootstrap authorization values are typed,
 and password recovery is cleanup-gated without losing its session. Observer-only expired-session

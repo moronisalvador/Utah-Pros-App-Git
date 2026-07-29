@@ -44,6 +44,7 @@ import {
   NATIVE_PUSH_PENDING_DETACH_KEY,
   detachNativePushDevice,
   isNativePushEnrollmentEnabled,
+  nativeApnsEnvironment,
   registerPushForEmployee,
   resolveNativePushActionTarget,
   retryPendingNativePushDetach,
@@ -77,6 +78,7 @@ function memoryStorage(initial = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
+  vi.stubEnv('VITE_APNS_ENV', 'sandbox');
   native.listeners.clear();
   native.listenerHandles.length = 0;
   native.isNativePlatform.mockReturnValue(true);
@@ -116,10 +118,18 @@ describe('registerPushForEmployee', () => {
     expect(isNativePushEnrollmentEnabled({})).toBe(false);
     expect(isNativePushEnrollmentEnabled({
       VITE_NATIVE_PUSH_ENABLED: 'TRUE',
+      VITE_APNS_ENV: 'sandbox',
     })).toBe(false);
     expect(isNativePushEnrollmentEnabled({
       VITE_NATIVE_PUSH_ENABLED: 'true',
+      VITE_APNS_ENV: 'sandbox',
     })).toBe(true);
+    expect(isNativePushEnrollmentEnabled({
+      VITE_NATIVE_PUSH_ENABLED: 'true',
+      VITE_APNS_ENV: 'staging',
+    })).toBe(false);
+    expect(nativeApnsEnvironment({ VITE_APNS_ENV: 'production' }))
+      .toBe('production');
     await expect(
       registerPushForEmployee(db, 'employee-fixture-a'),
     ).resolves.toEqual({
@@ -142,10 +152,9 @@ describe('registerPushForEmployee', () => {
     const result = await registerPushForEmployee(db, 'employee-fixture-a');
 
     expect(result).toEqual({ ok: true, token: DEVICE_TOKEN });
-    expect(db.rpc).toHaveBeenCalledWith('upsert_device_token', {
-      p_employee_id: 'employee-fixture-a',
+    expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
-      p_platform: 'ios',
+      p_apns_environment: 'sandbox',
     });
     expect(storage.setItem).toHaveBeenCalledWith(
       NATIVE_PUSH_BINDING_KEY,
@@ -158,6 +167,22 @@ describe('registerPushForEmployee', () => {
     expect([...storage.values.values()].join(' ')).not.toContain(
       'employee-fixture-a',
     );
+  });
+
+  it('does not touch APNs or the database when the environment is malformed', async () => {
+    vi.stubEnv('VITE_APNS_ENV', 'staging');
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(
+      registerPushForEmployee(db, 'employee-fixture-a'),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'native_push_misconfigured',
+    });
+
+    expect(native.push.checkPermissions).not.toHaveBeenCalled();
+    expect(native.push.register).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
   });
 
   it('unregisters and does not persist when the owner binding fails normally', async () => {
@@ -182,7 +207,7 @@ describe('registerPushForEmployee', () => {
     });
     vi.stubGlobal('localStorage', storage);
     const ownershipError = Object.assign(
-      new Error('RPC upsert_device_token: 403 {"code":"42501"}'),
+      new Error('RPC upsert_my_native_device_token: 403 {"code":"42501"}'),
       {
         status: 403,
         body: JSON.stringify({
@@ -211,7 +236,7 @@ describe('registerPushForEmployee', () => {
     const db = {
       rpc: vi.fn(async (name, args) => {
         calls.push([name, args]);
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await upsertRelease.promise;
         }
       }),
@@ -222,10 +247,9 @@ describe('registerPushForEmployee', () => {
       'employee-fixture-a',
     );
     await vi.waitFor(() => {
-      expect(db.rpc).toHaveBeenCalledWith('upsert_device_token', {
-        p_employee_id: 'employee-fixture-a',
+      expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
         p_token: DEVICE_TOKEN,
-        p_platform: 'ios',
+        p_apns_environment: 'sandbox',
       });
     });
 
@@ -245,8 +269,8 @@ describe('registerPushForEmployee', () => {
     });
 
     expect(calls.map(([name]) => name)).toEqual([
-      'upsert_device_token',
-      'delete_device_token',
+      'upsert_my_native_device_token',
+      'delete_my_native_device_token',
     ]);
     expect(calls[1][1]).toEqual({ p_token: DEVICE_TOKEN });
     expect(storage.setItem).not.toHaveBeenCalled();
@@ -259,7 +283,7 @@ describe('registerPushForEmployee', () => {
     const firstUpsertRelease = deferred();
     const firstDb = {
       rpc: vi.fn(async (name) => {
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await firstUpsertRelease.promise;
         }
       }),
@@ -272,7 +296,7 @@ describe('registerPushForEmployee', () => {
     );
     await vi.waitFor(() => {
       expect(firstDb.rpc).toHaveBeenCalledWith(
-        'upsert_device_token',
+        'upsert_my_native_device_token',
         expect.any(Object),
       );
     });
@@ -293,10 +317,9 @@ describe('registerPushForEmployee', () => {
     });
 
     expect(firstDb.rpc).toHaveBeenCalledOnce();
-    expect(secondDb.rpc).toHaveBeenCalledWith('upsert_device_token', {
-      p_employee_id: 'employee-fixture-b',
+    expect(secondDb.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
-      p_platform: 'ios',
+      p_apns_environment: 'sandbox',
     });
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
   });
@@ -309,7 +332,7 @@ describe('registerPushForEmployee', () => {
     const db = {
       rpc: vi.fn(async (name, args) => {
         calls.push([name, args]);
-        if (name === 'upsert_device_token') {
+        if (name === 'upsert_my_native_device_token') {
           await upsertResponse.promise;
         }
       }),
@@ -329,8 +352,8 @@ describe('registerPushForEmployee', () => {
     });
 
     expect(calls.map(([name]) => name)).toEqual([
-      'upsert_device_token',
-      'delete_device_token',
+      'upsert_my_native_device_token',
+      'delete_my_native_device_token',
     ]);
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(null);
     expect(native.push.unregister).toHaveBeenCalledTimes(2);
@@ -357,7 +380,7 @@ describe('detachNativePushDevice', () => {
       timeoutMs: 50,
     });
 
-    expect(db.rpc).toHaveBeenCalledWith('delete_device_token', {
+    expect(db.rpc).toHaveBeenCalledWith('delete_my_native_device_token', {
       p_token: DEVICE_TOKEN,
     });
     expect(order).toEqual(['server', 'local']);
@@ -515,7 +538,7 @@ describe('detachNativePushDevice', () => {
     });
     expect(db.rpc).toHaveBeenCalledTimes(2);
     expect(db.rpc).toHaveBeenLastCalledWith(
-      'delete_device_token',
+      'delete_my_native_device_token',
       { p_token: DEVICE_TOKEN },
     );
     expect(native.push.unregister).toHaveBeenCalledTimes(2);
@@ -581,7 +604,7 @@ describe('detachNativePushDevice', () => {
       markerCleared: true,
     });
     expect(reloadedOwnerDb.rpc).toHaveBeenCalledWith(
-      'delete_device_token',
+      'delete_my_native_device_token',
       { p_token: DEVICE_TOKEN },
     );
     expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);

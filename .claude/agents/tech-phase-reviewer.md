@@ -13,7 +13,7 @@ real files.
 Process:
 1. Read the phase's block in `docs/tech-v2-roadmap.md` — its close-out checklist and scope
    line — plus the ownership matrix / frozen list (in the roadmap, and
-   `.claude/rules/tech-v2-wave-ownership.md` once Phase F commits it).
+   `docs/archive/rules/tech-v2-wave-ownership.md` once Phase F commits it).
 2. For each checklist item, verify against the actual diff/code/tests. Read the real files.
    Run `npm run test` and `npm run build` where useful. Do not trust the author's claims.
 3. Weight scrutiny on the initiative's three danger zones:

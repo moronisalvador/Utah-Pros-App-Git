@@ -5,15 +5,13 @@ name: CI
 # auto-deploys on push). This runs build+test on every PR targeting main OR dev and
 # on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
-# What blocks a merge:  build + test  (both currently green)
-#                       bundle budgets — src/index.css and route-chunk only
+# What blocks a merge:  build + test + changed-file lint + migration hygiene
+#                       + bundle budgets — src/index.css and route-chunk
 #                                       (perf-budget.md §1; entry-graph JS is measured
 #                                        and printed but advisory until it is back under
 #                                        budget — see scripts/bundle-size-report.mjs)
-# What does NOT block:   lint          (pre-existing hygiene baseline — full-tree lint
-#                                       and the changed-files ratchet run for visibility
-#                                       via continue-on-error until the baseline is
-#                                       cleaned by the UX-Quality waves, then flip to blocking)
+# What does NOT block:  full-tree lint  (pre-existing hygiene baseline; changed files are
+#                                        independently ratcheted with zero warning tolerance)
 #
 # NOTE: a passing workflow does not enforce anything by itself. To actually block
 # merges, mark the "verify" check as a Required status check in branch protection
@@ -50,6 +48,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Blocking. Every migration added after 2026-07-29 must ship a paired
+      # rollback, justify any anon grant, revoke PUBLIC on definers, and mark
+      # destructive DDL. Existing migrations are grandfathered by baseline.
+      - name: Migration hygiene (blocking)
+        run: node scripts/check-migration-hygiene.mjs
 
       - name: Validate repository tooling governance
         run: npm run validate:tooling
@@ -107,17 +111,14 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
-      # Changed-files ratchet: surface the new UX-Quality rules (no-alert, no
-      # confirm/prompt, raw upr:toast, db-import) on just the files a PR touches, so
-      # the untouched baseline never blocks. Non-blocking during rollout; flip to
-      # blocking (remove continue-on-error) once the W-waves clean the touched surfaces.
-      - name: Lint changed files (UX-Quality ratchet)
+      # Blocking changed-files ratchet: enforce the UX-Quality and runtime-safety
+      # rules on just the files a PR touches, so untouched baseline debt never blocks.
+      - name: Lint changed files (blocking ratchet)
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}" || true
           CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
-        continue-on-error: true
 
       # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
       # and route-chunk budgets; entry-graph JS is measured and printed loudly but
@@ -125,21 +126,42 @@ jobs:
       # +10% line the moment the measurement was fixed, and gating it same-day would
       # have turned dev red for unrelated merges). Flip BLOCKING.entryJsGzip in
       # scripts/bundle-size-report.mjs once the entry graph is back under budget.
-      #
-      # This step replaced a one-liner that globbed `dist/assets/*.js` and gzipped it.
-      # Three defects, in the order they mattered:
-      #   1. It compared a concatenation of ALL chunks (~961 KB gzip, mostly lazy
-      #      routes) against a budget that only ever meant the entry graph. Wrong
-      #      metric from the day it was added (20e12a8f, 2026-07-13).
-      #   2. It never measured CSS, which is why the index.css budget could drift
-      #      ~157 KB unnoticed for its whole life.
-      #   3. On 2026-07-27, 03638752 moved Vite's assetsDir to `app-assets` for the
-      #      iOS cache un-poisoning. The glob then matched nothing and the step
-      #      printed 20 bytes — the gzip header of empty input — with no error.
-      # Being continue-on-error throughout, it never gated regardless. Hence a tested
-      # script that reads the real entry graph out of dist/index.html.
+      # This tested entry-graph report supersedes the interim check-bundle-budget.mjs
+      # guard (merged same day via PR #541) — one budget system, not two.
       - name: Test bundle size report
         run: npm run test:bundle-size
 
       - name: Bundle size budgets
         run: npm run report:bundle-size -- --strict
+
+  # The behavioral database lane (supabase/tests/**) against the seeded qa-staging
+  # Supabase branch. Until the owner seeds the branch and adds the three secrets
+  # (docs/database/staging-branch-runbook.md §2), this job reports NOT CONFIGURED
+  # loudly and tests/qa/unit/db-lane-coverage.test.js keeps counting the dark
+  # tests. Once the first green run exists, delete that counter file.
+  db-lane:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run db lane against qa-staging branch
+        env:
+          UPR_QA_SUPABASE_URL: ${{ secrets.UPR_QA_SUPABASE_URL }}
+          UPR_QA_SUPABASE_ANON_KEY: ${{ secrets.UPR_QA_SUPABASE_ANON_KEY }}
+          UPR_QA_SUPABASE_SERVICE_KEY: ${{ secrets.UPR_QA_SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ -z "$UPR_QA_SUPABASE_URL" ]; then
+            echo "::warning title=DB lane NOT CONFIGURED::The qa-staging branch is not seeded/wired. supabase/tests/** does NOT run in CI. See docs/database/staging-branch-runbook.md §2."
+            exit 0
+          fi
+          npm run test:db:branch

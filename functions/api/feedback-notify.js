@@ -127,6 +127,7 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
       db, env, fetchImpl,
       typeKey: 'feedback.submitted',
       body: {
+        notification_event_id: feedbackId,
         title: payload.title,
         body: payload.body,
         link: '/settings/feedback',

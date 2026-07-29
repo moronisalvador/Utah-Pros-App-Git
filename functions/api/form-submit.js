@@ -274,6 +274,7 @@ export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, d
       db, env,
       typeKey: 'lead.new',
       body: {
+        notification_event_id: lead.id || null,
         title,
         body,
         html,

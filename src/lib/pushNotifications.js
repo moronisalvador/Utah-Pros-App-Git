@@ -11,12 +11,13 @@
  * DEPENDS ON:
  *   Packages:  @capacitor/core, @capacitor/push-notifications
  *   Internal:  nativeAppLinks.js; callers pass the authenticated database client
- *   Data:      writes → device_tokens through upsert_device_token and
- *                       delete_device_token
+ *   Data:      writes → device_tokens through upsert_my_native_device_token
+ *                       and delete_my_native_device_token
  *
  * NOTES / GOTCHAS:
  *   - Enrollment is fail-closed. VITE_NATIVE_PUSH_ENABLED must be exactly
- *     "true" in the reviewed native build; missing or malformed values stay off.
+ *     "true" and VITE_APNS_ENV must be exactly "sandbox" or "production" in
+ *     the reviewed native build; missing or malformed values stay off.
  *   - The binding key stores only the APNs token. A pending-detach journal adds
  *     only an opaque PWA-owner fingerprint and local-cleanup proof so a crash
  *     cannot let another account relabel or consume the prior owner's token.
@@ -241,7 +242,7 @@ async function cleanLateNativeServerBinding(db, token) {
   if (typeof db?.rpc !== 'function') return false;
   try {
     await withDeadline(
-      db.rpc('delete_device_token', { p_token: token }),
+      db.rpc('delete_my_native_device_token', { p_token: token }),
       NATIVE_PUSH_DETACH_TIMEOUT_MS,
       'cancelled native push server cleanup',
     );
@@ -315,7 +316,13 @@ export function canRegisterPush() {
 }
 
 export function isNativePushEnrollmentEnabled(env = import.meta.env) {
-  return env?.VITE_NATIVE_PUSH_ENABLED === 'true';
+  return env?.VITE_NATIVE_PUSH_ENABLED === 'true'
+    && nativeApnsEnvironment(env) !== null;
+}
+
+export function nativeApnsEnvironment(env = import.meta.env) {
+  const value = env?.VITE_APNS_ENV;
+  return value === 'sandbox' || value === 'production' ? value : null;
 }
 
 function nativePushActionCandidates(action) {
@@ -460,8 +467,12 @@ export function startNativePushEventListeners({
  */
 export async function registerPushForEmployee(db, employeeId) {
   if (!canRegisterPush()) return { ok: false, reason: 'not_native' };
-  if (!isNativePushEnrollmentEnabled()) {
+  if (import.meta.env?.VITE_NATIVE_PUSH_ENABLED !== 'true') {
     return { ok: false, reason: 'native_push_disabled' };
+  }
+  const apnsEnvironment = nativeApnsEnvironment();
+  if (!apnsEnvironment) {
+    return { ok: false, reason: 'native_push_misconfigured' };
   }
   if (!employeeId) return { ok: false, reason: 'no_employee' };
   const enrollmentGeneration = nativePushEnrollmentGeneration;
@@ -495,10 +506,9 @@ export async function registerPushForEmployee(db, employeeId) {
     if (!token) return { ok: false, reason: 'no_token' };
 
     upsertAttempted = true;
-    await db.rpc('upsert_device_token', {
-      p_employee_id: employeeId,
+    await db.rpc('upsert_my_native_device_token', {
       p_token: token,
-      p_platform: 'ios',
+      p_apns_environment: apnsEnvironment,
     });
     if (!isNativeEnrollmentCurrent(enrollmentGeneration)) {
       if (latestNativePushEnrollment === enrollmentAttempt) {
@@ -614,7 +624,7 @@ export async function detachNativePushDevice(db, {
       // authored S1h contract raises for a foreign owner; timeout/denial also
       // reject and retain the token for a same-client retry.
       await withDeadline(
-        db.rpc('delete_device_token', { p_token: token }),
+        db.rpc('delete_my_native_device_token', { p_token: token }),
         timeoutMs,
         'native push server detach',
       );

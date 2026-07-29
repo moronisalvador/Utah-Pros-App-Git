@@ -42,5 +42,8 @@
   "privateBadge": "Cita privada",
   "btnDelete": "Eliminar cita",
   "btnDeleteConfirm": "Toca de nuevo para eliminar",
-  "btnDeleting": "Eliminando..."
+  "btnDeleting": "Eliminando...",
+  "timeError": "La hora de fin debe ser posterior a la de inicio",
+  "startTimeAria": "Hora de inicio",
+  "endTimeAria": "Hora de fin"
 }

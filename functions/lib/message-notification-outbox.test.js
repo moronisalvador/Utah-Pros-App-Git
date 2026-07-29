@@ -8,6 +8,8 @@ import {
 const NOW = new Date('2026-07-23T20:00:00.000Z');
 const BASE_ROW = {
   id: 'outbox-1',
+  provider_event_id: 'provider-event-1',
+  message_id: 'message-1',
   type_key: 'message.inbound',
   payload: {
     title: 'New text from Jane',
@@ -49,7 +51,12 @@ describe('message notification outbox', () => {
       db: store,
       env: ENV,
       typeKey: 'message.inbound',
-      body: BASE_ROW.payload,
+      nativeRetryOnly: false,
+      body: {
+        ...BASE_ROW.payload,
+        notification_event_id: 'provider-event-1',
+        message_id: 'message-1',
+      },
     });
     expect(store.update).toHaveBeenCalledWith(
       'message_notification_outbox',
@@ -79,6 +86,53 @@ describe('message notification outbox', () => {
       }),
     );
     expect(result).toMatchObject({ success: false, retryable: 1 });
+  });
+
+  it('persists a native-only retry after explicit APNs refusal', async () => {
+    const store = db();
+    const result = await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: vi.fn(async () => ({
+        recipients: 1,
+        results: [{
+          push: {
+            native: { sent: 0, attempted: 1, retryable: true },
+          },
+        }],
+      })),
+    });
+
+    expect(store.update).toHaveBeenCalledWith(
+      'message_notification_outbox',
+      expect.any(String),
+      expect.objectContaining({
+        delivery_state: 'retryable',
+        payload: expect.objectContaining({ _native_retry_only: true }),
+      }),
+    );
+    expect(result).toMatchObject({ success: false, retryable: 1 });
+  });
+
+  it('replays a persisted native retry without re-requesting other channels', async () => {
+    const store = db([{
+      ...BASE_ROW,
+      payload: { ...BASE_ROW.payload, _native_retry_only: true },
+    }]);
+    const dispatch = vi.fn(async () => ({ recipients: 1, results: [] }));
+
+    await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: dispatch,
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ nativeRetryOnly: true }),
+    );
+    expect(dispatch.mock.calls[0][0].body).not.toHaveProperty(
+      '_native_retry_only',
+    );
   });
 
   it('dead-letters the fifth failed dispatch', async () => {

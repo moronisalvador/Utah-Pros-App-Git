@@ -92,7 +92,7 @@ BEGIN
          AND policy.polroles =
                ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
          AND pg_get_expr(policy.polqual, policy.polrelid, true) =
-               '(auth_user_id = auth.uid())'
+               'auth_user_id = auth.uid()'
          AND policy.polwithcheck IS NULL
      )
      OR has_table_privilege('anon', 'public.employees', 'SELECT')
@@ -191,7 +191,7 @@ BEGIN
          AND grantee_role.rolname = 'authenticated'
          AND acl.privilege_type = 'SELECT'
      ) IS DISTINCT FROM
-       ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]
+       ARRAY['auth_user_id', 'id', 'is_active', 'is_external', 'role']::text[]
      OR EXISTS (
        SELECT 1
        FROM pg_attribute attribute
@@ -210,7 +210,8 @@ BEGIN
              'id',
              'auth_user_id',
              'role',
-             'is_active'
+             'is_active',
+             'is_external'
            )
            OR acl.is_grantable
          )
@@ -344,10 +345,22 @@ BEGIN
          AND pg_get_indexdef(index_record.indexrelid) =
                'CREATE INDEX notification_reads_employee_id_idx ON public.notification_reads USING btree (employee_id)'
      )
-     OR EXISTS (
+     OR (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.notification_reads')
+     ) IS DISTINCT FROM ARRAY['notification_reads_no_direct_access']::name[]
+     OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.notification_reads')
+         AND policy.polname = 'notification_reads_no_direct_access'
+         AND policy.polcmd = '*'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'false'
+         AND pg_get_expr(policy.polwithcheck, policy.polrelid, true) = 'false'
      )
      OR EXISTS (
        SELECT 1
@@ -417,7 +430,8 @@ BEGIN
        SELECT array_agg(policy.polname ORDER BY policy.polname)
        FROM pg_policy policy
        WHERE policy.polrelid = to_regclass('public.notifications')
-     ) IS DISTINCT FROM ARRAY['notifications_select']::name[]
+     ) IS DISTINCT FROM
+       ARRAY['notifications_delete_testrows', 'notifications_select']::name[]
      OR NOT EXISTS (
        SELECT 1
        FROM pg_policy policy
@@ -432,6 +446,18 @@ BEGIN
                pg_get_expr(policy.polqual, policy.polrelid),
                ''
              )) = 'f6a4b946f6d65eadf3bf4764e734d5b1'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.notifications')
+         AND policy.polname = 'notifications_delete_testrows'
+         AND policy.polcmd = 'd'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'false'
+         AND policy.polwithcheck IS NULL
      ) THEN
     RAISE EXCEPTION
       'S1g catalog post-apply notifications policy failed';

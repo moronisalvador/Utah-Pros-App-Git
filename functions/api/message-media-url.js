@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../lib/supabase.js';
+import { corsHeaders, handleOptions } from '../lib/cors.js';
 import { requireMessagingAccess } from '../lib/messaging-auth.js';
 import {
   outboundMessageMediaPath,
@@ -13,14 +14,25 @@ import {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EXPIRES_IN = 600;
 
-function response(body, status) {
+// `cors` is threaded in rather than computed here because a Worker handles
+// concurrent requests — a module-level origin would be a cross-request leak.
+function response(body, status, cors = {}) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      ...cors,
     },
   });
+}
+
+// Without this the browser's preflight for a cross-origin POST gets no
+// Allow-Origin and the request never leaves the app. The installed iOS app is
+// cross-origin by construction (capacitor://localhost), so these two Workers
+// were unreachable from it even after cors.js allowed the origin.
+export function onRequestOptions({ request, env }) {
+  return handleOptions(request, env);
 }
 
 function parseMedia(raw) {
@@ -36,25 +48,26 @@ function parseMedia(raw) {
 
 export async function onRequestPost({ request, env }) {
   const db = supabase(env);
+  const cors = corsHeaders(request, env);
   const auth = await requireMessagingAccess(request, env, db);
-  if (auth.error) return response({ error: auth.error, code: auth.code }, auth.status || 403);
+  if (auth.error) return response({ error: auth.error, code: auth.code }, auth.status || 403, cors);
 
   let body;
   try {
     body = await request.json();
   } catch {
-    return response({ error: 'Invalid request body' }, 400);
+    return response({ error: 'Invalid request body' }, 400, cors);
   }
   const index = Number(body?.index);
   if (!UUID_PATTERN.test(body?.message_id || '') || !Number.isSafeInteger(index) || index < 0) {
-    return response({ error: 'A valid message_id and attachment index are required' }, 400);
+    return response({ error: 'A valid message_id and attachment index are required' }, 400, cors);
   }
 
   const [message] = await db.select(
     'messages',
     `id=eq.${body.message_id}&select=id,conversation_id,media_urls&limit=1`,
   );
-  if (!message) return response({ error: 'Attachment not found' }, 404);
+  if (!message) return response({ error: 'Attachment not found' }, 404, cors);
   const reference = parseMedia(message.media_urls)[index];
   const path = ownedMessageMediaPath(reference);
   if (
@@ -64,13 +77,13 @@ export async function onRequestPost({ request, env }) {
       && !outboundMessageMediaPath(reference, message.conversation_id)
     )
   ) {
-    return response({ error: 'Attachment not found' }, 404);
+    return response({ error: 'Attachment not found' }, 404, cors);
   }
 
   try {
     const url = await db.signStorage('message-attachments', path, EXPIRES_IN);
-    return response({ url, expires_in: EXPIRES_IN }, 200);
+    return response({ url, expires_in: EXPIRES_IN }, 200, cors);
   } catch {
-    return response({ error: 'Attachment is temporarily unavailable' }, 503);
+    return response({ error: 'Attachment is temporarily unavailable' }, 503, cors);
   }
 }

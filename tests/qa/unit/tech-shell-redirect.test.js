@@ -48,10 +48,25 @@ describe('the office appointment destination exists', () => {
     expect(source.slice(idx, idx + 260)).toContain('<TechShellRedirect>');
   });
 
-  it('has the writer store the office path, not the field one', () => {
+  it('has the BELL link store the office path, not the field one', () => {
     const notify = readFileSync(join(ROOT, 'functions/api/notify.js'), 'utf8');
-    expect(notify).toContain('`/schedule/appointment/${body.appointment_id}`');
-    expect(notify).not.toContain('`/tech/appointment/${body.appointment_id}`');
+    // The stored `link` is what the in-app bell opens, and it is translated per
+    // reader by linkForCurrentShell. It must stay the office path so a desktop
+    // dispatcher is not dropped into the phone UI.
+    expect(notify).toMatch(/link:\s*body\.link\s*\|\|\s*`\/schedule\/appointment\/\$\{body\.appointment_id\}`/);
+  });
+
+  // Amended by PUSH-01. This assertion previously forbade the field path
+  // ANYWHERE in notify.js, which was too broad: Web Push never runs
+  // linkForCurrentShell — the service worker validates the raw URL against its
+  // own allowlist — so a bell-only office path left every tapped appointment
+  // push normalizing to the '/tech' fallback. The contract is now explicitly
+  // two-sided, and each side is pinned separately rather than by absence.
+  it('has the PUSH destination carry the field path via data.url', () => {
+    const notify = readFileSync(join(ROOT, 'functions/api/notify.js'), 'utf8');
+    expect(notify).toMatch(/url:\s*body\.data\?\.url\s*\|\|\s*`\/tech\/appointment\/\$\{body\.appointment_id\}`/);
+    // Still forbidden: the field path standing in for the bell link.
+    expect(notify).not.toMatch(/link:\s*body\.link\s*\|\|\s*`\/tech\/appointment/);
   });
 });
 

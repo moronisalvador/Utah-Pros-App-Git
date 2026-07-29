@@ -191,12 +191,15 @@ describe('notifyInboundMessage (message.inbound emit hook)', () => {
     const dispatchImpl = async (evt) => { calls.push(evt); return { ok: true }; };
     await notifyInboundMessage({
       db: {}, env: ENV, conversation, contact, from: '+15551234567',
-      text: 'Water is everywhere, please help!', dispatchImpl,
+      text: 'Water is everywhere, please help!',
+      notificationEventId: 'SM111',
+      dispatchImpl,
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].typeKey).toBe('message.inbound');
     expect(calls[0].body.entity_type).toBe('conversation');
     expect(calls[0].body.entity_id).toBe('conv-1');
+    expect(calls[0].body.notification_event_id).toBe('SM111');
     expect(calls[0].body.title).toContain('Jane Doe');
     expect(calls[0].body.body).toContain('Water is everywhere');
   });

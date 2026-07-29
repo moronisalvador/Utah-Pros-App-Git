@@ -685,6 +685,57 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-toast { animation: none; }
 }
 
+/* ─── MOTION-02: global Reduce Motion floor ────────────────────────────────
+   motion-standard.md §6 makes a missing prefers-reduced-motion fallback a review
+   failure, and requires it on EVERY transition and keyframe. There are 29
+   hand-written blocks in this file, which is real coverage but not a guarantee:
+   each one had to be remembered, and the next animation someone adds starts out
+   uncovered. This is the floor underneath them — anything they miss still
+   collapses.
+
+   Motion is removed, not the state change. Durations go to ~0 rather than
+   `animation: none` so the END STATE still lands: `none` on an animation that
+   supplies the final appearance (a fade-in from opacity 0) would leave the
+   element invisible. Reduced must not mean broken.
+
+   `!important` is deliberate and is the documented form of this pattern. It has
+   to beat inline styles and per-component rules, which is the entire point of a
+   floor. It applies ONLY inside this media query, so nothing changes for anyone
+   who has not asked for reduced motion — which is also why this is safe for the
+   frozen PWA surface, and why MOTION-02 itself asks for "the same media query
+   and preference handling" on native and PWA alike.
+
+   NOTE: this cannot reach programmatic scrolling. `scrollIntoView({ behavior:
+   'smooth' })` names its behaviour explicitly and per spec overrides the CSS
+   scroll-behavior property, so those call sites ask lib/reducedMotion.js
+   instead. ── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Busy indicators are the exception: they carry no spatial information and
+     communicate ONLY by moving. Freezing a spinner turns "working" into "hung",
+     which is worse than the motion it removes. They keep running — slower, and
+     with no travel across the screen. */
+  .spinner,
+  .loading-page .spinner,
+  .tv2-skel,
+  .coll-skel,
+  .ovw-skel-bar,
+  .ovw-live-dot,
+  .coll-chat-dotpulse {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
 /* Slide-in animation for mobile thread */
 @keyframes convSlideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes convSlideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
@@ -5815,18 +5866,290 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--tech-radius-card);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-lg);
   min-width: 180px; overflow: hidden;
+  transform-origin: top right;
+  z-index: 401;
+}
+.tv2-dash-menu[data-state='open'] {
+  animation: techPopoverIn var(--motion-duration-fast) var(--motion-spring-in) both;
+}
+.tv2-dash-menu[data-state='closing'] {
+  pointer-events: none;
+  animation: techPopoverOut calc(var(--motion-duration-fast) * 0.75) var(--motion-ease-accelerate) both;
 }
 .tv2-dash-menu__item {
   display: flex; align-items: center; gap: 10px;
-  width: 100%; padding: 14px 16px;
+  width: 100%; min-height: var(--tech-min-tap); padding: 14px 16px;
   background: none; border: none; cursor: pointer;
   font-size: 14px; font-weight: 600; text-align: left;
   color: var(--text-primary); font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
 }
+.tv2-dash-menu__item:active { opacity: 0.68; }
 .tv2-dash-menu__item + .tv2-dash-menu__item { border-top: 1px solid var(--border-light); }
 .tv2-dash-menu__item[data-danger='true'] { color: var(--status-paused-color); }
+
+/* ─── TECH POPOVER MOTION + NATIVE NOTIFICATION SURFACE — BELL-01 ─── */
+@keyframes techPopoverIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes techPopoverOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+@keyframes notificationBellBadgeIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.notification-bell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+.notification-bell__heading,
+.notification-bell__title,
+.notification-bell__subtitle,
+.notification-bell__item-title,
+.notification-bell__body,
+.notification-bell__time {
+  display: block;
+}
+.notification-bell__heading { min-width: 0; }
+.notification-bell__title { color: var(--text-primary); font-size: var(--text-sm); font-weight: 700; }
+.notification-bell__subtitle { display: none; color: var(--text-tertiary); font-size: var(--text-xs); font-weight: 500; margin-top: 1px; }
+.notification-bell__mark-all {
+  border: none; background: none; color: var(--accent); cursor: pointer;
+  font-family: var(--font-sans); font-size: 12px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.notification-bell__mark-all:active { opacity: 0.68; }
+.notification-bell__list { overflow-y: auto; }
+.notification-bell__item {
+  display: flex; gap: 10px; width: 100%; padding: 11px 14px;
+  border: none; border-bottom: 1px solid var(--border-light);
+  background: var(--bg-primary); cursor: pointer; text-align: left;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.notification-bell__item:active { opacity: 0.68; }
+.notification-bell__item:last-child { border-bottom: none; }
+.notification-bell__item[data-unread='true'] { background: var(--accent-light); }
+.notification-bell__indicator {
+  flex-shrink: 0; width: 7px; height: 7px; margin-top: 5px;
+  border-radius: var(--radius-full); background: transparent;
+}
+.notification-bell__item[data-unread='true'] .notification-bell__indicator { background: var(--accent); }
+.notification-bell__copy { min-width: 0; flex: 1; }
+.notification-bell__item-title { color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; }
+.notification-bell__body { margin-top: 1px; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+.notification-bell__time { margin-top: 3px; color: var(--text-tertiary); font-size: var(--text-xs); }
+.notification-bell__state {
+  padding: var(--space-6) 14px;
+  color: var(--text-secondary); font-size: var(--text-sm); text-align: center;
+}
+.notification-bell__state--empty { padding-block: var(--space-8); color: var(--text-tertiary); }
+.notification-bell__error-title { margin-bottom: 6px; color: var(--danger); font-weight: 600; }
+.notification-bell__retry {
+  padding: 6px 14px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); background: var(--bg-primary);
+  color: var(--text-primary); cursor: pointer; font-size: 12px; font-weight: 600;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.notification-bell__retry:active { opacity: 0.68; }
+
+@media (max-width: 768px) {
+  :root[data-native='true'] .notification-bell__panel {
+    top: calc(var(--safe-top) + 56px) !important;
+    right: var(--space-3) !important;
+    left: auto !important;
+    width: min(340px, calc(100vw - 2 * var(--space-3))) !important;
+    max-height: min(70dvh, 560px) !important;
+    z-index: 400 !important;
+    background: var(--bg-secondary) !important;
+    border-color: var(--border-light) !important;
+    border-radius: var(--tech-radius-card) !important;
+    box-shadow: var(--shadow-lg) !important;
+    outline: none;
+    transform-origin: top right;
+  }
+  :root[data-native='true'] .notification-bell__panel[data-state='open'] {
+    animation: techPopoverIn var(--motion-duration-fast) var(--motion-spring-in) both;
+  }
+  :root[data-native='true'] .notification-bell__panel[data-state='closing'] {
+    pointer-events: none;
+    animation: techPopoverOut calc(var(--motion-duration-fast) * 0.75) var(--motion-ease-accelerate) both;
+  }
+  :root[data-native='true'] .notification-bell__badge {
+    animation: notificationBellBadgeIn var(--motion-duration-fast) var(--motion-ease-decelerate) both;
+    transform-origin: center;
+  }
+  :root[data-native='true'] .notification-bell__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-light);
+  }
+  :root[data-native='true'] .notification-bell__heading,
+  :root[data-native='true'] .notification-bell__title,
+  :root[data-native='true'] .notification-bell__subtitle,
+  :root[data-native='true'] .notification-bell__item-title,
+  :root[data-native='true'] .notification-bell__body,
+  :root[data-native='true'] .notification-bell__time {
+    display: block;
+  }
+  :root[data-native='true'] .notification-bell__heading {
+    min-width: 0;
+  }
+  :root[data-native='true'] .notification-bell__title {
+    color: var(--text-primary);
+    font-size: var(--tech-text-body);
+    font-weight: 800;
+    line-height: 1.25;
+  }
+  :root[data-native='true'] .notification-bell__subtitle {
+    margin-top: var(--space-1);
+    color: var(--text-tertiary);
+    font-size: var(--tech-text-label);
+    font-weight: 600;
+  }
+  :root[data-native='true'] .notification-bell__mark-all {
+    min-height: var(--tech-min-tap);
+    padding: 0 var(--space-2);
+    border: none;
+    border-radius: var(--tech-radius-button);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--tech-text-label);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+  :root[data-native='true'] .notification-bell__list {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: var(--space-2);
+    min-height: 0;
+    padding: var(--space-2);
+    overflow-y: auto;
+    background: var(--bg-secondary);
+  }
+  :root[data-native='true'] .notification-bell__item {
+    display: flex;
+    align-items: flex-start;
+    flex: 0 0 auto;
+    gap: var(--space-3);
+    width: 100%;
+    min-height: var(--tech-min-tap);
+    padding: var(--space-3);
+    border: 1px solid var(--border-light) !important;
+    border-radius: var(--tech-radius-button);
+    background: var(--bg-primary) !important;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    text-align: left;
+    touch-action: manipulation;
+  }
+  :root[data-native='true'] .notification-bell__item[data-unread='true'] {
+    border-color: var(--accent) !important;
+    background: var(--accent-light) !important;
+  }
+  :root[data-native='true'] .notification-bell__indicator {
+    flex: 0 0 auto;
+    width: var(--space-2);
+    height: var(--space-2);
+    margin-top: var(--space-2);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-full);
+    background: transparent;
+  }
+  :root[data-native='true'] .notification-bell__item[data-unread='true'] .notification-bell__indicator {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  :root[data-native='true'] .notification-bell__copy {
+    min-width: 0;
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+  :root[data-native='true'] .notification-bell__item-title {
+    color: var(--text-primary);
+    font-size: var(--tech-text-body);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  :root[data-native='true'] .notification-bell__body {
+    margin-top: var(--space-1);
+    color: var(--text-secondary);
+    font-size: var(--tech-text-label);
+    font-weight: 500;
+    line-height: 1.45;
+  }
+  :root[data-native='true'] .notification-bell__time {
+    margin-top: var(--space-2);
+    color: var(--text-tertiary);
+    font-size: var(--tech-text-label);
+    font-weight: 600;
+  }
+  :root[data-native='true'] .notification-bell__state {
+    padding: var(--space-6) var(--space-4);
+    color: var(--text-secondary);
+    font-size: var(--tech-text-label);
+    text-align: center;
+  }
+  :root[data-native='true'] .notification-bell__state--empty {
+    color: var(--text-tertiary);
+  }
+  :root[data-native='true'] .notification-bell__error-title {
+    margin-bottom: var(--space-2);
+    color: var(--danger);
+    font-weight: 700;
+  }
+  :root[data-native='true'] .notification-bell__retry {
+    min-height: var(--tech-min-tap);
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--tech-radius-button);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--tech-text-label);
+    font-weight: 700;
+    touch-action: manipulation;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv2-dash-menu,
+  :root[data-native='true'] .notification-bell__panel,
+  :root[data-native='true'] .notification-bell__badge {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+  .tv2-dash-menu__item,
+  .notification-bell__mark-all,
+  .notification-bell__item,
+  .notification-bell__retry {
+    transition: none;
+  }
+}
 
 /* ── Attention strip (banners) ── */
 .tv2-dash-attention { display: flex; flex-direction: column; gap: 12px; }
@@ -11384,6 +11707,19 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: none;
 }
 
+/* COMPOSER-01 (2026-07-28). The rule above asks WebKit to re-evaluate a :has()
+   on the layout root when a class changes several levels below it, and it does
+   not do so reliably: the same deep link, run four times against one build on
+   the simulator, laid out correctly three times and once left the tab bar
+   visible — leaving the docked composer floating above it with its own
+   safe-area padding as dead space. React now sets this class directly on the
+   element the rule matches (TechLayout, derived from the URL), so there is no
+   invalidation to miss. The :has() rule is kept as a fallback for any path that
+   opens a thread without changing the query string. */
+.tech-layout--msgs-thread > .tech-nav {
+  display: none;
+}
+
 /* Messages-tab unread badge — a small red count pill on the tab icon. Positioned
    within .tech-nav-tab (position: relative). */
 .tv2-msgs-nav-badge {
@@ -11416,9 +11752,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   top: 0;
   z-index: 6;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
-  padding: 10px 14px calc(10px + env(safe-area-inset-top, 0px));
-  padding-top: max(10px, env(safe-area-inset-top, 10px));
+  border-bottom: 1px solid var(--border-color);
+  /* SAFE-01: `.tech-layout` is the SOLE owner of the top inset. This pane is an
+     ordinary in-flow flex child inside it, so re-applying the inset here pushed
+     the header down twice — and the old rule spent it on both the bottom
+     padding and the top. Plain geometry only. Keep this file's top-inset usage
+     to exactly two: the token and `.tech-layout`. */
+  padding: 10px 14px;
 }
 .tv2-msgs-list__title { font-size: 22px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
 
@@ -11429,7 +11769,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   box-sizing: border-box;
   height: 40px;
   padding: 0 14px 0 38px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -11444,7 +11784,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   min-height: 48px; /* tech-mobile-ux 48px floor — gloved hands, no exceptions */
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -11475,7 +11815,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 68px;
   padding: 10px 14px;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   background: var(--bg-primary);
   text-align: left;
   cursor: pointer;
@@ -11543,10 +11883,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   flex-shrink: 0;
   min-height: 52px;
-  padding: 0 8px;
-  padding-top: env(safe-area-inset-top, 0px);
+  padding: 0 8px;   /* SAFE-01: inset owned by .tech-layout, not re-applied here */
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-thread__back {
   display: flex;
@@ -11638,7 +11977,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 /* ── Composer ── */
 .tv2-msgs-composer {
   background: var(--bg-primary);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-color);
   /* Home-indicator inset ONLY when the keyboard is closed. When it's open the keyboard
      covers the indicator, so --tv2-msgs-kb (its height) zeroes this out — otherwise the
      inset becomes dead space between the composer and the keyboard (WhatsApp drops it too;
@@ -11658,7 +11997,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-size: 12px;
   font-weight: 600;
   text-align: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 
 /* Actions sheet ([+] menu) — always mounted; animates open AND closed via max-height +
@@ -11683,7 +12022,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   max-height: 160px;
   opacity: 1;
   padding: 6px;
-  border-bottom-color: var(--border);
+  border-bottom-color: var(--border-color);
   pointer-events: auto;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -11729,7 +12068,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 22px;
   background: var(--bg-secondary);
 }
@@ -11799,7 +12138,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 6px;
   min-height: 48px; /* 48px floor — tech-mobile-ux, no exceptions */
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: 999px;
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -11821,7 +12160,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-filter { flex-shrink: 0; }
 
 /* ── Conversation row: wrap + inline overflow action (mark read/unread) ── */
-.tv2-msgs-row-wrap { border-bottom: 1px solid var(--border); background: var(--bg-primary); }
+.tv2-msgs-row-wrap { border-bottom: 1px solid var(--border-color); background: var(--bg-primary); }
 .tv2-msgs-row-line { display: flex; align-items: stretch; }
 /* The row button loses its own border (the wrap carries it) and flexes beside "⋯". */
 .tv2-msgs-row { flex: 1; min-width: 0; border-bottom: none; }
@@ -11846,7 +12185,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-row__action {
   min-height: 48px;
   padding: 0 18px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--accent);
@@ -11902,7 +12241,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   gap: 2px;
   padding: 8px 14px 12px;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-info__row {
   display: flex;
@@ -11938,7 +12277,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 48px;
   margin-top: 4px;
   padding: 0 16px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   color: var(--text-secondary);
@@ -12028,7 +12367,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   display: flex;
   flex-direction: column;
   max-height: 46vh;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   background: var(--bg-primary);
 }
 .tv2-msgs-templates__head {
@@ -12039,7 +12378,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   font-size: 13px;
   font-weight: 700;
   color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-templates__close {
   display: flex;
@@ -12071,7 +12410,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 48px;
   padding: 8px 14px;
   border: none;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-color);
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -12091,7 +12430,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-retry-btn {
   min-height: 48px;
   padding: 0 24px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
   background: var(--bg-primary);
   color: var(--accent);
@@ -12113,11 +12452,14 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .tv2-msgs-new .tv2-msgs-search__input { height: 48px; }
 .tv2-msgs-new__search {
   position: sticky;
-  top: calc(52px + env(safe-area-inset-top, 0px));
+  /* SAFE-01: sticks below the 52px bar. The bar no longer carries an inset of
+     its own (the pane sits inside .tech-layout, which owns it), so adding one
+     here would offset the search field past its own header. */
+  top: 52px;
   z-index: 5;
   padding: 1px 14px 12px;
   background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
 }
 .tv2-msgs-new__body { min-height: calc(100dvh - 128px); }
 .tv2-msgs-new__rows { display: flex; flex-direction: column; }
@@ -12126,7 +12468,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   min-height: 68px;
   padding: 10px 14px;
   border: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -12620,4 +12962,42 @@ html.ui-glass .tech-nav {
      at this width, so the box has to grow to seat that font without clipping. */
   .crm-leads-search { flex: 1 1 100%; max-width: none; }
   .crm-leads-search .crm-leads-search-input { height: 40px; }
+}
+
+/* ─── SAFE-02 RESERVED — public/native route shell (2026-07-27) ─────────────
+   Public routes (/login, /sign, /s, /set-password, /privacy, /terms, /support)
+   are registered outside TechRoutes, so none of them is inside `.tech-layout`
+   — the authenticated shell's inset owner. They consumed no safe area at all,
+   and on a Dynamic Island device the signing header collided with the Island.
+
+   `.public-native-shell` is the PUBLIC half's single inset owner. Two owners,
+   one per shell, never nested; tests/qa/unit/safe-area-single-owner.test.js
+   pins exactly that.
+
+   Everything here is scoped to the native root marker, so the PWA and desktop
+   keep today's spacing. env(safe-area-inset-*) already resolves to 0 in a
+   browser — the marker makes that a structural guarantee, not a coincidence. */
+:root[data-native="true"] .public-native-shell {
+  min-height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+}
+
+/* The chrome behind the status strip. Matching it to the route means the strip
+   reads as part of the page rather than a band floating above it — and it is
+   the same value PublicNativeShell hands the status-icon API. */
+:root[data-native="true"] .public-native-shell[data-surface="dark"] {
+  background: var(--sidebar-bg);
+}
+:root[data-native="true"] .public-native-shell[data-surface="light"] {
+  background: var(--bg-primary);
+}
+
+/* These pages set their own full-height box; inside the shell that would add a
+   second viewport-height block below the inset and push content off-screen. */
+:root[data-native="true"] .public-native-shell > .login-page,
+:root[data-native="true"] .public-native-shell > .set-pw-page {
+  min-height: 0;
+  flex: 1;
 }

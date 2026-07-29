@@ -19,6 +19,8 @@
  *     fences a slow worker from finishing a row that a later worker reclaimed.
  *   - A disabled notification type is a successful no-op. An unknown type is
  *     retried because it usually means deployment/configuration order drift.
+ *   - An exhausted explicit APNs refusal persists `_native_retry_only`; its
+ *     retry never duplicates bell, Web Push, or email channels already sent.
  * ════════════════════════════════════════════════
  */
 
@@ -82,14 +84,35 @@ async function dispatchRow(db, env, row, now, dispatchImpl) {
   }
 
   try {
+    const {
+      _native_retry_only: nativeRetryOnly = false,
+      ...dispatchPayload
+    } = payload;
     const result = await dispatchImpl({
       db,
       env,
       typeKey: row.type_key,
-      body: payload,
+      nativeRetryOnly,
+      body: {
+        ...dispatchPayload,
+        // The durable provider event is the notification occurrence. Preserve
+        // it across outbox retries so APNs can claim one device delivery once;
+        // conversation id + message copy alone would collapse two identical
+        // customer messages sent at different times.
+        notification_event_id: row.provider_event_id,
+        message_id: row.message_id,
+      },
     });
     if (result?.skipped && ['unknown_type', 'no_type_key'].includes(result.reason)) {
       throw new Error(`Notification dispatcher skipped row: ${result.reason}`);
+    }
+    const retryableNative = (result?.results || []).some(
+      (recipient) => recipient?.push?.native?.retryable === true,
+    );
+    if (retryableNative) {
+      throw Object.assign(new Error('Native Push provider refused delivery'), {
+        nativeRetryOnly: true,
+      });
     }
     await db.update('message_notification_outbox', claimFilter(row), {
       delivery_state: 'delivered',
@@ -103,6 +126,12 @@ async function dispatchRow(db, env, row, now, dispatchImpl) {
     return { delivered: true };
   } catch (error) {
     const patch = failurePatch(row, error, now);
+    if (error?.nativeRetryOnly === true) {
+      patch.payload = {
+        ...payload,
+        _native_retry_only: true,
+      };
+    }
     await db.update('message_notification_outbox', claimFilter(row), patch);
     return patch.delivery_state === 'dead_letter'
       ? { deadLettered: true }

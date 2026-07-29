@@ -58,7 +58,7 @@ const nativePush = read('src/lib/pushNotifications.js');
 const accountDeviceCleanup = read('src/lib/accountDeviceCleanup.js');
 const notifyWorker = read('functions/api/notify.js');
 const calendar = read('functions/lib/google-calendar.js');
-const apnsWorker = read('functions/api/send-push.js');
+const apnsWorker = read('functions/lib/apns.js');
 const callrail = read('functions/api/callrail-recording.js');
 const messaging = read('functions/lib/messaging-auth.js');
 const executable = (sql) => sql
@@ -228,7 +228,13 @@ describe('S1h mobile personal ownership boundary', () => {
       /await withDeadline\(\s*db\.rpc\('delete_push_subscription', \{\s*p_endpoint: endpoint,\s*\}\),/,
     );
     expect(webPush).toContain("typeof db?.rpc !== 'function'");
-    expect(nativePush).toContain("db.rpc('upsert_device_token', {");
+    expect(nativePush).toContain(
+      "db.rpc('upsert_my_native_device_token', {",
+    );
+    expect(nativePush).toContain(
+      'p_apns_environment: apnsEnvironment',
+    );
+    expect(nativePush).not.toContain('p_employee_id: employeeId');
   });
 
   it('reconstructs active internal ownership and keeps the page admin exception narrow', () => {
@@ -369,7 +375,18 @@ describe('S1h mobile personal ownership boundary', () => {
       "db.rpc('get_effective_notification_prefs', { p_employee_id: employeeId })",
     );
     expect(apnsWorker).toContain("'device_tokens'");
-    expect(apnsWorker).toContain("db.delete('device_tokens'");
+    expect(apnsWorker).toContain(
+      '`&apns_environment=eq.${config.environment}`',
+    );
+    expect(apnsWorker).toContain(
+      "db.rpc('prune_stale_native_device_token'",
+    );
+    expect(apnsWorker).toContain(
+      'p_observed_updated_at: row.updated_at',
+    );
+    expect(apnsWorker).toContain(
+      'p_apns_environment: config.environment',
+    );
     expect(callrail).toContain("'employee_page_access'");
     expect(messaging).toContain("'employee_page_access'");
   });
@@ -638,12 +655,14 @@ describe('S1h mobile personal ownership boundary', () => {
       'Dev Mode: Real Data (test admin)',
     );
 
-    expect(nativePush).toContain("db.rpc('upsert_device_token', {");
+    expect(nativePush).toContain(
+      "db.rpc('upsert_my_native_device_token', {",
+    );
     expect(nativePush).toContain(
       'export async function detachNativePushDevice(db, {',
     );
     expect(nativePush).toContain(
-      "db.rpc('delete_device_token', { p_token: token })",
+      "db.rpc('delete_my_native_device_token', { p_token: token })",
     );
     expect(nativePush).toContain('PushNotifications.unregister()');
     expect(accountDeviceCleanup).toMatch(

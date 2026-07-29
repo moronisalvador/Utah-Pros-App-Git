@@ -38,6 +38,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Render ──────────────
 export default function NowNextTile({ appt, ctxType, onOpen }) {
@@ -101,7 +102,7 @@ export default function NowNextTile({ appt, ctxType, onOpen }) {
 // Returns { ctxType, appt } or null.
 export function pickNowNext(appointments, employeeId) {
   if (!appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   const crewHas = (a) => (a.crew || []).some(c => c.employee_id === employeeId);
   const live = ['en_route', 'in_progress', 'paused'];
 

@@ -58,6 +58,25 @@ describe('notification target authorization', () => {
     expect(normalize('/invoices/invoice_1')).toBe('/invoices/invoice_1');
     expect(normalize('/jobs/job_1')).toBe('/jobs/job_1');
     expect(normalize('/collections')).toBe('/collections');
+    // PUSH-01: notification rows written before that fix carry the office
+    // appointment path with no data.url. Without this entry they normalized to
+    // the '/tech' fallback and the appointment was unreachable from its push.
+    expect(normalize('/schedule/appointment/appt_123')).toBe('/schedule/appointment/appt_123');
+  });
+
+  // PUSH-01 durable guard. The regression that broke appointment push was a
+  // writer moving to a path the service-worker allowlist did not carry, with
+  // nothing asserting the two agree. Every appointment destination the server
+  // can emit must survive normalization rather than silently degrading to the
+  // '/tech' fallback.
+  it('accepts every appointment destination notify.js can emit', () => {
+    const notify = read('functions/api/notify.js');
+    const emitted = [...notify.matchAll(/`(\/(?:tech|schedule)\/appointment\/\$\{[^}]+\})`/g)]
+      .map(([, tpl]) => tpl.replace(/\$\{[^}]+\}/, 'appt_123'));
+    expect(emitted.length).toBeGreaterThanOrEqual(2);
+    for (const path of new Set(emitted)) {
+      expect(normalize(path), `${path} must not degrade to the fallback`).toBe(path);
+    }
   });
 
   it.each([
@@ -261,5 +280,38 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(layout).toContain('minHeight: 48');
     expect(layout).toContain('minWidth: 44');
     expect(layout).toContain("'appinstalled'");
+  });
+
+  // MSG-01 — the installed native app must never advertise installing the app.
+  describe('MSG-01 — install banner is web-only', () => {
+    const layout = read('src/components/TechLayout.jsx');
+
+    it('gates the banner on the native build flag', () => {
+      expect(layout).toContain('{!nativeBuild && <InstallBanner />}');
+      // An unguarded render is the defect.
+      expect(layout).not.toMatch(/^\s*<InstallBanner \/>\s*$/m);
+    });
+
+    it('keeps the banner itself intact for the real PWA', () => {
+      // A guard, not a deletion — the assertions above still have to pass, and
+      // home-screen PWA users still need the install prompt.
+      expect(layout).toContain('function InstallBanner()');
+      expect(layout).toContain("aria-label={t('dismissInstall')}");
+    });
+
+    it('does not rely on isStandaloneDisplay to detect native', () => {
+      // That is precisely what failed: it checks display-mode:standalone and
+      // navigator.standalone, neither of which is true in a Capacitor
+      // WKWebView, while the userAgent still matches /iPhone|iPad/.
+      const resume = read('src/lib/resumeRestore.js');
+      expect(resume).toContain('isStandaloneDisplay');
+      expect(resume).not.toContain('Capacitor');
+    });
+
+    it('still receives nativeBuild from the route tree', () => {
+      const app = read('src/App.jsx');
+      expect(app).toContain('<TechLayout nativeBuild={IS_NATIVE} />');
+      expect(layout).toMatch(/function TechLayout\(\{ nativeBuild = false \}\)/);
+    });
   });
 });

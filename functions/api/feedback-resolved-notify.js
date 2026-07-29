@@ -140,6 +140,7 @@ export async function handleFeedbackResolvedNotify({ request, env, db, fetchImpl
       db, env, fetchImpl,
       typeKey: 'feedback.resolved',
       body: {
+        notification_event_id: feedbackId,
         title: payload.title,
         body: payload.body,
         html,
