@@ -3824,10 +3824,13 @@ The web build now owns an admin-only `/settings/notification-presentation` page 
 Team group. It edits code-allowlisted bell/PWA/native copy and typed destinations, previews with
 synthetic values, and shows bounded audit history. Native uses the same event-approved variables as
 PWA by owner decision while retaining a separate field-only route allowlist.
-Title and Message each have their own compact variable picker. A picker lists only the current
-event/surface variables projected by the server catalog, shows a synthetic example, and inserts
-the selected token at that field's cursor or selection. It cannot create a variable or bypass
-server validation. Payment surfaces include a distinct trusted `invoice_number` variable;
+Title and Message each have their own compact variable picker. A picker lists all trusted values
+the current event actually provides, shows a synthetic example, and inserts the selected token at
+that field's cursor or selection. It cannot create a variable or bypass server validation.
+Appointment assigned/updated/canceled events resolve `customer_name` and `job_number` from the
+appointment's linked job alongside appointment title/time and four unambiguous job-value snapshots:
+estimated, approved, invoiced, and collected. Those values are available on bell, PWA, and native
+templates. Payment surfaces include a distinct trusted `invoice_number` variable;
 the separate `payment_reference` remains a charge/payment reference and is not relabeled as an
 invoice. Native Title and Message expose the same picker for that event.
 The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.

@@ -84,6 +84,10 @@ bindings and provider consoles.
   immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
   `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
   synthetic values and makes no provider call.
+- Appointment assigned/updated/canceled presentation resolves customer name and job number from
+  the appointment's trusted linked-job record. Those values join appointment title/time and
+  separately labeled estimated, approved, invoiced, and collected job amounts in the event
+  allowlist for bell, PWA, and native; caller-supplied values and arbitrary job fields do not.
 - Payment producers pass the normalized invoice display number through
   `presentation_context.invoice_number`; provider charge/payment references remain a separate
   `payload.reference` value. Both are display-only typed presentation variables, including native,

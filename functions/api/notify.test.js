@@ -795,11 +795,38 @@ describe('enrichDatabasePresentationContext', () => {
 });
 
 describe('enrichAppointmentBody', () => {
-  it('builds a clean title + body + deep link from a bare appointment_id', async () => {
-    const db = makeDb({ apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } } });
+  it('builds clean copy, customer/job variables, and a deep link from a bare appointment_id', async () => {
+    const db = makeDb({
+      apptsById: {
+        'ap-1': {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+          jobs: {
+            insured_name: 'Jordan Lee',
+            job_number: 'JOB-1042',
+            estimated_value: 8500,
+            approved_value: 7950,
+            invoiced_value: 5250,
+            collected_value: 2500,
+          },
+        },
+      },
+    });
     const out = await enrichAppointmentBody(db, 'appointment.assigned', { appointment_id: 'ap-1' });
     expect(out.title).toBe('New appointment · Water Mitigation');
     expect(out.body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+    expect(out.presentation_context).toEqual({
+      appointment_title: 'Water Mitigation',
+      appointment_when: 'Sat, Jul 4 · 9:00 AM – 11:00 AM',
+      customer_name: 'Jordan Lee',
+      job_number: 'JOB-1042',
+      job_estimated_amount: '$8,500.00',
+      job_approved_amount: '$7,950.00',
+      job_invoiced_amount: '$5,250.00',
+      job_collected_amount: '$2,500.00',
+    });
     // Office path, not /tech/appointment/ap-1. A notification does not know who will
     // open it; the reader's shell translates (src/lib/techShellRoutes.js). Storing the
     // field path put desktop dispatchers in the phone UI.
@@ -834,6 +861,12 @@ describe('enrichAppointmentBody', () => {
       presentation_context: {
         appointment_title: 'X',
         appointment_when: 'Sat, Jul 4 · 9:00 AM',
+        customer_name: '',
+        job_number: '',
+        job_estimated_amount: '',
+        job_approved_amount: '',
+        job_invoiced_amount: '',
+        job_collected_amount: '',
       },
     });
   });

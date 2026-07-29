@@ -205,9 +205,9 @@ destinations remain separately governed and field-only:
 | Event | Candidate allowlisted variables | Candidate route identifiers |
 |---|---|---|
 | `message.inbound` | sender display name; bounded message preview | `conversation.thread`, `field.home` |
-| `appointment.assigned` | appointment title, date, start/end time | `appointment.detail` |
-| `appointment.updated` | appointment title, date, start/end time | `appointment.detail` |
-| `appointment.canceled` | appointment title, date, start/end time | `appointment.detail` |
+| `appointment.assigned` | customer name, job number, appointment title/time, estimated/approved/invoiced/collected job amounts | `appointment.detail` |
+| `appointment.updated` | customer name, job number, appointment title/time, estimated/approved/invoiced/collected job amounts | `appointment.detail` |
+| `appointment.canceled` | customer name, job number, appointment title/time, estimated/approved/invoiced/collected job amounts | `appointment.detail` |
 | `estimate.accepted` | estimate number, approved amount, customer name | `estimate.detail`, `office.home` |
 | `payment.received` | amount, payment source, distinct normalized invoice number, payment reference | `invoice.detail`, `collections.home`, `office.home` |
 | `lead.new` | lead source, caller/customer label, form name when normalized | `crm.lead`, `office.home` |

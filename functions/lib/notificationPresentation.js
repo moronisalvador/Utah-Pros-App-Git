@@ -281,6 +281,12 @@ function presentationContext(typeKey, body = {}) {
     case 'appointment.canceled':
       context.appointment_title = contextValue(explicit.appointment_title);
       context.appointment_when = contextValue(explicit.appointment_when);
+      context.customer_name = contextValue(explicit.customer_name);
+      context.job_number = contextValue(explicit.job_number);
+      context.job_estimated_amount = contextValue(explicit.job_estimated_amount);
+      context.job_approved_amount = contextValue(explicit.job_approved_amount);
+      context.job_invoiced_amount = contextValue(explicit.job_invoiced_amount);
+      context.job_collected_amount = contextValue(explicit.job_collected_amount);
       break;
     case 'estimate.accepted':
       context.estimate_number = contextValue(explicit.estimate_number);
@@ -436,6 +442,10 @@ const VARIABLE_META = Object.freeze({
   signer_name: Object.freeze({ label: 'Signer name', sample: 'Jordan Lee' }),
   document_name: Object.freeze({ label: 'Document name', sample: 'Work authorization' }),
   job_number: Object.freeze({ label: 'Job number', sample: 'JOB-1042' }),
+  job_estimated_amount: Object.freeze({ label: 'Estimated job value', sample: '$8,500.00' }),
+  job_approved_amount: Object.freeze({ label: 'Approved job value', sample: '$7,950.00' }),
+  job_invoiced_amount: Object.freeze({ label: 'Invoiced job value', sample: '$5,250.00' }),
+  job_collected_amount: Object.freeze({ label: 'Collected job value', sample: '$2,500.00' }),
   feedback_type: Object.freeze({ label: 'Feedback type', sample: 'Bug report' }),
   employee_name: Object.freeze({ label: 'Employee name', sample: 'Alex Morgan' }),
   review_outcome: Object.freeze({ label: 'Review outcome', sample: 'approved' }),
@@ -487,7 +497,16 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
   'appointment.assigned': browserAndNative({
     title: 'New appointment · {{appointment_title}}',
     body: '{{appointment_when}}',
-    variables: ['appointment_title', 'appointment_when'],
+    variables: [
+      'customer_name',
+      'job_number',
+      'appointment_title',
+      'appointment_when',
+      'job_estimated_amount',
+      'job_approved_amount',
+      'job_invoiced_amount',
+      'job_collected_amount',
+    ],
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
@@ -495,7 +514,16 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
   'appointment.updated': browserAndNative({
     title: 'Appointment updated · {{appointment_title}}',
     body: '{{appointment_when}}',
-    variables: ['appointment_title', 'appointment_when'],
+    variables: [
+      'customer_name',
+      'job_number',
+      'appointment_title',
+      'appointment_when',
+      'job_estimated_amount',
+      'job_approved_amount',
+      'job_invoiced_amount',
+      'job_collected_amount',
+    ],
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
@@ -503,7 +531,16 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
   'appointment.canceled': browserAndNative({
     title: 'Appointment canceled · {{appointment_title}}',
     body: '{{appointment_when}}',
-    variables: ['appointment_title', 'appointment_when'],
+    variables: [
+      'customer_name',
+      'job_number',
+      'appointment_title',
+      'appointment_when',
+      'job_estimated_amount',
+      'job_approved_amount',
+      'job_invoiced_amount',
+      'job_collected_amount',
+    ],
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',

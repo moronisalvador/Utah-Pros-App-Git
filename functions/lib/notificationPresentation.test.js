@@ -324,6 +324,54 @@ describe('admin notification presentation contract', () => {
       .toEqual(variableKeys);
   });
 
+  it('offers every trusted appointment value, including customer and financial context, on all surfaces', () => {
+    const catalog = getNotificationPresentationCatalog();
+
+    for (const typeKey of [
+      'appointment.assigned',
+      'appointment.updated',
+      'appointment.canceled',
+    ]) {
+      const appointment = catalog.find((event) => event.type_key === typeKey);
+      const variableKeys = appointment.surfaces.bell.variables.map((variable) => variable.key);
+
+      expect(variableKeys).toEqual([
+        'customer_name',
+        'job_number',
+        'appointment_title',
+        'appointment_when',
+        'job_estimated_amount',
+        'job_approved_amount',
+        'job_invoiced_amount',
+        'job_collected_amount',
+      ]);
+      expect(appointment.surfaces.pwa_push.variables.map(({ key }) => key))
+        .toEqual(variableKeys);
+      expect(appointment.surfaces.native_push.variables.map(({ key }) => key))
+        .toEqual(variableKeys);
+    }
+  });
+
+  it('previews customer, job, and financial variables for an appointment', () => {
+    expect(previewNotificationPresentation(
+      'appointment.assigned',
+      'native_push',
+      {
+        title_template: '{{customer_name}} · {{job_approved_amount}}',
+        body_template: 'Job {{job_number}} · {{appointment_when}}',
+        route_id: 'appointment.detail',
+        contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+      },
+    )).toEqual({
+      ok: true,
+      presentation: {
+        title: 'Jordan Lee · $7,950.00',
+        body: 'Job JOB-1042 · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        url: '/tech/appointment/appointment-demo',
+      },
+    });
+  });
+
   it('offers distinct invoice and payment references on typed payment surfaces', () => {
     const payment = getNotificationPresentationCatalog()
       .find((event) => event.type_key === 'payment.received');

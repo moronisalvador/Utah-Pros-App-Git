@@ -483,7 +483,7 @@ export default function NotificationPresentation() {
             onMouseDown={(event) => event.preventDefault()}
           >
             <div className="notif-pres-variable-menu-head">
-              Available for this event
+              All values this event provides
               <span>Choose a value to insert at your cursor.</span>
             </div>
             <div className="notif-pres-variable-options">

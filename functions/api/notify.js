@@ -437,6 +437,18 @@ const APPT_VERB = {
   'appointment.canceled': 'Appointment canceled',
 };
 
+function formatPresentationMoney(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '';
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /**
  * Turn a bare `{ appointment_id }` trigger payload into a clean title + body +
  * deep link (the DB triggers pass only ids). Best-effort: on any lookup failure
@@ -445,19 +457,23 @@ const APPT_VERB = {
  */
 export async function enrichAppointmentBody(db, typeKey, body = {}) {
   if (!body.appointment_id) return body;
-  if (
-    body.presentation_context?.appointment_title
-    && body.presentation_context?.appointment_when
-  ) return body;
   let appt = null;
   try {
-    const rows = await db.select('appointments', `id=eq.${body.appointment_id}&select=title,date,time_start,time_end`);
+    const rows = await db.select(
+      'appointments',
+      `id=eq.${body.appointment_id}`
+        + '&select=title,date,time_start,time_end,'
+        + 'jobs(job_number,insured_name,estimated_value,approved_value,invoiced_value,collected_value)',
+    );
     appt = rows?.[0] || null;
   } catch { appt = null; }
   if (!appt) return body;
+  const job = appt.jobs || null;
   const what = (appt.title && String(appt.title).trim()) || '';
   const verb = APPT_VERB[typeKey] || 'Appointment';
   const when = formatApptWhen(appt.date, appt.time_start, appt.time_end);
+  const customerName = (job?.insured_name && String(job.insured_name).trim()) || '';
+  const jobNumber = (job?.job_number && String(job.job_number).trim()) || '';
   return {
     ...body,
     title: body.title || (what ? `${verb} · ${what}` : verb),
@@ -485,6 +501,12 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
       ...(body.presentation_context || {}),
       appointment_title: what,
       appointment_when: when,
+      customer_name: customerName,
+      job_number: jobNumber,
+      job_estimated_amount: formatPresentationMoney(job?.estimated_value),
+      job_approved_amount: formatPresentationMoney(job?.approved_value),
+      job_invoiced_amount: formatPresentationMoney(job?.invoiced_value),
+      job_collected_amount: formatPresentationMoney(job?.collected_value),
     },
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,

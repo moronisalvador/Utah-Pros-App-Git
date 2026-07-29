@@ -339,6 +339,10 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
 - Templates support literal text plus exact event-allowlisted `{{variable_name}}` tokens only.
   There is no expression/general template execution, HTML/Markdown, payload traversal, or URL
   interpolation.
+- The editor lists every trusted value the selected event can actually resolve. Appointment
+  assigned/updated/canceled includes customer name and job number from the linked job plus the
+  appointment title/time and separately labeled estimated, approved, invoiced, and collected job
+  values. The system does not collapse those distinct financial states into an ambiguous `amount`.
 - Routes are code-owned identifiers with server-derived parameter contracts, never saved paths or
   arbitrary URLs. Missing route context or invalid configuration uses the code default.
 - Native lock-screen templates may use the same event-specific allowlisted variables as PWA under
