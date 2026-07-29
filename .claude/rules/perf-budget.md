@@ -1,5 +1,5 @@
 ---
-paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-budget.json"]
+paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-size-report.mjs"]
 ---
 # Performance Budget Standard
 
@@ -19,48 +19,15 @@ enforced by review only. Re-derive any number here with
 between, the guard prints a warning and does not block — that band is a signal to ratchet down, not
 headroom to spend. Entry-graph JS sits in that band today.
 
-> **FIXED 2026-07-27 — and what it exposed.** The guard never enforced anything, for three
-> separate reasons, and it is worth separating them because only one is recent:
->
-> 1. **Wrong metric from day one** (added `20e12a8f`, 2026-07-13). It concatenated **all** chunks
->    and gzipped them — ~961,000 bytes across 185 files, most of it lazy routes — then compared
->    that to a **232 KB entry-graph** budget. Those are different quantities; the comparison could
->    never have been meaningful.
-> 2. **It never measured CSS at all.** That is the actual reason the `index.css` figure below
->    drifted ~157 KB unseen — not the glob.
-> 3. **The glob broke on 2026-07-27, hours before this fix.** Commit `03638752` moved Vite's
->    `assetsDir` to `app-assets` for the iOS cache un-poisoning, so `dist/assets/*.js` suddenly
->    matched nothing and the step printed **20 bytes**, the gzip header of empty input, with no
->    error. *(The warning recorded here earlier that day in `db09a6cd` implied this had been the
->    state all along; it had been true for hours. The step was equally useless before, for
->    reasons 1 and 2.)*
->
-> Throughout all of it the step was `continue-on-error: true`, so even a correct number could not
-> have gated a merge.
->
-> Fixing it exposed a second drift the same day: **entry-graph JS measured 264,072 B gzip against
-> a 261,325 B fail threshold** — over budget, silently, exactly like the CSS, and invisible for as
-> long as reason 1 above stood. The replacement reads the true entry graph — the module script in
-> `dist/index.html` plus its `modulepreload` closure — and sums each file gzipped **separately**,
-> because that is how they travel; concatenating first understates transfer weight by ~9 KB.
->
-> **Asked to resolve the JS overage on 2026-07-27, the owner chose to gate CSS and route-chunk
-> first** rather than turn `dev` red for unrelated merges or re-baseline a real budget the way the
-> CSS ceiling was re-baselined earlier that day — then to trim the entry graph and switch the JS
-> gate on in a follow-up. **Both landed the same day.**
->
-> **RESOLVED — the trim, 2026-07-27.** The `pt` and `es` locales were **statically imported** (19
-> namespaces each), so every English-speaking phone downloaded ~78 KB raw of words nobody had
-> chosen. §4 below had required them lazy-loaded all along; the code simply did not match the rule,
-> and defect 1 above is why no measurement ever said so. Routing each language through a barrel
-> module and importing it dynamically cut **13,078 B** off the entry graph
-> (**264,029 → 250,951 B**) and emitted `pt` (9,858 B gzip) and `es` (9,956 B gzip) as separate
-> chunks. `BLOCKING.entryJsGzip` is now `true`.
->
-> **Still above target, and deliberately visible:** 250,951 B is 13,383 B over the 237,568 B
-> budget, and 10,374 B below the fail line. The guard warns every run. Do not treat that gap as
-> spendable — the next reduction should come from the entry chunk itself (100,783 B) or `realtime`
-> (43,289 B).
+> **History (2026-07-27, compressed):** the previous CI guard never enforced anything (wrong
+> metric since day one, never measured CSS, glob broke when `assetsDir` moved, and it was
+> `continue-on-error` throughout) — which is how the CSS ceiling drifted ~157 KB and entry-graph
+> JS went over budget silently. Fixed the same day: the tested `bundle-size-report.mjs` reads the
+> true entry graph from `dist/index.html`, the pt/es locales were made genuinely lazy (−13 KB),
+> and all three §1 budgets now block. Full forensics: git history of this file + PR #540.
+> **Entry-graph JS is still above target and deliberately visible** — the guard warns every run;
+> the next reduction should come from the entry chunk (100,783 B) or `realtime` (43,289 B). Do
+> not treat the gap to the fail line as spendable.
 
 ## 1. Bundle budgets (all figures re-measured 2026-07-27 by the fixed CI guard)
 
@@ -89,16 +56,9 @@ headroom to spend. Entry-graph JS sits in that band today.
   wc -c src/index.css && wc -l src/index.css && gzip -c dist/app-assets/index-*.css | wc -c
   ```
 
-  > **RE-BASELINED 2026-07-27 (owner-directed).** This bullet read "≤ 400 KB raw (today 384 KB /
-  > 11,446 lines)" — a 2026-07-13 measurement that had drifted ~157 KB out of date, leaving the
-  > stated budget and reality far enough apart that the rule could not catch a real regression.
-  > Asked to resolve it on 2026-07-27, the owner chose re-baseline-to-measured over declaring an
-  > open breach, keeping the 400 KB ratchet target as the goal rather than the gate. Recorded in
-  > the `db-foundation-wave-ownership.md` §8 format so the loosened ceiling is attributable rather
-  > than silent. **The owner's direction is also what authorized this edit**, which lands inside the
-  > `.claude/**` writer lease that `upr-engineering-foundation-wave-ownership.md` §6 still marks
-  > ACTIVE for `codex/mobile-readiness-current-origin-review`. The JS and font bullets around it
-  > were **not** re-measured and keep their 2026-07-13 provenance.
+  > **Re-baselined 2026-07-27 (owner-directed):** the ceiling was moved from the drifted 400 KB
+  > figure to measured+4%; the 400 KB ratchet target stays the goal, not the gate. Detail: git
+  > history.
 - No new **render-blocking** third-party request (today there are 2 Google Fonts stylesheets; W5 self-hosts).
 
 ## 2. Image law

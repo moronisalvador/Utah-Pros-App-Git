@@ -1,8 +1,15 @@
 # Staging Database Runbook — the `qa-staging` Supabase branch
 
-**Last verified:** 2026-07-29 · Status: branch **created** (ref `uizgwvkvzyldystqrcsk`,
-~$0.01344/hr) — **pending the owner seeding action in §2**. The branch's `MIGRATIONS_FAILED`
-status is expected (see §1) and harmless: the seed in §2 replaces the schema wholesale.
+**Last verified:** 2026-07-29 · Status: **SEEDED AND LIVE** (ref `uizgwvkvzyldystqrcsk`,
+~$0.01344/hr). Owner ran the §2 Path B schema-only seed 2026-07-29; parity verified exact against
+production (141 public tables / 400 functions / 219 policies on both), grants verified transferred
+(365 functions executable by `authenticated`), PostgREST cache reloaded. The CI db lane runs
+against it on every PR. **Known tail:** `auth.users` is empty on a schema-only seed, so
+identity/fixture-dependent tests fail-as-anon or self-skip — gated by the shrink-only baseline in
+`scripts/qa/db-lane-baseline.json` (21 failed / 204 skipped of 357 at first light; 132 enforced).
+Next step to full green: a reviewed test-fixture seed (test auth users + minimal rows), then
+ratchet the baseline to zero and delete it. The branch's dashboard `MIGRATIONS_FAILED` badge is a
+cosmetic artifact of creation (§1) — the seeded schema is what's real.
 
 ## 1. What happened and what we learned (2026-07-29)
 
