@@ -195,6 +195,21 @@ returns exactly one due event. It adds no table, column, provider send, or brows
 Read-only catalog verification confirmed the exact source fingerprint, empty `search_path`,
 `SECURITY INVOKER` mode and service-role-only execution.
 
+Twilio inbound parity is repository-only and unapplied. Migration
+`20260729211728_twilio_inbound_notification_parity.sql` adds no table, column, trigger, policy, or
+provider configuration. It defines one `SECURITY INVOKER`,
+service-role-only `project_twilio_inbound_event(uuid, boolean DEFAULT false)` projection over the
+existing provider-event/message/outbox schema. The transaction shares CallRail's
+`messaging-phone:<last10>` advisory-lock namespace, applies replay-safe STOP/START/HELP consent,
+persists at most one MessageSid-addressed canonical SMS/MMS, increments unread only on insertion,
+and inserts at most one outbox row keyed by `provider_event_id`. MMS is refused unless every
+reference is under private `upr-storage://message-attachments/twilio/` ownership. The paired
+rollback drops only this new function after compatible Worker code is rolled back; retained
+event/message/outbox history is not deleted. The isolated behavioral source is
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql`; it has not run because this
+worktree has no reproducible local Supabase config/baseline and `qa-staging` mutation was not
+authorized.
+
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 
