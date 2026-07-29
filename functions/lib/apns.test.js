@@ -134,6 +134,22 @@ describe('sendNativePushToEmployee', () => {
       'apns-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
       'apns-collapse-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
+    const payload = JSON.parse(options.body);
+    const expectedRecipient = await stableApnsId('native-recipient:employee-1');
+    expect(payload.aps).toEqual({
+      alert: {
+        title: 'Utah Pros notification',
+        body: 'Open Utah Pros for details.',
+      },
+      sound: 'default',
+    });
+    expect(payload.data).toEqual({
+      url: '/tech/appointment/1',
+      recipient: expectedRecipient,
+    });
+    expect(payload.data.recipient).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(timeout).toBe(15_000);
     expect(result).toEqual({
       sent: 1,
@@ -319,7 +335,7 @@ describe('sendNativePushToEmployee', () => {
     expect(claimCalls[0].p_delivery_key).toBe(claimCalls[1].p_delivery_key);
   });
 
-  it('strips arbitrary producer data before sending the native payload', async () => {
+  it('strips arbitrary producer data and private alert copy before sending the native payload', async () => {
     const db = dbWithTokens([{
       id: 'token-privacy',
       token: 'private-token',
@@ -331,8 +347,8 @@ describe('sendNativePushToEmployee', () => {
       db,
       env: CONFIG,
       employeeId: 'employee-1',
-      title: 'Private event',
-      body: 'Open UPR',
+      title: 'Private event for Ada Lovelace',
+      body: 'Call +18015550123 about claim 01742',
       data: {
         url: '/tech/messages',
         phone: '+18015550123',
@@ -345,7 +361,70 @@ describe('sendNativePushToEmployee', () => {
     });
 
     const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(payload.data).toEqual({ url: '/tech/messages' });
+    const expectedRecipient = await stableApnsId('native-recipient:employee-1');
+    expect(payload.aps).toEqual({
+      alert: {
+        title: 'Utah Pros notification',
+        body: 'Open Utah Pros for details.',
+      },
+      sound: 'default',
+    });
+    expect(payload.data).toEqual({
+      url: '/',
+      recipient: expectedRecipient,
+    });
+    expect(payload.data.recipient).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const serializedPayload = fetchImpl.mock.calls[0][1].body;
+    expect(serializedPayload).not.toContain('Private event for Ada Lovelace');
+    expect(serializedPayload).not.toContain('Call +18015550123 about claim 01742');
+    expect(serializedPayload).not.toContain('+18015550123');
+    expect(serializedPayload).not.toContain('secret-provider-id');
+  });
+
+  it.each([
+    ['admin route', '/tech/admin/users', null],
+    ['malformed encoding', '/tech/appointment/%2Fprivate', null],
+    ['oversized path', `/tech/appointment/${'x'.repeat(2_100)}`, null],
+    ['sensitive query', '/tech/conversations?token=private-secret', 'private-secret'],
+    ['long signing bearer', '/sign/private-signing-token', 'private-signing-token'],
+    ['short signing bearer', '/s/private-signing-code', 'private-signing-code'],
+    [
+      'credential fragment',
+      '/set-password#type=recovery&token_type=bearer'
+        + '&access_token=private&refresh_token=private',
+      'access_token=private',
+    ],
+  ])('replaces an unsafe %s before serializing APNs data', async (
+    _label,
+    route,
+    secret,
+  ) => {
+    const db = dbWithTokens([{
+      id: 'token-route',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Private producer title',
+      data: { url: route },
+      eventKey: `unsafe-route:${_label}`,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.data.url).toBe('/');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain(route);
+    if (secret) {
+      expect(fetchImpl.mock.calls[0][1].body).not.toContain(secret);
+    }
   });
 
   it('fails closed before Apple when a durable delivery claim cannot be acquired', async () => {

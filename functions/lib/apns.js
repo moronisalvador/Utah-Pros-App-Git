@@ -11,7 +11,7 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  ./http.js
+ *   Internal:  ./http.js, ../../src/lib/nativeNavigationTarget.js
  *   Data:      reads  → device_tokens
  *              writes → native_push_delivery_claims (claim/release);
  *                       device_tokens (permanent-token cleanup only)
@@ -28,10 +28,13 @@
  * ════════════════════════════════════════════════
  */
 import { fetchWithTimeout } from './http.js';
+import { resolveNativePushRoute } from '../../src/lib/nativeNavigationTarget.js';
 
 const APNS_TIMEOUT_MS = 15_000;
 const APNS_CONCURRENCY = 5;
 const APNS_PROVIDER_ATTEMPTS = 2;
+const APNS_ALERT_TITLE = 'Utah Pros notification';
+const APNS_ALERT_BODY = 'Open Utah Pros for details.';
 export const APNS_MAX_TOKENS_PER_EMPLOYEE = 5;
 const jwtCache = new Map();
 
@@ -144,13 +147,11 @@ function apnsInvalidatedAt(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function safeNativeData(data) {
-  const url = typeof data?.url === 'string'
-    && data.url.startsWith('/')
-    && !data.url.startsWith('//')
-    ? data.url
-    : '/';
-  return { url };
+async function safeNativeData(data, employeeId) {
+  return {
+    url: resolveNativePushRoute(data?.url),
+    recipient: await stableApnsId(`native-recipient:${employeeId}`),
+  };
 }
 
 async function releaseDeliveryClaim(db, deliveryKey) {
@@ -194,6 +195,9 @@ export async function sendNativePushToEmployee({
   fetchImpl = fetchWithTimeout,
   signJwtImpl = signApnsJwt,
 }) {
+  // Keep the existing input contract and validation while ensuring caller copy
+  // can never become part of the provider payload.
+  void body;
   const config = readApnsConfig(env);
   if (!config.ok) {
     return {
@@ -256,10 +260,10 @@ export async function sendNativePushToEmployee({
     : 'https://api.sandbox.push.apple.com';
   const payload = JSON.stringify({
     aps: {
-      alert: { title, body: body || '' },
+      alert: { title: APNS_ALERT_TITLE, body: APNS_ALERT_BODY },
       sound: 'default',
     },
-    data: safeNativeData(data),
+    data: await safeNativeData(data, employeeId),
   });
 
   const results = await Promise.all(tokens.slice(0, APNS_CONCURRENCY).map(async (row) => {
