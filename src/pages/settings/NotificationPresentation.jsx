@@ -15,15 +15,16 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/components/{TabLoading,settings/SettingsPageHeader,ui},
- *              @/hooks/useTwoClickConfirm, @/lib/{realtime,toast},
+ *              @/hooks/useTwoClickConfirm,
+ *              @/lib/{notificationTemplate,realtime,toast},
  *              ./NotificationPresentation.css
  *   Data:      reads/writes → /api/notification-presentation only
  *
  * NOTES / GOTCHAS:
  *   - The browser never queries the service-only tables/RPC directly.
  *   - Preview uses synthetic registry samples and cannot send a notification.
- *   - Native lock-screen copy is intentionally read-only; only its code-owned
- *     privacy-safe presentation is shown.
+ *   - Native copy may use the same event-approved variables as PWA, but its
+ *     destination remains restricted to the field-app route catalog.
  * ════════════════════════════════════════════════
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,6 +32,7 @@ import TabLoading from '@/components/TabLoading';
 import SettingsPageHeader from '@/components/settings/SettingsPageHeader';
 import { EmptyState, ErrorState, StatusPill } from '@/components/ui';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
+import { insertNotificationTemplateVariable } from '@/lib/notificationTemplate';
 import { getAuthHeader } from '@/lib/realtime';
 import { err, ok } from '@/lib/toast';
 import './NotificationPresentation.css';
@@ -143,7 +145,11 @@ export default function NotificationPresentation() {
   const [historyError, setHistoryError] = useState('');
   const [conflict, setConflict] = useState('');
   const [pendingSelection, setPendingSelection] = useState(null);
+  const [variablePickerField, setVariablePickerField] = useState('');
+  const titleRef = useRef(null);
   const bodyRef = useRef(null);
+  const variablePickerRefs = useRef({});
+  const variablePickerTriggerRefs = useRef({});
   const eventsRef = useRef([]);
   const historyRequestRef = useRef(0);
   const historyIdentityRef = useRef('');
@@ -205,6 +211,7 @@ export default function NotificationPresentation() {
     setBaseline(config);
     setPreview(null);
     setConflict('');
+    setVariablePickerField('');
     cancel();
   }, [selectedTypeKey, surfaceKey, selectedSurface, cancel]);
 
@@ -238,6 +245,32 @@ export default function NotificationPresentation() {
       historyRequestRef.current += 1;
     };
   }, [loadHistory]);
+
+  useEffect(() => {
+    if (!variablePickerField) return undefined;
+    const closeOnPointerDown = (event) => {
+      if (!variablePickerRefs.current[variablePickerField]?.contains(event.target)) {
+        setVariablePickerField('');
+      }
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        const activeField = variablePickerField;
+        setVariablePickerField('');
+        variablePickerTriggerRefs.current[activeField]?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', closeOnPointerDown, true);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown, true);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [variablePickerField]);
+
+  useEffect(() => {
+    if (interactionLocked) setVariablePickerField('');
+  }, [interactionLocked]);
 
   const requestSelection = (selection) => {
     if (interactionLocked) return;
@@ -379,20 +412,99 @@ export default function NotificationPresentation() {
     }
   };
 
-  const insertVariable = (key) => {
-    if (!selectedSurface.copy_editable) return;
-    const token = `{{${key}}}`;
-    const element = bodyRef.current;
-    const start = element?.selectionStart ?? draft.body_template.length;
+  const insertVariable = (field, key) => {
+    if (interactionLocked || !selectedSurface.copy_editable || !draft) return;
+    const allowedKeys = new Set(selectedSurface.variables.map((variable) => variable.key));
+    if (!allowedKeys.has(key)) return;
+
+    const templateKey = field === 'title' ? 'title_template' : 'body_template';
+    const element = field === 'title' ? titleRef.current : bodyRef.current;
+    const currentTemplate = draft[templateKey] || '';
+    const start = element?.selectionStart ?? currentTemplate.length;
     const end = element?.selectionEnd ?? start;
+    const limit = field === 'title' ? selectedSurface.limits.title : selectedSurface.limits.body;
+    const insertion = insertNotificationTemplateVariable({
+      template: currentTemplate,
+      variableKey: key,
+      allowedVariableKeys: [...allowedKeys],
+      selectionStart: start,
+      selectionEnd: end,
+      maxLength: limit,
+    });
+    if (!insertion.ok) {
+      err(`The ${field === 'title' ? 'title' : 'message'} is too long to add that variable.`);
+      return;
+    }
+
     setDraft((current) => ({
       ...current,
-      body_template: `${current.body_template.slice(0, start)}${token}${current.body_template.slice(end)}`,
+      [templateKey]: insertion.value,
     }));
+    setVariablePickerField('');
     requestAnimationFrame(() => {
       element?.focus();
-      element?.setSelectionRange(start + token.length, start + token.length);
+      element?.setSelectionRange(insertion.caret, insertion.caret);
     });
+  };
+
+  const variablePicker = (field) => {
+    if (!selectedSurface.copy_editable || selectedSurface.variables.length === 0) return null;
+    const open = variablePickerField === field;
+    const label = field === 'title' ? 'title' : 'message';
+    const menuId = `notif-pres-${field}-variable-menu`;
+    return (
+      <div
+        ref={(node) => {
+          variablePickerRefs.current[field] = node;
+        }}
+        className="notif-pres-variable-picker"
+      >
+        <button
+          ref={(node) => {
+            variablePickerTriggerRefs.current[field] = node;
+          }}
+          type="button"
+          className="btn btn-secondary btn-sm notif-pres-variable-trigger"
+          aria-expanded={open}
+          aria-controls={menuId}
+          disabled={interactionLocked}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => setVariablePickerField(open ? '' : field)}
+        >
+          <span aria-hidden="true">＋</span>
+          Add variable
+        </button>
+        {open && (
+          <div
+            id={menuId}
+            className="notif-pres-variable-menu"
+            role="region"
+            aria-label={`Variables available for the ${label}`}
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            <div className="notif-pres-variable-menu-head">
+              Available for this event
+              <span>Choose a value to insert at your cursor.</span>
+            </div>
+            <div className="notif-pres-variable-options">
+              {selectedSurface.variables.map((variable) => (
+                <button
+                  key={variable.key}
+                  type="button"
+                  className="notif-pres-variable"
+                  disabled={interactionLocked}
+                  onClick={() => insertVariable(field, variable.key)}
+                >
+                  <span>{variable.label}</span>
+                  <code>{`{{${variable.key}}}`}</code>
+                  <small>Example: {variable.sample}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   if (loading) return <TabLoading />;
@@ -500,11 +612,11 @@ export default function NotificationPresentation() {
             ))}
           </div>
 
-          {!selectedSurface.copy_editable && (
+          {surfaceKey === 'native_push' && (
             <div className="notif-pres-privacy-note">
-              <strong>Privacy locked</strong>
-              Native lock-screen copy is code-owned and excludes names, message contents, contact details,
-              identifiers, amounts, appointment times, and free-form notes.
+              <strong>Same approved details as PWA</strong>
+              Native iPhone notifications can use this event&apos;s approved variables. Tap destinations
+              remain limited to field-app routes, and each iPhone controls whether previews appear while locked.
             </div>
           )}
 
@@ -521,9 +633,14 @@ export default function NotificationPresentation() {
           )}
 
           <div className="notif-pres-form">
-            <label className="notif-pres-field">
-              <span>Title</span>
+            <div className="notif-pres-field">
+              <div className="notif-pres-field-head">
+                <label htmlFor="notif-pres-title">Title</label>
+                {variablePicker('title')}
+              </div>
               <input
+                id="notif-pres-title"
+                ref={titleRef}
                 className="input"
                 value={draft?.title_template || ''}
                 maxLength={selectedSurface.limits.title}
@@ -534,11 +651,15 @@ export default function NotificationPresentation() {
                 }))}
               />
               <small>{draft?.title_template?.length || 0}/{selectedSurface.limits.title}</small>
-            </label>
+            </div>
 
-            <label className="notif-pres-field">
-              <span>Message</span>
+            <div className="notif-pres-field">
+              <div className="notif-pres-field-head">
+                <label htmlFor="notif-pres-message">Message</label>
+                {variablePicker('body')}
+              </div>
               <textarea
+                id="notif-pres-message"
                 ref={bodyRef}
                 className="input textarea notif-pres-textarea"
                 value={draft?.body_template || ''}
@@ -550,29 +671,7 @@ export default function NotificationPresentation() {
                 }))}
               />
               <small>{draft?.body_template?.length || 0}/{selectedSurface.limits.body}</small>
-            </label>
-
-            {selectedSurface.variables.length > 0 && (
-              <div className="notif-pres-variable-section">
-                <div className="notif-pres-field-label">Approved variables</div>
-                <p>Insert a typed value into the message. Preview always uses synthetic examples.</p>
-                <div className="notif-pres-variables">
-                  {selectedSurface.variables.map((variable) => (
-                    <button
-                      key={variable.key}
-                      type="button"
-                      className="notif-pres-variable"
-                      disabled={interactionLocked}
-                      onClick={() => insertVariable(variable.key)}
-                      title={`Example: ${variable.sample}`}
-                    >
-                      <span>{variable.label}</span>
-                      <code>{`{{${variable.key}}}`}</code>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            </div>
 
             <label className="notif-pres-field">
               <span>Tap destination</span>
