@@ -5,11 +5,12 @@
  *
  * WHAT THIS DOES (plain language):
  *   Guards the money worker that receives Stripe's payment webhook. It checks
- *   three safety properties by reading the worker's source: (1) it verifies
+ *   four safety properties by reading the worker's source: (1) it verifies
  *   Stripe's signature and stays dormant-safe (503) until keys exist, (2) it
  *   de-duplicates each event by Stripe's own event id (a stable key) so a repeated
  *   delivery no-ops instead of double-booking money, never by a per-attempt
- *   timestamp, and (3) it never writes the payment columns a database trigger owns.
+ *   timestamp, (3) it never writes the payment columns a database trigger owns,
+ *   and (4) notification charge references remain distinct from invoice numbers.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
@@ -54,5 +55,11 @@ describe('stripe-webhook worker safety (source contract)', () => {
     for (const col of TRIGGER_OWNED) {
       expect(src, `must not write ${col}`).not.toMatch(new RegExp(`\\b${col}\\s*:`));
     }
+  });
+
+  it('keeps the Stripe charge reference distinct from the invoice display number', () => {
+    expect(src).toMatch(/source:\s*'Stripe',\s*reference:\s*chargeId/);
+    expect(src).toMatch(/invoiceNumber:\s*inv\.qbo_doc_number\s*\|\|\s*inv\.invoice_number/);
+    expect(src).not.toMatch(/reference:\s*inv\.invoice_number/);
   });
 });
