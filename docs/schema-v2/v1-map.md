@@ -1,6 +1,6 @@
 # Schema v2 — v1 Usage Map (Phase P0)
 
-**Generated:** 2026-07-29 · code at `dev` @ `576f865a` · Phase **P0** of [`docs/schema-v2-plan.md`](../schema-v2-plan.md)
+**Generated:** 2026-07-29 · code as of `dev` @ `1bee3d60` · Phase **P0** of [`docs/schema-v2-plan.md`](../schema-v2-plan.md)
 **Deliverable:** every public table (141), column (1,746), function/RPC (400), RLS policy (223) and trigger (52) in the live schema, classified **used / dead / duplicated / band-aid** from the code that actually touches it.
 
 **This is a map, not a design.** v2 design is Phase P1 — a separate session, after the owner reviews the dead list below.
@@ -52,13 +52,15 @@ The older `db/baseline/live-schema-snapshot.json` remains in place and is genuin
 
 Of the §7 refresh checklist: items 1–2 (re-research Anthropic/Supabase guidance) are satisfied by the plan being authored the same day, 2026-07-29; **item 3 is fully met** (staging branch seeded ✓, committed baseline ✓, WIP reduced ✓ on gate day); item 4 (re-read the WIP inventory) is done. **WIP inventory item #12 is complete** and its row should be closed on the next inventory rewrite.
 
-## 4. Provenance headline — the schema cannot rebuild itself
+## 4. Provenance — restorable from the repo, not replayable from the ledger
 
-Measured this session with `scripts/db-drift-check.mjs` against the fresh snapshot (full output: [`provenance-drift-2026-07-29.txt`](provenance-drift-2026-07-29.txt)):
+These are two different properties and only one of them is a gap. Measured this session with `scripts/db-drift-check.mjs` against the fresh snapshot (full output: [`provenance-drift-2026-07-29.txt`](provenance-drift-2026-07-29.txt)):
 
-- **67 of 141 tables** and **87 of 400 functions** have **no `CREATE` statement in any migration.** They exist only in the live database, born from dashboard or direct DDL before schema-as-code discipline — the same fact that killed the branch-seed ledger replay at entry 4 of 419.
-- Every one of the 77 objects added since the 2026-07-08 baseline (14 tables, 63 functions) **is** migration-born. Discipline has held since it was imposed; the debt is entirely historical.
-- **For v2:** the plan's "CI boots the entire schema from migrations on every PR" is the structural fix. The untracked surface enumerated per-domain is exactly what a v1→v2 ETL must treat as source-of-truth-by-inspection rather than source-of-truth-by-history.
+- **Disaster recovery is CLOSED.** `db/baseline/schema.sql` (§3) is a complete `pg_dump` of the live schema committed to the repository. If the project were lost, the schema could be restored from git — all 141 tables, 400 functions, 219 policies and 13 custom types. That was the actual risk, and it no longer exists.
+- **Ledger replay is still BROKEN.** **67 of 141 tables** and **87 of 400 functions** have **no `CREATE` statement in any migration.** They exist only because someone ran DDL against the live database before schema-as-code discipline — which is why branch creation died replaying the ledger at entry 4 of 419, and why `supabase start` cannot reconstruct the schema from `supabase/migrations/` alone.
+- **The distinction matters practically.** Restoring from the baseline gives you the schema *as it is*, with no history and no way to reason about how any object came to exist or to re-derive it after an edit. Replaying the ledger would give you a schema you can *reason about and evolve*. The baseline is a photograph; the ledger is meant to be the recipe, and the recipe is missing two-thirds of its steps.
+- Every one of the 77 objects added since the 2026-07-08 snapshot (14 tables, 63 functions) **is** migration-born. Discipline has held since it was imposed; the debt is entirely historical and is not growing.
+- **For v2:** the plan's "CI boots the entire schema from migrations on every PR" makes the broken half structurally impossible to recur — a schema that cannot boot from zero fails the build. The untracked surface enumerated per-domain is exactly what a v1→v2 ETL must treat as source-of-truth-by-inspection rather than source-of-truth-by-history, since for those objects no history exists to consult.
 
 ---
 

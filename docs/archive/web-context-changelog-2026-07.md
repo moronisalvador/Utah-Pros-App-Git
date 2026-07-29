@@ -4,6 +4,42 @@ session logs, incident write-ups, shipped-phase narratives and plans-of-record �
 current state. The live reference stays in the root `UPR-Web-Context.md`. Nothing here is law;
 where an entry conflicts with a current doc, the current doc wins.
 
+## Schema v2 Phase P0 — v1 usage map (2026-07-29)
+
+Mapped every live database object and classified it from the code that touches it. Deliverable:
+`docs/schema-v2/v1-map.md` plus eight per-domain reports under `docs/schema-v2/domains/`. Current
+state and headline numbers live in `UPR-Web-Context.md`'s Database section; this entry is the
+session narrative.
+
+**Method.** Catalog extracted fresh from the parity-verified `qa-staging` branch (141 tables / 400
+functions / 219 public policies on both it and production), plus read-only production statistics,
+cron commands and storage config. Two branch-seed gaps — the four `storage.objects` policies and the
+realtime publication — were closed from production read-only queries. No write was performed against
+either database. Three verification passes: per-domain mapping, per-domain adversarial dead-claim
+refutation (22 overturned), then a sweep against four non-app-code surfaces (38 more reclassified,
+on top of billing's 21 from the pass that discovered the gap).
+
+**The methodological finding worth reusing.** Code-only "is this dead?" checking has a systematic
+blind spot. Objects stay alive through: runbooks the owner *executes* against production
+(`UPR-QBO-ENCIRCLE-RECONCILIATION-GUIDE.md` carries a canonical `INSERT INTO invoices`); recent
+data-repair migrations that are writes rather than DDL; `UPR-Web-Context.md` annotations naming
+external consumers this repo cannot inspect (the Netlify vendor app reads `vendor_invoices`); and
+doc-designated computation contracts whose callers are unobservable because `track_functions` is off
+in production. That sweep moved 59 claims. Run it on any future dead-code or dead-schema audit
+before presenting a kill list.
+
+**Two process corrections recorded in the map itself.** (1) An earlier revision claimed
+`db/baseline/schema.sql` did not exist; it does — commit `8e1cf9cc`, 2026-07-28, 1.2 MB from
+`pg_dump 18.4`. The checkout's `origin/dev` ref was stale at `e54afcce`, 21 commits behind, so a
+branch-wide search read a pre-baseline snapshot and reported absence as verified fact. (2) The
+`schema.sql` produced during the staging-branch seed and the committed DR baseline are separate
+artifacts; conflating them caused the first error.
+
+**Landed** via `schema-v2/p0-map` → PR into `dev` rather than a direct push, because local `dev` had
+diverged from `origin/dev` (4 local commits on a superseded base against 21 remote) and the CI
+verify + db-lane checks are exactly what should validate a reconciliation. P1 (design v2) is gated
+on owner review of the dead lists.
+
 ## Dorothy Killian downstairs reconstruction A/R repair (2026-07-27)
 
 Migration source
