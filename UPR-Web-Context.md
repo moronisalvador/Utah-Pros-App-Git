@@ -3817,6 +3817,8 @@ The web build now owns an admin-only `/settings/notification-presentation` page 
 Team group. It edits only code-allowlisted bell/PWA copy and typed destinations, previews with
 synthetic values, keeps native lock-screen copy privacy-locked, and shows bounded audit history.
 The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
+Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keeping the global
+`src/index.css` source below its blocking budget without changing the page design.
 
 `functions/lib/notificationPresentation.js` remains the single registry shared with the reconciled
 native parity work. Runtime consumers in `notify.js` and `apns.js` accept only a validated

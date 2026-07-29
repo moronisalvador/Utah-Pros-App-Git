@@ -15,7 +15,8 @@
  * DEPENDS ON:
  *   Packages:  react
  *   Internal:  @/components/{TabLoading,settings/SettingsPageHeader,ui},
- *              @/hooks/useTwoClickConfirm, @/lib/{realtime,toast}
+ *              @/hooks/useTwoClickConfirm, @/lib/{realtime,toast},
+ *              ./NotificationPresentation.css
  *   Data:      reads/writes → /api/notification-presentation only
  *
  * NOTES / GOTCHAS:
@@ -32,6 +33,7 @@ import { EmptyState, ErrorState, StatusPill } from '@/components/ui';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { getAuthHeader } from '@/lib/realtime';
 import { err, ok } from '@/lib/toast';
+import './NotificationPresentation.css';
 
 const SURFACE_LABELS = {
   bell: 'In-app bell',
