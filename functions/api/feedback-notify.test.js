@@ -132,6 +132,9 @@ describe('handleFeedbackNotify — delegates to the dispatcher', () => {
     expect(captured.body.title).toBe('New bug report');
     expect(captured.body.body).toBe('Jane Tech: Photos wont save');
     expect(captured.body.link).toBe('/settings/feedback');
+    expect(captured.body.presentation_context).toEqual({
+      employee_name: 'Jane Tech',
+    });
   });
 
   it('still succeeds (200) even if the dispatcher throws — fire-and-forget', async () => {

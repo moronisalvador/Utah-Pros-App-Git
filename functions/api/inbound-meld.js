@@ -134,6 +134,10 @@ export async function notifyNewMelds(db, env, newMelds, dispatchImpl = dispatchE
           link: '/melds',
           entity_type: 'meld',
           entity_id: m.meldNumber,
+          presentation_context: {
+            meld_type: m.meldType,
+            meld_number: m.meldNumber,
+          },
         },
       });
       notified += 1;
