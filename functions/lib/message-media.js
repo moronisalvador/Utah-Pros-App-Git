@@ -96,7 +96,11 @@ export function ownedMessageMediaPath(reference, { outboundOnly = false } = {}) 
     || path.startsWith('/')
     || !/^[A-Za-z0-9_./-]+$/.test(path)
     || (outboundOnly && !path.startsWith('outbound/'))
-    || (!path.startsWith('outbound/') && !path.startsWith('callrail/'))
+    || (
+      !path.startsWith('outbound/')
+      && !path.startsWith('callrail/')
+      && !path.startsWith('twilio/')
+    )
   ) {
     return null;
   }

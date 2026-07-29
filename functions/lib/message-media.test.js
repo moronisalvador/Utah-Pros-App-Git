@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   MESSAGE_MEDIA_MAX_BYTES,
+  ownedMessageMediaPath,
   outboundMessageMediaPath,
   resolveMessageMedia,
   validateMessageImage,
@@ -40,6 +41,18 @@ describe('private message media', () => {
     expect(outboundMessageMediaPath(
       'upr-storage://message-attachments/outbound/../secret.jpg',
       CONVERSATION,
+    )).toBeNull();
+  });
+
+  it('accepts only owned CallRail/Twilio inbound namespaces', () => {
+    expect(ownedMessageMediaPath(
+      'upr-storage://message-attachments/twilio/AC123/message/photo.jpg',
+    )).toBe('twilio/AC123/message/photo.jpg');
+    expect(ownedMessageMediaPath(
+      'upr-storage://message-attachments/callrail/company/message/photo.jpg',
+    )).toBe('callrail/company/message/photo.jpg');
+    expect(ownedMessageMediaPath(
+      'upr-storage://message-attachments/provider/message/photo.jpg',
     )).toBeNull();
   });
 
