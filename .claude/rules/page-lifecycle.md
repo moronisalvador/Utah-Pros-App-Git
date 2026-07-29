@@ -1,3 +1,6 @@
+---
+paths: ["src/pages/**", "src/components/**", "src/hooks/**"]
+---
 # Page Lifecycle Standard
 
 Linked from `CLAUDE.md`. **The law for how every page behaves across mount, refetch, mutation,
