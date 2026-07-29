@@ -381,6 +381,15 @@ export function enrichInboundMessageBody(body = {}) {
 
   return {
     ...body,
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      sender_name: body.presentation_context?.sender_name || (
+        String(body.title || '').startsWith('New text from ')
+          ? String(body.title).slice('New text from '.length)
+          : ''
+      ),
+      message_preview: body.presentation_context?.message_preview || body.body || '',
+    },
     link: bellLink,
     data: {
       ...(body.data || {}),
@@ -435,7 +444,11 @@ const APPT_VERB = {
  * unchanged, so the catalog label still shows and this never throws.
  */
 export async function enrichAppointmentBody(db, typeKey, body = {}) {
-  if (!body.appointment_id || body.title) return body;
+  if (!body.appointment_id) return body;
+  if (
+    body.presentation_context?.appointment_title
+    && body.presentation_context?.appointment_when
+  ) return body;
   let appt = null;
   try {
     const rows = await db.select('appointments', `id=eq.${body.appointment_id}&select=title,date,time_start,time_end`);
@@ -447,8 +460,8 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
   const when = formatApptWhen(appt.date, appt.time_start, appt.time_end);
   return {
     ...body,
-    title: what ? `${verb} · ${what}` : verb,
-    body: when || body.body || '',
+    title: body.title || (what ? `${verb} · ${what}` : verb),
+    body: body.body || when || '',
     // Store the OFFICE path. A notification has no idea who will open it or on
     // what, so the reader's shell decides (src/lib/techShellRoutes.js): field techs
     // are routed to /tech/appointment/:id, the office keeps this one. Storing the
@@ -484,7 +497,12 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
  * when a title is already set; never throws. Reads estimates + contacts.
  */
 export async function enrichEstimateBody(db, body = {}) {
-  if (!body.estimate_id || body.title) return body;
+  if (!body.estimate_id) return body;
+  if (
+    body.presentation_context?.estimate_number
+    && body.presentation_context?.amount
+    && body.presentation_context?.customer_name
+  ) return body;
   let est = null;
   try {
     const rows = await db.select('estimates', `id=eq.${body.estimate_id}&select=estimate_number,amount,approved_amount,contact_id,job_id`);
@@ -505,8 +523,8 @@ export async function enrichEstimateBody(db, body = {}) {
   const num = est.estimate_number ? String(est.estimate_number).trim() : '';
   return {
     ...body,
-    title: num ? `Estimate ${num} accepted` : 'Estimate accepted',
-    body: [money, client].filter(Boolean).join(' · ') || body.body || '',
+    title: body.title || (num ? `Estimate ${num} accepted` : 'Estimate accepted'),
+    body: body.body || [money, client].filter(Boolean).join(' · '),
     link: body.link || `/estimates/${body.estimate_id}`,
     entity_type: body.entity_type || 'estimate',
     entity_id: body.entity_id || body.estimate_id,
@@ -522,6 +540,52 @@ export async function enrichEstimateBody(db, body = {}) {
       customer_name: client,
     },
   };
+}
+
+export async function enrichDatabasePresentationContext(db, typeKey, body) {
+  if (
+    typeKey !== 'timesheet.change_requested'
+    && typeKey !== 'clock.abandoned'
+  ) return body;
+  const presentationContext = { ...(body.presentation_context || {}) };
+  delete presentationContext.employee_name;
+  const safeBody = {
+    ...body,
+    presentation_context: presentationContext,
+  };
+  let employeeId = null;
+  try {
+    if (typeKey === 'timesheet.change_requested' && body.entity_id) {
+      const requests = await db.select(
+        'time_entry_change_requests',
+        `id=eq.${encodeURIComponent(body.entity_id)}&select=requested_by&limit=1`,
+      );
+      employeeId = requests?.[0]?.requested_by || null;
+    } else if (typeKey === 'clock.abandoned') {
+      employeeId = body.payload?.employee_id || null;
+    }
+    if (!employeeId) return safeBody;
+    const employees = await db.select(
+      'employees',
+      `id=eq.${encodeURIComponent(employeeId)}`
+        + '&select=full_name,is_active,is_external&limit=1',
+    );
+    const employee = employees?.[0];
+    if (
+      !employee?.full_name
+      || employee.is_active !== true
+      || employee.is_external !== false
+    ) return safeBody;
+    return {
+      ...safeBody,
+      presentation_context: {
+        ...presentationContext,
+        employee_name: employee.full_name,
+      },
+    };
+  } catch {
+    return safeBody;
+  }
 }
 
 /**
@@ -560,6 +624,7 @@ export async function dispatchEvent({
   } else if (typeKey === 'estimate.accepted') {
     body = await enrichEstimateBody(db, body);
   }
+  body = await enrichDatabasePresentationContext(db, typeKey, body);
 
   const recipientIds = await resolveAudience(db, typeKey, body);
 

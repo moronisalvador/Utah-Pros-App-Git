@@ -23,8 +23,8 @@ NOTES / GOTCHAS:
 
 # Notification Presentation Settings — Safe Design and Implementation Plan
 
-**Status:** live; implemented and adversarially reviewed; isolated `qa-staging` behavior verified;
-production database applied; exact production web deployment and protected API verified
+**Status:** base feature live and verified; field-specific variable-picker follow-up implemented,
+locally verified, and independently reviewed; follow-up publication remains owner-gated
 
 **Artifact tier:** Tier 1 (one sequenced implementation plan)
 
@@ -33,6 +33,20 @@ production database applied; exact production web deployment and protected API v
 **Authorization:** on 2026-07-29 the owner authorized repository, database, deployment, and release
 actions needed to make this page live. No preview/test/real notification or provider call is needed
 for this release and none is part of its validation.
+
+**2026-07-29 follow-up:** the owner requested an Add variable control on both Title and Message and
+named customer, estimate, invoice, amount, and payment-source examples. Repository implementation
+is authorized. A new commit, push, or deployment requires fresh owner authorization under the
+repository's external-action boundary.
+
+**2026-07-29 native-policy amendment:** the owner explicitly rejected the generic-only native
+privacy policy and directed native iPhone notifications to show the same approved event details as
+PWA. Native now shares the event's variable allowlist and editable templates, but retains its
+separate field-only route allowlist. This does not permit generic payload traversal, arbitrary APNs
+fields, paths/URLs, or partially rendered copy. Missing trusted context uses immutable generic copy;
+rendered output and the final Apple payload are bounded; saved generic wording is honored without
+content-based legacy inference; `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server
+rollback seam.
 
 ## Decision
 
@@ -63,8 +77,8 @@ Requested outcome:
 - variables such as customer name and amount are available only for events where the server can
   derive them safely;
 - preview and validation happen without sending a notification;
-- PWA and native copy/routes remain compatible while preserving the field-only native product
-  boundary and privacy-safe lock-screen behavior;
+- PWA and native copy remain compatible while native preserves its separate field-only route
+  boundary and typed missing-context fallback;
 - every accepted change is attributable and recoverable.
 
 Release scope does not include changing notification defaults/preferences, provider settings, Apple
@@ -79,7 +93,7 @@ preview/test/real notification or widen native routes beyond the approved field-
 | Fifteen current event types are in the active product map | HAVE | current migrations plus the parent task's 2026-07-29 read-only catalog query | Reconcile the landed registry against all 15 before implementation closes. |
 | Effective recipient/channel preferences have one shared resolver | HAVE | `get_effective_notification_prefs`; `functions/api/notify.js` | Presentation overrides must not change audience or channel eligibility. |
 | Browser notification content is currently assembled by producers and `notify.js` | HAVE | producer call sites and `enrich*Body()` helpers | A normalized event context is required before configurable rendering. |
-| Native delivery currently replaces caller copy with generic privacy-safe copy | HAVE | `functions/lib/apns.js` | Rich native copy must remain an explicit per-event privacy decision. |
+| Native delivery originally replaced caller copy with generic copy | SUPERSEDED by owner decision 2026-07-29 | `functions/lib/apns.js`; owner amendment above | Native now accepts only event-approved typed context, with generic missing-context fallback. |
 | Native push routes are sanitized against field/public routes | HAVE | `src/lib/nativeNavigationTarget.js` | The new route registry must call the same sanitizer and may not add admin routes to native. |
 | Bell and PWA/native routes already differ for some events | HAVE | message and appointment enrichment in `notify.js` | Route selection is surface-specific; one free-form destination field is invalid. |
 | UI `AdminRoute` exists for Settings admin pages | HAVE | `src/App.jsx` | It is presentation only; a new Worker and database mutation boundary must repeat the admin gate. |
@@ -95,15 +109,16 @@ preview/test/real notification or widen native routes beyond the approved field-
 The 2026-07-29 parent handoff passed Worker security, mobile security, UPR pattern, design,
 page-lifecycle, and mobile-contract review after fixing raw APNs copy, unbounded provider fetch,
 cross-environment partial failure, feedback-sender authorization, and duplicated catalog evidence.
-Its frozen constraints for this task are:
+Its original constraints were amended by the owner decision recorded above. The still-binding
+parts are:
 
 - APNs selects typed presentation inside the provider boundary and ignores arbitrary caller
   `alert`, `data`, title, body, and route values.
-- The native privacy budget excludes names, message contents, phone numbers, addresses,
-  identifiers, financial amounts, appointment times, and free-form notes.
+- Native may render the same event-approved variables as PWA; generic payload traversal and
+  arbitrary producer/provider copy remain prohibited.
 - Office-only native destinations remain `/`; the native product remains field-only.
-- Browser/PWA/bell/email presentation is separate and must be introduced as an additive
-  server-validated surface contract.
+- Bell/PWA/native remain distinct server-validated surfaces even where their variable definitions
+  are shared.
 - Event audience, effective preferences, delivery identity, deduplication, and existing
   authorization predicates remain unchanged.
 
@@ -183,20 +198,18 @@ surface. It never emits a partly rendered token, blank alert, or caller-provided
 
 ### Variables
 
-Variables are event-specific, surface-specific where privacy requires it, and derived from trusted
-server data. The following inventory applies to richer browser surfaces only unless a later
-owner-approved native privacy-contract change says otherwise. Under the reviewed parent contract,
-`native_push` exposes no customer/contact name, message content, phone, address, identifier, money,
-appointment-time, or free-form-note variable:
+Variables are event-specific and derived from trusted server data. Under the owner's 2026-07-29
+privacy-contract amendment, `native_push` exposes the same approved variable set as PWA. Native
+destinations remain separately governed and field-only:
 
 | Event | Candidate allowlisted variables | Candidate route identifiers |
 |---|---|---|
-| `message.inbound` | sender display name; privacy-bounded message preview on approved web surfaces only | `conversation.thread`, `field.home` |
+| `message.inbound` | sender display name; bounded message preview | `conversation.thread`, `field.home` |
 | `appointment.assigned` | appointment title, date, start/end time | `appointment.detail` |
 | `appointment.updated` | appointment title, date, start/end time | `appointment.detail` |
 | `appointment.canceled` | appointment title, date, start/end time | `appointment.detail` |
 | `estimate.accepted` | estimate number, approved amount, customer name | `estimate.detail`, `office.home` |
-| `payment.received` | amount, payment source, reference, invoice identity when proven | `invoice.detail`, `collections.home`, `office.home` |
+| `payment.received` | amount, payment source, distinct normalized invoice number, payment reference | `invoice.detail`, `collections.home`, `office.home` |
 | `lead.new` | lead source, caller/customer label, form name when normalized | `crm.lead`, `office.home` |
 | `esign.signed` | signer name, document label, job number, property label | `job.detail`, `office.home` |
 | `feedback.submitted` | feedback kind, submitter display name | `settings.feedback`, `office.home` |
@@ -242,7 +255,7 @@ native product route set is a separate owner decision.
 | Arbitrary URL, open redirect, custom scheme, credential fragment, encoded traversal | Store route IDs only; server resolves; current native/web sanitizers run after resolution; absolute URLs and free-form paths are rejected. |
 | Template code execution or resource exhaustion | Tiny non-recursive token grammar; no general template engine; strict byte/token limits; deterministic linear parser/renderer. |
 | Secret or PII exposure in editor/preview/history | Catalog exposes names and synthetic examples only; runtime values are never returned to Settings; no generic payload variables; audit stores templates/route IDs, not rendered customer data. |
-| Lock-screen privacy regression | `native_push` has separate defaults/allowlists; registry privacy class may prohibit sensitive variables even when PWA/bell allow them. |
+| Unintended native disclosure | Only event-approved typed context may render; missing context is an atomic generic fallback; OS preview visibility remains a per-device setting; the server rollback setting restores generic copy immediately. |
 | Privilege escalation through UI-only gate | Worker uses shared auth helpers and requires active, internal `admin` before any protected configuration read/write; constructing the server client is not authorization. The database mutation RPC revalidates the actor and is service-role-only. |
 | Direct browser table/RPC mutation | New tables have forced RLS, no browser policy/grant; mutation RPC denies `PUBLIC`, `anon`, and `authenticated`. |
 | Service-role writer skips audit | Browser Worker receives no direct table mutation path; one atomic database function writes current state and append-only history together. |

@@ -150,6 +150,10 @@ describe('notifyNewMelds', () => {
     expect(calls[0].body.recipient_ids).toEqual(['owner-1']);
     expect(calls[0].body.link).toBe('/melds');
     expect(calls[0].body.entity_id).toBe('TREST01');
+    expect(calls[0].body.presentation_context).toEqual({
+      meld_type: expect.any(String),
+      meld_number: 'TREST01',
+    });
   });
 
   it('marks an emergency meld in the push title', async () => {

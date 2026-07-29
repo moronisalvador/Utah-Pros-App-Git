@@ -30,6 +30,7 @@
 import { fetchWithTimeout } from './http.js';
 import { resolveNativePushRoute } from '../../src/lib/nativeNavigationTarget.js';
 import {
+  buildGenericNativeNotificationPresentation,
   buildNativeNotificationPresentation,
   resolveConfiguredNotificationPresentation,
 } from './notificationPresentation.js';
@@ -37,6 +38,7 @@ import {
 const APNS_TIMEOUT_MS = 15_000;
 const APNS_CONCURRENCY = 5;
 const APNS_PROVIDER_ATTEMPTS = 2;
+const APNS_MAX_PAYLOAD_BYTES = 4_096;
 const APNS_ALERT_TITLE = 'Utah Pros notification';
 const APNS_ALERT_BODY = 'Open Utah Pros for details.';
 const APNS_DELIVERY_ENVIRONMENTS = Object.freeze(['sandbox', 'production']);
@@ -259,27 +261,41 @@ export async function sendNativePushToEmployee({
   const host = config.environment === 'production'
     ? 'https://api.push.apple.com'
     : 'https://api.sandbox.push.apple.com';
-  const nativeFallback = buildNativeNotificationPresentation(
+  // Emergency rollback seam: setting this exact server variable to "false"
+  // immediately restores generic native copy without disabling push delivery.
+  const richPresentationEnabled = env.NATIVE_RICH_NOTIFICATION_PRESENTATION !== 'false';
+  const genericFallback = buildGenericNativeNotificationPresentation(
     typeKey,
     notificationBody,
   );
-  const presentation = await resolveConfiguredNotificationPresentation({
-    db,
-    typeKey,
-    surfaceKey: 'native_push',
-    body: notificationBody,
-    fallback: nativeFallback,
-  });
-  const payload = JSON.stringify({
-    aps: {
-      alert: {
-        title: presentation.title || APNS_ALERT_TITLE,
-        body: presentation.body || APNS_ALERT_BODY,
+  const nativeFallback = richPresentationEnabled
+    ? buildNativeNotificationPresentation(typeKey, notificationBody)
+    : genericFallback;
+  let presentation = richPresentationEnabled
+    ? await resolveConfiguredNotificationPresentation({
+      db,
+      typeKey,
+      surfaceKey: 'native_push',
+      body: notificationBody,
+      fallback: nativeFallback,
+      renderFailureFallback: genericFallback,
+    })
+    : nativeFallback;
+  const serializePayload = async (selectedPresentation) => JSON.stringify({
+      aps: {
+        alert: {
+          title: selectedPresentation.title || APNS_ALERT_TITLE,
+          body: selectedPresentation.body || APNS_ALERT_BODY,
+        },
+        sound: 'default',
       },
-      sound: 'default',
-    },
-    data: await safeNativeData({ url: presentation.url }, employeeId),
+      data: await safeNativeData({ url: selectedPresentation.url }, employeeId),
   });
+  let payload = await serializePayload(presentation);
+  if (new TextEncoder().encode(payload).byteLength > APNS_MAX_PAYLOAD_BYTES) {
+    presentation = genericFallback;
+    payload = await serializePayload(presentation);
+  }
 
   const results = await Promise.all(tokens.slice(0, APNS_CONCURRENCY).map(async (row) => {
     // Token row ids are registration lifecycle details: logout/cap pruning can

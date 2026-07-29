@@ -187,7 +187,7 @@ PWA push and native APNs are distinct channels. Web Push requires:
 - authenticated account/device attachment and logout detachment;
 - governed event/audience/content and same-origin tap route;
 - configured VAPID and delivery/expiry/retry health;
-- privacy-safe lock-screen payload.
+- an owner-approved typed lock-screen payload.
 
 Settings → Notifications exposes Web Push Turn on/Turn off only in the browser
 or installed PWA. It reads the current service-worker subscription, requests

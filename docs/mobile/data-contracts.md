@@ -338,10 +338,10 @@ contract:
 - web/APNs environment-specific delivery with timeout/retry/expiry;
 - per-channel accepted/skipped/failed summary;
 - detach/revoke on logout/account/device lifecycle;
-- no sensitive lock-screen payload beyond approved privacy policy.
+- no lock-screen value outside the owner-approved typed event variable catalog.
 
 The native APNs implementation uses an exhaustive typed presentation catalog:
-each live event receives explicit privacy-conscious title/body copy, while
+each live event receives explicit event-approved title/body copy, while
 unknown events retain the generic `Utah Pros notification` /
 `Open Utah Pros for details.` fallback. Raw producer copy is never the APNs
 presentation contract. Data remains reduced to one allowlisted route plus an
@@ -352,12 +352,14 @@ unsupported or sensitive query shapes fall back to `/` before Apple sees them.
 The Push policy additionally rejects the public signing bearer paths
 `/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
 bearer capability is never provider payload data. A native action is rejected
-unless the binding matches the currently verified employee. The approved
-initial rich-copy budget excludes customer message contents, customer/contact
-names, addresses, claim/reference identifiers, financial amounts, appointment
-times and free-form review notes. Appointment notifications expose only their
-event state plus generic action copy. Expanding that variable budget requires
-a separately reviewed presentation-contract change.
+unless the binding matches the currently verified employee. Owner decision
+2026-07-29 supersedes the initial generic-only budget: native may render the
+same event-approved variables as PWA, including customer, scheduling, and
+financial details. Those values must be typed server context, never raw
+producer APNs fields or generic payload traversal. Missing values use immutable
+generic event copy. Rendered values and final APNs JSON are bounded before
+provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
+presentation at the provider boundary.
 
 Appointment notification audiences are structural rather than caller-selected:
 `appointment.assigned` intersects the named employee with the appointment's
