@@ -1,5 +1,26 @@
-// Twilio REST helper for Cloudflare Workers
-// No SDK — pure fetch() + Web Crypto API for signature validation
+/**
+ * ════════════════════════════════════════════════
+ * FILE: twilio.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Verifies that incoming Twilio forms are authentic and sends approved
+ *   outbound texts through Twilio. It also turns Twilio callback forms into a
+ *   small, consistent object used by the status handler.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  ./credentials.js, ./http.js
+ *   Data:      reads  → managed Twilio credentials through credentials.js
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Signature verification uses the exact public URL plus every form field,
+ *     including future or repeated fields.
+ *   - Outbound callers must complete consent and authorization before using the
+ *     send helper; this file is only the provider adapter.
+ * ════════════════════════════════════════════════
+ */
 
 import { resolveCredential } from './credentials.js';
 import { fetchWithTimeout } from './http.js';
@@ -12,35 +33,71 @@ export async function validateTwilioSignature(request, authToken, url) {
   const signature = request.headers.get('X-Twilio-Signature');
   if (!signature) return false;
 
-  // Get form data from the request
   const clonedReq = request.clone();
   const formData = await clonedReq.formData();
+  return validateTwilioFormSignature({
+    signature,
+    authToken,
+    url,
+    params: formData,
+  });
+}
 
-  // Sort parameters alphabetically and concatenate
-  const params = {};
-  for (const [key, value] of formData.entries()) {
-    params[key] = value;
+function decodeBase64(value) {
+  try {
+    const decoded = atob(value);
+    return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
+  } catch {
+    return null;
   }
-  const sortedKeys = Object.keys(params).sort();
+}
+
+/**
+ * Validate one application/x-www-form-urlencoded Twilio signature.
+ *
+ * Twilio may add webhook fields without notice, and a field may occur more than
+ * once. Build the signature input from every received parameter, sorting keys
+ * and each key's distinct values exactly as the maintained Twilio helper does.
+ * The caller supplies the exact public request URL including its query string.
+ */
+export async function validateTwilioFormSignature({
+  signature,
+  authToken,
+  url,
+  params,
+}) {
+  if (!signature || !authToken || !url || !params?.entries) return false;
+
+  const grouped = new Map();
+  for (const [key, rawValue] of params.entries()) {
+    const value = String(rawValue);
+    const values = grouped.get(key) || [];
+    values.push(value);
+    grouped.set(key, values);
+  }
+
   let dataString = url;
-  for (const key of sortedKeys) {
-    dataString += key + params[key];
+  for (const key of [...grouped.keys()].sort()) {
+    const values = [...new Set(grouped.get(key))].sort();
+    for (const value of values) dataString += key + value;
   }
 
-  // HMAC-SHA1 using Web Crypto API (available in Workers)
   const encoder = new TextEncoder();
-  const keyData = encoder.encode(authToken);
-  const msgData = encoder.encode(dataString);
-
   const cryptoKey = await crypto.subtle.importKey(
-    'raw', keyData, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+    'raw',
+    encoder.encode(authToken),
+    { name: 'HMAC', hash: 'SHA-1' },
+    false,
+    ['verify'],
   );
-  const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, msgData);
-
-  // Convert to base64
-  const computed = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
-
-  return computed === signature;
+  const signatureBytes = decodeBase64(signature);
+  if (!signatureBytes) return false;
+  return crypto.subtle.verify(
+    'HMAC',
+    cryptoKey,
+    signatureBytes,
+    encoder.encode(dataString),
+  );
 }
 
 /**
