@@ -1,6 +1,6 @@
 # Native push activation and release gate
 
-**Last verified:** 2026-07-28
+**Last verified:** 2026-07-29
 
 Native push is wired end to end and the focused database boundary is live. Apple
 and Cloudflare sender configuration exists, the compatible `dev` bundle is
@@ -47,11 +47,12 @@ partial, malformed, or merely similar text never clears the journal.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
-`Utah Pros notification` / `Open Utah Pros for details.` copy. Customer message
-contents, names, addresses, identifiers, financial amounts, appointment times
-and free-form notes are never serialized into native alert copy. Appointment
-alerts contain only the event state plus generic action copy. The worker applies the same pure native route/query policy
-before serialization and replaces unsafe input with `/`. The Push-only policy
+`Utah Pros notification` / `Open Utah Pros for details.` copy. Owner decision
+2026-07-29 permits the same event-approved customer, scheduling, message, and
+financial variables as PWA. Generic payload traversal and arbitrary producer
+APNs copy remain prohibited; missing or over-budget rendered context uses
+immutable generic event copy. The worker applies the same pure native
+route/query policy before serialization and replaces unsafe input with `/`. The Push-only policy
 also rejects `/sign/:token` and `/s/:code`, which remain valid Universal/App
 Links but contain bearer capabilities that must never reach Apple. A tap is
 ignored unless that binding matches the currently verified employee and the
@@ -192,9 +193,10 @@ delivery presentation still depends on the installation environment and app
 state.
 
 Foreground presentation is now explicit in `capacitor.config.json`: iOS may
-show badge, sound, and the typed privacy-safe alert while the native app is
-open. The JavaScript foreground callback remains content-private and emits only
-the constant refresh signal. Appointment audience remains the existing business
+show badge, sound, and the typed event alert while the native app is open.
+Owner decision 2026-07-29 permits the same event-approved details as PWA. The
+JavaScript foreground callback remains content-private and emits only the
+constant refresh signal. Appointment audience remains the existing business
 rule: only employees assigned to the appointment receive appointment Push.
 
 ## Pilot stop and rollback

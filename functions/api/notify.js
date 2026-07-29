@@ -381,6 +381,15 @@ export function enrichInboundMessageBody(body = {}) {
 
   return {
     ...body,
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      sender_name: body.presentation_context?.sender_name || (
+        String(body.title || '').startsWith('New text from ')
+          ? String(body.title).slice('New text from '.length)
+          : ''
+      ),
+      message_preview: body.presentation_context?.message_preview || body.body || '',
+    },
     link: bellLink,
     data: {
       ...(body.data || {}),
@@ -428,6 +437,18 @@ const APPT_VERB = {
   'appointment.canceled': 'Appointment canceled',
 };
 
+function formatPresentationMoney(value) {
+  if (value === null || value === undefined || value === '') return '';
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '';
+  return amount.toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 /**
  * Turn a bare `{ appointment_id }` trigger payload into a clean title + body +
  * deep link (the DB triggers pass only ids). Best-effort: on any lookup failure
@@ -435,20 +456,28 @@ const APPT_VERB = {
  * unchanged, so the catalog label still shows and this never throws.
  */
 export async function enrichAppointmentBody(db, typeKey, body = {}) {
-  if (!body.appointment_id || body.title) return body;
+  if (!body.appointment_id) return body;
   let appt = null;
   try {
-    const rows = await db.select('appointments', `id=eq.${body.appointment_id}&select=title,date,time_start,time_end`);
+    const rows = await db.select(
+      'appointments',
+      `id=eq.${body.appointment_id}`
+        + '&select=title,date,time_start,time_end,'
+        + 'jobs(job_number,insured_name,estimated_value,approved_value,invoiced_value,collected_value)',
+    );
     appt = rows?.[0] || null;
   } catch { appt = null; }
   if (!appt) return body;
+  const job = appt.jobs || null;
   const what = (appt.title && String(appt.title).trim()) || '';
   const verb = APPT_VERB[typeKey] || 'Appointment';
   const when = formatApptWhen(appt.date, appt.time_start, appt.time_end);
+  const customerName = (job?.insured_name && String(job.insured_name).trim()) || '';
+  const jobNumber = (job?.job_number && String(job.job_number).trim()) || '';
   return {
     ...body,
-    title: what ? `${verb} · ${what}` : verb,
-    body: when || body.body || '',
+    title: body.title || (what ? `${verb} · ${what}` : verb),
+    body: body.body || when || '',
     // Store the OFFICE path. A notification has no idea who will open it or on
     // what, so the reader's shell decides (src/lib/techShellRoutes.js): field techs
     // are routed to /tech/appointment/:id, the office keeps this one. Storing the
@@ -472,6 +501,12 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
       ...(body.presentation_context || {}),
       appointment_title: what,
       appointment_when: when,
+      customer_name: customerName,
+      job_number: jobNumber,
+      job_estimated_amount: formatPresentationMoney(job?.estimated_value),
+      job_approved_amount: formatPresentationMoney(job?.approved_value),
+      job_invoiced_amount: formatPresentationMoney(job?.invoiced_value),
+      job_collected_amount: formatPresentationMoney(job?.collected_value),
     },
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,
@@ -484,7 +519,12 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
  * when a title is already set; never throws. Reads estimates + contacts.
  */
 export async function enrichEstimateBody(db, body = {}) {
-  if (!body.estimate_id || body.title) return body;
+  if (!body.estimate_id) return body;
+  if (
+    body.presentation_context?.estimate_number
+    && body.presentation_context?.amount
+    && body.presentation_context?.customer_name
+  ) return body;
   let est = null;
   try {
     const rows = await db.select('estimates', `id=eq.${body.estimate_id}&select=estimate_number,amount,approved_amount,contact_id,job_id`);
@@ -505,8 +545,8 @@ export async function enrichEstimateBody(db, body = {}) {
   const num = est.estimate_number ? String(est.estimate_number).trim() : '';
   return {
     ...body,
-    title: num ? `Estimate ${num} accepted` : 'Estimate accepted',
-    body: [money, client].filter(Boolean).join(' · ') || body.body || '',
+    title: body.title || (num ? `Estimate ${num} accepted` : 'Estimate accepted'),
+    body: body.body || [money, client].filter(Boolean).join(' · '),
     link: body.link || `/estimates/${body.estimate_id}`,
     entity_type: body.entity_type || 'estimate',
     entity_id: body.entity_id || body.estimate_id,
@@ -522,6 +562,52 @@ export async function enrichEstimateBody(db, body = {}) {
       customer_name: client,
     },
   };
+}
+
+export async function enrichDatabasePresentationContext(db, typeKey, body) {
+  if (
+    typeKey !== 'timesheet.change_requested'
+    && typeKey !== 'clock.abandoned'
+  ) return body;
+  const presentationContext = { ...(body.presentation_context || {}) };
+  delete presentationContext.employee_name;
+  const safeBody = {
+    ...body,
+    presentation_context: presentationContext,
+  };
+  let employeeId = null;
+  try {
+    if (typeKey === 'timesheet.change_requested' && body.entity_id) {
+      const requests = await db.select(
+        'time_entry_change_requests',
+        `id=eq.${encodeURIComponent(body.entity_id)}&select=requested_by&limit=1`,
+      );
+      employeeId = requests?.[0]?.requested_by || null;
+    } else if (typeKey === 'clock.abandoned') {
+      employeeId = body.payload?.employee_id || null;
+    }
+    if (!employeeId) return safeBody;
+    const employees = await db.select(
+      'employees',
+      `id=eq.${encodeURIComponent(employeeId)}`
+        + '&select=full_name,is_active,is_external&limit=1',
+    );
+    const employee = employees?.[0];
+    if (
+      !employee?.full_name
+      || employee.is_active !== true
+      || employee.is_external !== false
+    ) return safeBody;
+    return {
+      ...safeBody,
+      presentation_context: {
+        ...presentationContext,
+        employee_name: employee.full_name,
+      },
+    };
+  } catch {
+    return safeBody;
+  }
 }
 
 /**
@@ -560,6 +646,7 @@ export async function dispatchEvent({
   } else if (typeKey === 'estimate.accepted') {
     body = await enrichEstimateBody(db, body);
   }
+  body = await enrichDatabasePresentationContext(db, typeKey, body);
 
   const recipientIds = await resolveAudience(db, typeKey, body);
 

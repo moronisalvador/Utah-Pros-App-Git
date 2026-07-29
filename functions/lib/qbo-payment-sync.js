@@ -53,6 +53,7 @@ export async function notifyPaymentReceived({
   jobId,
   source,
   reference,
+  invoiceNumber,
   paymentEventId,
   dispatchImpl = dispatchEvent,
 }) {
@@ -71,6 +72,7 @@ export async function notifyPaymentReceived({
         entity_id: invoiceId || null,
         job_id: jobId || null,
         payload: { amount: Number.isFinite(amt) ? amt : null, source: source || null, reference: reference || null },
+        presentation_context: { invoice_number: invoiceNumber || null },
         data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
       },
     });
@@ -133,7 +135,10 @@ async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
     if (!invoiceId) return null;
   }
 
-  const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id&limit=1`))?.[0];
+  const inv = (await db.select(
+    'invoices',
+    `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id,invoice_number,qbo_doc_number&limit=1`,
+  ))?.[0];
   if (!inv) return null;
   // Adopt the QBO-born invoice id so the payment matches + future webhooks dedup. Never
   // clobber a qbo_invoice_id the UPR invoice already has (it was pushed separately).
@@ -145,7 +150,13 @@ async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
       qbo_sync_error: null,
     });
   }
-  return { id: inv.id, job_id: inv.job_id, contact_id: inv.contact_id };
+  return {
+    id: inv.id,
+    job_id: inv.job_id,
+    contact_id: inv.contact_id,
+    invoice_number: inv.invoice_number || null,
+    qbo_doc_number: inv.qbo_doc_number || (qboInv.DocNumber != null ? String(qboInv.DocNumber) : null),
+  };
 }
 
 // ─── SECTION: Helpers ──────────────
@@ -228,7 +239,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     const applied = Number(line.Amount || 0);
     if (!(applied > 0)) { results.push({ qboInvoiceId, skipped: 'zero-amount' }); continue; }
 
-    let inv = (await db.select('invoices', `qbo_invoice_id=eq.${qboInvoiceId}&select=id,job_id,contact_id&limit=1`))?.[0];
+    let inv = (await db.select('invoices', `qbo_invoice_id=eq.${qboInvoiceId}&select=id,job_id,contact_id,invoice_number,qbo_doc_number&limit=1`))?.[0];
     // No UPR invoice for this QBO invoice yet — it may be a QBO-side auto-conversion of an
     // estimate (customer paid a deposit on the estimate's online pay link). Mirror it.
     if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId);
@@ -258,6 +269,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     await notifyPaymentReceived({
       db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
       source: 'QuickBooks', reference: `QBO Payment #${qboPaymentId}`,
+      invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
       paymentEventId: `qbo:${qboPaymentId}:${inv.id}`,
     });
     results.push({ qboInvoiceId, invoice_id: inv.id, amount: applied, recorded: true });

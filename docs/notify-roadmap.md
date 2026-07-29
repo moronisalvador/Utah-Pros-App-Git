@@ -487,8 +487,9 @@ reopen or silently rewrite the historical wave.
 ## 2026-07-29 notification presentation control-plane addendum
 
 The desktop admin presentation editor is separate from S1i notification channel defaults/employee
-preference ownership. It extends the reconciled native typed registry with independently governed
-bell/PWA templates and route identifiers, while native copy remains privacy-locked. Its new
+preference ownership. It extends the reconciled native typed registry with governed bell/PWA/native
+templates and route identifiers. Owner decision 2026-07-29 permits native to use the same
+event-approved variables as PWA while preserving field-only native routes. Its new
 service-only audited tables/RPC do not modify `notification_types`, defaults, locks, employee
 preferences, audience, deduplication, consent, or providers. Isolated `qa-staging` migration and
 concurrency/authorization behavior passed. The production database apply and exact production

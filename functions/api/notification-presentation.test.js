@@ -126,7 +126,8 @@ describe('notification presentation contracts', () => {
       type_key: 'estimate.accepted',
       label: 'Estimate accepted',
     });
-    expect(result.data.events[0].surfaces.native_push.variables).toEqual([]);
+    expect(result.data.events[0].surfaces.native_push.variables.map(({ key }) => key))
+      .toEqual(['estimate_number', 'amount', 'customer_name']);
   });
 
   it('previews synthetic data without configuration reads, RPCs, or providers', async () => {
@@ -164,9 +165,38 @@ describe('notification presentation contracts', () => {
     expect(db.rpc).not.toHaveBeenCalled();
   });
 
-  it('rejects native private copy and arbitrary routes', async () => {
+  it('allows typed native details but rejects arbitrary routes', async () => {
     const db = makeDb();
-    const result = await handleNotificationPresentation({
+    const preview = await handleNotificationPresentation({
+      request: request({
+        method: 'POST',
+        body: {
+          action: 'preview',
+          type_key: 'estimate.accepted',
+          surface: 'native_push',
+          config: {
+            title_template: 'Estimate {{estimate_number}} accepted',
+            body_template: '{{customer_name}} approved {{amount}}',
+            route_id: 'field.home',
+            contract_version: 1,
+          },
+        },
+      }),
+      env: ENV,
+      db,
+    });
+    expect(preview).toMatchObject({
+      status: 200,
+      data: {
+        presentation: {
+          title: 'Estimate EST-1042 accepted',
+          body: 'Jordan Lee approved $1,250.00',
+          url: '/',
+        },
+      },
+    });
+
+    const rejected = await handleNotificationPresentation({
       request: request({
         method: 'POST',
         body: {
@@ -185,7 +215,7 @@ describe('notification presentation contracts', () => {
       db,
     });
 
-    expect(result.status).toBe(400);
+    expect(rejected.status).toBe(400);
     expect(db.rpc).not.toHaveBeenCalled();
   });
 

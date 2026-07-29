@@ -155,10 +155,17 @@ single `/api/send-message` chokepoint.
 ## Notification presentation control plane
 
 `functions/lib/notificationPresentation.js` is the one typed event/surface/variable/route catalog
-for notification presentation. Browser bell/PWA and privacy-locked native definitions live in that
-registry; dispatchers may consume a validated override but do not accept caller-defined templates,
-paths, URLs, route parameters, or provider payloads. A missing, stale, invalid, over-budget, or
-unrenderable override falls back per surface to the code-owned presentation.
+for notification presentation. Bell, PWA, and native definitions live in that registry; under the
+2026-07-29 owner decision, native shares each event's approved PWA variable set while retaining its
+separate field-only route allowlist. Dispatchers may consume a validated override but do not accept
+caller-defined paths, URLs, route parameters, provider payloads, or generic payload traversal. A
+missing, stale, invalid, over-budget, or unrenderable override falls back per surface to the
+code-owned presentation; native missing-context or over-budget render fallback remains immutable
+generic copy, and the APNs boundary enforces the final 4 KB provider payload budget.
+
+The admin editor projects the registry's event-specific variables into separate Title and Message
+pickers; it never owns a second catalog. Payment events normalize invoice number separately from
+the provider/payment reference, so either value can be selected without conflating their meaning.
 
 The desktop-only `/settings/notification-presentation` page calls the protected
 `/api/notification-presentation` Worker. The Worker authenticates an active internal literal admin

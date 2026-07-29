@@ -47,7 +47,7 @@ describe('notifyPaymentReceived (payment.received emit hook)', () => {
   it('emits payment.received with amount, invoice link + payload', async () => {
     await notifyPaymentReceived({
       db: {}, env: ENV, amount: 1234.5, invoiceId: 'inv-1', jobId: 'job-1',
-      source: 'Stripe', reference: 'Invoice 1001',
+      source: 'Stripe', reference: 'Charge #ch-1', invoiceNumber: 'INV-1001',
     });
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
     const evt = dispatchEvent.mock.calls[0][0];
@@ -59,6 +59,7 @@ describe('notifyPaymentReceived (payment.received emit hook)', () => {
     expect(evt.body.body).toContain('$1234.50');
     expect(evt.body.body).toContain('Stripe');
     expect(evt.body.payload.amount).toBe(1234.5);
+    expect(evt.body.presentation_context).toEqual({ invoice_number: 'INV-1001' });
   });
 
   it('falls back to /collections when there is no invoice id', async () => {
@@ -88,7 +89,15 @@ function makeDb({ existingPayment = false } = {}) {
   return {
     inserts,
     async select(table) {
-      if (table === 'invoices') return [{ id: 'inv-1', job_id: 'job-1', contact_id: 'c-1' }];
+      if (table === 'invoices') {
+        return [{
+          id: 'inv-1',
+          job_id: 'job-1',
+          contact_id: 'c-1',
+          invoice_number: 'INV-1001',
+          qbo_doc_number: 'QB-1001',
+        }];
+      }
       if (table === 'payments') return existingPayment ? [{ id: 'pay-existing' }] : [];
       return [];
     },
@@ -109,6 +118,8 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
     expect(db.inserts).toHaveLength(1);
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
     expect(dispatchEvent.mock.calls[0][0].typeKey).toBe('payment.received');
+    expect(dispatchEvent.mock.calls[0][0].body.presentation_context)
+      .toEqual({ invoice_number: 'QB-1001' });
   });
 
   it('does NOT re-fire for an already-synced (re-delivered) payment', async () => {

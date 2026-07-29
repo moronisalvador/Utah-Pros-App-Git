@@ -135,6 +135,7 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
         entity_type: 'tech_feedback',
         entity_id: feedbackId,
         payload: { feedback_type: feedback.type, source: feedback.source ?? null },
+        presentation_context: { employee_name: submitterName },
         exclude_employee_id: feedback.employee_id,
         data: payload.data,
       },

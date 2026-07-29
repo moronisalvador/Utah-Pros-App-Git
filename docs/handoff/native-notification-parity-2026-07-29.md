@@ -23,6 +23,22 @@ This batch did **not** change SMS delivery, CallRail message ingestion,
 notification audiences, database schema, Apple signing, Cloudflare variables,
 or live deployment state.
 
+## Superseding owner decision — 2026-07-29
+
+After reviewing the live Settings page, the owner explicitly rejected the
+generic-only native privacy policy and directed native iPhone notifications to
+show the same event-approved details as PWA, including customer, scheduling,
+and payment information. The original privacy-budget text and static catalog
+below remain as historical handoff evidence, but no longer state current
+product policy.
+
+The amended contract still ignores arbitrary producer `alert`/`data`/copy,
+accepts only each event's typed server-derived variables, and preserves native's
+field-only route allowlist. Missing typed context atomically uses the original
+generic event copy. Setting
+`NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores that generic copy at
+the APNs boundary without disabling Push.
+
 ## Repository state
 
 - Base: `origin/dev` at `f290e865d25d718dc0ed4a8732e6bf3a621b95c7`
@@ -79,7 +95,7 @@ The APNs adapter invokes this registry internally. A caller cannot bypass it by
 supplying `alert`, `data`, title, body, customer message content, or a free-form
 route.
 
-The approved lock-screen privacy budget excludes:
+The original, now-superseded lock-screen privacy budget excluded:
 
 - customer/contact names;
 - message contents;
@@ -92,7 +108,7 @@ The approved lock-screen privacy budget excludes:
 Appointment alerts expose only event state and generic action copy. PWA Web
 Push, the in-app bell, and email retain their existing richer presentation.
 
-### 2. Current native presentation catalog
+### 2. Original native presentation catalog (superseded)
 
 | Type | Native title | Native body | Native tap destination |
 |---|---|---|---|
@@ -299,8 +315,8 @@ Constraints for that continuation:
 - preview/test operations remain owner-only and content-safe;
 - a database-backed overlay, if chosen, requires a separately reviewed
   additive migration and fresh owner authorization before live apply;
-- PWA/bell/email presentation changes remain separate from native lock-screen
-  disclosure;
+- PWA/bell/native share event-approved variable definitions, while native keeps
+  its separate field-only route allowlist;
 - existing event audience, preference, dedup, and authorization contracts do
   not change.
 

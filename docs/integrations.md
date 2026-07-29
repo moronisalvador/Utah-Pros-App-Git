@@ -78,10 +78,20 @@ bindings and provider consoles.
 - `functions/lib/notificationPresentation.js` is the exhaustive native presentation registry. It
   now also projects separately governed typed bell/PWA definitions for the 15 live event types.
   Admin overrides are validated against event-specific variables and route identifiers before
-  dispatch. Native copy remains privacy-locked with no configurable variables, and arbitrary
-  producer/admin copy, paths, URLs, data, or route parameters still cannot enter the APNs payload.
-  Presentation lookup uses a bounded service client and fails back to code defaults; preview makes
-  no APNs, Web Push, email, SMS, or other provider call.
+  dispatch. Owner decision 2026-07-29 permits native to use the same approved variables as PWA, but
+  native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
+  or route parameters still cannot enter APNs. Typed context missing any required value uses the
+  immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
+  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
+  synthetic values and makes no provider call.
+- Appointment assigned/updated/canceled presentation resolves customer name and job number from
+  the appointment's trusted linked-job record. Those values join appointment title/time and
+  separately labeled estimated, approved, invoiced, and collected job amounts in the event
+  allowlist for bell, PWA, and native; caller-supplied values and arbitrary job fields do not.
+- Payment producers pass the normalized invoice display number through
+  `presentation_context.invoice_number`; provider charge/payment references remain a separate
+  `payload.reference` value. Both are display-only typed presentation variables, including native,
+  and neither changes payment recording, idempotency, QuickBooks behavior, or recipients.
 - The owner-only delivery diagnostic may render each of those 15 registry types with synthetic
   values and deliver it to the owner's bell, enrolled Web Push subscriptions, and
   environment-matched iPhone tokens. Each event/surface gets its own stable diagnostic identity;
