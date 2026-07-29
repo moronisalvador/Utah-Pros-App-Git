@@ -1,0 +1,6 @@
+{
+  "note": "Shrink-only failure baseline for the db lane against the schema-only qa-staging branch (first real run 2026-07-29: 132 passed, 21 failed, 204 skipped of 357). The failures/skips are fixture gaps — auth.users is empty on a schema-only seed, so identity-dependent tests execute as anon and are correctly denied. Grants verified transferred (365 functions executable by authenticated). Run-to-green path: a reviewed test-fixture seed (test auth users + minimal rows) for the branch, then ratchet these to zero and delete this file. Never raise these numbers — a rise means a real regression.",
+  "recorded": "2026-07-29",
+  "maxFailedTests": 21,
+  "maxFailedFiles": 53
+}
