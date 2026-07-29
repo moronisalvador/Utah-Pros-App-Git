@@ -20,7 +20,7 @@ NOTES / GOTCHAS:
 
 # Provider-Neutral Messaging Transport — Plan of Record
 
-**Created / last verified:** 2026-07-23
+**Created:** 2026-07-23 · **Last verified:** 2026-07-29
 
 **Slug:** `messaging-transport`
 
@@ -598,6 +598,71 @@ traffic.
 - verify clients, conversations, consent, attempts/events, and automation domain require no rewrite;
 - retain provider-specific webhook adapters and number routing; document the production cutover
   runbook before any number move.
+
+#### Twilio inbound-notification parity contract (added 2026-07-29)
+
+The providers currently reach the same `message.inbound` notification through different reliability
+paths:
+
+- **CallRail:** signed text webhook → durable `message_provider_events` claim → atomic canonical
+  projection → unique `message_notification_outbox` row → protected outbox worker →
+  `dispatchEvent('message.inbound')`.
+- **Twilio today:** signed `twilio-webhook.js` request → canonical message persistence → direct
+  best-effort `notifyInboundMessage()` → `dispatchEvent('message.inbound')`.
+
+The resulting audience and presentation are provider-neutral, but the durability is not. Before a
+Production switch to Twilio, move Twilio inbound projection behind the same per-phone serialization
+and durable notification-outbox boundary used by CallRail. Reuse the existing outbox contract rather
+than creating a Twilio-only queue. Once that path is verified, retire the Twilio direct notification
+call in the same release so one inbound message cannot emit twice.
+
+The cutover implementation must preserve these exact notification facts:
+
+1. The canonical conversation id determines the bell/PWA/native deep link; no provider payload
+   chooses a UI route.
+2. `conversation.assigned_to` is the recipient when present; otherwise the existing active-internal
+   office-role fallback applies.
+3. The canonical contact plus persisted text/media state determines the title and preview.
+4. One stable source occurrence identifies one notification across retries. A Twilio Message SID may
+   identify the provider event, while the durable outbox row id remains the notification occurrence
+   consumed by native-delivery deduplication.
+5. Provider-event and outbox uniqueness prevent webhook retries from duplicating the canonical
+   message or notification. Bell/push delivery remains at-least-once across a crash after a channel
+   side effect but before outbox completion.
+6. STOP/START/HELP projection and consent writes complete before staff-facing notification dispatch;
+   invalid signatures and failed canonical projection produce no notification.
+
+#### Production CallRail → Twilio switch checklist
+
+This is an owner-gated provider operation, not merely a `MESSAGING_SEND_MODE` flip:
+
+1. Deploy the reviewed Twilio outbox/serialization implementation while CallRail remains active and
+   Twilio Production sending remains disabled.
+2. In a non-production environment, validate the exact public URL used for
+   `X-Twilio-Signature`, inbound SMS/MMS parsing, Message SID dedupe, status callbacks, private media
+   ownership, and the notification-outbox retry path.
+3. Prove one owner-approved round trip: staff send → Twilio acceptance/status → customer reply →
+   one canonical message → one unread increment → one outbox row → one notification on each enabled
+   bell/PWA/native surface. Repeat with a webhook redelivery and confirm no duplicate domain row or
+   notification occurrence.
+4. Prove STOP then refused send, later START then allowed staff 1:1 send, without weakening DND,
+   pending-STOP, kill-switch, quiet-hours, sole-writer, or no-fallback rules.
+5. Before the number move, freeze staff sends, drain/reconcile CallRail attempts, provider events,
+   and notification outbox work, and record any intentionally resolved exceptions.
+6. Set outbound mode to `disabled`; then move/port or rebind the business number and configure the
+   Twilio inbound and status webhooks. Never leave both providers able to originate from the same
+   business identity.
+7. Enable `twilio` only after the signed inbound/status canary succeeds. Observe provider events,
+   outbox state, worker runs, notification delivery, and customer-visible thread continuity through
+   the agreed bake window.
+8. Rollback starts with `MESSAGING_SEND_MODE=disabled`. Restore provider routing only when the number
+   owner and late-event behavior are understood; do not automatically resend an ambiguous attempt or
+   fall back across providers/channels.
+
+Production and Preview web deployments share one Supabase project. Reusing the existing outbox should
+not require provider-specific schema. Any necessary schema change still goes through `qa-staging`
+first and the separately authorized shared-production migration window; provider console, Cloudflare
+binding, deployment, number-port, and live-message actions each remain separately owner-gated.
 
 ### Phase 7 — Twilio RCS readiness and controlled activation
 
