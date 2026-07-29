@@ -1325,7 +1325,9 @@ an existing row. ENABLED (not OFF) is deliberate: `isFeatureEnabled` treats a mi
 ("no row = unrestricted"), so seeding OFF would *hide* a feature that was already live. To
 dark-launch a feature OFF, set `enabled: false` on its registry entry. Add a flag going forward by
 appending one line to `EXPLICIT_FLAGS`, or just set `featureFlag` on a nav item — it self-registers
-on the next DevTools open.
+on the next DevTools open. (2026-07-29: `FlagsTab.load()` and `WorkersTab.load()` gained a
+`{ silent }` option — add-flag, post-sync, and manual-Refresh refetches no longer re-gate the tab
+into `TabLoading`, per `page-lifecycle.md` §1.)
 
 **Phases 1C–6C (all complete):** Sidebar guards, DevTools.jsx with 9 tabs (Moroni-only route) —
 Flags, Health, Employees, Workers, Integrations, Backfill, Integrity, Messaging, Advanced.

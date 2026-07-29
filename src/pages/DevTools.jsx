@@ -93,8 +93,8 @@ function FlagsTab() {
   const [newFlag, setNewFlag]   = useState({ key: '', label: '', category: 'page', description: '' });
   const [adding, setAdding]     = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true); // silent: refetch after a mutation must not re-gate the tab (page-lifecycle.md §1)
     try {
       let rows = (await db.rpc('get_feature_flags')) || [];
       // Auto-register: surface any code-declared flag (FEATURE_FLAG_REGISTRY) not yet
@@ -229,7 +229,7 @@ function FlagsTab() {
       ok(`Flag "${newFlag.key}" created`);
       setNewFlag({ key: '', label: '', category: 'page', description: '' });
       setShowAdd(false);
-      load();
+      await load({ silent: true });
     } catch (e) {
       err('Failed to create flag');
     } finally {
@@ -264,7 +264,7 @@ function FlagsTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={load}>
+          <button className="btn btn-secondary btn-sm" onClick={() => load({ silent: true })}>
             <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(v => !v)}>
@@ -639,8 +639,8 @@ function WorkersTab() {
   const [syncing, setSyncing] = useState(false);
   const [limit, setLimit]     = useState(20);
 
-  const load = useCallback(async (n = limit) => {
-    setLoading(true);
+  const load = useCallback(async (n = limit, { silent = false } = {}) => {
+    if (!silent) setLoading(true); // silent: post-sync/manual refresh must not re-gate the tab (page-lifecycle.md §1)
     try {
       const rows = await db.rpc('get_worker_runs', { p_limit: n });
       setRuns(rows || []);
@@ -661,7 +661,7 @@ function WorkersTab() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       ok(`Encircle sync triggered — ${data.synced ?? '?'} records`);
-      setTimeout(() => load(), 2000); // Give it a moment to write worker_run row
+      setTimeout(() => load(limit, { silent: true }), 2000); // Give it a moment to write worker_run row
     } catch (e) {
       err('Sync failed: ' + e.message);
     } finally {
@@ -700,7 +700,7 @@ function WorkersTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => load()}>
+          <button className="btn btn-secondary btn-sm" onClick={() => load(limit, { silent: true })}>
             <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
           </button>
           <button className="btn btn-primary btn-sm" onClick={triggerSync} disabled={syncing}>
