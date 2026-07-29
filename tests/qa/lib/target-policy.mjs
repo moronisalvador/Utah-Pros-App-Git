@@ -26,6 +26,13 @@ export const LOCAL_BROWSER_ORIGIN = 'http://127.0.0.1:4173';
 export const LOCAL_SUPABASE_ORIGIN = 'http://127.0.0.1:54321';
 export const LOCAL_DATABASE_SENTINEL = 'upr-local-only-v1';
 
+// The seeded qa-staging Supabase branch (docs/database/staging-branch-runbook.md).
+// null until the owner seeds the branch and commits its ref here — a reviewed code
+// change, per this file's no-env-fallback rule. While null, every hosted-QA runner
+// refuses to start.
+export const QA_BRANCH_PROJECT_REF = null;
+export const QA_BRANCH_SENTINEL = 'upr-qa-branch-only-v1';
+
 const HUMAN_PROFILE_MARKERS = [
   '/google/chrome/user data',
   '/microsoft/edge/user data',
@@ -86,6 +93,30 @@ export function assertLocalDatabaseTarget({ mode, projectRef, supabaseUrl } = {}
     projectRef,
     origin: target.origin,
   });
+}
+
+export function assertQaBranchTarget({ mode, projectRef, supabaseUrl } = {}) {
+  if (mode !== 'qa-branch') denial('QA branch target', 'mode must be exactly qa-branch');
+  if (!QA_BRANCH_PROJECT_REF) {
+    denial('QA branch target', 'no QA branch ref is committed yet — seed the qa-staging branch '
+      + 'and set QA_BRANCH_PROJECT_REF (docs/database/staging-branch-runbook.md §2)');
+  }
+  if (!projectRef || projectRef === PRODUCTION_PROJECT_REF) {
+    denial('QA branch target', 'project ref is missing or production');
+  }
+  if (projectRef !== QA_BRANCH_PROJECT_REF) {
+    denial('QA branch target', `project ref ${projectRef} is not the committed QA branch ref`);
+  }
+
+  const target = parseUrl(supabaseUrl, 'QA branch target');
+  if (target.origin !== `https://${QA_BRANCH_PROJECT_REF}.supabase.co`) {
+    denial('QA branch target', `origin ${target.origin} is not the committed QA branch origin`);
+  }
+  if (target.pathname !== '/' || target.search || target.hash) {
+    denial('QA branch target', 'Supabase target must be an origin without a path or query');
+  }
+
+  return Object.freeze({ mode, projectRef, origin: target.origin });
 }
 
 export function assertCdpLaunchPolicy({ transport, userDataDir, repositoryRoot } = {}) {

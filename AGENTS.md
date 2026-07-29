@@ -65,9 +65,9 @@ Numbering is frozen — "CLAUDE.md Rule N" resolves here.
 
 One Supabase project — ref `glsmljpabrwonfiltiqm` — sits behind **both `dev` and `main`**. A
 migration is a production change the instant it applies. A persistent staging branch
-(**`qa-staging`**, ref `dgeptnjxruclohguenex`) exists for iteration — see
-`docs/database/staging-branch-runbook.md`; it is the ONLY hosted database agents may iterate
-against. Binding essentials (full standard: `.claude/rules/database-standard.md`):
+(**`qa-staging`**) is the iteration target — one owner seeding action is pending; see
+`docs/database/staging-branch-runbook.md`. Once seeded it is the ONLY hosted database agents may
+iterate against. Binding essentials (full standard: `.claude/rules/database-standard.md`):
 
 - **Never write-test against the shared project.** Iterate on the staging branch or a local stack.
 - **Additive-only on live tables**; removals are a separate reviewed change with a
@@ -207,8 +207,8 @@ deployment conventions, update the corresponding canonical doc in the same commi
   is used only in `src/lib/realtime.js`.
 - **Backend:** Cloudflare Pages Functions in `functions/api/`, shared code in `functions/lib/`
   (dashboard-configured, no `wrangler.toml`).
-- **Database:** one shared Supabase project plus the `qa-staging` branch; migrations in
-  `supabase/migrations/`, rollbacks in `supabase/rollbacks/`.
+- **Database:** one shared Supabase project (staging branch pending seed — see the runbook);
+  migrations in `supabase/migrations/`, rollbacks in `supabase/rollbacks/`.
 - **Native:** Capacitor 8 iOS project in `ios/`. **Owner automation:** `upr-mcp/`.
 - **Env:** Cloudflare keeps separate Production and Preview variable sets — a new secret needs
   both, plus a redeploy. Counts (pages, workers, migrations) drift — derive them, never quote a

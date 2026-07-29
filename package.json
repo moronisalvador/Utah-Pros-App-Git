@@ -16,6 +16,7 @@
     "test:worker": "node scripts/qa/run-vitest-lane.mjs worker",
     "test:qa": "node scripts/qa/run-vitest-lane.mjs qa",
     "test:db:local": "node scripts/qa/run-local-db-tests.mjs",
+    "test:db:branch": "node scripts/qa/run-qa-branch-db-tests.mjs",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",
