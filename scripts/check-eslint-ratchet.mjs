@@ -94,8 +94,10 @@ function gitChangedFiles(base) {
 
 function lint(files) {
   if (!files.length) return [];
-  const executable = path.join(ROOT, 'node_modules', '.bin', 'eslint');
-  const result = spawnSync(executable, ['--format', 'json', ...files], {
+  // The node_modules/.bin shim is a shell script spawnSync cannot execute on
+  // Windows (ENOENT); invoke eslint's JS entry via the current node binary.
+  const executable = path.join(ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js');
+  const result = spawnSync(process.execPath, [executable, '--format', 'json', ...files], {
     cwd: ROOT,
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,

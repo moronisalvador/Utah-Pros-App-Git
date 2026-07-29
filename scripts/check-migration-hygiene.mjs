@@ -35,8 +35,9 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MIGRATIONS_DIR = path.join(ROOT, 'supabase', 'migrations');
 const ROLLBACKS_DIR = path.join(ROOT, 'supabase', 'rollbacks');
 const BASELINE_PATH = path.join(ROOT, 'scripts', 'migration-hygiene-baseline.json');

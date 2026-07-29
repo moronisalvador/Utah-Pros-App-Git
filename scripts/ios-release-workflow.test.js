@@ -231,7 +231,12 @@ describe('iOS release workflow authorization boundary', () => {
     expect(ownedSubprocessRunner).toContain('verifyProcessGroupGone(pid)');
   });
 
+  // The two live subprocess probes below depend on POSIX semantics (/bin/sh,
+  // process-group kill via negative PID, timeout exit code 124) and cannot pass
+  // on Windows. They guard in-body rather than via it.skip because the lane
+  // runner fails on any skipped test; CI (Linux) is the enforcing environment.
   it('dynamically cleans successful and timed-out owned process groups', () => {
+    if (process.platform === 'win32') return;
     const success = runOwnedSubprocess(500, 'process.exit(0)');
     expect(success.status).toBe(0);
     expect(success.stderr).toContain('Verified owned process group');
@@ -273,6 +278,7 @@ describe('iOS release workflow authorization boundary', () => {
   });
 
   it('SIGKILLs TERM-resistant children inside the five-minute total deadline', () => {
+    if (process.platform === 'win32') return; // POSIX-only — see the comment above
     const startedAt = Date.now();
     const resistant = runOwnedSubprocess(
       800,
