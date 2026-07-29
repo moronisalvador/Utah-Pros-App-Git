@@ -486,6 +486,21 @@ staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until t
 approved activation window and provider proof. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
 
+### Provider-event operations boundary
+
+Ops-health message-event alerts link to the owner-only Provider Events panel at
+`/dev-tools?tab=messaging&sub=events`. `GET /api/provider-event-ops` returns a paginated,
+no-store list of unresolved failed/retryable events with only operational identity: provider,
+direction/type, error/state, attempt count, phone endpoints, provider message ID, timestamps and
+outcome. It never returns message content, media references, raw-body hashes or provider payloads.
+
+`POST /api/provider-event-ops` accepts only `retry` or `resolve` for one exact event UUID after the
+same active-internal-owner check as Dev Tools. Retry reads the current row server-side and calls the
+existing service-only `rearm_callrail_provider_event` RPC with that exact row/error compare-and-set;
+the existing scheduled recovery worker later projects the retained event. Resolve calls the existing
+service-only `resolve_provider_event` RPC and records the verified owner employee ID. The endpoint
+does not call CallRail, choose a provider, submit/resubmit an SMS/MMS, or alter consent.
+
 ### CallRail live MMS endpoint compatibility
 
 Authenticated CallRail history observed on 2026-07-24 returned account-scoped media endpoints under
