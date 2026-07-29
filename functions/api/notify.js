@@ -212,6 +212,8 @@ export async function dispatchToRecipient({
   type,
   body,
   vapid,
+  bellPresentation,
+  pwaPresentation,
   sendWebPushImpl,
   sendNativePushImpl,
   sendEmailImpl,
@@ -225,28 +227,6 @@ export async function dispatchToRecipient({
   catch { prefs = []; }
   const forType = (prefs || []).filter((p) => p.type_key === type.type_key);
   const on = (ch) => forType.some((p) => p.channel === ch && p.enabled);
-  const bellPresentation = await resolveConfiguredNotificationPresentation({
-    db,
-    typeKey: type.type_key,
-    surfaceKey: 'bell',
-    body,
-    fallback: {
-      title: body.title || type.label,
-      body: body.body || '',
-      url: body.link || '/',
-    },
-  });
-  const pwaPresentation = await resolveConfiguredNotificationPresentation({
-    db,
-    typeKey: type.type_key,
-    surfaceKey: 'pwa_push',
-    body,
-    fallback: {
-      title: body.title || type.label,
-      body: body.body || '',
-      url: body.data?.url || body.link || '/',
-    },
-  });
 
   // Channel 1 — in-app bell (per-recipient row).
   if (on('bell') && !nativeRetryOnly) {
@@ -654,6 +634,31 @@ export async function dispatchEvent({
   let vapid;
   try { vapid = await loadVapidConfig(env, db); } catch { vapid = undefined; }
 
+  // Presentation depends only on the type + enriched body, never the recipient —
+  // resolve each surface once per event, not twice per recipient.
+  const bellPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'bell',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.link || '/',
+    },
+  });
+  const pwaPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'pwa_push',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.data?.url || body.link || '/',
+    },
+  });
+
   const results = [];
   for (const rid of recipientIds) {
     results.push(await dispatchToRecipient({
@@ -663,6 +668,8 @@ export async function dispatchEvent({
       type,
       body,
       vapid,
+      bellPresentation,
+      pwaPresentation,
       sendWebPushImpl,
       sendNativePushImpl,
       sendEmailImpl,
