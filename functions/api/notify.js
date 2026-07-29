@@ -77,6 +77,11 @@ const ROLE_AUDIENCE = {
 
 const NOTIFY_BROWSER_ROLES = ['admin'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const APPOINTMENT_AUDIENCE_TYPES = new Set([
+  'appointment.assigned',
+  'appointment.updated',
+  'appointment.canceled',
+]);
 
 // There is no checked-in browser caller for POST /api/notify. Keep the legacy
 // Bearer capability deliberately narrow: only events whose recipient and
@@ -114,20 +119,40 @@ async function filterActiveInternalEmployeeIds(db, employeeIds) {
     .map((employee) => employee.id));
 }
 
+async function resolveAppointmentAudience(db, typeKey, body) {
+  if (!body.appointment_id) return [];
+  let crew = [];
+  try {
+    crew = await db.select(
+      'appointment_crew',
+      `appointment_id=eq.${body.appointment_id}&select=employee_id`,
+    );
+  } catch {
+    return [];
+  }
+  let crewIds = uniq((crew || []).map((row) => row.employee_id));
+  if (typeKey === 'appointment.assigned') {
+    if (!body.employee_id) return [];
+    crewIds = crewIds.filter((id) => id === body.employee_id);
+  }
+  return filterActiveInternalEmployeeIds(db, crewIds);
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
- *  1. explicit body.recipient_ids win after active/internal validation;
- *  2. appointment/employee-scoped types resolve from the payload / crew;
+ *  1. appointment types always resolve from current assignment/crew state;
+ *  2. other explicit body.recipient_ids win after active/internal validation;
  *  3. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
+  if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
+    return resolveAppointmentAudience(db, typeKey, body);
+  }
+
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {
     return filterActiveInternalEmployeeIds(db, body.recipient_ids);
   }
 
-  if (typeKey === 'appointment.assigned' && body.employee_id) {
-    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
-  }
   if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
     return filterActiveInternalEmployeeIds(db, [body.employee_id]);
   }
@@ -144,14 +169,6 @@ export async function resolveAudience(db, typeKey, body = {}) {
       [...(admins || []).filter((e) => e.is_external !== true).map((e) => e.id), tech],
     );
   }
-  if ((typeKey === 'appointment.updated' || typeKey === 'appointment.canceled') && body.appointment_id) {
-    let crew = [];
-    try {
-      crew = await db.select('appointment_crew', `appointment_id=eq.${body.appointment_id}&select=employee_id`);
-    } catch { crew = []; }
-    return filterActiveInternalEmployeeIds(db, (crew || []).map((c) => c.employee_id));
-  }
-
   const roles = ROLE_AUDIENCE[typeKey] || ['admin'];
   let emps = [];
   try {

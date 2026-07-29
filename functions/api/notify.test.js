@@ -136,18 +136,56 @@ describe('resolveAudience', () => {
   });
 
   it('appointment.assigned → the crewed employee', async () => {
-    const db = makeDb({ employees: [{ id: 'emp-9' }] });
-    const ids = await resolveAudience(db, 'appointment.assigned', { employee_id: 'emp-9' });
+    const db = makeDb({
+      employees: [{ id: 'emp-9' }, { id: 'other' }],
+      crewByAppt: {
+        'ap-1': [
+          { employee_id: 'emp-9' },
+          { employee_id: 'other' },
+        ],
+      },
+    });
+    const ids = await resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
+      employee_id: 'emp-9',
+      recipient_ids: ['other'],
+    });
     expect(ids).toEqual(['emp-9']);
   });
 
   it('appointment.updated → the crew of the appointment', async () => {
     const db = makeDb({
-      employees: [{ id: 'c1' }, { id: 'c2' }],
+      employees: [{ id: 'c1' }, { id: 'c2' }, { id: 'outsider' }],
       crewByAppt: { 'ap-1': [{ employee_id: 'c1' }, { employee_id: 'c2' }] },
     });
-    const ids = await resolveAudience(db, 'appointment.updated', { appointment_id: 'ap-1' });
+    const ids = await resolveAudience(db, 'appointment.updated', {
+      appointment_id: 'ap-1',
+      recipient_ids: ['outsider'],
+    });
     expect(ids.sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('appointment.canceled ignores explicit recipients and keeps current crew', async () => {
+    const db = makeDb({
+      employees: [{ id: 'crew' }, { id: 'outsider' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'crew' }] },
+    });
+    await expect(resolveAudience(db, 'appointment.canceled', {
+      appointment_id: 'ap-1',
+      recipient_ids: ['outsider'],
+    })).resolves.toEqual(['crew']);
+  });
+
+  it('appointment.assigned fails closed unless the named employee is current crew', async () => {
+    const db = makeDb({
+      employees: [{ id: 'crew' }, { id: 'outsider' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'crew' }] },
+    });
+    await expect(resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
+      employee_id: 'outsider',
+      recipient_ids: ['outsider'],
+    })).resolves.toEqual([]);
   });
 
   it('clock.abandoned → admins plus the affected tech from the payload', async () => {
@@ -197,6 +235,7 @@ describe('resolveAudience', () => {
       },
     });
     expect(await resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
       employee_id: 'inactive',
     })).toEqual([]);
     expect(await resolveAudience(db, 'appointment.updated', {
@@ -676,6 +715,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
     });
@@ -701,6 +741,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { push: true }) },
       subsByEmp: { 'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }] },
