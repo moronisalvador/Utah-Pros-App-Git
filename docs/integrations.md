@@ -78,14 +78,41 @@ bindings and provider consoles.
 - `functions/lib/notificationPresentation.js` is the exhaustive native presentation registry. It
   now also projects separately governed typed bell/PWA definitions for the 15 live event types.
   Admin overrides are validated against event-specific variables and route identifiers before
-  dispatch. Native copy remains privacy-locked with no configurable variables, and arbitrary
-  producer/admin copy, paths, URLs, data, or route parameters still cannot enter the APNs payload.
-  Presentation lookup uses a bounded service client and fails back to code defaults; preview makes
-  no APNs, Web Push, email, SMS, or other provider call.
+  dispatch. Owner decision 2026-07-29 permits native to use the same approved variables as PWA, but
+  native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
+  or route parameters still cannot enter APNs. Typed context missing any required value uses the
+  immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
+  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
+  synthetic values and makes no provider call.
+- Appointment assigned/updated/canceled presentation resolves customer name and job number from
+  the appointment's trusted linked-job record. Those values join appointment title/time and
+  separately labeled estimated, approved, invoiced, and collected job amounts in the event
+  allowlist for bell, PWA, and native; caller-supplied values and arbitrary job fields do not.
+- Payment producers pass the normalized invoice display number through
+  `presentation_context.invoice_number`; provider charge/payment references remain a separate
+  `payload.reference` value. Both are display-only typed presentation variables, including native,
+  and neither changes payment recording, idempotency, QuickBooks behavior, or recipients.
+- The owner-only delivery diagnostic may render each of those 15 registry types with synthetic
+  values and deliver it to the owner's bell, enrolled Web Push subscriptions, and
+  environment-matched iPhone tokens. Each event/surface gets its own stable diagnostic identity;
+  Web Push also gets a unique tag so the service worker does not collapse separate types. This
+  diagnostic is independent of the source event's master enable switch, creates no source
+  business event, and never enters email, SMS, or MMS transport.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
+- The CallRail→Twilio switch must preserve the durable inbound-notification contract, not only the
+  outbound adapter. Repository source now retains signed Twilio inbound SMS/MMS in
+  `message_provider_events`, privately owns MMS bytes, then projects consent, canonical message,
+  unread state, and one `message_notification_outbox` occurrence under the same per-phone lock as
+  CallRail. The former direct `notifyInboundMessage()` module/path is removed, so the durable
+  outbox is the only `message.inbound` route. The compatible inactive Worker is deployed on `dev`,
+  and migration `20260729211728_twilio_inbound_notification_parity.sql` is applied and
+  rollback-proof-verified on isolated `qa-staging` (ledger `20260729220202`). The identical
+  definition and service-only ACL are applied/catalog-verified on the shared project (ledger
+  `20260729221116`). No Twilio webhook/provider setting changed and no live traffic ran. Phase 6
+  in `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send

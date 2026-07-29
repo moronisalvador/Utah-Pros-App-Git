@@ -11427,6 +11427,30 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   max-width: 100%; margin-bottom: var(--space-5);
   overflow-x: auto; -webkit-overflow-scrolling: touch;
 }
+.devtools-advanced-subtabs {
+  display: flex;
+  max-width: 100%;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.devtools-advanced-subtab {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--motion-duration-fast) var(--motion-ease-standard),
+              border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
 .devtools-messaging-seg {
   display: inline-grid; grid-template-columns: repeat(5, minmax(max-content, 1fr));
   min-width: max-content;
@@ -11437,6 +11461,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
 .devtools-tab:active:not(:disabled),
+.devtools-advanced-subtab:active:not(:disabled),
 .devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: scale(0.97); }
 .devtools-messaging-indicator {
   left: 3px; width: calc((100% - 14px) / 5);
@@ -11448,9 +11473,11 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 .devtools-messaging-indicator.is-position-4 { transform: translateX(calc(400% + 8px)); }
 @media (prefers-reduced-motion: reduce) {
   .devtools-tab,
+  .devtools-advanced-subtab,
   .devtools-messaging-seg .ui-seg-btn,
   .devtools-messaging-indicator { transition: none; }
   .devtools-tab:active:not(:disabled),
+  .devtools-advanced-subtab:active:not(:disabled),
   .devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: none; }
 }
 @media (max-width: 768px) {

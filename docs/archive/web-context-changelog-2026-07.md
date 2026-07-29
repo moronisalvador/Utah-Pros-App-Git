@@ -5579,3 +5579,31 @@ lookup as designed. The worker now uses the returned outbox `id` as the stable
 APNs occurrence and records only aggregate allowlisted native delivery
 telemetry. No schema, consent, CallRail send, audience, or customer-message
 behavior changed.
+
+## 2026-07-29 — Inactive Twilio inbound durable parity authored
+
+Repository source now places signed Twilio inbound SMS/MMS behind the same
+provider-event, per-phone atomic projection, and unique notification-outbox
+boundary as CallRail. MessageSid is the replay identity; MMS bytes are
+authenticated, bounded, byte-validated, and copied into private deterministic
+Storage paths before projection; STOP/START/HELP consent remains ordered before
+notification; and the direct best-effort `notifyInboundMessage()` module/path
+was removed in the same change. Additive migration
+`20260729211728_twilio_inbound_notification_parity.sql`, paired rollback,
+credential-free Worker/QA coverage, and a rollback-only isolated database proof
+were authored. At this authoring checkpoint nothing was applied to `qa-staging`
+or production, deployed, provider-bound, activated, or sent.
+
+## 2026-07-29 — Inactive Twilio inbound parity staged and shared-schema applied
+
+Commit `8a7fd8e` deployed the compatible inactive Worker to `dev`; CI and the
+34-asset deployment smoke passed. The exact reviewed migration, source SHA-256
+`4f3859baba80d2f9d4d9801f7eaaba9e5cbfec564ed092eac575d1592cd6cf3f`,
+was applied to isolated `qa-staging` under ledger `20260729220202`. Its
+rollback-only behavioral proof passed and left zero fixture residue. The same
+source was then applied to the shared project under ledger `20260729221116`.
+Production and staging share deployed definition hash
+`58b9d8db71347fb317145e683b8919db`, service-only ACL, invoker mode, pinned
+search path, caller guard, phone lock, and outbox markers. Production
+verification was read-only. No Twilio webhook/provider configuration changed,
+no provider switch occurred, and no live traffic was sent.

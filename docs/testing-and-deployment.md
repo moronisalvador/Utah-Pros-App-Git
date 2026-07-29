@@ -500,6 +500,47 @@ and verification that a stale retained event becomes processed or durably retrya
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
 
+### Twilio inbound durability verification
+
+The 2026-07-29 inactive Twilio parity source has credential-free Worker and QA coverage for exact
+and invalid signatures, future/repeated form parameters, schema/credential/account fail-closed
+gates, SMS/MMS normalization, MessageSid replay and concurrent duplicate behavior, transient
+projection retry, STOP/START/HELP ordering and TwiML, Advanced Opt-Out silence, private-media
+authentication/redirect/type/byte/size bounds, assigned/fallback audience, exact thread links, and
+stable outbox/native occurrence identity. The focused run passed 98 Worker tests plus 19 QA source
+contracts using the repository-pinned dependency tree from the primary checkout; this does not
+prove a database effect.
+
+Final repository verification passed `npm test` with 1,362 unit, 1,670 Worker, and 590 QA tests
+and zero unexpected skips; `npm run build`; changed-file eslint; migration hygiene (3 checked,
+0 failures); and `git diff --check`. The strict bundle report exited successfully but retained the
+existing advisory entry-graph overage: 259,110 bytes gzip, 2,215 bytes below its blocking line.
+The required consent-path, Worker-security, migration-safety, anon-grant, and UPR-pattern reviews
+all passed after their findings were resolved.
+
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql` is the rollback-only behavioral
+proof for the post-migration database. It exercises one canonical/unread/outbox effect, replay
+no-op, duplicate-phone STOP, stale START suppression, visible HELP, private MMS, assigned
+recipient/fallback payloads, and service-role-only execution. It ran only against isolated
+`qa-staging`; fixtures were transactionally rolled back. This worktree has no `supabase/config.toml`,
+the local Colima Docker daemon is not running, and the historic migration ledger cannot reconstruct
+the legacy baseline, so `supabase start`/`npm run test:db:local` is not currently a reproducible
+local proof.
+
+On 2026-07-29 the exact reviewed migration was applied to seeded `qa-staging` under ledger version
+`20260729220202`; the rollback-only proof completed without exception and a post-proof query found
+zero fixture residue. Catalog checks proved invoker mode, pinned search path, service-only ACL,
+caller guard, shared phone lock, and outbox projection. The same source was then applied to the
+shared project under ledger version `20260729221116`; its deployed definition hash
+`58b9d8db71347fb317145e683b8919db`, ACL, and configuration exactly match `qa-staging`. Production
+verification was read-only and sent no traffic.
+
+The remaining release order is exact: keep Twilio inbound/provider switching untouched; obtain
+separate authorization for provider webhook/configuration and controlled test traffic; prove signed
+SMS/MMS and status canaries; then promote compatible code through a reviewed `dev → main` release
+before any production provider switch. Production mode, number routing, provider console,
+Cloudflare binding changes, deployment promotion, and traffic remain independent gates.
+
 ### Mobile messaging release acceptance
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
@@ -613,3 +654,30 @@ shell, both route-specific notification presentation assets have the correct Jav
 content types, and the 34-asset production deployment smoke passed. During the earlier dev
 verification, the smoke test detected a stale HTML response cached for a JavaScript chunk; a zone
 cache purge removed it, and the complete no-cache-bust smoke rerun passed.
+
+## Notification delivery diagnostic qualification
+
+The owner-only delivery tester has two separate proof layers:
+
+1. Credential-free Worker tests prove denial before side effects, strict request-field and channel
+   allowlists, the 15-key event allowlist, fixed self-recipient/copy/routes, durable claim/replay
+   before every side effect, browser-subscription pruning, distinct typed identities, stable APNs
+   and Resend request identities, and sanitized provider failures.
+2. Live delivery remains one separately owner-authorized send per selected channel. A local test
+   double, successful build, or protected endpoint response is not evidence that a bell, browser,
+   iPhone, or inbox presented the notification.
+
+The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
+diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
+authoritative catalog and requires exactly 15 entries, then sends each type to the owner bell, PWA,
+and environment-matched iPhone: 45 event/surface checks. Each PWA check fans out to every enrolled
+owner browser subscription, so the provider delivery count may be greater than 45. It sends no
+email/SMS/MMS and creates no business occurrence. Separate Web Push tags prevent different types
+from collapsing into one displayed notification; three surface calls run in parallel per event
+while events run sequentially to bound Worker/provider concurrency. The synthetic sweep requires
+each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
+qualifies presentation and transport, not whether a source workflow is activated or emits.
+
+Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
+migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
+contacting any provider.

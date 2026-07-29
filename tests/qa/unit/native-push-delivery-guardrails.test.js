@@ -20,17 +20,18 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const migration = readFileSync(
+// Windows checkouts materialize these files with CRLF (no .gitattributes eol
+// rule covers *.sql), which would break the `\n`-embedded assertions below.
+const readSql = (path) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
+
+const migration = readSql(
   'supabase/migrations/20260728224000_native_push_delivery_guardrails.sql',
-  'utf8',
 );
-const messagingFoundation = readFileSync(
+const messagingFoundation = readSql(
   'supabase/migrations/20260723215926_messaging_transport_foundation.sql',
-  'utf8',
 );
-const rollback = readFileSync(
+const rollback = readSql(
   'supabase/rollbacks/20260728224000_native_push_delivery_guardrails.rollback.sql',
-  'utf8',
 );
 const grants = (sql) => sql.match(/\bGRANT\b[^;]*;/gi) || [];
 const source = (path) => readFileSync(path, 'utf8');
@@ -136,10 +137,6 @@ describe('native Push delivery guardrails migration', () => {
 
   it('requires every direct production dispatcher to pass a durable occurrence id', () => {
     const expected = new Map([
-      [
-        'functions/lib/messaging-inbound-notifications.js',
-        'notification_event_id: notificationEventId',
-      ],
       ['functions/api/form-submit.js', 'notification_event_id: lead.id || null'],
       ['functions/api/callrail-webhook.js', 'notification_event_id: lead.id || null'],
       ['functions/api/feedback-notify.js', 'notification_event_id: feedbackId'],

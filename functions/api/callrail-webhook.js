@@ -111,6 +111,10 @@ export async function notifyNewLead({ db, env, lead, dispatchImpl = dispatchEven
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: lead.source_type || 'call', callrail_id: lead.callrail_id || null },
+        presentation_context: {
+          customer_name: caller,
+          lead_source: lead.source || 'Phone call',
+        },
         data: { route: leadsLink, lead_id: lead.id || null },
       },
     });

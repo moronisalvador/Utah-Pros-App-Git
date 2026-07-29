@@ -30,11 +30,12 @@
  * ════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { NavLink, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
+import { StatusPill } from '@/components/ui';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
@@ -92,8 +93,8 @@ function FlagsTab() {
   const [newFlag, setNewFlag]   = useState({ key: '', label: '', category: 'page', description: '' });
   const [adding, setAdding]     = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true); // silent: refetch after a mutation must not re-gate the tab (page-lifecycle.md §1)
     try {
       let rows = (await db.rpc('get_feature_flags')) || [];
       // Auto-register: surface any code-declared flag (FEATURE_FLAG_REGISTRY) not yet
@@ -228,7 +229,7 @@ function FlagsTab() {
       ok(`Flag "${newFlag.key}" created`);
       setNewFlag({ key: '', label: '', category: 'page', description: '' });
       setShowAdd(false);
-      load();
+      await load({ silent: true });
     } catch (e) {
       err('Failed to create flag');
     } finally {
@@ -263,7 +264,7 @@ function FlagsTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={load}>
+          <button className="btn btn-secondary btn-sm" onClick={() => load({ silent: true })}>
             <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(v => !v)}>
@@ -638,8 +639,8 @@ function WorkersTab() {
   const [syncing, setSyncing] = useState(false);
   const [limit, setLimit]     = useState(20);
 
-  const load = useCallback(async (n = limit) => {
-    setLoading(true);
+  const load = useCallback(async (n = limit, { silent = false } = {}) => {
+    if (!silent) setLoading(true); // silent: post-sync/manual refresh must not re-gate the tab (page-lifecycle.md §1)
     try {
       const rows = await db.rpc('get_worker_runs', { p_limit: n });
       setRuns(rows || []);
@@ -660,7 +661,7 @@ function WorkersTab() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || res.statusText);
       ok(`Encircle sync triggered — ${data.synced ?? '?'} records`);
-      setTimeout(() => load(), 2000); // Give it a moment to write worker_run row
+      setTimeout(() => load(limit, { silent: true }), 2000); // Give it a moment to write worker_run row
     } catch (e) {
       err('Sync failed: ' + e.message);
     } finally {
@@ -699,7 +700,7 @@ function WorkersTab() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => load()}>
+          <button className="btn btn-secondary btn-sm" onClick={() => load(limit, { silent: true })}>
             <IconRefresh style={{ width: 13, height: 13 }} /> Refresh
           </button>
           <button className="btn btn-primary btn-sm" onClick={triggerSync} disabled={syncing}>
@@ -1148,15 +1149,24 @@ function DuplicateDetector() {
 /* ════════════════════════════════════════════════════
    MESSAGING TAB — Phase 5
    ════════════════════════════════════════════════════ */
+const MESSAGING_SUBTABS = [
+  { key: 'events', label: 'Provider Events' },
+  { key: 'templates', label: 'Template Preview' },
+  { key: 'log', label: 'Message Log' },
+  { key: 'queue', label: 'Scheduled Queue' },
+  { key: 'deliverability', label: 'Deliverability' },
+];
+
+const ADVANCED_SUBTABS = [
+  { key: 'rpc', label: 'RPC Runner' },
+  { key: 'tables', label: 'Tables' },
+  { key: 'cache', label: 'Cache' },
+  { key: 'notifications', label: 'Notifications' },
+];
+
 function MessagingTab() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const subs = [
-    { key: 'events', label: 'Provider Events' },
-    { key: 'templates', label: 'Template Preview' },
-    { key: 'log', label: 'Message Log' },
-    { key: 'queue', label: 'Scheduled Queue' },
-    { key: 'deliverability', label: 'Deliverability' },
-  ];
+  const subs = MESSAGING_SUBTABS;
   const requestedSubTab = searchParams.get('sub');
   const subTab = subs.some((item) => item.key === requestedSubTab)
     ? requestedSubTab
@@ -1590,13 +1600,17 @@ const TABLE_LIST = [
 ];
 
 function AdvancedTab() {
-  const [subTab, setSubTab] = useState('rpc');
-  const subs = [
-    { key: 'rpc', label: 'RPC Runner' },
-    { key: 'tables', label: 'Tables' },
-    { key: 'cache', label: 'Cache' },
-    { key: 'push', label: 'Native Push' },
-  ];
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSub = searchParams.get('sub');
+  const subTab = ADVANCED_SUBTABS.some((item) => item.key === requestedSub)
+    ? requestedSub
+    : 'rpc';
+  const selectSubTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'advanced');
+    next.set('sub', key);
+    setSearchParams(next, { replace: true });
+  };
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -1605,15 +1619,23 @@ function AdvancedTab() {
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>RPC test runner, table inspector, and cache tools.</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        {subs.map(s => (
-          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
-            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
-            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
-            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
-            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
-          }}>{s.label}</button>
+      <div className="devtools-advanced-subtabs">
+        {ADVANCED_SUBTABS.map(s => (
+          <button
+            key={s.key}
+            type="button"
+            className="devtools-advanced-subtab"
+            aria-pressed={subTab === s.key}
+            onClick={() => selectSubTab(s.key)}
+            style={{
+              fontWeight: subTab === s.key ? 600 : 400,
+              background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
+              color: subTab === s.key ? 'var(--accent-text)' : 'var(--text-secondary)',
+              borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
+            }}
+          >
+            {s.label}
+          </button>
         ))}
       </div>
       {subTab === 'rpc' && <RpcRunner />}
@@ -1630,21 +1652,77 @@ function AdvancedTab() {
           </div>
         </div>
       )}
-      {subTab === 'push' && <NativePushDiagnostic />}
+      {subTab === 'notifications' && <NotificationDeliveryDiagnostic />}
     </div>
   );
 }
 
-function NativePushDiagnostic() {
-  const [sending, setSending] = useState(false);
-  const [result, setResult] = useState(null);
+const NOTIFICATION_TEST_CHANNELS = [
+  {
+    key: 'bell',
+    label: 'In-app bell',
+    help: 'Adds one fixed test item to your notification bell.',
+  },
+  {
+    key: 'web_push',
+    label: 'Browser push',
+    help: 'Sends to the browser subscriptions enrolled for your account.',
+  },
+  {
+    key: 'native_push',
+    label: 'iPhone push',
+    help: 'Sends the privacy-safe native test to your enrolled iPhone.',
+  },
+  {
+    key: 'email',
+    label: 'Email',
+    help: 'Sends one fixed transactional test to your employee email.',
+  },
+];
 
-  const sendTest = async () => {
-    setSending(true);
-    setResult(null);
+const NOTIFICATION_TYPE_TEST_CHANNELS = [
+  { key: 'bell', label: 'Bell' },
+  { key: 'web_push', label: 'PWA' },
+  { key: 'native_push', label: 'iPhone' },
+];
+
+function resultLabel(result) {
+  if (result?.state === 'sending') return 'Sending';
+  if (result?.ok) {
+    const count = Number(result.sent || 0);
+    return `${count} sent`;
+  }
+  if (result?.error) return result.error;
+  return result?.reason || 'Not tested';
+}
+
+export function NotificationDeliveryDiagnostic() {
+  const requestIdsRef = useRef({});
+  const [sending, setSending] = useState([]);
+  const [results, setResults] = useState({});
+  const [typeSweep, setTypeSweep] = useState({
+    state: 'idle',
+    completed: 0,
+    total: 15,
+    events: [],
+    error: '',
+  });
+  const typeSweepRunning = typeSweep.state === 'sending';
+  const busy = sending.length > 0 || typeSweepRunning;
+
+  const sendChannels = async (channels) => {
+    if (busy) return;
+    setSending(channels);
+    setResults((current) => {
+      const next = { ...current };
+      channels.forEach((channel) => {
+        next[channel] = { channel, state: 'sending' };
+      });
+      return next;
+    });
     try {
       if (typeof crypto?.randomUUID !== 'function') {
-        throw new Error('This browser cannot create a stable push test ID.');
+        throw new Error('This browser cannot create stable notification test IDs.');
       }
 
       const auth = await getAuthHeader();
@@ -1652,90 +1730,400 @@ function NativePushDiagnostic() {
         throw new Error('Your session is unavailable. Sign in again and retry.');
       }
 
-      const response = await fetch('/api/send-push', {
-        method: 'POST',
-        headers: {
-          ...auth,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ request_id: crypto.randomUUID() }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.error || `Push test failed (${response.status}).`);
+      const nextResults = {};
+      for (const channel of channels) {
+        const requestId = requestIdsRef.current[channel] || crypto.randomUUID();
+        requestIdsRef.current[channel] = requestId;
+        try {
+          const response = await fetch('/api/notification-test', {
+            method: 'POST',
+            headers: {
+              ...auth,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ channel, request_id: requestId }),
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(payload.error || `Test failed (${response.status}).`);
+          }
+          nextResults[channel] = payload;
+          if (payload.settled) delete requestIdsRef.current[channel];
+        } catch (error) {
+          nextResults[channel] = {
+            channel,
+            ok: false,
+            error: error instanceof Error ? error.message : 'Test failed.',
+          };
+        }
       }
 
-      setResult(payload);
-      if (payload.sent > 0 && !payload.skipped) {
-        ok('Test notification sent to your enrolled iPhone.');
+      setResults((current) => ({ ...current, ...nextResults }));
+      const passed = Object.values(nextResults).filter((result) => result.ok).length;
+      if (passed === channels.length) {
+        ok(`${passed} notification channel${passed === 1 ? '' : 's'} passed.`);
       } else {
-        err(`Test notification was not sent: ${payload.reason || 'unknown reason'}.`);
+        err(`${passed} of ${channels.length} notification channels passed.`);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Push test failed.';
-      setResult({ ok: false, error: message });
+      const message = error instanceof Error ? error.message : 'Notification test failed.';
+      setResults((current) => {
+        const next = { ...current };
+        channels.forEach((channel) => {
+          next[channel] = { channel, ok: false, error: message };
+        });
+        return next;
+      });
       err(message);
     } finally {
-      setSending(false);
+      setSending([]);
+    }
+  };
+
+  const sendAllNotificationTypes = async () => {
+    if (busy) return;
+    setTypeSweep({
+      state: 'sending',
+      completed: 0,
+      total: 15,
+      events: [],
+      error: '',
+    });
+    try {
+      if (typeof crypto?.randomUUID !== 'function') {
+        throw new Error('This browser cannot create stable notification test IDs.');
+      }
+      const auth = await getAuthHeader();
+      if (!auth.Authorization) {
+        throw new Error('Your session is unavailable. Sign in again and retry.');
+      }
+
+      const catalogResponse = await fetch('/api/notification-presentation?action=catalog', {
+        cache: 'no-store',
+        headers: auth,
+      });
+      const catalogPayload = await catalogResponse.json().catch(() => ({}));
+      if (!catalogResponse.ok) {
+        throw new Error(
+          catalogPayload.error || `Notification catalog failed (${catalogResponse.status}).`,
+        );
+      }
+      const events = Array.isArray(catalogPayload.events) ? catalogPayload.events : [];
+      if (events.length !== 15) {
+        throw new Error(`Expected 15 notification types, but the server returned ${events.length}.`);
+      }
+
+      const completedEvents = [];
+      for (const event of events) {
+        const surfaceResults = {};
+        await Promise.all(NOTIFICATION_TYPE_TEST_CHANNELS.map(async (channel) => {
+          const requestKey = `type:${channel.key}:${event.type_key}`;
+          const requestId = requestIdsRef.current[requestKey] || crypto.randomUUID();
+          requestIdsRef.current[requestKey] = requestId;
+          try {
+            const response = await fetch('/api/notification-test', {
+              method: 'POST',
+              headers: {
+                ...auth,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                channel: channel.key,
+                request_id: requestId,
+                type_key: event.type_key,
+              }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(payload.error || `Test failed (${response.status}).`);
+            }
+            surfaceResults[channel.key] = payload;
+            if (payload.settled) delete requestIdsRef.current[requestKey];
+          } catch (error) {
+            surfaceResults[channel.key] = {
+              channel: channel.key,
+              type_key: event.type_key,
+              ok: false,
+              error: error instanceof Error ? error.message : 'Test failed.',
+            };
+          }
+        }));
+
+        completedEvents.push({
+          type_key: event.type_key,
+          label: event.label || event.type_key,
+          surfaces: surfaceResults,
+        });
+        setTypeSweep({
+          state: 'sending',
+          completed: completedEvents.length,
+          total: events.length,
+          events: [...completedEvents],
+          error: '',
+        });
+      }
+
+      const passed = completedEvents.filter((event) => (
+        NOTIFICATION_TYPE_TEST_CHANNELS.every((channel) => event.surfaces[channel.key]?.ok)
+      )).length;
+      setTypeSweep({
+        state: 'complete',
+        completed: completedEvents.length,
+        total: events.length,
+        events: completedEvents,
+        error: '',
+      });
+      if (passed === events.length) {
+        ok('All 15 notification types passed on bell, PWA, and iPhone.');
+      } else {
+        err(`${passed} of ${events.length} notification types passed on all three surfaces.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Notification type sweep failed.';
+      setTypeSweep((current) => ({
+        ...current,
+        state: 'error',
+        error: message,
+      }));
+      err(message);
     }
   };
 
   return (
     <div style={{
-      padding: 20,
+      padding: 'var(--space-5)',
       border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-lg)',
       background: 'var(--bg-primary)',
     }}>
       <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
-        Owner iPhone delivery test
+        Owner notification delivery tests
       </div>
       <p style={{
-        margin: '6px 0 16px',
+        margin: 'var(--space-2) 0 var(--space-4)',
         maxWidth: 640,
-        fontSize: 13,
+        fontSize: 'var(--text-sm)',
         lineHeight: 1.5,
         color: 'var(--text-secondary)',
       }}>
-        Put your enrolled iPhone in the background before sending. The server fixes the recipient,
-        message, and destination route; this control cannot notify another employee.
+        Every test targets only your account with fixed diagnostic copy. SMS/MMS and real business
+        events are excluded. Put the iPhone or PWA in the background before testing Push.
       </p>
-      <button
-        type="button"
-        onClick={sendTest}
-        disabled={sending}
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: 'var(--space-3)',
+      }}>
+        {NOTIFICATION_TEST_CHANNELS.map((channel) => {
+          const result = results[channel.key];
+          const isSending = sending.includes(channel.key);
+          return (
+            <section
+              key={channel.key}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-3)',
+                padding: 'var(--space-4)',
+                border: '1px solid var(--border-color)',
+                borderRadius: 'var(--radius-lg)',
+                background: 'var(--bg-secondary)',
+              }}
+            >
+              <div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--space-2)',
+                }}>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                    {channel.label}
+                  </strong>
+                  {result && (
+                    <StatusPill
+                      tone={result.state === 'sending' ? 'info' : result.ok ? 'success' : 'danger'}
+                      label={result.state === 'sending' ? 'Sending' : result.ok ? 'Passed' : 'Needs attention'}
+                      dot
+                    />
+                  )}
+                </div>
+                <p style={{
+                  margin: 'var(--space-2) 0 0',
+                  minHeight: 38,
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                  color: 'var(--text-secondary)',
+                }}>
+                  {channel.help}
+                </p>
+              </div>
+              <button
+                className="btn btn-secondary btn-lg"
+                type="button"
+                disabled={busy}
+                onClick={() => sendChannels([channel.key])}
+              >
+                {isSending ? 'Sending…' : `Test ${channel.label}`}
+              </button>
+              <div
+                role="status"
+                aria-live="polite"
+                style={{
+                  minHeight: 18,
+                  fontSize: 12,
+                  color: result?.ok ? 'var(--success)' : result ? 'var(--danger)' : 'var(--text-tertiary)',
+                }}
+              >
+                {resultLabel(result)}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+
+      <div
         style={{
-          minHeight: 44,
-          padding: '10px 16px',
-          border: 0,
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--accent)',
-          color: 'var(--text-inverse)',
-          font: 'inherit',
-          fontWeight: 700,
-          cursor: sending ? 'wait' : 'pointer',
-          opacity: sending ? 0.7 : 1,
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+          marginTop: 'var(--space-4)',
+          paddingTop: 'var(--space-4)',
+          borderTop: '1px solid var(--border-color)',
         }}
       >
-        {sending ? 'Sending test…' : 'Send iPhone test notification'}
-      </button>
-      {result && (
-        <div
-          role="status"
-          aria-live="polite"
+        <button
+          className="btn btn-primary btn-lg"
+          type="button"
+          disabled={busy}
+          onClick={() => sendChannels(NOTIFICATION_TEST_CHANNELS.map((channel) => channel.key))}
+        >
+          {busy && sending.length > 1 ? 'Testing all channels…' : 'Test all four channels'}
+        </button>
+        <NavLink
+          className="btn btn-secondary btn-lg"
+          to="/settings/notification-presentation"
+        >
+          Preview every notification type
+        </NavLink>
+        <span
           style={{
-            marginTop: 14,
             fontSize: 12,
-            color: result.sent > 0 && !result.skipped
-              ? 'var(--success)'
-              : 'var(--danger)',
+            color: 'var(--text-tertiary)',
           }}
         >
-          {result.sent > 0 && !result.skipped
-            ? `Delivered to ${result.sent || 0} enrolled device${result.sent === 1 ? '' : 's'}.`
-            : `Not sent: ${result.reason || result.error || 'unknown reason'}.`}
+          This sends one generic test per channel.
+        </span>
+      </div>
+
+      <section
+        style={{
+          marginTop: 'var(--space-5)',
+          paddingTop: 'var(--space-5)',
+          borderTop: '1px solid var(--border-color)',
+        }}
+      >
+        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)' }}>
+          Real-world 15-type delivery sweep
         </div>
-      )}
+        <p style={{
+          margin: 'var(--space-2) 0 var(--space-4)',
+          maxWidth: 760,
+          fontSize: 'var(--text-sm)',
+          lineHeight: 1.5,
+          color: 'var(--text-secondary)',
+        }}>
+          Sends one safe synthetic example of every catalog event to your bell, PWA, and iPhone:
+          45 owner-only type/surface checks. PWA checks fan out to every browser subscription
+          enrolled for your account. This proves presentation and transport, not the source
+          business trigger. It never creates business records or sends email, SMS, or MMS.
+        </p>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}>
+          <button
+            className="btn btn-primary btn-lg"
+            type="button"
+            disabled={busy}
+            onClick={sendAllNotificationTypes}
+          >
+            {typeSweepRunning
+              ? `Sending type ${Math.min(typeSweep.completed + 1, typeSweep.total)} of ${typeSweep.total}…`
+              : 'Test all 15 notification types'}
+          </button>
+          <span
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: 'var(--text-sm)',
+              color: typeSweep.error ? 'var(--danger)' : 'var(--text-secondary)',
+            }}
+          >
+            {typeSweep.error
+              || (typeSweep.state === 'complete'
+                ? `${typeSweep.completed} of ${typeSweep.total} types completed.`
+                : typeSweepRunning
+                  ? `${typeSweep.completed} of ${typeSweep.total} types completed.`
+                  : 'Put both Push apps in the background before starting.')}
+          </span>
+        </div>
+
+        {typeSweep.events.length > 0 && (
+          <div style={{
+            display: 'grid',
+            gap: 'var(--space-2)',
+            marginTop: 'var(--space-4)',
+          }}>
+            {typeSweep.events.map((event) => (
+              <div
+                key={event.type_key}
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--space-3)',
+                  padding: 'var(--space-3) var(--space-4)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-secondary)',
+                }}
+              >
+                <div>
+                  <div style={{
+                    fontSize: 'var(--text-sm)',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                  }}>
+                    {event.label}
+                  </div>
+                  <code style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                    {event.type_key}
+                  </code>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+                  {NOTIFICATION_TYPE_TEST_CHANNELS.map((channel) => {
+                    const result = event.surfaces[channel.key];
+                    return (
+                      <StatusPill
+                        key={channel.key}
+                        tone={result?.ok ? 'success' : 'danger'}
+                        label={`${channel.label}: ${result?.ok ? 'Passed' : 'Needs attention'}`}
+                        dot
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -2636,7 +3024,17 @@ export default function DevTools() {
   const selectTab = (key) => {
     const next = new URLSearchParams(searchParams);
     next.set('tab', key);
-    if (key !== 'messaging') next.delete('sub');
+    if (key === 'messaging') {
+      if (!MESSAGING_SUBTABS.some((item) => item.key === next.get('sub'))) {
+        next.set('sub', 'templates');
+      }
+    } else if (key === 'advanced') {
+      if (!ADVANCED_SUBTABS.some((item) => item.key === next.get('sub'))) {
+        next.set('sub', 'rpc');
+      }
+    } else {
+      next.delete('sub');
+    }
     setSearchParams(next, { replace: true });
   };
 

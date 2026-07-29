@@ -27,6 +27,7 @@ import {
   handleNotify,
   formatApptWhen,
   enrichAppointmentBody,
+  enrichDatabasePresentationContext,
   enrichEstimateBody,
   enrichInboundMessageBody,
   nativeNotificationEventKey,
@@ -737,12 +738,95 @@ describe('formatApptWhen', () => {
   });
 });
 
+describe('enrichDatabasePresentationContext', () => {
+  it('derives a timesheet employee name from typed database rows, not display copy', async () => {
+    const db = {
+      select: vi.fn(async (table) => {
+        if (table === 'time_entry_change_requests') {
+          return [{ requested_by: 'employee-1' }];
+        }
+        if (table === 'employees') {
+          return [{
+            full_name: 'Alex Morgan',
+            is_active: true,
+            is_external: false,
+          }];
+        }
+        return [];
+      }),
+    };
+    const body = {
+      entity_id: 'request-1',
+      body: 'Forged display copy with a secret',
+      presentation_context: { employee_name: 'Forged Name' },
+    };
+
+    await expect(enrichDatabasePresentationContext(
+      db,
+      'timesheet.change_requested',
+      body,
+    )).resolves.toMatchObject({
+      presentation_context: { employee_name: 'Alex Morgan' },
+    });
+  });
+
+  it('uses the typed clock employee id and falls back when the lookup is not active/internal', async () => {
+    const db = {
+      select: vi.fn(async () => [{
+        full_name: 'Should not render',
+        is_active: false,
+        is_external: false,
+      }]),
+    };
+    const body = {
+      title: 'Forged Name may have forgotten to clock out',
+      payload: { employee_id: 'employee-1', minutes: 270 },
+      presentation_context: { employee_name: 'Forged Name' },
+    };
+
+    const enriched = await enrichDatabasePresentationContext(
+      db,
+      'clock.abandoned',
+      body,
+    );
+    expect(enriched).not.toBe(body);
+    expect(enriched.presentation_context).not.toHaveProperty('employee_name');
+  });
+});
+
 describe('enrichAppointmentBody', () => {
-  it('builds a clean title + body + deep link from a bare appointment_id', async () => {
-    const db = makeDb({ apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } } });
+  it('builds clean copy, customer/job variables, and a deep link from a bare appointment_id', async () => {
+    const db = makeDb({
+      apptsById: {
+        'ap-1': {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+          jobs: {
+            insured_name: 'Jordan Lee',
+            job_number: 'JOB-1042',
+            estimated_value: 8500,
+            approved_value: 7950,
+            invoiced_value: 5250,
+            collected_value: 2500,
+          },
+        },
+      },
+    });
     const out = await enrichAppointmentBody(db, 'appointment.assigned', { appointment_id: 'ap-1' });
     expect(out.title).toBe('New appointment · Water Mitigation');
     expect(out.body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+    expect(out.presentation_context).toEqual({
+      appointment_title: 'Water Mitigation',
+      appointment_when: 'Sat, Jul 4 · 9:00 AM – 11:00 AM',
+      customer_name: 'Jordan Lee',
+      job_number: 'JOB-1042',
+      job_estimated_amount: '$8,500.00',
+      job_approved_amount: '$7,950.00',
+      job_invoiced_amount: '$5,250.00',
+      job_collected_amount: '$2,500.00',
+    });
     // Office path, not /tech/appointment/ap-1. A notification does not know who will
     // open it; the reader's shell translates (src/lib/techShellRoutes.js). Storing the
     // field path put desktop dispatchers in the phone UI.
@@ -772,7 +856,19 @@ describe('enrichAppointmentBody', () => {
   it('leaves a caller-supplied title untouched', async () => {
     const db = makeDb({ apptsById: { 'ap-1': { title: 'X', date: '2026-07-04', time_start: '09:00:00' } } });
     const body = { appointment_id: 'ap-1', title: 'Already set' };
-    expect(await enrichAppointmentBody(db, 'appointment.updated', body)).toBe(body);
+    expect(await enrichAppointmentBody(db, 'appointment.updated', body)).toMatchObject({
+      title: 'Already set',
+      presentation_context: {
+        appointment_title: 'X',
+        appointment_when: 'Sat, Jul 4 · 9:00 AM',
+        customer_name: '',
+        job_number: '',
+        job_estimated_amount: '',
+        job_approved_amount: '',
+        job_invoiced_amount: '',
+        job_collected_amount: '',
+      },
+    });
   });
   it('returns the body unchanged when the appointment is not found (never throws)', async () => {
     const db = makeDb({ apptsById: {} });

@@ -48,6 +48,10 @@ describe('notifyNewLead (callrail lead.new)', () => {
     // Formatted for humans now, not raw E.164.
     expect(calls[0].body.body).toContain('(555) 123-4567');
     expect(calls[0].body.body).toContain('Google');
+    expect(calls[0].body.presentation_context).toEqual({
+      customer_name: '(555) 123-4567',
+      lead_source: 'Google',
+    });
   });
 
   // A known customer's call announced itself as a bare phone number (reported
@@ -170,6 +174,10 @@ describe('notifyNewLeadFromForm (form lead.new)', () => {
     const { title, body, html } = calls[0].body;
     // Title carries the lead's name.
     expect(title).toBe('New lead · Jane Doe');
+    expect(calls[0].body.presentation_context).toEqual({
+      customer_name: 'Jane Doe',
+      lead_source: 'Water Damage Quote',
+    });
     // Plain-text body (bell + push) lists every answered field...
     expect(body).toContain('Full name: Jane Doe');
     expect(body).toContain('Phone: 801-555-1234');
