@@ -491,5 +491,6 @@ preference ownership. It extends the reconciled native typed registry with indep
 bell/PWA templates and route identifiers, while native copy remains privacy-locked. Its new
 service-only audited tables/RPC do not modify `notification_types`, defaults, locks, employee
 preferences, audience, deduplication, consent, or providers. Isolated `qa-staging` migration and
-concurrency/authorization behavior passed. The production database apply and exact-SHA dev
-deployment are verified; current production web promotion status belongs in `UPR-Web-Context.md`.
+concurrency/authorization behavior passed. The production database apply and exact production
+merge `3f456810162dad8c4407d354b36085778d138ae2` are verified; no live override was saved and no
+provider/test notification was sent.

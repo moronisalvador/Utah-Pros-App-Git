@@ -3834,7 +3834,9 @@ rows were removed. The same committed source is applied to the shared production
 ledger version `20260729171946`: both tables retain forced RLS, only `service_role` can select or
 execute the mutation RPC, and production contains zero overrides and zero audit rows.
 
-Dev runs reviewed release `5849d84c8bff6fcdc0d51fcc791c6ad43b17cb02`; the protected API rejects
-an unauthenticated request with `401`, and the deployment smoke test fetched all 34 boot assets
-with the expected content types after the `utahpros.app` Cloudflare cache was purged. Production
-web promotion through the required reviewed `dev → main` gate remains pending until verified.
+Production runs reviewed PR `#547` at exact merge
+`3f456810162dad8c4407d354b36085778d138ae2`; the live bundle embeds that SHA. The protected API
+rejects an unauthenticated request with `401` JSON, the Settings route returns the SPA shell, its
+route-specific JavaScript and CSS assets have correct content types, and the deployment smoke
+fetched all 34 boot assets successfully. No live override/configuration was saved and no provider
+or test notification was sent.
