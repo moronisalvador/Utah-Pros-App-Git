@@ -1,11 +1,44 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: DevTools.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Gives the company owner one place to inspect system health, messaging
+ *   failures, data checks, and internal feature settings. It also provides
+ *   carefully limited controls for retrying or acknowledging operational work.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /dev-tools
+ *   Rendered by:  src/App.jsx
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  AuthContext, realtime auth, toast, feature flags, employee
+ *              directory, DeliverabilityHealth, ProviderEventOps
+ *   Data:      reads  → feature_flags, contacts, claims, message_templates,
+ *                       scheduled_messages, worker_runs, message_provider_events,
+ *                       and owner-selected diagnostic tables
+ *              writes → feature_flags, scheduled_messages, and
+ *                       message_provider_events through owner-gated workers
+ *
+ * NOTES / GOTCHAS:
+ *   - The route is owner-only, and sensitive worker actions enforce that gate
+ *     again on the server.
+ *   - Messaging tabs live in the URL so an operations alert can open the exact
+ *     panel without a full-page reload.
+ * ════════════════════════════════════════════════
+ */
+
 import { useState, useEffect, useCallback } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
+import ProviderEventOps from '@/components/ProviderEventOps';
 
 /* ── Toast helpers ── */
 const ok  = (msg) => toast(msg, 'success');
@@ -1116,13 +1149,26 @@ function DuplicateDetector() {
    MESSAGING TAB — Phase 5
    ════════════════════════════════════════════════════ */
 function MessagingTab() {
-  const [subTab, setSubTab] = useState('templates');
+  const [searchParams, setSearchParams] = useSearchParams();
   const subs = [
+    { key: 'events', label: 'Provider Events' },
     { key: 'templates', label: 'Template Preview' },
     { key: 'log', label: 'Message Log' },
     { key: 'queue', label: 'Scheduled Queue' },
     { key: 'deliverability', label: 'Deliverability' },
   ];
+  const requestedSubTab = searchParams.get('sub');
+  const subTab = subs.some((item) => item.key === requestedSubTab)
+    ? requestedSubTab
+    : 'templates';
+
+  const selectSubTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'messaging');
+    next.set('sub', key);
+    setSearchParams(next, { replace: true });
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
@@ -1131,17 +1177,27 @@ function MessagingTab() {
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>Template preview, message log, and scheduled queue.</div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-        {subs.map(s => (
-          <button key={s.key} onClick={() => setSubTab(s.key)} style={{
-            padding: '6px 14px', borderRadius: 'var(--radius-full)', border: '1px solid',
-            fontSize: 12, fontWeight: subTab === s.key ? 600 : 400, cursor: 'pointer',
-            background: subTab === s.key ? 'var(--accent)' : 'var(--bg-tertiary)',
-            color: subTab === s.key ? '#fff' : 'var(--text-secondary)',
-            borderColor: subTab === s.key ? 'var(--accent)' : 'var(--border-color)',
-          }}>{s.label}</button>
-        ))}
+      <div className="devtools-messaging-subtabs">
+        <div className="ui-seg devtools-messaging-seg" aria-label="Messaging tools">
+          <span
+            aria-hidden="true"
+            className={`ui-seg-indicator devtools-messaging-indicator is-position-${subs.findIndex((item) => item.key === subTab)}`}
+          />
+          {subs.map(s => (
+            <button
+              key={s.key}
+              type="button"
+              aria-pressed={subTab === s.key}
+              data-active={subTab === s.key}
+              className="ui-seg-btn"
+              onClick={() => selectSubTab(s.key)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
+      {subTab === 'events' && <ProviderEventOps />}
       {subTab === 'templates' && <TemplatePreview />}
       {subTab === 'log' && <MessageLog />}
       {subTab === 'queue' && <ScheduledQueue />}
@@ -2570,8 +2626,19 @@ const TAB_COMPONENTS = {
 
 export default function DevTools() {
   const { employee } = useAuth();
-  const [activeTab, setActiveTab] = useState('flags');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeTab = Object.hasOwn(TAB_COMPONENTS, requestedTab)
+    ? requestedTab
+    : 'flags';
   const ActiveComponent = TAB_COMPONENTS[activeTab] || FlagsTab;
+
+  const selectTab = (key) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', key);
+    if (key !== 'messaging') next.delete('sub');
+    setSearchParams(next, { replace: true });
+  };
 
   return (
     <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 20px 48px' }}>
@@ -2600,7 +2667,8 @@ export default function DevTools() {
           return (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              className="devtools-tab"
+              onClick={() => selectTab(tab.key)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
                 padding: '9px 14px', border: 'none', background: 'none',
@@ -2608,7 +2676,6 @@ export default function DevTools() {
                 color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
                 fontFamily: 'var(--font-sans)', fontSize: 13, fontWeight: isActive ? 600 : 400,
                 cursor: 'pointer', whiteSpace: 'nowrap', marginBottom: -1,
-                transition: 'color 0.12s, border-color 0.12s',
               }}
             >
               <Icon style={{ width: 14, height: 14 }} />

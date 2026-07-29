@@ -904,6 +904,14 @@ get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message 
 get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
 ```
 
+Dev Tools now includes an owner-only **Provider Events** subtab, reached directly from ops-health
+alerts at `/dev-tools?tab=messaging&sub=events`. Its thin `/api/provider-event-ops` Worker lists only
+sanitized unresolved operational metadata and calls the already-live, service-only
+`rearm_callrail_provider_event` / `resolve_provider_event` RPCs for one exact row. Retry only places a
+retained event back into the existing recovery queue; it never sends or re-sends a customer message
+and never calls CallRail. Resolve records the verified owner employee ID and removes the acknowledged
+terminal failure from future ops-health backlog alerts.
+
 ### Omni-inbox — email (Foundation, Jul 4 2026)
 ```
 claim_inbound_email(p_message_key TEXT) → boolean — SECURITY DEFINER, GRANT anon+authenticated.
