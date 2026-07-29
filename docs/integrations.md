@@ -92,6 +92,12 @@ bindings and provider consoles.
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
+- The CallRail→Twilio switch must preserve the durable inbound-notification contract, not only the
+  outbound adapter: Twilio inbound moves behind the existing per-phone serialization and
+  `message_notification_outbox` boundary before Production cutover, then its current direct
+  `notifyInboundMessage()` call is retired in the same release to avoid duplicate
+  `message.inbound` alerts. The Phase 6 checklist in `docs/messaging-transport-roadmap.md` is the
+  canonical cutover runbook.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
