@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import i18n from '@/i18n';
+import i18n, { ensureLanguage } from '@/i18n';
 import { relativeTime, relativeDate, currentLocaleTag, formatLossDate } from './techDateUtils.js';
 
 // Build a local YYYY-MM-DD (avoids UTC-vs-local day drift near midnight).
@@ -14,8 +14,8 @@ afterEach(async () => { await i18n.changeLanguage('en'); });
 describe('currentLocaleTag', () => {
   it('maps the active language to a BCP-47 tag', async () => {
     expect(currentLocaleTag()).toBe('en-US');
-    await i18n.changeLanguage('pt'); expect(currentLocaleTag()).toBe('pt-BR');
-    await i18n.changeLanguage('es'); expect(currentLocaleTag()).toBe('es');
+    await ensureLanguage('pt'); await i18n.changeLanguage('pt'); expect(currentLocaleTag()).toBe('pt-BR');
+    await ensureLanguage('es'); await i18n.changeLanguage('es'); expect(currentLocaleTag()).toBe('es');
   });
 });
 
@@ -23,9 +23,9 @@ describe('relativeTime', () => {
   it('localizes the "ago" phrasing with interpolated count', async () => {
     const fiveMinAgo = new Date(Date.now() - 5 * 60000).toISOString();
     expect(relativeTime(fiveMinAgo)).toBe('5m ago');
-    await i18n.changeLanguage('pt');
+    await ensureLanguage('pt'); await i18n.changeLanguage('pt');
     expect(relativeTime(fiveMinAgo)).toBe('há 5 min');
-    await i18n.changeLanguage('es');
+    await ensureLanguage('es'); await i18n.changeLanguage('es');
     expect(relativeTime(fiveMinAgo)).toBe('hace 5 min');
   });
 
@@ -40,9 +40,9 @@ describe('relativeDate', () => {
     expect(relativeDate(localDay(0))).toBe('Today');
     expect(relativeDate(localDay(1))).toBe('Tomorrow');
     expect(relativeDate(localDay(-1))).toBe('Yesterday');
-    await i18n.changeLanguage('pt');
+    await ensureLanguage('pt'); await i18n.changeLanguage('pt');
     expect(relativeDate(localDay(0))).toBe('Hoje');
-    await i18n.changeLanguage('es');
+    await ensureLanguage('es'); await i18n.changeLanguage('es');
     expect(relativeDate(localDay(0))).toBe('Hoy');
   });
 });

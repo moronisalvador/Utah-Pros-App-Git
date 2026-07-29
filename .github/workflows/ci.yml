@@ -5,7 +5,11 @@ name: CI
 # auto-deploys on push). This runs build+test on every PR targeting main OR dev and
 # on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
-# What blocks a merge:  build + test + changed-file lint
+# What blocks a merge:  build + test + changed-file lint + migration hygiene
+#                       + bundle budgets — src/index.css and route-chunk
+#                                       (perf-budget.md §1; entry-graph JS is measured
+#                                        and printed but advisory until it is back under
+#                                        budget — see scripts/bundle-size-report.mjs)
 # What does NOT block:  full-tree lint  (pre-existing hygiene baseline; changed files are
 #                                        independently ratcheted with zero warning tolerance)
 #
@@ -116,12 +120,19 @@ jobs:
           CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
 
-      # Blocking bundle budget (perf-budget.md). Replaces the old non-blocking
-      # report, which read dist/assets/ — a directory Vite does not emit to — and
-      # measured 20 bytes of nothing. Ceilings live in scripts/bundle-budget.json;
-      # raising one is a conscious, visible commit.
-      - name: Bundle budget (blocking)
-        run: node scripts/check-bundle-budget.mjs
+      # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
+      # and route-chunk budgets; entry-graph JS is measured and printed loudly but
+      # does not fail (owner decision 2026-07-27 — it was already ~2.7 KB over the
+      # +10% line the moment the measurement was fixed, and gating it same-day would
+      # have turned dev red for unrelated merges). Flip BLOCKING.entryJsGzip in
+      # scripts/bundle-size-report.mjs once the entry graph is back under budget.
+      # This tested entry-graph report supersedes the interim check-bundle-budget.mjs
+      # guard (merged same day via PR #541) — one budget system, not two.
+      - name: Test bundle size report
+        run: npm run test:bundle-size
+
+      - name: Bundle size budgets
+        run: npm run report:bundle-size -- --strict
 
   # The behavioral database lane (supabase/tests/**) against the seeded qa-staging
   # Supabase branch. Until the owner seeds the branch and adds the three secrets

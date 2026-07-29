@@ -45,7 +45,7 @@ vi.mock('@/lib/webPushClient', () => ({
   disablePush: async () => ({ ok: false }),
 }));
 
-const { default: i18n } = await import('@/i18n');
+const { default: i18n, ensureLanguage } = await import('@/i18n');
 const { default: NotificationsSection } = await import(
   '@/components/tech/settings/NotificationsSection'
 );
@@ -55,36 +55,37 @@ afterEach(() => {
   isNativePlatform.mockReturnValue(false);
 });
 
-function render(lang = 'en') {
+async function render(lang = 'en') {
+  await ensureLanguage(lang);
   i18n.changeLanguage(lang);
   return renderToStaticMarkup(<NotificationsSection />);
 }
 
 describe('SET-01 — native app never shows Web Push / install guidance', () => {
-  it('does not tell a native user to add the app to their Home Screen', () => {
+  it('does not tell a native user to add the app to their Home Screen', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).not.toMatch(/Home Screen/i);
     expect(out).not.toMatch(/Add to Home/i);
   });
 
-  it('states the truthful pending status instead of a broken "off" state', () => {
+  it('states the truthful pending status instead of a broken "off" state', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).toContain('coming in an app update');
     expect(out).toContain('nothing to set up here');
   });
 
-  it('offers no Turn On / Turn Off control on native', () => {
+  it('offers no Turn On / Turn Off control on native', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).not.toContain('Turn On');
     expect(out).not.toContain('Turn Off');
   });
 
-  it('keeps the web/PWA card unchanged when not native', () => {
+  it('keeps the web/PWA card unchanged when not native', async () => {
     isNativePlatform.mockReturnValue(false);
-    const out = render('en');
+    const out = await render('en');
     // Static render captures the initial pass, where `loading` is still true —
     // so neither button has rendered yet on EITHER path. The guidance branches
     // are not loading-gated, so they are what distinguishes the two: this env
@@ -94,10 +95,10 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).not.toContain('nothing to set up here');
   });
 
-  it('renders the native copy in all three locales', () => {
+  it('renders the native copy in all three locales', async () => {
     isNativePlatform.mockReturnValue(true);
-    expect(render('en')).toContain('coming in an app update');
-    expect(render('es')).toContain('llegarán en una actualización');
-    expect(render('pt')).toContain('virá em uma atualização do app');
+    expect(await render('en')).toContain('coming in an app update');
+    expect(await render('es')).toContain('llegarán en una actualización');
+    expect(await render('pt')).toContain('virá em uma atualização do app');
   });
 });

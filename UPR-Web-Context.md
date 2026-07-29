@@ -10,7 +10,7 @@ Owner/developer: Moroni Salvador.
 
 No feature code, schema, or provider behaviour changed. What changed:
 
-- **CI now blocks** on a real bundle budget (`scripts/check-bundle-budget.mjs` +
+- **CI now blocks** on a real bundle budget (`scripts/bundle-size-report.mjs --strict`, which superseded the interim `check-bundle-budget.mjs` +
   `scripts/bundle-budget.json`; the old report read `dist/assets/`, which Vite never emits to) and
   on migration hygiene (`scripts/check-migration-hygiene.mjs`: paired rollback, anon-grant
   justification, `REVOKE FROM PUBLIC` with `SECURITY DEFINER`, destructive-DDL markers; all 257

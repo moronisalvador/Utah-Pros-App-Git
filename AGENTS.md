@@ -139,7 +139,7 @@ npx eslint <changed files>   # zero new findings (CI enforces the changed-files 
 ```
 
 CI additionally blocks on: migration hygiene (`scripts/check-migration-hygiene.mjs`), the bundle
-budget (`scripts/check-bundle-budget.mjs`), and the tooling-governance checks for `tooling/`
+budget (`scripts/bundle-size-report.mjs --strict`), and the tooling-governance checks for `tooling/`
 changes. Risk-specific reviewers: migrations → `migration-safety-checker` + `anon-grant-auditor`
 plus a CI-visible contract test in `tests/qa/unit/**` (behavioral db-lane tests in
 `supabase/tests/` run against the staging branch, not in the credential-free lanes — never present

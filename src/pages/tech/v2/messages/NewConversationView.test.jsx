@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import i18n from '@/i18n';
+import i18n, { ensureLanguage } from '@/i18n';
 
 vi.mock('@/lib/realtime', () => ({ getAuthHeader: async () => ({ Authorization: 'Bearer test' }) }));
 vi.mock('@/lib/toast', () => ({ err: vi.fn() }));
@@ -39,7 +39,9 @@ describe('NewConversationView', () => {
   it.each([
     ['es', 'Nueva conversación', 'Buscar contactos'],
     ['pt', 'Nova conversa', 'Buscar contatos'],
-  ])('renders the %s translation', (language, title, search) => {
+  ])('renders the %s translation', async (language, title, search) => {
+    // pt/es load on demand (perf-budget.md §4) — same ordering LanguageProvider uses.
+    await ensureLanguage(language);
     i18n.changeLanguage(language);
     const output = renderToStaticMarkup(
       <NewConversationView onBack={() => {}} onStarted={() => {}} />,
