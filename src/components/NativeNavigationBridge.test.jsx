@@ -318,6 +318,7 @@ describe('NativeNavigationBridge lifecycle', () => {
     expect(harness.startPushEvents).toHaveBeenCalledOnce();
 
     const pushCallbacks = harness.startPushEvents.mock.calls[0][0];
+    expect(pushCallbacks.employeeId).toBe('employee-a');
     pushCallbacks.onForeground({
       title: 'Private title',
       body: 'Private body',
