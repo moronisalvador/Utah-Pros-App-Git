@@ -11,6 +11,9 @@ on:
 
 jobs:
   deploy:
+    # OTA remains a separately governed release path. Manual dispatch is kept
+    # visible for provenance, but cannot upload until that gate is reviewed.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -30,13 +33,31 @@ jobs:
         run: |
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "name=production" >> "$GITHUB_OUTPUT"
+            echo "api_origin=https://utahpros.app" >> "$GITHUB_OUTPUT"
           else
             echo "name=beta" >> "$GITHUB_OUTPUT"
+            echo "api_origin=https://dev.utahpros.app" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate channel API boundary
+        env:
+          CHANNEL: ${{ steps.channel.outputs.name }}
+          VITE_NATIVE_API_ORIGIN: ${{ steps.channel.outputs.api_origin }}
+        run: |
+          if [ "$CHANNEL" = "production" ] && [ "$VITE_NATIVE_API_ORIGIN" != "https://utahpros.app" ]; then
+            echo "Production OTA must use https://utahpros.app." >&2
+            exit 1
+          fi
+          if [ "$CHANNEL" = "beta" ] && [ "$VITE_NATIVE_API_ORIGIN" != "https://dev.utahpros.app" ]; then
+            echo "Beta OTA must use https://dev.utahpros.app." >&2
+            exit 1
           fi
 
       - name: Build native bundle
         env:
           VITE_BUILD_TARGET: native
+          VITE_NATIVE_API_ORIGIN: ${{ steps.channel.outputs.api_origin }}
+          VITE_RELEASE_SHA: ${{ github.sha }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npx vite build

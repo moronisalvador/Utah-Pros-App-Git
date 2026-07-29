@@ -277,13 +277,17 @@ Completed in source, pending final integration/release review:
 - custom scheme, Associated Domains, AASA, App-plugin cold/warm listener, and Push-action routing
   use one deny-by-default route/query resolver; `/tech/admin` is excluded;
 - native Push enrollment is exact-default-off and account cleanup detaches server/local state;
+  device intent is owner-lease-bound, APNs copy is generic, and taps require
+  an opaque current-recipient match; public signing bearer routes remain valid
+  app links but are rejected from Push payload data;
 - OTA is exact-default-off and has zero boot acknowledgment pending an explicit health gate;
 - app-target `PrivacyInfo.xcprivacy` is registered and declares no tracking, UserDefaults `CA92.1`,
   and exactly 12 linked/non-tracking App Functionality data types, including Other Financial Info
   for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;
 - the manual `main`-only archive workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler
-  4.0.16, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
-  signing/provisioning/entitlements/privacy/build identity/hashes;
+  2.5.22, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
+  signing/provisioning/entitlements/privacy/build identity/hashes; its native
+  bundle is pinned to `https://utahpros.app` and the exact release SHA;
 - `ios/App/Version.xcconfig` provides one marketing-version source, the workflow assigns a unique
   build from its run number/attempt, and native Settings displays the installed values through
   Capacitor `App.getInfo()`;
@@ -332,12 +336,12 @@ Open external/release gates:
 - App Store Connect app record **created** 2026-07-28 as “UPR Field Operations”
   (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
   screenshot fields remain incomplete;
-- APNs key and Cloudflare Preview/Production sender variables are configured,
-  but enrollment stays exact-default-off pending the ordered focused native-token
-  and delivery-guardrail migrations, explicit `VITE_APNS_ENV` bindings,
-  deployment, and a new signed build. Broad S1h is not a Push activation
-  prerequisite; its preflight must be reconciled after the focused preference
-  boundary is live;
+- APNs key and Cloudflare Preview/Production sender variables are configured;
+  the ordered focused native-token and delivery-guardrail migrations are live,
+  and one development-signed sandbox delivery succeeded. Enrollment remains
+  exact-default-off. Production token registration/delivery begins only from a
+  TestFlight/App Store build carrying `VITE_APNS_ENV=production`. Broad S1h is
+  not a Push activation prerequisite and remains deferred;
 - clean-source final archive/IPA verification, internal TestFlight upload/install,
   Universal/custom link, recovery/signing, Push, background/privacy, biometric,
   account-switch, permission, and offline physical-device matrix;
