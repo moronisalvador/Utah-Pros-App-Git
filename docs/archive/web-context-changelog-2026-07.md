@@ -5579,3 +5579,17 @@ lookup as designed. The worker now uses the returned outbox `id` as the stable
 APNs occurrence and records only aggregate allowlisted native delivery
 telemetry. No schema, consent, CallRail send, audience, or customer-message
 behavior changed.
+
+## 2026-07-29 — Inactive Twilio inbound durable parity authored
+
+Repository source now places signed Twilio inbound SMS/MMS behind the same
+provider-event, per-phone atomic projection, and unique notification-outbox
+boundary as CallRail. MessageSid is the replay identity; MMS bytes are
+authenticated, bounded, byte-validated, and copied into private deterministic
+Storage paths before projection; STOP/START/HELP consent remains ordered before
+notification; and the direct best-effort `notifyInboundMessage()` module/path
+was removed in the same change. Additive migration
+`20260729211728_twilio_inbound_notification_parity.sql`, paired rollback,
+credential-free Worker/QA coverage, and a rollback-only isolated database proof
+were authored. Nothing was applied to `qa-staging` or production, deployed,
+provider-bound, activated, or sent.
