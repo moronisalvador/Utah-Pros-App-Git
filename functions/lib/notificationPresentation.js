@@ -4,7 +4,7 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Converts each trusted notification event into privacy-conscious iPhone
+ *   Converts each trusted notification event into event-specific iPhone
  *   lock-screen copy and one field-app destination. This is deliberately a
  *   typed catalog: arbitrary caller copy and arbitrary paths never flow
  *   directly into APNs.
@@ -15,11 +15,10 @@
  *   Data:      none
  *
  * NOTES / GOTCHAS:
- *   - PWA/bell/email keep their richer server-derived copy. Native lock screens
- *     use this smaller disclosure budget because they are visible while locked.
+ *   - Native and PWA may use the same event-approved variables. Values are
+ *     still derived from trusted server context, never arbitrary APNs inputs.
  *   - The admin presentation editor consumes the same event catalog below.
- *     Browser surfaces may use only their explicit variables and route ids;
- *     native copy remains code-owned and exposes no configurable variables.
+ *     Every surface may use only its explicit variables and route ids.
  *   - Unsupported office-only destinations return `/`; the native app is still
  *     field-only. The APNs layer performs the final route allowlist validation.
  *   - Keep this registry exhaustive with notification_types. A new event safely
@@ -170,9 +169,25 @@ export const NATIVE_NOTIFICATION_TYPE_KEYS = Object.freeze(
   Object.keys(PRESENTATIONS),
 );
 
-export function buildNativeNotificationPresentation(typeKey, body = {}) {
-  const presentation = PRESENTATIONS[typeKey]
-    || INTERNAL_PRESENTATIONS[typeKey];
+export function buildGenericNativeNotificationPresentation(typeKey, body = {}) {
+  const internalPresentation = INTERNAL_PRESENTATIONS[typeKey];
+  if (internalPresentation) {
+    return {
+      title: cleanText(
+        internalPresentation.title(body),
+        GENERIC_TITLE,
+        MAX_ALERT_TITLE_LENGTH,
+      ),
+      body: cleanText(
+        internalPresentation.body(body),
+        GENERIC_BODY,
+        MAX_ALERT_BODY_LENGTH,
+      ),
+      url: internalPresentation.route(body),
+    };
+  }
+
+  const presentation = PRESENTATIONS[typeKey];
   if (!presentation) {
     return {
       title: GENERIC_TITLE,
@@ -194,6 +209,14 @@ export function buildNativeNotificationPresentation(typeKey, body = {}) {
     ),
     url: presentation.route(body),
   };
+}
+
+export function buildNativeNotificationPresentation(typeKey, body = {}) {
+  if (!PRESENTATIONS[typeKey]) {
+    return buildGenericNativeNotificationPresentation(typeKey, body);
+  }
+  return buildConfiguredDefaultNativePresentation(typeKey, body)
+    || buildGenericNativeNotificationPresentation(typeKey, body);
 }
 
 // ─── SECTION: Admin-configurable presentation contract ──────────────────────
@@ -247,17 +270,11 @@ function presentationContext(typeKey, body = {}) {
     : {};
   const payload = body.payload && typeof body.payload === 'object' ? body.payload : {};
   const data = body.data && typeof body.data === 'object' ? body.data : {};
-  const title = contextValue(body.title, 180);
-  const bodyText = contextValue(body.body, 500);
-
   const context = {};
   switch (typeKey) {
     case 'message.inbound':
-      context.sender_name = contextValue(
-        explicit.sender_name
-          || (title.startsWith('New text from ') ? title.slice('New text from '.length) : ''),
-      );
-      context.message_preview = contextValue(explicit.message_preview || bodyText, 180);
+      context.sender_name = contextValue(explicit.sender_name);
+      context.message_preview = contextValue(explicit.message_preview, 180);
       break;
     case 'appointment.assigned':
     case 'appointment.updated':
@@ -274,6 +291,7 @@ function presentationContext(typeKey, body = {}) {
       context.amount = formatMoney(payload.amount);
       context.payment_source = contextValue(payload.source);
       context.payment_reference = contextValue(payload.reference);
+      context.invoice_number = contextValue(explicit.invoice_number);
       break;
     case 'lead.new':
       context.lead_source = contextValue(explicit.lead_source || payload.source_type);
@@ -343,7 +361,7 @@ const ROUTES = Object.freeze({
   }),
   'field.home': Object.freeze({
     label: 'Field home',
-    resolve: () => '/tech',
+    resolve: (_ctx, surface) => surface === 'native_push' ? '/' : '/tech',
   }),
   'conversation.thread': Object.freeze({
     label: 'Exact conversation',
@@ -412,7 +430,8 @@ const VARIABLE_META = Object.freeze({
   amount: Object.freeze({ label: 'Amount', sample: '$1,250.00' }),
   customer_name: Object.freeze({ label: 'Customer name', sample: 'Jordan Lee' }),
   payment_source: Object.freeze({ label: 'Payment source', sample: 'Credit card' }),
-  payment_reference: Object.freeze({ label: 'Payment reference', sample: 'INV-1042' }),
+  payment_reference: Object.freeze({ label: 'Payment reference', sample: 'Charge #ch_demo' }),
+  invoice_number: Object.freeze({ label: 'Invoice number', sample: 'INV-1042' }),
   lead_source: Object.freeze({ label: 'Lead source', sample: 'Website form' }),
   signer_name: Object.freeze({ label: 'Signer name', sample: 'Jordan Lee' }),
   document_name: Object.freeze({ label: 'Document name', sample: 'Work authorization' }),
@@ -448,15 +467,11 @@ function browserAndNative({
   bellRoutes,
   pwaRoutes,
   nativeRoute,
-  nativeTitle,
-  nativeBody,
 }) {
   return Object.freeze({
     bell: surface(title, body, variables, bellRoutes, bellRoutes[0]),
     pwa_push: surface(title, body, variables, pwaRoutes, pwaRoutes[0]),
-    native_push: surface(nativeTitle, nativeBody, [], [nativeRoute], nativeRoute, {
-      copyEditable: false,
-    }),
+    native_push: surface(title, body, variables, [nativeRoute], nativeRoute),
   });
 }
 
@@ -468,8 +483,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['conversation.thread', 'office.home'],
     pwaRoutes: ['conversation.thread', 'field.home'],
     nativeRoute: 'conversation.thread',
-    nativeTitle: 'New customer message',
-    nativeBody: 'Tap to open the conversation.',
   }),
   'appointment.assigned': browserAndNative({
     title: 'New appointment · {{appointment_title}}',
@@ -478,8 +491,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
-    nativeTitle: 'New appointment',
-    nativeBody: 'Tap to review the appointment.',
   }),
   'appointment.updated': browserAndNative({
     title: 'Appointment updated · {{appointment_title}}',
@@ -488,8 +499,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
-    nativeTitle: 'Appointment updated',
-    nativeBody: 'Tap to review the changes.',
   }),
   'appointment.canceled': browserAndNative({
     title: 'Appointment canceled · {{appointment_title}}',
@@ -498,8 +507,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
-    nativeTitle: 'Appointment canceled',
-    nativeBody: 'Tap to review the appointment.',
   }),
   'estimate.accepted': browserAndNative({
     title: 'Estimate {{estimate_number}} accepted',
@@ -508,18 +515,14 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['estimate.detail', 'office.home'],
     pwaRoutes: ['estimate.detail', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Estimate accepted',
-    nativeBody: 'Open Utah Pros to review the estimate.',
   }),
   'payment.received': browserAndNative({
     title: 'Payment received',
     body: '{{amount}} recorded via {{payment_source}} · {{payment_reference}}',
-    variables: ['amount', 'payment_source', 'payment_reference'],
+    variables: ['amount', 'payment_source', 'invoice_number', 'payment_reference'],
     bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
     pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Payment received',
-    nativeBody: 'Open Utah Pros to review payment details.',
   }),
   'lead.new': browserAndNative({
     title: 'New lead · {{customer_name}}',
@@ -528,8 +531,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['crm.lead', 'office.home'],
     pwaRoutes: ['crm.lead', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'New lead',
-    nativeBody: 'Open Utah Pros to review the lead.',
   }),
   'esign.signed': browserAndNative({
     title: '{{signer_name}} signed {{document_name}}',
@@ -538,8 +539,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['job.detail', 'office.home'],
     pwaRoutes: ['job.detail', 'field.home'],
     nativeRoute: 'job.detail',
-    nativeTitle: 'Document signed',
-    nativeBody: 'Tap to open the job.',
   }),
   'feedback.submitted': browserAndNative({
     title: 'New {{feedback_type}}',
@@ -548,8 +547,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['feedback.inbox', 'office.home'],
     pwaRoutes: ['feedback.inbox', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'New feedback',
-    nativeBody: 'Open Utah Pros to review the feedback.',
   }),
   'timesheet.change_requested': browserAndNative({
     title: 'Timesheet change requested',
@@ -558,8 +555,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['time_tracking.home', 'office.home'],
     pwaRoutes: ['time_tracking.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Timesheet change requested',
-    nativeBody: 'Open Utah Pros to review the request.',
   }),
   'timesheet.change_reviewed': browserAndNative({
     title: 'Timesheet change {{review_outcome}}',
@@ -568,8 +563,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['time_tracking.home', 'field.home'],
     pwaRoutes: ['time_tracking.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Timesheet change reviewed',
-    nativeBody: 'Open Utah Pros to review your request.',
   }),
   'clock.abandoned': browserAndNative({
     title: 'Clock needs attention',
@@ -578,8 +571,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['time_tracking.home', 'office.home'],
     pwaRoutes: ['time_tracking.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Clock needs attention',
-    nativeBody: 'Open Utah Pros to review your time.',
   }),
   'meld.received': browserAndNative({
     title: 'New {{meld_type}} meld',
@@ -588,8 +579,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['melds.home', 'office.home'],
     pwaRoutes: ['melds.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'New meld received',
-    nativeBody: 'Open Utah Pros to review the meld.',
   }),
   'feedback.resolved': browserAndNative({
     title: '{{feedback_type}} resolved',
@@ -598,8 +587,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['field.feedback', 'field.home'],
     pwaRoutes: ['field.feedback', 'field.home'],
     nativeRoute: 'field.feedback',
-    nativeTitle: 'Feedback resolved',
-    nativeBody: 'Tap to review your feedback.',
   }),
   'ops.health': browserAndNative({
     title: 'Ops alert · {{condition}}',
@@ -608,8 +595,6 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
     bellRoutes: ['dev_tools.home', 'office.home'],
     pwaRoutes: ['dev_tools.home', 'field.home'],
     nativeRoute: 'field.home',
-    nativeTitle: 'Operations alert',
-    nativeBody: 'Open Utah Pros to review system health.',
   }),
 });
 
@@ -662,7 +647,7 @@ export function validateNotificationPresentationConfig(typeKey, surfaceKey, conf
   if (!definition.copyEditable && (
     title !== definition.defaultTitle || body !== definition.defaultBody
   )) {
-    return { ok: false, error: 'Native lock-screen copy is privacy-locked' };
+    return { ok: false, error: 'Presentation copy is code-owned for this surface' };
   }
   const scrubbed = `${title}\n${body}`.replace(TEMPLATE_TOKEN, '');
   if (scrubbed.includes('{{') || scrubbed.includes('}}')) {
@@ -697,12 +682,41 @@ function renderTemplate(template, values) {
   return missing ? null : rendered;
 }
 
+function boundedRenderedNativeText(value, maxLength) {
+  const cleaned = cleanText(value, '', maxLength + 1);
+  return cleaned && cleaned.length <= maxLength ? cleaned : null;
+}
+
 function defaultConfig(definition) {
   return {
     title_template: definition.defaultTitle,
     body_template: definition.defaultBody,
     route_id: definition.defaultRouteId,
     contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+  };
+}
+
+function buildConfiguredDefaultNativePresentation(typeKey, body) {
+  const definition = CONFIGURABLE_PRESENTATIONS[typeKey]?.native_push;
+  if (!definition) return null;
+  const values = presentationContext(typeKey, body);
+  const title = renderTemplate(definition.defaultTitle, values);
+  const renderedBody = renderTemplate(definition.defaultBody, values);
+  const url = ROUTES[definition.defaultRouteId]?.resolve(values, 'native_push');
+  if (!title || !renderedBody || !url) return null;
+  const boundedTitle = boundedRenderedNativeText(
+    title,
+    SURFACE_LIMITS.native_push.title,
+  );
+  const boundedBody = boundedRenderedNativeText(
+    renderedBody,
+    SURFACE_LIMITS.native_push.body,
+  );
+  if (!boundedTitle || !boundedBody) return null;
+  return {
+    title: boundedTitle,
+    body: boundedBody,
+    url,
   };
 }
 
@@ -762,6 +776,7 @@ export async function resolveConfiguredNotificationPresentation({
   surfaceKey,
   body = {},
   fallback,
+  renderFailureFallback = fallback,
 }) {
   const definition = CONFIGURABLE_PRESENTATIONS[typeKey]?.[surfaceKey];
   if (!definition || !db) return fallback;
@@ -788,6 +803,18 @@ export async function resolveConfiguredNotificationPresentation({
   const title = renderTemplate(checked.config.title_template, values);
   const renderedBody = renderTemplate(checked.config.body_template, values);
   const url = ROUTES[checked.config.route_id]?.resolve(values, surfaceKey);
-  if (!title || !renderedBody || !url) return fallback;
+  if (!title || !renderedBody || !url) return renderFailureFallback;
+  if (surfaceKey === 'native_push') {
+    const boundedTitle = boundedRenderedNativeText(
+      title,
+      SURFACE_LIMITS.native_push.title,
+    );
+    const boundedBody = boundedRenderedNativeText(
+      renderedBody,
+      SURFACE_LIMITS.native_push.body,
+    );
+    if (!boundedTitle || !boundedBody) return renderFailureFallback;
+    return { title: boundedTitle, body: boundedBody, url };
+  }
   return { title, body: renderedBody, url };
 }

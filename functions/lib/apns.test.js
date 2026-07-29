@@ -423,6 +423,126 @@ describe('sendNativePushToEmployee', () => {
     expect(serializedPayload).not.toContain('secret-provider-id');
   });
 
+  it('renders approved rich native details only from typed event context', async () => {
+    const db = dbWithTokens([{
+      id: 'token-rich',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'payment.received',
+      notificationBody: {
+        payload: {
+          amount: 1250,
+          source: 'Credit card',
+          reference: 'Charge #ch_demo',
+        },
+        presentation_context: { invoice_number: 'INV-1042' },
+      },
+      eventKey: 'payment.received:rich',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Payment received',
+      body: '$1,250.00 recorded via Credit card · Charge #ch_demo',
+    });
+    expect(payload.data.url).toBe('/');
+  });
+
+  it('keeps expanded multibyte overrides within Apple payload limits by using generic copy', async () => {
+    const db = {
+      select: vi.fn(async (table) => {
+        if (table === 'device_tokens') {
+          return [{
+            id: 'token-expanded',
+            token: 'private-token',
+            updated_at: '2026-07-28T12:00:00.000Z',
+          }];
+        }
+        if (table === 'notification_presentation_overrides') {
+          return [{
+            title_template: 'New text from {{sender_name}}',
+            body_template: Array(9).fill('{{message_preview}}').join(''),
+            route_id: 'conversation.thread',
+            contract_version: 1,
+          }];
+        }
+        return [];
+      }),
+      rpc: vi.fn(async () => true),
+    };
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'message.inbound',
+      notificationBody: {
+        entity_type: 'conversation',
+        entity_id: 'conversation-1',
+        presentation_context: {
+          sender_name: 'Jordan Lee',
+          message_preview: '🔒'.repeat(90),
+        },
+      },
+      eventKey: 'message.inbound:expanded',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const serialized = fetchImpl.mock.calls[0][1].body;
+    const payload = JSON.parse(serialized);
+    expect(payload.aps.alert).toEqual({
+      title: 'New customer message',
+      body: 'Tap to open the conversation.',
+    });
+    expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(4_096);
+  });
+
+  it('restores generic native copy immediately when the server rollback setting is false', async () => {
+    const db = dbWithTokens([{
+      id: 'token-generic',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' },
+      employeeId: 'employee-1',
+      typeKey: 'payment.received',
+      notificationBody: {
+        payload: {
+          amount: 1250,
+          source: 'Credit card',
+          reference: 'Charge #ch_demo',
+        },
+        presentation_context: { invoice_number: 'INV-1042' },
+      },
+      eventKey: 'payment.received:generic',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Payment received',
+      body: 'Open Utah Pros to review payment details.',
+    });
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('1,250');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('INV-1042');
+  });
+
   it.each([
     ['admin route', '/tech/admin/users', null],
     ['malformed encoding', '/tech/appointment/%2Fprivate', null],
