@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-28T19:25:43Z",
+  "capturedAt": "2026-07-29T17:34:07Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "86050e56042b558ec18a04e3c6f74769f81bf880",
+  "captureBaseCommit": "93974862db975a729418b3fe9bfbc44ff4918184",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -187,6 +187,18 @@
     {
       "name": "notification_read_recipient_boundary",
       "version": "20260728192024"
+    },
+    {
+      "name": "native_apns_token_boundary",
+      "version": "20260729021021"
+    },
+    {
+      "name": "native_push_delivery_guardrails",
+      "version": "20260729021050"
+    },
+    {
+      "name": "notification_presentation_settings",
+      "version": "20260729171946"
     }
   ],
   "functions": [
