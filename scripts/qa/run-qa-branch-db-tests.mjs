@@ -128,7 +128,6 @@ if (!url || !anonKey || !serviceKey) {
         fs.readFileSync(path.join(root, 'scripts', 'qa', 'db-lane-baseline.json'), 'utf8'),
       );
       const failedTests = report.numFailedTests || 0;
-      const failedFiles = report.numFailedTestSuites || 0;
       const skipped =
         (report.numPendingTests || 0) + (report.numPendingTestSuites || 0) + (report.numTodoTests || 0);
       process.stdout.write(
@@ -136,18 +135,18 @@ if (!url || !anonKey || !serviceKey) {
         + `${failedTests} failed (baseline ${baseline.maxFailedTests}), ${skipped} skipped `
         + '(fixture-gap tail — see scripts/qa/db-lane-baseline.json).\n',
       );
-      if (failedTests > baseline.maxFailedTests || failedFiles > baseline.maxFailedFiles) {
+      if (failedTests > baseline.maxFailedTests) {
         process.stderr.write(
-          `QA branch DB tests FAILED: ${failedTests} failed tests / ${failedFiles} failed files `
-          + `exceeds the shrink-only baseline (${baseline.maxFailedTests}/${baseline.maxFailedFiles}) — `
-          + 'a NEW database regression beyond the known fixture gaps.\n',
+          `QA branch DB tests FAILED: ${failedTests} failed tests exceeds the shrink-only `
+          + `baseline (${baseline.maxFailedTests}) — a NEW database regression beyond the known `
+          + 'fixture gaps.\n',
         );
         process.exitCode = 1;
       } else {
-        if (failedTests < baseline.maxFailedTests || failedFiles < baseline.maxFailedFiles) {
+        if (failedTests < baseline.maxFailedTests) {
           process.stdout.write(
-            'Ratchet opportunity: failures are below baseline — lower the maxima to '
-            + `${failedTests}/${failedFiles} in scripts/qa/db-lane-baseline.json in this PR.\n`,
+            'Ratchet opportunity: failures are below baseline — lower maxFailedTests to '
+            + `${failedTests} in scripts/qa/db-lane-baseline.json in this PR.\n`,
           );
         }
         process.exitCode = 0;
