@@ -219,16 +219,39 @@ describe('iOS release workflow authorization boundary', () => {
       .toEqual(['badge', 'sound', 'alert']);
   });
 
-  it('bounds Xcode and provider subprocesses to five minutes and verifies cleanup', () => {
+  it('bounds Xcode and provider subprocesses with owned cleanup and pinned raised budgets', () => {
+    // Owner-authorized 2026-07-29: the archive (30 min) and upload (15 min)
+    // steps opt into a raised total-runtime budget via --total-runtime-ms;
+    // the five-minute default law stays for every other consumer, and the
+    // 45-minute job timeout remains the outer bound.
     for (const job of [archiveJob, publishJob]) {
       expect(job).toContain('scripts/qa/run-owned-subprocess.mjs');
-      expect(job).toContain('--timeout-ms 290000');
     }
+    expect(archiveJob).toContain('--total-runtime-ms 1800000');
+    expect(archiveJob).toContain('--timeout-ms 1792000');
+    expect(publishJob).toContain('--total-runtime-ms 900000');
+    expect(publishJob).toContain('--timeout-ms 892000');
     expect(ownedSubprocessRunner).toContain('const MAX_TOTAL_RUNTIME_MS = 300_000');
+    expect(ownedSubprocessRunner).toContain('const ABSOLUTE_TOTAL_RUNTIME_CEILING_MS = 2_700_000');
     expect(ownedSubprocessRunner).toContain('const MAX_COMMAND_TIMEOUT_MS');
     expect(ownedSubprocessRunner).toContain('detached: true');
     expect(ownedSubprocessRunner).toContain("process.kill(-pid, signal)");
     expect(ownedSubprocessRunner).toContain('verifyProcessGroupGone(pid)');
+  });
+
+  it('rejects a total-runtime raise above the 45-minute ceiling before any child starts', () => {
+    // Validation happens pre-spawn, so this probe is platform-independent.
+    const rejected = spawnSync(
+      process.execPath,
+      [
+        ownedSubprocessRunnerPath,
+        '--total-runtime-ms', '2700001',
+        '--', process.execPath, '-e', 'process.exit(0)',
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(rejected.status).not.toBe(0);
+    expect(`${rejected.stderr}${rejected.stdout}`).toContain('--total-runtime-ms');
   });
 
   // The two live subprocess probes below depend on POSIX semantics (/bin/sh,

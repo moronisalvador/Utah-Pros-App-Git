@@ -22,6 +22,12 @@
  *     the negative PID, never a process name, so unrelated processes are safe.
  *   - The timeout maximum is five minutes by repository law. Shorter values are
  *     allowed for tests; longer values are rejected before a child starts.
+ *   - Exception (owner-authorized 2026-07-29): a named CI build step may raise
+ *     the total-runtime budget with an explicit `--total-runtime-ms`, floor =
+ *     the five-minute default (the flag can only raise, never shrink), ceiling
+ *     = 45 minutes to match the CI job timeout that still bounds the step. A
+ *     clean Capacitor Release archive cannot finish in five minutes, so
+ *     without this the iOS release workflow fails by construction.
  * ════════════════════════════════════════════════
  */
 import { spawn } from 'node:child_process';
@@ -29,6 +35,7 @@ import process from 'node:process';
 import { safeChildEnv } from './safe-child-env.mjs';
 
 const MAX_TOTAL_RUNTIME_MS = 300_000;
+const ABSOLUTE_TOTAL_RUNTIME_CEILING_MS = 2_700_000;
 const TERM_GRACE_MS = 5_000;
 const VERIFY_INTERVAL_MS = 100;
 const VERIFY_ATTEMPTS = 30;
@@ -42,13 +49,14 @@ function usage(message) {
   if (message) process.stderr.write(`${message}\n`);
   process.stderr.write(
     'Usage: node scripts/qa/run-owned-subprocess.mjs '
-      + '[--timeout-ms N] [--cwd PATH] [--safe-env] -- COMMAND [ARGS...]\n',
+      + '[--timeout-ms N] [--total-runtime-ms N] [--cwd PATH] [--safe-env] -- COMMAND [ARGS...]\n',
   );
   process.exitCode = 2;
 }
 
 function parseArguments(argv) {
   let timeoutMs = MAX_COMMAND_TIMEOUT_MS;
+  let totalRuntimeMs = MAX_TOTAL_RUNTIME_MS;
   let termGraceMs = TERM_GRACE_MS;
   let cwd = process.cwd();
   let useSafeEnv = false;
@@ -76,6 +84,11 @@ function parseArguments(argv) {
       index += 2;
       continue;
     }
+    if (argument === '--total-runtime-ms') {
+      totalRuntimeMs = Number(argv[index + 1]);
+      index += 2;
+      continue;
+    }
     throw new Error(`Unknown argument: ${argument}`);
   }
 
@@ -83,8 +96,19 @@ function parseArguments(argv) {
   if (!Number.isInteger(termGraceMs) || termGraceMs < 0 || termGraceMs > TERM_GRACE_MS) {
     throw new Error(`--term-grace-ms must be an integer from 0 to ${TERM_GRACE_MS}`);
   }
+  if (
+    !Number.isInteger(totalRuntimeMs)
+    || totalRuntimeMs < MAX_TOTAL_RUNTIME_MS
+    || totalRuntimeMs > ABSOLUTE_TOTAL_RUNTIME_CEILING_MS
+  ) {
+    throw new Error(
+      `--total-runtime-ms must be an integer from ${MAX_TOTAL_RUNTIME_MS} `
+      + `to ${ABSOLUTE_TOTAL_RUNTIME_CEILING_MS} (it raises the budget for a `
+      + 'named build step; it never shrinks it)',
+    );
+  }
   const maxTimeoutMs = (
-    MAX_TOTAL_RUNTIME_MS
+    totalRuntimeMs
     - termGraceMs
     - (VERIFY_INTERVAL_MS * VERIFY_ATTEMPTS)
   );
