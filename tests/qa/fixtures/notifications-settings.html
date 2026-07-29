@@ -1,0 +1,31 @@
+<!--
+════════════════════════════════════════════════
+FILE: notifications-settings.html
+════════════════════════════════════════════════
+
+WHAT THIS DOES (plain language):
+  Provides the empty browser page used to display the real Notifications
+  Settings component during credential-free visual checks.
+
+DEPENDS ON:
+  Packages:  n/a
+  Internal:  tests/qa/fixtures/notifications-settings.jsx
+  Data:      reads  → synthetic fixture state only
+             writes → none
+
+NOTES / GOTCHAS:
+  - This page is opened only by the local QA runner and is not part of the app.
+════════════════════════════════════════════════
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Notifications Settings QA</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/tests/qa/fixtures/notifications-settings.jsx"></script>
+  </body>
+</html>
