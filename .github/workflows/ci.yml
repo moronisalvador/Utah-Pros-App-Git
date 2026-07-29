@@ -5,7 +5,11 @@ name: CI
 # auto-deploys on push). This runs build+test on every PR targeting main OR dev and
 # on push to either — so staging no longer ships unchecked (UX-Quality F-S1, 2026-07).
 #
-# What blocks a merge:  build + test + changed-file lint
+# What blocks a merge:  build + test + changed-file lint + migration hygiene
+#                       + bundle budgets — src/index.css and route-chunk
+#                                       (perf-budget.md §1; entry-graph JS is measured
+#                                        and printed but advisory until it is back under
+#                                        budget — see scripts/bundle-size-report.mjs)
 # What does NOT block:  full-tree lint  (pre-existing hygiene baseline; changed files are
 #                                        independently ratcheted with zero warning tolerance)
 #
@@ -44,6 +48,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Blocking. Every migration added after 2026-07-29 must ship a paired
+      # rollback, justify any anon grant, revoke PUBLIC on definers, and mark
+      # destructive DDL. Existing migrations are grandfathered by baseline.
+      - name: Migration hygiene (blocking)
+        run: node scripts/check-migration-hygiene.mjs
 
       - name: Validate repository tooling governance
         run: npm run validate:tooling
@@ -107,13 +117,51 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}" || true
-          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' | tr '\n' ' ')
+          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' ':(exclude).claude/workflows/**' | tr '\n' ' ')
           if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
 
-      # Perf-budget trend signal (perf-budget.md). Non-blocking; reports the gzipped
-      # JS weight so a regression is visible in the run. Hard-fail ratchet is a follow-up.
-      - name: Bundle size report
+      # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
+      # and route-chunk budgets; entry-graph JS is measured and printed loudly but
+      # does not fail (owner decision 2026-07-27 — it was already ~2.7 KB over the
+      # +10% line the moment the measurement was fixed, and gating it same-day would
+      # have turned dev red for unrelated merges). Flip BLOCKING.entryJsGzip in
+      # scripts/bundle-size-report.mjs once the entry graph is back under budget.
+      # This tested entry-graph report supersedes the interim check-bundle-budget.mjs
+      # guard (merged same day via PR #541) — one budget system, not two.
+      - name: Test bundle size report
+        run: npm run test:bundle-size
+
+      - name: Bundle size budgets
+        run: npm run report:bundle-size -- --strict
+
+  # The behavioral database lane (supabase/tests/**) against the seeded qa-staging
+  # Supabase branch. Until the owner seeds the branch and adds the three secrets
+  # (docs/database/staging-branch-runbook.md §2), this job reports NOT CONFIGURED
+  # loudly and tests/qa/unit/db-lane-coverage.test.js keeps counting the dark
+  # tests. Once the first green run exists, delete that counter file.
+  db-lane:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run db lane against qa-staging branch
+        env:
+          UPR_QA_SUPABASE_URL: ${{ secrets.UPR_QA_SUPABASE_URL }}
+          UPR_QA_SUPABASE_ANON_KEY: ${{ secrets.UPR_QA_SUPABASE_ANON_KEY }}
+          UPR_QA_SUPABASE_SERVICE_KEY: ${{ secrets.UPR_QA_SUPABASE_SERVICE_KEY }}
         run: |
-          BYTES=$(cat dist/assets/*.js | gzip -c | wc -c)
-          echo "dist JS gzip (concatenated): ${BYTES} bytes  (perf-budget.md entry-graph guide ~232KB, fail intent at +10%)"
-        continue-on-error: true
+          if [ -z "$UPR_QA_SUPABASE_URL" ]; then
+            echo "::warning title=DB lane NOT CONFIGURED::The qa-staging branch is not seeded/wired. supabase/tests/** does NOT run in CI. See docs/database/staging-branch-runbook.md §2."
+            exit 0
+          fi
+          npm run test:db:branch

@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // .claude/workflows are Claude Code workflow DSL scripts (top-level return/await,
+  // injected globals like agent()/phase()) — not parseable as standard modules.
+  globalIgnores(['dist', '.claude/workflows']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

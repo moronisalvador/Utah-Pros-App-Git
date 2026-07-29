@@ -14,6 +14,8 @@ apply, deploy, send, upload, promote, or change provider state.
 **Reviewed integration commit:** `dc8120797b273c1c5aa944659005aec56b7bbcf3`  
 **Current deployed `dev` at this checkpoint:** `d5d08cb48ed083d45108dce018969df760076f55`  
 **Current continuation base / `origin/dev`:** `bf45ae00fd96e8b115220fab2d2920472b9ca533`
+**Pre-push reconciliation target:** `origin/dev`
+`8e1cf9cceba72f027caf91debded4afb6841b276`
 **Reviewed continuation source commits:** `64f2d86` through `81f9dac` (16
 small logical commits; exact list in section 10)
 **Production `main` was not changed.**
@@ -548,6 +550,16 @@ Reviewed source commit sequence:
 14. `49b2a72` — Document native push contracts
 15. `46d9a6f` — Update mobile release guidance
 16. `81f9dac` — Record native TestFlight preflight
+
+Before the authorized branch push, `origin/dev` advanced from the continuation
+base to `8e1cf9cceba72f027caf91debded4afb6841b276`. The wave was therefore
+reconciled by an ordinary merge without rewriting history. The two conflicts
+were intentional overlapping contracts: the lean `UPR-Web-Context.md`
+restructure and lazy Spanish/Portuguese locale loading in the native
+notification Settings test. Resolution preserves `dev`'s lean context and
+`ensureLanguage()` behavior while retaining the reviewed native Push controls
+and tests. Post-merge verification and the exact merge tip are recorded with
+the publication outcome.
 
 The final TestFlight workflow now builds the native bundle only with
 `VITE_NATIVE_API_ORIGIN=https://utahpros.app` and

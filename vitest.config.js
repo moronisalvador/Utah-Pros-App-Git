@@ -25,7 +25,7 @@ import process from 'node:process';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-import { LOCAL_DATABASE_SENTINEL } from './tests/qa/lib/target-policy.mjs';
+import { LOCAL_DATABASE_SENTINEL, QA_BRANCH_SENTINEL } from './tests/qa/lib/target-policy.mjs';
 
 const lane = process.env.UPR_TEST_LANE;
 const laneIncludes = {
@@ -51,8 +51,11 @@ const laneIncludes = {
 if (!Object.hasOwn(laneIncludes, lane)) {
   throw new Error('UPR_TEST_LANE must be exactly unit, worker, qa, or db');
 }
-if (lane === 'db' && process.env.UPR_QA_CONFIRMED_LOCAL !== LOCAL_DATABASE_SENTINEL) {
-  throw new Error('Database test discovery refused: use npm run test:db:local');
+const dbLaneConfirmed =
+  process.env.UPR_QA_CONFIRMED_LOCAL === LOCAL_DATABASE_SENTINEL
+  || process.env.UPR_QA_CONFIRMED_QA_BRANCH === QA_BRANCH_SENTINEL;
+if (lane === 'db' && !dbLaneConfirmed) {
+  throw new Error('Database test discovery refused: use npm run test:db:local or npm run test:db:branch');
 }
 
 export default defineConfig({

@@ -65,7 +65,7 @@ vi.mock('@/lib/webPushClient', () => ({
   disablePush: async () => ({ ok: false }),
 }));
 
-const { default: i18n } = await import('@/i18n');
+const { default: i18n, ensureLanguage } = await import('@/i18n');
 const {
   NATIVE_PUSH_BINDING_KEY,
   NATIVE_PUSH_USER_ENABLED_KEY,
@@ -102,34 +102,35 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(lang = 'en') {
+async function render(lang = 'en') {
+  await ensureLanguage(lang);
   i18n.changeLanguage(lang);
   return renderToStaticMarkup(<NotificationsSection />);
 }
 
 describe('SET-01 — native app never shows Web Push / install guidance', () => {
-  it('does not tell a native user to add the app to their Home Screen', () => {
+  it('does not tell a native user to add the app to their Home Screen', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).not.toMatch(/Home Screen/i);
     expect(out).not.toMatch(/Add to Home/i);
   });
 
-  it('states the truthful pending status instead of a broken "off" state', () => {
+  it('states the truthful pending status instead of a broken "off" state', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).toContain('coming in an app update');
     expect(out).toContain('nothing to set up here');
   });
 
-  it('keeps controls hidden while the native build activation gate is off', () => {
+  it('keeps controls hidden while the native build activation gate is off', async () => {
     isNativePlatform.mockReturnValue(true);
-    const out = render('en');
+    const out = await render('en');
     expect(out).not.toContain('Turn on');
     expect(out).not.toContain('Turn off');
   });
 
-  it('offers Turn on for an explicitly disabled native installation', () => {
+  it('offers Turn on for an explicitly disabled native installation', async () => {
     isNativePlatform.mockReturnValue(true);
     vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
     vi.stubEnv('VITE_APNS_ENV', 'sandbox');
@@ -137,7 +138,7 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
       [NATIVE_PUSH_USER_ENABLED_KEY]: 'false',
     }));
 
-    const out = render('en');
+    const out = await render('en');
 
     expect(out).toContain('Not on yet for this phone.');
     expect(out).toContain('Turn on');
@@ -145,7 +146,7 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).not.toMatch(/Home Screen/i);
   });
 
-  it('offers Turn off for a bound native installation', () => {
+  it('offers Turn off for a bound native installation', async () => {
     isNativePlatform.mockReturnValue(true);
     vi.stubEnv('VITE_NATIVE_PUSH_ENABLED', 'true');
     vi.stubEnv('VITE_APNS_ENV', 'sandbox');
@@ -154,7 +155,7 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
       [NATIVE_PUSH_USER_ENABLED_KEY]: 'true',
     }));
 
-    const out = render('en');
+    const out = await render('en');
 
     expect(out).toContain('On here — checking iPhone notification access.');
     expect(out).toContain('Turn off');
@@ -162,9 +163,9 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).not.toContain('Turn on');
   });
 
-  it('keeps the web/PWA card unchanged when not native', () => {
+  it('keeps the web/PWA card unchanged when not native', async () => {
     isNativePlatform.mockReturnValue(false);
-    const out = render('en');
+    const out = await render('en');
     // Static render captures the initial pass, where `loading` is still true —
     // so neither button has rendered yet on EITHER path. The guidance branches
     // are not loading-gated, so they are what distinguishes the two: this env
@@ -174,11 +175,11 @@ describe('SET-01 — native app never shows Web Push / install guidance', () => 
     expect(out).not.toContain('nothing to set up here');
   });
 
-  it('renders the activation-gated native copy in all three locales', () => {
+  it('renders the activation-gated native copy in all three locales', async () => {
     isNativePlatform.mockReturnValue(true);
-    expect(render('en')).toContain('coming in an app update');
-    expect(render('es')).toContain('llegarán en una actualización');
-    expect(render('pt')).toContain('virá em uma atualização do app');
+    expect(await render('en')).toContain('coming in an app update');
+    expect(await render('es')).toContain('llegarán en una actualización');
+    expect(await render('pt')).toContain('virá em uma atualização do app');
   });
 });
 

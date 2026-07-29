@@ -1,3 +1,6 @@
+---
+paths: ["src/pages/tech/**", "src/components/tech/**"]
+---
 # UX Design Principles — Tech Mobile App
 
 **Last-verified: 2026-07-27** (offline bullet amended — owner ratified online-only for the initial
