@@ -29,7 +29,10 @@
  */
 import { fetchWithTimeout } from './http.js';
 import { resolveNativePushRoute } from '../../src/lib/nativeNavigationTarget.js';
-import { buildNativeNotificationPresentation } from './notificationPresentation.js';
+import {
+  buildNativeNotificationPresentation,
+  resolveConfiguredNotificationPresentation,
+} from './notificationPresentation.js';
 
 const APNS_TIMEOUT_MS = 15_000;
 const APNS_CONCURRENCY = 5;
@@ -256,10 +259,17 @@ export async function sendNativePushToEmployee({
   const host = config.environment === 'production'
     ? 'https://api.push.apple.com'
     : 'https://api.sandbox.push.apple.com';
-  const presentation = buildNativeNotificationPresentation(
+  const nativeFallback = buildNativeNotificationPresentation(
     typeKey,
     notificationBody,
   );
+  const presentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey,
+    surfaceKey: 'native_push',
+    body: notificationBody,
+    fallback: nativeFallback,
+  });
   const payload = JSON.stringify({
     aps: {
       alert: {

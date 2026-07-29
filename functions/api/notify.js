@@ -55,6 +55,10 @@ import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
 import { sendNativePushToEmployeeAcrossEnvironments } from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import {
+  resolveConfiguredNotificationPresentation,
+} from '../lib/notificationPresentation.js';
 
 // The internal notifications sender identity (distinct from the customer-facing
 // "Utah Pros Restoration" default in email.js).
@@ -221,15 +225,37 @@ export async function dispatchToRecipient({
   catch { prefs = []; }
   const forType = (prefs || []).filter((p) => p.type_key === type.type_key);
   const on = (ch) => forType.some((p) => p.channel === ch && p.enabled);
+  const bellPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'bell',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.link || '/',
+    },
+  });
+  const pwaPresentation = await resolveConfiguredNotificationPresentation({
+    db,
+    typeKey: type.type_key,
+    surfaceKey: 'pwa_push',
+    body,
+    fallback: {
+      title: body.title || type.label,
+      body: body.body || '',
+      url: body.data?.url || body.link || '/',
+    },
+  });
 
   // Channel 1 — in-app bell (per-recipient row).
   if (on('bell') && !nativeRetryOnly) {
     try {
       await db.rpc('create_notification', {
         p_type: type.type_key,
-        p_title: body.title || type.label,
-        p_body: body.body || null,
-        p_link: body.link || null,
+        p_title: bellPresentation.title,
+        p_body: bellPresentation.body || null,
+        p_link: bellPresentation.url || null,
         p_entity_type: body.entity_type || null,
         p_entity_id: body.entity_id || null,
         p_job_id: body.job_id || null,
@@ -288,10 +314,13 @@ export async function dispatchToRecipient({
       try { subs = await db.select('push_subscriptions', `employee_id=eq.${recipientId}&select=id,endpoint,p256dh,auth`); }
       catch { subs = []; }
       const pushBody = JSON.stringify({
-        title: body.title || type.label,
-        body: body.body || '',
-        url: body.data?.url || body.link || '/',
-        data: body.data || {},
+        title: pwaPresentation.title,
+        body: pwaPresentation.body,
+        url: pwaPresentation.url,
+        // The typed presentation resolver is the only authority for tap
+        // navigation. Never forward producer metadata: older producers carry a
+        // data.url that can conflict with an admin-selected route.
+        data: { url: pwaPresentation.url },
       });
       const send = sendWebPushImpl || sendWebPush;
       for (const s of subs || []) {
@@ -439,6 +468,11 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
       ...(body.data || {}),
       url: body.data?.url || `/tech/appointment/${body.appointment_id}`,
     },
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      appointment_title: what,
+      appointment_when: when,
+    },
     entity_type: body.entity_type || 'appointment',
     entity_id: body.entity_id || body.appointment_id,
   };
@@ -477,6 +511,16 @@ export async function enrichEstimateBody(db, body = {}) {
     entity_type: body.entity_type || 'estimate',
     entity_id: body.entity_id || body.estimate_id,
     job_id: body.job_id ?? est.job_id ?? null,
+    payload: {
+      ...(body.payload || {}),
+      amount: Number.isFinite(amt) ? amt : null,
+    },
+    presentation_context: {
+      ...(body.presentation_context || {}),
+      estimate_number: num,
+      amount: money,
+      customer_name: client,
+    },
   };
 }
 
@@ -697,6 +741,11 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const { status, data } = await handleNotify({ request, env, db: supabase(env), fetchImpl: fetch });
+  const { status, data } = await handleNotify({
+    request,
+    env,
+    db: supabase(env, fetchWithTimeout),
+    fetchImpl: fetch,
+  });
   return jsonResponse(data, status, request, env);
 }

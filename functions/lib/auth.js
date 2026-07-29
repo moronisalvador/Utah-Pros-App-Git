@@ -59,7 +59,7 @@ function projectUrl(env) {
 // ─── SECTION: Token → user ──────────────
 // Verifies the caller's Supabase session and returns the auth user, or a
 // { error, status } pair the worker can hand straight to jsonResponse().
-export async function requireUser(request, env) {
+export async function requireUser(request, env, fetchImpl = fetch) {
   const token = getBearer(request);
   if (!token) return { error: 'Missing Authorization header', status: 401 };
 
@@ -69,7 +69,7 @@ export async function requireUser(request, env) {
 
   let res;
   try {
-    res = await fetch(`${url}/auth/v1/user`, {
+    res = await fetchImpl(`${url}/auth/v1/user`, {
       headers: { apikey: key, Authorization: `Bearer ${token}` },
     });
   } catch {
@@ -85,8 +85,8 @@ export async function requireUser(request, env) {
 // ─── SECTION: User → employee ──────────────
 // Valid session AND a matching employees row. Returns { user, employee } or a
 // { error, status } pair.
-export async function requireEmployee(request, env, db) {
-  const auth = await requireUser(request, env);
+export async function requireEmployee(request, env, db, fetchImpl = fetch) {
+  const auth = await requireUser(request, env, fetchImpl);
   if (auth.error) return auth;
 
   let emp;
@@ -107,8 +107,8 @@ export async function requireEmployee(request, env, db) {
 // ─── SECTION: Employee → role gate ──────────────
 // Enforces, server-side, the SAME role predicate the UI enforces (money/PII/
 // campaign endpoints). `roles` is an array, e.g. ['admin','manager'].
-export async function requireRole(request, env, db, roles) {
-  const auth = await requireEmployee(request, env, db);
+export async function requireRole(request, env, db, roles, fetchImpl = fetch) {
+  const auth = await requireEmployee(request, env, db, fetchImpl);
   if (auth.error) return auth;
 
   const allowed = Array.isArray(roles) ? roles : [roles];

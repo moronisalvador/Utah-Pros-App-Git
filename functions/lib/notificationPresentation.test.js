@@ -20,7 +20,12 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   buildNativeNotificationPresentation,
+  getNotificationPresentationCatalog,
   NATIVE_NOTIFICATION_TYPE_KEYS,
+  NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+  previewNotificationPresentation,
+  resolveConfiguredNotificationPresentation,
+  validateNotificationPresentationConfig,
 } from './notificationPresentation.js';
 
 const CATALOG_MIGRATIONS = [
@@ -137,5 +142,137 @@ describe('native notification presentation catalog', () => {
       body: 'This iPhone can receive UPR alerts.',
       url: '/tech/settings',
     });
+  });
+});
+
+describe('admin notification presentation contract', () => {
+  it('projects every schema-seeded type without exposing native variables', () => {
+    const catalog = getNotificationPresentationCatalog();
+
+    expect(catalog.map((event) => event.type_key).sort()).toEqual(catalogTypeKeys());
+    for (const event of catalog) {
+      expect(event.surfaces.native_push.copy_editable).toBe(false);
+      expect(event.surfaces.native_push.variables).toEqual([]);
+    }
+  });
+
+  it('allows customer name and amount only on the typed estimate browser surfaces', () => {
+    const estimate = getNotificationPresentationCatalog()
+      .find((event) => event.type_key === 'estimate.accepted');
+    const variableKeys = estimate.surfaces.bell.variables.map((variable) => variable.key);
+
+    expect(variableKeys).toEqual(expect.arrayContaining([
+      'estimate_number',
+      'amount',
+      'customer_name',
+    ]));
+    expect(estimate.surfaces.native_push.variables).toEqual([]);
+  });
+
+  it.each([
+    ['{{payload}}', 'Open details'],
+    ['{{customer.name}}', 'Open details'],
+    ['{{#if amount}}Paid{{/if}}', 'Open details'],
+    ['{{amount', 'Open details'],
+  ])('rejects unsafe or malformed template syntax: %s', (title, body) => {
+    expect(validateNotificationPresentationConfig(
+      'estimate.accepted',
+      'bell',
+      {
+        title_template: title,
+        body_template: body,
+        route_id: 'estimate.detail',
+        contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+      },
+    )).toMatchObject({ ok: false });
+  });
+
+  it('rejects a native copy override even when the route is allowed', () => {
+    expect(validateNotificationPresentationConfig(
+      'payment.received',
+      'native_push',
+      {
+        title_template: 'Jordan paid $1,250',
+        body_template: 'Private reference INV-1042',
+        route_id: 'field.home',
+        contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+      },
+    )).toEqual({
+      ok: false,
+      error: 'Native lock-screen copy is privacy-locked',
+    });
+  });
+
+  it('previews with synthetic values and a code-resolved route', () => {
+    expect(previewNotificationPresentation(
+      'estimate.accepted',
+      'bell',
+      {
+        title_template: 'Estimate {{estimate_number}} accepted',
+        body_template: '{{customer_name}} approved {{amount}}',
+        route_id: 'estimate.detail',
+        contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+      },
+    )).toEqual({
+      ok: true,
+      presentation: {
+        title: 'Estimate EST-1042 accepted',
+        body: 'Jordan Lee approved $1,250.00',
+        url: '/estimates/estimate-demo',
+      },
+    });
+  });
+
+  it('uses a valid stored override and safely falls back on missing context', async () => {
+    const validDb = {
+      select: async () => [{
+        title_template: 'Payment {{amount}} received',
+        body_template: 'Recorded via {{payment_source}}',
+        route_id: 'invoice.detail',
+        contract_version: NOTIFICATION_PRESENTATION_CONTRACT_VERSION,
+      }],
+    };
+    const fallback = { title: 'Fallback', body: 'Fallback body', url: '/' };
+
+    await expect(resolveConfiguredNotificationPresentation({
+      db: validDb,
+      typeKey: 'payment.received',
+      surfaceKey: 'bell',
+      body: {
+        entity_type: 'invoice',
+        entity_id: 'invoice-1',
+        payload: { amount: 1250, source: 'Credit card' },
+      },
+      fallback,
+    })).resolves.toEqual({
+      title: 'Payment $1,250.00 received',
+      body: 'Recorded via Credit card',
+      url: '/invoices/invoice-1',
+    });
+
+    await expect(resolveConfiguredNotificationPresentation({
+      db: validDb,
+      typeKey: 'payment.received',
+      surfaceKey: 'bell',
+      body: { payload: { amount: 1250 } },
+      fallback,
+    })).resolves.toEqual(fallback);
+  });
+
+  it('falls back without exposing a failed or timed-out configuration lookup', async () => {
+    const fallback = { title: 'Fallback', body: 'Fallback body', url: '/' };
+    const timedOutDb = {
+      select: async () => {
+        throw new DOMException('Timed out', 'TimeoutError');
+      },
+    };
+
+    await expect(resolveConfiguredNotificationPresentation({
+      db: timedOutDb,
+      typeKey: 'payment.received',
+      surfaceKey: 'bell',
+      body: {},
+      fallback,
+    })).resolves.toEqual(fallback);
   });
 });

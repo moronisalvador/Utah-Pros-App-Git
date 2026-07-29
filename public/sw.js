@@ -44,7 +44,10 @@ self.addEventListener('push', (event) => {
   }
 
   const title = payload.title || 'Utah Pros';
-  const rawTarget = (payload.data && payload.data.url) || payload.url;
+  // Current dispatchers put the registry-resolved destination at the top
+  // level. Keep data.url only as a compatibility fallback for older queued
+  // payloads; it must never override the validated presentation route.
+  const rawTarget = payload.url || (payload.data && payload.data.url);
   const target = self.UPRPushTarget.normalizePushTarget(rawTarget, self.location.origin);
   const options = {
     body: payload.body || '',

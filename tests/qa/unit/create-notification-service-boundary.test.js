@@ -67,7 +67,7 @@ describe('S1f create_notification service boundary', () => {
     expect(notifyWorker).toContain("await db.rpc('create_notification'");
     expect(notifyWorker).toContain('export async function dispatchToRecipient');
     expect(notifyWorker).toContain(
-      'handleNotify({ request, env, db: supabase(env), fetchImpl: fetch })',
+      'db: supabase(env, fetchWithTimeout)',
     );
     expect(workerSupabase).toContain('const key = env.SUPABASE_SERVICE_ROLE_KEY');
     expect(workerSupabase).toContain("'apikey': key");

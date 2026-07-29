@@ -31,6 +31,7 @@ import { supabase } from '../lib/supabase.js';
 import { requireOwner } from '../lib/auth.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { sendNativePushToEmployee } from '../lib/apns.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -40,7 +41,7 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const auth = await requireOwner(request, env, db);
   if (auth.error) {
     return jsonResponse({ error: auth.error }, auth.status, request, env);

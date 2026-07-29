@@ -41,7 +41,8 @@ function makeDb(opts = {}) {
   const {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
-    contactsById = {}, webhookSecret = null, selectErrorTable = null,
+    contactsById = {}, presentationOverrides = {}, webhookSecret = null,
+    selectErrorTable = null,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -82,6 +83,14 @@ function makeDb(opts = {}) {
       if (table === 'push_subscriptions') {
         const m = /employee_id=eq\.([^&]+)/.exec(query);
         return (m && subsByEmp[m[1]]) || [];
+      }
+      if (table === 'notification_presentation_overrides') {
+        const type = /type_key=eq\.([^&]+)/.exec(query);
+        const surface = /surface=eq\.([^&]+)/.exec(query);
+        const key = type && surface
+          ? `${decodeURIComponent(type[1])}:${surface[1]}`
+          : '';
+        return presentationOverrides[key] ? [presentationOverrides[key]] : [];
       }
       if (table === 'appointments') {
         const m = /id=eq\.([^&]+)/.exec(query);
@@ -282,6 +291,64 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     const out = await dispatchEvent({ db, env: ENV, typeKey: 'feedback.submitted', body: {}, sendWebPushImpl });
     expect(sends).toEqual(['https://push/1']);
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
+  });
+
+  it('makes the validated presentation route authoritative over producer data', async () => {
+    const payloads = [];
+    const db = makeDb({
+      types: {
+        'message.inbound': {
+          type_key: 'message.inbound',
+          label: 'New text message',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('message.inbound', { push: true }) },
+      subsByEmp: {
+        a1: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+      },
+      presentationOverrides: {
+        'message.inbound:pwa_push': {
+          title_template: 'Customer message',
+          body_template: 'Open Utah Pros to reply.',
+          route_id: 'field.home',
+          contract_version: 1,
+        },
+      },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'message.inbound',
+      body: {
+        recipient_ids: ['a1'],
+        notification_event_id: 'message-event-1',
+        data: {
+          conversation_id: 'conversation-1',
+          url: '/tech/conversations?c=producer-choice',
+          secret_metadata: 'must-not-cross-provider-boundary',
+        },
+      },
+      sendNativePushImpl: async () => ({
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+        skipped: true,
+        reason: 'no_tokens',
+      }),
+      sendWebPushImpl: async (_subscription, payload) => {
+        payloads.push(JSON.parse(payload));
+        return { ok: true, status: 201 };
+      },
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].url).toBe('/tech');
+    expect(payloads[0].data).toEqual({ url: '/tech' });
+    expect(JSON.stringify(payloads[0])).not.toContain('producer-choice');
+    expect(JSON.stringify(payloads[0])).not.toContain('secret_metadata');
   });
 
   it('routes native APNs through the same preference-gated dispatcher', async () => {
