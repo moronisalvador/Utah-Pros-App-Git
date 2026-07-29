@@ -137,6 +137,15 @@ Researched live from Anthropic's docs 2026-07-29. Headlines:
   mechanical batch work per the framework above. Re-check the
   [release notes](https://platform.claude.com/docs/en/release-notes/overview) at start time —
   this is exactly the fast-moving part.
+- **Context engineering for Claude 5-generation models** (Anthropic, 2026-07-24): the Claude
+  Code team cut >80% of their own system prompt with no eval loss — the shift is "from rules to
+  judgment" for *behavioral* instructions. Applied here: agent instructions for this initiative
+  state objectives and domain facts, not behavioral micro-rules; hard constraints live in
+  mechanical gates (CI, migration hygiene) rather than prose; the small prose core is reserved
+  for business/legal invariants (consent, money, tenancy isolation) that no model can infer
+  ([post](https://claude.com/blog/best-practices-for-prompt-engineering),
+  [trade-off discussion](https://www.ibtimes.sg/anthropic-says-claude-5-needs-shorter-prompts-developers-say-trade-offs-are-more-complicated-90853)).
+  This mirrors the 2026-07-29 repo restructure that preceded it by hours.
 
 ## 7. Refresh checklist — run this BEFORE starting P0
 
