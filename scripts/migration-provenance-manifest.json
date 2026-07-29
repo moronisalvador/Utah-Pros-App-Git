@@ -296,6 +296,18 @@
       "name": "notification_presentation_settings",
       "path": "supabase/migrations/20260729163127_notification_presentation_settings.sql",
       "reviewedOriginCommit": "c5ba2bb0dda01a001f8e465eb6f6c46cc0ae33e9"
+    },
+    {
+      "version": "20260729183731",
+      "name": "notification_delivery_diagnostic_claims",
+      "path": "supabase/migrations/20260729181049_notification_delivery_diagnostic_claims.sql",
+      "reviewedOriginCommit": "9de32bc0724c658779851c04b95a2d3501930350"
+    },
+    {
+      "version": "20260729221116",
+      "name": "twilio_inbound_notification_parity",
+      "path": "supabase/migrations/20260729211728_twilio_inbound_notification_parity.sql",
+      "reviewedOriginCommit": "9d464052f36ee2adea4be95ab841fbbc505f2a42"
     }
   ],
   "selectedFunctions": [
