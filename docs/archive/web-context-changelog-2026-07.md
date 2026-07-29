@@ -5567,3 +5567,15 @@ Push. The existing **Clear cache & reload** recovery preserves authentication
 and subscription state; physical PWA confirmation after that recovery remains
 the release-facing proof.
 
+## 2026-07-29 — CallRail inbound native Push occurrence repair
+
+Read-only live evidence showed a CallRail inbound event projected and delivered
+through the notification outbox, with Web Push subscriptions in its effective
+audience, but no native delivery claim. Source review found the exact mismatch:
+`claim_message_notification_outbox` returns the durable outbox `id` and omits
+`provider_event_id`, while the worker passed the absent field as
+`notification_event_id`. Native dispatch therefore failed closed before token
+lookup as designed. The worker now uses the returned outbox `id` as the stable
+APNs occurrence and records only aggregate allowlisted native delivery
+telemetry. No schema, consent, CallRail send, audience, or customer-message
+behavior changed.
