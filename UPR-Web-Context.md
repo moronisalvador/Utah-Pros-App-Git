@@ -3762,11 +3762,12 @@ It adds no migration or live-database change.
   has explicit **Turn on** / **Turn off** controls, owner-bound versioned local
   intent, permission checks on load/resume, exact token cleanup journaling, and
   delivered-notification cleanup during detach.
-- APNs banners use an exhaustive typed presentation catalog. The approved
-  lock-screen budget excludes customer message contents, names, addresses,
-  identifiers, amounts, appointment times and free-form notes; appointment
-  alerts show only event state plus generic action copy. Unknown types retain
-  generic copy.
+- APNs banners use an exhaustive typed presentation catalog. This paragraph's
+  original generic-only privacy budget was superseded by the owner's 2026-07-29
+  decision: native may show the same event-approved variables as PWA. Typed
+  server context is required; missing context and unknown types retain generic
+  copy, and a server rollback setting can immediately restore generic native
+  presentation.
   Data contains an allowlisted route and opaque employee binding; public
   signing bearer routes are reduced to `/`, and tap navigation fails closed
   when the current employee does not match.
@@ -3814,8 +3815,15 @@ verification, reviewer challenges, rollback, and release handoff:
 ## Admin notification presentation Settings (2026-07-29)
 
 The web build now owns an admin-only `/settings/notification-presentation` page in the Settings
-Team group. It edits only code-allowlisted bell/PWA copy and typed destinations, previews with
-synthetic values, keeps native lock-screen copy privacy-locked, and shows bounded audit history.
+Team group. It edits code-allowlisted bell/PWA/native copy and typed destinations, previews with
+synthetic values, and shows bounded audit history. Native uses the same event-approved variables as
+PWA by owner decision while retaining a separate field-only route allowlist.
+Title and Message each have their own compact variable picker. A picker lists only the current
+event/surface variables projected by the server catalog, shows a synthetic example, and inserts
+the selected token at that field's cursor or selection. It cannot create a variable or bypass
+server validation. Payment surfaces include a distinct trusted `invoice_number` variable;
+the separate `payment_reference` remains a charge/payment reference and is not relabeled as an
+invoice. Native Title and Message expose the same picker for that event.
 The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
 Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keeping the global
 `src/index.css` source below its blocking budget without changing the page design.
@@ -3823,8 +3831,11 @@ Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keep
 `functions/lib/notificationPresentation.js` remains the single registry shared with the reconciled
 native parity work. Runtime consumers in `notify.js` and `apns.js` accept only a validated
 event/surface override and otherwise use code defaults. No arbitrary URL/path, caller route
-parameters, general template execution, audience/preference/consent/provider change, or native
-privacy expansion is possible.
+parameters, general template execution, audience/preference/consent/provider change, or office-only
+native route expansion is possible. Arbitrary APNs alert/data remains ignored, and missing typed
+context or over-budget rendered output falls back to immutable generic native copy. Final APNs
+JSON is limited to Apple's 4 KB budget. Saved generic wording is honored exactly; runtime does not
+guess legacy provenance from title/body content.
 
 Migration `20260729163127_notification_presentation_settings.sql` adds forced-RLS, service-only
 `notification_presentation_overrides`, `notification_presentation_audit`, and the sole atomic
