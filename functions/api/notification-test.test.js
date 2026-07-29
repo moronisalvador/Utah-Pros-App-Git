@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the owner notification diagnostic cannot target another employee or
- *   choose arbitrary content, and verifies each fixed delivery channel without
- *   contacting a real provider or database.
+ *   choose arbitrary content, verifies each fixed delivery channel, and checks
+ *   safe typed-event delivery without contacting a real provider or database.
  *
  * DEPENDS ON:
  *   Packages:  vitest
@@ -52,6 +52,25 @@ function dbHarness() {
   };
 }
 
+function configureTypedCatalog(db, {
+  typeKey = 'lead.new',
+  label = 'New lead',
+  enabled = true,
+  override = null,
+  subscriptions = [],
+} = {}) {
+  db.select.mockImplementation(async (table) => {
+    if (table === 'notification_types') {
+      return [{ type_key: typeKey, label, enabled }];
+    }
+    if (table === 'notification_presentation_overrides') {
+      return override ? [override] : [];
+    }
+    if (table === 'push_subscriptions') return subscriptions;
+    return [];
+  });
+}
+
 describe('POST /api/notification-test', () => {
   it('requires the owner gate before any diagnostic side effect', async () => {
     const runTestImpl = vi.fn();
@@ -79,6 +98,8 @@ describe('POST /api/notification-test', () => {
     { channel: 'bell', request_id: REQUEST_ID, employee_id: 'victim' },
     { channel: 'bell', request_id: REQUEST_ID, title: 'arbitrary' },
     { channel: 'bell', request_id: REQUEST_ID, route: '/billing' },
+    { channel: 'email', request_id: REQUEST_ID, type_key: 'lead.new' },
+    { channel: 'bell', request_id: REQUEST_ID, type_key: 'future.unknown' },
   ])('rejects unsupported channels and caller-selected scope: %o', async (body) => {
     const runTestImpl = vi.fn();
     const result = await handleNotificationTest({
@@ -117,6 +138,39 @@ describe('POST /api/notification-test', () => {
       employee: EMPLOYEE,
       channel: 'email',
       requestId: REQUEST_ID,
+    });
+  });
+
+  it('passes one allowlisted catalog type without accepting copy or a recipient', async () => {
+    const db = dbHarness();
+    const runTestImpl = vi.fn().mockResolvedValue({
+      channel: 'native_push',
+      type_key: 'lead.new',
+      ok: true,
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+    });
+    const result = await handleNotificationTest({
+      request: request({
+        channel: 'native_push',
+        request_id: REQUEST_ID,
+        type_key: 'lead.new',
+      }),
+      env: { APNS_ENV: 'sandbox' },
+      db,
+      requireOwnerImpl: vi.fn().mockResolvedValue({ employee: EMPLOYEE }),
+      runTestImpl,
+    });
+
+    expect(result.status).toBe(200);
+    expect(runTestImpl).toHaveBeenCalledWith({
+      db,
+      env: { APNS_ENV: 'sandbox' },
+      employee: EMPLOYEE,
+      channel: 'native_push',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
     });
   });
 });
@@ -274,6 +328,124 @@ describe('runNotificationTest', () => {
     });
   });
 
+  it('writes one synthetic typed bell using server-owned sample copy and owner scope', async () => {
+    configureTypedCatalog(db);
+
+    const result = await runNotificationTest({
+      db,
+      env: {},
+      employee: EMPLOYEE,
+      channel: 'bell',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
+    });
+
+    const claimCall = db.rpc.mock.calls.find(
+      ([fn]) => fn === 'claim_notification_delivery_diagnostic',
+    );
+    const derivedRequestId = claimCall[1].p_request_id;
+    expect(derivedRequestId).not.toBe(REQUEST_ID);
+    expect(derivedRequestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    expect(db.rpc).toHaveBeenCalledWith('create_notification', {
+      p_type: 'lead.new',
+      p_title: 'New lead · Jordan Lee',
+      p_body: 'Source: Website form',
+      p_link: '/dev-tools?tab=advanced&sub=notifications',
+      p_entity_type: null,
+      p_entity_id: null,
+      p_job_id: null,
+      p_payload: {
+        diagnostic_request_id: derivedRequestId,
+        diagnostic_type_key: 'lead.new',
+      },
+      p_recipient_id: EMPLOYEE.id,
+      p_type_key: 'lead.new',
+    });
+    expect(result).toMatchObject({
+      channel: 'bell',
+      type_key: 'lead.new',
+      label: 'New lead',
+      title: 'New lead · Jordan Lee',
+      ok: true,
+      sent: 1,
+      settled: true,
+    });
+  });
+
+  it('can present a registered type even when its real-event master switch is disabled', async () => {
+    configureTypedCatalog(db, { enabled: false });
+
+    const result = await runNotificationTest({
+      db,
+      env: {},
+      employee: EMPLOYEE,
+      channel: 'bell',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
+    });
+
+    expect(db.rpc).toHaveBeenCalledWith(
+      'create_notification',
+      expect.objectContaining({
+        p_recipient_id: EMPLOYEE.id,
+        p_type_key: 'lead.new',
+      }),
+    );
+    expect(result).toMatchObject({
+      channel: 'bell',
+      type_key: 'lead.new',
+      ok: true,
+      sent: 1,
+      settled: true,
+    });
+  });
+
+  it('uses a validated live override and unique tag for one typed PWA delivery', async () => {
+    configureTypedCatalog(db, {
+      override: {
+        enabled: true,
+        title_template: 'Test lead · {{customer_name}}',
+        body_template: 'From {{lead_source}}',
+        route_id: 'field.home',
+        contract_version: 1,
+      },
+      subscriptions: [
+        { id: 'sub-1', endpoint: 'https://push.example/1', p256dh: 'p1', auth: 'a1' },
+      ],
+    });
+    const sendWebPushImpl = vi.fn().mockResolvedValue({ ok: true, status: 201 });
+
+    const result = await runNotificationTest({
+      db,
+      env: {},
+      employee: EMPLOYEE,
+      channel: 'web_push',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
+      loadVapidConfigImpl: vi.fn().mockResolvedValue({ ok: true, publicKey: 'public' }),
+      sendWebPushImpl,
+      fetchImpl: vi.fn(),
+    });
+
+    const payload = JSON.parse(sendWebPushImpl.mock.calls[0][1]);
+    expect(payload).toMatchObject({
+      title: 'Test lead · Jordan Lee',
+      body: 'From Website form',
+      url: '/dev-tools?tab=advanced&sub=notifications',
+      data: { url: '/dev-tools?tab=advanced&sub=notifications' },
+    });
+    expect(payload.tag).toMatch(/^upr-type-test:lead\.new:/);
+    expect(result).toMatchObject({
+      channel: 'web_push',
+      type_key: 'lead.new',
+      ok: true,
+      sent: 1,
+      settled: true,
+    });
+  });
+
   it('uses the stable request identity for the fixed native owner test', async () => {
     const sendNativePushImpl = vi.fn().mockResolvedValue({
       sent: 1,
@@ -298,6 +470,81 @@ describe('runNotificationTest', () => {
       eventKey: `owner-native-push-test:${REQUEST_ID}`,
     });
     expect(result).toMatchObject({ channel: 'native_push', ok: true, sent: 1 });
+  });
+
+  it('uses the real catalog key and a namespaced occurrence for typed native delivery', async () => {
+    configureTypedCatalog(db);
+    const sendNativePushImpl = vi.fn().mockResolvedValue({
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+    });
+
+    const result = await runNotificationTest({
+      db,
+      env: { APNS_ENV: 'sandbox' },
+      employee: EMPLOYEE,
+      channel: 'native_push',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).toHaveBeenCalledTimes(1);
+    const input = sendNativePushImpl.mock.calls[0][0];
+    expect(input).toMatchObject({
+      db,
+      env: { APNS_ENV: 'sandbox' },
+      employeeId: EMPLOYEE.id,
+      typeKey: 'lead.new',
+      notificationBody: {
+        payload: { diagnostic_type_key: 'lead.new' },
+      },
+    });
+    expect(input.eventKey).toMatch(/^owner-native-type-test:/);
+    expect(input.eventKey).not.toContain(REQUEST_ID);
+    expect(result).toMatchObject({
+      channel: 'native_push',
+      type_key: 'lead.new',
+      ok: true,
+      sent: 1,
+      settled: true,
+    });
+  });
+
+  it('replays one typed event without re-contacting its provider', async () => {
+    configureTypedCatalog(db);
+    const stored = {
+      channel: 'native_push',
+      ok: true,
+      sent: 1,
+      attempted: 1,
+      pruned: 0,
+    };
+    db.rpc.mockResolvedValue({
+      claimed: false,
+      state: 'complete',
+      result: stored,
+    });
+    const sendNativePushImpl = vi.fn();
+
+    const result = await runNotificationTest({
+      db,
+      env: {},
+      employee: EMPLOYEE,
+      channel: 'native_push',
+      requestId: REQUEST_ID,
+      typeKey: 'lead.new',
+      sendNativePushImpl,
+    });
+
+    expect(sendNativePushImpl).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ...stored,
+      type_key: 'lead.new',
+      replayed: true,
+      settled: true,
+    });
   });
 
   it('sends fixed transactional copy to the owner email with provider idempotency', async () => {
