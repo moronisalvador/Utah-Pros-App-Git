@@ -3844,17 +3844,27 @@ or test notification was sent.
 ### Owner notification delivery tests
 
 Dev Tools → Advanced → Notifications now pairs the presentation editor's synthetic all-event
-preview with fixed owner-self delivery diagnostics. `POST /api/notification-test` accepts only
-`{ channel, request_id }`, requires `requireOwner()`, derives the recipient from the authenticated
-employee, and fixes all copy/routes server-side. The four channels are an owner-targeted bell row,
-the owner's enrolled browser subscriptions, the owner's environment-matched iPhone token, and the
-owner's employee email. SMS/MMS and real business events are structurally absent.
+preview with fixed owner-self delivery diagnostics. `POST /api/notification-test` requires
+`requireOwner()`, derives the recipient from the authenticated employee, and accepts only an
+allowlisted channel, a UUID, and an optional code-owned `type_key`. The generic four-channel test
+creates one owner bell row, one Web Push fanout, one environment-matched iPhone delivery, and one
+transactional email. The typed sweep accepts only the 15 presentation-registry event keys and only
+bell, Web Push, and native APNs, producing 45 owner-only type/surface checks. Each Web Push check
+fans out to all browser subscriptions enrolled for the owner, so provider delivery count can be
+greater than 45. The sweep uses synthetic
+server-rendered presentation data, creates no business occurrence, and structurally excludes
+email, SMS, and MMS. It requires the catalog row to exist but deliberately ignores the
+business-event `enabled` master switch so presentation/transport qualification remains distinct
+from producer activation.
 
-The UI can run one channel or exactly one of each. APNs uses the request UUID as its durable
-delivery identity; the shared email helper now optionally places a caller-supplied stable key in
-Resend's HTTP `Idempotency-Key` header without adding it to the message payload. The additive
-service-only `notification_delivery_diagnostic_claims` ledger claims the employee/channel/request
-tuple before every side effect and replays the bounded result after a lost response. Browser-expired
-subscriptions are pruned; provider errors return only bounded diagnostic reasons. Source and fake
-provider tests do not prove live presentation, and the migration plus compatible Worker/UI must be
-separately authorized, deployed, and verified before the controls are used.
+The UI fetches the protected catalog, requires exactly 15 entries, and runs three surfaces per type
+without combining all provider work into one Worker request. A namespaced UUID derived from the
+client request UUID, channel, and type isolates each typed claim/retry. APNs uses that stable
+identity for its occurrence; typed Web Push adds a unique tag so separate event types do not
+collapse into one displayed notification. The shared email helper optionally places the generic
+email test UUID in Resend's HTTP `Idempotency-Key` header without adding it to the message payload.
+The service-only `notification_delivery_diagnostic_claims` ledger claims the
+employee/channel/request tuple before every side effect and replays the bounded result after a
+lost response. Browser-expired subscriptions are pruned; provider errors return only bounded
+diagnostic reasons. Source and fake-provider tests do not prove live presentation, and compatible
+Worker/UI deployment plus every live send remain separately owner-authorized actions.

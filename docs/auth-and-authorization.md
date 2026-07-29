@@ -561,13 +561,20 @@ no configuration write or provider call.
 `POST /api/notification-test` is a separate fixed-scope diagnostic boundary. It requires
 `requireOwner()` before reading an address/subscription or causing any side effect. The
 authenticated employee is the only possible recipient; the request accepts only an allowlisted
-channel and a client-created UUID. Title, body, destination, sender, provider, and recipient are
-server-owned.
+channel, a client-created UUID, and optionally one of the 15 code-owned presentation event keys.
+Title, body, destination, sender, provider, and recipient remain server-owned.
 
 The endpoint can create one owner-targeted bell row or send one owner-only Web Push, native APNs,
-or transactional email test. It cannot send SMS/MMS, select another employee, provide arbitrary
-content, or create a real business event. Before any channel side effect, the Worker claims the
-owner/channel/request tuple through the service-only diagnostic ledger and stores the bounded
-result; a lost HTTP response therefore replays the prior result instead of sending again. APNs and
-Resend additionally consume the UUID as their provider-specific stable identity. Provider errors
-are reduced to allowlisted diagnostic reasons and never return upstream details.
+or transactional email test. The optional event key is accepted only for bell, Web Push, and
+native APNs; email remains generic. The all-type UI therefore creates 15 owner bell rows, 15 Web
+Push fanouts, and 15 native APNs occurrences without creating business records or entering an
+email/SMS/MMS path. The synthetic diagnostic requires a registered catalog row but does not consume
+the real-event `enabled` master switch; it qualifies presentation/transport, not producer
+activation. It cannot select another employee or provide arbitrary content.
+
+Before any channel side effect, the Worker claims the owner/channel/request tuple through the
+service-only diagnostic ledger and stores the bounded result; a lost HTTP response therefore
+replays the prior result instead of sending again. Typed tests derive a separate stable UUID from
+the request UUID, channel, and event key so no event can cross-replay another. APNs and the generic
+Resend test consume their stable identities at the provider boundary. Provider errors are reduced
+to allowlisted diagnostic reasons and never return upstream details.
