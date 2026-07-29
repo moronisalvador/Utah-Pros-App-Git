@@ -4727,6 +4727,22 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-settings-btn:disabled { opacity: 0.5; cursor: default; }
 .tech-settings-btn--primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .tech-settings-btn[data-confirm="true"] { background: var(--status-paused-bg); color: var(--status-paused-color); border-color: var(--status-paused-border); }
+@media (max-width: 768px) {
+  .tech-layout .tech-settings-btn {
+    transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+  }
+  .tech-layout .tech-settings-btn:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+  .tech-layout .tech-settings-card .ui-error-state .btn {
+    min-height: var(--tech-min-tap);
+  }
+}
+@media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+  .tech-layout .tech-settings-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
 .tech-settings-seg {
   display: flex; gap: 8px; padding: 4px; border-radius: var(--tech-radius-button);
   background: var(--bg-secondary); border: 1px solid var(--border-light);
@@ -11399,6 +11415,76 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 }
 
 /* ─── SETTINGS OVERHAUL RESERVED — P7-lite (DevTools dedup · Session H) ─── */
+
+/* DevTools tabs: token motion, contained mobile scroll, ≥44px touch targets. */
+.devtools-tab {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard),
+              border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.devtools-messaging-subtabs {
+  max-width: 100%; margin-bottom: var(--space-5);
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.devtools-advanced-subtabs {
+  display: flex;
+  max-width: 100%;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.devtools-advanced-subtab {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard),
+              background var(--motion-duration-fast) var(--motion-ease-standard),
+              border-color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.devtools-messaging-seg {
+  display: inline-grid; grid-template-columns: repeat(5, minmax(max-content, 1fr));
+  min-width: max-content;
+}
+.devtools-messaging-seg .ui-seg-btn {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.devtools-tab:active:not(:disabled),
+.devtools-advanced-subtab:active:not(:disabled),
+.devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: scale(0.97); }
+.devtools-messaging-indicator {
+  left: 3px; width: calc((100% - 14px) / 5);
+}
+.devtools-messaging-indicator.is-position-0 { transform: translateX(0); }
+.devtools-messaging-indicator.is-position-1 { transform: translateX(calc(100% + 2px)); }
+.devtools-messaging-indicator.is-position-2 { transform: translateX(calc(200% + 4px)); }
+.devtools-messaging-indicator.is-position-3 { transform: translateX(calc(300% + 6px)); }
+.devtools-messaging-indicator.is-position-4 { transform: translateX(calc(400% + 8px)); }
+@media (prefers-reduced-motion: reduce) {
+  .devtools-tab,
+  .devtools-advanced-subtab,
+  .devtools-messaging-seg .ui-seg-btn,
+  .devtools-messaging-indicator { transition: none; }
+  .devtools-tab:active:not(:disabled),
+  .devtools-advanced-subtab:active:not(:disabled),
+  .devtools-messaging-seg .ui-seg-btn:active:not(:disabled) { transform: none; }
+}
+@media (max-width: 768px) {
+  .devtools-tab,
+  .devtools-messaging-seg .ui-seg-btn,
+  .provider-event-action { min-height: 44px; }
+}
 
 /* ─── SETTINGS OVERHAUL RESERVED — P10 (Lists & Values · Session K) ─── */
 

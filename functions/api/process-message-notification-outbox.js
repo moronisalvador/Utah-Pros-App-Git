@@ -68,6 +68,16 @@ async function run(db, env) {
       claimed: result.claimed || 0,
       retryable: result.retryable || 0,
       dead_lettered: result.deadLettered || 0,
+      native: result.native || {
+        recipients: 0,
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+        retryable: 0,
+        ambiguous: 0,
+        skipped: 0,
+        skip_reasons: {},
+      },
     },
   });
   return result;

@@ -27,6 +27,7 @@ import {
   handleNotify,
   formatApptWhen,
   enrichAppointmentBody,
+  enrichDatabasePresentationContext,
   enrichEstimateBody,
   enrichInboundMessageBody,
   nativeNotificationEventKey,
@@ -41,7 +42,8 @@ function makeDb(opts = {}) {
   const {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
-    contactsById = {}, webhookSecret = null, selectErrorTable = null,
+    contactsById = {}, presentationOverrides = {}, webhookSecret = null,
+    selectErrorTable = null,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -82,6 +84,14 @@ function makeDb(opts = {}) {
       if (table === 'push_subscriptions') {
         const m = /employee_id=eq\.([^&]+)/.exec(query);
         return (m && subsByEmp[m[1]]) || [];
+      }
+      if (table === 'notification_presentation_overrides') {
+        const type = /type_key=eq\.([^&]+)/.exec(query);
+        const surface = /surface=eq\.([^&]+)/.exec(query);
+        const key = type && surface
+          ? `${decodeURIComponent(type[1])}:${surface[1]}`
+          : '';
+        return presentationOverrides[key] ? [presentationOverrides[key]] : [];
       }
       if (table === 'appointments') {
         const m = /id=eq\.([^&]+)/.exec(query);
@@ -136,18 +146,56 @@ describe('resolveAudience', () => {
   });
 
   it('appointment.assigned → the crewed employee', async () => {
-    const db = makeDb({ employees: [{ id: 'emp-9' }] });
-    const ids = await resolveAudience(db, 'appointment.assigned', { employee_id: 'emp-9' });
+    const db = makeDb({
+      employees: [{ id: 'emp-9' }, { id: 'other' }],
+      crewByAppt: {
+        'ap-1': [
+          { employee_id: 'emp-9' },
+          { employee_id: 'other' },
+        ],
+      },
+    });
+    const ids = await resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
+      employee_id: 'emp-9',
+      recipient_ids: ['other'],
+    });
     expect(ids).toEqual(['emp-9']);
   });
 
   it('appointment.updated → the crew of the appointment', async () => {
     const db = makeDb({
-      employees: [{ id: 'c1' }, { id: 'c2' }],
+      employees: [{ id: 'c1' }, { id: 'c2' }, { id: 'outsider' }],
       crewByAppt: { 'ap-1': [{ employee_id: 'c1' }, { employee_id: 'c2' }] },
     });
-    const ids = await resolveAudience(db, 'appointment.updated', { appointment_id: 'ap-1' });
+    const ids = await resolveAudience(db, 'appointment.updated', {
+      appointment_id: 'ap-1',
+      recipient_ids: ['outsider'],
+    });
     expect(ids.sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('appointment.canceled ignores explicit recipients and keeps current crew', async () => {
+    const db = makeDb({
+      employees: [{ id: 'crew' }, { id: 'outsider' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'crew' }] },
+    });
+    await expect(resolveAudience(db, 'appointment.canceled', {
+      appointment_id: 'ap-1',
+      recipient_ids: ['outsider'],
+    })).resolves.toEqual(['crew']);
+  });
+
+  it('appointment.assigned fails closed unless the named employee is current crew', async () => {
+    const db = makeDb({
+      employees: [{ id: 'crew' }, { id: 'outsider' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'crew' }] },
+    });
+    await expect(resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
+      employee_id: 'outsider',
+      recipient_ids: ['outsider'],
+    })).resolves.toEqual([]);
   });
 
   it('clock.abandoned → admins plus the affected tech from the payload', async () => {
@@ -197,6 +245,7 @@ describe('resolveAudience', () => {
       },
     });
     expect(await resolveAudience(db, 'appointment.assigned', {
+      appointment_id: 'ap-1',
       employee_id: 'inactive',
     })).toEqual([]);
     expect(await resolveAudience(db, 'appointment.updated', {
@@ -245,6 +294,64 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
   });
 
+  it('makes the validated presentation route authoritative over producer data', async () => {
+    const payloads = [];
+    const db = makeDb({
+      types: {
+        'message.inbound': {
+          type_key: 'message.inbound',
+          label: 'New text message',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('message.inbound', { push: true }) },
+      subsByEmp: {
+        a1: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+      },
+      presentationOverrides: {
+        'message.inbound:pwa_push': {
+          title_template: 'Customer message',
+          body_template: 'Open Utah Pros to reply.',
+          route_id: 'field.home',
+          contract_version: 1,
+        },
+      },
+    });
+
+    await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'message.inbound',
+      body: {
+        recipient_ids: ['a1'],
+        notification_event_id: 'message-event-1',
+        data: {
+          conversation_id: 'conversation-1',
+          url: '/tech/conversations?c=producer-choice',
+          secret_metadata: 'must-not-cross-provider-boundary',
+        },
+      },
+      sendNativePushImpl: async () => ({
+        sent: 0,
+        attempted: 0,
+        pruned: 0,
+        skipped: true,
+        reason: 'no_tokens',
+      }),
+      sendWebPushImpl: async (_subscription, payload) => {
+        payloads.push(JSON.parse(payload));
+        return { ok: true, status: 201 };
+      },
+    });
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].url).toBe('/tech');
+    expect(payloads[0].data).toEqual({ url: '/tech' });
+    expect(JSON.stringify(payloads[0])).not.toContain('producer-choice');
+    expect(JSON.stringify(payloads[0])).not.toContain('secret_metadata');
+  });
+
   it('routes native APNs through the same preference-gated dispatcher', async () => {
     const nativeSends = [];
     const sendNativePushImpl = vi.fn(async (input) => {
@@ -278,11 +385,11 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       db,
       env: ENV,
       employeeId: 'a1',
-      title: 'New feedback',
-      body: 'A technician sent feedback.',
-      data: { url: '/tech/settings' },
+      typeKey: 'feedback.submitted',
+      notificationBody: body,
       eventKey: nativeNotificationEventKey(baseType, body, 'a1'),
     });
+    expect(nativeSends[0]).not.toHaveProperty('fetchImpl');
     expect(out.results[0].push).toMatchObject({
       sent: 1,
       attempted: 1,
@@ -417,7 +524,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     });
   });
 
-  it('forwards only the reviewed native route, not arbitrary producer data', async () => {
+  it('uses the typed native destination instead of arbitrary producer data', async () => {
     const sendNativePushImpl = vi.fn(async () => ({
       sent: 1,
       attempted: 1,
@@ -450,7 +557,11 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
 
     expect(sendNativePushImpl).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { url: '/tech/settings' },
+        typeKey: 'feedback.submitted',
+        notificationBody: expect.objectContaining({
+          entity_type: 'tech_feedback',
+          entity_id: 'feedback-1',
+        }),
       }),
     );
   });
@@ -627,12 +738,95 @@ describe('formatApptWhen', () => {
   });
 });
 
+describe('enrichDatabasePresentationContext', () => {
+  it('derives a timesheet employee name from typed database rows, not display copy', async () => {
+    const db = {
+      select: vi.fn(async (table) => {
+        if (table === 'time_entry_change_requests') {
+          return [{ requested_by: 'employee-1' }];
+        }
+        if (table === 'employees') {
+          return [{
+            full_name: 'Alex Morgan',
+            is_active: true,
+            is_external: false,
+          }];
+        }
+        return [];
+      }),
+    };
+    const body = {
+      entity_id: 'request-1',
+      body: 'Forged display copy with a secret',
+      presentation_context: { employee_name: 'Forged Name' },
+    };
+
+    await expect(enrichDatabasePresentationContext(
+      db,
+      'timesheet.change_requested',
+      body,
+    )).resolves.toMatchObject({
+      presentation_context: { employee_name: 'Alex Morgan' },
+    });
+  });
+
+  it('uses the typed clock employee id and falls back when the lookup is not active/internal', async () => {
+    const db = {
+      select: vi.fn(async () => [{
+        full_name: 'Should not render',
+        is_active: false,
+        is_external: false,
+      }]),
+    };
+    const body = {
+      title: 'Forged Name may have forgotten to clock out',
+      payload: { employee_id: 'employee-1', minutes: 270 },
+      presentation_context: { employee_name: 'Forged Name' },
+    };
+
+    const enriched = await enrichDatabasePresentationContext(
+      db,
+      'clock.abandoned',
+      body,
+    );
+    expect(enriched).not.toBe(body);
+    expect(enriched.presentation_context).not.toHaveProperty('employee_name');
+  });
+});
+
 describe('enrichAppointmentBody', () => {
-  it('builds a clean title + body + deep link from a bare appointment_id', async () => {
-    const db = makeDb({ apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } } });
+  it('builds clean copy, customer/job variables, and a deep link from a bare appointment_id', async () => {
+    const db = makeDb({
+      apptsById: {
+        'ap-1': {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+          jobs: {
+            insured_name: 'Jordan Lee',
+            job_number: 'JOB-1042',
+            estimated_value: 8500,
+            approved_value: 7950,
+            invoiced_value: 5250,
+            collected_value: 2500,
+          },
+        },
+      },
+    });
     const out = await enrichAppointmentBody(db, 'appointment.assigned', { appointment_id: 'ap-1' });
     expect(out.title).toBe('New appointment · Water Mitigation');
     expect(out.body).toBe('Sat, Jul 4 · 9:00 AM – 11:00 AM');
+    expect(out.presentation_context).toEqual({
+      appointment_title: 'Water Mitigation',
+      appointment_when: 'Sat, Jul 4 · 9:00 AM – 11:00 AM',
+      customer_name: 'Jordan Lee',
+      job_number: 'JOB-1042',
+      job_estimated_amount: '$8,500.00',
+      job_approved_amount: '$7,950.00',
+      job_invoiced_amount: '$5,250.00',
+      job_collected_amount: '$2,500.00',
+    });
     // Office path, not /tech/appointment/ap-1. A notification does not know who will
     // open it; the reader's shell translates (src/lib/techShellRoutes.js). Storing the
     // field path put desktop dispatchers in the phone UI.
@@ -662,7 +856,19 @@ describe('enrichAppointmentBody', () => {
   it('leaves a caller-supplied title untouched', async () => {
     const db = makeDb({ apptsById: { 'ap-1': { title: 'X', date: '2026-07-04', time_start: '09:00:00' } } });
     const body = { appointment_id: 'ap-1', title: 'Already set' };
-    expect(await enrichAppointmentBody(db, 'appointment.updated', body)).toBe(body);
+    expect(await enrichAppointmentBody(db, 'appointment.updated', body)).toMatchObject({
+      title: 'Already set',
+      presentation_context: {
+        appointment_title: 'X',
+        appointment_when: 'Sat, Jul 4 · 9:00 AM',
+        customer_name: '',
+        job_number: '',
+        job_estimated_amount: '',
+        job_approved_amount: '',
+        job_invoiced_amount: '',
+        job_collected_amount: '',
+      },
+    });
   });
   it('returns the body unchanged when the appointment is not found (never throws)', async () => {
     const db = makeDb({ apptsById: {} });
@@ -676,6 +882,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
     });
@@ -701,6 +908,7 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     const db = makeDb({
       types: { 'appointment.assigned': { type_key: 'appointment.assigned', label: 'Appointment assigned', enabled: true } },
       employees: [{ id: 'emp-9' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { push: true }) },
       subsByEmp: { 'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }] },

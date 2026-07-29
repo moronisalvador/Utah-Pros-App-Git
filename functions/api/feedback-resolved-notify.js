@@ -21,6 +21,7 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  ../lib/supabase.js (service-key client), ../lib/cors.js,
+ *              ../lib/auth.js (active internal admin role gate),
  *              ./notify.js (dispatchEvent — the shared prefs-driven dispatcher)
  *   Data:      reads  → tech_feedback (the resolved row), employees (submitter
  *                        name). Channel delivery happens inside the dispatcher
@@ -34,13 +35,13 @@
  *     it exists the dispatcher returns { skipped } — inert, never an error.
  *   - Fire-and-forget: a dispatcher failure is swallowed and the request returns
  *     200 — marking feedback resolved must never fail on the notify path.
- *   - requireAuth mirrors feedback-notify.js: a valid Bearer token is required;
- *     the apikey used to validate it is the anon key (a valid project key for
- *     /auth/v1/user — service-role is unnecessary here).
+ *   - Sending as the company is admin-only, matching the AdminRoute UI. A valid
+ *     session alone is not authorization.
  * ════════════════════════════════════════════════
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { requireRole } from '../lib/auth.js';
 import { dispatchEvent } from './notify.js';
 
 // ─── SECTION: Pure helpers (node-testable — see feedback-resolved-notify.test.js) ───
@@ -75,21 +76,6 @@ export function buildResolvedEmailHtml(feedback) {
   </div>`;
 }
 
-// ─── SECTION: Auth (same shape as feedback-notify.js) ───
-
-async function requireAuth(request, env, fetchImpl) {
-  const authHeader = request.headers.get('Authorization') || '';
-  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) return { error: 'Missing Authorization header', status: 401 };
-  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
-  const apiKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
-  const userRes = await fetchImpl(`${url}/auth/v1/user`, {
-    headers: { 'apikey': apiKey, 'Authorization': `Bearer ${token}` },
-  });
-  if (!userRes.ok) return { error: 'Invalid or expired token', status: 401 };
-  return { ok: true, authHeader };
-}
-
 // ─── SECTION: Core handler (injectable deps — no direct globals) ───
 
 /**
@@ -97,8 +83,15 @@ async function requireAuth(request, env, fetchImpl) {
  * injected so it runs under vitest with fakes. Returns { status, data } — the
  * Pages entry point below wraps it in a CORS jsonResponse.
  */
-export async function handleFeedbackResolvedNotify({ request, env, db, fetchImpl = fetch, dispatchImpl = dispatchEvent }) {
-  const auth = await requireAuth(request, env, fetchImpl);
+export async function handleFeedbackResolvedNotify({
+  request,
+  env,
+  db,
+  fetchImpl = fetch,
+  dispatchImpl = dispatchEvent,
+  authorizeImpl = requireRole,
+}) {
+  const auth = await authorizeImpl(request, env, db, ['admin']);
   if (auth.error) return { status: auth.status, data: { error: auth.error } };
 
   let body;

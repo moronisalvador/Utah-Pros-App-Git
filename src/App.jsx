@@ -103,6 +103,7 @@ const {
   MyAccount,
   NewBuildSimulator,
   NotificationDefaults,
+  NotificationPresentation,
   NotificationsSettings,
   OOPPricing,
   PageAccess,
@@ -594,6 +595,9 @@ function WebRoutes() {
           <Route path="settings/roles" element={<AdminRoute><ErrorBoundary section="Roles"><Roles /></ErrorBoundary></AdminRoute>} />
           <Route path="settings/page-access" element={<AdminRoute><ErrorBoundary section="Page Access"><PageAccess /></ErrorBoundary></AdminRoute>} />
           <Route path="settings/notification-defaults" element={<AdminRoute><ErrorBoundary section="Notification Defaults"><NotificationDefaults /></ErrorBoundary></AdminRoute>} />
+          {!IS_NATIVE && (
+            <Route path="settings/notification-presentation" element={<AdminRoute><ErrorBoundary section="Notification Presentation"><NotificationPresentation /></ErrorBoundary></AdminRoute>} />
+          )}
           <Route path="settings/feedback" element={<AdminRoute><ErrorBoundary section="Feedback Inbox"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
 
           {/* Connections. */}

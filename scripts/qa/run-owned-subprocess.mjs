@@ -13,7 +13,8 @@
  *
  * DEPENDS ON:
  *   Packages:     Node built-ins only
- *   Internal:     called by .github/workflows/ios-release.yml
+ *   Internal:     scripts/qa/safe-child-env.mjs when --safe-env is selected;
+ *                 called by .github/workflows/ios-release.yml
  *   Data:         reads/writes only what the wrapped command owns
  *
  * NOTES / GOTCHAS:
@@ -25,6 +26,7 @@
  */
 import { spawn } from 'node:child_process';
 import process from 'node:process';
+import { safeChildEnv } from './safe-child-env.mjs';
 
 const MAX_TOTAL_RUNTIME_MS = 300_000;
 const TERM_GRACE_MS = 5_000;
@@ -40,7 +42,7 @@ function usage(message) {
   if (message) process.stderr.write(`${message}\n`);
   process.stderr.write(
     'Usage: node scripts/qa/run-owned-subprocess.mjs '
-      + '[--timeout-ms N] [--cwd PATH] -- COMMAND [ARGS...]\n',
+      + '[--timeout-ms N] [--cwd PATH] [--safe-env] -- COMMAND [ARGS...]\n',
   );
   process.exitCode = 2;
 }
@@ -49,6 +51,7 @@ function parseArguments(argv) {
   let timeoutMs = MAX_COMMAND_TIMEOUT_MS;
   let termGraceMs = TERM_GRACE_MS;
   let cwd = process.cwd();
+  let useSafeEnv = false;
   let index = 0;
 
   while (index < argv.length && argv[index] !== '--') {
@@ -61,6 +64,11 @@ function parseArguments(argv) {
     if (argument === '--cwd') {
       cwd = argv[index + 1];
       index += 2;
+      continue;
+    }
+    if (argument === '--safe-env') {
+      useSafeEnv = true;
+      index += 1;
       continue;
     }
     if (argument === '--term-grace-ms') {
@@ -88,7 +96,13 @@ function parseArguments(argv) {
     throw new Error('A command is required after --');
   }
 
-  return { timeoutMs, termGraceMs, cwd, command };
+  return {
+    timeoutMs,
+    termGraceMs,
+    cwd,
+    useSafeEnv,
+    command,
+  };
 }
 
 function delay(milliseconds) {
@@ -146,7 +160,9 @@ async function main() {
   const child = spawn(command, args, {
     cwd: options.cwd,
     detached: true,
-    env: process.env,
+    env: options.useSafeEnv
+      ? safeChildEnv(process.env, { NODE_ENV: 'test' })
+      : process.env,
     stdio: 'inherit',
   });
 

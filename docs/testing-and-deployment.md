@@ -27,7 +27,8 @@ NOTES / GOTCHAS:
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
-| `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; PR-changed JS/JSX files are separately blocking with zero warning tolerance |
+| `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
+| `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -77,9 +78,11 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 ## CI
 
 `.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
-ratchet are intended merge gates. The full-tree lint baseline and bundle-size report remain
-non-blocking. `no-use-before-define` is variables-only at warning level: this preserves untouched
-baseline debt while `--max-warnings 0` makes the rule blocking for every changed JS/JSX file.
+ratchet are intended merge gates. The full-tree lint report remains non-blocking. The changed-file
+ratchet compares findings by file, severity and rule against
+`scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
+shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
+`no-use-before-define` is variables-only at warning level so new warnings remain blocking.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
 as an enforced gate.
 
@@ -497,6 +500,43 @@ and verification that a stale retained event becomes processed or durably retrya
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
 
+### Twilio inbound durability verification
+
+The 2026-07-29 inactive Twilio parity source has credential-free Worker and QA coverage for exact
+and invalid signatures, future/repeated form parameters, schema/credential/account fail-closed
+gates, SMS/MMS normalization, MessageSid replay and concurrent duplicate behavior, transient
+projection retry, STOP/START/HELP ordering and TwiML, Advanced Opt-Out silence, private-media
+authentication/redirect/type/byte/size bounds, assigned/fallback audience, exact thread links, and
+stable outbox/native occurrence identity. The focused run passed 98 Worker tests plus 19 QA source
+contracts using the repository-pinned dependency tree from the primary checkout; this does not
+prove a database effect.
+
+Final repository verification passed `npm test` with 1,362 unit, 1,670 Worker, and 590 QA tests
+and zero unexpected skips; `npm run build`; changed-file eslint; migration hygiene (3 checked,
+0 failures); and `git diff --check`. The strict bundle report exited successfully but retained the
+existing advisory entry-graph overage: 259,110 bytes gzip, 2,215 bytes below its blocking line.
+The required consent-path, Worker-security, migration-safety, anon-grant, and UPR-pattern reviews
+all passed after their findings were resolved.
+
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql` is the rollback-only behavioral
+proof for the post-migration database. It exercises one canonical/unread/outbox effect, replay
+no-op, duplicate-phone STOP, stale START suppression, visible HELP, private MMS, assigned
+recipient/fallback payloads, and service-role-only execution. It has not run. This worktree has no
+`supabase/config.toml`, the local Colima Docker daemon is not running, and the historic migration
+ledger cannot reconstruct the legacy baseline, so `supabase start`/`npm run test:db:local` is not
+currently a reproducible proof. The seeded
+`qa-staging` branch is the safe hosted target; its dashboard `MIGRATIONS_FAILED` badge records the
+superseded creation replay, not current schema health. No branch mutation was authorized in this
+implementation session.
+
+The remaining database/release order is exact: approve the reviewed migration and rollback; apply
+and run the isolated proof on `qa-staging`; deploy compatible inactive Worker code to `dev` while
+Twilio inbound/provider switching stays untouched; apply the same committed migration to the
+shared project in a separate low-traffic owner window; verify grants/source/idempotency with no
+live send; then obtain separate authorization for webhook/provider configuration and controlled
+test traffic. Production mode, number routing, provider console, Cloudflare bindings, deployments,
+shared-database applies, and traffic remain independent gates.
+
 ### Mobile messaging release acceptance
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
@@ -583,3 +623,57 @@ Passing those tests proves that the initial release does not automatically admit
 command. It does not prove offline mutation support. Web/PWA/Capacitor qualification must verify
 that online writes still work and offline attempts are not presented as saved; a future queue
 requires a separately reviewed end-to-end idempotency and crash-consistency contract.
+
+## Notification presentation release order
+
+The admin presentation control plane uses an additive, backward-compatible release:
+
+1. run Worker/library/UI/static migration tests plus web and native builds;
+2. apply and behavior-test the exact migration on `qa-staging`;
+3. commit reviewed source, deploy compatible Worker/UI code to `dev`, then apply the same committed
+   migration to the shared production database;
+4. verify production RLS/grants/function/catalog and the protected page without saving a live
+   override or sending a notification;
+5. promote reviewed `dev → main` and verify the production page/API.
+
+Old code ignores the additive tables. New runtime code fails safely to code-owned presentation if
+the schema/config read is missing or invalid. Application rollback therefore stops consuming
+overrides first and leaves audit data intact; dropping the tables/audit is a separate destructive
+rollback.
+
+Steps 1–5 completed on 2026-07-29. The exact migration is recorded in production as
+`20260729171946`, with post-apply RLS/grant/function checks and zero live override/audit rows.
+Reviewed PR `#547` merged `dev → main` as
+`3f456810162dad8c4407d354b36085778d138ae2`; the production bundle embeds that exact SHA.
+The protected API returns `401` JSON without authorization, the Settings route returns the SPA
+shell, both route-specific notification presentation assets have the correct JavaScript/CSS
+content types, and the 34-asset production deployment smoke passed. During the earlier dev
+verification, the smoke test detected a stale HTML response cached for a JavaScript chunk; a zone
+cache purge removed it, and the complete no-cache-bust smoke rerun passed.
+
+## Notification delivery diagnostic qualification
+
+The owner-only delivery tester has two separate proof layers:
+
+1. Credential-free Worker tests prove denial before side effects, strict request-field and channel
+   allowlists, the 15-key event allowlist, fixed self-recipient/copy/routes, durable claim/replay
+   before every side effect, browser-subscription pruning, distinct typed identities, stable APNs
+   and Resend request identities, and sanitized provider failures.
+2. Live delivery remains one separately owner-authorized send per selected channel. A local test
+   double, successful build, or protected endpoint response is not evidence that a bell, browser,
+   iPhone, or inbox presented the notification.
+
+The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
+diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
+authoritative catalog and requires exactly 15 entries, then sends each type to the owner bell, PWA,
+and environment-matched iPhone: 45 event/surface checks. Each PWA check fans out to every enrolled
+owner browser subscription, so the provider delivery count may be greater than 45. It sends no
+email/SMS/MMS and creates no business occurrence. Separate Web Push tags prevent different types
+from collapsing into one displayed notification; three surface calls run in parallel per event
+while events run sequentially to bound Worker/provider concurrency. The synthetic sweep requires
+each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
+qualifies presentation and transport, not whether a source workflow is activated or emits.
+
+Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
+migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
+contacting any provider.

@@ -11,7 +11,7 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  ./http.js
+ *   Internal:  ./http.js, ../../src/lib/nativeNavigationTarget.js
  *   Data:      reads  → device_tokens
  *              writes → native_push_delivery_claims (claim/release);
  *                       device_tokens (permanent-token cleanup only)
@@ -28,10 +28,20 @@
  * ════════════════════════════════════════════════
  */
 import { fetchWithTimeout } from './http.js';
+import { resolveNativePushRoute } from '../../src/lib/nativeNavigationTarget.js';
+import {
+  buildGenericNativeNotificationPresentation,
+  buildNativeNotificationPresentation,
+  resolveConfiguredNotificationPresentation,
+} from './notificationPresentation.js';
 
 const APNS_TIMEOUT_MS = 15_000;
 const APNS_CONCURRENCY = 5;
 const APNS_PROVIDER_ATTEMPTS = 2;
+const APNS_MAX_PAYLOAD_BYTES = 4_096;
+const APNS_ALERT_TITLE = 'Utah Pros notification';
+const APNS_ALERT_BODY = 'Open Utah Pros for details.';
+const APNS_DELIVERY_ENVIRONMENTS = Object.freeze(['sandbox', 'production']);
 export const APNS_MAX_TOKENS_PER_EMPLOYEE = 5;
 const jwtCache = new Map();
 
@@ -144,13 +154,11 @@ function apnsInvalidatedAt(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function safeNativeData(data) {
-  const url = typeof data?.url === 'string'
-    && data.url.startsWith('/')
-    && !data.url.startsWith('//')
-    ? data.url
-    : '/';
-  return { url };
+async function safeNativeData(data, employeeId) {
+  return {
+    url: resolveNativePushRoute(data?.url),
+    recipient: await stableApnsId(`native-recipient:${employeeId}`),
+  };
 }
 
 async function releaseDeliveryClaim(db, deliveryKey) {
@@ -187,9 +195,8 @@ export async function sendNativePushToEmployee({
   db,
   env,
   employeeId,
-  title,
-  body,
-  data = {},
+  typeKey,
+  notificationBody = {},
   eventKey,
   fetchImpl = fetchWithTimeout,
   signJwtImpl = signApnsJwt,
@@ -204,7 +211,7 @@ export async function sendNativePushToEmployee({
       reason: 'apns_not_configured',
     };
   }
-  if (!employeeId || !title || !eventKey) {
+  if (!employeeId || !eventKey) {
     return {
       sent: 0,
       attempted: 0,
@@ -254,13 +261,41 @@ export async function sendNativePushToEmployee({
   const host = config.environment === 'production'
     ? 'https://api.push.apple.com'
     : 'https://api.sandbox.push.apple.com';
-  const payload = JSON.stringify({
-    aps: {
-      alert: { title, body: body || '' },
-      sound: 'default',
-    },
-    data: safeNativeData(data),
+  // Emergency rollback seam: setting this exact server variable to "false"
+  // immediately restores generic native copy without disabling push delivery.
+  const richPresentationEnabled = env.NATIVE_RICH_NOTIFICATION_PRESENTATION !== 'false';
+  const genericFallback = buildGenericNativeNotificationPresentation(
+    typeKey,
+    notificationBody,
+  );
+  const nativeFallback = richPresentationEnabled
+    ? buildNativeNotificationPresentation(typeKey, notificationBody)
+    : genericFallback;
+  let presentation = richPresentationEnabled
+    ? await resolveConfiguredNotificationPresentation({
+      db,
+      typeKey,
+      surfaceKey: 'native_push',
+      body: notificationBody,
+      fallback: nativeFallback,
+      renderFailureFallback: genericFallback,
+    })
+    : nativeFallback;
+  const serializePayload = async (selectedPresentation) => JSON.stringify({
+      aps: {
+        alert: {
+          title: selectedPresentation.title || APNS_ALERT_TITLE,
+          body: selectedPresentation.body || APNS_ALERT_BODY,
+        },
+        sound: 'default',
+      },
+      data: await safeNativeData({ url: selectedPresentation.url }, employeeId),
   });
+  let payload = await serializePayload(presentation);
+  if (new TextEncoder().encode(payload).byteLength > APNS_MAX_PAYLOAD_BYTES) {
+    presentation = genericFallback;
+    payload = await serializePayload(presentation);
+  }
 
   const results = await Promise.all(tokens.slice(0, APNS_CONCURRENCY).map(async (row) => {
     // Token row ids are registration lifecycle details: logout/cap pruning can
@@ -411,5 +446,73 @@ export async function sendNativePushToEmployee({
     retryable: results.some((result) => result.retryable),
     ambiguous: results.some((result) => result.ambiguous),
     results,
+  };
+}
+
+/**
+ * Deliver one trusted occurrence to both Apple environments. UPR's shared
+ * production database feeds direct-development (sandbox) and TestFlight/App
+ * Store (production) installs at the same time, so choosing only the Worker's
+ * own APNS_ENV strands one cohort. Each environment still performs an exact
+ * token query, uses its own provider host, and claims an environment-specific
+ * delivery identity.
+ */
+export async function sendNativePushToEmployeeAcrossEnvironments({
+  sendImpl = sendNativePushToEmployee,
+  ...input
+}) {
+  const configured = readApnsConfig(input.env);
+  if (!configured.ok) {
+    return {
+      sent: 0,
+      attempted: 0,
+      pruned: 0,
+      skipped: true,
+      reason: 'apns_not_configured',
+      environments: {},
+    };
+  }
+
+  const attempts = await Promise.allSettled(
+    APNS_DELIVERY_ENVIRONMENTS.map((environment) => sendImpl({
+      ...input,
+      env: {
+        ...input.env,
+        APNS_ENV: environment,
+      },
+    })),
+  );
+  const environments = Object.fromEntries(
+    APNS_DELIVERY_ENVIRONMENTS.map((environment, index) => {
+      const outcome = attempts[index];
+      return [
+        environment,
+        outcome.status === 'fulfilled'
+          ? outcome.value
+          : {
+            sent: 0,
+            attempted: 0,
+            pruned: 0,
+            skipped: false,
+            retryable: true,
+            ambiguous: false,
+            reason: 'native_push_failed',
+          },
+      ];
+    }),
+  );
+  const summaries = Object.values(environments);
+
+  return {
+    sent: summaries.reduce((sum, result) => sum + (result?.sent || 0), 0),
+    attempted: summaries.reduce((sum, result) => sum + (result?.attempted || 0), 0),
+    pruned: summaries.reduce((sum, result) => sum + (result?.pruned || 0), 0),
+    retryable: summaries.some((result) => result?.retryable),
+    ambiguous: summaries.some((result) => result?.ambiguous),
+    skipped: summaries.every((result) => result?.skipped === true),
+    reason: summaries.every((result) => result?.reason === 'no_tokens')
+      ? 'no_tokens'
+      : undefined,
+    environments,
   };
 }

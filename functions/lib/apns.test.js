@@ -17,10 +17,11 @@
  *   - No provider credential, real token, or external request is used.
  * ════════════════════════════════════════════════
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   readApnsConfig,
   sendNativePushToEmployee,
+  sendNativePushToEmployeeAcrossEnvironments,
   stableApnsId,
 } from './apns.js';
 
@@ -42,6 +43,10 @@ function dbWithTokens(tokens) {
     ].includes(fn)),
   };
 }
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('readApnsConfig', () => {
   it('requires an exact sandbox or production environment', () => {
@@ -72,6 +77,30 @@ describe('stableApnsId', () => {
 });
 
 describe('sendNativePushToEmployee', () => {
+  it('uses the bounded default HTTP client when a caller does not inject one', async () => {
+    const globalFetch = vi.fn(async (_url, options) => {
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      return new Response('', { status: 200 });
+    });
+    vi.stubGlobal('fetch', globalFetch);
+
+    const result = await sendNativePushToEmployee({
+      db: dbWithTokens([{
+        id: 'token-bounded-fetch',
+        token: 'private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Bounded request',
+      eventKey: 'bounded-request:1',
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(result.sent).toBe(1);
+    expect(globalFetch).toHaveBeenCalledOnce();
+  });
+
   it('does not read tokens or call Apple when configuration is incomplete', async () => {
     const db = dbWithTokens([{
       id: 'token-1',
@@ -110,9 +139,8 @@ describe('sendNativePushToEmployee', () => {
       db,
       env: CONFIG,
       employeeId: 'employee-1',
-      title: 'Appointment updated',
-      body: 'Tomorrow',
-      data: { url: '/tech/appointment/1' },
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: '1' },
       eventKey: 'appointment.updated:1',
       fetchImpl,
       signJwtImpl: vi.fn(async () => 'signed-jwt'),
@@ -134,6 +162,22 @@ describe('sendNativePushToEmployee', () => {
       'apns-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
       'apns-collapse-id': expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
+    const payload = JSON.parse(options.body);
+    const expectedRecipient = await stableApnsId('native-recipient:employee-1');
+    expect(payload.aps).toEqual({
+      alert: {
+        title: 'Appointment updated',
+        body: 'Tap to review the changes.',
+      },
+      sound: 'default',
+    });
+    expect(payload.data).toEqual({
+      url: '/tech/appointment/1',
+      recipient: expectedRecipient,
+    });
+    expect(payload.data.recipient).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     expect(timeout).toBe(15_000);
     expect(result).toEqual({
       sent: 1,
@@ -319,7 +363,7 @@ describe('sendNativePushToEmployee', () => {
     expect(claimCalls[0].p_delivery_key).toBe(claimCalls[1].p_delivery_key);
   });
 
-  it('strips arbitrary producer data before sending the native payload', async () => {
+  it('strips arbitrary producer data and private alert copy before sending the native payload', async () => {
     const db = dbWithTokens([{
       id: 'token-privacy',
       token: 'private-token',
@@ -331,10 +375,20 @@ describe('sendNativePushToEmployee', () => {
       db,
       env: CONFIG,
       employeeId: 'employee-1',
-      title: 'Private event',
-      body: 'Open UPR',
+      typeKey: 'appointment.updated',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        title: 'Private event for Ada Lovelace',
+        body: 'Call +18015550123 about claim 01742',
+        address: '1 Main Street',
+        notes: 'Free-form private review notes',
+      },
+      alert: {
+        title: 'Private alert for Ada Lovelace',
+        body: 'Call +18015550123 at 1 Main Street',
+      },
       data: {
-        url: '/tech/messages',
+        url: '/tech/messages?token=private',
         phone: '+18015550123',
         provider_id: 'secret-provider-id',
         recovery: 'private',
@@ -345,7 +399,192 @@ describe('sendNativePushToEmployee', () => {
     });
 
     const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
-    expect(payload.data).toEqual({ url: '/tech/messages' });
+    const expectedRecipient = await stableApnsId('native-recipient:employee-1');
+    expect(payload.aps).toEqual({
+      alert: {
+        title: 'Appointment updated',
+        body: 'Tap to review the changes.',
+      },
+      sound: 'default',
+    });
+    expect(payload.data).toEqual({
+      url: '/tech/appointment/appointment-1',
+      recipient: expectedRecipient,
+    });
+    expect(payload.data.recipient).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const serializedPayload = fetchImpl.mock.calls[0][1].body;
+    expect(serializedPayload).not.toContain('Private event for Ada Lovelace');
+    expect(serializedPayload).not.toContain('Call +18015550123 about claim 01742');
+    expect(serializedPayload).not.toContain('+18015550123');
+    expect(serializedPayload).not.toContain('1 Main Street');
+    expect(serializedPayload).not.toContain('Free-form private review notes');
+    expect(serializedPayload).not.toContain('secret-provider-id');
+  });
+
+  it('renders approved rich native details only from typed event context', async () => {
+    const db = dbWithTokens([{
+      id: 'token-rich',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'payment.received',
+      notificationBody: {
+        payload: {
+          amount: 1250,
+          source: 'Credit card',
+          reference: 'Charge #ch_demo',
+        },
+        presentation_context: { invoice_number: 'INV-1042' },
+      },
+      eventKey: 'payment.received:rich',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Payment received',
+      body: '$1,250.00 recorded via Credit card · Charge #ch_demo',
+    });
+    expect(payload.data.url).toBe('/');
+  });
+
+  it('keeps expanded multibyte overrides within Apple payload limits by using generic copy', async () => {
+    const db = {
+      select: vi.fn(async (table) => {
+        if (table === 'device_tokens') {
+          return [{
+            id: 'token-expanded',
+            token: 'private-token',
+            updated_at: '2026-07-28T12:00:00.000Z',
+          }];
+        }
+        if (table === 'notification_presentation_overrides') {
+          return [{
+            title_template: 'New text from {{sender_name}}',
+            body_template: Array(9).fill('{{message_preview}}').join(''),
+            route_id: 'conversation.thread',
+            contract_version: 1,
+          }];
+        }
+        return [];
+      }),
+      rpc: vi.fn(async () => true),
+    };
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'message.inbound',
+      notificationBody: {
+        entity_type: 'conversation',
+        entity_id: 'conversation-1',
+        presentation_context: {
+          sender_name: 'Jordan Lee',
+          message_preview: '🔒'.repeat(90),
+        },
+      },
+      eventKey: 'message.inbound:expanded',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const serialized = fetchImpl.mock.calls[0][1].body;
+    const payload = JSON.parse(serialized);
+    expect(payload.aps.alert).toEqual({
+      title: 'New customer message',
+      body: 'Tap to open the conversation.',
+    });
+    expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(4_096);
+  });
+
+  it('restores generic native copy immediately when the server rollback setting is false', async () => {
+    const db = dbWithTokens([{
+      id: 'token-generic',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' },
+      employeeId: 'employee-1',
+      typeKey: 'payment.received',
+      notificationBody: {
+        payload: {
+          amount: 1250,
+          source: 'Credit card',
+          reference: 'Charge #ch_demo',
+        },
+        presentation_context: { invoice_number: 'INV-1042' },
+      },
+      eventKey: 'payment.received:generic',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Payment received',
+      body: 'Open Utah Pros to review payment details.',
+    });
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('1,250');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('INV-1042');
+  });
+
+  it.each([
+    ['admin route', '/tech/admin/users', null],
+    ['malformed encoding', '/tech/appointment/%2Fprivate', null],
+    ['oversized path', `/tech/appointment/${'x'.repeat(2_100)}`, null],
+    ['sensitive query', '/tech/conversations?token=private-secret', 'private-secret'],
+    ['long signing bearer', '/sign/private-signing-token', 'private-signing-token'],
+    ['short signing bearer', '/s/private-signing-code', 'private-signing-code'],
+    [
+      'credential fragment',
+      '/set-password#type=recovery&token_type=bearer'
+        + '&access_token=private&refresh_token=private',
+      'access_token=private',
+    ],
+  ])('replaces an unsafe %s before serializing APNs data', async (
+    _label,
+    route,
+    secret,
+  ) => {
+    const db = dbWithTokens([{
+      id: 'token-route',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Private producer title',
+      data: { url: route },
+      eventKey: `unsafe-route:${_label}`,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.data.url).toBe('/');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain(route);
+    if (secret) {
+      expect(fetchImpl.mock.calls[0][1].body).not.toContain(secret);
+    }
   });
 
   it('fails closed before Apple when a durable delivery claim cannot be acquired', async () => {
@@ -420,5 +659,105 @@ describe('sendNativePushToEmployee', () => {
       expect.anything(),
     );
     expect(result.pruned).toBe(0);
+  });
+});
+
+describe('sendNativePushToEmployeeAcrossEnvironments', () => {
+  it('delivers the same trusted occurrence to sandbox and production cohorts', async () => {
+    const sendImpl = vi.fn(async ({ env }) => (
+      env.APNS_ENV === 'sandbox'
+        ? { sent: 1, attempted: 1, pruned: 0, retryable: false, ambiguous: false }
+        : { sent: 2, attempted: 2, pruned: 1, retryable: true, ambiguous: false }
+    ));
+
+    const result = await sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: CONFIG,
+      employeeId: 'employee-1',
+      title: 'Appointment updated',
+      body: 'Tomorrow',
+      eventKey: 'appointment.updated:dual',
+      sendImpl,
+    });
+
+    expect(sendImpl).toHaveBeenCalledTimes(2);
+    expect(sendImpl.mock.calls.map(([input]) => input.env.APNS_ENV))
+      .toEqual(['sandbox', 'production']);
+    expect(result).toMatchObject({
+      sent: 3,
+      attempted: 3,
+      pruned: 1,
+      retryable: true,
+      ambiguous: false,
+      skipped: false,
+      environments: {
+        sandbox: { sent: 1, attempted: 1 },
+        production: { sent: 2, attempted: 2 },
+      },
+    });
+  });
+
+  it('fails closed before either cohort when shared APNs configuration is incomplete', async () => {
+    const sendImpl = vi.fn();
+
+    await expect(sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: { ...CONFIG, APNS_ENV: '' },
+      employeeId: 'employee-1',
+      title: 'Appointment updated',
+      eventKey: 'appointment.updated:missing-config',
+      sendImpl,
+    })).resolves.toMatchObject({
+      sent: 0,
+      attempted: 0,
+      skipped: true,
+      reason: 'apns_not_configured',
+    });
+
+    expect(sendImpl).not.toHaveBeenCalled();
+  });
+
+  it('still attempts production when the sandbox cohort throws', async () => {
+    const sendImpl = vi.fn(async ({ env }) => {
+      if (env.APNS_ENV === 'sandbox') throw new Error('private sandbox fault');
+      return {
+        sent: 1,
+        attempted: 1,
+        pruned: 0,
+        retryable: false,
+        ambiguous: false,
+      };
+    });
+
+    const result = await sendNativePushToEmployeeAcrossEnvironments({
+      db: {},
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: 'appointment-1' },
+      eventKey: 'appointment.updated:partial',
+      sendImpl,
+    });
+
+    expect(sendImpl).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      sent: 1,
+      attempted: 1,
+      retryable: true,
+      skipped: false,
+      environments: {
+        sandbox: {
+          sent: 0,
+          skipped: false,
+          retryable: true,
+          reason: 'native_push_failed',
+        },
+        production: {
+          sent: 1,
+          attempted: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('private sandbox fault');
   });
 });

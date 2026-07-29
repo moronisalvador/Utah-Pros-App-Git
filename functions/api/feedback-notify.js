@@ -38,6 +38,7 @@
  */
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { dispatchEvent } from './notify.js';
 
 // ─── SECTION: Pure helpers (node-testable — see feedback-notify.test.js) ───
@@ -134,6 +135,7 @@ export async function handleFeedbackNotify({ request, env, db, fetchImpl = fetch
         entity_type: 'tech_feedback',
         entity_id: feedbackId,
         payload: { feedback_type: feedback.type, source: feedback.source ?? null },
+        presentation_context: { employee_name: submitterName },
         exclude_employee_id: feedback.employee_id,
         data: payload.data,
       },
@@ -154,8 +156,8 @@ export async function onRequestPost(context) {
   const { status, data } = await handleFeedbackNotify({
     request,
     env,
-    db: supabase(env),
-    fetchImpl: fetch,
+    db: supabase(env, fetchWithTimeout),
+    fetchImpl: fetchWithTimeout,
   });
   return jsonResponse(data, status, request, env);
 }

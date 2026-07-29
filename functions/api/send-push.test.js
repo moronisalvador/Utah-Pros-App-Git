@@ -76,9 +76,7 @@ describe('POST /api/send-push', () => {
       db: h.db,
       env,
       employeeId: 'employee-owner',
-      title: 'UPR notifications are ready',
-      body: 'This iPhone can receive UPR alerts.',
-      data: { url: '/tech/settings' },
+      typeKey: 'owner.native_push_test',
       eventKey: `owner-native-push-test:${REQUEST_ID}`,
     });
   });

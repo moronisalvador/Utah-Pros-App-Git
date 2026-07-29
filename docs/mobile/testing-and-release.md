@@ -233,7 +233,7 @@ clearly.
 
 On a clean macOS runner:
 
-1. install locked Node and Ruby dependencies (Ruby 3.3.12, Bundler 4.0.16,
+1. install locked Node and Ruby dependencies (Ruby 3.3.12, Bundler 2.5.22,
    Fastlane 2.237.0, and a reviewed `ios/Gemfile.lock`);
 2. build the native target with `npm run build:native` and run reviewed `cap sync ios`;
 3. validate native diff, target membership, plugin versions, Info.plist, entitlements, privacy

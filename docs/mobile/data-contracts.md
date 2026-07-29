@@ -338,7 +338,33 @@ contract:
 - web/APNs environment-specific delivery with timeout/retry/expiry;
 - per-channel accepted/skipped/failed summary;
 - detach/revoke on logout/account/device lifecycle;
-- no sensitive lock-screen payload beyond approved privacy policy.
+- no lock-screen value outside the owner-approved typed event variable catalog.
+
+The native APNs implementation uses an exhaustive typed presentation catalog:
+each live event receives explicit event-approved title/body copy, while
+unknown events retain the generic `Utah Pros notification` /
+`Open Utah Pros for details.` fallback. Raw producer copy is never the APNs
+presentation contract. Data remains reduced to one allowlisted route plus an
+opaque deterministic recipient binding. The same pure route policy used by the
+app runs in the worker before serialization;
+admin/external paths, encoded paths, oversized input, credential fragments, and
+unsupported or sensitive query shapes fall back to `/` before Apple sees them.
+The Push policy additionally rejects the public signing bearer paths
+`/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
+bearer capability is never provider payload data. A native action is rejected
+unless the binding matches the currently verified employee. Owner decision
+2026-07-29 supersedes the initial generic-only budget: native may render the
+same event-approved variables as PWA, including customer, scheduling, and
+financial details. Those values must be typed server context, never raw
+producer APNs fields or generic payload traversal. Missing values use immutable
+generic event copy. Rendered values and final APNs JSON are bounded before
+provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
+presentation at the provider boundary.
+
+Appointment notification audiences are structural rather than caller-selected:
+`appointment.assigned` intersects the named employee with the appointment's
+current crew, while updated/canceled events resolve the current crew. Supplied
+`recipient_ids` cannot widen any appointment audience.
 
 S1c implements only the HTTP identity/object portion. An exact stored secret remains first and
 keeps the full deployed trigger payload; trusted Workers continue to call `dispatchEvent`

@@ -64,11 +64,53 @@ bindings and provider consoles.
   token-row deletion/re-registration. Explicit APNs 429/5xx refusals release, reclaim, and receive
   one bounded retry; a durable message-notification outbox keeps an exhausted explicit refusal
   retryable in native-only mode so bell/Web Push/email do not duplicate. Timeout/network ambiguity
-  retains the claim and is never auto-replayed.
+  retains the claim and is never auto-replayed. The inbound-message claim RPC returns the durable
+  outbox `id` but not `provider_event_id`; the worker therefore uses that returned outbox `id` as
+  the stable native occurrence across retries. Protected worker telemetry retains only aggregate
+  native counts and allowlisted skip categories, never employee/device identifiers or upstream
+  provider details.
+- One trusted event is dispatched to both exact APNs token cohorts: sandbox for development-signed
+  installations and production for TestFlight/App Store installations. Each cohort keeps its own
+  token query, Apple host, fingerprint, delivery claim, pruning environment and bounded five-token
+  fanout; the configured `APNS_ENV` remains a required fail-closed activation signal. A rejected
+  cohort is a sanitized retryable failure, so the durable inbound-message outbox replays native
+  delivery only and does not resend bell, Web Push, or email.
+- `functions/lib/notificationPresentation.js` is the exhaustive native presentation registry. It
+  now also projects separately governed typed bell/PWA definitions for the 15 live event types.
+  Admin overrides are validated against event-specific variables and route identifiers before
+  dispatch. Owner decision 2026-07-29 permits native to use the same approved variables as PWA, but
+  native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
+  or route parameters still cannot enter APNs. Typed context missing any required value uses the
+  immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
+  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
+  synthetic values and makes no provider call.
+- Appointment assigned/updated/canceled presentation resolves customer name and job number from
+  the appointment's trusted linked-job record. Those values join appointment title/time and
+  separately labeled estimated, approved, invoiced, and collected job amounts in the event
+  allowlist for bell, PWA, and native; caller-supplied values and arbitrary job fields do not.
+- Payment producers pass the normalized invoice display number through
+  `presentation_context.invoice_number`; provider charge/payment references remain a separate
+  `payload.reference` value. Both are display-only typed presentation variables, including native,
+  and neither changes payment recording, idempotency, QuickBooks behavior, or recipients.
+- The owner-only delivery diagnostic may render each of those 15 registry types with synthetic
+  values and deliver it to the owner's bell, enrolled Web Push subscriptions, and
+  environment-matched iPhone tokens. Each event/surface gets its own stable diagnostic identity;
+  Web Push also gets a unique tag so the service worker does not collapse separate types. This
+  diagnostic is independent of the source event's master enable switch, creates no source
+  business event, and never enters email, SMS, or MMS transport.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
+- The CallRail→Twilio switch must preserve the durable inbound-notification contract, not only the
+  outbound adapter. Repository source now retains signed Twilio inbound SMS/MMS in
+  `message_provider_events`, privately owns MMS bytes, then projects consent, canonical message,
+  unread state, and one `message_notification_outbox` occurrence under the same per-phone lock as
+  CallRail. The former direct `notifyInboundMessage()` module/path is removed, so the durable
+  outbox is the only `message.inbound` route. This is inactive source only: migration
+  `20260729211728_twilio_inbound_notification_parity.sql` is unapplied, the Worker is undeployed,
+  and no Twilio webhook/provider setting changed. Phase 6 in
+  `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
@@ -481,6 +523,21 @@ owner-managed and independently verified; the shared Supabase project is never u
 staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
 approved activation window and provider proof. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
+
+### Provider-event operations boundary
+
+Ops-health message-event alerts link to the owner-only Provider Events panel at
+`/dev-tools?tab=messaging&sub=events`. `GET /api/provider-event-ops` returns a paginated,
+no-store list of unresolved failed/retryable events with only operational identity: provider,
+direction/type, error/state, attempt count, phone endpoints, provider message ID, timestamps and
+outcome. It never returns message content, media references, raw-body hashes or provider payloads.
+
+`POST /api/provider-event-ops` accepts only `retry` or `resolve` for one exact event UUID after the
+same active-internal-owner check as Dev Tools. Retry reads the current row server-side and calls the
+existing service-only `rearm_callrail_provider_event` RPC with that exact row/error compare-and-set;
+the existing scheduled recovery worker later projects the retained event. Resolve calls the existing
+service-only `resolve_provider_event` RPC and records the verified owner employee ID. The endpoint
+does not call CallRail, choose a provider, submit/resubmit an SMS/MMS, or alter consent.
 
 ### CallRail live MMS endpoint compatibility
 

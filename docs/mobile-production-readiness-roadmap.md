@@ -356,11 +356,12 @@ account intents, and never surfaces raw foreground Push content. Native Push enr
 exact-default-off; OTA has zero boot acknowledgment and requires a future explicit health
 checkpoint.
 
-These source changes do not make the product production-ready. Before native release,
-`@capacitor/app` still needs a reviewed `cap sync ios` (the managed SPM package is unsynchronized),
-and `ios/Gemfile.lock` must be generated/reviewed with Ruby 3.3.12 and Bundler 4.0.16. The
-current-`origin/dev` no-rewrite integration is committed as local source history prepared for a
-draft PR; it is not merged into `dev` or released. Authenticated/installed web/native regression,
+These source changes do not make the product production-ready. The reviewed
+`@capacitor/app` sync and checked-in `ios/Gemfile.lock` now align with Ruby
+3.3.12, Bundler 2.5.22, and Fastlane 2.237.0; the release workflow still
+rebuilds and rejects native drift. The current-`origin/dev` no-rewrite
+integration is committed as local source history prepared for a draft PR; it
+is not merged into `dev` or released. Authenticated/installed web/native regression,
 S1d/S1e/S1f/S1g and S1h database
 windows, QBO telemetry/RLS, private media, public-signing/route-family containment,
 deployment/providers, Apple signing/TestFlight, and installed PWA/physical-device qualification

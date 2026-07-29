@@ -23,12 +23,14 @@ No feature code, schema, or provider behaviour changed. What changed:
   `docs/archive/rules/`; live coordination state consolidated into
   `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
   they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
-- **Staging database:** attempted `qa-staging` Supabase branch; discovered the live migration
-  ledger is NOT replayable (failed at entry 4/419 — ~73 tables/~101 functions predate
-  schema-as-code), deleted the broken branch, and shipped the full plumbing
-  (`docs/database/staging-branch-runbook.md`, `npm run test:db:branch`, target-policy `qa-branch`
-  mode, CI `db-lane` job) so one owner seeding action (data branch or `pg_dump` seed) activates
-  it. Production is refused unconditionally by the new runner.
+- **Staging database:** `qa-staging` is seeded and live at the isolated ref recorded in
+  `docs/database/staging-branch-runbook.md`. Its public schema matches production (141 tables /
+  400 functions / 219 policies), standing QA identities are seeded, and the CI database lane is
+  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge is a cosmetic creation artifact: the
+  original ledger replay failed at entry 4/419 because legacy schema predates migrations, then the
+  owner restored the production schema onto the branch. The repository still has no
+  `supabase/config.toml`, and migration history alone cannot reconstruct a local stack; use the
+  hosted branch only under the branch runner/authorization rules.
 - **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
 
 Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
@@ -329,7 +331,7 @@ functions/
     sync-encircle.js              — Pull Encircle claims → jobs + contacts (bulk, legacy)
     track-open.js                 — Email open tracking pixel
     twilio-status.js              — Delivery receipts + RCS read status
-    twilio-webhook.js             — Inbound SMS handler. Detects STOP/START/HELP keywords (+ synonyms) via exported `detectKeyword`; ALWAYS writes opt-in/DND state to `contacts` + audits to `sms_consent_log`. Customer-facing reply comes from exported `keywordReplyBody(keyword, {advancedOptOut})`: default sends a CTIA reply (HELP shows SMS support (385) 336-0611 / restoration@utah-pros.com, kept in sync with the Privacy Policy); when env `TWILIO_ADVANCED_OPT_OUT='true'` (set only after enabling Advanced Opt-Out on the Twilio Messaging Service) it returns empty TwiML so Twilio owns the reply — avoids double-texting / post-STOP error 21610. **Wave -1 hotfix (Jul 9 2026):** the inbound sender is now resolved by a **digits-OR match** (exported `phoneMatchVariants`/`buildPhoneOrFilter`, using `normalizePhone`) across every common stored format (E.164, bare digits, `(XXX) XXX-XXXX`, dashed, dotted) — not an exact `phone=eq.{from}`; STOP/START update **ALL** matching contact rows (`id=in.(…)`) + log a consent row per match, closing the F-3 send-after-STOP hole where a non-E.164 dup stayed opted-in. Exact `yes`/`info` inbound messages are now persisted (via `persistInboundMessage`) **before** the keyword early-return so a real reply is never swallowed (F-7, exported `isAmbiguousContentReply`).
+    twilio-webhook.js             — Repository-only, inactive durable Twilio inbound SMS/MMS receiver. It fails closed unless `MESSAGING_SCHEMA_MODE=foundation`, resolves the account/token DB-first, validates `X-Twilio-Signature` against the exact URL and every form parameter before side effects, retains one normalized `message_provider_events` row per MessageSid, privately copies authenticated MMS bytes, and calls the service-only atomic projection. STOP/START/HELP TwiML remains synchronous (and Advanced Opt-Out remains silent); consent is projected even when MMS capture must retry. It no longer writes canonical messages/unread directly and has no `notifyInboundMessage()`/`waitUntil` path: the unique durable notification outbox is the sole `message.inbound` route. Migration `20260729211728_twilio_inbound_notification_parity.sql` and its rollback are authored but were not applied by this task to `qa-staging` or the shared project; the Worker was not deployed and Twilio/provider bindings are unchanged.
     encircle-search.js            — GET /api/encircle-search?policyholder_name|contractor_identifier|assignment_identifier=… (TechDemoSheet job picker). Limits to 20 newest property_claims. Uses X-Encircle-Attribution=UtahProsRestoration.
     encircle-rooms.js             — GET /api/encircle-rooms?claim_id=… returns { rooms[], structures[] }. Fetches structures for the claim then rooms per structure in parallel; multi-structure rooms get prefixed with structure name.
     encircle-upload.js            — POST /api/encircle-upload { claim_id, title, text } — posts a general note to the Encircle property claim (v2 /notes). Returns { ok, id } so the page can persist encircle_note_id.
@@ -342,9 +344,13 @@ functions/
     messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
     callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS immediately consumes the signed webhook's short-lived media endpoint only after exact CallRail HTTPS/host/account validation, while retained-event retries refresh current endpoints from the documented conversation API. Verified bytes are copied into private `message-attachments`, and only owned references are retained. The account validator accepts a legacy numeric id and current masked `ACC...` media identity only after CallRail's authenticated account inventory proves the pair. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge. Live 2026-07-23 iPhone MMS evidence isolated the numeric-vs-masked account mismatch before Storage; post-deploy recovery and a fresh round trip remain required.
     message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
+    twilio-inbound.js             — Normalizes signed Twilio SMS/MMS form facts into the provider-neutral event identity and enforces AccountSid/MessageSid/media-count shape before retention.
+    twilio-inbound-auth.js        — Public-webhook pre-authentication resolver limited to the exact Twilio token row and AccountSid key (with only their legacy env fallbacks). It never reads outbound sender/messaging-service configuration and makes no write.
+    twilio-inbound-processor.js   — Thin retry-aware adapter for the service-only `project_twilio_inbound_event(uuid,boolean)` atomic projection.
+    twilio-mms.js                 — Authenticated Twilio Media fetcher with exact account/message/media URL binding, redirect refusal, bounded time/size/count, JPEG/PNG/GIF byte validation, and deterministic private `message-attachments/twilio/...` ownership. Provider URLs and credentials are never persisted.
     process-callrail-events.js    — Scheduler-secret HTTP recovery worker for retained CallRail text events. Reclaims only due/stale work with bounded backoff and retries atomic canonical projection without making a provider send. Owner-applied migration `20260724002500_callrail_event_recovery_scheduler.sql` is live as ledger version `20260724002500` and supplies the five-minute exact-URL pg_cron/pg_net invoker outside browser execution. Live PATCH response drift then required `20260724051500_claim_callrail_provider_event.sql`, now live as ledger version `20260724051500`: its service-role-only invoker RPC atomically claims and returns one event so a mutation cannot be mistaken for a lost claim. Read-only role and source-fingerprint verification passed; Worker deployment and one stale-event recovery remain open. A separate read-only reconciliation worker polls exact CallRail history matches for accepted/ambiguous sends.
     recover-message-send-attempts.js — Provider-neutral, scheduler-secret recovery of accepted provider attempts whose canonical message insert failed; RPC-only and never imports a provider adapter.
-    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection. An exact-URL pg_net wake-up runs after outbox insert/commit, backed by a five-minute pg_cron due/stale-work safety net; missing config or an empty queue is inert. The lease prevents concurrent dispatch, while bell/push delivery remains at-least-once across worker crashes. `message.inbound` bell links select `/conversations?c=<id>`; Web Push selects the same thread inside `/tech/conversations?c=<id>`.
+    process-message-notification-outbox.js — Scheduler-secret fenced lease/retry/dead-letter worker for inbound notification jobs atomically committed by message projection. An exact-URL pg_net wake-up runs after outbox insert/commit, backed by a five-minute pg_cron due/stale-work safety net; missing config or an empty queue is inert. The lease prevents concurrent dispatch, while bell/push delivery remains at-least-once across worker crashes. The live claim RPC returns the durable outbox `id` but not `provider_event_id`; that returned `id` is the native Push occurrence identity across retries, preventing the former fail-closed `missing_notification_event_id` skip. Worker telemetry records only aggregate native attempted/sent/skipped counts and allowlisted skip reasons, never recipient/device identifiers or provider details. `message.inbound` bell links select `/conversations?c=<id>`; Web Push and native Push select the same thread inside `/tech/conversations?c=<id>`.
     twilio.js                     — Twilio helpers
 ```
 
@@ -920,6 +926,14 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
 get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
 ```
+
+Dev Tools now includes an owner-only **Provider Events** subtab, reached directly from ops-health
+alerts at `/dev-tools?tab=messaging&sub=events`. Its thin `/api/provider-event-ops` Worker lists only
+sanitized unresolved operational metadata and calls the already-live, service-only
+`rearm_callrail_provider_event` / `resolve_provider_event` RPCs for one exact row. Retry only places a
+retained event back into the existing recovery queue; it never sends or re-sends a customer message
+and never calls CallRail. Resolve records the verified owner employee ID and removes the acknowledged
+terminal failure from future ops-health backlog alerts.
 
 ### Omni-inbox — email (Foundation, Jul 4 2026)
 ```
@@ -3760,3 +3774,134 @@ prerequisite that stopped it silently burning leads. Still open before `sms_send
 flipped: the `fireAutomation` duplicate-send window, and the owner's consent-policy decision.
 Handoff detail: `docs/handoff/messaging-production-activation-prompt.md` §4a.
 
+## Native Push and TestFlight activation (2026-07-29 current state)
+
+The reviewed continuation on `codex/mobile-readiness-native-usability` was
+reconciled by merge with `origin/dev` at
+`8e1cf9cceba72f027caf91debded4afb6841b276` without rewriting either history.
+It adds no migration or live-database change.
+
+- Settings keeps PWA Web Push and native APNs controls separate. Native Push
+  has explicit **Turn on** / **Turn off** controls, owner-bound versioned local
+  intent, permission checks on load/resume, exact token cleanup journaling, and
+  delivered-notification cleanup during detach.
+- APNs banners use an exhaustive typed presentation catalog. This paragraph's
+  original generic-only privacy budget was superseded by the owner's 2026-07-29
+  decision: native may show the same event-approved variables as PWA. Typed
+  server context is required; missing context and unknown types retain generic
+  copy, and a server rollback setting can immediately restore generic native
+  presentation.
+  Data contains an allowlisted route and opaque employee binding; public
+  signing bearer routes are reduced to `/`, and tap navigation fails closed
+  when the current employee does not match.
+- Each trusted occurrence fans out to both exact APNs cohorts: sandbox
+  development installs and production TestFlight/App Store installs. Token
+  queries, Apple hosts, fingerprints, delivery claims, pruning and the
+  five-device bound remain environment-specific; Worker `APNS_ENV` is still a
+  required fail-closed activation signal. A thrown cohort is reported as a
+  sanitized retryable failure so the inbound-message outbox preserves its
+  native-only retry instead of closing the occurrence as a harmless skip.
+- Appointment Push resolves the appointment first and is structurally limited
+  to currently assigned employees; supplied recipient IDs cannot widen it.
+- The main-only iOS workflow pins the production API and release SHA, uses the
+  lockfile Bundler, and performs the signed archive/export/App Store Connect
+  upload only behind a separate owner-authorized publish dispatch. Dormant
+  Capgo OTA publishing is hard-disabled and environment-pinned.
+- One recovered physical PWA installation was confirmed with Push **On**. The
+  existing development-signed iPhone build previously received one authorized
+  sandbox Push while backgrounded.
+- CallRail inbound notification projection and Web Push were live, but the
+  outbox worker incorrectly read `provider_event_id` from a claim RPC that does
+  not return that column. Native dispatch therefore stopped before token lookup
+  with `missing_notification_event_id`. Source now uses the returned durable
+  outbox `id` as the stable APNs occurrence and exposes privacy-safe aggregate
+  native outcomes in protected worker-run telemetry. This is a worker-only fix;
+  it adds no migration and does not change CallRail customer-message, consent,
+  audience, bell, Web Push, or email behavior.
+- Native notification destinations are type-owned. Messages open the exact
+  field conversation, appointments the exact field appointment, signed
+  documents the native Job Hub, and resolved feedback the field feedback page.
+  Office-only admin events safely open native home until a separately approved
+  native admin route exists. Field technicians can now configure
+  `feedback.resolved` alongside their other self-recipient event types. The
+  corresponding sender now repeats the Feedback Inbox's admin-only gate
+  server-side with `requireRole(['admin'])` before any service-role read or
+  channel dispatch.
+
+Still gated: integration/push to `dev`, hosted PWA verification, reviewed
+`dev → main` promotion, TestFlight workflow dispatch/upload, processed
+TestFlight installation, production-token registration, and the real-device
+foreground/background/terminated/tap/account-switch matrix. Full source,
+verification, reviewer challenges, rollback, and release handoff:
+`docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
+
+## Admin notification presentation Settings (2026-07-29)
+
+The web build now owns an admin-only `/settings/notification-presentation` page in the Settings
+Team group. It edits code-allowlisted bell/PWA/native copy and typed destinations, previews with
+synthetic values, and shows bounded audit history. Native uses the same event-approved variables as
+PWA by owner decision while retaining a separate field-only route allowlist.
+Title and Message each have their own compact variable picker. A picker lists all trusted values
+the current event actually provides, shows a synthetic example, and inserts the selected token at
+that field's cursor or selection. It cannot create a variable or bypass server validation.
+Appointment assigned/updated/canceled events resolve `customer_name` and `job_number` from the
+appointment's linked job alongside appointment title/time and four unambiguous job-value snapshots:
+estimated, approved, invoiced, and collected. Those values are available on bell, PWA, and native
+templates. Payment surfaces include a distinct trusted `invoice_number` variable;
+the separate `payment_reference` remains a charge/payment reference and is not relabeled as an
+invoice. Native Title and Message expose the same picker for that event.
+The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
+Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keeping the global
+`src/index.css` source below its blocking budget without changing the page design.
+
+`functions/lib/notificationPresentation.js` remains the single registry shared with the reconciled
+native parity work. Runtime consumers in `notify.js` and `apns.js` accept only a validated
+event/surface override and otherwise use code defaults. No arbitrary URL/path, caller route
+parameters, general template execution, audience/preference/consent/provider change, or office-only
+native route expansion is possible. Arbitrary APNs alert/data remains ignored, and missing typed
+context or over-budget rendered output falls back to immutable generic native copy. Final APNs
+JSON is limited to Apple's 4 KB budget. Saved generic wording is honored exactly; runtime does not
+guess legacy provenance from title/body content.
+
+Migration `20260729163127_notification_presentation_settings.sql` adds forced-RLS, service-only
+`notification_presentation_overrides`, `notification_presentation_audit`, and the sole atomic
+service-role mutation RPC. It has passed migration/anonymous-grant/Worker security review plus
+real `qa-staging` denial, replay, conflict, audit, and simultaneous first-write tests; synthetic
+rows were removed. The same committed source is applied to the shared production project under
+ledger version `20260729171946`: both tables retain forced RLS, only `service_role` can select or
+execute the mutation RPC, and production contains zero overrides and zero audit rows.
+
+Production runs reviewed PR `#547` at exact merge
+`3f456810162dad8c4407d354b36085778d138ae2`; the live bundle embeds that SHA. The protected API
+rejects an unauthenticated request with `401` JSON, the Settings route returns the SPA shell, its
+route-specific JavaScript and CSS assets have correct content types, and the deployment smoke
+fetched all 34 boot assets successfully. No live override/configuration was saved and no provider
+or test notification was sent.
+
+### Owner notification delivery tests
+
+Dev Tools → Advanced → Notifications now pairs the presentation editor's synthetic all-event
+preview with fixed owner-self delivery diagnostics. `POST /api/notification-test` requires
+`requireOwner()`, derives the recipient from the authenticated employee, and accepts only an
+allowlisted channel, a UUID, and an optional code-owned `type_key`. The generic four-channel test
+creates one owner bell row, one Web Push fanout, one environment-matched iPhone delivery, and one
+transactional email. The typed sweep accepts only the 15 presentation-registry event keys and only
+bell, Web Push, and native APNs, producing 45 owner-only type/surface checks. Each Web Push check
+fans out to all browser subscriptions enrolled for the owner, so provider delivery count can be
+greater than 45. The sweep uses synthetic
+server-rendered presentation data, creates no business occurrence, and structurally excludes
+email, SMS, and MMS. It requires the catalog row to exist but deliberately ignores the
+business-event `enabled` master switch so presentation/transport qualification remains distinct
+from producer activation.
+
+The UI fetches the protected catalog, requires exactly 15 entries, and runs three surfaces per type
+without combining all provider work into one Worker request. A namespaced UUID derived from the
+client request UUID, channel, and type isolates each typed claim/retry. APNs uses that stable
+identity for its occurrence; typed Web Push adds a unique tag so separate event types do not
+collapse into one displayed notification. The shared email helper optionally places the generic
+email test UUID in Resend's HTTP `Idempotency-Key` header without adding it to the message payload.
+The service-only `notification_delivery_diagnostic_claims` ledger claims the
+employee/channel/request tuple before every side effect and replays the bounded result after a
+lost response. Browser-expired subscriptions are pruned; provider errors return only bounded
+diagnostic reasons. Source and fake-provider tests do not prove live presentation, and compatible
+Worker/UI deployment plus every live send remain separately owner-authorized actions.

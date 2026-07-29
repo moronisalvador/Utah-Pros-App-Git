@@ -9,13 +9,15 @@
  *
  * DEPENDS ON:
  *   Packages:  eslint, vitest
- *   Internal:  eslint.config.js, .github/workflows/ci.yml
+ *   Internal:  eslint.config.js, .github/workflows/ci.yml,
+ *              scripts/check-eslint-ratchet.mjs
  *   Data:      reads  → none
  *              writes → none
  *
  * NOTES / GOTCHAS:
  *   - This runs the real project lint configuration instead of checking its source text.
- *   - The existing baseline keeps the rule at warning level; changed-file CI treats warnings as failures.
+ *   - The frozen shrink-only baseline keeps existing findings visible while changed-file CI
+ *     blocks any new warning or error by file and rule.
  * ════════════════════════════════════════════════
  */
 import { ESLint } from 'eslint';
@@ -72,7 +74,7 @@ describe('variable-before-definition lint contract', () => {
 });
 
 describe('changed-file CI ratchet', () => {
-  it('blocks pull requests on every lint error or warning', () => {
+  it('runs the tested shrink-only ratchet as a blocking pull-request step', () => {
     const workflow = readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8');
     const stepStart = workflow.indexOf('- name: Lint changed files (blocking ratchet)');
     const nextStep = workflow.indexOf('\n      - name:', stepStart + 1);
@@ -80,7 +82,11 @@ describe('changed-file CI ratchet', () => {
 
     expect(stepStart).toBeGreaterThan(-1);
     expect(step).toContain("if: github.event_name == 'pull_request'");
-    expect(step).toContain('npx eslint --max-warnings 0 $CHANGED');
+    expect(step).toContain('npm run validate:lint-ratchet -- "origin/${{ github.base_ref }}"');
     expect(step).not.toContain('continue-on-error');
+
+    const script = readFileSync(join(ROOT, 'scripts/check-eslint-ratchet.mjs'), 'utf8');
+    expect(script).toContain("const severity = message.severity === 2 ? 'error' : 'warning'");
+    expect(script).toContain('if (found > allowed)');
   });
 });

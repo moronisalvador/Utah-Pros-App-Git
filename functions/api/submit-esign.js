@@ -121,6 +121,11 @@ export async function notifyEsignSigned({ db, env, job, docLabel, docType, signe
         entity_id:   job?.id || null,
         job_id:      job?.id || null,
         payload:     { doc_type: docType, signer_name: signerName, job_document_id: jobDocumentId || null },
+        presentation_context: {
+          signer_name: signerName,
+          document_name: docLabel,
+          job_number: job?.job_number || '',
+        },
         data:        { route: `/jobs/${job?.id}` },
       },
     });

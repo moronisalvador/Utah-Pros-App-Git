@@ -104,6 +104,7 @@ export default function NativeNavigationBridge({ enabled = false }) {
       },
     });
     const pushEvents = startNativePushEventListeners({
+      employeeId: employee?.id || null,
       onForeground: () => {
         if (accepting) coordinator.receiveForegroundPush();
       },
@@ -120,7 +121,7 @@ export default function NativeNavigationBridge({ enabled = false }) {
       stopLifecycle(appLinks);
       stopLifecycle(pushEvents);
     };
-  }, [coordinator, enabled]);
+  }, [coordinator, employee?.id, enabled]);
 
   return null;
 }

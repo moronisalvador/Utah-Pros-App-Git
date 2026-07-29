@@ -127,7 +127,7 @@ async function handlePaymentIntent(env, db, pi) {
   const txnDate = ymd(charge.created);
   const method = charge.payment_method_details?.type === 'us_bank_account' ? 'ach' : 'credit_card';
 
-  const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=id,invoice_number,job_id,contact_id,qbo_invoice_id&limit=1`))?.[0];
+  const inv = (await db.select('invoices', `id=eq.${invoiceId}&select=id,invoice_number,qbo_doc_number,job_id,contact_id,qbo_invoice_id&limit=1`))?.[0];
   if (!inv) return { skipped: true, reason: 'invoice not found', invoice_id: invoiceId };
 
   let contactId = inv.contact_id;
@@ -155,7 +155,8 @@ async function handlePaymentIntent(env, db, pi) {
   if (wasNewPayment) {
     await notifyPaymentReceived({
       db, env, amount: gross, invoiceId: inv.id, jobId: inv.job_id || null,
-      source: 'Stripe', reference: inv.invoice_number ? `Invoice ${inv.invoice_number}` : chargeId,
+      source: 'Stripe', reference: chargeId,
+      invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
       paymentEventId: pay?.id || `stripe:${chargeId}`,
     });
   }

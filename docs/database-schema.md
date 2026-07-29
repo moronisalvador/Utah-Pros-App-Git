@@ -195,6 +195,21 @@ returns exactly one due event. It adds no table, column, provider send, or brows
 Read-only catalog verification confirmed the exact source fingerprint, empty `search_path`,
 `SECURITY INVOKER` mode and service-role-only execution.
 
+Twilio inbound parity is repository-only and unapplied. Migration
+`20260729211728_twilio_inbound_notification_parity.sql` adds no table, column, trigger, policy, or
+provider configuration. It defines one `SECURITY INVOKER`,
+service-role-only `project_twilio_inbound_event(uuid, boolean DEFAULT false)` projection over the
+existing provider-event/message/outbox schema. The transaction shares CallRail's
+`messaging-phone:<last10>` advisory-lock namespace, applies replay-safe STOP/START/HELP consent,
+persists at most one MessageSid-addressed canonical SMS/MMS, increments unread only on insertion,
+and inserts at most one outbox row keyed by `provider_event_id`. MMS is refused unless every
+reference is under private `upr-storage://message-attachments/twilio/` ownership. The paired
+rollback drops only this new function after compatible Worker code is rolled back; retained
+event/message/outbox history is not deleted. The isolated behavioral source is
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql`; it has not run because this
+worktree has no reproducible local Supabase config/baseline and `qa-staging` mutation was not
+authorized.
+
 Sanitized live evidence and apply-window recapture queries:
 `docs/audit/2026-07/evidence/messaging-transport-2026-07-23.md`.
 
@@ -528,7 +543,50 @@ pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback ch
 retained governed local database. Generated schema/RPC reports must continue describing deployed
 state; none of these source migrations is live or `ready_for_apply`.
 
+## Notification presentation settings (2026-07-29)
+
+Migration `20260729163127_notification_presentation_settings.sql` adds two service-only tables:
+
+- `notification_presentation_overrides`, keyed by `(type_key, surface)`, stores only validated
+  title/body templates, an allowlisted route identifier, contract version, revision, and actor/time;
+- `notification_presentation_audit` stores append-only before/after configuration, action, actor,
+  request UUID, revision, and time. It stores no rendered customer/provider payload.
+
+Both tables use forced RLS, explicit `service_role` SELECT policies, and revoke
+`PUBLIC`/`anon`/`authenticated`. The sole writer,
+`mutate_notification_presentation(uuid,text,text,text,jsonb,bigint,uuid) -> jsonb`, is a
+service-role-only `SECURITY DEFINER` that pins `search_path`, revalidates an active internal admin,
+serializes each event/surface, enforces optimistic revision/idempotency, and writes current state
+plus audit atomically. Browser roles have no direct table or RPC path. The paired rollback is
+`supabase/rollbacks/20260729163127_notification_presentation_settings.rollback.sql`.
+
+The exact migration is applied and behavior-verified on isolated project `qa-staging`
+(`uizgwvkvzyldystqrcsk`): browser-role table/RPC denial, replay, stale revision rejection, atomic
+audit, and simultaneous first-write serialization passed. Synthetic rows were removed afterward.
+The same committed migration is applied to shared production under ledger version
+`20260729171946`. Post-apply inspection confirmed forced RLS on both tables, SELECT and RPC
+execution denied to `anon`/`authenticated`, service-role-only access, the pinned definer
+`search_path`, and zero override/audit rows. Application deployment status is recorded separately
+in `UPR-Web-Context.md`.
+
 Rollback is not routine compatibility work. It deliberately restores anonymous page-access
 enumeration, broad browser table grants, foreign selectors, raw token visibility, and arbitrary
 token mutation. It requires its explicit unsafe session flag plus a separate owner decision;
 forward repair is preferred. See `docs/mobile/s1h-database-apply-runbook.md`.
+
+## Notification delivery diagnostic claims (repository only; not applied)
+
+Migration `20260729181049_notification_delivery_diagnostic_claims.sql` proposes one additive
+service-only ledger keyed by `(employee_id, channel, request_id)`. The four channels are fixed to
+bell, Web Push, native APNs, and transactional email. A pending row is inserted before the Worker
+causes any delivery side effect; the bounded channel result is then stored as complete. A retry
+returns the stored result, while a request left pending by an uncertain Worker failure remains a
+no-op instead of risking a duplicate notification.
+
+The table enables and forces RLS, grants no browser access, and stores no address, notification
+copy, customer/provider payload, or credential. Its two `SECURITY INVOKER` RPCs pin an empty
+`search_path`, assert `service_role`, revalidate an active internal admin for the claim, accept only
+the fixed channels/result vocabulary, and are executable only by `service_role`. Claim cleanup is
+bounded to 1,000 rows older than 90 days per new claim. The paired rollback removes both RPCs and
+the additive history after compatible code stops calling them. This source has not been applied to
+`qa-staging` or the shared production project.

@@ -56,6 +56,12 @@ Money, payroll, PII, campaigns, company messaging, credentials and administrativ
 the same or stronger role boundary server-side as the UI. Perform authorization before provider
 calls or service-role reads/writes. Record the actor for sensitive state changes.
 
+`POST /api/feedback-resolved-notify` mirrors the Feedback Inbox's `AdminRoute`
+with `requireRole(['admin'])` before reading the feedback row or dispatching
+bell, Web Push, native Push, or email as the company. A technician may receive
+and configure their own `feedback.resolved` notification, but cannot invoke the
+administrative sender.
+
 ## Database authorization
 
 - RLS and RPC bodies are the final data boundary for browser-accessible paths.
@@ -183,6 +189,17 @@ employees, appointment crews, and role-based fallback audiences are all intersec
 current active, non-external employee directory before bell, push, or email fan-out. An inactive,
 external, deleted, or unknown employee ID is not trusted merely because it arrived in an internal
 event payload or still has a historical push subscription.
+
+The inactive Twilio inbound route is public by provider necessity but not anonymous in authority:
+before any event, Storage, consent, canonical-message, unread, or notification work, it requires
+`MESSAGING_SCHEMA_MODE=foundation`, a configured account/token, and an
+`X-Twilio-Signature` valid for the exact public URL plus every received form parameter. AccountSid
+must match the configured account. Before signature success, database access is limited to the
+exact Twilio token row and AccountSid key; outbound sender configuration is not read and no
+telemetry/domain write occurs. Its atomic `project_twilio_inbound_event(uuid,boolean)` RPC is
+`SECURITY INVOKER`, rejects every `current_user` except `service_role`, and explicitly revokes
+execution from `PUBLIC`, `anon`, and `authenticated`. Browser roles have no path to manufacture a
+provider event projection or message notification.
 
 `GET /api/messaging-setup` and its `action=callrail-options` discovery mode use the same strict
 integration-administrator boundary: valid Supabase session, resolved employee, `role='admin'`,
@@ -536,3 +553,39 @@ unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. 
 `docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
 test, rollback, provider action, signing step, and device qualification remains a separate
 owner-authorized gate.
+
+## Notification presentation administration
+
+The UI `AdminRoute` and web-only Settings navigation are usability gates, not the authorization
+boundary. Every `/api/notification-presentation` action first verifies the Supabase session,
+resolves an active employee through shared auth helpers, requires literal `role='admin'`, and
+rejects `is_external !== false` before reading catalog overrides/history or accepting preview/save/
+reset input. Auth and service database calls use bounded fetches.
+
+The browser cannot query or mutate the presentation tables/RPC. The Worker uses the service role,
+and the database writer independently requires the service-role claim plus the supplied actor's
+active/internal/admin row before its atomic write. Preview is a pure synthetic render and performs
+no configuration write or provider call.
+
+## Owner notification delivery diagnostics
+
+`POST /api/notification-test` is a separate fixed-scope diagnostic boundary. It requires
+`requireOwner()` before reading an address/subscription or causing any side effect. The
+authenticated employee is the only possible recipient; the request accepts only an allowlisted
+channel, a client-created UUID, and optionally one of the 15 code-owned presentation event keys.
+Title, body, destination, sender, provider, and recipient remain server-owned.
+
+The endpoint can create one owner-targeted bell row or send one owner-only Web Push, native APNs,
+or transactional email test. The optional event key is accepted only for bell, Web Push, and
+native APNs; email remains generic. The all-type UI therefore creates 15 owner bell rows, 15 Web
+Push fanouts, and 15 native APNs occurrences without creating business records or entering an
+email/SMS/MMS path. The synthetic diagnostic requires a registered catalog row but does not consume
+the real-event `enabled` master switch; it qualifies presentation/transport, not producer
+activation. It cannot select another employee or provide arbitrary content.
+
+Before any channel side effect, the Worker claims the owner/channel/request tuple through the
+service-only diagnostic ledger and stores the bounded result; a lost HTTP response therefore
+replays the prior result instead of sending again. Typed tests derive a separate stable UUID from
+the request UUID, channel, and event key so no event can cross-replay another. APNs and the generic
+Resend test consume their stable identities at the provider boundary. Provider errors are reduced
+to allowlisted diagnostic reasons and never return upstream details.

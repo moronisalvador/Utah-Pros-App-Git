@@ -112,13 +112,17 @@ jobs:
         continue-on-error: true
 
       # Blocking changed-files ratchet: enforce the UX-Quality and runtime-safety
-      # rules on just the files a PR touches, so untouched baseline debt never blocks.
+      # rules on just the files a PR touches. The frozen per-file/per-rule baseline
+      # handles debt accumulated on dev before the first production promotion after
+      # this gate became blocking; findings may shrink but never grow.
+      - name: Test changed-files lint ratchet
+        run: npm run test:lint-ratchet
+
       - name: Lint changed files (blocking ratchet)
         if: github.event_name == 'pull_request'
         run: |
           git fetch --no-tags origin "${{ github.base_ref }}" || true
-          CHANGED=$(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}" HEAD -- '*.js' '*.jsx' ':(exclude).claude/workflows/**' | tr '\n' ' ')
-          if [ -n "$CHANGED" ]; then echo "Linting: $CHANGED"; npx eslint --max-warnings 0 $CHANGED; else echo "No JS/JSX changes."; fi
+          npm run validate:lint-ratchet -- "origin/${{ github.base_ref }}"
 
       # Perf-budget enforcement (perf-budget.md §1). BLOCKING for the src/index.css
       # and route-chunk budgets; entry-graph JS is measured and printed loudly but

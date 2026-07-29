@@ -28,6 +28,15 @@ const DEFAULT_BATCH_LIMIT = 20;
 const LEASE_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 const RETRY_DELAYS_MS = [60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+const SAFE_NATIVE_SKIP_REASONS = new Set([
+  'apns_not_configured',
+  'invalid_notification',
+  'no_tokens',
+  'token_lookup_failed',
+  'apns_signing_failed',
+  'missing_notification_event_id',
+  'native_push_failed',
+]);
 
 function asPayload(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -73,6 +82,56 @@ function failurePatch(row, error, now) {
   };
 }
 
+function summarizeNativeDelivery(result) {
+  const summary = {
+    recipients: 0,
+    sent: 0,
+    attempted: 0,
+    pruned: 0,
+    retryable: 0,
+    ambiguous: 0,
+    skipped: 0,
+    skip_reasons: {},
+  };
+
+  for (const recipient of result?.results || []) {
+    const native = recipient?.push?.native;
+    if (!native) continue;
+    summary.recipients += 1;
+    summary.sent += Number(native.sent) || 0;
+    summary.attempted += Number(native.attempted) || 0;
+    summary.pruned += Number(native.pruned) || 0;
+    if (native.retryable === true) summary.retryable += 1;
+    if (native.ambiguous === true) summary.ambiguous += 1;
+    if (native.skipped === true || (native.sent || 0) === 0 && (native.attempted || 0) === 0) {
+      summary.skipped += 1;
+      const reason = SAFE_NATIVE_SKIP_REASONS.has(native.reason)
+        ? native.reason
+        : 'other';
+      summary.skip_reasons[reason] = (summary.skip_reasons[reason] || 0) + 1;
+    }
+  }
+
+  return summary;
+}
+
+function addNativeSummary(target, source) {
+  for (const key of [
+    'recipients',
+    'sent',
+    'attempted',
+    'pruned',
+    'retryable',
+    'ambiguous',
+    'skipped',
+  ]) {
+    target[key] += source[key];
+  }
+  for (const [reason, count] of Object.entries(source.skip_reasons)) {
+    target.skip_reasons[reason] = (target.skip_reasons[reason] || 0) + count;
+  }
+}
+
 async function dispatchRow(db, env, row, now, dispatchImpl) {
   const payload = asPayload(row.payload);
   if (!row.type_key || !payload) {
@@ -95,23 +154,25 @@ async function dispatchRow(db, env, row, now, dispatchImpl) {
       nativeRetryOnly,
       body: {
         ...dispatchPayload,
-        // The durable provider event is the notification occurrence. Preserve
-        // it across outbox retries so APNs can claim one device delivery once;
-        // conversation id + message copy alone would collapse two identical
-        // customer messages sent at different times.
-        notification_event_id: row.provider_event_id,
+        // The live claim RPC deliberately returns the durable outbox id rather
+        // than provider_event_id. That id is still one stable notification
+        // occurrence, so preserve it across retries for APNs deduplication.
+        // Never derive this identity from mutable message copy.
+        notification_event_id: row.id,
         message_id: row.message_id,
       },
     });
     if (result?.skipped && ['unknown_type', 'no_type_key'].includes(result.reason)) {
       throw new Error(`Notification dispatcher skipped row: ${result.reason}`);
     }
+    const native = summarizeNativeDelivery(result);
     const retryableNative = (result?.results || []).some(
       (recipient) => recipient?.push?.native?.retryable === true,
     );
     if (retryableNative) {
       throw Object.assign(new Error('Native Push provider refused delivery'), {
         nativeRetryOnly: true,
+        native,
       });
     }
     await db.update('message_notification_outbox', claimFilter(row), {
@@ -123,7 +184,7 @@ async function dispatchRow(db, env, row, now, dispatchImpl) {
       claim_token: null,
       updated_at: now.toISOString(),
     });
-    return { delivered: true };
+    return { delivered: true, native };
   } catch (error) {
     const patch = failurePatch(row, error, now);
     if (error?.nativeRetryOnly === true) {
@@ -134,8 +195,8 @@ async function dispatchRow(db, env, row, now, dispatchImpl) {
     }
     await db.update('message_notification_outbox', claimFilter(row), patch);
     return patch.delivery_state === 'dead_letter'
-      ? { deadLettered: true }
-      : { retryable: true };
+      ? { deadLettered: true, native: error?.native }
+      : { retryable: true, native: error?.native };
   }
 }
 
@@ -168,11 +229,13 @@ export async function processMessageNotificationOutbox(db, env, {
   let delivered = 0;
   let retryable = 0;
   let deadLettered = 0;
+  const native = summarizeNativeDelivery();
   for (const row of claimed || []) {
     const result = await dispatchRow(db, env, row, now, dispatchImpl);
     if (result.delivered) delivered += 1;
     else if (result.retryable) retryable += 1;
     else deadLettered += 1;
+    if (result.native) addNativeSummary(native, result.native);
   }
   return {
     success: retryable === 0 && deadLettered === 0,
@@ -180,6 +243,7 @@ export async function processMessageNotificationOutbox(db, env, {
     retryable,
     deadLettered,
     claimed: (claimed || []).length,
+    native,
   };
 }
 

@@ -65,7 +65,7 @@ qualification.
 |---|---|---|---|
 | REL-01 | Apple team identifiers and Associated Domains are stale | **Closed** | `d63a3f8`. Entitlements confirmed on a real device — simulator builds strip them, so this could not have been verified any other way. |
 | REL-02 | Promoted source is not a reproducible iOS release input | **Closed** | `a04f133`. Deep link `upr://app/tech/tools/demo-sheet` verified opening the Scope Sheet on device. |
-| PUSH-01 | Native push dormant; appointment destinations not mobile | **Partly done** | `cfcd558` fixed the live deep-link defect (`notify.js` wrote a path no reader could use). Enrollment stays dormant: it needs an **APNs Auth Key**, which only the owner can generate. Steps written up in [`docs/mobile/push-activation-owner-gate.md`](../../../mobile/push-activation-owner-gate.md). |
+| PUSH-01 | Native push dormant; appointment destinations not mobile | **Partly done** | `cfcd558` fixed the live deep-link defect. The APNs key and focused production boundary are configured, sandbox enrollment and one owner-authorized background delivery succeeded, and source now provides owner-bound controls plus privacy-safe foreground presentation. Closure still requires a clean TestFlight build, a production token, and the foreground/background/terminated/tap/account-switch device matrix in [`docs/mobile/push-activation-owner-gate.md`](../../../mobile/push-activation-owner-gate.md). |
 | AUTH-01 | Native field shell authenticated but not role-restricted | **Closed** | `f694582`. `FIELD_SHELL_ROLES` + `FieldShellRoute`; renders a recoverable screen rather than `<Navigate>`, because native `*` → `/tech` would loop. |
 | QUAL-01 | Physical-device and iPad qualification remain release gates | **Not started** | Owner/external gate. The app was installed and exercised on the owner's iPhone 17 Pro Max repeatedly, but **no iPad pass and no formal qualification record exists**. |
 | KB-01 | Capacitor has competing keyboard layout owners | **Closed** | `2d6c131`, `d18d01e`, `161f0c0`, `8bdf6be`. Took four commits; the first three looked complete and were not — see the caveat below. |
@@ -139,7 +139,6 @@ Not in the audit. Found while remediating, and mostly worse than what was.
 
 ## Owner decisions still open
 
-- **APNs Auth Key** — blocks all push (PUSH-01).
 - **App Store build high-water mark** — the local project baseline remains
   `CURRENT_PROJECT_VERSION = 1`, but the governed release workflow now replaces it with a unique
   run-number/attempt build and verifies marketing/build identity. Native Settings surfaces the

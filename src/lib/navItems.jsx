@@ -37,6 +37,7 @@
  *     paths and nav_keys stay the same so routing and permissions are untouched.
  * ════════════════════════════════════════════════
  */
+/* eslint-disable react-refresh/only-export-components -- this registry intentionally exports JSX icons with shared navigation data/helpers */
 import {
   IconDashboard, IconConversations, IconJobs,
   IconCustomers, IconSchedule, IconTimeTracking,
@@ -180,6 +181,7 @@ export const SETTINGS_GROUPS = [
     { key: 'roles',                 label: 'Roles & Permissions',  path: '/settings/roles',                 description: 'What each role can see and edit.',           icon: IconShield,   adminOnly: true },
     { key: 'page_access',           label: 'Page Access',          path: '/settings/page-access',           description: 'Per-employee page overrides.',               icon: IconKey,      adminOnly: true },
     { key: 'notification_defaults', label: 'Notification Defaults',path: '/settings/notification-defaults', description: 'Company-wide default channels.',             icon: IconBell,     adminOnly: true },
+    { key: 'notification_presentation', label: 'Notification Presentation', path: '/settings/notification-presentation', description: 'Approved notification copy and destinations.', icon: IconBell, adminOnly: true, webOnly: true },
     { key: 'feedback_inbox',        label: 'Feedback Inbox',       path: '/settings/feedback',              description: 'Bug reports and suggestions from the team.', icon: IconFeedback, adminOnly: true },
   ]},
   { group: 'Connections', description: 'Outside services', items: [
@@ -199,8 +201,17 @@ export const SETTINGS_GROUPS = [
  * @param item one of the SETTINGS_GROUPS items
  * @param ctx  { canAccess, employee, isMoroni }
  */
-export function isSettingsItemVisible(item, { canAccess, employee, isMoroni }) {
+export function isSettingsItemVisible(
+  item,
+  {
+    canAccess,
+    employee,
+    isMoroni,
+    isNativeBuild = import.meta.env.VITE_BUILD_TARGET === 'native',
+  },
+) {
   if (!employee) return false;
+  if (item.webOnly && isNativeBuild) return false;
   if (item.owner)     return isMoroni;
   if (item.personal)  return true;              // GC8 — every employee
   if (item.adminOnly) return employee.role === 'admin';

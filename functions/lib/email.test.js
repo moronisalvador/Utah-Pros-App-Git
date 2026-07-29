@@ -29,9 +29,10 @@ function fakeResponse(obj, { ok = true, status = 200 } = {}) {
 }
 
 function stubResend() {
-  const capture = { payload: null };
+  const capture = { payload: null, requestHeaders: null };
   vi.stubGlobal('fetch', vi.fn(async (url, init) => {
     capture.payload = JSON.parse(init.body);
+    capture.requestHeaders = init.headers;
     return fakeResponse({ id: 're_1' });
   }));
   return capture;
@@ -51,6 +52,7 @@ describe('sendEmail — backward compatibility (existing transactional sends unc
     expect(cap.payload.reply_to).toBe('restoration@utahpros.app');
     expect(cap.payload.to).toEqual(['a@b.com']);
     expect(cap.payload.html).toBe('<p>x</p>');
+    expect(cap.requestHeaders).not.toHaveProperty('Idempotency-Key');
   });
 
   it('attachments still pass through in the same shape', async () => {
@@ -62,6 +64,35 @@ describe('sendEmail — backward compatibility (existing transactional sends unc
     expect(cap.payload.attachments).toEqual([
       { filename: 'f.pdf', content: 'BASE64', content_type: 'application/pdf' },
     ]);
+  });
+});
+
+describe('sendEmail — provider idempotency', () => {
+  it('puts a stable caller key on the Resend HTTP request, not the email body', async () => {
+    const cap = stubResend();
+    await sendEmail(ENV, {
+      to: 'a@b.com',
+      subject: 'Test',
+      text: 'Once',
+      idempotencyKey: 'owner-notification-test/email/request-1',
+    });
+
+    expect(cap.requestHeaders['Idempotency-Key'])
+      .toBe('owner-notification-test/email/request-1');
+    expect(cap.payload).not.toHaveProperty('idempotencyKey');
+  });
+
+  it.each(['', 'x'.repeat(257), 42])('rejects invalid keys before provider contact', async (key) => {
+    const cap = stubResend();
+    const result = await sendEmail(ENV, {
+      to: 'a@b.com',
+      subject: 'Test',
+      text: 'Once',
+      idempotencyKey: key,
+    });
+
+    expect(result).toMatchObject({ ok: false, error: 'Invalid idempotency key' });
+    expect(cap.payload).toBeNull();
   });
 });
 

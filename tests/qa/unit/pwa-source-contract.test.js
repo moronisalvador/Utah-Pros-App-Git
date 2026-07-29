@@ -104,6 +104,9 @@ describe('notification target authorization', () => {
     expect(worker.match(/normalizePushTarget/g)).toHaveLength(2);
     expect(worker).toContain("icon: '/icon-192.png'");
     expect(worker).toContain('data: { url: target }');
+    expect(worker).toContain(
+      'const rawTarget = payload.url || (payload.data && payload.data.url)',
+    );
     expect(worker).not.toMatch(/addEventListener\(['"]fetch['"]/);
     expect(worker).not.toContain('...(payload.data');
   });

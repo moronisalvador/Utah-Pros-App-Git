@@ -9,7 +9,7 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest, node built-ins
- *   Internal:  focused migration and rollback SQL source
+ *   Internal:  messaging foundation plus focused migration and rollback source
  *   Data:      reads → repository files; writes → none
  *
  * NOTES / GOTCHAS:
@@ -22,6 +22,10 @@ import { describe, expect, it } from 'vitest';
 
 const migration = readFileSync(
   'supabase/migrations/20260728224000_native_push_delivery_guardrails.sql',
+  'utf8',
+);
+const messagingFoundation = readFileSync(
+  'supabase/migrations/20260723215926_messaging_transport_foundation.sql',
   'utf8',
 );
 const rollback = readFileSync(
@@ -132,10 +136,6 @@ describe('native Push delivery guardrails migration', () => {
 
   it('requires every direct production dispatcher to pass a durable occurrence id', () => {
     const expected = new Map([
-      [
-        'functions/lib/messaging-inbound-notifications.js',
-        'notification_event_id: notificationEventId',
-      ],
       ['functions/api/form-submit.js', 'notification_event_id: lead.id || null'],
       ['functions/api/callrail-webhook.js', 'notification_event_id: lead.id || null'],
       ['functions/api/feedback-notify.js', 'notification_event_id: feedbackId'],
@@ -146,7 +146,7 @@ describe('native Push delivery guardrails migration', () => {
       ['functions/api/ops-health.js', 'notification_event_id: dedupeKey'],
       [
         'functions/lib/message-notification-outbox.js',
-        'notification_event_id: row.provider_event_id',
+        'notification_event_id: row.id',
       ],
     ]);
 
@@ -157,6 +157,19 @@ describe('native Push delivery guardrails migration', () => {
     const notify = source('functions/api/notify.js');
     expect(notify).toContain("reason: 'missing_notification_event_id'");
     expect(notify).not.toContain('body?.title ||');
+
+    const claimStart = messagingFoundation.indexOf(
+      'CREATE OR REPLACE FUNCTION public.claim_message_notification_outbox(',
+    );
+    const claimEnd = messagingFoundation.indexOf(
+      'COMMENT ON FUNCTION public.claim_message_notification_outbox(',
+      claimStart,
+    );
+    const claimContract = messagingFoundation.slice(claimStart, claimEnd);
+    expect(claimStart).toBeGreaterThan(-1);
+    expect(claimEnd).toBeGreaterThan(claimStart);
+    expect(claimContract).toContain('RETURNS TABLE (\n  id uuid,');
+    expect(claimContract).not.toContain('provider_event_id');
   });
 
   it('guards the unsafe exact-contract rollback and disables delivery', () => {

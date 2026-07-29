@@ -173,6 +173,14 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   existing fan-out; they do not make an arbitrary browser payload trusted.
 - Every final notification audience is intersected with active, non-external employees before bell,
   push or email. Per-channel failure remains best-effort and is reported in the existing summary.
+- Native lock-screen presentation is selected by trusted event type, not caller-supplied APNs copy
+  or paths. Owner decision 2026-07-29 permits native to render the same event-approved variables as
+  PWA, including customer, scheduling, and payment details. Values must come from typed server
+  context; missing context uses the immutable generic event copy. Native tap destinations remain
+  field-only, and unknown types fall back to generic copy and native home.
+- Resolving feedback and sending `feedback.resolved` as the company is admin-only server-side.
+  The submitting technician is the sole recipient and may configure the event, but a valid
+  technician session cannot invoke the sender.
 - Staff recording playback is company-wide only for an active internal admin or the explicit
   `crm_call_log` capability. The Worker must bind the UUID to an actual call row, match its stored
   provider call ID to its stored allowlisted URL, and complete those checks before credential or
@@ -322,3 +330,34 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   separately approved, applied, and verified on the shared project: workers accept
   `IMPLIED_CONSENT` only for the direct staff path and the three named
   transactional-service purposes, while the current database does not yet return it.
+
+## Internal notification presentation
+
+- Presentation settings may change only title/body templates and a typed route identifier for a
+  code-owned event/surface. They cannot change audience, recipients, channel defaults/preferences,
+  consent/DND, delivery occurrence identity, provider, or email behavior.
+- Templates support literal text plus exact event-allowlisted `{{variable_name}}` tokens only.
+  There is no expression/general template execution, HTML/Markdown, payload traversal, or URL
+  interpolation.
+- The editor lists every trusted value the selected event can actually resolve. Appointment
+  assigned/updated/canceled includes customer name and job number from the linked job plus the
+  appointment title/time and separately labeled estimated, approved, invoiced, and collected job
+  values. The system does not collapse those distinct financial states into an ambiguous `amount`.
+- Routes are code-owned identifiers with server-derived parameter contracts, never saved paths or
+  arbitrary URLs. Missing route context or invalid configuration uses the code default.
+- Native lock-screen templates may use the same event-specific allowlisted variables as PWA under
+  the owner decision dated 2026-07-29. This does not allow generic payload traversal, arbitrary
+  provider/caller fields, HTML, scripts, secrets, paths, or URLs. Missing trusted values atomically
+  use immutable generic copy; rendered copy and the final APNs payload are bounded before provider
+  use; office-only native destinations remain `/`. Setting the server
+  variable `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic native copy without
+  disabling ordinary Push.
+- Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
+  sends a notification. Every save/reset is revision-checked, idempotent, and audited.
+- Owner delivery diagnostics are deliberately separate from business-event dispatch. They use
+  fixed privacy-safe copy, target only the authenticated owner, and may test bell, Web Push,
+  native APNs, or transactional email independently of personal notification preferences. The
+  optional 15-type sweep renders each code-owned catalog event with synthetic values on bell,
+  Web Push, and native APNs only, independently of the real-event master enable switch. It proves
+  presentation/transport rather than source-workflow activation, never creates a business
+  occurrence, and never includes email, SMS, or MMS in that sweep.

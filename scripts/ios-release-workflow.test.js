@@ -49,6 +49,7 @@ function section(source, start, end) {
 }
 
 const workflow = readRepositoryFile('.github/workflows/ios-release.yml');
+const capgoWorkflow = readRepositoryFile('.github/workflows/capgo-deploy.yml');
 const archiveJob = section(workflow, '  archive:', '  publish:');
 const publishJob = workflow.slice(workflow.indexOf('  publish:'));
 const fastfile = readRepositoryFile('ios/fastlane/Fastfile');
@@ -76,6 +77,7 @@ const releaseEntitlements = readRepositoryFile(
   'ios/App/App/App.Release.entitlements',
 );
 const gemfile = readRepositoryFile('ios/Gemfile');
+const gemfileLock = readRepositoryFile('ios/Gemfile.lock');
 const iosGitignore = readRepositoryFile('ios/.gitignore');
 const nativeBuildScript = readRepositoryFile('scripts/build-native.mjs');
 const verifier = readRepositoryFile('scripts/qa/verify-ios-release-artifact.mjs');
@@ -87,27 +89,47 @@ const ownedSubprocessRunnerPath = repositoryFile(
   'scripts/qa/run-owned-subprocess.mjs',
 );
 
-function runOwnedSubprocess(timeoutMs, childSource, { termGraceMs = 50 } = {}) {
+function runOwnedCommand(
+  timeoutMs,
+  command,
+  args,
+  {
+    termGraceMs = 50,
+    safeEnv = false,
+    parentEnv = process.env,
+  } = {},
+) {
+  const runnerArgs = [
+    ownedSubprocessRunnerPath,
+    '--timeout-ms',
+    String(timeoutMs),
+    '--term-grace-ms',
+    String(termGraceMs),
+    '--cwd',
+    repositoryFile('.'),
+    ...(safeEnv ? ['--safe-env'] : []),
+    '--',
+    command,
+    ...args,
+  ];
   return spawnSync(
     process.execPath,
-    [
-      ownedSubprocessRunnerPath,
-      '--timeout-ms',
-      String(timeoutMs),
-      '--term-grace-ms',
-      String(termGraceMs),
-      '--cwd',
-      repositoryFile('.'),
-      '--',
-      process.execPath,
-      '-e',
-      childSource,
-    ],
+    runnerArgs,
     {
       cwd: repositoryFile('.'),
       encoding: 'utf8',
+      env: parentEnv,
       timeout: 5_000,
     },
+  );
+}
+
+function runOwnedSubprocess(timeoutMs, childSource, options) {
+  return runOwnedCommand(
+    timeoutMs,
+    process.execPath,
+    ['-e', childSource],
+    options,
   );
 }
 
@@ -161,12 +183,13 @@ describe('iOS release workflow authorization boundary', () => {
     expect(workflow).toContain('Build version 17F113');
     expect(workflow).toContain('node-version: 22.23.1');
     expect(workflow).toContain('ruby-version: 3.3.12');
-    expect(workflow).toContain('bundler: 4.0.16');
+    expect(workflow).toContain('bundler: 2.5.22');
     expect(readFileSync(repositoryFile('ios/.ruby-version'), 'utf8').trim())
       .toBe('3.3.12');
     expect(readFileSync(repositoryFile('ios/Gemfile'), 'utf8'))
       .toContain('ruby "3.3.12"');
     expect(gemfile).toContain('gem "fastlane", "2.237.0"');
+    expect(gemfileLock).toMatch(/BUNDLED WITH\s+2\.5\.22\s*$/);
   });
 
   it('fails closed until a reviewed Ruby lockfile is committed', () => {
@@ -191,6 +214,11 @@ describe('iOS release workflow authorization boundary', () => {
     expect(publishJob).toContain('ASC_KEY_CONTENT_BASE64');
   });
 
+  it('presents native Push while the signed app is in the foreground', () => {
+    expect(capacitorConfig.plugins.PushNotifications?.presentationOptions)
+      .toEqual(['badge', 'sound', 'alert']);
+  });
+
   it('bounds Xcode and provider subprocesses to five minutes and verifies cleanup', () => {
     for (const job of [archiveJob, publishJob]) {
       expect(job).toContain('scripts/qa/run-owned-subprocess.mjs');
@@ -208,19 +236,40 @@ describe('iOS release workflow authorization boundary', () => {
     expect(success.status).toBe(0);
     expect(success.stderr).toContain('Verified owned process group');
 
-    const descendant = runOwnedSubprocess(
+    // A POSIX shell keeps this process-tree proof lightweight and deterministic
+    // even while Vitest is running the full parallel unit lane.
+    const descendant = runOwnedCommand(
       800,
-      "const { spawn } = require('node:child_process');"
-        + "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'],"
-        + "{ stdio: 'ignore' });"
-        + 'process.stdout.write(String(child.pid));'
-        + 'setInterval(() => {}, 1000);',
+      '/bin/sh',
+      [
+        '-c',
+        'sleep 30 & child_pid=$!; printf "%s" "$child_pid"; wait',
+      ],
     );
     expect(descendant.status).toBe(124);
     expect(descendant.stderr).toContain('Verified owned process group');
     const descendantPid = Number(descendant.stdout);
     expect(Number.isInteger(descendantPid)).toBe(true);
     expect(processExists(descendantPid)).toBe(false);
+  });
+
+  it('scrubs caller credentials when a QA command selects the safe environment', () => {
+    const syntheticSecretName = 'UPR_QA_SYNTHETIC_SECRET';
+    const scrubbed = runOwnedSubprocess(
+      500,
+      `process.stdout.write(process.env.${syntheticSecretName} || 'absent')`,
+      {
+        safeEnv: true,
+        parentEnv: {
+          ...process.env,
+          [syntheticSecretName]: 'must-not-cross',
+        },
+      },
+    );
+
+    expect(scrubbed.status).toBe(0);
+    expect(scrubbed.stdout).toBe('absent');
+    expect(scrubbed.stderr).toContain('Verified owned process group');
   });
 
   it('SIGKILLs TERM-resistant children inside the five-minute total deadline', () => {
@@ -250,6 +299,39 @@ describe('iOS release workflow authorization boundary', () => {
     expect(nativeBuildScript).toContain("VITE_BUILD_TARGET: 'native'");
     expect(nativeBuildScript).not.toMatch(
       /spawnSync\([\s\S]*?['"]cap(?:acitor)?['"][\s\S]*?['"]sync['"]/,
+    );
+  });
+
+  it('pins TestFlight API traffic and release identity to production', () => {
+    expect(workflow).toContain(
+      'VITE_NATIVE_API_ORIGIN: https://utahpros.app',
+    );
+    expect(workflow).toContain('VITE_RELEASE_SHA: "${{ github.sha }}"');
+    expect(archiveJob).toContain(
+      '"$VITE_NATIVE_API_ORIGIN" != "https://utahpros.app"',
+    );
+    expect(archiveJob).toContain(
+      '"$VITE_RELEASE_SHA" != "$GITHUB_SHA"',
+    );
+  });
+
+  it('keeps OTA disabled and pins each dormant channel to its API origin', () => {
+    expect(capgoWorkflow).toContain('if: ${{ false }}');
+    expect(capgoWorkflow).toContain(
+      'echo "api_origin=https://utahpros.app" >> "$GITHUB_OUTPUT"',
+    );
+    expect(capgoWorkflow).toContain(
+      'echo "api_origin=https://dev.utahpros.app" >> "$GITHUB_OUTPUT"',
+    );
+    expect(capgoWorkflow).toContain(
+      'VITE_NATIVE_API_ORIGIN: ${{ steps.channel.outputs.api_origin }}',
+    );
+    expect(capgoWorkflow).toContain('VITE_RELEASE_SHA: ${{ github.sha }}');
+    expect(capgoWorkflow).toContain(
+      '"$CHANNEL" = "production" ] && [ "$VITE_NATIVE_API_ORIGIN" != "https://utahpros.app"',
+    );
+    expect(capgoWorkflow).toContain(
+      '"$CHANNEL" = "beta" ] && [ "$VITE_NATIVE_API_ORIGIN" != "https://dev.utahpros.app"',
     );
   });
 

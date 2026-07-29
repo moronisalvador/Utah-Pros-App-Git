@@ -283,3 +283,33 @@ check, and signing remain open gates.
 
 Full host/toolchain output, command-safety boundary, hashes, and limitations:
 [`../2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md`](../2026-07/evidence/mobile-pwa-macos-xcode-simulator-2026-07-25.md).
+
+## 2026-07-28 native Push/TestFlight preflight addendum
+
+A later bounded macOS/Xcode follow-up on
+`codex/mobile-readiness-native-usability` built the production-configured
+native bundle, synchronized ten reviewed Capacitor plugins without tracked
+native drift, and completed an unsigned generic-iOS Release compile in Xcode
+26.6. The build pinned the production API origin and a non-production local
+release marker. All owned process groups were verified gone and temporary
+derived data was removed.
+
+This does not supersede the open clean-source signing, TestFlight upload/install,
+or physical-device matrix. Exact commands, sanitized results, and limitations:
+[`17-native-push-testflight-preflight-2026-07-28.md`](17-native-push-testflight-preflight-2026-07-28.md).
+
+## 2026-07-28 Notifications Settings browser close-out addendum
+
+The real Notifications Settings component passed a credential-free
+390×844 Chromium check twice with forced loading/error/ready states and a
+31-second silent resume through the real hook under controlled browser
+visibility events. Input, route, and ready state were preserved; Chrome's
+final current-source runs measured zero scroll drift (the runner fails above
+two pixels);
+visible actions were at least 48px; horizontal overflow/clipping was zero; the
+shared guard denied local POST/external WebSocket probes and all non-local
+requests; ordinary press feedback and its reduced-motion fallback were both
+verified; the scrubbed child environment was used; and both owned process
+groups were verified gone. Exact command, corrected attempts, result, and
+limitations:
+[`18-notifications-settings-closeout-2026-07-28.md`](18-notifications-settings-closeout-2026-07-28.md).

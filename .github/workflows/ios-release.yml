@@ -22,6 +22,8 @@ env:
   DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
   FASTLANE_HIDE_CHANGELOG: "1"
   FASTLANE_SKIP_UPDATE_CHECK: "1"
+  VITE_NATIVE_API_ORIGIN: https://utahpros.app
+  VITE_RELEASE_SHA: "${{ github.sha }}"
 
 jobs:
   archive:
@@ -52,6 +54,14 @@ jobs:
           fi
           if [[ ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*(\.[0-9]+){0,2}$ ]]; then
             echo "Generated BUILD_NUMBER is not a valid Apple bundle version." >&2
+            exit 1
+          fi
+          if [[ "$VITE_NATIVE_API_ORIGIN" != "https://utahpros.app" ]]; then
+            echo "TestFlight must use the production native API origin." >&2
+            exit 1
+          fi
+          if [[ "$VITE_RELEASE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Native release identity must match the archived commit." >&2
             exit 1
           fi
 
@@ -134,7 +144,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.3.12
-          bundler: 4.0.16
+          bundler: 2.5.22
           bundler-cache: true
           working-directory: ios
 
@@ -272,7 +282,7 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.3.12
-          bundler: 4.0.16
+          bundler: 2.5.22
           bundler-cache: true
           working-directory: ios
 
