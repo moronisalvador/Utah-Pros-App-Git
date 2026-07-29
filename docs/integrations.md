@@ -93,11 +93,14 @@ bindings and provider consoles.
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
 - The CallRail→Twilio switch must preserve the durable inbound-notification contract, not only the
-  outbound adapter: Twilio inbound moves behind the existing per-phone serialization and
-  `message_notification_outbox` boundary before Production cutover, then its current direct
-  `notifyInboundMessage()` call is retired in the same release to avoid duplicate
-  `message.inbound` alerts. The Phase 6 checklist in `docs/messaging-transport-roadmap.md` is the
-  canonical cutover runbook.
+  outbound adapter. Repository source now retains signed Twilio inbound SMS/MMS in
+  `message_provider_events`, privately owns MMS bytes, then projects consent, canonical message,
+  unread state, and one `message_notification_outbox` occurrence under the same per-phone lock as
+  CallRail. The former direct `notifyInboundMessage()` module/path is removed, so the durable
+  outbox is the only `message.inbound` route. This is inactive source only: migration
+  `20260729211728_twilio_inbound_notification_parity.sql` is unapplied, the Worker is undeployed,
+  and no Twilio webhook/provider setting changed. Phase 6 in
+  `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
