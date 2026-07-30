@@ -210,6 +210,7 @@ function memoryStorage() {
 const SESSION_IDS = Object.freeze({
   'session-a': '44444444-4444-4444-8444-444444444444',
   'session-b': '55555555-5555-4555-8555-555555555555',
+  'session-c': '66666666-6666-4666-8666-666666666666',
 });
 
 // Structurally real access token: base64url header.payload.signature carrying
@@ -227,6 +228,11 @@ function fakeSessionToken(sessionKey, rotation = 0) {
     }),
     `signature-${rotation}`,
   ].join('.');
+}
+
+function endedSessionIds() {
+  const raw = globalThis.localStorage.getItem(ENDED_SESSIONS_KEY);
+  return raw ? JSON.parse(raw) : [];
 }
 
 function employee(id, role = 'admin') {
@@ -1474,7 +1480,10 @@ describe('AuthProvider latest-account-wins races', () => {
     cleanup();
   });
 
-  it('does not sign out or start another login until blocked cleanup retries successfully', async () => {
+  it('completes sign-out even when cleanup fails, leaving enforcement to the bind gate', async () => {
+    // Owner directive 2026-07-29: a sign out button just signs out. The
+    // failed cleanup leaves the durable journal; the bind-time gate walls a
+    // foreign owner and reconciles the same owner at the next sign-in.
     const cleanup = await mountProvider();
     const employeeA = employee('employee-a');
     harness.profileResponses.push(Promise.resolve([employeeA]));
@@ -1483,57 +1492,17 @@ describe('AuthProvider latest-account-wins races', () => {
       access_token: 'token-a',
     });
 
-    harness.cleanupAccountDeviceState
-      .mockResolvedValueOnce({
-        ready: false,
-        reason: 'server-delete-denied',
-      })
-      .mockResolvedValueOnce({
-        ready: false,
-        reason: 'server-delete-timeout',
-      })
-      .mockResolvedValueOnce({
-        ready: true,
-        reloadRequired: false,
-      });
-
-    await expect(harness.providerValue.logout()).rejects.toThrow(
-      /could not finish securing/,
-    );
-    expect(harness.auth.signOut).not.toHaveBeenCalled();
-    expect(harness.tokenGetter()).toBe('token-a');
-    expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
-    expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeA);
-    expect(harness.states[LOADING_STATE]).toBe(true);
-
-    await expect(
-      harness.providerValue.login(
-        'b@example.invalid',
-        'synthetic-password',
-      ),
-    ).rejects.toThrow(/could not finish securing/);
-    expect(harness.auth.signInWithPassword).not.toHaveBeenCalled();
-    expect(harness.tokenGetter()).toBe('token-a');
-    expect(harness.states[LOADING_STATE]).toBe(true);
-
-    await expect(
-      harness.providerValue.login(
-        'b@example.invalid',
-        'synthetic-password',
-      ),
-    ).resolves.toEqual({});
-    expect(harness.auth.signOut).toHaveBeenCalledOnce();
-    expect(harness.auth.signInWithPassword).toHaveBeenCalledOnce();
-    expect(harness.auth.signInWithPassword).toHaveBeenCalledWith({
-      email: 'b@example.invalid',
-      password: 'synthetic-password',
+    harness.cleanupAccountDeviceState.mockResolvedValueOnce({
+      ready: false,
+      reason: 'server-delete-denied',
     });
-    expect(
-      harness.auth.signOut.mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      harness.auth.signInWithPassword.mock.invocationCallOrder[0],
-    );
-    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledTimes(3);
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
     expect(harness.tokenGetter()).toBe(null);
 
     cleanup();
@@ -1639,7 +1608,7 @@ describe('AuthProvider latest-account-wins races', () => {
     cleanup();
   });
 
-  it('completes an explicit sign-out visually when cleanup defers on a journaled residual', async () => {
+  it('completes an explicit sign-out visually when cleanup leaves a journaled residual', async () => {
     const cleanup = await mountProvider();
     const employeeA = employee('employee-a');
     harness.profileResponses.push(Promise.resolve([employeeA]));
@@ -1656,10 +1625,7 @@ describe('AuthProvider latest-account-wins races', () => {
 
     await expect(harness.providerValue.logout()).resolves.toBeUndefined();
 
-    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ transientPushRetry: true }),
-    );
+    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
     expect(harness.auth.signOut).toHaveBeenCalledOnce();
     expect(harness.states[USER_STATE]).toBe(null);
     expect(harness.states[EMPLOYEE_STATE]).toBe(null);
@@ -1733,7 +1699,9 @@ describe('AuthProvider latest-account-wins races', () => {
     cleanup();
   });
 
-  it('completes a deferred sign-out from the wall retry after an earlier hard block', async () => {
+  it('clears the sign-out-failure wall when the retry completes', async () => {
+    // The only transient wall left on the explicit path is a failed local
+    // Supabase signOut(); its Retry re-runs logout(), which now completes.
     const cleanup = await mountProvider();
     const employeeA = employee('employee-a');
     harness.profileResponses.push(Promise.resolve([employeeA]));
@@ -1742,19 +1710,24 @@ describe('AuthProvider latest-account-wins races', () => {
       access_token: 'token-a',
     });
 
-    harness.cleanupAccountDeviceState
-      .mockResolvedValueOnce({ ready: false, deferrable: false })
-      .mockResolvedValueOnce({ ready: false, deferrable: true });
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: true,
+      reloadRequired: false,
+    });
+    harness.auth.signOut.mockResolvedValueOnce({
+      error: new Error('local sign out failed'),
+    });
 
     await expect(harness.providerValue.logout()).rejects.toThrow(
-      /could not finish securing/,
+      /local sign out failed/,
     );
-    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(harness.states[ERROR_STATE]).toMatch(/Sign out failed/);
     expect(harness.states[LOADING_STATE]).toBe(true);
+    expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
 
     await harness.providerValue.retrySecureAccountCleanup();
 
-    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
     expect(harness.states[USER_STATE]).toBe(null);
     expect(harness.states[LOADING_STATE]).toBe(false);
     expect(harness.states[ERROR_STATE]).toBe(null);
@@ -1784,6 +1757,404 @@ describe('AuthProvider latest-account-wins races', () => {
     expect(harness.tokenGetter()).toBe('token-a');
     expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
     expect(harness.states[LOADING_STATE]).toBe(true);
+
+    cleanup();
+  });
+});
+
+// Post-sign-out session resurrection (TestFlight defect 2026-07-29): a token
+// refresh racing signOut re-persists the session, and without these guards
+// the app re-enters the account without ever reaching Login. The registry
+// keys on the JWT session_id — stable across token rotation, never reused by
+// a new login — so nothing is ever cleared at login and a real sign-in can
+// never be refused.
+describe('AuthProvider ended-session resurrection guards', () => {
+  const AUTH_UUID = '77777777-7777-4777-8777-777777777777';
+  const PERSISTED_KEY = 'sb-unit-test-ref-auth-token';
+
+  function persistSession(sessionKey, rotation = 9) {
+    globalThis.localStorage.setItem(PERSISTED_KEY, JSON.stringify({
+      access_token: fakeSessionToken(sessionKey, rotation),
+    }));
+  }
+
+  async function signInAsUuidUser() {
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+  }
+
+  it('logout arms the ended-session registry before signing out', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+
+    cleanup();
+  });
+
+  it('terminates a resurrected session at boot instead of re-entering the account', async () => {
+    recordEndedSessionId(SESSION_IDS['session-a']);
+    harness.auth.getSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: AUTH_UUID, email: 'a@example.invalid' },
+          access_token: fakeSessionToken('session-a', 1),
+        },
+      },
+    });
+
+    const cleanup = await mountProvider();
+
+    expect(harness.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(profileCallCount()).toBe(0);
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    // The registry entry survives, so a second resurrection is refused again.
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
+
+    cleanup();
+  });
+
+  it('refuses a SIGNED_IN for an ended session instead of bootstrapping', async () => {
+    const cleanup = await mountProvider();
+    recordEndedSessionId(SESSION_IDS['session-a']);
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 1),
+    });
+
+    expect(harness.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(profileCallCount()).toBe(0);
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('terminates a zombie TOKEN_REFRESHED for an ended session', async () => {
+    const cleanup = await mountProvider();
+    recordEndedSessionId(SESSION_IDS['session-a']);
+
+    await harness.authCallback('TOKEN_REFRESHED', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 1),
+    });
+
+    expect(harness.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(profileCallCount()).toBe(0);
+
+    cleanup();
+  });
+
+  it('never refuses a re-login: a fresh session id cannot match the registry', async () => {
+    const cleanup = await mountProvider();
+    recordEndedSessionId(SESSION_IDS['session-a']);
+
+    await expect(harness.providerValue.login(
+      'a@example.invalid',
+      'synthetic-password',
+    )).resolves.toEqual({});
+    // Nothing is cleared at login — the entry stays armed against the OLD
+    // session while the new one bootstraps freely.
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
+
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+    expect(profileCallCount()).toBe(1);
+    expect(harness.states[USER_STATE]).toMatchObject({ id: AUTH_UUID });
+
+    cleanup();
+  });
+
+  it('sweeps a session that a racing refresh re-persisted during sign-out', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://unit-test-ref.supabase.co');
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    // The zombie write-back already sits in SDK storage when logout's
+    // un-awaited sweep re-checks it (side-effect-free read, no getSession).
+    persistSession('session-a');
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    // The signed-out UI publishes BEFORE the un-awaited sweep settles.
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    await vi.waitFor(() => {
+      expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    });
+
+    cleanup();
+  });
+
+  it('never refreshes a session for a signed-out or absent principal', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+
+    // A stale page's 401 after sign-out must not refresh (refreshSession
+    // re-persists the session as a side effect — the resurrection path).
+    await expect(harness.onAuthError()).resolves.toBe(false);
+    expect(harness.auth.refreshSession).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  it('preserves a recovery session on /set-password alongside an armed entry', async () => {
+    const cleanup = await mountProvider();
+    globalThis.window.location.pathname = '/set-password';
+    recordEndedSessionId(SESSION_IDS['session-a']);
+
+    // A recovery link mints a NEW session — its id cannot match the ended
+    // one, so no /set-password carve-out is needed for the guard.
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(harness.states[USER_STATE]).toMatchObject({ id: AUTH_UUID });
+
+    cleanup();
+  });
+
+  it('never sweeps a different session signed in during the sweep window', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://unit-test-ref.supabase.co');
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    // A fresh (not ended) session already owns storage when the sweep runs.
+    persistSession('session-b', 0);
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    await nextMacrotask();
+    await nextMacrotask();
+
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+
+    cleanup();
+  });
+
+  it('never re-walls when the sweep sign-out emits its own SIGNED_OUT', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://unit-test-ref.supabase.co');
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    // The dangerous production interleaving: the observer processes the
+    // FIRST SIGNED_OUT while the explicit transition is still unfinalized
+    // and nulls explicitLogoutRef. Without the pre-finalized resurrection
+    // transition, the sweep's own SIGNED_OUT would then take the
+    // observer-only branch, re-run the (not-ready) cleanup, and raise the
+    // signed-out-reauth wall.
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: false,
+      deferrable: true,
+    });
+    persistSession('session-a');
+    harness.auth.signOut
+      .mockImplementationOnce(async () => {
+        harness.sdkAuthCallback('SIGNED_OUT', null);
+        // Let the observer process this SIGNED_OUT (and null the ref)
+        // BEFORE signOut resolves and logout() finalizes the transition.
+        await nextMacrotask();
+        await nextMacrotask();
+        return { error: null };
+      })
+      .mockImplementationOnce(() => {
+        harness.sdkAuthCallback('SIGNED_OUT', null);
+        return Promise.resolve({ error: null });
+      });
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    await vi.waitFor(() => {
+      expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    });
+    await nextMacrotask();
+    await nextMacrotask();
+
+    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('keeps the guard armed when the new credentials fail after a switch', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signInWithPassword.mockResolvedValueOnce({
+      data: {},
+      error: new Error('Invalid login credentials'),
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'wrong-password',
+    )).rejects.toThrow(/Invalid login credentials/);
+
+    // A's session was signed out by the switch and nothing replaced it —
+    // the entry stays armed with no re-arm bookkeeping, so A's zombie is
+    // still refused.
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 2),
+    });
+    expect(profileCallCount()).toBe(1);
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('uninstalls the resurrection transition when its sign-out throws', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    harness.auth.signOut.mockRejectedValueOnce(
+      new Error('sign out transport failed'),
+    );
+
+    // A zombie SIGNED_IN whose kill sign-out throws — the pre-finalized
+    // transition must be uninstalled, not left as a ghost.
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 2),
+    });
+    expect(profileCallCount()).toBe(1);
+
+    // A ghost transition would swallow the NEXT genuine observer-only
+    // SIGNED_OUT. Publish a fresh session, then prove its sign-out event
+    // still tears it down.
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+    expect(harness.states[USER_STATE]).toMatchObject({ id: AUTH_UUID });
+
+    await harness.authCallback('SIGNED_OUT', null);
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('never walls a clean sibling tab on a cross-tab SIGNED_OUT broadcast', async () => {
+    const cleanup = await mountProvider();
+
+    // Nothing was ever bound in this tab. A cross-tab broadcast (for example
+    // another tab's resurrection purge) must be ignored, not walled.
+    harness.cleanupAccountDeviceState.mockResolvedValue({ ready: false });
+    await harness.authCallback('SIGNED_OUT', null);
+
+    expect(harness.cleanupAccountDeviceState).not.toHaveBeenCalled();
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('un-arms the entry when sign-out fails and the session is retained', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signOut.mockResolvedValueOnce({
+      error: new Error('local sign out failed'),
+    });
+
+    await expect(harness.providerValue.logout()).rejects.toThrow(
+      /local sign out failed/,
+    );
+    // The session is still live behind the retry wall: the registry must not
+    // block recoverSession from renewing its token.
+    expect(endedSessionIds()).not.toContain(SESSION_IDS['session-a']);
+
+    await harness.providerValue.retrySecureAccountCleanup();
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('un-arms the entry when the switch sign-out itself fails', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signOut.mockResolvedValueOnce({
+      error: new Error('local sign out failed'),
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'synthetic-password',
+    )).rejects.toThrow(/could not finish securing/);
+
+    // A is retained behind the block — no armed entry may refuse its token
+    // renewal.
+    expect(endedSessionIds()).not.toContain(SESSION_IDS['session-a']);
+
+    cleanup();
+  });
+
+  it('un-arms the entry when a recovery-owned block refuses the sign-out', async () => {
+    const cleanup = await mountProvider();
+    // A foreign-owner journal walls this sign-in with a recovery-owned block.
+    harness.retryPendingAccountPushDetaches.mockResolvedValueOnce({
+      ready: false,
+      pending: true,
+      ownerMismatch: true,
+    });
+    await signInAsUuidUser();
+    expect(harness.states[ERROR_STATE]).toMatch(
+      /unfinished notification cleanup/,
+    );
+
+    // logout() arms before its first await, then must un-arm when it refuses
+    // to sign past the recovery-owned block — the session stays live behind
+    // that wall and must keep renewing its token.
+    await expect(harness.providerValue.logout()).rejects.toThrow(
+      /could not finish securing/,
+    );
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(endedSessionIds()).not.toContain(SESSION_IDS['session-a']);
+
+    cleanup();
+  });
+
+  it('arms the registry when a rejected bootstrap signs the principal out', async () => {
+    const cleanup = await mountProvider();
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+    harness.db.rpc.mockImplementation((name) => {
+      if (name === 'get_my_employee_profile') {
+        return harness.profileResponses.shift();
+      }
+      if (name === 'get_feature_flags') return Promise.resolve(null);
+      if (name === 'get_employee_page_access') return Promise.resolve([]);
+      throw new Error(`Unexpected RPC: ${name}`);
+    });
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+
+    await vi.waitFor(() => {
+      expect(harness.states[ERROR_STATE]).toMatch(
+        /Failed to verify employee access/,
+      );
+    });
+    expect(endedSessionIds()).toContain(SESSION_IDS['session-a']);
 
     cleanup();
   });
@@ -1838,7 +2209,7 @@ describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
 
     harness.profileResponses.push(Promise.resolve([employeeA]));
     // The purge's own signOut emits SIGNED_OUT exactly as the SDK does; the
-    // finalized marker must absorb it (no second cleanup, no reauth wall).
+    // pre-finalized marker must absorb it (no second cleanup, no reauth wall).
     harness.auth.signOut.mockImplementationOnce(async () => {
       harness.sdkAuthCallback('SIGNED_OUT', null);
       return { error: null };
@@ -1898,7 +2269,7 @@ describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
 
     // A newer legitimate session (fresh session_id) won storage between the
     // zombie event's emission and its processing.
-    localStorage.setItem(
+    globalThis.localStorage.setItem(
       'sb-unit-test-ref-auth-token',
       JSON.stringify({ access_token: fakeSessionToken('session-b', 0) }),
     );
@@ -1929,7 +2300,7 @@ describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
     expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeB);
 
     // A's zombie refresh then clobbers storage (SDK-level _saveSession).
-    localStorage.setItem(
+    globalThis.localStorage.setItem(
       'sb-unit-test-ref-auth-token',
       JSON.stringify({ access_token: revivedSession.access_token }),
     );
@@ -1972,27 +2343,6 @@ describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
       .toBe(cleanupCalls);
     expect(harness.states[LOADING_STATE]).toBe(false);
     expect(harness.states[ERROR_STATE]).toBe(null);
-
-    cleanup();
-  });
-
-  it('purges a revived ended session found at cold start instead of bootstrapping', async () => {
-    recordEndedSessionId(SESSION_IDS['session-a']);
-    harness.auth.getSession.mockResolvedValue({
-      data: {
-        session: {
-          user: { id: 'auth-a', email: 'a@example.invalid' },
-          access_token: fakeSessionToken('session-a', 1),
-        },
-      },
-    });
-
-    const cleanup = await mountProvider();
-
-    expect(profileCallCount()).toBe(0);
-    expect(harness.states[USER_STATE]).toBe(null);
-    expect(harness.states[LOADING_STATE]).toBe(false);
-    expect(harness.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
 
     cleanup();
   });
@@ -2059,7 +2409,7 @@ describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
       access_token: fakeSessionToken('session-a', 0),
     });
 
-    // The 2026-07-29 deferral: sign-out completes over a journaled residual.
+    // Sign-out completes over a journaled residual (owner directive).
     harness.cleanupAccountDeviceState.mockResolvedValueOnce({
       ready: false,
       deferrable: true,

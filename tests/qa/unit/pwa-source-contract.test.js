@@ -241,33 +241,36 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(auth).toContain('accountState.workerResult.reloadRequired');
 
     expect(logout).toBeTruthy();
+    // Post-sign-out revival guard (2026-07-29 defect #2): logout arms the
+    // ended-session registry BEFORE its first await (so a 401 during cleanup
+    // is never rescued by a refresh and a racing re-persist is refusable),
+    // runs cleanup before signOut, and un-arms on BOTH failure paths that
+    // retain the session live (the recovery-owned block refusal and a failed
+    // local signOut) so a walled session can still renew its token.
+    expect(logout.indexOf('const armedSessionId = armEndedSessionGuard()'))
+      .toBeLessThan(
+        logout.indexOf('clearRejectedPrincipalState(priorDb, {'),
+      );
     expect(logout.indexOf('clearRejectedPrincipalState(priorDb, {'))
       .toBeLessThan(
-      logout.indexOf('await signOutLocalSession(transition)'),
+      logout.indexOf('realtimeClient.auth.signOut({'),
     );
-    expect(logout.indexOf('if (cleanupResult.cancelled) return;')).toBeLessThan(
-      logout.indexOf('await signOutLocalSession(transition)'),
+    expect(
+      logout.match(/removeEndedSessionId\(armedSessionId\)/g),
+    ).toHaveLength(2);
+    expect(logout).toContain(
+      'terminateResurrectedSession({ requirePersistedMatch: true })',
     );
-    expect(logout.indexOf('if (!cleanupResult.ready)')).toBeLessThan(
-      logout.indexOf('await signOutLocalSession(transition)'),
-    );
-    // The ONE local sign-out path (post-sign-out revival guard): it captures
-    // the ended session id BEFORE signOut and tombstones it only after a
-    // CONFIRMED sign-out, so a hard-wall retry never tombstones a live
-    // session and a late refresh re-persist can be refused later.
-    const signOutHelper = auth.match(
-      /const signOutLocalSession = useCallback\([\s\S]*?\n {2}\}, \[\]\);/,
+    // The arm helper captures the session id from the live token ref; the id
+    // is rotation-stable so it still matches a zombie's refreshed token.
+    const armHelper = auth.match(
+      /const armEndedSessionGuard = useCallback\([\s\S]*?\n {2}\}, \[\]\);/,
     )?.[0];
-    expect(signOutHelper).toBeTruthy();
-    expect(signOutHelper).toContain('realtimeClient.auth.signOut({');
-    expect(signOutHelper).toContain("scope: 'local'");
-    expect(signOutHelper.indexOf('sessionIdFromAccessToken(tokenRef.current)'))
-      .toBeLessThan(
-        signOutHelper.indexOf('realtimeClient.auth.signOut({'),
-      );
-    expect(signOutHelper).toMatch(
-      /if \(!signOutError \|\| transition\?\.signedOutObserved === true\) \{\s*recordEndedSessionId\(endedSessionId\);/,
+    expect(armHelper).toBeTruthy();
+    expect(armHelper).toContain(
+      'sessionIdFromAccessToken(tokenRef.current)',
     );
+    expect(armHelper).toContain('recordEndedSessionId(sessionId)');
     expect(auth).toMatch(
       /event === 'SIGNED_OUT'[\s\S]*?clearRejectedPrincipalState\(priorDb, \{/,
     );

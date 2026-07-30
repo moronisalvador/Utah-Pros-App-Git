@@ -137,6 +137,36 @@ export function recordEndedSessionId(sessionId) {
   }
 }
 
+/**
+ * Un-arms a previously recorded session id. Used ONLY by the failure paths
+ * that retain the session live behind a wall (a failed local signOut, or a
+ * recovery/reauth-owned block refusing the sign-out) — a live session must
+ * keep renewing its token and must never be purged. Best-effort like the
+ * rest of the registry, but a failed removal is warned + breadcrumbed
+ * because it leaves a LIVE session refusable.
+ */
+export function removeEndedSessionId(sessionId) {
+  if (!isCanonicalSessionId(sessionId)) return false;
+  try {
+    const next = readEndedSessionIds().filter((id) => id !== sessionId);
+    globalThis.localStorage.setItem(
+      ENDED_SESSIONS_KEY,
+      JSON.stringify(next),
+    );
+    return true;
+  } catch {
+    console.warn(
+      '[auth] Ended-session guard could not un-arm a retained live session; '
+      + 'its token renewal and next sign-in may be refused until sign-out '
+      + 'completes.',
+    );
+    recordPwaDiagnostic('account-state', {
+      section: 'ended-session-unarm-failed',
+    });
+    return false;
+  }
+}
+
 export function isSessionEnded(sessionId) {
   return isCanonicalSessionId(sessionId)
     && readEndedSessionIds().includes(sessionId);

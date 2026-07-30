@@ -45,68 +45,89 @@ The foreign-owner discriminator parses the top-level PostgREST body and
 requires the exact `42501` code plus the full canonical SQL message; nested,
 partial, malformed, or merely similar text never clears the journal.
 
-**Sign-out cleanup failure UX (owner-directed 2026-07-29).** After the first
+**Sign-out UX (owner-directed 2026-07-29, final).** After the first
 TestFlight sign-out walled behind "Finish securing this device" on a
-network-ambiguous `delete_my_native_device_token` (the owner's manual Retry
-immediately succeeded), explicit sign-out now (1) runs a bounded silent retry
-of the push detach legs (~10s with backoff, skipped while offline) before any
-blocking UI, and (2) completes visually when the ONLY residual is journaled
-push server work: local delivery revoked in this session, a same-owner
-pending-detach marker positively re-read from storage (`residualJournaled`,
-never the weaker `markerPersisted`), no foreign-owner conflict, no invalid
-marker, no in-flight enrollment, no unknown web subscription state, and every
-non-push cleanup leg clean. The journal is the durable memory: the next
-same-owner sign-in reconciles it (the 60-second provisional window and the
-`42501` discriminator are unchanged), and a different account is refused at
-the bind gate before it publishes or enrolls. Foreign-owner conflict, invalid
-markers, observer-only sign-out (signed-out reauth), password recovery,
-login/account-switch, rejected bootstrap, and any local cleanup failure keep
-the hard blocking screen. A deferred sign-out also skips the advisory
-service-worker reload so no in-flight settlement is orphaned. A retry that
-finds a residual channel's journal vanished, or discovers a foreign owner,
-escalates back to the blocking screen rather than completing. Known limit
-(pre-existing, shared with the composite ready path): each channel keeps ONE
-pending-detach marker and the detach prefers the marker's stale identity over
+network-ambiguous `delete_my_native_device_token`, the owner directed that
+"a sign out button should just do that: sign out." Explicit sign-out now
+ALWAYS completes: one bounded best-effort cleanup pass runs while the
+authenticated client still exists (the owner-scoped server deletes need it),
+its outcome never gates the sign-out, and unfinished server work normally
+stays in the durable owner-bound pending-detach journal. The journal is the
+durable memory: the next same-owner sign-in reconciles it (the 60-second
+provisional window and the `42501` discriminator are unchanged), and a
+different account is refused at the bind gate before it publishes or enrolls.
+Two honest limits: (1) if browser storage itself cannot persist the journal,
+the residual has no durable memory at all — nothing writable can create one —
+and the accepted-banner window becomes unbounded for that device until the
+same owner signs in and the detach re-runs; (2) if a FOREIGN owner's journal
+occupies the single marker slot, this sign-out's residual is not separately
+journaled, but that foreign journal itself already walls every next bind on
+its owner check. Because the signed-out intent is armed before cleanup runs,
+a 401 during sign-out cleanup is no longer rescued by a token refresh — the
+detach lands in the journal instead of succeeding after a renew; deliberate
+(refresh persistence is the resurrection vector). The only walls
+left on the explicit path are a recovery/reauth-owned block and a failed
+local Supabase `signOut()`; observer-only sign-out (signed-out reauth),
+password recovery, login/account-switch, and rejected bootstrap keep their
+hard gates unchanged. The owner accepts a short window of lock-screen
+banners after a sign-out whose server detach is still journaled — the
+tap-refusal recipient binding prevents cross-account data access. The
+classification (`deferrable`, `residualJournaled`, `enrollmentPending`) and
+the bounded `transientPushRetry` mechanism in `accountDeviceCleanup.js`
+remain reviewed and tested but sign-out no longer waits on the retry. Known
+limit (pre-existing, shared with the composite ready path): each channel
+keeps ONE pending-detach marker and prefers the marker's stale identity over
 the live one, so after a token rotation the journal may cover a stale row
-while a live row goes unjournaled — `residualJournaled` proves a same-owner
-journal exists, not that it names every row this session ever bound.
+while a live row goes unjournaled.
 
-**Status of the two 2026-07-29 sign-out defects:** the sign-out deferral
-source change fixed the FIRST (the overprotective wall). The SECOND — after
-the owner's Retry succeeded, the app re-entered the same account without ever
-reaching Login — is now ALSO fixed at source (2026-07-29, security-reviewed
-design). The mechanism was confirmed in the installed `@supabase/auth-js`
-2.99.3, not just hypothesized: `signOut()` steals the SDK auth lock from an
-in-flight token refresh after 5s, and the orphaned refresh later re-persists
-the signed-out session (`_callRefreshToken → _saveSession` has no signed-out
-re-check); the next resume/cold start re-emits it as SIGNED_IN and the
-observer re-bootstraps (profile load + token re-upsert, matching the
-02:00:06Z evidence). The fix: every confirmed local sign-out records the
-ended session's stable JWT `session_id` in `src/lib/endedSessionGuard.js`
-(`upr:auth-ended-sessions:v1`, session UUIDs only, deliberately
-logout-surviving), and the auth observer refuses + purges a revived
-tombstoned session at SIGNED_IN, TOKEN_REFRESHED, and cold-start init. A
-legitimate login always mints a new `session_id`, so web cross-tab login
-sync is structurally unaffected; the purge prechecks SDK storage with a
-side-effect-free read so it can never sign out a newer legitimate session,
-and a SIGNED_OUT delivered to an already-clean tab is now a no-op (the
-purge's own broadcast cannot wall sibling tabs). Node-lane tests reproduce
-the zombie deterministically and pin the guard
-(`src/contexts/AuthContext.race.test.jsx`). Disclosed residuals: the guard
-fails OPEN (undecodable token / blocked storage → pre-fix behavior, warned +
-pwa-diagnostics breadcrumbed, never a broken login); `getAuthHeader()` in
-`realtime.js` calls `getSession()`, which can itself refresh — and so
-briefly extend — a zombie during the pre-purge window (workers still enforce
-authorization server-side); if a zombie clobbers a NEWER logged-in account's
-storage, that account is torn down to a clean signed-out state rather than
-left rendering over a destroyed session. One behavior change to note: the
-02:00:06Z re-entry had *accidentally* reconciled the push journal — after
-this fix the journal correctly waits for a real same-owner sign-in, per the
-deferral contract. Open evidence items: decoding one real deployed access
-token to confirm the canonical `session_id` claim shape (owner-gated; the
-guard is inert-but-observable without it), and the on-device
-**account-switch refusal** check below — run that owner check before broad
-tech rollout.
+**Post-sign-out session resurrection (the second 2026-07-29 defect) — fixed
+in source, unified implementation.** The Retry-then-re-entry evidence (204 at
+01:58:33Z, then a fresh profile load + token re-upsert at 02:00:06Z with no
+credential entry and no Login screen) is explained by a token refresh racing
+`signOut({ scope: 'local' })`: auth-js 2.99.3 lets `signOut()` steal the SDK
+auth lock from an in-flight refresh after 5s, and the orphaned refresh later
+re-persists the session (`_callRefreshToken → _saveSession` has no signed-out
+re-check) — including through UPR's own `recoverSession()` 401 handler. Two
+independently security-reviewed fixes were built in parallel and then unified
+per the cross-session recommendation: the always-complete sign-out contract
+and flow structure from the first fix, with its principal-keyed single marker
+replaced by the second fix's **ended-session registry**
+(`src/lib/endedSessionGuard.js`, key `upr:auth-ended-sessions:v1` — bare JWT
+`session_id` UUIDs, cap 8, deliberately logout-surviving). session_id is
+stable across token rotation but never reused by a new login, so nothing is
+cleared at login, same-user re-login and web cross-tab login sync are
+structurally unaffected, and multiple ended sessions stay guarded at once
+(this closes the reviewed logout-A→login-B residual of the single marker).
+Every local sign-out path (`logout()`, the login account-switch transition,
+the rejected-bootstrap sign-out, and the recovery-wall sign-out) arms the
+registry before its first await — so a 401 during sign-out cleanup is never
+rescued by a refresh — and the two failure paths that retain the session
+LIVE (a failed local `signOut()`, and logout refusing to sign past a
+recovery-owned block) un-arm it so the walled session's token can still
+renew. Boot, SIGNED_IN, and TOKEN_REFRESHED terminate a revived armed
+session instead of bootstrapping it; `recoverSession()` refuses to refresh
+an absent principal or an ended session; an un-awaited post-signOut sweep
+catches the common in-flight case without delaying Login and acts only on a
+POSITIVE side-effect-free storage match (never `getSession()`, which can
+refresh — and so extend — the very zombie being purged). The termination
+installs a pre-finalized transition (uninstalled if its sign-out throws) so
+the observer never re-walls; when a zombie has clobbered a NEWER published
+account's storage, no marker is installed and the full SIGNED_OUT teardown
+runs so authorized UI never keeps rendering over a destroyed session. A
+SIGNED_OUT reaching an already-clean tab is a no-op (a cross-tab purge
+broadcast can never wall sibling tabs), and `SetPassword.jsx` refuses to
+disclose a revived ended session's email on its own observer. The guard
+fails OPEN (undecodable token / blocked storage → pre-fix behavior), warned
+and pwa-diagnostics-breadcrumbed so the fail-open is never silent. Disclosed
+residuals: `getAuthHeader()` in `realtime.js` calls `getSession()` and can
+itself briefly extend a zombie during the pre-purge window (workers enforce
+authorization server-side); the 02:00:06Z re-entry had accidentally
+reconciled the push journal — the journal now correctly waits for a real
+same-owner sign-in per the deferral contract. Open evidence items: decoding
+one real deployed access token to confirm the canonical `session_id` claim
+shape (owner-gated; the guard is inert-but-observable without it), and the
+on-device **account-switch refusal** check below — the owner verification
+gate before broad tech rollout.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
@@ -372,11 +393,11 @@ Connect sign-in and the Organizer upload themselves.
   the session (supabase-js lock-steal race). Owner directive (2026-07-29):
   sign-out must always complete immediately; the token detach becomes
   invisible best-effort/journaled. Both defects are now fixed at source: the
-  deferral session shipped the wall fix, and the ended-session revival guard
-  (see the status paragraph above) shipped the session-clearing fix. Neither
-  is on-device-verified — the owner account-switch check on the physical
-  iPhone remains the open gate. First-login flows for fresh tech installs
-  are unaffected.
+  always-complete sign-out contract closed the wall, and the unified
+  ended-session revival guard (see the status paragraph above) closed the
+  session re-entry. Neither is on-device-verified — the owner account-switch
+  check on the physical iPhone remains the open gate. First-login flows for
+  fresh tech installs are unaffected.
 - Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
   `ios-signing` secrets), no App Review submission, no flag flips.
 
