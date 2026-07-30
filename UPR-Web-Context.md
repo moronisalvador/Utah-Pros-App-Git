@@ -49,6 +49,24 @@ ran once (0 events, 0 of 156 leads valued) — its `AFTER INSERT ON invoices` tr
 **UI:** `src/pages/crm/CrmLeads.jsx` — inline-editable Value row in the lead detail panel. It was
 previously hidden whenever `value` was null, which is why there was no way to enter one.
 
+**Its CSS was dead until 2026-07-30 (structural defect, now guarded).** `src/index.css` carried one
+unclosed `{` — the `:root[data-native="true"] … .login-page/.set-pw-page { min-height: 0;` rule at
+the very END of the file never closed. Because it was last, it swallowed everything after it to EOF,
+and the build re-emitted the remainder as **CSS nesting** inside that selector:
+`.crm-lead-value` therefore only matched inside `.set-pw-page` within a native shell — i.e. never on
+the CRM Leads page. All 7 swallowed selectors were inert (`.crm-lead-value`, `:focus-visible`,
+`-muted`, `-edit`, `-edit .crm-input`, the `@media (max-width: 768px)` block, `-edit .crm-btn`).
+**That was the real cause of the Value control rendering with native button chrome**, and it is why
+adding `appearance: none` alone could not fix it. Blast radius was exactly those 7 selectors,
+precisely because the broken rule sat at end-of-file. It shipped in both `dev` and `main`.
+Fixed by restoring the brace; guarded by
+**`tests/qa/unit/css-structural-integrity.test.js`**, which fails the build if `index.css` braces
+ever go unbalanced again. Verified in the built asset, not just the source: the shipped CSS now
+contains `.crm-lead-value{appearance:none;…}` as a top-level rule.
+
+**Reading the diff is not enough here** — an unclosed brace at end-of-file looks like an ordinary
+addition in every hunk. Trust the brace-balance guard, not the eye.
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
