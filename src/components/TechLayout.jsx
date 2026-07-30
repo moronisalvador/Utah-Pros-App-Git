@@ -18,8 +18,8 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
  *              components/ErrorBoundary, components/tech/v2 (TechPane, skeletons),
- *              lib/resumeRestore, lib/pwaDiagnostics, pages/tech/v2 (TechDashV2,
- *              TechScheduleV2 — lazy)
+ *              lib/nativeHaptics (light press tick on tab taps), lib/resumeRestore,
+ *              lib/pwaDiagnostics, pages/tech/v2 (TechDashV2, TechScheduleV2 — lazy)
  *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
  *
  * NOTES / GOTCHAS:
@@ -34,6 +34,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect, Suspense, la
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { impact } from '@/lib/nativeHaptics';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
@@ -554,14 +555,15 @@ export default function TechLayout({ nativeBuild = false }) {
               to={tab.path}
               viewTransition
               className={`tech-nav-tab${active ? ' active' : ''}`}
+              onClick={() => impact('light')}
             >
               <tab.Icon filled={active} />
               {tab.key === 'messages' && msgsV2 && <MessagesUnreadBadge />}
               {showDot && (
                 <span style={{
                   position: 'absolute', top: 4, right: '50%', marginRight: -16,
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: '#ef4444',
+                  width: 8, height: 8, borderRadius: 'var(--radius-full)',
+                  background: 'var(--status-needs-response)',
                 }} />
               )}
               <span>{t(tab.key, tab.label)}</span>

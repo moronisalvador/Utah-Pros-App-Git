@@ -4786,7 +4786,7 @@ tr:hover td { background: var(--bg-secondary); }
   min-height: var(--tech-min-tap);
   min-width: var(--tech-min-tap);
   padding: 0;
-  transition: color 0.12s;
+  transition: color 0.12s, transform var(--motion-duration-fast) var(--motion-ease-standard);
   position: relative;
   touch-action: manipulation;
   -webkit-touch-callout: none;
@@ -4822,7 +4822,13 @@ tr:hover td { background: var(--bg-secondary); }
 .tech-nav-tab:visited {
   text-decoration: none;
 }
-.tech-nav-tab:active { opacity: 0.6; }
+.tech-nav-tab:active { opacity: 0.6; transform: scale(0.97); }
+/* motion-standard.md §5: press scale collapses under reduced motion; the
+   opacity swap above stays as the opacity-only press feedback. */
+@media (prefers-reduced-motion: reduce) {
+  .tech-nav-tab { transition: color 0.12s; }
+  .tech-nav-tab:active { transform: none; }
+}
 
 /* Tech page shared */
 .tech-page {
