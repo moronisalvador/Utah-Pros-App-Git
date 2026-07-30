@@ -86,14 +86,25 @@ fresh profile load + token re-upsert at 02:00:06Z with no credential entry
 and no Login screen) is explained by a token refresh racing
 `signOut({ scope: 'local' })`: supabase-js persists a refreshed session
 before any caller check can discard it — including UPR's own
-`recoverSession()` 401 handler. The fix: `logout()` writes a durable
-signed-out-intent marker before any await; boot, SIGNED_IN, and
-TOKEN_REFRESHED terminate a session for the marked principal instead of
-bootstrapping it; `recoverSession()` refuses to refresh a signed-out or
-absent principal; a time-boxed post-signOut sweep catches the common
-in-flight case; and `login()` clears the marker immediately before
-`signInWithPassword` so a real sign-in (including same-user re-login and
-web cross-tab login) is never refused. Account switching is therefore
+`recoverSession()` 401 handler. The fix: every local sign-out path
+(`logout()`, the login account-switch transition — re-armed if the new
+credentials fail — the rejected-bootstrap sign-out, and the recovery-wall
+sign-out) writes a durable signed-out-intent marker before its sign-out;
+boot, SIGNED_IN, and TOKEN_REFRESHED terminate a session for the marked
+principal instead of bootstrapping it (via a pre-finalized transition so the
+observer never re-walls, uninstalled if the termination itself throws);
+`recoverSession()` refuses to refresh a signed-out or absent principal; an
+un-awaited principal-checked post-signOut sweep catches the common in-flight
+case without delaying Login; `login()` clears the marker immediately before
+`signInWithPassword` (so same-user re-login and web cross-tab login are
+never refused) and flags its in-flight window so a stale zombie event can
+never make the new session collateral; and `handleAuthUser` self-repairs a
+stale marker at publication. Accepted residual: a zombie SIGNED_IN emitted
+in the sub-second window after `login()` clears the marker can briefly
+publish the old account before the deliberate sign-in's own SIGNED_IN — the
+serialized account-switch gate then re-runs the full cleanup, and the
+fire-and-forget push re-enrollment self-deletes when superseded, so no
+unenforced cross-account binding results. Account switching is therefore
 unblocked in source — the on-device **account-switch refusal** check below
 remains the owner verification gate before broad tech rollout.
 

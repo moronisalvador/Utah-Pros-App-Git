@@ -1865,10 +1865,13 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
     });
 
     await expect(harness.providerValue.logout()).resolves.toBeUndefined();
-
-    expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    // The signed-out UI publishes BEFORE the un-awaited sweep settles.
     expect(harness.states[USER_STATE]).toBe(null);
     expect(harness.states[LOADING_STATE]).toBe(false);
+
+    await vi.waitFor(() => {
+      expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    });
 
     cleanup();
   });
@@ -1950,6 +1953,8 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
     });
 
     await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    await nextMacrotask();
+    await nextMacrotask();
 
     expect(harness.auth.signOut).toHaveBeenCalledOnce();
 
@@ -1960,14 +1965,17 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
     const cleanup = await mountProvider();
     await signInAsUuidUser();
 
-    // Any observer-only processing of the sweep's SIGNED_OUT would re-run
-    // cleanup, fail, and raise the signed-out-reauth wall — the pre-finalized
-    // resurrection transition must keep the observer out entirely.
+    // The dangerous production interleaving: the observer processes the
+    // FIRST SIGNED_OUT while the explicit transition is still unfinalized
+    // and nulls explicitLogoutRef. Without the pre-finalized resurrection
+    // transition, the sweep's own SIGNED_OUT would then take the
+    // observer-only branch, re-run the (not-ready) cleanup, and raise the
+    // signed-out-reauth wall.
     harness.cleanupAccountDeviceState.mockResolvedValue({
       ready: false,
       deferrable: true,
     });
-    harness.auth.getSession.mockResolvedValueOnce({
+    harness.auth.getSession.mockResolvedValue({
       data: {
         session: {
           user: { id: AUTH_UUID, email: 'a@example.invalid' },
@@ -1976,17 +1984,26 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
       },
     });
     harness.auth.signOut
-      .mockResolvedValueOnce({ error: null })
+      .mockImplementationOnce(async () => {
+        harness.sdkAuthCallback('SIGNED_OUT', null);
+        // Let the observer process this SIGNED_OUT (and null the ref)
+        // BEFORE signOut resolves and logout() finalizes the transition.
+        await nextMacrotask();
+        await nextMacrotask();
+        return { error: null };
+      })
       .mockImplementationOnce(() => {
         harness.sdkAuthCallback('SIGNED_OUT', null);
         return Promise.resolve({ error: null });
       });
 
     await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    await vi.waitFor(() => {
+      expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    });
     await nextMacrotask();
     await nextMacrotask();
 
-    expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
     expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
     expect(harness.states[ERROR_STATE]).toBe(null);
     expect(harness.states[LOADING_STATE]).toBe(false);

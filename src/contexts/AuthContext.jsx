@@ -563,6 +563,19 @@ export function AuthProvider({ children }) {
             return;
           }
 
+          // While THIS tab's credentialed sign-in is in flight, a SIGNED_IN
+          // for a different identity is a stale/zombie event (for example a
+          // resurrected session whose marker the login just cleared) —
+          // ignore it; the deliberate sign-in's own SIGNED_IN follows
+          // serially in this queue.
+          if (
+            pendingSignInRef.current?.email
+            && String(session.user.email || '').trim().toLowerCase()
+              !== pendingSignInRef.current.email
+          ) {
+            return;
+          }
+
           // A SIGNED_IN for a principal that explicitly signed out and has
           // not signed back in is a resurrected zombie (a refresh raced the
           // sign-out) — never bootstrap it. login() clears the marker BEFORE
@@ -1470,8 +1483,13 @@ export function AuthProvider({ children }) {
       // BEFORE signInWithPassword so the resulting SIGNED_IN (which can queue
       // ahead of this function resuming) is never refused as a zombie; the
       // in-flight flag keeps the resurrection kills from treating the new
-      // session as collateral during this window.
-      pendingSignInRef.current = { generation };
+      // session as collateral during this window, and its email lets the
+      // observer drop a stale zombie SIGNED_IN for a different identity that
+      // slipped past the just-cleared marker.
+      pendingSignInRef.current = {
+        generation,
+        email: String(email || '').trim().toLowerCase(),
+      };
       clearSignedOutIntent();
       const { data, error: authError } = await realtimeClient.auth.signInWithPassword({
         email,
@@ -1488,7 +1506,11 @@ export function AuthProvider({ children }) {
       authLifecycle.commit(generation, () => setError(err.message));
       throw err;
     } finally {
-      pendingSignInRef.current = null;
+      // Generation-guarded so a double-tapped login cannot null another
+      // in-flight sign-in's flag.
+      if (pendingSignInRef.current?.generation === generation) {
+        pendingSignInRef.current = null;
+      }
       authLifecycle.commit(
         generation,
         () => setLoading(cleanupBlockRef.current !== null),
@@ -1599,40 +1621,6 @@ export function AuthProvider({ children }) {
     }
 
     transition.finalized = true;
-    // Resurrection sweep (2026-07-29 TestFlight defect): a refresh already in
-    // flight when signOut ran can re-persist the session AFTER removal. One
-    // bounded re-check catches the common case on this stack; the durable
-    // signed-out-intent marker covers anything that lands later. The sweep
-    // only ever terminates the principal that just signed out — another
-    // tab's fresh login is never collateral — and its second signOut is
-    // installed as a pre-finalized transition so its SIGNED_OUT can never
-    // take the observer-only reauth-wall path. Time-boxed so a lock held by
-    // a slow in-flight refresh cannot stall the visual sign-out.
-    try {
-      const sweep = (async () => {
-        const { data } = await realtimeClient.auth.getSession();
-        if (
-          data?.session?.user?.id === priorPrincipal
-          && !pendingSignInRef.current
-        ) {
-          const marker = markResurrectionSignOut();
-          try {
-            await realtimeClient.auth.signOut({ scope: 'local' });
-          } catch {
-            if (explicitLogoutRef.current === marker) {
-              explicitLogoutRef.current = null;
-            }
-          }
-        }
-      })();
-      await Promise.race([
-        sweep.catch(() => {}),
-        new Promise((resolve) => { setTimeout(resolve, 2_000); }),
-      ]);
-    } catch {
-      // Marker guards remain the durable backstop.
-    }
-    if (!authLifecycle.isCurrent(generation)) return;
     authLifecycle.commit(generation, () => {
       activePrincipalRef.current = null;
       readyPrincipalRef.current = null;
@@ -1653,6 +1641,36 @@ export function AuthProvider({ children }) {
     if (explicitLogoutRef.current === transition) {
       explicitLogoutRef.current = null;
     }
+    // Resurrection sweep (2026-07-29 TestFlight defect): a refresh already in
+    // flight when signOut ran can re-persist the session AFTER removal. One
+    // re-check catches the common case; the durable signed-out-intent marker
+    // covers anything that lands later. Deliberately NOT awaited — Login must
+    // appear immediately even when the auth lock is contended by the very
+    // refresh being raced ("a sign out button should just do that: sign
+    // out"). The sweep only ever terminates the principal that just signed
+    // out — another tab's fresh login is never collateral — and its second
+    // signOut is installed as a pre-finalized transition so its SIGNED_OUT
+    // can never take the observer-only reauth-wall path.
+    void (async () => {
+      try {
+        const { data } = await realtimeClient.auth.getSession();
+        if (
+          data?.session?.user?.id === priorPrincipal
+          && !pendingSignInRef.current
+        ) {
+          const marker = markResurrectionSignOut();
+          try {
+            await realtimeClient.auth.signOut({ scope: 'local' });
+          } catch {
+            if (explicitLogoutRef.current === marker) {
+              explicitLogoutRef.current = null;
+            }
+          }
+        }
+      } catch {
+        // Marker guards remain the durable backstop.
+      }
+    })();
     if (
       cleanupResult?.reloadRequired
       // The advisory reload runs only after a fully-ready cleanup so an
