@@ -1892,4 +1892,185 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
 
     cleanup();
   });
+
+  it('preserves a recovery session on /set-password despite a matching intent', async () => {
+    const cleanup = await mountProvider();
+    globalThis.window.location.pathname = '/set-password';
+    globalThis.localStorage.setItem(INTENT_KEY, JSON.stringify({
+      version: 1,
+      principalId: AUTH_UUID,
+      at: 1,
+    }));
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: 'recovery-token',
+    });
+
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(harness.states[USER_STATE]).toMatchObject({ id: AUTH_UUID });
+
+    cleanup();
+  });
+
+  it('bootstraps normally after another tab cleared the shared intent', async () => {
+    const cleanup = await mountProvider();
+    globalThis.localStorage.setItem(INTENT_KEY, JSON.stringify({
+      version: 1,
+      principalId: AUTH_UUID,
+      at: 1,
+    }));
+    // Another tab's login() clears the SHARED marker without this provider
+    // ever seeing a login() call.
+    globalThis.localStorage.removeItem(INTENT_KEY);
+
+    await signInAsUuidUser();
+
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(profileCallCount()).toBe(1);
+    expect(harness.states[USER_STATE]).toMatchObject({ id: AUTH_UUID });
+
+    cleanup();
+  });
+
+  it('never sweeps a different principal signed in during the sweep window', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.getSession.mockResolvedValueOnce({
+      data: {
+        session: {
+          user: {
+            id: '55555555-5555-4555-8555-555555555555',
+            email: 'b@example.invalid',
+          },
+          access_token: 'fresh-b-token',
+        },
+      },
+    });
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+
+    cleanup();
+  });
+
+  it('never re-walls when the sweep sign-out emits its own SIGNED_OUT', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    // Any observer-only processing of the sweep's SIGNED_OUT would re-run
+    // cleanup, fail, and raise the signed-out-reauth wall — the pre-finalized
+    // resurrection transition must keep the observer out entirely.
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: false,
+      deferrable: true,
+    });
+    harness.auth.getSession.mockResolvedValueOnce({
+      data: {
+        session: {
+          user: { id: AUTH_UUID, email: 'a@example.invalid' },
+          access_token: 'resurrected-token',
+        },
+      },
+    });
+    harness.auth.signOut
+      .mockResolvedValueOnce({ error: null })
+      .mockImplementationOnce(() => {
+        harness.sdkAuthCallback('SIGNED_OUT', null);
+        return Promise.resolve({ error: null });
+      });
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    await nextMacrotask();
+    await nextMacrotask();
+
+    expect(harness.auth.signOut).toHaveBeenCalledTimes(2);
+    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('re-arms the switched-out principal when the new credentials fail', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signInWithPassword.mockResolvedValueOnce({
+      data: {},
+      error: new Error('Invalid login credentials'),
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'wrong-password',
+    )).rejects.toThrow(/Invalid login credentials/);
+
+    // A's session was signed out by the switch and nothing replaced it —
+    // the resurrection guard must stay armed for A.
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(readIntent()).toMatchObject({ principalId: AUTH_UUID });
+
+    cleanup();
+  });
+
+  it('uninstalls the resurrection transition when its sign-out throws', async () => {
+    const cleanup = await mountProvider();
+    globalThis.localStorage.setItem(INTENT_KEY, JSON.stringify({
+      version: 1,
+      principalId: AUTH_UUID,
+      at: 1,
+    }));
+    harness.auth.signOut.mockRejectedValueOnce(
+      new Error('sign out transport failed'),
+    );
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: 'zombie-token',
+    });
+    expect(profileCallCount()).toBe(0);
+
+    // A later genuine SIGNED_OUT must still be processed — a lingering
+    // pre-finalized ghost transition would swallow it silently.
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: true,
+      reloadRequired: false,
+    });
+    await harness.authCallback('SIGNED_OUT', null);
+
+    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('arms the intent when a rejected bootstrap signs the principal out', async () => {
+    const cleanup = await mountProvider();
+    harness.profileResponses.push(Promise.resolve([employee('employee-a')]));
+    harness.db.rpc.mockImplementation((name) => {
+      if (name === 'get_my_employee_profile') {
+        return harness.profileResponses.shift();
+      }
+      if (name === 'get_feature_flags') return Promise.resolve(null);
+      if (name === 'get_employee_page_access') return Promise.resolve([]);
+      throw new Error(`Unexpected RPC: ${name}`);
+    });
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    await vi.waitFor(() => {
+      expect(harness.states[ERROR_STATE]).toMatch(
+        /Failed to verify employee access/,
+      );
+    });
+    expect(readIntent()).toMatchObject({ principalId: AUTH_UUID });
+
+    cleanup();
+  });
 });

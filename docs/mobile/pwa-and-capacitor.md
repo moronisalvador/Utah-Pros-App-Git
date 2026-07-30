@@ -128,8 +128,10 @@ Supabase sign-out, validates employee/permission/page-access/feature-flag respon
 publishing authority, and gates SetPassword on cleanup while preserving the recovery session.
 EXPLICIT sign-out ALWAYS completes (owner directive 2026-07-29: "a sign out button should just do
 that: sign out"): one bounded best-effort cleanup pass runs while the authenticated client exists,
-its outcome never gates the sign-out, and anything unfinished stays in the durable owner-bound
-pending-detach journal. The journal is the durable memory: the next same-owner sign-in reconciles
+its outcome never gates the sign-out, and unfinished server work normally stays in the durable
+owner-bound pending-detach journal (honest limits: broken storage can journal nothing, and a
+foreign journal occupying the single slot is itself what walls the next bind — see
+`push-activation-owner-gate.md`). The journal is the durable memory: the next same-owner sign-in reconciles
 it and a different account is refused at the bind gate before it publishes or enrolls. The only
 walls left on the explicit path are a recovery/reauth-owned block and a failed local Supabase
 signOut(); observer-only sign-out (signed-out reauth), password recovery, login/account-switch,

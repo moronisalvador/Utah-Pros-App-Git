@@ -51,11 +51,21 @@ network-ambiguous `delete_my_native_device_token`, the owner directed that
 "a sign out button should just do that: sign out." Explicit sign-out now
 ALWAYS completes: one bounded best-effort cleanup pass runs while the
 authenticated client still exists (the owner-scoped server deletes need it),
-its outcome never gates the sign-out, and anything unfinished stays in the
-durable owner-bound pending-detach journal. The journal is the durable
-memory: the next same-owner sign-in reconciles it (the 60-second provisional
-window and the `42501` discriminator are unchanged), and a different account
-is refused at the bind gate before it publishes or enrolls. The only walls
+its outcome never gates the sign-out, and unfinished server work normally
+stays in the durable owner-bound pending-detach journal. The journal is the
+durable memory: the next same-owner sign-in reconciles it (the 60-second
+provisional window and the `42501` discriminator are unchanged), and a
+different account is refused at the bind gate before it publishes or enrolls.
+Two honest limits: (1) if browser storage itself cannot persist the journal,
+the residual has no durable memory at all — nothing writable can create one —
+and the accepted-banner window becomes unbounded for that device until the
+same owner signs in and the detach re-runs; (2) if a FOREIGN owner's journal
+occupies the single marker slot, this sign-out's residual is not separately
+journaled, but that foreign journal itself already walls every next bind on
+its owner check. Because the signed-out intent is armed before cleanup runs,
+a 401 during sign-out cleanup is no longer rescued by a token refresh — the
+detach lands in the journal instead of succeeding after a renew; deliberate
+(refresh persistence is the resurrection vector). The only walls
 left on the explicit path are a recovery/reauth-owned block and a failed
 local Supabase `signOut()`; observer-only sign-out (signed-out reauth),
 password recovery, login/account-switch, and rejected bootstrap keep their
