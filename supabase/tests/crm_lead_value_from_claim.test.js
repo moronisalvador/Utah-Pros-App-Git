@@ -110,14 +110,22 @@ describe.skipIf(!hasCreds)('lead value = sum of committed invoices under the cla
     });
     const j2 = await db.insert('jobs', {
       job_number: `${tag}-J2`, claim_id: claimId,
-      primary_contact_id: contactId, division: 'recon', phase: 'job_received',
+      primary_contact_id: contactId, division: 'reconstruction', phase: 'job_received',
     });
     jobA = (Array.isArray(j1) ? j1[0] : j1).id;
     jobB = (Array.isArray(j2) ? j2[0] : j2).id;
   });
 
   afterAll(async () => {
-    // Children first — invoices/jobs reference the claim.
+    // Audit rows first: system_events.job_id has an FK to jobs, so a job cannot
+    // be deleted while the triggers' own event rows still reference it.
+    const ids = [leadId, claimId, contactId, jobA, jobB, ...invoiceIds].filter(Boolean);
+    if (ids.length) await db.delete('system_events', `entity_id=in.(${ids.join(',')})`).catch(() => {});
+    if (jobA || jobB) {
+      const jobIds = [jobA, jobB].filter(Boolean).join(',');
+      await db.delete('system_events', `job_id=in.(${jobIds})`).catch(() => {});
+    }
+    // Then children — invoices/jobs reference the claim.
     if (invoiceIds.length) await db.delete('invoices', `id=in.(${invoiceIds.join(',')})`).catch(() => {});
     if (jobA || jobB) await db.delete('jobs', `id=in.(${[jobA, jobB].filter(Boolean).join(',')})`).catch(() => {});
     if (leadId) await db.delete('inbound_leads', `id=eq.${leadId}`).catch(() => {});
