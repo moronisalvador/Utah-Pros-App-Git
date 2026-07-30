@@ -8,7 +8,8 @@
  *   indicator, the install banner, and the toast pop-ups. It also hosts the Tech
  *   Mobile v2 "panes" — the rebuilt dashboard and schedule stay alive in the
  *   background so switching tabs is instant and nothing reloads; each other
- *   screen still renders in the normal spot.
+ *   screen still renders in the normal spot. On a technician's very first
+ *   visit it also shows the one-time welcome tour overlay.
  *
  * WHERE IT LIVES:
  *   Route:        wraps all /tech/* routes
@@ -19,7 +20,8 @@
  *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
  *              components/ErrorBoundary, components/tech/v2 (TechPane, skeletons),
  *              lib/resumeRestore, lib/pwaDiagnostics, pages/tech/v2 (TechDashV2,
- *              TechScheduleV2 — lazy)
+ *              TechScheduleV2 — lazy), hooks/useTechOnboarding,
+ *              components/tech/onboarding/TechOnboarding (lazy)
  *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
  *
  * NOTES / GOTCHAS:
@@ -631,11 +633,16 @@ export default function TechLayout({ nativeBuild = false }) {
       <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(8px)}}`}</style>
 
       {/* First-run welcome tour (once per employee, versioned server-side).
-          Sits at z-index 9000 — above the shell, below the toast layer. */}
+          Sits at z-index 9000 — above the shell, below the toast layer. The
+          boundary keeps a stale-chunk or render failure of this once-ever
+          surface degrading to "tour doesn't show" instead of taking down the
+          whole shell (same wrap as the sibling panes above). */}
       {onboarding.show && (
-        <Suspense fallback={null}>
-          <TechOnboarding onComplete={onboarding.complete} />
-        </Suspense>
+        <ErrorBoundary section="Technician onboarding" hidden>
+          <Suspense fallback={null}>
+            <TechOnboarding onComplete={onboarding.complete} />
+          </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

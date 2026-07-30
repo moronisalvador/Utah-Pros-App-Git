@@ -1,17 +1,32 @@
-/* ═══════════════════════════════════════════════════════════════════
-   TECH ONBOARDING — first-run welcome tour
-   Component-scoped stylesheet (precedent: claim-page.css,
-   NotificationPresentation.css). Deliberately NOT in src/index.css:
-   that file sits ~1.3 KB under its BLOCKING CI budget, and this
-   once-ever surface is lazy — its styles ride the lazy chunk and cost
-   the boot path nothing.
-
-   Rare/first-run motion tier (motion-standard.md §3): this surface may
-   carry delight. Every animation here is transform/opacity only, uses
-   the :root motion tokens, and collapses under prefers-reduced-motion
-   (end states land instantly; JS timers own the unmounts). Durations
-   above 300ms are deliberate for this once-ever tier.
-   ═══════════════════════════════════════════════════════════════════ */
+/**
+ * ════════════════════════════════════════════════
+ * FILE: TechOnboarding.css
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   All the styling and movement for the one-time welcome tour a technician
+ *   sees the first time they open the app: the full-screen cover, the three
+ *   steps sliding in, the icon pop, the bell wiggle, the step dots, and the
+ *   big buttons.
+ *
+ * DEPENDS ON:
+ *   Internal:  imported only by TechOnboarding.jsx (rides its lazy chunk);
+ *              :root motion/color tokens + .tech-layout tokens in
+ *              src/index.css (--motion-*, --accent*, --tech-min-tap,
+ *              --status-working-color)
+ *
+ * NOTES / GOTCHAS:
+ *   - Component-scoped stylesheet ON PURPOSE (precedent: claim-page.css,
+ *     NotificationPresentation.css): src/index.css sits ~1.3 KB under its
+ *     BLOCKING CI size budget, and this once-ever surface is lazy — its
+ *     styles ride the lazy chunk and cost the boot path nothing.
+ *   - Rare/first-run motion tier (motion-standard.md §3): may carry delight.
+ *     Everything animates transform/opacity only, uses the :root motion
+ *     tokens, and collapses under prefers-reduced-motion (end states land
+ *     instantly; JS timers in TechOnboarding.jsx own the unmounts there).
+ *     Durations above 300ms are deliberate for this once-ever tier.
+ * ════════════════════════════════════════════════
+ */
 
 .tech-onb {
   position: fixed;
@@ -62,7 +77,10 @@
   animation: techOnbStepOut 150ms var(--motion-ease-accelerate) forwards;
   pointer-events: none;
 }
-/* A leaving step must not replay its children's entrances under the fade. */
+/* Children of a leaving step freeze in place (paused, not reset) so an
+   advance mid-entrance fades them from where they are instead of snapping
+   them to their end state first. The step node is keyed by name in JSX, so
+   it is the SAME node — only the class changes. */
 .tech-onb-step--leaving .tech-onb-art,
 .tech-onb-step--leaving .tech-onb-halo,
 .tech-onb-step--leaving .tech-onb-icon,
@@ -70,7 +88,7 @@
 .tech-onb-step--leaving .tech-onb-title,
 .tech-onb-step--leaving .tech-onb-body,
 .tech-onb-step--leaving .tech-onb-row {
-  animation: none;
+  animation-play-state: paused;
 }
 @keyframes techOnbStepOut {
   to { opacity: 0; transform: translateY(-8px); }
@@ -116,7 +134,7 @@
   from { opacity: 0; transform: scale(0.85); }
 }
 .tech-onb-icon--success {
-  color: var(--status-working-color, #059669);
+  color: var(--status-working-color);
 }
 /* One-shot bell ring, delayed until the priming copy has been read for a
    beat — it points the eye at exactly what the button will turn on. */
@@ -236,7 +254,7 @@
 .tech-onb-btn--ghost {
   background: transparent;
   color: var(--text-secondary);
-  min-height: 48px;
+  min-height: var(--tech-min-tap);
 }
 
 .tech-onb-sr {
@@ -272,6 +290,12 @@
   .tech-onb-row,
   .tech-onb-footer {
     animation: none;
+  }
+  /* End states still land (motion-standard §5): with the keyframes gone,
+     the leaving step and the closing overlay jump straight to invisible —
+     the JS fallback timers then remove them. */
+  .tech-onb-step--leaving {
+    opacity: 0;
   }
   .tech-onb--closing {
     animation: none;

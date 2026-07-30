@@ -172,8 +172,29 @@ export default function TechOnboarding({ onComplete }) {
   const completedRef = useRef(false);
   const rootRef = useRef(null);
 
+  // Focus trap (Modal.jsx idiom): focus enters on mount and Tab cycles inside
+  // the dialog. No Escape handler — finishing the tour is the only way out,
+  // and "Not now" / "Done" are always present.
   useEffect(() => {
-    rootRef.current?.focus();
+    const root = rootRef.current;
+    root?.focus();
+    const FOCUSABLE = 'button:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const onKeyDown = (e) => {
+      if (e.key !== 'Tab' || !root) return;
+      const items = root.querySelectorAll(FOCUSABLE);
+      if (!items.length) { e.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => document.removeEventListener('keydown', onKeyDown, true);
   }, []);
 
   const finishOverlay = useCallback(() => {
@@ -254,9 +275,12 @@ export default function TechOnboarding({ onComplete }) {
       ? ArtCheck
       : STEP_ART[key];
     const leaving = index === leavingIndex;
+    // Keyed by step name alone (names are unique per tour) so the leaving
+    // step keeps its DOM node — children frozen mid-rise by the CSS pause
+    // instead of snapping to their end state before the fade.
     return (
       <div
-        key={`${key}-${index === leavingIndex ? 'leaving' : 'live'}`}
+        key={key}
         className={`tech-onb-step${leaving ? ' tech-onb-step--leaving' : ''}`}
         aria-hidden={leaving || undefined}
         onAnimationEnd={(e) => {
@@ -270,7 +294,11 @@ export default function TechOnboarding({ onComplete }) {
           <span
             key={key === 'notify' && enroll === 'granted' ? 'success' : 'art'}
             className={`tech-onb-icon${key === 'notify' && enroll === 'granted' ? ' tech-onb-icon--success' : ''}`}
-            data-ring={key === 'notify' && enroll === 'idle' ? 'true' : undefined}
+            data-ring={
+              key === 'notify' && (enroll === 'idle' || enroll === 'busy')
+                ? 'true'
+                : undefined
+            }
           >
             <Art width={64} height={64} />
           </span>

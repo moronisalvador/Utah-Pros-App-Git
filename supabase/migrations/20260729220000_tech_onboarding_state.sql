@@ -162,6 +162,9 @@ BEGIN
 END;
 $function$;
 
+-- Owned by postgres so the definer functions bypass the table's FORCE ROW
+-- LEVEL SECURITY (table owner exemption) — same assumption as the
+-- device_tokens precedent (20260728223000).
 ALTER FUNCTION public.get_my_onboarding_version_seen(text)
   OWNER TO postgres;
 ALTER FUNCTION public.ack_my_onboarding_seen(text, integer)
