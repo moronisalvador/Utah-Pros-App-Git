@@ -13140,10 +13140,11 @@ html.ui-glass .tech-nav {
 :root[data-native="true"] .public-native-shell > .login-page,
 :root[data-native="true"] .public-native-shell > .set-pw-page {
   min-height: 0;
+  flex: 1;
 }
 
-/* CRM LEAD VALUE — the row's own value, not a control. appearance:none is
-   load-bearing: WebKit shows native button chrome with no solid background.*/
+/* CRM LEAD VALUE — row's own value, not a control. appearance:none is
+   load-bearing: WebKit shows native chrome with no background.*/
 .crm-lead-value {
   appearance: none;
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
