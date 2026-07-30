@@ -15,9 +15,31 @@ verifiable in the next native build — group them accordingly.
 
 ## Open
 
+**Theme: trapped screens / navigation escape hatches (fix as one batch)**
+
+- [ ] (P2) Document signing screen — no back/cancel control; the tech is stuck on the
+      screen until someone signs. Expected: an always-visible way out that safely
+      abandons the signing attempt. (Found 2026-07-29, TestFlight 1.0.0 (1).)
+- [ ] (P2) Legal & Support pages — the three screens (Privacy / Terms / Support) have no
+      top-left back button; once opened, the user is stuck. Expected: standard back
+      affordance on all three. (Found 2026-07-29.)
+- [ ] (P2) Job screen back button — always navigates to the claim page regardless of
+      where the user came from. Expected: origin-aware back (history back with claim
+      page as fallback only). (Found 2026-07-29.)
+
+**Theme: haptics consistency**
+
 - [ ] (P3) Tech nav bar — tab presses have no haptic feedback, while the notification bell
-      has a satisfying haptic. Expected: consistent light haptic on primary nav taps,
-      matching the bell's feel. (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
+      and the header trio by the technician's name feel great. Expected: primary nav taps
+      match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
+      motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
+
+**Theme: notifications surface (feature-sized — may fold into the onboarding session)**
+
+- [ ] (P3) Settings → Notifications — tapping the section should open a dedicated
+      notifications page: activate/deactivate push plus per-type customization (the
+      per-type self-recipient config that already exists server-side). (Owner request
+      2026-07-29.)
 
 ## Done
 
