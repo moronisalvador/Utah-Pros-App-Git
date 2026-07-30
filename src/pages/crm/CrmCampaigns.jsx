@@ -132,12 +132,23 @@ export default function CrmCampaigns() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // LES-01 (loading-error-states.md §1): the referral-sources read KEEPS its
+      // catch on purpose — it only fills an audience FILTER dropdown, and one
+      // missing grant must not blank the campaigns list. What changes is that
+      // it no longer fails SILENTLY: a short filter list used to read as "these
+      // are all the sources", which would let someone build a campaign audience
+      // against options that merely failed to load.
+      let refError = null;
       const [c, r] = await Promise.all([
         db.rpc('get_email_campaigns', {}),
-        db.rpc('get_referral_sources', {}).catch(() => []),
+        db.rpc('get_referral_sources', {}).catch((e) => { refError = e; return []; }),
       ]);
       setCampaigns(c || []);
       setReferralSources(r || []);
+      if (refError) {
+        console.error('get_referral_sources failed:', refError?.message || refError);
+        err('Referral sources could not be loaded — the audience filter is not showing all options');
+      }
     } catch {
       err('Failed to load email campaigns');
     } finally {
@@ -172,15 +183,26 @@ export default function CrmCampaigns() {
     setAudienceFilterAtLoad(c.audience_filter || {});
     setAudienceLoading(true);
     try {
+      // LES-01 (loading-error-states.md §1): the exclusions read used to end in
+      // `.catch(() => [])`. `db.rpc` THROWS on any non-OK response, so a failed
+      // read produced an EMPTY exclusion set — every previously-excluded
+      // contact silently re-checked as "included". That is not just a
+      // misleading render: saving from that screen calls
+      // `set_campaign_exclusions` with the empty set and DESTROYS the stored
+      // suppression list for an email campaign. It now rejects.
       const [rows, exclusions] = await Promise.all([
         db.rpc('preview_email_audience', { p_filter: c.audience_filter || {}, p_limit: AUDIENCE_LOAD_LIMIT }),
-        db.rpc('get_campaign_exclusions', { p_campaign_id: c.id }).catch(() => []),
+        db.rpc('get_campaign_exclusions', { p_campaign_id: c.id }),
       ]);
       setAudienceRows(rows || []);
       setExcludedIds(new Set((exclusions || []).map(e => e.contact_id)));
     } catch {
       err('Failed to load this campaign\'s audience');
-      setAudienceRows([]);
+      // Reset to the un-loaded state, NOT an empty audience: `saveCampaign`
+      // only writes exclusions when `audienceRows !== null`, so leaving this
+      // null is what stops a failed read from overwriting the saved exclusion
+      // list with nothing.
+      resetAudience();
     } finally {
       setAudienceLoading(false);
     }

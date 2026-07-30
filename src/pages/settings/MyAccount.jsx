@@ -75,19 +75,30 @@ function GoogleDriveIntegrationPanel({ db }) {
   const [status,     setStatus]     = useState(null);   // { connected, google_email, connected_at }
   const [cal,        setCal]        = useState(null);   // { connected, synced_count, error_count }
   const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState(null);
   const [connecting, setConnecting] = useState(false);
   const [syncing,    setSyncing]    = useState(false);
   const [confirmDisc, setConfirmDisc] = useState(false);
 
+  // LES-01 (loading-error-states.md §1): both status reads used to carry an
+  // inline `.catch(() => [])`. `db.rpc` THROWS on any non-OK response, so that
+  // swallow collapsed a failed read into `{ connected: false }` — telling a
+  // user whose Google account IS connected that it is NOT, and inviting them to
+  // re-run the OAuth grant against a service that is merely unreachable. The
+  // reads now reject, and the panel says it could not check.
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [drive, calendar] = await Promise.all([
-        db.rpc('get_google_drive_status').catch(() => []),
-        db.rpc('get_google_calendar_status').catch(() => []),
+        db.rpc('get_google_drive_status'),
+        db.rpc('get_google_calendar_status'),
       ]);
       setStatus(Array.isArray(drive) ? (drive[0] || { connected: false }) : (drive || { connected: false }));
       setCal(Array.isArray(calendar) ? (calendar[0] || { connected: false }) : (calendar || { connected: false }));
+    } catch (e) {
+      console.error('Google integration status load failed:', e?.message || e);
+      setLoadError('Could not check your Google connection');
     } finally { setLoading(false); }
   }, [db]);
   useEffect(() => { load(); }, [load]);
@@ -136,6 +147,29 @@ function GoogleDriveIntegrationPanel({ db }) {
   };
 
   if (loading) return <div style={{ padding: 32, display: 'flex', justifyContent: 'center' }}><div className="spinner" /></div>;
+
+  // LES-01 (loading-error-states.md §1): a failed status read renders an ERROR,
+  // never the "Not connected" success state — the two are indistinguishable to
+  // the user but mean opposite things.
+  if (loadError) {
+    return (
+      <div className="settings-panel">
+        <div style={{ marginBottom: 'var(--space-5)' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Google</h2>
+        </div>
+        <div style={{
+          border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-5)', textAlign: 'center',
+        }}>
+          <div style={{ fontWeight: 600, fontSize: 'var(--text-base)', marginBottom: 4 }}>{loadError}</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+            This does not mean you are disconnected — we could not reach the service to check.
+          </div>
+          <button className="btn btn-sm btn-primary" onClick={load}>Try again</button>
+        </div>
+      </div>
+    );
+  }
 
   const connected    = status?.connected;
   const calConnected = cal?.connected;

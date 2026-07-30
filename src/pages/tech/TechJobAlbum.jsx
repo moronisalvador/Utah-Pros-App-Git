@@ -63,13 +63,23 @@ export default function TechJobAlbum() {
   const fileRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
+  // `.catch(() => [])`. `db.select` THROWS on any non-OK response, so that
+  // swallow rendered "No photos yet. Tap Add Photo to capture the first one."
+  // over a real outage — and on the post-upload reload it WIPED a grid the tech
+  // was looking at. It now rejects into the outer catch.
+  //
+  // `silent` = don't re-gate the page (page-lifecycle.md §1: the loading gate is
+  // cold-start only). `quiet` = don't surface the failure; the upload already
+  // reported its own outcome, so the grid stays put and the error goes to the
+  // console only. Precedent for the silence gate: src/pages/crm/CrmCallLog.jsx.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       const [rows, docList] = await Promise.all([
         db.select('jobs', `id=eq.${jobId}&select=*`),
-        db.select('job_documents', `job_id=eq.${jobId}&category=eq.photo&order=created_at.desc`).catch(() => []),
+        db.select('job_documents', `job_id=eq.${jobId}&category=eq.photo&order=created_at.desc`),
       ]);
       const j = rows?.[0];
       if (!j) {
@@ -82,6 +92,7 @@ export default function TechJobAlbum() {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechJobAlbum load failed:', e?.message || e);
+      if (quiet) return;
       setLoadError('Failed to load album');
       toast('Failed to load album', 'error');
     } finally {
@@ -124,7 +135,10 @@ export default function TechJobAlbum() {
       });
       impact('light');
       toast('Photo uploaded');
-      load();
+      // LES-01: silent + quiet — refresh the grid without collapsing the page
+      // into a spinner, and without stacking a second toast on "Photo uploaded"
+      // if the refresh itself fails. The already-rendered grid stays.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {

@@ -37,19 +37,29 @@ import { useAuth } from '@/contexts/AuthContext';
 import { MANAGED_LISTS } from '@/lib/managedLists';
 import LookupTable from '@/components/settings/LookupTable';
 import TabLoading from '@/components/TabLoading';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
+import { err as errToast } from '@/lib/toast';
 
 function ManagedListSection({ list }) {
   const { db } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
+  // LES-01 (loading-error-states.md §1): the read used to end in
+  // `.catch(() => [])`, and the outer catch only logged — so a failed load
+  // rendered this managed list as EMPTY with no feedback at all. An admin
+  // reading "no items" over an outage would re-add values that already exist.
+  // The read now rejects into the catch, which keeps whatever rows are already
+  // on screen and says so.
   const load = useCallback(async () => {
     try {
-      const rows = await db.rpc(list.getRpc).catch(() => []);
+      const rows = await db.rpc(list.getRpc);
       setItems(rows || []);
-    } catch (err) { console.error(`${list.key} load error:`, err); }
+      setLoadError(null);
+    } catch (e) {
+      console.error(`${list.key} load error:`, e);
+      setLoadError('Failed to load this list');
+    }
     finally { setLoading(false); }
   }, [db, list]);
   useEffect(() => { load(); }, [load]);
@@ -70,6 +80,19 @@ function ManagedListSection({ list }) {
   };
 
   if (loading) return <TabLoading />;
+
+  // LES-01: a failed load renders an ERROR, never the success "0 items" table.
+  if (loadError && items.length === 0) {
+    return (
+      <div className="settings-panel" style={{ padding: 'var(--space-5)' }}>
+        <div style={{ fontWeight: 600, fontSize: 'var(--text-base)', marginBottom: 4 }}>{list.title}</div>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+          {loadError} — this is not the same as the list being empty.
+        </div>
+        <button className="btn btn-sm btn-primary" onClick={load}>Retry</button>
+      </div>
+    );
+  }
 
   return (
     <LookupTable

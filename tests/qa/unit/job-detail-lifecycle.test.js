@@ -15,6 +15,13 @@
  * only ever set false), §3 (mutations patch in place), and
  * loading-error-states.md §6 (PTR is always the silent load).
  *
+ * `load()` later grew a SECOND, independent flag (`quiet`, LES-01) covering a
+ * different question — whether a failure is reported, not whether the page
+ * re-gates. The assertions below therefore match on `silent: true` being
+ * PRESENT rather than on an exact argument literal: JOB-01 owns the gate, and a
+ * pin on the literal would fail every time an orthogonal flag is added, which
+ * teaches the next author to loosen the guard instead of the pin.
+ *
  * Source contract rather than a render test: this lane is DOM-free
  * (vitest.config.js environment 'node', no jsdom in the repo), and the property
  * that matters — which call sites re-gate — is structural.
@@ -28,7 +35,7 @@ const source = readFileSync(join(ROOT, 'src/pages/tech/TechJobDetail.jsx'), 'utf
 
 describe('JOB-01 — TechJobDetail loading gate', () => {
   it('only gates when the caller did not ask for a silent load', () => {
-    expect(source).toMatch(/const load = useCallback\(async \(\{ silent = false \} = \{\}\) =>/);
+    expect(source).toMatch(/const load = useCallback\(async \(\{ silent = false[^}]*\} = \{\}\) =>/);
     expect(source).toMatch(/if \(!silent\) setLoading\(true\);/);
     // A bare setLoading(true) anywhere in load() would re-gate unconditionally.
     const loadBody = source.slice(
@@ -50,7 +57,7 @@ describe('JOB-01 — TechJobDetail loading gate', () => {
       source.indexOf('const saveNote = async'),
       source.indexOf('const saveNote = async') + 1400,
     );
-    expect(saveNote).toContain('load({ silent: true })');
+    expect(saveNote).toMatch(/load\(\{ silent: true[^)]*\}\)/);
     expect(saveNote).not.toMatch(/\bload\(\);/);
   });
 
@@ -59,7 +66,7 @@ describe('JOB-01 — TechJobDetail loading gate', () => {
       source.indexOf('const uploadPhoto'),
       source.indexOf('const saveNote = async'),
     );
-    expect(upload).toContain('load({ silent: true })');
+    expect(upload).toMatch(/load\(\{ silent: true[^)]*\}\)/);
     expect(upload).not.toMatch(/\bload\(\);/);
   });
 

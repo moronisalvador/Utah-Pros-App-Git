@@ -89,6 +89,91 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 
 ---
 
+<<<<<<< ours
+## Load-failure contract — an outage never renders as "empty" (LES-01, Jul 30 2026)
+
+`db.select` / `db.rpc` **THROW** on any non-OK response (400/404/500). They do not resolve to `[]`.
+So an inline `.catch(() => [])` on a read does not "make it resilient" — it converts a real outage
+into a successful-looking **empty result**, which `loading-error-states.md` §1 names the
+highest-impact defect in the app. 31 of these existed across 18 files; 28 were removed on
+2026-07-30 and 3 kept with a `LES-01 triage — KEEP` comment stating why.
+
+**What the pattern looks like now** (reference: `TechJobDetail.jsx`, `TechJobAlbum.jsx`):
+
+- Reads inside a `load()` carry **no inline catch** — they reject into the one outer catch.
+- Every setter is **committed together after all reads resolve**, so a partial failure can neither
+  half-update the screen nor slip past the page's `if (!job)` / `if (!detail?.claim)` error gate
+  into a page of false empty sections.
+- The outer catch does `console.error(...)` — **a tech is never shown raw PostgREST JSON** — then
+  sets the error state and toasts.
+- **Two independent flags, never one.** `load({ silent, quiet })`:
+  | caller | flags | why |
+  |---|---|---|
+  | cold load | `load()` | gate the page, report the failure |
+  | pull-to-refresh | `{ silent: true }` | no gate (loading-error-states §6) but **still reports** — the tech chose the gesture, and silence leaves them pulling against a dead connection |
+  | post-mutation reload (upload / save) | `{ silent: true, quiet: true }` | no gate, **no second toast** — the mutation already reported itself; already-rendered rows stay put and the failure goes to the console |
+  A single boolean cannot express both, which is why `quiet` exists separately from `silent`.
+  Precedent for the silence gate: `src/pages/crm/CrmCallLog.jsx`.
+- A **secondary lookup** (a picker/filter beside un-swallowed primary content) may keep a catch, but
+  captures the error into a local, logs it, and toasts which control is degraded — an empty picker
+  must never read as "none exist". See `CrmAutomations` / `CrmSequences` / `CrmCampaigns`.
+
+Notable failures this closed: a FALSE "no signed Work Authorization" compliance banner on
+`TechJobDetail` + `TechAppointment`; resume silently erasing visible e-signature rows on
+`TechJobDocuments`; an all-unchecked permission matrix on `settings/Roles`; `settings/TemplatesEditor`
+opening built-in defaults as if they were the saved template (a save would have overwritten the real
+one); and `crm/CrmCampaigns` emptying a campaign's exclusion set, which the next save would have
+persisted as "exclude nobody".
+
+Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
+repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
+=======
+## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
+
+`src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
+comes back" (`page-lifecycle.md` §2). It owns the hidden→visible edge detection, the `focus`
+listener, and the `document.hidden` poll guard §4 requires:
+
+```js
+useResumeRefetch({ onResume, onFocus, pollMs, hiddenEdgeOnly = true, enabled = true })
+```
+
+Callbacks are held in refs, so passing a fresh inline function each render does **not** re-subscribe.
+`hiddenEdgeOnly` (default) fires `onResume` only on a real hidden→visible transition, not on every
+desktop refocus. Note the hook does **not** apply a visibility guard to `onFocus` — a page that also
+refreshes on focus keeps its own `document.visibilityState === 'visible'` check inside the callback
+(see `CrmCallLog`).
+
+**The last five page-level hand-rolled listeners were migrated Jul 30 2026**, so no page or
+component registers `visibilitychange`/`focus` itself any more:
+
+| Surface | Was | Now |
+|---|---|---|
+| `pages/crm/CrmCallLog.jsx` | visibilitychange + focus + 15s `setInterval` | `{ onResume, onFocus, pollMs: 15000 }` |
+| `pages/tech/admin/AdminLeadCenter.jsx` | same shape, 20s interval | `{ onResume, onFocus, pollMs: 20000 }` |
+| `pages/JobPage.jsx` (FilesTab) | visibilitychange → sign requests + an unguarded inline `job_documents` select | one generation-guarded `refreshOnResume` |
+| `pages/tech/v2/dash/AttentionStrip.jsx` | visibilitychange → `checkAway()` | `{ enabled: active, onResume: checkAway }` |
+| `pages/tech/TechJobDocuments.jsx` | visibilitychange → `loadRequests()` | `{ onResume: loadRequests }` |
+
+The two raw `setInterval` polls are gone with them — both now inherit the hook's hidden-guard, so a
+backgrounded phone no longer polls CallRail every 15–20s. JobPage's FilesTab additionally gained the
+request guard §2 requires (a `resumeGenRef` generation compared before each `setState`); previously
+two bare selects could land a stale job's files on the job you had just navigated to.
+
+**Sanctioned exceptions** (allowed to hold a raw listener because each is the one implementation of
+its concern): `components/overview/hooks/usePolledRpc.js` (the hidden-guard behavior model),
+`components/RouteRestorer.jsx` (the single scroll/route-restoration primitive, §5), and
+`lib/nativeKeyboardLayout.js` (keyboard metrics, not a refetch). `useResumeRefetch.js` itself
+attaches to **injected** `doc`/`win` params, which is what keeps its `subscribeResume` unit-testable
+without a DOM.
+
+**Guard:** `tests/qa/unit/resume-listener-lifecycle.test.js` sweeps all of `src/` and fails on a new
+hand-rolled listener anywhere outside that allowlist — it is not a snapshot of these five files.
+Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
+>>>>>>> theirs
+
+---
+
 ## File Structure
 
 ```
@@ -107,6 +192,7 @@ src/
     clockPrecheck.js              — Time-Tracking PR-2: runOmwPrecheck(db, apptId, employeeId) (fail-open call to clock_omw_precheck) + jobLabel/fmtElapsed helpers. Used by TimeTracker.jsx + TechDash.jsx before OMW.
     navItems.jsx                  — Single source of truth for office nav: NAV_ITEMS (legacy sidebar list), PRIMARY/OVERFLOW/SYSTEM groupings, nav icon components, isItemVisible() gate. Read by Sidebar + the desktop TopNav/OverflowDrawer/SettingsLayout.
     backNav.js                    — History-aware Back (field-polish Jul 29 2026): canGoBack() reads React Router v7's history.state.idx; goBackOr(navigate, fallback) pops when in-app history exists, else replaces to the fallback. Used by TechJobDetail, v2 HubHeader, TechJobAlbum, TechJobDocuments, Legal, SignPage. Unit-tested (backNav.test.js).
+    signSubmit.js                 — Jul 30 2026: the SignPage submit path, split out so its failure shapes are testable. submitEsign(body, fetchImpl?) POSTs /api/submit-esign and THROWS on every failure (worker `{error}` message, else `Submission failed (<status>)`); an unparseable body is a failure, never a silent success (the ESIGN false-success class). submitErrorText(err) turns it into a customer-facing sentence — a rejected fetch ("Failed to fetch"/"Load failed") becomes "We could not reach the server." Unit-tested (SignPage.submitError.test.jsx).
   pages/
     Login.jsx                     — Email/password login + forgot password (no employee selector)
     SetPassword.jsx               — Password reset flow (recovery link handler)
@@ -233,7 +319,7 @@ src/
                                     entries collapsed into one "Lists & Values" entry (src/lib/navItems.jsx,
                                     IconListValues).
     Help.jsx                      — In-app Help & Guides centre (route /help — now UNWRAPPED from the settings hub, renders directly in Layout; reached from the TopNav ? button + Sidebar). Landing menu of guide cards → opens a guide; the open guide is kept in the URL hash (#how-it-works / #invoicing, plus an optional #guide/section to deep-link straight to a section) so it deep-links and survives refresh, and the ? button (no hash) always lands on the menu. Two guides today: "How UPR Works" (office orientation — the Customer→Claim→Job→Invoice hierarchy rendered natively + worked example, the cardinality rules, first-call-to-paid job lifecycle, creating a new job (the New Job modal walkthrough + dos/don'ts), a tour of every main screen, the 7 divisions, a "where do I do X" quick-reference, a glossary, and a field-tech mobile note) and "Invoicing & Financials" (build → Save to QBO → get paid → Collections; downloadable PDF). Visible to every logged-in user (not role-gated). Printable hierarchy diagram served from /public/UPR-Hierarchy-Diagram.html. Contextual ? links (HelpLink.jsx) on the New Job modal, invoice builder, Collections, and Claims open the matching guide section in a new tab. Static content only — no DB reads/writes.
-    SignPage.jsx                  — Public esign page (no auth) — type or draw signature. Field-polish (Jul 29 2026): when reached by IN-APP navigation (the tech "Collect signature on-site" flow — canGoBack() true) it renders an escape hatch on every state — header Back (disabled while submitting), Back bar on the error/expired/signed cards, and a Done button on the completion card. A customer's cold link open has no in-app history, so the public page is unchanged. Abandoning is safe: nothing is written before the atomic /api/submit-esign POST; the sign request stays pending.
+    SignPage.jsx                  — Public esign page (no auth) — type or draw signature. Field-polish (Jul 29 2026): when reached by IN-APP navigation (the tech "Collect signature on-site" flow — canGoBack() true) it renders an escape hatch on every state — header Back (disabled while submitting), Back bar on the error/expired/signed cards, and a Done button on the completion card. A customer's cold link open has no in-app history, so the public page is unchanged. Abandoning is safe: nothing is written before the atomic /api/submit-esign POST; the sign request stays pending. **Submit-failure visibility (Jul 30 2026, close-out finding):** the catch used to write `errorMsg`, which only renders in the `status === 'error'` early-return branch — so a failed POST dropped the customer back on an unchanged form with NO error shown. It now sets a separate `submitError` rendered inline by `SubmitErrorNotice` (role="alert") directly above the Submit button, cleared at the start of the next attempt. Inline is required, not stylistic: this page renders outside both app shells, so there is no toast container and a `lib/toast` call here would be swallowed. Request/message logic lives in `lib/signSubmit.js`.
     CreateJob.jsx                 — Full-page job creation flow
     Legal.jsx                     — Public /privacy + /terms + /support pages (required by Intuit's QBO production profile + App Store). Also rendered inside the field shell at /tech/legal/* (App.jsx). Field-polish (Jul 29 2026): LegalLayout carries a Back button — always visible in the tech shell (fallback /tech/settings), history-gated on the public copies so a direct visitor/App Store reviewer keeps the plain document; cross-links (LegalLink) stay on /tech/legal/* when inside the tech shell.
     settings/FeedbackInbox.jsx    — Feedback inbox (route /settings/feedback, admin-only; was /tech-feedback → permanent redirect)
@@ -242,6 +328,27 @@ src/
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     settings/Payments.jsx         — Stripe pay-link + payout settings (route /settings/payments; was /payments/settings → redirect)
   pages/tech/
+    ** Dark-theme token migration (Jul 30 2026) — applies across this whole block and components/tech/.
+      Raw hex color literals on the field surface were swapped to the semantic design tokens
+      (var(--danger|success|warning|info|neutral) + their -bg/-border) so `[data-theme="dark"]
+      .tech-layout` re-tones them instead of leaving frozen light patches. 23 files: techConstants.js
+      (APPT_STATUS_COLORS + CLAIM_STATUS_COLORS now hold var() strings, same {bg,color,border} shape,
+      so consumers were untouched), TechAppointment, TechClaimDetail, TechClaimAlbum, TechRoomDetail,
+      TechOOPPricing, TechEditAppointment, TechNewAppointment, TechNewEvent, TechNewJob,
+      TechNewCustomer, TechTasks, and components/tech/{StalledWidget, OfflineStatusPill,
+      OfflineReconciliationPanel, ClockSupersedeSheet, EsignRequestSheet, GenerateReportButton,
+      NowNextTile, TimeTracker, ReadingEntrySheet, Hero, PhotosGroup}, plus src/lib/oopPricing.js
+      (TIER_COLORS, the margin-tier badge — it lives in lib/ but renders inside .tech-layout via
+      TechOOPPricing; it uses the semantic family and NOT --status-*, because --status-* is
+      .tech-layout-scoped and this module is also consumed by the desktop src/pages/OOPPricing.jsx,
+      where those tokens resolve to nothing). Verified in-browser at 390px in
+      both themes: light mode resolves to the original hex (a visual no-op), dark darkens the tint
+      while every foreground keeps its hue. Color-only — no layout, behavior, or index.css change.
+      DELIBERATELY still raw hex (all documented in place, none is a defect): the categorical division /
+      appointment-type palettes, TechDemoSheet's email-HTML palette (email clients can't resolve CSS
+      vars), the `p_phase_color` RPC arguments, #fff on saturated fills, and four armed two-click
+      destructive-confirm fills. Rules + the status-vs-categorical split: UPR-Design-System.md →
+      Dark-theme contract. NOT covered: TechJobDetail.jsx / TechJobDocuments.jsx (migrated separately).
     TechDash.jsx / TechSchedule.jsx — DELETED (Tech Mobile v2 Phase C, Jul 4 2026 cutover). Both
       v2 flags (page:tech_dash_v2, page:tech_sched_v2) baked and went live for all techs, so the
       legacy pages + their App.jsx swap shims were removed; /tech and /tech/schedule now always
@@ -260,7 +367,7 @@ src/
     TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
     TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (Resend HTML email) + /api/encircle-upload (general note posted to the linked claim) + /api/demo-sheet-pdf (renders the sheet to a PDF and attaches it to the job's Files via job_documents, category 'demo_sheet' — also surfaces on the customer page Files section) in parallel; ResultScreen shows per-channel success/fail (email, Encircle, PDF); final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
-    TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon. Nav tab taps fire impact('light') via lib/nativeHaptics (Jul 29 2026 field-polish — matches the bell/IconButton press haptic; native-only, reduced-motion-suppressed) and carry the standard :active scale(0.97) press on the motion tokens with a prefers-reduced-motion collapse (source contract: tests/qa/unit/tech-nav-haptics.test.js).
+    TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon. Nav tab taps fire impact('light') via lib/nativeHaptics (Jul 29 2026 field-polish — matches the bell/IconButton press haptic; native-only, reduced-motion-suppressed) and carry the standard :active scale(0.97) press on the motion tokens with a prefers-reduced-motion collapse (source contract: tests/qa/unit/tech-nav-haptics.test.js). **Lifecycle (Jul 30 2026):** the More-tab badge counts today's tasks from `get_assigned_tasks` on mount and every 60s **via `useResumeRefetch` — hidden-guarded**, so it no longer polls a backgrounded phone (it also refetches on the hidden→visible edge, so the badge is current the moment a tech looks at it); toast-expiry restoration moved onto the same hook. This shell now registers **no** `visibilitychange` listener and owns **no** `setInterval` of its own (page-lifecycle.md §2/§4; source contract: tests/qa/unit/tech-shell-poll-guard.test.js). The badge fetch is `fetchTodayTaskCount(db, employeeId)`, module-scope and pure — it returns the count, and both callers swallow the throw, because a background poll must never toast.
     tech/Hero.jsx                 — Shared division-gradient hero. Prop-configurable: { division, topLabel, title, address, statusText, statusColors, meta[], onBack, backLabel, showMenu, onMenu }. Used by TechClaimDetail and TechJobDetail.
     tech/ActionBar.jsx            — Shared 3-button action bar: Call (tel:), Navigate (maps), Message (sms:). Disabled state when phone/address missing. Used by TechClaimDetail and TechJobDetail. TechAppointment keeps its own 5-button version.
     tech/NowNextTile.jsx          — Shared context-aware "what's happening" tile + pickNowNext(appointments, employeeId) helper. 4 cases: now_active (en_route/in_progress/paused) / today / next / hidden.

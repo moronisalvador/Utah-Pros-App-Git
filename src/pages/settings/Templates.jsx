@@ -29,6 +29,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import TabLoading from '@/components/TabLoading';
+import { err } from '@/lib/toast';
 import { DOC_TYPES, DEFAULT_TEMPLATES } from './templates/templateData';
 
 function IconEdit(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);}
@@ -44,12 +45,20 @@ export default function Templates() {
     (async () => {
       setLoading(true);
       try {
-        const rows = await db.rpc('get_document_templates').catch(() => []);
+        // LES-01 (loading-error-states.md §1): this used to end in
+        // `.catch(() => [])`. `db.rpc` THROWS on any non-OK response, so a
+        // failed read produced an empty override map, and every document on
+        // this grid then read as "not customized" during an outage. It now
+        // rejects into the catch below.
+        const rows = await db.rpc('get_document_templates');
         const map = {};
         for (const row of rows || []) {
           map[`${row.doc_type}::${row.division || '_'}`] = { heading: row.heading, body: row.body, sort_order: row.sort_order };
         }
         if (!cancelled) setDbTemplates(map);
+      } catch (e) {
+        console.error('Templates load failed:', e?.message || e);
+        if (!cancelled) err('Failed to load saved templates — customized documents may not be marked');
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };

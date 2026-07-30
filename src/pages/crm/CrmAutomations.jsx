@@ -189,14 +189,30 @@ export default function CrmAutomations() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // LES-01 (loading-error-states.md §1): the two secondary reads KEEP their
+      // catches on purpose — they populate pickers beside the automations list,
+      // and one missing grant must not blank the page's primary content. What
+      // changes is that they no longer fail SILENTLY: an empty sequence picker
+      // used to read as "no sequences exist", which is a different fact from
+      // "we could not ask". The error is captured, logged, and reported.
+      let seqsError = null;
+      let settError = null;
       const [autos, seqs, sett] = await Promise.all([
         db.rpc('get_crm_automations', {}),
-        db.rpc('get_sequences', {}).catch(() => []),
-        db.rpc('get_automation_settings', {}).catch(() => null),
+        db.rpc('get_sequences', {}).catch((e) => { seqsError = e; return []; }),
+        db.rpc('get_automation_settings', {}).catch((e) => { settError = e; return null; }),
       ]);
       setAutomations(autos || []);
       setSequences(seqs || []);
       setSettings(sett || null);
+      if (seqsError) {
+        console.error('get_sequences failed:', seqsError?.message || seqsError);
+        err('Sequences could not be loaded — the sequence picker is not showing all options');
+      }
+      if (settError) {
+        console.error('get_automation_settings failed:', settError?.message || settError);
+        err('Automation settings could not be loaded');
+      }
     } catch {
       err('Failed to load automations');
       setAutomations([]);

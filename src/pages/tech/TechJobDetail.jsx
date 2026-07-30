@@ -182,18 +182,44 @@ export default function TechJobDetail() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  // JOB-01. `silent` refetches WITHOUT re-gating the page.
+  // JOB-01 / LES-01. Two INDEPENDENT flags, because this page's three reload
+  // triggers want two different answers and one boolean cannot carry both:
   //
-  // The page-level gate below renders a short spinner in place of the whole
-  // page. `.tech-content` (the shell) owns the scroll, and `.tech-page` declares
-  // no overflow — so collapsing this child to a spinner clamps the shell's
-  // scrollTop, and the page comes back near the hero instead of where the tech
-  // was working. Every save, upload and pull-to-refresh did that.
+  //   cold load           load()                          gate the page · report failure
+  //   pull-to-refresh     load({ silent: true })          no gate · REPORT failure — the
+  //                                                       tech chose the gesture, so
+  //                                                       silence would leave them pulling
+  //                                                       against a dead connection
+  //   post-mutation       load({ silent: true,            no gate · no SECOND toast — the
+  //   (upload / save)                quiet: true })       upload or save already reported
+  //                                                       its own outcome; the failure
+  //                                                       goes to the console and the
+  //                                                       rows already on screen stay put
+  //
+  // `silent` = don't re-gate the page. The page-level gate below renders a
+  // short spinner in place of the whole page. `.tech-content` (the shell) owns
+  // the scroll, and `.tech-page` declares no overflow — so collapsing this
+  // child to a spinner clamps the shell's scrollTop, and the page comes back
+  // near the hero instead of where the tech was working.
+  //
+  // `quiet` = don't surface the failure. Never blanket-applied to a silent
+  // reload: pull-to-refresh is silent AND must still report.
+  //
+  // LES-01 (loading-error-states.md §1): each of the five reads below used to
+  // carry an inline `.catch(() => [])`. `db.select`/`db.rpc` THROW on any
+  // non-OK response, so that swallow converted a real outage into a
+  // successful-looking EMPTY result — "No appointments", "No photos or notes
+  // yet", a vanished claim breadcrumb, and worst, a FALSE "no signed Work
+  // Authorization" compliance banner. They now reject into the outer catch.
+  //
+  // Every setter is committed together AFTER all five resolve, so a partial
+  // failure can neither half-update the screen nor (on a cold load) slip past
+  // the `!job` gate into a page of false empty sections.
   //
   // page-lifecycle.md §1: the gate is cold-start only — `loading` starts true
-  // and is only ever set false. §3: mutations patch in place. Precedent:
-  // src/pages/crm/CrmCallLog.jsx.
-  const load = useCallback(async ({ silent = false } = {}) => {
+  // and is only ever set false. §3: mutations patch in place. Precedent for the
+  // silence gate: src/pages/crm/CrmCallLog.jsx.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
     if (!silent) setLoading(true);
     setLoadError(null);
     try {
@@ -203,21 +229,21 @@ export default function TechJobDetail() {
         setLoadError(t('notFound'));
         return;
       }
-      setJob(j);
 
       const [contacts, claimRows, allAppts, docList, workAuth] = await Promise.all([
-        db.rpc('get_job_contacts', { p_job_id: jobId }).catch(() => []),
+        db.rpc('get_job_contacts', { p_job_id: jobId }),
         j.claim_id
-          ? db.select('claims', `id=eq.${j.claim_id}&select=id,claim_number`).catch(() => [])
+          ? db.select('claims', `id=eq.${j.claim_id}&select=id,claim_number`)
           : Promise.resolve([]),
         j.claim_id
-          ? db.rpc('get_claim_appointments', { p_claim_id: j.claim_id }).catch(() => [])
+          ? db.rpc('get_claim_appointments', { p_claim_id: j.claim_id })
           : Promise.resolve([]),
-        db.select('job_documents', `job_id=eq.${jobId}&order=created_at.desc`).catch(() => []),
-        db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`).catch(() => []),
+        db.select('job_documents', `job_id=eq.${jobId}&order=created_at.desc`),
+        db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`),
       ]);
       const list = Array.isArray(contacts) ? contacts : [];
       const primary = list.find(c => c.is_primary) || list[0] || null;
+      setJob(j);
       setContact(primary);
       setClaim(claimRows?.[0] || null);
       const jobAppts = (allAppts || []).filter(a => a.job_id === jobId);
@@ -228,6 +254,9 @@ export default function TechJobDetail() {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechJobDetail load failed:', e?.message || e);
+      // A quiet reload leaves the loaded page exactly as it was — no error
+      // screen, no toast on top of the mutation's own.
+      if (quiet) return;
       setLoadError(t('toastLoadFailed'));
       toast(t('toastLoadFailed'), 'error');
     } finally {
@@ -270,7 +299,10 @@ export default function TechJobDetail() {
       });
       impact('light');
       toast(t('tech:toast.photoUploaded'));
-      load({ silent: true });   // JOB-01: keep the photo grid and scroll in place
+      // JOB-01: keep the photo grid and scroll in place. LES-01: quiet — the
+      // upload already reported its own result, so a failed refresh must not
+      // stack a second toast on top of "Photo uploaded"; the grid stays as-is.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast(t('tech:toast.photoUploadFailed', { message: err.message }), 'error');
     } finally {
@@ -336,7 +368,9 @@ export default function TechJobDetail() {
       // and losing the tech's scroll position. On failure this line is never
       // reached, so the draft and the open editor both survive (tech-mobile-ux.md
       // online-only rule: a save must fail visibly with the text intact).
-      load({ silent: true });
+      // LES-01: quiet — the save already toasted; a failed refresh keeps the
+      // existing note list rather than adding a second, confusing toast.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     } finally {

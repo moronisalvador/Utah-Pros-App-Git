@@ -74,13 +74,20 @@ export default function TechRoomDetail() {
   const pendingJobRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // LES-01 (loading-error-states.md §1): the room list and the photo/note read
+  // each used to carry an inline `.catch(() => [])`. `db.rpc`/`db.select` THROW
+  // on any non-OK response, so a failed room read reported the honest-looking
+  // but wrong "Room not found", and a failed document read rendered an empty
+  // room over a real outage — wiping the grid on the post-upload reload. Both
+  // now reject into the outer catch. `silent`/`quiet` per page-lifecycle.md §1:
+  // the loading gate is cold-start only, and the upload already reported itself.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       const [detail, roomList] = await Promise.all([
         db.rpc('get_claim_detail', { p_claim_id: claimId }),
-        db.rpc('get_claim_rooms', { p_claim_id: claimId }).catch(() => []),
+        db.rpc('get_claim_rooms', { p_claim_id: claimId }),
       ]);
       if (!detail?.claim) {
         setLoadError('Claim not found');
@@ -91,18 +98,21 @@ export default function TechRoomDetail() {
         setLoadError('Room not found');
         return;
       }
+
+      const docList = await db
+        .select('job_documents', `room_id=eq.${roomId}&order=created_at.desc`);
+
+      // Committed after every read resolves, so a failed document read on a
+      // cold load lands on the error screen rather than an empty-looking room.
       setClaim(detail.claim);
       setJobs(detail.jobs || []);
       setRoom(foundRoom);
-
-      const docList = await db
-        .select('job_documents', `room_id=eq.${roomId}&order=created_at.desc`)
-        .catch(() => []);
       setDocs(docList || []);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechRoomDetail load failed:', e?.message || e);
+      if (quiet) return;
       setLoadError('Failed to load room');
       toast('Failed to load room', 'error');
     } finally {
@@ -170,7 +180,10 @@ export default function TechRoomDetail() {
       });
       impact('light');
       toast('Photo uploaded');
-      load();
+      // LES-01: silent + quiet — refresh without collapsing the page into a
+      // spinner, and without a second toast on top of "Photo uploaded" if the
+      // refresh fails. The already-rendered grid stays.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {
@@ -380,7 +393,7 @@ export default function TechRoomDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {notes.map(n => {
                 const job = jobs.find(j => j.id === n.job_id);
-                const divColor = DIV_BORDER_COLORS[job?.division] || '#6b7280';
+                const divColor = DIV_BORDER_COLORS[job?.division] || 'var(--neutral)';
                 return (
                   <div
                     key={n.id}
@@ -578,7 +591,7 @@ function JobPicker({ jobs, onPick, onClose, title }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {jobs.map(job => {
-            const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+            const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
             return (
               <button
                 key={job.id}

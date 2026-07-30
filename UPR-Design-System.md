@@ -202,7 +202,7 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
-## Dark-theme contract *(Last-verified: 2026-07-13, F-S2)*
+## Dark-theme contract *(Last-verified: 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
@@ -219,6 +219,23 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   (the audit found ~297 tech-surface hex literals W1 migrates to `var(--status-*)`).
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
+- **STATUS color is tokenized; CATEGORICAL color is not** *(2026-07-30 migration decision)*. A color that
+  means "this thing is failing / working / waiting" is status → it reads the semantic
+  `--success|--danger|--warning|--info|--neutral` triplet. A color that IS the identity of a thing
+  (division water=blue / fire=red / mold=pink, appointment type, an event accent) is categorical → the
+  hue carries the meaning, so it stays raw hex and is NOT a defect. `techConstants.js` holds both kinds
+  and says which is which. **Known remaining gap:** the light tints in `DIV_PILL_COLORS` and
+  `TYPE_CONFIG.bg` are still frozen-light in dark; closing that needs its own reviewed division token
+  family in `index.css`, not a swap.
+- **Use the semantic family, not `--status-*`, for anything with a border.** The tech dark block
+  re-points only `--status-*-bg`, so a pill built on that family keeps a LIGHT border on a dark fill;
+  the semantic family re-tones `-bg` AND `-border`. (`--status-*` remains correct for the clock-state
+  surfaces that already consume it and set no bordered tint.)
+- **Three sanctioned non-token exceptions,** each of which must carry a one-line comment saying so:
+  a saturated fill carrying white text (theme-invariant already, and the lighter token can drop it
+  below AA — e.g. an armed two-click destructive confirm); a hex inside generated **email** HTML
+  (email clients do not resolve CSS variables); and a hex that is **data**, not style (e.g. the
+  `p_phase_color` RPC argument).
 
 ## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-29, first-run/rare-delight tier row added with the tech onboarding tour)*
 
@@ -1139,9 +1156,15 @@ Example (the v2 `StatusChip` pattern): `style={{ background: 'var(--status-worki
 color: 'var(--status-working-color)' }}`. Division color is demoted to a small pill in v2 —
 it must never out-shout status.
 
-> Note: `src/pages/tech/techConstants.js` also exports `APPT_STATUS_COLORS` (hex map) for
-> JS-side lookups (e.g. dynamic inline styles where a CSS var isn't reachable). The
-> `.tech-layout` `--status-*` tokens are the canonical CSS source; keep the two in sync.
+> Note: `src/pages/tech/techConstants.js` also exports `APPT_STATUS_COLORS` /
+> `CLAIM_STATUS_COLORS` for JS-side lookups (dynamic inline styles). **As of 2026-07-30 those
+> maps hold `var(--…)` strings, not hex** — and they read the **semantic**
+> `--success|--danger|--warning|--info|--neutral` family, NOT the `--status-*` family above,
+> because the dark block re-points only `--status-*-bg` and these render with a border (see the
+> Dark-theme contract). Nothing to "keep in sync" any more: change the token, both follow. The
+> `--status-*` tokens above remain canonical for the CSS-side v2 `StatusChip` surfaces that
+> already consume them, and are `.tech-layout`-scoped — a module shared with a desktop page
+> (e.g. `src/lib/oopPricing.js`) must use the `:root` semantic family instead.
 
 ---
 

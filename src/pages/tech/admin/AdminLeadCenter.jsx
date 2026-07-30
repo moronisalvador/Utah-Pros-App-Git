@@ -17,7 +17,8 @@
  *   Packages:  react
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/components/admin-mobile
  *              (AdminMobilePage, AmTabs), @/components/TabLoading,
- *              ./ (leads) LeadRow, leadFormat
+ *              ./ (leads) LeadRow, leadFormat, @/lib/toast (err),
+ *              @/hooks/useResumeRefetch (20s poll + resume/focus refresh)
  *   Data:      reads  → inbound_leads via get_inbound_leads RPC (embeds contact;
  *                       POST so it's never cache-stale) · call recordings via the
  *                       /api/callrail-recording proxy (in LeadRow)
@@ -37,9 +38,8 @@ import { AdminMobilePage, AmTabs } from '@/components/admin-mobile';
 import TabLoading from '@/components/TabLoading';
 import LeadRow from '@/components/admin-mobile/leads/LeadRow';
 import { STATUS_FILTER_TABS, filterLeads } from '@/components/admin-mobile/leads/leadFormat';
-
-const toast = (message, type = 'error') =>
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import { err } from '@/lib/toast';
 
 export default function AdminLeadCenter() {
   const { db } = useAuth();
@@ -62,7 +62,7 @@ export default function AdminLeadCenter() {
       const rows = await dbRef.current.rpc('get_inbound_leads', { p_limit: 100 });
       setLeads(rows || []);
     } catch {
-      if (!silent) toast('Failed to load leads');
+      if (!silent) err('Failed to load leads');
     } finally {
       if (!silent) setLoading(false);
     }
@@ -73,17 +73,17 @@ export default function AdminLeadCenter() {
   // Auto-refresh so a newly-landed call appears without a manual reload: poll every
   // 20s while the tab is visible, and refetch when it regains focus. CallRail's
   // post-call webhook can lag ~1 min, so the screen keeps itself current.
-  useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') load({ silent: true }); };
-    const id = setInterval(refresh, 20000);
-    document.addEventListener('visibilitychange', refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', refresh);
-      window.removeEventListener('focus', refresh);
-    };
+  //
+  // All three signals go through the one shared hook (page-lifecycle.md §2),
+  // which owns the hidden→visible edge detection and the `document.hidden` poll
+  // guard §4 requires. The visibility check stays here because it is what keeps
+  // the `focus` path from firing while the document is still hidden — the hook
+  // does not guard onFocus, by design.
+  const silentRefresh = useCallback(() => {
+    if (document.visibilityState === 'visible') load({ silent: true });
   }, [load]);
+
+  useResumeRefetch({ onResume: silentRefresh, onFocus: silentRefresh, pollMs: 20000 });
 
   // ─── SECTION: Event handlers ──────────────
   const handleStatusChange = useCallback(async (leadId, next) => {
@@ -91,7 +91,7 @@ export default function AdminLeadCenter() {
     try {
       await dbRef.current.rpc('update_lead_status', { p_lead_id: leadId, p_status: next });
     } catch {
-      toast('Failed to update lead status');
+      err('Failed to update lead status');
       load();
     }
   }, [load]);

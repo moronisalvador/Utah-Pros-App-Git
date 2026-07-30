@@ -964,6 +964,12 @@ function ClaimTreeViewer() {
       const claimData = { ...claim, jobs: data?.jobs || data || [] };
       // Load contacts and tasks for each job
       const jobsWithDetails = await Promise.all((claimData.jobs || []).map(async (job) => {
+        // LES-01 triage — KEEP. These run once PER JOB while assembling a
+        // developer-only diagnostic tree, and the tree's value is showing which
+        // jobs resolve and which do not. Coupling them to the outer catch would
+        // let one bad job blank the whole claim, which is the opposite of what
+        // this tool is for. The un-swallowed `get_claim_jobs` above still
+        // reports a real outage.
         const [contacts, tasks] = await Promise.all([
           db.rpc('get_job_contacts', { p_job_id: job.id }).catch(() => []),
           db.rpc('get_job_task_summary', { p_job_id: job.id }).catch(() => null),
@@ -2226,20 +2232,31 @@ function TableInspector() {
   const [selected, setSelected] = useState(TABLE_LIST[0]);
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState(null);
+  const [rowsError, setRowsError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const inspect = useCallback(async (table) => {
     setLoading(true);
     setStats(null);
     setRows(null);
+    setRowsError(null);
     try {
+      // LES-01 (loading-error-states.md §1): this read used to end in
+      // `.catch(() => [])`, so a table that is not PostgREST-readable — or a
+      // grant that has been revoked — rendered as "no recent rows". On a
+      // DIAGNOSTIC surface that is the worst possible lie: "0 rows" and "I was
+      // not allowed to look" are the two answers a developer is here to tell
+      // apart. The row read stays independent of the stats read (they fail for
+      // different reasons), but the failure is now shown as itself.
+      let rowsError = null;
       const [statsResult, recentRows] = await Promise.all([
         db.rpc('get_table_stats', { p_table: table }),
-        db.select(table, 'select=*&order=created_at.desc&limit=5').catch(() => []),
+        db.select(table, 'select=*&order=created_at.desc&limit=5').catch((e) => { rowsError = e; return null; }),
       ]);
       const s = Array.isArray(statsResult) ? statsResult[0] : statsResult;
       setStats(s || { row_count: '?', latest_created_at: null });
-      setRows(recentRows || []);
+      setRowsError(rowsError ? (rowsError.message || String(rowsError)) : null);
+      setRows(rowsError ? null : (recentRows || []));
     } catch (e) {
       err('Failed to inspect table: ' + e.message);
     } finally {
@@ -2286,9 +2303,17 @@ function TableInspector() {
           }}>{JSON.stringify(rows, null, 2)}</pre>
         </>
       )}
+      {/* LES-01: "empty" and "the read failed" are now separate answers. The
+          old copy hedged ("empty or not accessible") precisely because the
+          swallow made them indistinguishable. */}
       {rows && rows.length === 0 && !loading && (
         <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--text-tertiary)', fontSize: 13 }}>
-          Table is empty or not accessible via REST.
+          Table is empty — the read succeeded and returned no rows.
+        </div>
+      )}
+      {rowsError && !loading && (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--danger, #dc2626)', fontSize: 13 }}>
+          Could not read rows: {rowsError}
         </div>
       )}
     </div>

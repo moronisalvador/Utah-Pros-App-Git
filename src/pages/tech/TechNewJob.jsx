@@ -455,7 +455,7 @@ export default function TechNewJob() {
         {/* ═══ CLIENT ═══ */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ ...labelStyle, marginBottom: 8 }}>
-            {t('labelClient')} <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelClient')} <span style={{ color: 'var(--danger)' }}>*</span>
           </div>
 
           {!contact ? (
@@ -719,7 +719,7 @@ export default function TechNewJob() {
 
         {/* ═══ DIVISION ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelDivision')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDivision')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8 }}>
             {DIVISIONS.map(d => (
               <button
@@ -746,7 +746,7 @@ export default function TechNewJob() {
 
         {/* ═══ REFERRAL SOURCE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelReferralSource')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelReferralSource')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {SOURCES.map(src => (
               <button
@@ -804,7 +804,7 @@ export default function TechNewJob() {
         <>
         {/* ═══ ADDRESS ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelLossAddress')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelLossAddress')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <AddressAutocomplete
             value={f.address}
             onChange={v => s('address', v)}
@@ -845,7 +845,7 @@ export default function TechNewJob() {
 
         {/* ═══ INSURANCE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelInsuranceCarrier')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelInsuranceCarrier')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <CarrierSelect
             value={f.insurance_company}
             onChange={v => s('insurance_company', v)}

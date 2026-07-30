@@ -18,7 +18,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/tech/StalledWidget, @/lib/nativeGeolocation,
- *              @/lib/nativeHaptics, @/lib/toast
+ *              @/lib/nativeHaptics, @/lib/toast, @/hooks/useResumeRefetch
  *   Data:      reads  → get_active_appointment_geo (jobsite arrival coords)
  *              writes → clock_appointment_action (pause / finish from the away
  *                        banner), clock_finish_entry (finish from the 5 PM banner)
@@ -26,7 +26,10 @@
  * NOTES / GOTCHAS:
  *   - Geolocation runs FOREGROUND-ONLY and is gated on the `active` prop (this
  *     pane being the visible tab) — a hidden persistent pane must not poll GPS.
- *     It is also debounced to once per 20s and fails silently.
+ *     It is also debounced to once per 20s and fails silently. The re-check on
+ *     resume runs through the shared useResumeRefetch hook with
+ *     `enabled: active`, so an inactive pane subscribes to nothing at all
+ *     (page-lifecycle.md §2).
  *   - The 5 PM "still clocked in" banner reads the open entry straight from the
  *     get_tech_dashboard payload (no extra query). The midnight auto-split is the
  *     backend safety net; this is the proactive nudge.
@@ -42,6 +45,7 @@ import { apptHref } from '@/components/tech/v2/nav.js';
 import { getCurrentCoords, distanceMeters } from '@/lib/nativeGeolocation';
 import { notify, impact } from '@/lib/nativeHaptics';
 import { toast } from '@/lib/toast';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 
 const AWAY_THRESHOLD_M = 200;
 
@@ -91,17 +95,15 @@ export default function AttentionStrip({ employee, db, active = true, openEntry,
   }, [db, employee.id, t]);
 
   useEffect(() => {
-    if (!active) return undefined;
-    checkAway();
-    const onVis = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') checkAway();
-    };
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', onVis);
-      return () => document.removeEventListener('visibilitychange', onVis);
-    }
-    return undefined;
+    if (active) checkAway();
   }, [active, checkAway]);
+
+  // Re-check on a real hidden→visible resume, through the one shared hook
+  // (page-lifecycle.md §2 — it owns the edge detection this used to hand-roll).
+  // `enabled: active` reproduces the old effect's `if (!active) return` bail, so
+  // an inactive strip never geolocates; checkAway's own 20s debounce keeps a
+  // rapid app-switch cheap.
+  useResumeRefetch({ enabled: active, onResume: checkAway });
 
   useEffect(() => () => { if (awayConfirmTimer.current) clearTimeout(awayConfirmTimer.current); }, []);
 

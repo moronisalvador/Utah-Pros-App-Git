@@ -43,11 +43,18 @@ export default function Roles() {
     try {
       setError(null);
 
+      // LES-01 (loading-error-states.md §1): the table fallback used to end in
+      // `.catch(() => [])`. `db.select` THROWS on any non-OK response, so a
+      // total outage rendered the permission matrix as every box UNCHECKED —
+      // indistinguishable from "this role has no access", on the one screen
+      // where an admin might then start ticking boxes to "restore" access that
+      // was never actually lost. The fallback now rethrows into the catch
+      // below, which sets the error state instead.
       let perms;
       try {
         perms = await db.rpc('get_all_permissions');
       } catch {
-        perms = await db.select('nav_permissions', 'order=role.asc,nav_key.asc').catch(() => []);
+        perms = await db.select('nav_permissions', 'order=role.asc,nav_key.asc');
       }
       setPermissions(perms || []);
     } catch {

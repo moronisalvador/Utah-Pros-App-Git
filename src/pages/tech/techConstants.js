@@ -24,25 +24,49 @@
  *   - Single source of truth for tech-screen colors — change a color here and
  *     every tech screen updates. Components that need the same colors import
  *     from here (e.g. Hero, PhotosGroup) rather than hardcoding their own.
+ *   - TWO DELIBERATELY DIFFERENT KINDS OF COLOR live in this file:
+ *     · APPT_STATUS_COLORS / CLAIM_STATUS_COLORS are STATUS, so they read the
+ *       semantic var(--success|danger|warning|info|neutral) tokens and follow the
+ *       tech dark theme automatically. Reasoning is inline above each map.
+ *     · DIV_* and TYPE_CONFIG are a CATEGORICAL brand palette (water=blue,
+ *       fire=red, mold=pink, …). The hue IS the meaning, so they are NOT status
+ *       tokens and stay raw hex on purpose. The gradients and DIV_BORDER_COLORS
+ *       are theme-invariant (saturated fills carrying white text). The light
+ *       tints in DIV_PILL_COLORS and TYPE_CONFIG.bg are the one KNOWN dark-theme
+ *       gap left on this surface — closing it needs its own reviewed division
+ *       token family in index.css, which is a CSS change, not a swap.
  * ════════════════════════════════════════════════
  */
 
 // ─── SECTION: Constants ──────────────
+// Status colors read the SEMANTIC tokens, not raw hex, so `[data-theme="dark"]
+// .tech-layout` re-tones them instead of leaving frozen light patches
+// (UPR-Design-System.md → Dark-theme contract). The {bg,color,border} shape is
+// unchanged, so every consumer keeps working untouched.
+//
+// Why the semantic family and NOT the tech `--status-*` family: the dark block
+// re-points only `--status-*-bg`, so those pills would keep a LIGHT border on a
+// dark fill, and `--status-completed-*` is gray where an appointment's
+// "completed" is green. The semantic family re-tones bg AND border, and is what
+// the shared StatusPill reads. In light mode this is a near-exact no-op —
+// scheduled/confirmed/en_route/paused/completed match their token triplet
+// byte-for-byte; only in_progress (#059669 → #16a34a) and the two `cancelled`/
+// `closed` borders (#e2e5e9 → #e5e7eb) shift, all imperceptibly.
 export const APPT_STATUS_COLORS = {
-  scheduled:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  confirmed:   { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  en_route:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
-  in_progress: { bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' },
-  paused:      { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
-  completed:   { bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' },
-  cancelled:   { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
+  scheduled:   { bg: 'var(--info-bg)',    color: 'var(--info)',    border: 'var(--info-border)' },
+  confirmed:   { bg: 'var(--info-bg)',    color: 'var(--info)',    border: 'var(--info-border)' },
+  en_route:    { bg: 'var(--warning-bg)', color: 'var(--warning)', border: 'var(--warning-border)' },
+  in_progress: { bg: 'var(--success-bg)', color: 'var(--success)', border: 'var(--success-border)' },
+  paused:      { bg: 'var(--danger-bg)',  color: 'var(--danger)',  border: 'var(--danger-border)' },
+  completed:   { bg: 'var(--success-bg)', color: 'var(--success)', border: 'var(--success-border)' },
+  cancelled:   { bg: 'var(--neutral-bg)', color: 'var(--neutral)', border: 'var(--neutral-border)' },
 };
 
 export const CLAIM_STATUS_COLORS = {
-  open:       { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  active:     { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
-  closed:     { bg: '#f1f3f5', color: '#6b7280', border: '#e2e5e9' },
-  pending:    { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+  open:       { bg: 'var(--info-bg)',    color: 'var(--info)',    border: 'var(--info-border)' },
+  active:     { bg: 'var(--info-bg)',    color: 'var(--info)',    border: 'var(--info-border)' },
+  closed:     { bg: 'var(--neutral-bg)', color: 'var(--neutral)', border: 'var(--neutral-border)' },
+  pending:    { bg: 'var(--warning-bg)', color: 'var(--warning)', border: 'var(--warning-border)' },
 };
 
 export const DIV_GRADIENTS = {

@@ -34,8 +34,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIVISION_COLORS } from '@/components/DivisionIcons';
 import AddContactModal from '@/components/AddContactModal';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
+import { toast } from '@/lib/toast';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const fmtPh = (phone) => { if (!phone) return ''; const d = phone.replace(/\D/g, ''); const n = d.startsWith('1') ? d.slice(1) : d; return n.length === 10 ? `(${n.slice(0, 3)}) ${n.slice(3, 6)}-${n.slice(6)}` : phone; };
 const TYPES = [['initial', 'Initial'], ['supplement', 'Supplement'], ['change_order', 'Change order'], ['final', 'Final']];
 const DIVISIONS = [['water', '\u{1F4A7}', 'Water'], ['mold', '\u{1F9A0}', 'Mold'], ['reconstruction', '\u{1F3D7}️', 'Reconstruction'], ['remodeling', '\u{1F528}', 'Remodeling'], ['fire', '\u{1F525}', 'Fire'], ['contents', '\u{1F4E6}', 'Contents']];
@@ -122,6 +122,11 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
     } catch (err) {
       const msg = err.message || '';
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        // LES-01 triage — KEEP. This is a recovery probe inside the
+        // duplicate-phone handler, not a load. An empty result does not render
+        // an empty state: it falls through to the explicit "already exists —
+        // search by name" message and rethrows the original error, which is
+        // exactly what a failed probe should say.
         const ex = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`).catch(() => []);
         if (ex?.length) { setSelectedContact(ex[0]); setShowAddContact(false); toast(`Found existing customer: ${ex[0].name}`); return; }
         toast('A customer with this phone already exists — search by name.', 'error'); throw err;

@@ -129,29 +129,48 @@ export default function TechAppointment() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  // LES-01 (loading-error-states.md §1): the two document reads and the Work
+  // Authorization check each used to carry an inline `.catch(() => [])`.
+  // `db.select` THROWS on any non-OK response, so those swallows turned a real
+  // outage into a successful-looking EMPTY result: "No photos or notes yet",
+  // and — worst — a FALSE "no signed Work Authorization" compliance banner
+  // telling a tech to stop and collect a signature that already exists. They
+  // now reject into the outer catch, which leaves whatever is already on screen
+  // untouched and reports the failure once.
+  //
+  // `quiet` = a post-mutation reload; the mutation already reported its own
+  // outcome, so a failed refresh must not stack a second toast. There is no
+  // `silent` flag here because `load` never re-gates the page: `loading` starts
+  // true and is only ever set false (page-lifecycle.md §1 cites this file as
+  // the gold standard), so pull-to-refresh already never unmounts it.
+  const load = useCallback(async ({ quiet = false } = {}) => {
     try {
       const [detail, taskList] = await Promise.all([
         db.rpc('get_appointment_detail', { p_appointment_id: id }),
         db.rpc('get_appointment_tasks', { p_appointment_id: id }),
       ]);
-      setAppt(detail);
-      setTasks(taskList || []);
       // Fetch docs by appointment_id OR job_id (catches older docs without appointment_id)
       const jobId = detail?.jobs?.id || detail?.job_id;
       const docList = jobId
-        ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`).catch(() => [])
-        : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []);
-      setDocs(docList || []);
+        ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`)
+        : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`);
       // Work Authorization compliance — is there a signed one on the parent job?
-      if (jobId) {
-        const wa = await db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`).catch(() => []);
-        setWorkAuthSigned((wa || []).length > 0);
-      } else {
-        setWorkAuthSigned(true); // no parent job (e.g. private appt) → no alert
-      }
-    } catch {
-      toast(t('toastLoadFailed'), 'error');
+      // A failed read must NOT read as "unsigned": it rejects, and the previous
+      // value (initially `true`, i.e. assume signed) stands.
+      const wa = jobId
+        ? await db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`)
+        : null;
+
+      // Committed after every read resolves, so a partial failure can neither
+      // half-update the screen nor slip past the `!appt` gate below.
+      setAppt(detail);
+      setTasks(taskList || []);
+      setDocs(docList || []);
+      setWorkAuthSigned(jobId ? (wa || []).length > 0 : true); // no parent job (e.g. private appt) → no alert
+    } catch (e) {
+      // Raw failures stay in the console for diagnosis and never reach the screen.
+      console.error('TechAppointment load failed:', e?.message || e);
+      if (!quiet) toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
   }, [db, id, t]);
@@ -211,7 +230,7 @@ export default function TechAppointment() {
         p_uploaded_by: employee.id,
         p_appointment_id: id,
       });
-      load();
+      load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
       impact('light');
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
@@ -277,7 +296,7 @@ export default function TechAppointment() {
   const handleSavePhotoNote = async (text) => {
     if (!photoNoteSheet?.id) return;
     await db.update('job_documents', `id=eq.${photoNoteSheet.id}`, { description: text });
-    load();
+    load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
   };
 
   const handleAssignPhotoRoom = async (roomId) => {
@@ -290,7 +309,7 @@ export default function TechAppointment() {
       const r = await db.rpc('get_job_rooms', { p_job_id: jobIdForRooms });
       setRooms(r || []);
     }
-    load();
+    load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
   };
 
   const handleCreateRoom = async (name) => {
@@ -465,7 +484,7 @@ export default function TechAppointment() {
       toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteOpen(false);
-      load();
+      load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     }
@@ -733,21 +752,21 @@ export default function TechAppointment() {
           style={{
             display: 'flex', alignItems: 'center', gap: 10, width: '100%',
             padding: '12px var(--space-4)', minHeight: 52,
-            background: '#fef2f2', borderTop: '1px solid #fecaca', borderBottom: '1px solid #fecaca',
+            background: 'var(--danger-bg)', borderTop: '1px solid var(--danger-border)', borderBottom: '1px solid var(--danger-border)',
             borderLeft: 'none', borderRight: 'none',
             cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{t('compliance.title')}</div>
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>{t('compliance.sub')}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>{t('compliance.title')}</div>
+            <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 1 }}>{t('compliance.sub')}</div>
           </div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -755,7 +774,7 @@ export default function TechAppointment() {
 
       <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={() => load()} style={{ flex: 1 }}>
         {/* Time Tracker */}
         <div style={{ padding: '0 var(--space-4)' }}>
           <TimeTracker appt={appt} employee={employee} db={db} onUpdate={load} />
@@ -788,7 +807,7 @@ export default function TechAppointment() {
                       <span style={{
                         fontSize: 10, fontWeight: 600, padding: '1px 6px',
                         borderRadius: 'var(--radius-full)',
-                        background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a',
+                        background: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)',
                       }}>
                         {t('lead')}
                       </span>
@@ -898,7 +917,7 @@ export default function TechAppointment() {
                   <span style={{
                     fontSize: 11, fontWeight: 700,
                     padding: '2px 8px', borderRadius: 'var(--radius-full)',
-                    background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                    background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)',
                     letterSpacing: 'normal', textTransform: 'none',
                   }}>
                     {t('stalledCount', { count: stalledCount })}
@@ -927,9 +946,9 @@ export default function TechAppointment() {
                   const goal = r.drying_goal_pct;
                   let mcColor = 'var(--text-primary)';
                   if (mc != null && goal != null) {
-                    if (mc <= goal) mcColor = '#16a34a';
-                    else if (mc - goal <= 2) mcColor = '#d97706';
-                    else mcColor = '#dc2626';
+                    if (mc <= goal) mcColor = 'var(--success)';
+                    else if (mc - goal <= 2) mcColor = 'var(--warning)';
+                    else mcColor = 'var(--danger)';
                   }
                   return (
                     <div key={r.id} style={{
@@ -971,7 +990,7 @@ export default function TechAppointment() {
                         <span style={{
                           fontSize: 10, fontWeight: 700,
                           padding: '2px 6px', borderRadius: 'var(--radius-full)',
-                          background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                          background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)',
                         }}>
                           {t('stalled')}
                         </span>
@@ -1053,10 +1072,10 @@ export default function TechAppointment() {
                           minHeight: 36, minWidth: 48,
                           padding: '6px 10px',
                           fontSize: 12, fontWeight: 700,
-                          border: `1px solid ${isConfirming ? '#fecaca' : 'var(--border-light)'}`,
+                          border: `1px solid ${isConfirming ? 'var(--danger-border)' : 'var(--border-light)'}`,
                           borderRadius: 8,
-                          background: isConfirming ? '#fef2f2' : 'var(--bg-tertiary)',
-                          color: isConfirming ? '#dc2626' : 'var(--text-tertiary)',
+                          background: isConfirming ? 'var(--danger-bg)' : 'var(--bg-tertiary)',
+                          color: isConfirming ? 'var(--danger)' : 'var(--text-tertiary)',
                           cursor: 'pointer',
                           fontFamily: 'var(--font-sans)',
                         }}
@@ -1272,13 +1291,13 @@ export default function TechAppointment() {
           left: 16, right: 16,
           zIndex: 100,
           padding: '10px 14px',
-          background: '#f0fdf4', border: '1px solid #bbf7d0',
+          background: 'var(--success-bg)', border: '1px solid var(--success-border)',
           borderRadius: 'var(--radius-lg)',
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           animation: 'tech-fade-in 0.15s ease-out',
         }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>{t('tech:toast.photoSaved')}</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--success)' }}>{t('tech:toast.photoSaved')}</span>
           <button
             onClick={openPhotoNoteSheet}
             style={{
