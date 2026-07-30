@@ -21,13 +21,15 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-- `supabase/migrations/20260728000000_sms_consent_opt_out_only.sql` — opt-out-only consent
-  (owner-directed 2026-07-28). Until it applies, the database never returns `IMPLIED_CONSENT`, so
-  live behaviour is unchanged. Apply is a separate owner-authorized window.
-- `supabase/migrations/20260729220000_tech_onboarding_state.sql` — tech first-run onboarding flag
-  (owner request 2026-07-29): `employee_onboarding_state` + two selector-free definer RPCs. Until
-  it applies, the frontend gate fails closed and the tour never shows — deploy code first, apply
-  in a separate owner-authorized window.
+**None.** Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
+
+- `20260729220000_tech_onboarding_state.sql` → live ledger `20260730115220`. Postconditions and an
+  independent check passed (RLS enabled+forced, no browser-role table grant, `anon` EXECUTE false on
+  both definer RPCs). The first-run tour is live; verified rendering all three screens.
+- `20260728000000_sms_consent_opt_out_only.sql` → live ledger `20260730121811`. Its drift guard
+  passed before replacement; live body still carries the DND, explicit-opt-out and pending-STOP
+  refusals, and the function stays `service_role`-only. Opt-out-only is live for staff 1:1 only.
+  Detail + rollback posture: `.claude/rules/sms-experience-wave-ownership.md` §13.
 
 ## Standing operational state
 

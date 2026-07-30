@@ -411,8 +411,12 @@ no `servicePurpose` input and cannot opt itself into this exception. No automate
 these notices is live yet; the existing staff-triggered signature request remains a direct
 `POST /api/send-message` action.
 
-**NOT APPLIED.** The migration is authored, reviewed and tested at repository level only. Applying
-it to the shared Supabase project is a separate owner-authorized window per
-`database-standard.md` §0/§5. Until it applies, every send path keeps its current live behaviour —
-the direct staff worker accepts `IMPLIED_CONSENT`, but the database never returns it, so nothing
-changes.
+**APPLIED 2026-07-30** under explicit owner authorization, live ledger version `20260730121811`.
+The migration's own drift guard passed, confirming the live body was byte-exact to the reviewed
+2026-07-28 definition before replacement. Verified live afterwards: `anon` and `authenticated`
+EXECUTE both false, `service_role` true, and the DND / explicit-opt-out / pending-STOP refusals all
+still present in the live body. Opt-out-only is therefore **live behaviour now** for the direct
+staff 1:1 path, which accepts `IMPLIED_CONSENT`; every automated, scheduled, group, broadcast, bulk,
+campaign and marketing path still accepts `GLOBAL_OPT_IN` only. The code-side revert (remove
+`IMPLIED_CONSENT` from `STAFF_ACCEPTED_CONSENT_CODES` and redeploy) remains the faster rollback and
+needs no database window; the rollback migration reverses the database return code itself.
