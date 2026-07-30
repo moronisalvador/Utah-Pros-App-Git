@@ -4087,6 +4087,27 @@ occurred; `ios-signing` secrets remain unpopulated (Path A follow-up).
 Evidence detail: `docs/mobile/push-activation-owner-gate.md`. Field polish
 findings now accumulate in `docs/mobile/field-polish-punchlist.md`.
 
+### Xcode Cloud post-clone hook — ordering guard (2026-07-30)
+
+`ci_scripts/ci_post_clone.sh` now runs `npm ci` **before** it validates the
+required `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` workflow variables.
+Previously a missing variable exited the hook first, so `node_modules` never
+existed, and Xcode's Capacitor SPM resolution then failed with an unrelated
+"cannot access `@capacitor/splash-screen`" — burying the real cause. Installing
+first makes the readable variable error the only error. Cost of the swap: a
+missing variable is now reported after `npm ci` rather than within seconds.
+
+**This hook is Xcode-Cloud-only, and Xcode Cloud is NOT the canonical pipeline.**
+`.github/workflows/ios-release.yml` is canonical (owner decision 2026-07-29); the
+auto-attached "App | Default" workflow is to be **paused** in App Store Connect —
+not deleted — because its builds bypass
+`scripts/qa/verify-ios-release-artifact.mjs` entirely and PR-triggered builds
+burn the free compute allowance. This change is therefore **dormant** unless
+Apple-managed CI is deliberately revisited. The two Supabase variables remain
+owner-controlled Xcode Cloud workflow configuration, and a real cloud build is
+still required to prove the complete path. Guard:
+`scripts/ios-release-workflow.test.js` → "Xcode Cloud post-clone hook".
+
 ## Admin notification presentation Settings (2026-07-29)
 
 The web build now owns an admin-only `/settings/notification-presentation` page in the Settings
