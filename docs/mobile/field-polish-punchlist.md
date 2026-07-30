@@ -27,13 +27,6 @@ verifiable in the next native build — group them accordingly.
       where the user came from. Expected: origin-aware back (history back with claim
       page as fallback only). (Found 2026-07-29.)
 
-**Theme: haptics consistency**
-
-- [ ] (P3) Tech nav bar — tab presses have no haptic feedback, while the notification bell
-      and the header trio by the technician's name feel great. Expected: primary nav taps
-      match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
-      motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
-
 **Theme: perceived performance**
 
 - [ ] (P2) Notification bell first-open jank — the first tap after every cold app start
@@ -62,4 +55,13 @@ verifiable in the next native build — group them accordingly.
 
 ## Done
 
-*(move items here with completion date + commit)*
+- [x] (P3) Tech nav bar — tab presses have no haptic feedback, while the notification bell
+      and the header trio by the technician's name feel great. Expected: primary nav taps
+      match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
+      motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
+      **Done 2026-07-29, commit `86b00fc2`** — `impact('light')` on tab tap (the exact
+      bell/header-trio pattern; `selection()` deliberately not used — the reference the
+      owner praised is the impact tick) + the standard `:active` scale(0.97) press on
+      `.tech-nav-tab` with reduced-motion collapse. Haptic FEEL check on device pends the
+      next native build (code path pinned by `tests/qa/unit/tech-nav-haptics.test.js`).
+      Office/CRM shells deliberately untouched: the native app mounts only `/tech/*`.
