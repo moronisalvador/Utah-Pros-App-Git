@@ -26,7 +26,12 @@ describe('TOAST-01 — the timer survives being backgrounded', () => {
   });
 
   it('gives back any toast that ran out while nobody was looking', () => {
-    expect(layout).toContain("if (document.visibilityState !== 'visible') return;");
+    // The resume edge is the shared hook's job now (page-lifecycle.md §2 bans a
+    // hand-rolled visibilitychange listener in a page or shell). useResumeRefetch
+    // calls back only on a real hidden→visible transition, which is exactly what
+    // the local `visibilityState !== 'visible'` early-out used to establish — so
+    // pin the wiring rather than the deleted line.
+    expect(layout).toContain('useResumeRefetch({ onResume: restoreExpiredToasts })');
     expect(layout).toContain('expiresAt: now + TOAST_RESUME_MIN_MS');
   });
 

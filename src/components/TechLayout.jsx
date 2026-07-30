@@ -21,8 +21,10 @@
  *              components/ErrorBoundary, components/tech/v2 (TechPane, skeletons),
  *              lib/nativeHaptics (light press tick on tab taps), lib/resumeRestore,
  *              lib/pwaDiagnostics, pages/tech/v2 (TechDashV2, TechScheduleV2 — lazy),
- *              hooks/useTechOnboarding, components/tech/onboarding/TechOnboarding (lazy)
- *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
+ *              hooks/useTechOnboarding, hooks/useResumeRefetch,
+ *              components/tech/onboarding/TechOnboarding (lazy)
+ *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge,
+ *                      paused while backgrounded)
  *
  * NOTES / GOTCHAS:
  *   - Pane host: v2 panes render OUTSIDE the pathname-keyed <Outlet/> wrapper so
@@ -30,6 +32,10 @@
  *     banned on WKWebView). Dashboard/Schedule are the only live implementations.
  *   - The keyed <Outlet/> replays the 0.2s fade on each route change and is not
  *     rendered while a v2 pane covers the screen.
+ *   - Both resume behaviors (the task-badge poll and toast-expiry restoration) run
+ *     through useResumeRefetch — this shell registers NO visibilitychange listener
+ *     of its own, and the badge poll no-ops while backgrounded
+ *     (page-lifecycle.md §2/§4).
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, Suspense, lazy } from 'react';
@@ -46,6 +52,7 @@ import { isStandaloneDisplay } from '@/lib/resumeRestore.js';
 import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics.js';
 import { useTechConversations } from '@/pages/tech/v2/messages/useTechConversations.js';
 import { useTechOnboarding } from '@/hooks/useTechOnboarding.js';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch.js';
 
 // Tech Mobile v2 panes render PERSISTENTLY in the pane host below, outside the
 // keyed <Outlet/>, so tab switches don't remount them.
@@ -156,6 +163,21 @@ const TOAST_RESUME_MIN_MS = 3000;
 // driven by onAnimationEnd, but an animation that never fires — a backgrounded
 // tab, a display:none ancestor — must not strand a toast on screen forever.
 const TOAST_EXIT_FALLBACK_MS = 400;
+
+// How often the "More" tab's task badge re-counts (page-lifecycle.md §4: the
+// interval that drives it lives in useResumeRefetch, which pauses it while the
+// app is backgrounded).
+const TASK_BADGE_POLL_MS = 60000;
+
+// The badge's data fetch, kept at module scope and PURE — it returns the count
+// rather than setting state, so the mount load and the poll/resume refresh below
+// share one definition of "today's tasks" without either owning the other's
+// state writes. Throws like every db call (CLAUDE.md's DB Client API); callers
+// swallow it, because a badge is not worth interrupting a tech over.
+async function fetchTodayTaskCount(db, employeeId) {
+  const tasks = await db.rpc('get_assigned_tasks', { p_employee_id: employeeId });
+  return (tasks || []).filter(t => t.is_today).length;
+}
 
 const TABS = [
   { key: 'dash', label: 'Dash', path: '/tech', Icon: IconHome, exact: true },
@@ -450,38 +472,64 @@ export default function TechLayout({ nativeBuild = false }) {
 
   // Resume: hand back any toast that expired unseen. page-lifecycle.md's minimize
   // test is the same idea — coming back must not lose what you were shown.
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      const now = Date.now();
-      setToasts(prev => {
-        let changed = false;
-        const next = prev.map(t => {
-          if (t.leaving || t.expiresAt - now >= TOAST_RESUME_MIN_MS) return t;
-          changed = true;
-          return { ...t, expiresAt: now + TOAST_RESUME_MIN_MS };
-        });
-        // Returning `prev` unchanged matters: a fresh array every resume would
-        // re-run the timer effect above for nothing.
-        return changed ? next : prev;
+  // Goes through the shared useResumeRefetch below rather than its own
+  // visibilitychange listener (page-lifecycle.md §2 bans hand-rolled ones); the
+  // hook only calls this on a real hidden→visible edge, so the old
+  // `visibilityState !== 'visible'` early-out is now the hook's job.
+  const restoreExpiredToasts = useCallback(() => {
+    const now = Date.now();
+    setToasts(prev => {
+      let changed = false;
+      const next = prev.map(t => {
+        if (t.leaving || t.expiresAt - now >= TOAST_RESUME_MIN_MS) return t;
+        changed = true;
+        return { ...t, expiresAt: now + TOAST_RESUME_MIN_MS };
       });
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
+      // Returning `prev` unchanged matters: a fresh array every resume would
+      // re-run the timer effect above for nothing.
+      return changed ? next : prev;
+    });
   }, []);
 
+  useResumeRefetch({ onResume: restoreExpiredToasts });
+
+  // MORE-BADGE-01. The "More" tab's task-count badge refreshes on a 60s timer.
+  // That timer had a cleanup but no hidden-guard, so it kept calling
+  // get_assigned_tasks all night on a backgrounded phone — page-lifecycle.md §4
+  // requires both. Routing the timer through useResumeRefetch supplies the guard
+  // from one place (the same `if (doc.hidden) return` as usePolledRpc.js:62) and
+  // adds the hidden→visible refetch, so the badge is correct the moment a tech
+  // looks at it instead of up to 60s stale. The cold load stays outside that guard
+  // on purpose: the badge has to load once even if the shell first mounts hidden.
+  // Silent by law — never flips a loading flag, never toasts (§4).
+  const employeeId = employee?.id;
+
+  // Cold load, and again if the signed-in technician changes. Cancel-guarded so a
+  // slow response for a previous technician cannot land on the new one's badge.
   useEffect(() => {
-    if (!employee?.id || !db) return;
-    const load = async () => {
+    if (!employeeId || !db) return undefined;
+    let cancelled = false;
+    (async () => {
       try {
-        const tasks = await db.rpc('get_assigned_tasks', { p_employee_id: employee.id });
-        setTaskCount((tasks || []).filter(t => t.is_today).length);
-      } catch { /* ignore */ }
-    };
-    load();
-    const interval = setInterval(load, 60000);
-    return () => clearInterval(interval);
-  }, [db, employee?.id]);
+        const count = await fetchTodayTaskCount(db, employeeId);
+        if (!cancelled) setTaskCount(count);
+      } catch { /* ignore — see fetchTodayTaskCount */ }
+    })();
+    return () => { cancelled = true; };
+  }, [db, employeeId]);
+
+  // The 60s refresh + the hidden→visible edge. The hook owns the interval, its
+  // cleanup and the document.hidden guard, so there is no hand-rolled listener
+  // and no unguarded timer left in this shell.
+  useResumeRefetch({
+    onResume: async () => {
+      if (!employeeId || !db) return;
+      try {
+        setTaskCount(await fetchTodayTaskCount(db, employeeId));
+      } catch { /* ignore — see fetchTodayTaskCount */ }
+    },
+    pollMs: TASK_BADGE_POLL_MS,
+  });
 
   const isActive = (tab) => {
     if (tab.exact) return location.pathname === tab.path;
