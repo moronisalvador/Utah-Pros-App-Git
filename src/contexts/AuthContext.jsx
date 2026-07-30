@@ -40,6 +40,12 @@
  *   - recoverSession() is the app's ONLY 401 handler. stableDb.js calls it when
  *     the database rejects the JWT; it renews once (single-flight) or flips
  *     `sessionExpired`. Nothing else should hand-roll a 401 branch.
+ *   - Explicit sign-out (logout()) may complete visually after a bounded
+ *     silent push-detach retry when the only residual is a journaled
+ *     same-owner push cleanup (owner decision 2026-07-29, silent by design —
+ *     see accountDeviceCleanup.js). Every other cleanup-blocked path
+ *     (password recovery, foreign-owner recovery, signed-out reauth, login)
+ *     still hard-walls behind the full-screen retry lock.
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
