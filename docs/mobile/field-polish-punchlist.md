@@ -82,3 +82,9 @@ verifiable in the next native build — group them accordingly.
       (Flagged 2026-07-30 during overnight merge; pre-existing.)
 - [ ] (P3) Side-tab accent borders (Layout.jsx ~L327, TechLayout.jsx ~L609) — design hook flags
       the thick one-side card accent; revisit in a design pass. (Flagged 2026-07-30; pre-existing.)
+- [ ] (P3) Dark-theme status colors: 4 files reverted from the 2026-07-30 sweep because they
+      carry unrelated lint debt the changed-files ratchet requires clearing —
+      TimeTracker (exported helpers → own module), StalledWidget (load-in-effect hooks
+      pattern), ClockSupersedeSheet + TechOOPPricing (style consts used before definition).
+      Clear the debt, then re-apply the token swap. They keep frozen light-tone status
+      colors in dark theme until then.
