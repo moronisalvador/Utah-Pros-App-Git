@@ -13140,5 +13140,18 @@ html.ui-glass .tech-nav {
 :root[data-native="true"] .public-native-shell > .login-page,
 :root[data-native="true"] .public-native-shell > .set-pw-page {
   min-height: 0;
-  flex: 1;
+
+/* ─── CRM LEAD VALUE (2026-07-30) — the value must read as the row's own value, not a control dropped into it ── */
+.crm-lead-value {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; border-bottom: 1px dotted var(--crm-border);
+}
+.crm-lead-value:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 2px; }
+.crm-lead-value-muted { color: var(--crm-text-tertiary); }
+.crm-lead-value-edit { display: flex; align-items: center; gap: var(--space-2); }
+.crm-lead-value-edit .crm-input { width: 104px; padding: 4px 8px; font-size: 13px; }
+@media (max-width: 768px) {
+  .crm-lead-value-edit { flex-wrap: wrap; justify-content: flex-end; }
+  .crm-lead-value-edit .crm-input { width: 100%; }
+  .crm-lead-value-edit .crm-btn { min-height: 44px; }
 }

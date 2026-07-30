@@ -9,6 +9,46 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+## CRM lead value — manual entry + claim-wide billed total (2026-07-30, owner-directed)
+
+Applied live, ledger **`20260730155213`** (`20260730133000_crm_lead_value_from_claim.sql`), proven on
+the `qa-staging` branch first.
+
+**Schema (additive):** `inbound_leads.claim_id uuid` (FK → `claims`, `ON DELETE SET NULL`, partial
+index) and `inbound_leads.value_source text` (`'manual'` | `'auto'` | NULL). A `'manual'` value is
+never overwritten by automation.
+
+**New RPCs/functions** (all `SECURITY DEFINER`, `search_path` pinned, `REVOKE ... FROM PUBLIC, anon`
+then `GRANT ... TO authenticated, service_role`):
+- `crm_lead_claim_value(p_claim_id) → numeric` — **the single claim → jobs → invoices join.** Sums
+  `COALESCE(adjusted_total, total)` for every invoice under the claim that is sent, QBO-emailed,
+  converted from an estimate, or carries a payment. A draft never counts.
+  ⚠ **Multi-tenant seam:** `claims`/`jobs`/`invoices`/`contacts` carry no `org_id` (only the CRM
+  tables do), so the lead is the org anchor. When billing gains `org_id`, the predicate goes HERE.
+- `crm_recompute_lead_value(p_lead_id) → numeric` — recomputes from source (idempotent by
+  construction); skips `'manual'` rows and unchanged values.
+- `crm_recompute_lead_values_for_claim(p_claim_id)`, `crm_attach_claim_to_lead(p_claim_id) → uuid`.
+- `set_lead_value(p_lead_id, p_value, p_updated_by) → inbound_leads` — the Leads panel's write path.
+  Validates the caller in SQL (active, non-external employee). `p_value = NULL` returns the lead to
+  automatic and recomputes. Deliberately **not** `set_lead_details`, which would blank `notes`.
+- `crm_backfill_lead_values(p_days)` — admin-**session**-gated, so it cannot run from the SQL editor.
+
+**Triggers:** `crm_invoice_lead_value_sync` on `invoices`
+(`AFTER INSERT OR DELETE OR UPDATE OF total, adjusted_total, job_id, sent_at, qbo_emailed_at,
+amount_paid, estimate_id` — the list must name every column `crm_lead_claim_value()` reads);
+`crm_job_claim_lead_value_sync` on `jobs`; `crm_claim_created_lead_link` on `claims`. All trap their
+own errors so CRM bookkeeping can never block a money write.
+
+**Why it was rewritten:** `20260721_crm_lead_value_sync.sql` had been applied for nine days and never
+ran once (0 events, 0 of 156 leads valued) — its `AFTER INSERT ON invoices` trigger tested
+`total > 0`, but invoices are inserted with no total and get one later by UPDATE
+(`recompute_invoice_from_lines`). `crm_sync_lead_value` is left in place but unwired from
+`crm_trg_invoice_created` (dropping a live granted function is forbidden by `database-standard.md`
+§3). Won auto-advance is preserved verbatim.
+
+**UI:** `src/pages/crm/CrmLeads.jsx` — inline-editable Value row in the lead detail panel. It was
+previously hidden whenever `value` was null, which is why there was no way to enter one.
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
