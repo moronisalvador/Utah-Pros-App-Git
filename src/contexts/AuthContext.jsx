@@ -46,6 +46,13 @@
  *     see accountDeviceCleanup.js). Every other cleanup-blocked path
  *     (password recovery, foreign-owner recovery, signed-out reauth, login)
  *     still hard-walls behind the full-screen retry lock.
+ *   - Every confirmed local sign-out records the ended session's server id
+ *     (endedSessionGuard.js), and the auth observer refuses + purges that
+ *     session if supabase-js ever re-persists it — a signOut() racing an
+ *     in-flight token refresh steals the SDK lock and the orphaned refresh
+ *     re-saves the session afterwards (2026-07-29 native sign-out defect #2).
+ *     A fresh login always mints a new session id, so cross-tab login sync
+ *     is structurally unaffected.
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
@@ -62,6 +69,12 @@ import {
   detachAccountPushDevices,
   retryPendingAccountPushDetaches,
 } from '@/lib/accountDeviceCleanup';
+import {
+  isSessionEnded,
+  readPersistedSessionDescriptor,
+  recordEndedSessionId,
+  sessionIdFromAccessToken,
+} from '@/lib/endedSessionGuard';
 import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
 import {
   fingerprintPwaPrincipal,
@@ -274,6 +287,77 @@ export function AuthProvider({ children }) {
   }, [authLifecycle]);
   recoverRef.current = recoverSession;
 
+  // ── Ended-session revival guard (2026-07-29 native sign-out defect #2) ──
+  // auth-js signOut() steals the SDK auth lock from an in-flight token refresh
+  // after 5s; the orphaned refresh later re-persists the signed-out session
+  // (_callRefreshToken → _saveSession has no signed-out re-check) and the next
+  // resume/cold start re-enters the account. The ONE local sign-out path below
+  // records the ended session's stable server id so the observer can refuse
+  // exactly that session — and only that session — if it ever comes back.
+
+  // The single local sign-out path. Captures the session id BEFORE signOut
+  // (session_id is stable across token rotation, so it still matches a
+  // zombie's rotated token) and records it only after CONFIRMED success — the
+  // hard-wall retry paths must never tombstone a still-live session.
+  const signOutLocalSession = useCallback(async (transition) => {
+    const endedSessionId = sessionIdFromAccessToken(tokenRef.current);
+    let signOutError = null;
+    try {
+      const signOutResult = await realtimeClient.auth.signOut({
+        scope: 'local',
+      });
+      signOutError = localSignOutError(signOutResult);
+    } catch (error) {
+      signOutError = error;
+    }
+    if (!signOutError || transition?.signedOutObserved === true) {
+      recordEndedSessionId(endedSessionId);
+    }
+    return signOutError;
+  }, []);
+
+  // Removes a revived ended session from SDK storage. The precheck is a
+  // side-effect-free storage read on purpose — auth.getSession() refreshes a
+  // near-expiry session and would extend the very zombie being purged.
+  const purgeEndedSession = useCallback(async () => {
+    // A live explicit transition owns SIGNED_OUT attribution; never race it.
+    // The tombstone stays put, so the guard re-fires on the next auth event.
+    if (explicitLogoutRef.current !== null) return;
+    const persisted = readPersistedSessionDescriptor();
+    if (persisted.status === 'none') return; // already gone — nothing to purge
+    const published = activePrincipalRef.current !== null
+      || readyPrincipalRef.current !== null;
+    if (persisted.status === 'session') {
+      // A newer legitimate session already owns storage — leave it alone.
+      if (!isSessionEnded(persisted.sessionId)) return;
+    } else if (published) {
+      // Storage state is unknowable and a principal is live: purging could
+      // destroy the live session. Stay conservative; re-check on next event.
+      return;
+    }
+    // Absorb the purge's own SIGNED_OUT only when there is nothing published
+    // to tear down. With a published principal (a zombie clobbered a newer
+    // account's storage) the full SIGNED_OUT teardown must run so the UI
+    // cannot keep rendering authorized state over a destroyed session.
+    const marker = published
+      ? null
+      : { finalized: true, signedOutObserved: false };
+    if (marker) explicitLogoutRef.current = marker;
+    try {
+      await realtimeClient.auth.signOut({ scope: 'local' });
+    } catch {
+      // Best-effort: the tombstone remains, so the guard re-fires on the next
+      // SIGNED_IN / TOKEN_REFRESHED / cold start for this session.
+    } finally {
+      // Safe to clear here: the SDK notifies SIGNED_OUT synchronously inside
+      // signOut(), and the observer captures its marker reference at push
+      // time — the capture strictly precedes this clear.
+      if (marker && explicitLogoutRef.current === marker) {
+        explicitLogoutRef.current = null;
+      }
+    }
+  }, []);
+
   // ── Bootstrap: check existing session ──
   useEffect(() => {
     // Intercept recovery links — if URL hash contains type=recovery,
@@ -289,6 +373,16 @@ export function AuthProvider({ children }) {
       const generation = authLifecycle.begin();
       try {
         const { data: { session } } = await realtimeClient.auth.getSession();
+        // Cold start with a revived ended session already persisted (the
+        // zombie refresh landed and the app was relaunched): purge instead of
+        // bootstrapping. The finally below lands loading=false → Login.
+        const initSessionId = session
+          ? sessionIdFromAccessToken(session.access_token)
+          : null;
+        if (initSessionId && isSessionEnded(initSessionId)) {
+          await purgeEndedSession();
+          return;
+        }
         if (
           session?.user
           && window.location.pathname.startsWith('/set-password')
@@ -432,6 +526,17 @@ export function AuthProvider({ children }) {
         }
 
         if (event === 'SIGNED_IN' && session?.user) {
+          // A session the user explicitly ended on this device must never be
+          // re-entered, however it resurfaces (zombie refresh re-persist +
+          // resume). A legitimate login — this tab or another — always mints
+          // a new session id and is never matched here.
+          const signedInSessionId = sessionIdFromAccessToken(
+            session.access_token,
+          );
+          if (signedInSessionId && isSessionEnded(signedInSessionId)) {
+            await purgeEndedSession();
+            return;
+          }
           // Supabase can repeat SIGNED_IN for the same established session
           // (tab focus, session re-emission). Keep the published account and
           // current route intact; this event only needs to refresh the token.
@@ -505,6 +610,16 @@ export function AuthProvider({ children }) {
             () => setLoading(cleanupBlockRef.current !== null),
           );
         } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
+          // Earliest zombie signal: the orphaned refresh notifies here right
+          // after re-persisting the ended session. Purging now removes the
+          // revival before any resume SIGNED_IN or cold start can see it.
+          const refreshedSessionId = sessionIdFromAccessToken(
+            session.access_token,
+          );
+          if (refreshedSessionId && isSessionEnded(refreshedSessionId)) {
+            await purgeEndedSession();
+            return;
+          }
           // Supabase silently refreshed the JWT — swap the token IN PLACE.
           // Without this, all db calls return 401 after ~1 hour. bindAuthDb
           // keeps the client's identity stable so no [db]-keyed loader re-runs.
@@ -524,6 +639,21 @@ export function AuthProvider({ children }) {
             if (explicitLogoutRef.current === explicitLogout) {
               explicitLogoutRef.current = null;
             }
+            return;
+          }
+          // A SIGNED_OUT delivered to an already-clean tab — the cross-tab
+          // broadcast of another tab's sign-out or ended-session purge, or a
+          // duplicate emission — has nothing to tear down. Running the
+          // observer-only path anyway would re-run cleanup with a nulled
+          // token and raise the signed-out reauth wall in a tab the user
+          // never touched.
+          if (
+            !explicitLogout
+            && activePrincipalRef.current === null
+            && readyPrincipalRef.current === null
+            && tokenRef.current === null
+            && cleanupBlockRef.current === null
+          ) {
             return;
           }
           const priorPrincipal = cleanupBlockRef.current?.principalId
@@ -936,15 +1066,7 @@ export function AuthProvider({ children }) {
     };
     explicitLogoutRef.current = transition;
 
-    let signOutError = null;
-    try {
-      const signOutResult = await realtimeClient.auth.signOut({
-        scope: 'local',
-      });
-      signOutError = localSignOutError(signOutResult);
-    } catch (error) {
-      signOutError = error;
-    }
+    const signOutError = await signOutLocalSession(transition);
     if (!authLifecycle.isCurrent(generation)) {
       return { ready: false, cancelled: true };
     }
@@ -987,7 +1109,7 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
     return { ready: true };
-  }, [authLifecycle, clearPublishedPrincipal]);
+  }, [authLifecycle, clearPublishedPrincipal, signOutLocalSession]);
 
   // ── Match auth user → employee row ──
   const handleAuthUser = async (authUser, token, generation) => {
@@ -1289,15 +1411,7 @@ export function AuthProvider({ children }) {
           finalized: false,
         };
         explicitLogoutRef.current = transition;
-        let transitionSignOutError = null;
-        try {
-          const signOutResult = await realtimeClient.auth.signOut({
-            scope: 'local',
-          });
-          transitionSignOutError = localSignOutError(signOutResult);
-        } catch (signOutError) {
-          transitionSignOutError = signOutError;
-        }
+        const transitionSignOutError = await signOutLocalSession(transition);
         if (
           transitionSignOutError
           && !transition.signedOutObserved
@@ -1342,7 +1456,12 @@ export function AuthProvider({ children }) {
         () => setLoading(cleanupBlockRef.current !== null),
       );
     }
-  }, [authLifecycle, clearPublishedPrincipal, requireAccountCleanup]);
+  }, [
+    authLifecycle,
+    clearPublishedPrincipal,
+    requireAccountCleanup,
+    signOutLocalSession,
+  ]);
 
   // ── Logout ──
   const logout = useCallback(async () => {
@@ -1410,15 +1529,7 @@ export function AuthProvider({ children }) {
       );
     }
 
-    let signOutError = null;
-    try {
-      const signOutResult = await realtimeClient.auth.signOut({
-        scope: 'local',
-      });
-      signOutError = localSignOutError(signOutResult);
-    } catch (error) {
-      signOutError = error;
-    }
+    const signOutError = await signOutLocalSession(transition);
     if (signOutError && !transition.signedOutObserved) {
       if (explicitLogoutRef.current === transition) {
         explicitLogoutRef.current = null;
@@ -1471,6 +1582,7 @@ export function AuthProvider({ children }) {
     authLifecycle,
     clearRejectedPrincipalState,
     requireAccountCleanup,
+    signOutLocalSession,
     user?.id,
   ]);
 
@@ -1525,15 +1637,7 @@ export function AuthProvider({ children }) {
           finalized: false,
         };
         explicitLogoutRef.current = transition;
-        let recoverySignOutError = null;
-        try {
-          const signOutResult = await realtimeClient.auth.signOut({
-            scope: 'local',
-          });
-          recoverySignOutError = localSignOutError(signOutResult);
-        } catch (signOutError) {
-          recoverySignOutError = signOutError;
-        }
+        const recoverySignOutError = await signOutLocalSession(transition);
         if (
           recoverySignOutError
           && !transition.signedOutObserved
@@ -1584,6 +1688,7 @@ export function AuthProvider({ children }) {
     finishPasswordRecoveryCleanup,
     logout,
     requireAccountCleanup,
+    signOutLocalSession,
   ]);
 
   // ── Permission check helper (4-layer priority) ──
