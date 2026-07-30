@@ -997,9 +997,20 @@ export async function detachNativePushDevice(db, {
     && local.localDetached
     && local.localStateCleared
     && markerCleared;
+  // Positive journal evidence for the caller's sign-out deferral decision:
+  // re-read the marker AFTER every write/clear above. `markerPersisted` alone
+  // is not proof (it initializes true when there was nothing to mark), so a
+  // deferral must key on this field, never on markerPersisted.
+  const residualMarker = readPendingNativePushDetach(storage);
+  const residualJournaled = !!residualMarker
+    && residualMarker.invalid !== true
+    && validDetachOwner(ownerKey)
+    && residualMarker.ownerKey === ownerKey;
   return {
     ok: ready,
     ready,
+    enrollmentPending,
+    residualJournaled,
     hadBinding,
     hadServerBinding: serverCallRequired,
     serverDetached,
