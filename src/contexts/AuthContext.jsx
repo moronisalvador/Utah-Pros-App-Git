@@ -40,12 +40,18 @@
  *   - recoverSession() is the app's ONLY 401 handler. stableDb.js calls it when
  *     the database rejects the JWT; it renews once (single-flight) or flips
  *     `sessionExpired`. Nothing else should hand-roll a 401 branch.
- *   - Explicit sign-out (logout()) may complete visually after a bounded
- *     silent push-detach retry when the only residual is a journaled
- *     same-owner push cleanup (owner decision 2026-07-29, silent by design —
- *     see accountDeviceCleanup.js). Every other cleanup-blocked path
- *     (password recovery, foreign-owner recovery, signed-out reauth, login)
- *     still hard-walls behind the full-screen retry lock.
+ *   - Explicit sign-out (logout()) ALWAYS completes (owner directive
+ *     2026-07-29: "a sign out button should just do that: sign out"). Device
+ *     cleanup is one bounded best-effort pass; anything unfinished stays in
+ *     the durable owner-bound journal for the bind-time gate. The only walls
+ *     left on this path are a recovery/reauth-owned block and a failed local
+ *     Supabase signOut(). Other cleanup-blocked paths (password recovery,
+ *     foreign-owner recovery, signed-out reauth, login) hard-wall unchanged.
+ *   - A durable signed-out-intent marker + guards in boot/SIGNED_IN/
+ *     TOKEN_REFRESHED/recoverSession terminate a session a racing token
+ *     refresh re-persists after sign-out (the 2026-07-29 TestFlight defect
+ *     where the app re-entered the account without ever reaching Login).
+ *     login() clears the marker immediately before signInWithPassword.
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
@@ -131,13 +137,59 @@ function isValidEmployeeProfile(employee) {
     && typeof employee.is_external === 'boolean';
 }
 
-// ONE copy of the deferral authorization decision, shared by
-// requireAccountCleanup and the SIGNED_OUT observer: a block set by a
-// recovery/reauth flow is never dropped through sign-out deferral.
+// ONE copy of the deferral authorization decision, shared by logout() and the
+// SIGNED_OUT observer: a block set by a recovery/reauth flow is never dropped
+// by an explicit sign-out completing past it.
 function cleanupBlockAllowsDeferral(block) {
   return block?.recoveryRequired !== true
     && block?.passwordRecovery !== true
     && block?.signedOutReauthRequired !== true;
+}
+
+// Durable signed-out intent (TestFlight defect 2026-07-29): a token refresh
+// racing signOut({scope:'local'}) can re-persist the session AFTER removal,
+// and the app then re-enters the account without ever showing Login. logout()
+// writes this marker before any await; boot, SIGNED_IN, TOKEN_REFRESHED and
+// recoverSession() refuse a session for the marked principal until an
+// explicit login() clears the marker. Fail-open on storage errors — the
+// marker is defense in depth behind the post-signOut sweep, never a login
+// gate of its own.
+const SIGNED_OUT_INTENT_KEY = 'upr:auth:signed-out-intent:v1';
+
+function readSignedOutIntent() {
+  try {
+    const raw = localStorage.getItem(SIGNED_OUT_INTENT_KEY);
+    if (!raw) return null;
+    const marker = JSON.parse(raw);
+    return marker?.version === 1 && isCanonicalUuid(marker.principalId)
+      ? marker
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSignedOutIntent(principalId) {
+  if (!isCanonicalUuid(principalId)) return false;
+  try {
+    localStorage.setItem(SIGNED_OUT_INTENT_KEY, JSON.stringify({
+      version: 1,
+      principalId,
+      at: Date.now(),
+    }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearSignedOutIntent() {
+  try {
+    localStorage.removeItem(SIGNED_OUT_INTENT_KEY);
+  } catch {
+    // A failed clear only means a later zombie session for the SAME user is
+    // refused once more; login() clears again on the next attempt.
+  }
 }
 
 function localSignOutError(result) {
@@ -215,6 +267,22 @@ export function AuthProvider({ children }) {
   const refreshingRef = useRef(null); // in-flight refresh promise (single-flight)
   const explicitLogoutRef = useRef(null);
   const cleanupBlockRef = useRef(null);
+  // A resurrected post-sign-out session is terminated with a pre-finalized
+  // explicit transition so the SIGNED_OUT observer treats it as an already
+  // completed sign-out: its cleanup ran at the original logout and the
+  // journal is the intended durable memory — re-walling it behind the
+  // signed-out-reauth screen would contradict the owner's 2026-07-29
+  // sign-out directive.
+  const markResurrectionSignOut = () => {
+    explicitLogoutRef.current = {
+      cleanupPromise: Promise.resolve({ ready: true, reloadRequired: false }),
+      db: null,
+      generation: authLifecycle.current(),
+      ownerKey: null,
+      signedOutObserved: false,
+      finalized: true,
+    };
+  };
   const bindAuthDb = (token) => {
     tokenRef.current = token;
     if (!stableDbRef.current) {
@@ -248,6 +316,13 @@ export function AuthProvider({ children }) {
     if (refreshingRef.current) return refreshingRef.current; // join the in-flight attempt
     const generation = authLifecycle.current();
     const principalId = activePrincipalRef.current;
+    // Never refresh without an active principal, and never refresh a
+    // principal that just signed out: refreshSession() PERSISTS the renewed
+    // session as a side effect before our generation check can discard it,
+    // which is exactly the resurrection path that kept the 2026-07-29
+    // TestFlight sign-out from ever reaching Login.
+    if (!principalId) return false;
+    if (readSignedOutIntent()?.principalId === principalId) return false;
     refreshingRef.current = (async () => {
       try {
         const { data, error: refreshError } = await realtimeClient.auth.refreshSession();
@@ -335,6 +410,22 @@ export function AuthProvider({ children }) {
             return;
           }
           finishPasswordRecoveryCleanup(generation);
+          return;
+        }
+        if (
+          session?.user
+          && readSignedOutIntent()?.principalId === session.user.id
+        ) {
+          // This principal explicitly signed out and never signed back in —
+          // the stored session is a resurrected zombie (a refresh raced the
+          // sign-out). Terminate it and land on Login instead of silently
+          // re-entering the account (TestFlight defect 2026-07-29).
+          markResurrectionSignOut();
+          try {
+            await realtimeClient.auth.signOut({ scope: 'local' });
+          } catch {
+            // The marker persists, so the next boot/SIGNED_IN refuses again.
+          }
           return;
         }
         if (
@@ -445,6 +536,26 @@ export function AuthProvider({ children }) {
             return;
           }
 
+          // A SIGNED_IN for a principal that explicitly signed out and has
+          // not signed back in is a resurrected zombie (a refresh raced the
+          // sign-out) — terminate it instead of bootstrapping. login() clears
+          // the marker BEFORE signInWithPassword, so a real sign-in is never
+          // refused; the marker is re-read here, just before acting, so a
+          // login racing this queued event wins. Recovery sessions on
+          // /set-password keep their own gated path below.
+          if (
+            readSignedOutIntent()?.principalId === session.user.id
+            && !window.location.pathname.startsWith('/set-password')
+          ) {
+            markResurrectionSignOut();
+            try {
+              await realtimeClient.auth.signOut({ scope: 'local' });
+            } catch {
+              // Marker persists; the next boot/SIGNED_IN refuses again.
+            }
+            return;
+          }
+
           const priorPrincipal = cleanupBlockRef.current?.principalId
             || activePrincipalRef.current
             || readyPrincipalRef.current;
@@ -513,6 +624,17 @@ export function AuthProvider({ children }) {
             || !session.user?.id
             || session.user.id !== activePrincipalRef.current
           ) {
+            // A refresh landing for a signed-out principal just re-persisted
+            // a zombie session (2026-07-29 TestFlight defect) — terminate it
+            // promptly rather than leaving it for the next boot to refuse.
+            if (readSignedOutIntent()?.principalId === session.user?.id) {
+              markResurrectionSignOut();
+              try {
+                await realtimeClient.auth.signOut({ scope: 'local' });
+              } catch {
+                // Marker persists; boot/SIGNED_IN refuse the zombie later.
+              }
+            }
             return;
           }
           bindAuthDb(session.access_token);
@@ -569,17 +691,16 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === explicitLogout) {
             explicitLogoutRef.current = null;
           }
-          // Race backstop for the same explicit logout: its cleanup may have
-          // classified a journaled-transient residual as deferrable, and this
-          // observer must not re-wall what logout() is completing. An
-          // observer-only SIGNED_OUT (no explicit transition) never defers —
-          // the signed-out reauth wall stays exactly as before. The shared
-          // refusal keeps a concurrent recovery flow's block intact (its
-          // begin() also makes this generation stale — defense in depth).
-          const deferredExplicitCleanup = !!explicitLogout
-            && cleanupResult?.deferrable === true
+          // Owner directive 2026-07-29: an explicit sign-out ALWAYS completes
+          // — this observer never re-walls it, whatever the cleanup result
+          // (the durable journal + bind-time gate carry enforcement). An
+          // observer-only SIGNED_OUT (no explicit transition) keeps the
+          // signed-out-reauth wall exactly as before. The shared refusal
+          // keeps a concurrent recovery flow's block intact (its begin()
+          // also makes this generation stale — defense in depth).
+          const explicitSignOutCompletes = !!explicitLogout
             && cleanupBlockAllowsDeferral(cleanupBlockRef.current);
-          if (cleanupResult?.ready !== true && !deferredExplicitCleanup) {
+          if (cleanupResult?.ready !== true && !explicitSignOutCompletes) {
             const signedOutReauthRequired = !explicitLogout;
             cleanupBlockRef.current = {
               db: priorDb,
@@ -597,7 +718,9 @@ export function AuthProvider({ children }) {
             });
             return;
           }
-          cleanupBlockRef.current = null;
+          if (cleanupBlockAllowsDeferral(cleanupBlockRef.current)) {
+            cleanupBlockRef.current = null;
+          }
           readyOwnerRef.current = null;
           authLifecycle.commit(generation, () => {
             tokenRef.current = null;
@@ -772,13 +895,12 @@ export function AuthProvider({ children }) {
   // be revoked before the login screen is exposed.
   const clearRejectedPrincipalState = useCallback(async (
     dbClient,
-    { ownerKey = null, transientPushRetry = false } = {},
+    { ownerKey = null } = {},
   ) => {
     writeWebPushMirror(null, null);
     return cleanupAccountDeviceState(dbClient, {
       clearCaches: false,
       ownerKey,
-      transientPushRetry,
     });
   }, []);
 
@@ -797,7 +919,6 @@ export function AuthProvider({ children }) {
       ownerKey = cleanupBlockRef.current?.ownerKey
         || readyOwnerRef.current,
       cleanupPromise = null,
-      allowDeferred = false,
     } = {},
   ) => {
     let cleanupResult;
@@ -827,25 +948,6 @@ export function AuthProvider({ children }) {
     if (cleanupResult?.ready === true) {
       cleanupBlockRef.current = null;
       return cleanupResult;
-    }
-
-    // Journaled-transient residual on an explicit sign-out (owner decision
-    // 2026-07-29): local delivery is revoked and a same-owner pending-detach
-    // journal survives, so the bind-time gate (handleAuthUser →
-    // retryPendingAccountPushDetaches) enforces reconciliation — or the
-    // previous-account recovery wall — before any account publishes again.
-    // Never defers over a recovery/reauth block another flow set.
-    if (
-      allowDeferred
-      && cleanupResult?.deferrable === true
-      && cleanupBlockAllowsDeferral(cleanupBlockRef.current)
-    ) {
-      cleanupBlockRef.current = null;
-      return {
-        ...cleanupResult,
-        ready: false,
-        deferred: true,
-      };
     }
 
     cleanupBlockRef.current = {
@@ -1327,6 +1429,10 @@ export function AuthProvider({ children }) {
         await options.beforeSignIn();
         if (!authLifecycle.isCurrent(generation)) return null;
       }
+      // A deliberate sign-in supersedes any earlier sign-out intent. Cleared
+      // BEFORE signInWithPassword so the resulting SIGNED_IN (which can queue
+      // ahead of this function resuming) is never refused as a zombie.
+      clearSignedOutIntent();
       const { data, error: authError } = await realtimeClient.auth.signInWithPassword({
         email,
         password,
@@ -1361,13 +1467,19 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setError(null);
     });
+    // Durable sign-out intent BEFORE any await: if a token refresh racing
+    // signOut re-persists the session, the boot/SIGNED_IN/TOKEN_REFRESHED
+    // guards read this marker and terminate the zombie (2026-07-29 defect).
+    writeSignedOutIntent(priorPrincipal);
     const cleanupPromise = authLifecycle.enqueueAccountState(
       generation,
-      // Explicit sign-out is the one flow with the bounded silent push-detach
-      // retry window (~10s backoff) before any blocking UI.
+      // One bounded best-effort cleanup pass while the authenticated client
+      // still exists (the owner-scoped server deletes need it). Its outcome
+      // never gates sign-out — anything unfinished stays in the durable
+      // owner-bound journal for the bind-time gate (owner directive
+      // 2026-07-29: "a sign out button should just do that: sign out").
       () => clearRejectedPrincipalState(priorDb, {
         ownerKey: priorOwnerKey,
-        transientPushRetry: true,
       }),
       { requireCurrent: false },
     );
@@ -1380,18 +1492,15 @@ export function AuthProvider({ children }) {
       finalized: false,
     };
     explicitLogoutRef.current = transition;
-    const cleanupResult = await requireAccountCleanup(
-      generation,
-      {
-        dbClient: priorDb,
-        principalId: priorPrincipal,
-        ownerKey: priorOwnerKey,
-        cleanupPromise,
-        allowDeferred: true,
-      },
-    );
-    if (cleanupResult.cancelled) return;
-    if (!cleanupResult.ready && cleanupResult.deferred !== true) {
+    let cleanupResult = null;
+    try {
+      cleanupResult = await cleanupPromise;
+    } catch (cleanupError) {
+      cleanupResult = { ready: false, error: cleanupError };
+    }
+    if (!authLifecycle.isCurrent(generation)) return;
+    if (!cleanupBlockAllowsDeferral(cleanupBlockRef.current)) {
+      // A recovery/reauth flow owns the current block — never sign past it.
       explicitLogoutRef.current = null;
       const cleanupError = new Error(ACCOUNT_CLEANUP_BLOCKED_MESSAGE);
       authLifecycle.commit(generation, () => {
@@ -1400,13 +1509,14 @@ export function AuthProvider({ children }) {
       });
       throw cleanupError;
     }
-    if (cleanupResult.deferred === true) {
+    cleanupBlockRef.current = null;
+    if (cleanupResult?.ready !== true) {
       // Deliberately silent for the user (owner precedent 2026-07-28: a banner
       // about a self-resolving internal window is noise). The journal finishes
-      // at the next same-owner sign-in or blocks a foreign owner.
+      // at the next same-owner sign-in or blocks a foreign owner at bind.
       console.warn(
-        '[auth] Sign out completed with journaled push cleanup pending; '
-        + 'it reconciles at the next same-owner sign-in.',
+        '[auth] Sign out proceeding with best-effort cleanup; the owner-bound '
+        + 'journal reconciles at the next same-owner sign-in.',
       );
     }
 
@@ -1437,6 +1547,27 @@ export function AuthProvider({ children }) {
     }
 
     transition.finalized = true;
+    // Resurrection sweep (2026-07-29 TestFlight defect): a refresh already in
+    // flight when signOut ran can re-persist the session AFTER removal. One
+    // bounded re-check catches the common case on this stack; the durable
+    // signed-out-intent marker covers anything that lands later. The sweep is
+    // time-boxed so a lock held by a slow in-flight refresh cannot stall the
+    // visual sign-out.
+    try {
+      const sweep = (async () => {
+        const { data } = await realtimeClient.auth.getSession();
+        if (data?.session) {
+          await realtimeClient.auth.signOut({ scope: 'local' });
+        }
+      })();
+      await Promise.race([
+        sweep.catch(() => {}),
+        new Promise((resolve) => { setTimeout(resolve, 2_000); }),
+      ]);
+    } catch {
+      // Marker guards remain the durable backstop.
+    }
+    if (!authLifecycle.isCurrent(generation)) return;
     authLifecycle.commit(generation, () => {
       activePrincipalRef.current = null;
       readyPrincipalRef.current = null;
@@ -1459,9 +1590,10 @@ export function AuthProvider({ children }) {
     }
     if (
       cleanupResult?.reloadRequired
-      // A deferred sign-out skips the advisory reload so the settled journal
-      // (not an interrupted context) is the only memory the next boot needs.
-      && cleanupResult?.deferred !== true
+      // The advisory reload runs only after a fully-ready cleanup so an
+      // unfinished journal (not an interrupted context) is the only memory
+      // the next boot needs.
+      && cleanupResult?.ready === true
       && authLifecycle.isCurrent(generation)
     ) {
       resetAfterServiceWorkerChange();
@@ -1470,7 +1602,6 @@ export function AuthProvider({ children }) {
     authDb,
     authLifecycle,
     clearRejectedPrincipalState,
-    requireAccountCleanup,
     user?.id,
   ]);
 
