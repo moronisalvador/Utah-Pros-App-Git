@@ -28,6 +28,21 @@
  *   - Owner-bound pending-detach journals survive reload/crash. A mismatched
  *     account may revoke local delivery but cannot consume or relabel the
  *     prior owner's server cleanup proof.
+ *   - `deferrable` (owner decision 2026-07-29) marks the one failure shape an
+ *     explicit sign-out may complete through visually: every local leg clean
+ *     and the only residual is push server work positively covered by a
+ *     same-owner journal marker. Foreign-owner, invalid-marker, in-flight
+ *     enrollment, unknown local subscription state, or any non-push failure
+ *     is never deferrable. The bind-time gate in AuthContext (handleAuthUser →
+ *     retryPendingAccountPushDetaches) stays the enforcement point before any
+ *     account publishes again.
+ *   - Known limit (pre-existing single-slot journal): each channel keeps ONE
+ *     pending-detach marker and the detach prefers the marker's stale
+ *     token/endpoint identity over the live one, so after a token rotation
+ *     the journal may cover the stale row while a live row goes unjournaled.
+ *     `residualJournaled` proves a same-owner journal exists, not that it
+ *     names every row this session ever bound — the composite ready path has
+ *     always had the same limit.
  * ════════════════════════════════════════════════
  */
 
@@ -44,11 +59,32 @@ import {
   retryPendingWebPushDetach,
 } from './webPushClient.js';
 
+// Bounded silent auto-retry window for the journaled-transient sign-out case
+// (owner decision 2026-07-29): retry the push detach legs with backoff before
+// any blocking UI. Each attempt is additionally bounded by the detach RPCs'
+// own 5s deadlines, so the worst case is ~13s of ordinary loading state.
+export const ACCOUNT_CLEANUP_TRANSIENT_RETRY_WINDOW_MS = 10_000;
+export const ACCOUNT_CLEANUP_TRANSIENT_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
 function browserStorage() {
   try {
     return globalThis.localStorage || null;
   } catch {
     return null;
+  }
+}
+
+function defaultDelay(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function browserIsOnline() {
+  try {
+    return globalThis.navigator?.onLine !== false;
+  } catch {
+    return true;
   }
 }
 
@@ -70,6 +106,31 @@ function webServerDetached(result) {
 function nativeServerDetached(result) {
   return !!result
     && result.serverDetached === true;
+}
+
+// Deferral predicates (fail closed). A channel qualifies only when it is fully
+// ready, or when local delivery was revoked in THIS session and the residual
+// server work is positively covered by a same-owner journal marker re-read
+// from storage (`residualJournaled` — never the weaker markerPersisted).
+function webChannelSettledOrJournaled(result) {
+  if (result?.ready === true) return true;
+  return !!result
+    && result.pendingOwnerMismatch !== true
+    && result.pendingMarkerInvalid !== true
+    && result.lookupStatus !== 'unknown'
+    && result.localDetached === true
+    && result.residualJournaled === true;
+}
+
+function nativeChannelSettledOrJournaled(result) {
+  if (result?.ready === true) return true;
+  return !!result
+    && result.pendingOwnerMismatch !== true
+    && result.pendingMarkerInvalid !== true
+    && result.enrollmentPending !== true
+    && result.localDetached === true
+    && result.localStateCleared === true
+    && result.residualJournaled === true;
 }
 
 /**
@@ -105,10 +166,14 @@ export async function detachAccountPushDevices(
     && native?.localDetached === true
     && native?.localStateCleared === true;
   const ready = serverDetached && localDetached;
+  const deferrable = !ready
+    && webChannelSettledOrJournaled(web)
+    && nativeChannelSettledOrJournaled(native);
 
   return {
     ok: ready,
     ready,
+    deferrable,
     serverDetached,
     localDetached,
     web,
@@ -171,6 +236,7 @@ export async function cleanupAccountDeviceState(
     clearCaches = false,
     ownerKey = null,
     storage = browserStorage(),
+    transientPushRetry = false,
     dependencies = {},
   } = {},
 ) {
@@ -232,13 +298,95 @@ export async function cleanupAccountDeviceState(
     };
   }
 
-  const ready = biometricCleared
+  let ready = biometricCleared
     && accountState?.ready === true
     && worker?.ok === true
     && mirrorCleared;
+  // Deferrable only when push server residual is the SOLE failure: every
+  // local leg here is clean and the account-state layer classified its own
+  // failure as journaled push residual.
+  let deferrable = !ready
+    && biometricCleared
+    && mirrorCleared
+    && worker?.ok === true
+    && accountState?.deferrable === true;
+
+  let pushRetryAttempts = 0;
+  let pushRetryEscalated = false;
+  if (!ready && deferrable && transientPushRetry) {
+    const retryPush = dependencies.retryPush
+      || ((client) => retryPendingAccountPushDetaches(client, {
+        ...dependencies,
+        ownerKey,
+        storage,
+      }));
+    const wait = dependencies.delay || defaultDelay;
+    const isOnline = dependencies.isOnline || browserIsOnline;
+    const now = dependencies.now || Date.now;
+    const windowMs = dependencies.retryWindowMs
+      || ACCOUNT_CLEANUP_TRANSIENT_RETRY_WINDOW_MS;
+    const delaysMs = dependencies.retryDelaysMs
+      || ACCOUNT_CLEANUP_TRANSIENT_RETRY_DELAYS_MS;
+    // A channel that was already fully ready may legitimately report
+    // pending:false on retry. A channel that had journaled residual must
+    // report pending:true (its journal was found and reprocessed) until a
+    // retry we observed settles it — a vanished journal under a residual
+    // channel means the durable memory is gone, so escalate to the wall.
+    // Accepted consequence: a concurrent same-owner tab that reconciles and
+    // clears the journal during this window ALSO escalates (a false wall on
+    // a clean device, resolved by its Retry re-running logout with no marker
+    // left). Deliberate — never loosen this into laundering a journal that
+    // genuinely vanished.
+    let webSettled = accountState?.pushWebSettled === true;
+    let nativeSettled = accountState?.pushNativeSettled === true;
+    const startedAt = now();
+    for (const delayMs of delaysMs) {
+      if (!isOnline()) break;
+      if ((now() - startedAt) + delayMs > windowMs) break;
+      await wait(delayMs);
+      pushRetryAttempts += 1;
+      let retry;
+      try {
+        retry = await retryPush(db);
+      } catch (error) {
+        retry = { ready: false, error };
+      }
+      if (
+        retry?.ownerMismatch === true
+        || retry?.markerInvalid === true
+        || (!webSettled && retry?.web?.pending !== true)
+        || (!nativeSettled && retry?.native?.pending !== true)
+      ) {
+        deferrable = false;
+        pushRetryEscalated = true;
+        break;
+      }
+      if (retry?.web?.ready === true) webSettled = true;
+      if (retry?.native?.ready === true) nativeSettled = true;
+      if (retry?.ready === true) {
+        // Deferrable guaranteed push was the only failing leg, so a settled
+        // push retry makes the composite state genuinely ready.
+        ready = true;
+        deferrable = false;
+        accountState = {
+          ...accountState,
+          ready: true,
+          serverPushCleared: true,
+          localPushCleared: true,
+          pushCleanupReady: true,
+          deferrable: false,
+          reason: null,
+        };
+        break;
+      }
+    }
+  }
 
   return {
     ready,
+    deferrable,
+    pushRetryAttempts,
+    pushRetryEscalated,
     biometricCleared,
     mirrorCleared,
     accountState,

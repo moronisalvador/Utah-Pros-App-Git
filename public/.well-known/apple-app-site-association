@@ -3,7 +3,7 @@
     "apps": [],
     "details": [
       {
-        "appID": "P93U4Z4DJB.com.utahprosrestoration.upr",
+        "appID": "H6ZUT739T9.com.utahprosrestoration.upr",
         "paths": [
           "NOT /tech/admin",
           "NOT /tech/admin/*",
@@ -22,7 +22,7 @@
   },
   "webcredentials": {
     "apps": [
-      "com.utahpros.mobile"
+      "H6ZUT739T9.com.utahprosrestoration.upr"
     ]
   }
 }

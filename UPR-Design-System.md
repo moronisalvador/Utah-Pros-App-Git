@@ -202,7 +202,7 @@ The `@/components/ui` primitives + `:root` tokens are the **shared** layer the M
 others may consume where it fits (e.g. `useResumeRefetch`, `Modal`). The three page-scoped kits keep
 their own palettes deliberately (each `tokens.js` says so in a comment) until an app-wide rollout decision.
 
-## Dark-theme contract *(Last-verified: 2026-07-13, F-S2)*
+## Dark-theme contract *(Last-verified: 2026-07-30 · original 2026-07-13, F-S2)*
 
 - **Dark mode is live only on the tech shell.** `ThemeContext` stamps `data-theme="dark"` on `<html>`;
   the CSS block `[data-theme="dark"] .tech-layout { … }` re-points the core tokens (`--bg-*`, `--text-*`,
@@ -219,8 +219,25 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
   (the audit found ~297 tech-surface hex literals W1 migrates to `var(--status-*)`).
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
+- **STATUS color is tokenized; CATEGORICAL color is not** *(2026-07-30 migration decision)*. A color that
+  means "this thing is failing / working / waiting" is status → it reads the semantic
+  `--success|--danger|--warning|--info|--neutral` triplet. A color that IS the identity of a thing
+  (division water=blue / fire=red / mold=pink, appointment type, an event accent) is categorical → the
+  hue carries the meaning, so it stays raw hex and is NOT a defect. `techConstants.js` holds both kinds
+  and says which is which. **Known remaining gap:** the light tints in `DIV_PILL_COLORS` and
+  `TYPE_CONFIG.bg` are still frozen-light in dark; closing that needs its own reviewed division token
+  family in `index.css`, not a swap.
+- **Use the semantic family, not `--status-*`, for anything with a border.** The tech dark block
+  re-points only `--status-*-bg`, so a pill built on that family keeps a LIGHT border on a dark fill;
+  the semantic family re-tones `-bg` AND `-border`. (`--status-*` remains correct for the clock-state
+  surfaces that already consume it and set no bordered tint.)
+- **Three sanctioned non-token exceptions,** each of which must carry a one-line comment saying so:
+  a saturated fill carrying white text (theme-invariant already, and the lighter token can drop it
+  below AA — e.g. an armed two-click destructive confirm); a hex inside generated **email** HTML
+  (email clients do not resolve CSS variables); and a hex that is **data**, not style (e.g. the
+  `p_phase_color` RPC argument).
 
-## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-13, F-S2 + motion-polish: `--motion-spring-in` token, modal/sheet exit motion)*
+## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-29, first-run/rare-delight tier row added with the tech onboarding tour)*
 
 All motion is defined in **two central places only**: the `:root` motion tokens (below) and this catalog.
 Change a token → the whole app retunes. **No bespoke `120ms`/`ease-in-out`/`@keyframes` in a page or
@@ -258,6 +275,7 @@ review failure).
 | **Dropdown / popover / menu** | fade + slight scale (0.96→1) from trigger, **springs** into place | `--motion-duration-fast` · `--motion-spring-in` | consume the tokens on the popover; e.g. `.create-menu-popup` (CSS `createMenuIn`). |
 | **Toast** | slide/fade from the container edge; enter **springs** | `--motion-duration-base` · `--motion-spring-in` (enter) | shell toast container; in-CSS `.conv-toast` uses `toastIn` on the spring (the shell's live toast is inline-styled in `Layout.jsx`). |
 | **Form focus** | border/ring transition | `--motion-duration-fast` | `.field:focus` / `.input:focus`. |
+| **First-run / rare delight** (onboarding, completion moments — `motion-standard.md` §3's rare tier) | full-screen cover fades in; content staggers up (50–60ms steps); icon **springs** in; one-shot accents (e.g. a single bell wiggle) | enter `--motion-duration-slow` · `--motion-ease-decelerate` · content `--motion-duration-base` · icon pop ~480ms `--motion-spring-in` · one-shot accents ≤700ms, always once, never looping · exit ≈75% of enter on `--motion-ease-accelerate` | Reference: `TechOnboarding.css` (tech first-run tour). Durations >300ms are sanctioned ONLY on this tier and state their reason in a comment; reduced-motion collapses everything with end states landing (JS timers own unmounts). |
 
 ### Haptics (native-feel multiplier — pairs with motion, never replaces it)
 `import { impact, selection, notify } from '@/lib/nativeHaptics'` (import-only; Taptic on native,
@@ -1138,9 +1156,15 @@ Example (the v2 `StatusChip` pattern): `style={{ background: 'var(--status-worki
 color: 'var(--status-working-color)' }}`. Division color is demoted to a small pill in v2 —
 it must never out-shout status.
 
-> Note: `src/pages/tech/techConstants.js` also exports `APPT_STATUS_COLORS` (hex map) for
-> JS-side lookups (e.g. dynamic inline styles where a CSS var isn't reachable). The
-> `.tech-layout` `--status-*` tokens are the canonical CSS source; keep the two in sync.
+> Note: `src/pages/tech/techConstants.js` also exports `APPT_STATUS_COLORS` /
+> `CLAIM_STATUS_COLORS` for JS-side lookups (dynamic inline styles). **As of 2026-07-30 those
+> maps hold `var(--…)` strings, not hex** — and they read the **semantic**
+> `--success|--danger|--warning|--info|--neutral` family, NOT the `--status-*` family above,
+> because the dark block re-points only `--status-*-bg` and these render with a border (see the
+> Dark-theme contract). Nothing to "keep in sync" any more: change the token, both follow. The
+> `--status-*` tokens above remain canonical for the CSS-side v2 `StatusChip` surfaces that
+> already consume them, and are `.tech-layout`-scoped — a module shared with a desktop page
+> (e.g. `src/lib/oopPricing.js`) must use the `:root` semantic family instead.
 
 ---
 
@@ -1155,6 +1179,11 @@ it must never out-shout status.
 - ❌ `window.confirm` for destructive actions — use two-click confirm pattern
 - ❌ Font size < 16px on mobile inputs — triggers iOS auto-zoom
 - ❌ Redefining constants that are imported (e.g. DIVISION_COLORS, LOSS_CONFIG) — causes build errors
-- ❌ Creating new CSS files — all styles go in `index.css` or inline styles
+- ❌ Creating new CSS files — all styles go in `index.css` or inline styles. **Narrow exception
+  (budget-driven, used by `claim-page.css`, `NotificationPresentation.css`, `TechOnboarding.css`):**
+  a ROUTE-LAZY component may carry its own component-scoped stylesheet when `index.css` is at or
+  near its CI-enforced size ceiling (`perf-budget.md` §1) — the styles then ride the lazy chunk
+  instead of the boot path. The file states this justification in its header; eagerly-loaded
+  surfaces still belong in `index.css`.
 - ❌ New utility classes without checking if they already exist in index.css
 - ❌ `100vh` for full-screen pages — use `100dvh` (handles iOS Safari toolbar)

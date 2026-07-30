@@ -17,7 +17,8 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, ./techConstants, @/lib/toast,
  *              @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/components/tech/Lightbox, @/lib/techDateUtils
+ *              @/components/tech/Lightbox, @/lib/techDateUtils,
+ *              @/lib/backNav, @/components/tech/v2/nav (jobHref)
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs (direct db.select); job_documents
  *                        (direct db.select, photos only)
@@ -34,6 +35,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS } from './techConstants';
@@ -42,8 +44,11 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { goBackOr } from '@/lib/backNav';
+import { jobHref } from '@/components/tech/v2/nav';
 
 export default function TechJobAlbum() {
+  const kbInset = useNativeKeyboardInset();
   const { jobId } = useParams();
   const navigate = useNavigate();
   const { db, employee } = useAuth();
@@ -58,13 +63,23 @@ export default function TechJobAlbum() {
   const fileRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
+  // `.catch(() => [])`. `db.select` THROWS on any non-OK response, so that
+  // swallow rendered "No photos yet. Tap Add Photo to capture the first one."
+  // over a real outage — and on the post-upload reload it WIPED a grid the tech
+  // was looking at. It now rejects into the outer catch.
+  //
+  // `silent` = don't re-gate the page (page-lifecycle.md §1: the loading gate is
+  // cold-start only). `quiet` = don't surface the failure; the upload already
+  // reported its own outcome, so the grid stays put and the error goes to the
+  // console only. Precedent for the silence gate: src/pages/crm/CrmCallLog.jsx.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       const [rows, docList] = await Promise.all([
         db.select('jobs', `id=eq.${jobId}&select=*`),
-        db.select('job_documents', `job_id=eq.${jobId}&category=eq.photo&order=created_at.desc`).catch(() => []),
+        db.select('job_documents', `job_id=eq.${jobId}&category=eq.photo&order=created_at.desc`),
       ]);
       const j = rows?.[0];
       if (!j) {
@@ -77,6 +92,7 @@ export default function TechJobAlbum() {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechJobAlbum load failed:', e?.message || e);
+      if (quiet) return;
       setLoadError('Failed to load album');
       toast('Failed to load album', 'error');
     } finally {
@@ -119,7 +135,10 @@ export default function TechJobAlbum() {
       });
       impact('light');
       toast('Photo uploaded');
-      load();
+      // LES-01: silent + quiet — refresh the grid without collapsing the page
+      // into a spinner, and without stacking a second toast on "Photo uploaded"
+      // if the refresh itself fails. The already-rendered grid stays.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {
@@ -162,7 +181,7 @@ export default function TechJobAlbum() {
             {loadError || 'Album not available'}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(`/tech/jobs/${jobId}`)}>Back</button>
+            <button className="btn btn-secondary" onClick={() => goBackOr(navigate, jobHref(jobId))}>Back</button>
             <button className="btn btn-primary" onClick={load}>Retry</button>
           </div>
         </div>
@@ -186,7 +205,7 @@ export default function TechJobAlbum() {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
-          onClick={() => navigate(`/tech/jobs/${jobId}`)}
+          onClick={() => goBackOr(navigate, jobHref(jobId))}
           aria-label="Back to job"
           style={{
             background: 'none', border: 'none', color: 'var(--text-primary)',
@@ -291,7 +310,7 @@ export default function TechJobAlbum() {
       {/* Pinned Add Photo */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
-        bottom: 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
+        bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
         padding: '10px var(--space-4)',
         background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--bg-primary) 40%)',
         pointerEvents: 'none',

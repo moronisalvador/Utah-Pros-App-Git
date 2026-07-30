@@ -338,7 +338,33 @@ contract:
 - web/APNs environment-specific delivery with timeout/retry/expiry;
 - per-channel accepted/skipped/failed summary;
 - detach/revoke on logout/account/device lifecycle;
-- no sensitive lock-screen payload beyond approved privacy policy.
+- no lock-screen value outside the owner-approved typed event variable catalog.
+
+The native APNs implementation uses an exhaustive typed presentation catalog:
+each live event receives explicit event-approved title/body copy, while
+unknown events retain the generic `Utah Pros notification` /
+`Open Utah Pros for details.` fallback. Raw producer copy is never the APNs
+presentation contract. Data remains reduced to one allowlisted route plus an
+opaque deterministic recipient binding. The same pure route policy used by the
+app runs in the worker before serialization;
+admin/external paths, encoded paths, oversized input, credential fragments, and
+unsupported or sensitive query shapes fall back to `/` before Apple sees them.
+The Push policy additionally rejects the public signing bearer paths
+`/sign/:token` and `/s/:code`; those remain valid Universal/App Links, but the
+bearer capability is never provider payload data. A native action is rejected
+unless the binding matches the currently verified employee. Owner decision
+2026-07-29 supersedes the initial generic-only budget: native may render the
+same event-approved variables as PWA, including customer, scheduling, and
+financial details. Those values must be typed server context, never raw
+producer APNs fields or generic payload traversal. Missing values use immutable
+generic event copy. Rendered values and final APNs JSON are bounded before
+provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
+presentation at the provider boundary.
+
+Appointment notification audiences are structural rather than caller-selected:
+`appointment.assigned` intersects the named employee with the appointment's
+current crew, while updated/canceled events resolve the current crew. Supplied
+`recipient_ids` cannot widen any appointment audience.
 
 S1c implements only the HTTP identity/object portion. An exact stored secret remains first and
 keeps the full deployed trigger payload; trusted Workers continue to call `dispatchEvent`
@@ -436,10 +462,10 @@ existing `SECURITY DEFINER` bodies.
 
 IndexedDB v3 publishes bounded typed blocked/timeout/version-change recovery state. Blocking and
 version-change callbacks close only the captured connection generation; an inspection failure
-blocks rollout. Focused tests pass 58/58. In the current-origin integration worktree, the complete
-unit lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206
-tests, and web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet
-is tracked separately. Independent review found no actionable offline P0/P1. Browser/device
+blocks rollout. At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), focused tests passed
+58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests, QA
+passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings; the
+changed-file ratchet was tracked separately. Independent review found no actionable offline P0/P1. Browser/device
 qualification and the separate live RPC authorization boundary remain.
 
 ## Change checklist

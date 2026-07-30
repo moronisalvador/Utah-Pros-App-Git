@@ -336,6 +336,120 @@ describe('send-message compliance chain', () => {
     expect(h.twilio).toHaveBeenCalledTimes(1);
   });
 
+  it('allows a direct existing-client service message only after durable decision audit', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+    });
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => {
+      if (name === 'get_service_sms_consent_status') {
+        return {
+          allowed: true,
+          code: 'IMPLIED_CONSENT',
+          source: 'no_recorded_objection',
+        };
+      }
+      return originalRpc(name, args);
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(201);
+    expect(h.twilio).toHaveBeenCalledTimes(1);
+    const audit = consentBlocks(h.db).find(
+      ({ payload }) => payload.event_type === 'service_send_allowed_existing_client',
+    );
+    expect(audit?.payload).toMatchObject({
+      contact_id: 'c-1',
+      event_type: 'service_send_allowed_existing_client',
+      source: 'existing_client_service_relationship',
+      performed_by: 'e-1',
+    });
+    expect(audit.payload.details).toContain('not a marketing opt-in');
+    const auditIndex = h.db.inserts.indexOf(audit);
+    const messageIndex = h.db.inserts.findIndex(
+      ({ table, payload }) => table === 'messages' && payload.type === 'sms_outbound',
+    );
+    expect(auditIndex).toBeGreaterThanOrEqual(0);
+    expect(messageIndex).toBeGreaterThan(auditIndex);
+  });
+
+  it('fails closed when the required implied-service decision audit cannot be stored', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      contact: { ...OPTED_IN, opt_in_status: false },
+    });
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => {
+      if (name === 'get_service_sms_consent_status') {
+        return { allowed: true, code: 'IMPLIED_CONSENT' };
+      }
+      return originalRpc(name, args);
+    });
+    const originalInsert = h.db.insert;
+    h.db.insert = vi.fn(async (table, payload) => {
+      if (table === 'sms_consent_log') {
+        throw new Error('audit unavailable');
+      }
+      return originalInsert(table, payload);
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(500);
+    expect(h.twilio).not.toHaveBeenCalled();
+    expect(outboundRows(h.db)).toHaveLength(0);
+  });
+
+  it('rejects a direct-shaped thread with multiple recipients before implied consent or transport', async () => {
+    h.db = makeDb({
+      conversation: DIRECT,
+      participants: [
+        { contact_id: 'c-1', phone: '+15551110001', is_active: true },
+        { contact_id: 'c-2', phone: '+15551110002', is_active: true },
+      ],
+      contactsById: {
+        'c-1': { id: 'c-1', dnd: false, opt_in_status: false, phone: '+15551110001' },
+        'c-2': { id: 'c-2', dnd: false, opt_in_status: false, phone: '+15551110002' },
+      },
+    });
+    h.db.rpc = vi.fn(async (name) => {
+      if (name === 'get_service_sms_consent_status') {
+        return { allowed: true, code: 'IMPLIED_CONSENT' };
+      }
+      return null;
+    });
+
+    const res = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'Project update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).code).toBe('DIRECT_PURPOSE_UNSUPPORTED');
+    expect(h.db.rpc).not.toHaveBeenCalled();
+    expect(h.twilio).not.toHaveBeenCalled();
+  });
+
   it('keeps STOP fail-closed even when a service consent record exists', async () => {
     h.db = makeDb({
       conversation: DIRECT,

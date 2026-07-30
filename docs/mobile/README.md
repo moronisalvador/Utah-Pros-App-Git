@@ -47,6 +47,7 @@ an addendum or new audit.
 | [`motion-system.md`](motion-system.md) | Existing motion foundations plus proposed standardization and required reduced-motion behavior |
 | [`data-contracts.md`](data-contracts.md) | Workflow-to-RPC/table/Storage/worker contracts, authorization and mutation guarantees |
 | [`pwa-and-capacitor.md`](pwa-and-capacitor.md) | PWA/SW/install/offline/update and Capacitor/plugins/permissions/deep-link/release boundaries |
+| [`dev-app-variant.md`](dev-app-variant.md) | The side-by-side "UPR Dev" iOS build configuration/scheme, its install flow, and its shared-database + push-topic caveats |
 | [`testing-and-release.md`](testing-and-release.md) | Required safe validation, browser/device matrices, database compatibility, promotion and rollback evidence |
 | [`s1h-database-apply-runbook.md`](s1h-database-apply-runbook.md) | Source-only S1h dependency order, exact qualification requirements, and separately authorized database window |
 
@@ -94,14 +95,15 @@ canonical/initiative documentation.
 - The native build graph is field-only. Office, CRM, billing/QBO, desktop settings, and
   admin-mobile implementation modules are denied by a build-time graph guard. Public login,
   recovery, legal/support, and both `/sign/:token` and `/s/:code` remain available.
-- The checked-in Capacitor iOS source now contains a native privacy shield, fail-closed enrolled
-  biometric gate, an allowlisted App/Universal-Link and Push-action bridge, public legal/account
+- The checked-in Capacitor iOS source now contains a native privacy shield, sign-in-time biometric
+  verification, an allowlisted App/Universal-Link and Push-action bridge, public legal/account
   deletion access, and an exact 12-type privacy declaration, including Other Financial Info for
-  retained OOP quote/pricing data. Native Push enrollment and OTA remain exact-default-off.
+  retained OOP quote/pricing data. Retained authenticated sessions reopen without a biometric
+  challenge. Native Push enrollment and OTA remain exact-default-off.
 - Those source controls are not a release claim. S1h database source is unapplied and not exact
-  database-behavior-verified; `@capacitor/app` still needs a reviewed `cap sync ios`;
-  `ios/Gemfile.lock` is absent; deployment/provider/signing/TestFlight and physical-device gates
-  remain separate.
+  database-behavior-verified; `@capacitor/app` is present in the reviewed clean iOS sync and
+  `ios/Gemfile.lock` is checked in. Deployment/provider/distribution-signing/TestFlight and the
+  complete physical-device matrix remain separate.
 - No Android Capacitor project is checked in. Android PWA support and Android native support are
   separate decisions.
 

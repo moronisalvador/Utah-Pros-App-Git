@@ -293,6 +293,11 @@ describe('notifyEsignSigned (esign.signed rewire)', () => {
     expect(calls[0].body.title).toContain('Work Authorization');
     expect(calls[0].body.payload.doc_type).toBe('work_auth');
     expect(calls[0].body.payload.job_document_id).toBe('doc-9');
+    expect(calls[0].body.presentation_context).toEqual({
+      signer_name: 'Jane Homeowner',
+      document_name: 'Work Authorization',
+      job_number: 'J-1001',
+    });
   });
 
   it('never throws when the dispatcher fails (signing already stored)', async () => {

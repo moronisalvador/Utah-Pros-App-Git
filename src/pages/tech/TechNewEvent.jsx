@@ -41,7 +41,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, getInitials, isTimeRangeInvalid } from './techFormConstants';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 export default function TechNewEvent() {
   // ─── SECTION: State & hooks ──────────────
@@ -50,7 +51,7 @@ export default function TechNewEvent() {
   const [searchParams] = useSearchParams();
   const { db, employee } = useAuth();
 
-  const initialDate = searchParams.get('date') || new Date().toISOString().split('T')[0];
+  const initialDate = searchParams.get('date') || todayInCompanyTimeZone();
 
   const canTogglePrivate = ['admin', 'project_manager'].includes(employee?.role);
 
@@ -83,7 +84,9 @@ export default function TechNewEvent() {
     });
   };
 
-  const timeInvalid = timeStart && timeEnd && timeEnd <= timeStart;
+  // PICK-03: was the only correct implementation of this rule; now the shared
+  // one, so the three forms cannot diverge again.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
   const canSubmit = title.trim() && date && !timeInvalid;
 
   const handleSubmit = async () => {
@@ -162,7 +165,7 @@ export default function TechNewEvent() {
 
         {/* Title */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelTitle')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelTitle')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <input
             type="text"
             value={title}
@@ -175,7 +178,7 @@ export default function TechNewEvent() {
 
         {/* Date */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelDate')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDate')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <DatePicker value={date} onChange={setDate} />
         </div>
 
@@ -183,7 +186,11 @@ export default function TechNewEvent() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: this form already validated the range correctly; it was
+                the two appointment forms that did not. It shared the missing
+                labels, though — the heading above is a styled div. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => setTimeStart(e.target.value)}
               style={{ ...inputStyle, flex: 1 }}
@@ -191,6 +198,7 @@ export default function TechNewEvent() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => setTimeEnd(e.target.value)}
               style={{ ...inputStyle, flex: 1 }}
@@ -199,7 +207,7 @@ export default function TechNewEvent() {
             </select>
           </div>
           {timeInvalid && (
-            <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6, fontWeight: 500 }}>
+            <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6, fontWeight: 500 }}>
               {t('timeError')}
             </div>
           )}
@@ -220,10 +228,10 @@ export default function TechNewEvent() {
 
         {/* Private — admin/PM only */}
         {canTogglePrivate && (
-          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
+          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? 'var(--warning-bg)' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? 'var(--warning-border)' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 'var(--tech-min-tap)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
               <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
-                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: '#d97706', flexShrink: 0 }} />
+                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: 'var(--warning)', flexShrink: 0 }} />
               <span style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -294,7 +302,7 @@ export default function TechNewEvent() {
                   {sel?.role === 'lead' && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, padding: '0 5px', borderRadius: 3,
-                      background: '#fffbeb', color: '#92400e',
+                      background: 'var(--warning-bg)', color: 'var(--warning)',
                     }}>{t('leadBadge')}</span>
                   )}
                 </button>

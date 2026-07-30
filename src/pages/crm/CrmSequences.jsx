@@ -70,12 +70,22 @@ export default function CrmSequences() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // LES-01 (loading-error-states.md §1): the segments read KEEPS its catch
+      // on purpose — it only fills the "enroll a segment" picker, and one
+      // missing grant must not blank the sequences list. What changes is that
+      // it no longer fails SILENTLY: an empty picker used to read as "no
+      // segments exist", which is a different fact from "we could not ask".
+      let segsError = null;
       const [seqs, segs] = await Promise.all([
         db.rpc('get_sequences', {}),
-        db.rpc('get_segments', {}).catch(() => []),
+        db.rpc('get_segments', {}).catch((e) => { segsError = e; return []; }),
       ]);
       setSequences(seqs || []);
       setSegments(segs || []);
+      if (segsError) {
+        console.error('get_segments failed:', segsError?.message || segsError);
+        err('Segments could not be loaded — the enrollment picker is not showing all options');
+      }
     } catch {
       err('Failed to load sequences');
       setSequences([]);

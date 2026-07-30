@@ -483,3 +483,15 @@ containment, and page-access provenance reconciliation. Session D notification
 defaults/employee overrides remain S1i; that separate work requires a fresh scoped ownership and
 authorization decision after the ordered S1h database chain is qualified. This addendum does not
 reopen or silently rewrite the historical wave.
+
+## 2026-07-29 notification presentation control-plane addendum
+
+The desktop admin presentation editor is separate from S1i notification channel defaults/employee
+preference ownership. It extends the reconciled native typed registry with governed bell/PWA/native
+templates and route identifiers. Owner decision 2026-07-29 permits native to use the same
+event-approved variables as PWA while preserving field-only native routes. Its new
+service-only audited tables/RPC do not modify `notification_types`, defaults, locks, employee
+preferences, audience, deduplication, consent, or providers. Isolated `qa-staging` migration and
+concurrency/authorization behavior passed. The production database apply and exact production
+merge `3f456810162dad8c4407d354b36085778d138ae2` are verified; no live override was saved and no
+provider/test notification was sent.

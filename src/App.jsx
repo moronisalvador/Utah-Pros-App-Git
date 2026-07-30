@@ -26,7 +26,7 @@
  *     restoration runs first so a newer external link remains the final intent.
  * ════════════════════════════════════════════════
  */
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { officeToTechPath } from '@/lib/techShellRoutes';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -34,21 +34,13 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import '@/i18n'; // initialize the translation engine once, at app entry
 import ProtectedRoute from '@/components/ProtectedRoute';
+import FieldShellRoute from '@/components/FieldShellRoute';
+import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
-import {
-  checkBiometricAvailable,
-  readBiometricPreference,
-  verifyBiometric,
-} from '@/lib/nativeBiometric';
-import { evaluateNativeBiometricLaunch } from '@/lib/nativeBiometricGate';
-import { cleanupAccountDeviceState } from '@/lib/accountDeviceCleanup';
-import { createSupabaseClient } from '@/lib/supabase';
-import { realtimeClient } from '@/lib/realtime';
-import { buildResetUrl } from '@/lib/staleChunkReload';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { isMoroni } from '@/lib/owner';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
@@ -111,6 +103,7 @@ const {
   MyAccount,
   NewBuildSimulator,
   NotificationDefaults,
+  NotificationPresentation,
   NotificationsSettings,
   OOPPricing,
   PageAccess,
@@ -156,6 +149,16 @@ const {
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
+
+// SAFE-02: stamp the native root marker so CSS can scope device-shell rules
+// (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
+// than in an effect so the very first paint already has it — a route that
+// gained its inset one frame late would visibly jump under the Dynamic Island.
+// env(safe-area-inset-*) is 0 in a browser regardless; the marker makes the
+// PWA's exemption structural instead of incidental.
+if (IS_NATIVE && typeof document !== 'undefined') {
+  document.documentElement.setAttribute('data-native', 'true');
+}
 
 // ── Route guards ──────────────────────────────────────────────────────────────
 
@@ -292,8 +295,15 @@ function TechRoutes() {
   return (
     <Route
       element={(
+        // AUTH-01: ProtectedRoute proves WHO you are; FieldShellRoute decides
+        // whether the field shell is yours at all. Before this, any signed-in
+        // account — including the external crm_partner identity — could render
+        // every /tech/* screen by typing the URL, tapping a notification, or
+        // following a Universal Link. The landing redirect only fires on '/'.
         <ProtectedRoute>
-          <TechLayout nativeBuild={IS_NATIVE} />
+          <FieldShellRoute>
+            <TechLayout nativeBuild={IS_NATIVE} />
+          </FieldShellRoute>
         </ProtectedRoute>
       )}
     >
@@ -303,7 +313,11 @@ function TechRoutes() {
       <Route path="tech/claims" element={<ErrorBoundary section="TechClaims"><TechClaims /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId" element={<ErrorBoundary section="TechClaimDetail"><TechClaimDetail /></ErrorBoundary>} />
       <Route path="tech/claims/:claimId/photos" element={<ErrorBoundary section="TechClaimAlbum"><TechClaimAlbum /></ErrorBoundary>} />
-      <Route path="tech/claims/:claimId/rooms/:roomId" element={<ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary>} />
+      {/* NAV-01: TechClaimDetail gates the rooms grid on page:tech_rooms and
+          skips get_claim_rooms entirely when it is off, but this route had no
+          guard — so a flag-off user reaching the URL directly, or by back-nav
+          after the flag flipped, landed on an ungated screen. */}
+      <Route path="tech/claims/:claimId/rooms/:roomId" element={<FeatureRoute flag="page:tech_rooms"><ErrorBoundary section="TechRoomDetail"><TechRoomDetail /></ErrorBoundary></FeatureRoute>} />
       <Route path="tech/jobs/:jobId" element={<ErrorBoundary section="TechJobDetail"><TechJobDetail /></ErrorBoundary>} />
       {/* Tech Mobile v2 M1 — Job Hub. Flag-gated (page:tech_job_hub). v2 nav
           (apptHref/jobHref) repoints to the hub PER-USER for whoever the flag is
@@ -353,14 +367,20 @@ function NativeRoutes() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/sign/:token" element={<SignPage />} />
+        {/* SAFE-02: these sit OUTSIDE TechRoutes, so none of them was inside
+            `.tech-layout` — the only element applying a top inset. On a Dynamic
+            Island device the signing header collided with the Island. The shell
+            is the public half's single inset owner and picks the status-icon
+            colour from the chrome behind it: login and signing are dark, the
+            password and legal pages are light. */}
+        <Route path="/login" element={<PublicNativeShell surface="dark"><Login /></PublicNativeShell>} />
+        <Route path="/sign/:token" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
         {/* Short form. /sign/:token remains for links already sent live. */}
-        <Route path="/s/:code" element={<SignPage />} />
-        <Route path="/set-password" element={<SetPassword />} />
-        <Route path="/privacy" element={<PrivacyPolicy />} />
-        <Route path="/terms" element={<TermsOfService />} />
-        <Route path="/support" element={<Support />} />
+        <Route path="/s/:code" element={<PublicNativeShell surface="dark"><SignPage /></PublicNativeShell>} />
+        <Route path="/set-password" element={<PublicNativeShell surface="light"><SetPassword /></PublicNativeShell>} />
+        <Route path="/privacy" element={<PublicNativeShell surface="light"><PrivacyPolicy /></PublicNativeShell>} />
+        <Route path="/terms" element={<PublicNativeShell surface="light"><TermsOfService /></PublicNativeShell>} />
+        <Route path="/support" element={<PublicNativeShell surface="light"><Support /></PublicNativeShell>} />
         {TechRoutes()}
         <Route path="/" element={<Navigate to="/tech" replace />} />
         <Route path="*" element={<Navigate to="/tech" replace />} />
@@ -575,6 +595,9 @@ function WebRoutes() {
           <Route path="settings/roles" element={<AdminRoute><ErrorBoundary section="Roles"><Roles /></ErrorBoundary></AdminRoute>} />
           <Route path="settings/page-access" element={<AdminRoute><ErrorBoundary section="Page Access"><PageAccess /></ErrorBoundary></AdminRoute>} />
           <Route path="settings/notification-defaults" element={<AdminRoute><ErrorBoundary section="Notification Defaults"><NotificationDefaults /></ErrorBoundary></AdminRoute>} />
+          {!IS_NATIVE && (
+            <Route path="settings/notification-presentation" element={<AdminRoute><ErrorBoundary section="Notification Presentation"><NotificationPresentation /></ErrorBoundary></AdminRoute>} />
+          )}
           <Route path="settings/feedback" element={<AdminRoute><ErrorBoundary section="Feedback Inbox"><AdminFeedback /></ErrorBoundary></AdminRoute>} />
 
           {/* Connections. */}
@@ -606,119 +629,6 @@ function WebRoutes() {
       </Routes>
     </Suspense>
   );
-}
-
-function resetAfterSecureCleanup() {
-  try {
-    if (sessionStorage.getItem('swReset')) return;
-    sessionStorage.setItem('swReset', '1');
-  } catch {
-    // A blocked session marker must not expose the authenticated route tree.
-  }
-  window.location.replace(
-    buildResetUrl(window.location.pathname + window.location.search),
-  );
-}
-
-// Cold-launch biometric gate. On native, an enrolled stored session stays
-// hidden until Face ID / Touch ID / passcode succeeds. Unavailable or rejected
-// verification runs the same account/device cleanup as logout, then signs out
-// locally. Session/policy/sign-out failures remain on a locked retry surface.
-// Web is passthrough.
-function BiometricGate({ children }) {
-  const [gate, setGate] = useState(() => ({
-    state: IS_NATIVE ? 'checking' : 'open',
-    reason: IS_NATIVE ? 'starting' : 'web',
-  }));
-  const [retry, setRetry] = useState(0);
-
-  useEffect(() => {
-    if (!IS_NATIVE) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        setGate({ state: 'checking', reason: 'verifying' });
-        const result = await evaluateNativeBiometricLaunch({
-          native: true,
-          getSession: () => realtimeClient.auth.getSession(),
-          readPreference: readBiometricPreference,
-          checkAvailable: checkBiometricAvailable,
-          verify: () => verifyBiometric('Unlock UPR'),
-          cleanup: (session) => {
-            if (!session?.access_token) {
-              throw new Error('Authenticated cleanup token is unavailable');
-            }
-            // Bootstrap-only security exception: AuthProvider has not mounted
-            // yet, so cleanup uses the exact stored session token directly.
-            return cleanupAccountDeviceState(
-              createSupabaseClient(session.access_token),
-            );
-          },
-          signOut: (options) => realtimeClient.auth.signOut(options),
-          isCurrent: () => !cancelled,
-        });
-        if (cancelled || result.reason === 'cancelled') return;
-        if (result.signedOut && result.reloadRequired) {
-          resetAfterSecureCleanup();
-          return;
-        }
-        setGate(result);
-      } catch (error) {
-        if (!cancelled) {
-          setGate({
-            state: 'locked',
-            reason: 'gate_error',
-            cause: error,
-          });
-        }
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [retry]);
-
-  if (gate.state !== 'open') {
-    const locked = gate.state === 'locked';
-    return (
-      <div style={{
-        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', gap: 16,
-        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-        fontFamily: 'var(--font-sans)',
-      }}>
-        <div style={{
-          width: 72, height: 72, borderRadius: 16,
-          background: 'var(--accent)', color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 36, fontWeight: 800, letterSpacing: -1,
-        }}>U</div>
-        <div
-          role="status"
-          aria-live="polite"
-          style={{ fontSize: 14, fontWeight: 600 }}
-        >
-          {locked
-            ? 'UPR stayed locked because device security could not be verified.'
-            : 'Unlocking UPR…'}
-        </div>
-        {locked && (
-          <button
-            onClick={() => setRetry(r => r + 1)}
-            style={{
-              marginTop: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600,
-              color: 'var(--accent)', background: 'transparent', border: 'none',
-              cursor: 'pointer', fontFamily: 'var(--font-sans)',
-            }}
-          >
-            Retry secure unlock
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  return children;
 }
 
 // Route persistence is account-owned. Mount only after Auth has published the
@@ -772,20 +682,18 @@ export default function App() {
           {/* Sets html[data-nav]=forward|back each navigation so the directional
               View-Transition page push (index.css) reverses on Back. Renders nothing. */}
           <NavDirectionTracker />
-          <BiometricGate>
-            <AuthProvider>
-              {/* Home-screen-PWA eviction recovery is account-owned and remains
-                  inert until Auth publishes a verified opaque owner lease. */}
-              <AuthenticatedRouteRestorer />
-              {/* Restorer runs first; an accepted cold/warm native intent then
-                  wins as the newest route after account readiness. */}
-              <NativeNavigationBridge enabled={IS_NATIVE} />
-              {/* Owner-gated preview classes (page transitions / liquid glass) —
-                  reads feature flags, so must be inside AuthProvider. */}
-              <UiFlagClasses />
-              {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
-            </AuthProvider>
-          </BiometricGate>
+          <AuthProvider>
+            {/* Home-screen-PWA eviction recovery is account-owned and remains
+                inert until Auth publishes a verified opaque owner lease. */}
+            <AuthenticatedRouteRestorer />
+            {/* Restorer runs first; an accepted cold/warm native intent then
+                wins as the newest route after account readiness. */}
+            <NativeNavigationBridge enabled={IS_NATIVE} />
+            {/* Owner-gated preview classes (page transitions / liquid glass) —
+                reads feature flags, so must be inside AuthProvider. */}
+            <UiFlagClasses />
+            {IS_NATIVE ? <NativeRoutes /> : <WebRoutes />}
+          </AuthProvider>
         </BrowserRouter>
       </LanguageProvider>
     </ThemeProvider>

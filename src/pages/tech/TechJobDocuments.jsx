@@ -19,7 +19,9 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/realtime (getAuthHeader),
  *              @/lib/toast, ./techConstants,
- *              @/components/tech/EsignRequestSheet
+ *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
+ *              @/lib/backNav, @/components/tech/v2/nav (jobHref),
+ *              @/hooks/useResumeRefetch
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs, contact_jobs, contacts, sign_requests (direct db.select)
  *              writes → sign_requests (db.update — cancel; and indirectly via the
@@ -31,8 +33,10 @@
  *   - Navigating in with history state { startEsign: 'work_auth' } (from the
  *     job page's "no signed Work Auth" banner) auto-opens the request sheet on
  *     that doc type.
- *   - Reloads sign requests on tab re-focus so a freshly collected signature
- *     (signed on /sign/:token, then Back) shows up without a manual refresh.
+ *   - Reloads sign requests on a hidden→visible resume so a freshly collected
+ *     signature (signed on /sign/:token, then Back) shows up without a manual
+ *     refresh. That goes through the shared useResumeRefetch hook, never a
+ *     hand-rolled visibilitychange listener (page-lifecycle.md §2).
  *   - Curated to two doc types; legacy rows of other types still render via a
  *     titleCased fallback label.
  * ════════════════════════════════════════════════
@@ -44,6 +48,10 @@ import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { DIV_GRADIENTS } from './techConstants';
 import EsignRequestSheet from '@/components/tech/EsignRequestSheet';
+import { publicSigningUrl } from '@/lib/publicSigningUrl';
+import { goBackOr } from '@/lib/backNav';
+import { jobHref } from '@/components/tech/v2/nav';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 
 // ─── SECTION: Helpers ──────────────
 const DOC_TYPE_LABELS = {
@@ -91,11 +99,29 @@ export default function TechJobDocuments() {
   const [esignDocType] = useState(() => location.state?.startEsign || 'work_auth');
 
   // ─── SECTION: Data fetching ──────────────
+  // LES-01 (loading-error-states.md §1): this used to end in `.catch(() => [])`.
+  // `db.select` THROWS on any non-OK response, so that swallow turned a real
+  // outage into `setRequests([])` — and this one function backs the cold load,
+  // the return-to-tab refresh, and three post-mutation refreshes. A blip while
+  // the tab was backgrounded therefore ERASED already-visible pending and
+  // signed e-signature rows and rendered the success empty state in their
+  // place. It now rejects; each caller decides what that means.
   const loadRequests = useCallback(async () => {
-    const rows = await db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`).catch(() => []);
+    const rows = await db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`);
     setRequests(rows || []);
     return rows || [];
   }, [db, jobId]);
+
+  // The standalone callers — resume and the three post-mutation refreshes —
+  // each already reported their own outcome, and none of them may blank the
+  // list or leak an unhandled rejection. Keep the rows on screen, log only.
+  const refreshRequests = useCallback(async () => {
+    try {
+      await loadRequests();
+    } catch (e) {
+      console.error('TechJobDocuments request refresh failed:', e?.message || e);
+    }
+  }, [loadRequests]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -104,7 +130,6 @@ export default function TechJobDocuments() {
       const rows = await db.select('jobs', `id=eq.${jobId}&select=id,job_number,division,insured_name,client_email,address,city,state`);
       const j = rows?.[0];
       if (!j) { setLoadError('Job not found'); return; }
-      setJob(j);
 
       // Primary contact for signer pre-fill (mirrors SendEsignModal)
       let primary = null;
@@ -120,9 +145,13 @@ export default function TechJobDocuments() {
           primary = cs?.[0] || null;
         }
       } catch { /* fall back to job fields below */ }
-      setContact(primary);
 
+      // LES-01: the requests read runs BEFORE `job` is committed, so a cold
+      // load that fails here lands on the `!job` error screen below instead of
+      // rendering "No signature requests yet" over an outage.
       await loadRequests();
+      setJob(j);
+      setContact(primary);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
@@ -136,18 +165,22 @@ export default function TechJobDocuments() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Refresh when returning to the tab (e.g. back from the signing page)
-  useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') loadRequests(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loadRequests]);
+  // Refresh when returning to the tab (e.g. back from the signing page), through
+  // the shared hook rather than a hand-rolled listener (page-lifecycle.md §2).
+  // onResume is refreshRequests, NOT loadRequests: loadRequests now rejects on a
+  // failed read by design (LES-01), and an unhandled rejection from a resume
+  // callback would be invisible. refreshRequests keeps the rendered rows on
+  // screen and logs instead.
+  useResumeRefetch({ onResume: refreshRequests });
 
   // ─── SECTION: Event handlers ──────────────
   const pdfUrl = (path) => `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
 
+  // ESIGN-01: window.location.origin is capacitor://localhost inside the app,
+  // so this copied a link no customer could open. publicSigningUrl pins the
+  // origin to a real UPR host.
   const copyLink = (token) => {
-    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
+    navigator.clipboard.writeText(publicSigningUrl(token))
       .then(() => { setCopiedToken(token); setTimeout(() => setCopiedToken(null), 2000); })
       .catch(() => toast('Could not copy link', 'error'));
   };
@@ -161,10 +194,18 @@ export default function TechJobDocuments() {
         headers: { 'Content-Type': 'application/json', ...auth },
         body: JSON.stringify({ sign_request_id: sr.id }),
       });
+      // ESIGN-03: `.catch(() => ({}))` turns ANY non-JSON body into an empty
+      // object, and `res.ok` alone then gated the success toast — so a 200
+      // carrying something that is not this worker's reply reported "Reminder
+      // sent" for an email nobody sent. That is exactly what happened while the
+      // native app answered /api from its own bundle. The worker returns
+      // `success: true` on both its happy path and its email-failure path, so
+      // require it rather than inferring success from a status code.
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to resend');
+      if (json.success !== true) throw new Error(json.error || 'Resend did not complete');
       toast(json.email_error ? `Email failed: ${json.email_error_detail || 'unknown error'}` : `Reminder sent to ${sr.signer_email}`, json.email_error ? 'error' : 'success');
-      loadRequests();
+      refreshRequests();
     } catch (e) {
       toast('Resend failed: ' + e.message, 'error');
     } finally {
@@ -178,7 +219,7 @@ export default function TechJobDocuments() {
     try {
       await db.update('sign_requests', `id=eq.${sr.id}`, { status: 'cancelled', updated_at: new Date().toISOString() });
       toast('Request cancelled');
-      loadRequests();
+      refreshRequests();
     } catch (e) {
       toast('Failed to cancel: ' + e.message, 'error');
     }
@@ -197,7 +238,7 @@ export default function TechJobDocuments() {
             {loadError || 'Documents not available'}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(`/tech/jobs/${jobId}`)}>Back</button>
+            <button className="btn btn-secondary" onClick={() => goBackOr(navigate, jobHref(jobId))}>Back</button>
             <button className="btn btn-primary" onClick={load}>Retry</button>
           </div>
         </div>
@@ -314,7 +355,7 @@ export default function TechJobDocuments() {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
-          onClick={() => navigate(`/tech/jobs/${jobId}`)}
+          onClick={() => goBackOr(navigate, jobHref(jobId))}
           aria-label="Back to job"
           style={{
             background: 'none', border: 'none', color: 'var(--text-primary)',
@@ -418,7 +459,7 @@ export default function TechJobDocuments() {
         signerPrefill={signerPrefill}
         employeeId={employee?.id || null}
         initialDocType={esignDocType}
-        onSent={loadRequests}
+        onSent={refreshRequests}
       />
     </div>
   );

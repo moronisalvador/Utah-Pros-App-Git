@@ -59,6 +59,7 @@ import {
 } from '../lib/messaging-attempts.js';
 import { resolveMessageMedia } from '../lib/message-media.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { STAFF_ACCEPTED_CONSENT_CODES, isAcceptedConsent } from '../lib/sms-consent.js';
 
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
 
@@ -111,14 +112,27 @@ async function gateRecipient(
     p_destination_phone: participantPhone,
   });
   const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
-  if (
-    status?.allowed === true
-    && (
-      status.code === 'GLOBAL_OPT_IN'
-      || (allowServiceConsent && status.code === 'SERVICE_CONSENT')
-    )
-  ) {
-    return { blocked: false };
+  // SERVICE_CONSENT and IMPLIED_CONSENT stay gated on allowServiceConsent
+  // (staff-written direct service messages only). Group/broadcast traffic
+  // requires GLOBAL_OPT_IN.
+  const acceptedCodes = allowServiceConsent
+    ? STAFF_ACCEPTED_CONSENT_CODES
+    : STAFF_ACCEPTED_CONSENT_CODES.filter((code) => code === 'GLOBAL_OPT_IN');
+  if (isAcceptedConsent(status, acceptedCodes)) {
+    if (status.code === 'IMPLIED_CONSENT') {
+      // The owner-approved existing-client exception must leave evidence before
+      // any provider call. This insert is intentionally required: if durable
+      // audit storage is unavailable, the send does not proceed.
+      await db.insert('sms_consent_log', {
+        contact_id: contact.id,
+        phone: contact.phone,
+        event_type: 'service_send_allowed_existing_client',
+        source: 'existing_client_service_relationship',
+        details: 'Allowed one-to-one staff service message: reachable client, with no DND, explicit opt-out, or pending STOP. This is not a marketing opt-in.',
+        performed_by: sentBy,
+      });
+    }
+    return { blocked: false, consentCode: status.code };
   }
 
   if (status?.code === 'DND_ACTIVE') {
@@ -164,16 +178,24 @@ async function gateRecipient(
 
   // Missing/unknown status fails closed as NO_CONSENT. Never fall back to the
   // browser-visible contact boolean when the authoritative RPC is unavailable.
+  // Since 2026-07-28 a reachable, non-objecting contact returns IMPLIED_CONSENT
+  // instead, so arriving here means one of: an explicit opt-out, an inbound STOP
+  // not yet filed, or the RPC being unreadable. `source` distinguishes them.
   {
+    const blockSource = status?.source || 'status_unavailable';
     await db.insert('sms_consent_log', {
       contact_id: contact.id,
       phone: contact.phone,
       event_type: 'send_blocked_no_consent',
       source: 'system',
-      details: 'Outbound blocked: no current global or service-message consent.',
+      details: `Outbound blocked: ${blockSource === 'explicit_opt_out'
+        ? 'contact has explicitly opted out.'
+        : blockSource === 'pending_stop'
+          ? 'an inbound STOP request is awaiting projection.'
+          : 'consent status could not be read; failing closed.'}`,
       performed_by: sentBy,
     });
-    return { blocked: true, code: 'NO_CONSENT' };
+    return { blocked: true, code: 'NO_CONSENT', source: blockSource };
   }
 }
 
@@ -508,10 +530,17 @@ export async function onRequestPost(context) {
       return jsonResponse({ error: 'No active participants in conversation' }, 400, request, env);
     }
 
+    const isDirectOneToOne = conversation.type === 'direct' && participants.length === 1;
     const isMulti = conversation.type === 'group' || conversation.type === 'broadcast';
+    if (!isDirectOneToOne && !isMulti) {
+      return jsonResponse({
+        error: 'Staff person-to-person messages require exactly one active recipient',
+        code: 'DIRECT_PURPOSE_UNSUPPORTED',
+      }, 400, request, env);
+    }
     if (
       provider === 'callrail'
-      && (conversation.type !== 'direct' || isMulti || participants.length !== 1)
+      && !isDirectOneToOne
     ) {
       return jsonResponse({
         error: 'CallRail supports staff person-to-person messages only',
@@ -555,7 +584,7 @@ export async function onRequestPost(context) {
     // A blocked recipient returns 403 with the block code (the shape Conversations.jsx
     // reads). This preserves the pre-Phase-B behaviour for the one path the live UI uses.
     // The `skip_compliance` escape hatch is gone (Wave -1 / F-2) — the gate always runs.
-    if (!isMulti) {
+    if (isDirectOneToOne) {
       const participant = participants[0];
       const [contact] = await db.select('contacts', `id=eq.${participant.contact_id}`);
       const attemptCommand = {
@@ -615,7 +644,11 @@ export async function onRequestPost(context) {
               : gate.code === 'CONTACT_PENDING_STOP'
                 ? 'Message blocked: an inbound STOP request is still being processed'
                 : gate.code === 'NO_CONSENT'
-                  ? 'Message blocked: contact has not opted in to SMS'
+                  ? (gate.source === 'explicit_opt_out'
+                    ? 'Message blocked: contact opted out of SMS'
+                    : gate.source === 'pending_stop'
+                      ? 'Message blocked: an inbound STOP request is still being processed'
+                      : 'Message blocked: SMS permission could not be verified')
                   : gate.code === 'CONTACT_PHONE_MISMATCH'
                     ? 'Message blocked: conversation phone does not match the consented contact phone'
                     : 'Message blocked: could not resolve contact for compliance check',

@@ -38,6 +38,7 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_BORDER_COLORS, DIV_PILL_COLORS } from './techConstants';
@@ -47,8 +48,10 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { scrollBehavior } from '@/lib/reducedMotion';
 
 export default function TechClaimAlbum() {
+  const kbInset = useNativeKeyboardInset();
   const { claimId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -71,8 +74,14 @@ export default function TechClaimAlbum() {
   const pendingPhotoJobIdRef = useRef(null);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
-    setLoading(true);
+  // LES-01 (loading-error-states.md §1): the photo read used to carry an inline
+  // `.catch(() => [])`. `db.select` THROWS on any non-OK response, so that
+  // swallow rendered an empty album over a real outage — and on the post-upload
+  // reload it wiped a grid the tech was looking at. It now rejects into the
+  // outer catch. `silent`/`quiet` per page-lifecycle.md §1: the loading gate is
+  // cold-start only, and the upload already reported its own outcome.
+  const load = useCallback(async ({ silent = false, quiet = false } = {}) => {
+    if (!silent) setLoading(true);
     setLoadError(null);
     try {
       const data = await db.rpc('get_claim_detail', { p_claim_id: claimId });
@@ -80,20 +89,24 @@ export default function TechClaimAlbum() {
         setLoadError('Claim not found');
         return;
       }
-      setDetail(data);
       const jobIds = (data.jobs || []).map(j => j.id);
+      let docList = [];
       if (jobIds.length > 0) {
         const idList = jobIds.map(id => `"${id}"`).join(',');
-        const docList = await db.select(
+        docList = await db.select(
           'job_documents',
           `job_id=in.(${idList})&category=eq.photo&order=created_at.desc`,
-        ).catch(() => []);
-        setDocs(docList || []);
+        );
       }
+      // Committed after both reads resolve, so a failed photo read on a cold
+      // load lands on the error screen rather than an empty-looking album.
+      setDetail(data);
+      setDocs(docList || []);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
       console.error('TechClaimAlbum load failed:', e?.message || e);
+      if (quiet) return;
       setLoadError('Failed to load album');
       toast('Failed to load album', 'error');
     } finally {
@@ -107,7 +120,7 @@ export default function TechClaimAlbum() {
   useEffect(() => {
     if (!focusJobId || loading) return;
     const el = document.getElementById(`album-group-${focusJobId}`);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (el) el.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
   }, [focusJobId, loading]);
 
   // ─── SECTION: Event handlers ──────────────
@@ -143,7 +156,10 @@ export default function TechClaimAlbum() {
       });
       impact('light');
       toast('Photo uploaded');
-      load();
+      // LES-01: silent + quiet — refresh without collapsing the page into a
+      // spinner, and without a second toast on top of "Photo uploaded" if the
+      // refresh fails. The already-rendered grid stays.
+      load({ silent: true, quiet: true });
     } catch (err) {
       toast('Photo upload failed: ' + err.message, 'error');
     } finally {
@@ -291,7 +307,7 @@ export default function TechClaimAlbum() {
           jobs.map(job => {
             const photos = photosByJob[job.id] || [];
             if (photos.length === 0) return null;
-            const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+            const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
             return (
               <div key={job.id} id={`album-group-${job.id}`} style={{ marginBottom: 22 }}>
                 {jobs.length > 1 && (
@@ -375,7 +391,7 @@ export default function TechClaimAlbum() {
       {/* Pinned Add Photo */}
       <div style={{
         position: 'fixed', left: 0, right: 0,
-        bottom: 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
+        bottom: kbInset > 0 ? `${kbInset}px` : 'calc(var(--tech-nav-height, 64px) + env(safe-area-inset-bottom, 0px))',
         padding: '10px var(--space-4)',
         background: 'linear-gradient(to bottom, rgba(255,255,255,0) 0%, var(--bg-primary) 40%)',
         pointerEvents: 'none',
@@ -455,7 +471,7 @@ export default function TechClaimAlbum() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {
-                const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+                const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
                 const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
                 return (
                   <button

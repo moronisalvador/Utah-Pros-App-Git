@@ -58,18 +58,79 @@ bindings and provider consoles.
   environment.
 - Provider-specific raw payloads are normalized at the adapter boundary so business rules consume
   owned canonical fields.
+- Native APNs delivery requires a durable producer occurrence ID. Each direct producer supplies its
+  persisted source identity; a missing ID skips native delivery rather than deriving identity from
+  mutable copy. Delivery claims use a non-reversible token/environment fingerprint and survive
+  token-row deletion/re-registration. Explicit APNs 429/5xx refusals release, reclaim, and receive
+  one bounded retry; a durable message-notification outbox keeps an exhausted explicit refusal
+  retryable in native-only mode so bell/Web Push/email do not duplicate. Timeout/network ambiguity
+  retains the claim and is never auto-replayed. The inbound-message claim RPC returns the durable
+  outbox `id` but not `provider_event_id`; the worker therefore uses that returned outbox `id` as
+  the stable native occurrence across retries. Protected worker telemetry retains only aggregate
+  native counts and allowlisted skip categories, never employee/device identifiers or upstream
+  provider details.
+- One trusted event is dispatched to both exact APNs token cohorts: sandbox for development-signed
+  installations and production for TestFlight/App Store installations. Each cohort keeps its own
+  token query, Apple host, fingerprint, delivery claim, pruning environment and bounded five-token
+  fanout; the configured `APNS_ENV` remains a required fail-closed activation signal. A rejected
+  cohort is a sanitized retryable failure, so the durable inbound-message outbox replays native
+  delivery only and does not resend bell, Web Push, or email.
+- `functions/lib/notificationPresentation.js` is the exhaustive native presentation registry. It
+  now also projects separately governed typed bell/PWA definitions for the 15 live event types.
+  Admin overrides are validated against event-specific variables and route identifiers before
+  dispatch. Owner decision 2026-07-29 permits native to use the same approved variables as PWA, but
+  native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
+  or route parameters still cannot enter APNs. Typed context missing any required value uses the
+  immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
+  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
+  synthetic values and makes no provider call.
+- Appointment assigned/updated/canceled presentation resolves customer name and job number from
+  the appointment's trusted linked-job record. Those values join appointment title/time and
+  separately labeled estimated, approved, invoiced, and collected job amounts in the event
+  allowlist for bell, PWA, and native; caller-supplied values and arbitrary job fields do not.
+- Payment producers pass the normalized invoice display number through
+  `presentation_context.invoice_number`; provider charge/payment references remain a separate
+  `payload.reference` value. Both are display-only typed presentation variables, including native,
+  and neither changes payment recording, idempotency, QuickBooks behavior, or recipients.
+- The owner-only delivery diagnostic may render each of those 15 registry types with synthetic
+  values and deliver it to the owner's bell, enrolled Web Push subscriptions, and
+  environment-matched iPhone tokens. Each event/surface gets its own stable diagnostic identity;
+  Web Push also gets a unique tag so the service worker does not collapse separate types. This
+  diagnostic is independent of the source event's master enable switch, creates no source
+  business event, and never enters email, SMS, or MMS transport.
 - Staff-written SMS uses one server chokepoint and a provider-neutral transport seam. CallRail is
   never an allowed adapter for scheduled, automated, group, broadcast, bulk or campaign sends, and
   no provider failure falls back to another provider/channel. Plan:
   `docs/messaging-transport-roadmap.md`.
+- The CallRail→Twilio switch must preserve the durable inbound-notification contract, not only the
+  outbound adapter. Repository source now retains signed Twilio inbound SMS/MMS in
+  `message_provider_events`, privately owns MMS bytes, then projects consent, canonical message,
+  unread state, and one `message_notification_outbox` occurrence under the same per-phone lock as
+  CallRail. The former direct `notifyInboundMessage()` module/path is removed, so the durable
+  outbox is the only `message.inbound` route. The compatible inactive Worker is deployed on `dev`,
+  and migration `20260729211728_twilio_inbound_notification_parity.sql` is applied and
+  rollback-proof-verified on isolated `qa-staging` (ledger `20260729220202`). The identical
+  definition and service-only ACL are applied/catalog-verified on the shared project (ledger
+  `20260729221116`). No Twilio webhook/provider setting changed and no live traffic ran. Phase 6
+  in `docs/messaging-transport-roadmap.md` remains the canonical activation checklist.
 - `POST /api/attest-sms-consent` is an evidence-recording integration boundary, not a messaging
   adapter: it makes no Twilio/CallRail request and cannot send an opt-in solicitation. Once verified
   prior service consent is recorded, `POST /api/send-message` remains the sole staff-send
   chokepoint, consumes the service-only consent decision, and adds Utah Pros identification plus
   first-conversation STOP instructions before provider dispatch. Recording permission never
   automatically retries or sends the failed message; staff must choose Retry as a separate action.
-  Scheduled and automated SMS call the same suppression-aware status boundary but accept only
-  `GLOBAL_OPT_IN`; staff-only `SERVICE_CONSENT` cannot authorize those senders.
+  The mobile thread does not call the attestation GET endpoint on open; the server rechecks when
+  staff presses Send. Under the reviewed 2026-07-28 opt-out-only rollout, a staff-written direct
+  service message may accept the distinct `IMPLIED_CONSENT` code after the matching migration is
+  separately applied. Dedicated typed transactional-service producers may also accept
+  `SERVICE_CONSENT` or `IMPLIED_CONSENT` for reviewed registry entries, initially
+  `appointment_scheduled`, `appointment_canceled`, and `signature_request`. A producer must derive
+  its event, destination and approved copy from the server-owned appointment or signature record,
+  use a stable source-record/event delivery identity, and write the mandatory durable
+  `transactional_service_send_allowed` audit before provider selection. No such automated producer
+  is live yet, and the generic `sendAutomatedMessage()` API has no caller-controlled service-purpose
+  bypass. Generic automation, scheduled free-form, group, broadcast, bulk, marketing, and campaign
+  sends still require `GLOBAL_OPT_IN`.
 - The UPR e-sign Worker has a repository-authored, not-yet-released bridge for native Work
   Authorizations. It recognizes only the pinned rendered SMS disclosure and asks a service-only
   database wrapper to complete the signature plus store linked immutable evidence atomically.
@@ -215,35 +276,35 @@ slice. Email retains its timed provider request.
 
 At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
 `SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the
-database-side capability bypass. The S1d section below records the separately authored
-caller-compatible migration/rollback/tests, which still require an owner-authorized
-shared-database apply. S1c evidence:
+database-side capability bypass. That historical gap was closed by the later S1d live apply
+described below. S1c evidence:
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`.
 Direct authenticated execution of `create_notification` has a separate S1f attribute-only apply
 candidate. It retains the service-role Worker and owner-run midnight-clock caller and remains live
 exposure until its own reviewed apply/verification window.
 
-## Notification dispatcher database checkpoint (S1d, 2026-07-26)
+## Notification dispatcher database checkpoint (S1d, live 2026-07-27)
 
-The S1d read-only live capture found one exact `notify_emit(text,jsonb) -> void` overload and no
+The original S1d read-only capture found one exact `notify_emit(text,jsonb) -> void` overload and no
 browser/Pages source caller. It is owned by `postgres`, runs `SECURITY DEFINER` with
-`search_path=public`, and currently grants EXECUTE to `authenticated` and `service_role`.
+`search_path=public`, and then granted EXECUTE to `authenticated` and `service_role`.
 Its direct database graph is three notification trigger functions, two timesheet RPCs, and the
 abandoned-clock scanner; those six definer functions contain seven calls, and the scanner is
 scheduled every 30 minutes as `postgres`.
 
-`20260726110000_notify_emit_service_boundary.sql` is a reviewed local apply candidate, not live
-state. It removes direct browser execution and retains `service_role` while leaving the
+`20260726110000_notify_emit_service_boundary.sql` is live as ledger entry
+`20260727233704 notify_emit_service_boundary`. It removes direct browser execution and retains
+only owner/`service_role` execution while leaving the
 owner-executed database chain intact. The HTTP contract is deliberately frozen: the notification
 catalog enabled gate, Worker URL/secret configuration key names, stored values, `Content-Type`,
 `x-webhook-secret`, `net.http_post`, fire-and-forget response behavior, and `/api/notify` payload
 shape do not change. Only the JSON object merge order changes so the trusted `p_type_key` cannot be
 replaced by `p_body`.
 
-Apply and rollback each fail closed on the captured function and caller graph. Apply-window checks
-are catalog-only and do not invoke a notification or provider. The migration must remain absent
-from live provenance until an owner-authorized apply records its actual ledger version and fresh
-fingerprint. Evidence:
+Apply and rollback each fail closed on the captured function and caller graph. A 2026-07-28
+read-only recapture confirmed owner `postgres`, body hash
+`27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
+`service_role`; it invoked no notification or provider. Evidence:
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
 ## Notification read/Realtime recipient checkpoint (S1g, 2026-07-26)
@@ -464,6 +525,21 @@ owner-managed and independently verified; the shared Supabase project is never u
 staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
 approved activation window and provider proof. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
+
+### Provider-event operations boundary
+
+Ops-health message-event alerts link to the owner-only Provider Events panel at
+`/dev-tools?tab=messaging&sub=events`. `GET /api/provider-event-ops` returns a paginated,
+no-store list of unresolved failed/retryable events with only operational identity: provider,
+direction/type, error/state, attempt count, phone endpoints, provider message ID, timestamps and
+outcome. It never returns message content, media references, raw-body hashes or provider payloads.
+
+`POST /api/provider-event-ops` accepts only `retry` or `resolve` for one exact event UUID after the
+same active-internal-owner check as Dev Tools. Retry reads the current row server-side and calls the
+existing service-only `rearm_callrail_provider_event` RPC with that exact row/error compare-and-set;
+the existing scheduled recovery worker later projects the retained event. Resolve calls the existing
+service-only `resolve_provider_event` RPC and records the verified owner employee ID. The endpoint
+does not call CallRail, choose a provider, submit/resubmit an SMS/MMS, or alter consent.
 
 ### CallRail live MMS endpoint compatibility
 

@@ -58,6 +58,25 @@ describe('notification target authorization', () => {
     expect(normalize('/invoices/invoice_1')).toBe('/invoices/invoice_1');
     expect(normalize('/jobs/job_1')).toBe('/jobs/job_1');
     expect(normalize('/collections')).toBe('/collections');
+    // PUSH-01: notification rows written before that fix carry the office
+    // appointment path with no data.url. Without this entry they normalized to
+    // the '/tech' fallback and the appointment was unreachable from its push.
+    expect(normalize('/schedule/appointment/appt_123')).toBe('/schedule/appointment/appt_123');
+  });
+
+  // PUSH-01 durable guard. The regression that broke appointment push was a
+  // writer moving to a path the service-worker allowlist did not carry, with
+  // nothing asserting the two agree. Every appointment destination the server
+  // can emit must survive normalization rather than silently degrading to the
+  // '/tech' fallback.
+  it('accepts every appointment destination notify.js can emit', () => {
+    const notify = read('functions/api/notify.js');
+    const emitted = [...notify.matchAll(/`(\/(?:tech|schedule)\/appointment\/\$\{[^}]+\})`/g)]
+      .map(([, tpl]) => tpl.replace(/\$\{[^}]+\}/, 'appt_123'));
+    expect(emitted.length).toBeGreaterThanOrEqual(2);
+    for (const path of new Set(emitted)) {
+      expect(normalize(path), `${path} must not degrade to the fallback`).toBe(path);
+    }
   });
 
   it.each([
@@ -85,6 +104,9 @@ describe('notification target authorization', () => {
     expect(worker.match(/normalizePushTarget/g)).toHaveLength(2);
     expect(worker).toContain("icon: '/icon-192.png'");
     expect(worker).toContain('data: { url: target }');
+    expect(worker).toContain(
+      'const rawTarget = payload.url || (payload.data && payload.data.url)',
+    );
     expect(worker).not.toMatch(/addEventListener\(['"]fetch['"]/);
     expect(worker).not.toContain('...(payload.data');
   });
@@ -219,16 +241,52 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(auth).toContain('accountState.workerResult.reloadRequired');
 
     expect(logout).toBeTruthy();
+    // Post-sign-out revival guard (2026-07-29 defect #2): logout arms the
+    // ended-session registry BEFORE its first await (so a 401 during cleanup
+    // is never rescued by a refresh and a racing re-persist is refusable),
+    // runs cleanup before signOut, and un-arms on ALL THREE paths that can
+    // retain the session live (the recovery-owned block refusal, a failed
+    // local signOut, and the superseded-generation exit when no newer
+    // sign-out took over) so a walled or live session can still renew.
+    expect(logout.indexOf('const armedSessionId = armEndedSessionGuard()'))
+      .toBeLessThan(
+        logout.indexOf('clearRejectedPrincipalState(priorDb, {'),
+      );
     expect(logout.indexOf('clearRejectedPrincipalState(priorDb, {'))
       .toBeLessThan(
       logout.indexOf('realtimeClient.auth.signOut({'),
     );
-    expect(logout.indexOf('if (cleanupResult.cancelled) return;')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+    expect(
+      logout.match(/removeEndedSessionId\(armedSessionId\)/g),
+    ).toHaveLength(3);
+    expect(logout).toContain(
+      'terminateResurrectedSession({ requirePersistedMatch: true })',
     );
-    expect(logout.indexOf('if (!cleanupResult.ready)')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+    // The arm helper captures the session id from the live token ref; the id
+    // is rotation-stable so it still matches a zombie's refreshed token.
+    const armHelper = auth.match(
+      /const armEndedSessionGuard = useCallback\([\s\S]*?\n {2}\}, \[\]\);/,
+    )?.[0];
+    expect(armHelper).toBeTruthy();
+    expect(armHelper).toContain(
+      'sessionIdFromAccessToken(tokenRef.current)',
     );
+    expect(armHelper).toContain('recordEndedSessionId(sessionId)');
+    // The purge's storage precheck is only as good as its key derivation:
+    // pin the guard's template against the SDK's own defaultStorageKey line
+    // and pin that realtimeClient configures no custom storageKey, so a
+    // drift on either side fails here instead of silently reading 'none'.
+    const guardSource = read('src/lib/endedSessionGuard.js');
+    expect(guardSource).toMatch(
+      /`sb-\$\{\s*new URL\(supabaseUrl\)\.hostname\.split\('\.'\)\[0\]\s*\}-auth-token`/,
+    );
+    const sdkSource = read(
+      'node_modules/@supabase/supabase-js/src/SupabaseClient.ts',
+    );
+    expect(sdkSource).toContain(
+      "`sb-${baseUrl.hostname.split('.')[0]}-auth-token`",
+    );
+    expect(read('src/lib/realtime.js')).not.toContain('storageKey');
     expect(auth).toMatch(
       /event === 'SIGNED_OUT'[\s\S]*?clearRejectedPrincipalState\(priorDb, \{/,
     );
@@ -261,5 +319,38 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(layout).toContain('minHeight: 48');
     expect(layout).toContain('minWidth: 44');
     expect(layout).toContain("'appinstalled'");
+  });
+
+  // MSG-01 — the installed native app must never advertise installing the app.
+  describe('MSG-01 — install banner is web-only', () => {
+    const layout = read('src/components/TechLayout.jsx');
+
+    it('gates the banner on the native build flag', () => {
+      expect(layout).toContain('{!nativeBuild && <InstallBanner />}');
+      // An unguarded render is the defect.
+      expect(layout).not.toMatch(/^\s*<InstallBanner \/>\s*$/m);
+    });
+
+    it('keeps the banner itself intact for the real PWA', () => {
+      // A guard, not a deletion — the assertions above still have to pass, and
+      // home-screen PWA users still need the install prompt.
+      expect(layout).toContain('function InstallBanner()');
+      expect(layout).toContain("aria-label={t('dismissInstall')}");
+    });
+
+    it('does not rely on isStandaloneDisplay to detect native', () => {
+      // That is precisely what failed: it checks display-mode:standalone and
+      // navigator.standalone, neither of which is true in a Capacitor
+      // WKWebView, while the userAgent still matches /iPhone|iPad/.
+      const resume = read('src/lib/resumeRestore.js');
+      expect(resume).toContain('isStandaloneDisplay');
+      expect(resume).not.toContain('Capacitor');
+    });
+
+    it('still receives nativeBuild from the route tree', () => {
+      const app = read('src/App.jsx');
+      expect(app).toContain('<TechLayout nativeBuild={IS_NATIVE} />');
+      expect(layout).toMatch(/function TechLayout\(\{ nativeBuild = false \}\)/);
+    });
   });
 });

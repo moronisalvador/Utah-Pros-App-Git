@@ -47,14 +47,16 @@ import { SkeletonList } from '@/components/tech/v2';
 import { techKeys, invalidateTech } from '@/lib/techQuery';
 import { runOmwPrecheck } from '@/lib/clockPrecheck';
 import { toast } from '@/lib/toast';
+import { goBackOr } from '@/lib/backNav';
 import HubHeader from './hub/HubHeader.jsx';
 import HubStage from './hub/HubStage.jsx';
 import HubDock from './hub/HubDock.jsx';
 import HubBelowFold from './hub/HubBelowFold.jsx';
 import AdminJobMenu from './hub/AdminJobMenu.jsx';
 import { selectVisitId } from './hub/hubHelpers.js';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
-const todayISO = () => new Date().toISOString().split('T')[0];
+const todayISO = () => todayInCompanyTimeZone();
 
 export default function TechJobHub() {
   const { t } = useTranslation('hub');
@@ -140,7 +142,7 @@ export default function TechJobHub() {
           <div className="tv2-hub-errorscreen__title">{t('states.loadErrorTitle')}</div>
           <div className="tv2-hub-errorscreen__sub">{t('states.loadErrorSub')}</div>
           <div className="tv2-hub-errorscreen__actions">
-            <button type="button" className="btn btn-secondary" onClick={() => navigate(-1)}>{t('states.back')}</button>
+            <button type="button" className="btn btn-secondary" onClick={() => goBackOr(navigate, '/tech')}>{t('states.back')}</button>
             <button type="button" className="btn btn-primary" onClick={() => hubQuery.refetch()}>{t('states.retry')}</button>
           </div>
         </div>

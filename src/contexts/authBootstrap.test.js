@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FIELD_SHELL_ROLES,
+  canUseFieldShell,
   classifyEmployeeBootstrap,
   createAuthProviderLifecycle,
   getAccountLandingPath,
@@ -88,6 +90,69 @@ describe('getAccountLandingPath', () => {
     [undefined, '/'],
   ])('maps %s to its shared account landing', (role, expected) => {
     expect(getAccountLandingPath(role)).toBe(expected);
+  });
+});
+
+// AUTH-01. Before the field-shell gate, being signed in was sufficient to
+// render every /tech/* route: the landing redirect only fires on '/', so a
+// direct URL, a Universal Link or a notification tap bypassed it entirely.
+describe('canUseFieldShell', () => {
+  it.each(['field_tech', 'admin', 'office', 'supervisor', 'estimator', 'project_manager'])(
+    'admits the internal role %s',
+    (role) => { expect(canUseFieldShell(role)).toBe(true); },
+  );
+
+  it('does not admit "manager", which is not a real role', () => {
+    // NAV-01: absent from AuthContext's SUPPORTED_EMPLOYEE_ROLES and from
+    // navKeys ROLES, so no session can hold it. It was briefly in the allowlist
+    // where it granted nothing but implied an identity that does not exist.
+    expect(canUseFieldShell('manager')).toBe(false);
+  });
+
+  it('only lists roles a session can actually hold', () => {
+    // Guards against another phantom role being added from a stale grep.
+    const SUPPORTED = new Set([
+      'admin', 'office', 'project_manager', 'field_tech',
+      'estimator', 'supervisor', 'crm_partner',
+    ]);
+    for (const role of FIELD_SHELL_ROLES) {
+      expect(SUPPORTED.has(role), `${role} is not a supported employee role`).toBe(true);
+    }
+  });
+
+  it('refuses crm_partner, the external product identity', () => {
+    // Owner-ratified 2026-07-27. This identity previously reached job data,
+    // claims, customer records and photos through the field shell.
+    expect(canUseFieldShell('crm_partner')).toBe(false);
+  });
+
+  it('fails closed on an absent, unknown or malformed role', () => {
+    for (const role of [undefined, null, '', 'not_a_role', 0, {}]) {
+      expect(canUseFieldShell(role)).toBe(false);
+    }
+  });
+
+  it('always sends a refused account somewhere real, never back into /tech', () => {
+    // The refusal screen links to getAccountLandingPath(role). If that ever
+    // resolved to a /tech path for a refused role, the native catch-all
+    // ('*' -> /tech) would trap the user in a loop with no way out.
+    const refused = ['crm_partner', undefined, 'not_a_role'];
+    for (const role of refused) {
+      expect(canUseFieldShell(role)).toBe(false);
+      expect(getAccountLandingPath(role).startsWith('/tech')).toBe(false);
+    }
+  });
+
+  it('keeps the gate and the landing rule from drifting apart', () => {
+    // Both live in this module on purpose: any role sent to /tech on login must
+    // also be admitted by the gate, or login would bounce into the refusal screen.
+    for (const role of FIELD_SHELL_ROLES) {
+      if (getAccountLandingPath(role) === '/tech') {
+        expect(canUseFieldShell(role)).toBe(true);
+      }
+    }
+    expect(canUseFieldShell('field_tech')).toBe(true);
+    expect(getAccountLandingPath('field_tech')).toBe('/tech');
   });
 });
 

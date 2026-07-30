@@ -53,10 +53,15 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import { toast } from '@/lib/toast';
+import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import DatePicker from '@/components/DatePicker';
-import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials } from './techFormConstants';
+import { inputStyle, labelStyle, TIME_OPTIONS, MOBILE_TYPES, getInitials, isTimeRangeInvalid } from './techFormConstants';
+import { scrollBehavior } from '@/lib/reducedMotion';
 
 export default function TechEditAppointment() {
+  // KB-01: the sticky Save sits behind the keyboard without this.
+  // Native only — 0 on web, where this renders exactly as it does today.
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation(['apptForm', 'tech']);
   const { id } = useParams();
@@ -147,7 +152,7 @@ export default function TechEditAppointment() {
   // Scroll to tasks section if ?section=tasks
   useEffect(() => {
     if (!loading && searchParams.get('section') === 'tasks' && taskSectionRef.current) {
-      setTimeout(() => taskSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+      setTimeout(() => taskSectionRef.current.scrollIntoView({ behavior: scrollBehavior(), block: 'start' }), 300);
     }
   }, [loading, searchParams]);
 
@@ -222,8 +227,14 @@ export default function TechEditAppointment() {
   };
 
   /* ── Save ── */
+  // PICK-03: shared with TechNewAppointment and TechNewEvent so the rule
+  // cannot drift between the three forms.
+  const timeInvalid = isTimeRangeInvalid(timeStart, timeEnd);
+
   const handleSave = async () => {
-    if (!date || saving) return;
+    // PICK-03: an end at or before the start reached update_appointment
+    // unchecked on this path.
+    if (!date || saving || timeInvalid) return;
     setSaving(true);
     try {
       // 1. Update core appointment fields
@@ -328,7 +339,7 @@ export default function TechEditAppointment() {
       </div>
 
       {/* Scrollable form */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 + kbInset }}>
 
         {/* ═══ JOB (read-only) ═══ */}
         <div style={{ marginBottom: 20 }}>
@@ -351,7 +362,7 @@ export default function TechEditAppointment() {
 
         {/* ═══ DATE ═══ */}
         <div style={{ marginBottom: 20 }}>
-          <div style={labelStyle}>{t('labelDate')} <span style={{ color: '#ef4444' }}>*</span></div>
+          <div style={labelStyle}>{t('labelDate')} <span style={{ color: 'var(--danger)' }}>*</span></div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => { const d = new Date(date + 'T12:00:00'); d.setDate(d.getDate() - 1); setDate(d.toISOString().split('T')[0]); }}
               style={{ width: 48, height: 48, flexShrink: 0, borderRadius: 'var(--tech-radius-button)', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}>
@@ -395,7 +406,10 @@ export default function TechEditAppointment() {
         <div style={{ marginBottom: 20 }}>
           <div style={labelStyle}>{t('labelTime')}</div>
           <div style={{ display: 'flex', gap: 8 }}>
+            {/* PICK-03: the group heading is a styled div, not a <label>, so
+                without these the two selects announce identically. */}
             <select
+              aria-label={t('startTimeAria')}
               value={timeStart}
               onChange={e => setTimeStart(e.target.value)}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -404,6 +418,7 @@ export default function TechEditAppointment() {
             </select>
             <div style={{ alignSelf: 'center', color: 'var(--text-tertiary)', fontSize: 13, fontWeight: 600 }}>{t('timeTo')}</div>
             <select
+              aria-label={t('endTimeAria')}
               value={timeEnd}
               onChange={e => setTimeEnd(e.target.value)}
               style={{ ...inputStyle, flex: 1, cursor: 'pointer' }}
@@ -411,6 +426,11 @@ export default function TechEditAppointment() {
               {TIME_OPTIONS.map(o => <option key={o.val} value={o.val}>{o.label}</option>)}
             </select>
           </div>
+          {timeInvalid && (
+            <div role="alert" style={{ fontSize: 12, color: 'var(--danger)', marginTop: 6, fontWeight: 500 }}>
+              {t('timeError')}
+            </div>
+          )}
         </div>
 
         {/* ═══ CREW ═══ */}
@@ -669,10 +689,10 @@ export default function TechEditAppointment() {
 
         {/* ═══ PRIVATE ═══ admin/PM toggle; read-only badge otherwise */}
         {canTogglePrivate ? (
-          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? '#fef3c7' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? '#fde68a' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
+          <div style={{ marginBottom: 20, padding: '12px 14px', background: isPrivate ? 'var(--warning-bg)' : 'var(--bg-secondary)', border: `1px solid ${isPrivate ? 'var(--warning-border)' : 'var(--border-light)'}`, borderRadius: 'var(--tech-radius-button)' }}>
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, minHeight: 'var(--tech-min-tap)', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
               <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
-                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: '#d97706', flexShrink: 0 }} />
+                style={{ marginTop: 4, width: 20, height: 20, cursor: 'pointer', accentColor: 'var(--warning)', flexShrink: 0 }} />
               <span style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
@@ -685,9 +705,9 @@ export default function TechEditAppointment() {
             </label>
           </div>
         ) : isPrivate && (
-          <div style={{ marginBottom: 20, padding: '10px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 'var(--tech-radius-button)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#92400e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#92400e' }}>{t('privateBadge')}</span>
+          <div style={{ marginBottom: 20, padding: '10px 14px', background: 'var(--warning-bg)', border: '1px solid var(--warning-border)', borderRadius: 'var(--tech-radius-button)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--warning)' }}>{t('privateBadge')}</span>
           </div>
         )}
 
@@ -699,9 +719,9 @@ export default function TechEditAppointment() {
             disabled={deleting}
             style={{
               width: '100%', height: 52, borderRadius: 'var(--tech-radius-button)',
-              background: confirmDelete ? '#fef2f2' : 'transparent',
-              color: confirmDelete ? '#dc2626' : 'var(--text-tertiary)',
-              border: `1.5px solid ${confirmDelete ? '#fecaca' : 'var(--border-color)'}`,
+              background: confirmDelete ? 'var(--danger-bg)' : 'transparent',
+              color: confirmDelete ? 'var(--danger)' : 'var(--text-tertiary)',
+              border: `1.5px solid ${confirmDelete ? 'var(--danger-border)' : 'var(--border-color)'}`,
               fontSize: 15, fontWeight: confirmDelete ? 700 : 600,
               cursor: 'pointer', fontFamily: 'var(--font-sans)',
               touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent',
@@ -715,7 +735,7 @@ export default function TechEditAppointment() {
 
       {/* Sticky save button */}
       <div style={{
-        position: 'fixed', bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))',
+        position: 'fixed', bottom: techStickyCtaBottom(kbInset),
         left: 0, right: 0, padding: '12px 16px',
         background: 'linear-gradient(transparent, var(--bg-primary) 8px)',
         zIndex: 10,
@@ -723,7 +743,7 @@ export default function TechEditAppointment() {
         <button
           className="btn"
           onClick={handleSave}
-          disabled={!date || saving}
+          disabled={!date || saving || timeInvalid}
           style={{
             width: '100%', height: 52, borderRadius: 'var(--tech-radius-button)',
             background: date && !saving ? 'var(--accent)' : 'var(--bg-tertiary)',

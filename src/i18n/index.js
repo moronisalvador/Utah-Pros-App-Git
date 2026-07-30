@@ -4,108 +4,112 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Starts up the app's translation engine. It loads the English, Portuguese, and
- *   Spanish word lists and tells the engine which language to show first (the one
- *   this phone last picked, or English). After this runs, any tech screen can ask
- *   for a piece of text by name and get it back in the chosen language. If a phrase
- *   hasn't been translated yet, English is shown instead — so a half-translated
- *   screen never breaks.
+ *   Starts up the app's translation engine. English is built in and ready
+ *   instantly. Portuguese and Spanish are fetched only when somebody actually
+ *   uses them, so English-speaking phones never download words they will not
+ *   read. After this runs, any tech screen can ask for a piece of text by name
+ *   and get it back in the chosen language. If a phrase hasn't been translated
+ *   yet, English is shown instead — so a half-translated screen never breaks.
  *
  * WHERE IT LIVES:
  *   Route:  n/a (imported once for its side effect — it initializes i18next)
  *
  * DEPENDS ON:
  *   Packages:  i18next, react-i18next
- *   Internal:  ./langPrefs (which language to start in), ./locales/<lang>/<ns>.json
+ *   Internal:  ./langPrefs (which language to start in),
+ *              ./locales/en/index.js (bundled), ./locales/{pt,es}/index.js (on demand)
  *   Data:      none (translations are bundled JSON; no DB, no network)
  *
  * NOTES / GOTCHAS:
- *   - Resources are BUNDLED (static JSON imports), so init is synchronous and
- *     `t()` works on the very first render — hence `react.useSuspense: false`
- *     (there is nothing to wait for). Lazy-loading PT/ES is a later optimization.
+ *   - English is STATIC, pt/es are DYNAMIC. English init stays synchronous, so
+ *     `t()` works on the very first render and `react.useSuspense: false` remains
+ *     correct. Changed 2026-07-27: pt+es were statically imported, putting ~78 KB
+ *     raw of locales nobody had chosen into the entry bundle. perf-budget.md §4
+ *     already required them lazy; this makes the code match the rule.
+ *   - `ensureLanguage(lng)` MUST resolve before `i18n.changeLanguage(lng)`, or
+ *     the switch renders English until the chunk lands. LanguageContext owns that
+ *     ordering — do not call `changeLanguage` for pt/es from anywhere else.
  *   - `fallbackLng: 'en'` is what makes the phased rollout safe: any missing key
  *     in pt/es renders the English source, never a crash or a blank.
  *   - ADDING A STRING: put the key in `locales/en/<ns>.json` first (source of
- *     truth), then the same key in `pt` and `es`. New namespace → add its four
- *     imports + a line in each `resources.<lang>` block + `NAMESPACES`.
+ *     truth), then the same key in `pt` and `es`. New namespace → add its import
+ *     to all THREE `locales/<lang>/index.js` barrels + a line in `NAMESPACES`.
  * ════════════════════════════════════════════════
  */
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { LANGS, DEFAULT_LANG, readStoredLang } from './langPrefs.js';
 
-import enCommon from './locales/en/common.json';
-import enNav from './locales/en/nav.json';
-import enMore from './locales/en/more.json';
-import enSettings from './locales/en/settings.json';
-import enTech from './locales/en/tech.json';
-import enTasks from './locales/en/tasks.json';
-import enDash from './locales/en/dash.json';
-import enSchedule from './locales/en/schedule.json';
-import enClaims from './locales/en/claims.json';
-import enAppointment from './locales/en/appointment.json';
-import enTracker from './locales/en/tracker.json';
-import enJob from './locales/en/job.json';
-import enClaimDetail from './locales/en/claimDetail.json';
-import enApptForm from './locales/en/apptForm.json';
-import enNewCustomer from './locales/en/newCustomer.json';
-import enNewEvent from './locales/en/newEvent.json';
-import enNewJob from './locales/en/newJob.json';
-import enHub from './locales/en/hub.json'; // Job Hub v2 (Phase H1)
-import enMsgs from './locales/en/msgs.json'; // Tech Messages v2 (Phase F-M)
+import enResources from './locales/en/index.js';
 
-import ptCommon from './locales/pt/common.json';
-import ptNav from './locales/pt/nav.json';
-import ptMore from './locales/pt/more.json';
-import ptSettings from './locales/pt/settings.json';
-import ptTech from './locales/pt/tech.json';
-import ptTasks from './locales/pt/tasks.json';
-import ptDash from './locales/pt/dash.json';
-import ptSchedule from './locales/pt/schedule.json';
-import ptClaims from './locales/pt/claims.json';
-import ptAppointment from './locales/pt/appointment.json';
-import ptTracker from './locales/pt/tracker.json';
-import ptJob from './locales/pt/job.json';
-import ptClaimDetail from './locales/pt/claimDetail.json';
-import ptApptForm from './locales/pt/apptForm.json';
-import ptNewCustomer from './locales/pt/newCustomer.json';
-import ptNewEvent from './locales/pt/newEvent.json';
-import ptNewJob from './locales/pt/newJob.json';
-import ptHub from './locales/pt/hub.json'; // Job Hub v2 (Phase H1)
-import ptMsgs from './locales/pt/msgs.json'; // Tech Messages v2 (Phase F-M)
-
-import esCommon from './locales/es/common.json';
-import esNav from './locales/es/nav.json';
-import esMore from './locales/es/more.json';
-import esSettings from './locales/es/settings.json';
-import esTech from './locales/es/tech.json';
-import esTasks from './locales/es/tasks.json';
-import esDash from './locales/es/dash.json';
-import esSchedule from './locales/es/schedule.json';
-import esClaims from './locales/es/claims.json';
-import esAppointment from './locales/es/appointment.json';
-import esTracker from './locales/es/tracker.json';
-import esJob from './locales/es/job.json';
-import esClaimDetail from './locales/es/claimDetail.json';
-import esApptForm from './locales/es/apptForm.json';
-import esNewCustomer from './locales/es/newCustomer.json';
-import esNewEvent from './locales/es/newEvent.json';
-import esNewJob from './locales/es/newJob.json';
-import esHub from './locales/es/hub.json'; // Job Hub v2 (Phase H1)
-import esMsgs from './locales/es/msgs.json'; // Tech Messages v2 (Phase F-M)
-
-/** Every translation namespace (one file per screen area). Keep in sync with resources. */
+/** Every translation namespace (one file per screen area). Keep in sync with the barrels. */
 export const NAMESPACES = ['common', 'nav', 'more', 'settings', 'tech', 'tasks', 'dash', 'schedule', 'claims', 'appointment', 'tracker', 'job', 'claimDetail', 'apptForm', 'newCustomer', 'newEvent', 'newJob', 'hub', 'msgs'];
 
-export const resources = {
-  en: { common: enCommon, nav: enNav, more: enMore, settings: enSettings, tech: enTech, tasks: enTasks, dash: enDash, schedule: enSchedule, claims: enClaims, appointment: enAppointment, tracker: enTracker, job: enJob, claimDetail: enClaimDetail, apptForm: enApptForm, newCustomer: enNewCustomer, newEvent: enNewEvent, newJob: enNewJob, hub: enHub, msgs: enMsgs },
-  pt: { common: ptCommon, nav: ptNav, more: ptMore, settings: ptSettings, tech: ptTech, tasks: ptTasks, dash: ptDash, schedule: ptSchedule, claims: ptClaims, appointment: ptAppointment, tracker: ptTracker, job: ptJob, claimDetail: ptClaimDetail, apptForm: ptApptForm, newCustomer: ptNewCustomer, newEvent: ptNewEvent, newJob: ptNewJob, hub: ptHub, msgs: ptMsgs },
-  es: { common: esCommon, nav: esNav, more: esMore, settings: esSettings, tech: esTech, tasks: esTasks, dash: esDash, schedule: esSchedule, claims: esClaims, appointment: esAppointment, tracker: esTracker, job: esJob, claimDetail: esClaimDetail, apptForm: esApptForm, newCustomer: esNewCustomer, newEvent: esNewEvent, newJob: esNewJob, hub: esHub, msgs: esMsgs },
+/**
+ * Bundled resources. English ONLY — pt/es arrive through ensureLanguage().
+ * Still an object keyed by language so existing readers of `resources.en` work.
+ */
+export const resources = { en: enResources };
+
+// ─── SECTION: On-demand locale loading ──────────────
+
+/**
+ * One dynamic import per non-default language. Each barrel is a single module,
+ * so Vite emits ONE chunk per language rather than 19 loose JSON chunks.
+ * A static import of these paths anywhere in app code silently undoes the split.
+ */
+const LOADERS = {
+  pt: () => import('./locales/pt/index.js'),
+  es: () => import('./locales/es/index.js'),
 };
+
+/** In-flight/settled loads, so N concurrent callers trigger ONE fetch. */
+const inFlight = new Map();
+
+/**
+ * Make `lng` usable by the engine, fetching it if needed. Idempotent, safe to
+ * call concurrently, and a no-op for English (already bundled) or an unknown
+ * code. Resolves to true when the language is ready to display.
+ *
+ * On failure it resolves FALSE rather than throwing: a locale chunk that will
+ * not download must degrade to English, never break the app for a field tech.
+ */
+export async function ensureLanguage(lng) {
+  if (lng === DEFAULT_LANG || !LOADERS[lng]) return true;
+  if (i18n.hasResourceBundle?.(lng, 'common')) return true;
+
+  if (!inFlight.has(lng)) {
+    inFlight.set(lng, LOADERS[lng]()
+      .then((mod) => {
+        const bundle = mod.default;
+        for (const ns of NAMESPACES) {
+          // deep=false, overwrite=false — never clobber a bundle already present.
+          i18n.addResourceBundle(lng, ns, bundle[ns], false, false);
+        }
+        resources[lng] = bundle;
+        return true;
+      })
+      .catch((e) => {
+        // Let a later attempt retry instead of caching the failure forever.
+        inFlight.delete(lng);
+        console.error(`i18n: failed to load "${lng}" locale, staying on English`, e);
+        return false;
+      }));
+  }
+  return inFlight.get(lng);
+}
+
+// ─── SECTION: Engine init ──────────────
+
+const startingLang = readStoredLang();
 
 i18n.use(initReactI18next).init({
   resources,
-  lng: readStoredLang(),
+  // Boot in English even when pt/es is stored: its bundle is not here yet, and
+  // naming a language with no resources renders raw keys on the first paint.
+  // LanguageProvider awaits initialLanguageReady, then switches — so the first
+  // thing drawn is already the right language.
+  lng: DEFAULT_LANG,
   fallbackLng: DEFAULT_LANG,
   supportedLngs: LANGS,
   ns: NAMESPACES,
@@ -114,5 +118,18 @@ i18n.use(initReactI18next).init({
   returnNull: false,
   react: { useSuspense: false },
 });
+
+/**
+ * Resolves once the stored language is loaded AND active. English resolves on
+ * the spot (no await, no fetch), so the common path is unchanged.
+ * LanguageProvider gates its first render on this to avoid showing English to
+ * somebody who chose Portuguese.
+ */
+export const initialLanguageReady = startingLang === DEFAULT_LANG
+  ? Promise.resolve(true)
+  : ensureLanguage(startingLang).then(async (ok) => {
+    if (ok) await i18n.changeLanguage(startingLang);
+    return ok;
+  });
 
 export default i18n;

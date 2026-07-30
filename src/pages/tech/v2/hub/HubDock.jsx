@@ -45,7 +45,7 @@ import { openMap } from '@/lib/techDateUtils';
 // Message opens the in-app thread (see the dock button below). The offline-queue
 // imports that used to sit here went with the PR's removal of the offline photo
 // fork — uploadPhotoFile is online-only now and guards on navigator.onLine.
-import { pickerHref } from '@/lib/openInAppThread';
+import { openJobThread } from '@/lib/openInAppThread';
 
 /**
  * @param {{ jobId: string, appointmentId: string|null, phone?: string|null,
@@ -61,6 +61,9 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
   const [uploading, setUploading] = useState(false);
   const [hidden, setHidden] = useState(false);       // keyboard-open → hide bar
   const [menuOpen, setMenuOpen] = useState(false);
+  // MSG-05: Message resolves the job's contact on tap; block a second tap
+  // from firing a second lookup while the first is still in flight.
+  const [openingThread, setOpeningThread] = useState(false);
   const [photoToast, setPhotoToast] = useState(null); // { id, filePath }
   const [photoNoteSheet, setPhotoNoteSheet] = useState(null);
   const [localRooms, setLocalRooms] = useState(rooms);
@@ -182,12 +185,18 @@ export default function HubDock({ jobId, appointmentId, phone, address, rooms, o
         {/* Opens the thread INSIDE UPR. A native sms: link here would send from the
             tech's personal number, so it would never reach the customer's UPR
             thread. The Job Hub flag is off today, so this was latent — it would
-            have surfaced the moment the flag opened. */}
+            have surfaced the moment the flag opened.
+            MSG-05: resolve the job's contact on tap and open that thread directly;
+            the picker stays the fallback when the job has no single clear customer. */}
         <button
           type="button"
           className={`tv2-hub-dock__btn${phone ? '' : ' is-disabled'}`}
-          onClick={phone ? () => navigate(pickerHref()) : undefined}
-          disabled={!phone}
+          onClick={phone ? async () => {
+            setOpeningThread(true);
+            try { await openJobThread(navigate, jobId, db); }
+            finally { setOpeningThread(false); }
+          } : undefined}
+          disabled={!phone || openingThread}
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
           <span>{t('tech:actionBar.message')}</span>

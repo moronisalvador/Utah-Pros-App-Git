@@ -41,6 +41,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
 import AddressAutocomplete from '@/components/AddressAutocomplete';
 import { toast } from '@/lib/toast';
+import useNativeKeyboardInset, { techStickyCtaBottom } from '@/lib/useNativeKeyboardInset';
 import { normalizePhone } from '@/lib/phone';
 
 // ─── SECTION: Constants ──────────────
@@ -65,6 +66,9 @@ const labelStyle = {
 };
 
 export default function TechNewCustomer() {
+  // KB-01: the sticky Save sits behind the keyboard without this.
+  // Native only — 0 on web, where this renders exactly as it does today.
+  const kbInset = useNativeKeyboardInset();
   // ─── SECTION: State & hooks ──────────────
   const { t } = useTranslation('newCustomer');
   const navigate = useNavigate();
@@ -169,7 +173,7 @@ export default function TechNewCustomer() {
       </div>
 
       {/* Scrollable form */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 100 + kbInset }}>
 
         {/* Role pills */}
         <div style={{ marginBottom: 20 }}>
@@ -203,7 +207,7 @@ export default function TechNewCustomer() {
         {/* Name */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            {t('labelFullName')} <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelFullName')} <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <input
             type="text"
@@ -218,7 +222,7 @@ export default function TechNewCustomer() {
         {/* Phone */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            {t('labelPhone')} <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelPhone')} <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <input
             type="tel"
@@ -315,7 +319,7 @@ export default function TechNewCustomer() {
 
       {/* Sticky submit */}
       <div style={{
-        position: 'fixed', bottom: 'calc(var(--tech-nav-height) + max(12px, env(safe-area-inset-bottom, 12px)))',
+        position: 'fixed', bottom: techStickyCtaBottom(kbInset),
         left: 0, right: 0, padding: '12px 16px',
         background: 'linear-gradient(transparent, var(--bg-primary) 8px)',
         zIndex: 10,

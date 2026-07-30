@@ -35,6 +35,13 @@
   const ID = '[A-Za-z0-9_-]{1,128}';
   const ID_ROUTES = [
     new RegExp(`^/tech/appointment/${ID}$`),
+    // PUSH-01. Notification rows written between the office-appointment bell fix
+    // and that finding's repair carry link=/schedule/appointment/:id with no
+    // data.url, and normalized to the '/tech' fallback — the appointment was
+    // unreachable from its own push. The route exists (App.jsx) and is wrapped in
+    // TechShellRedirect, so a field tech opening it still lands on
+    // /tech/appointment/:id. New pushes carry the field path directly.
+    new RegExp(`^/schedule/appointment/${ID}$`),
     new RegExp(`^/estimates/${ID}$`),
     new RegExp(`^/jobs/${ID}$`),
     new RegExp(`^/invoices/${ID}$`),

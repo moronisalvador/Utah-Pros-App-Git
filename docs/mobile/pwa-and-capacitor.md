@@ -126,7 +126,23 @@ Account/lifecycle source guarantees:
 Auth source now gates rejected-bootstrap Login on ready device cleanup plus strictly verified local
 Supabase sign-out, validates employee/permission/page-access/feature-flag response values before
 publishing authority, and gates SetPassword on cleanup while preserving the recovery session.
-Failure or malformed sign-out stays behind a retry hard lock. Auth observer callbacks now return
+EXPLICIT sign-out ALWAYS completes (owner directive 2026-07-29: "a sign out button should just do
+that: sign out"): one bounded best-effort cleanup pass runs while the authenticated client exists,
+its outcome never gates the sign-out, and unfinished server work normally stays in the durable
+owner-bound pending-detach journal (honest limits: broken storage can journal nothing, and a
+foreign journal occupying the single slot is itself what walls the next bind — see
+`push-activation-owner-gate.md`). The journal is the durable memory: the next same-owner sign-in reconciles
+it and a different account is refused at the bind gate before it publishes or enrolls. The only
+walls left on the explicit path are a recovery/reauth-owned block and a failed local Supabase
+signOut(); observer-only sign-out (signed-out reauth), password recovery, login/account-switch,
+and rejected bootstrap keep their hard gates. A durable signed-out-intent marker plus guards at
+boot/SIGNED_IN/TOKEN_REFRESHED/recoverSession and a time-boxed post-signOut sweep terminate a
+session that a racing token refresh re-persists after sign-out (the 2026-07-29 TestFlight defect
+where the app re-entered the account without ever reaching Login); login() clears the marker
+immediately before signInWithPassword so real sign-ins — including same-user re-login and web
+cross-tab login — are never refused. Accepted consequence (deliberate): a fully "ready" sign-out
+can still leave the native provisional-window journal behind, so a DIFFERENT employee's next
+sign-in can hit the previous-account wall through the bind gate. Auth observer callbacks return
 synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out from
 deadlocking on the SDK observer lock. Independent review is clean; browser/device proof remains.
 
@@ -150,10 +166,10 @@ retry guidance; blocking/version-change callbacks close only their captured conn
 Historical completed-photo cleanup is never sent and uses bounded retry-limited, time-rotating,
 key-only owner maintenance. Hidden documents neither poll nor run maintenance.
 
-Focused zero-replay tests pass 58/58. In the current-origin integration worktree, the complete unit
-lane passes 90 files/1079 tests, Worker passes 99 files/1476 tests, QA passes 25 files/206 tests, and
-web/native builds pass. Full lint retains 310 baseline findings; the changed-file ratchet is tracked
-separately. Independent review found no actionable offline P0/P1. Real multi-tab/upgrade and
+At the 2026-07-27 offline-remediation checkpoint (`3da70e5`), focused zero-replay tests passed
+58/58, the complete unit lane passed 90 files/1079 tests, Worker passed 99 files/1476 tests, QA
+passed 25 files/206 tests, and web/native builds passed. Full lint reported 310 findings; the
+changed-file ratchet was tracked separately. Independent review found no actionable offline P0/P1. Real multi-tab/upgrade and
 representative device proof remain additional gates.
 
 Any broader offline promise requires an owner-approved workflow matrix, private-data threat model,
@@ -187,7 +203,13 @@ PWA push and native APNs are distinct channels. Web Push requires:
 - authenticated account/device attachment and logout detachment;
 - governed event/audience/content and same-origin tap route;
 - configured VAPID and delivery/expiry/retry health;
-- privacy-safe lock-screen payload.
+- an owner-approved typed lock-screen payload.
+
+Settings → Notifications exposes Web Push Turn on/Turn off only in the browser
+or installed PWA. It reads the current service-worker subscription, requests
+permission only from the Turn on gesture, and deletes only that browser
+subscription on Turn off. The native app never substitutes APNs for this
+control, and the PWA never calls the native plugin.
 
 Service-worker source and permission UI are not delivery proof.
 
@@ -204,9 +226,9 @@ undeclared packages are not support evidence.
 ## Platform synchronization
 
 `cap sync ios` mutates generated native project/assets and is a release/build step, not a routine
-read-only validation. `@capacitor/app` is now a direct package dependency, but the checked-in
-managed `ios/App/CapApp-SPM/Package.swift` does not yet include `CapacitorApp`; a reviewed sync is
-therefore a hard source-integration gate. Do not hand-edit the managed package file.
+read-only validation. `@capacitor/app` is a direct package dependency and the checked-in managed
+`ios/App/CapApp-SPM/Package.swift` now includes `CapacitorApp`. Repeated reviewed syncs on
+2026-07-28 produced no tracked drift. Do not hand-edit the managed package file.
 
 Required sequence on a clean macOS checkout:
 
@@ -229,7 +251,7 @@ Do not commit incidental native-project changes from an unrelated audit or depen
 | Haptics | `nativeHaptics.js` | supported impact/notification/selection lifecycle on device |
 | Keyboard | `nativeKeyboard.js` | composer/long-form visual viewport, safe dock, rotation |
 | Status/splash/appearance | native appearance/status/splash helpers | launch/theme/background/resume proof |
-| Biometrics | `nativeBiometric.js`, `BiometricGate` | approved secure session/credential policy; cancel/error/unavailable/revocation |
+| Biometrics | `nativeLoginVerification.js` plus `nativeBiometric.js` | manual native password sign-in verification; cancel/error/unavailable/revocation and retained-session reopen |
 | Privacy screen | native opaque shield in `AppDelegate.swift` before resign/background | app-switcher/device proof; deliberate active screenshots are not blocked |
 | Updater | `nativeUpdater.js`, Capgo | exact-default-off; future late health acknowledgment, channel/binary/database compatibility, rollback |
 | Push | `pushNotifications.js` + mounted bridge | exact-default-off enrollment; attach/detach, provider environment and signed-device delivery proof |
@@ -245,17 +267,19 @@ capability before adding a plugin.
 
 ## Native session and privacy
 
-Supabase still persists the bearer session in default WebView storage. Biometrics remain an
-on-device unlock preference rather than Keychain token storage, but an enrolled policy now fails
-closed: unreadable policy/session, unavailable biometrics, verification failure, cleanup failure,
-or local sign-out failure cannot reveal the stored authenticated app. Cleanup runs before local
-sign-out while the old session can detach Push state. `AppDelegate.swift` installs an opaque native
-privacy shield before resign/background and removes it only after the app becomes active.
+Supabase still persists the bearer session in default WebView storage. Native biometrics now run
+only at the manual password sign-in boundary, after prior-account cleanup and before Supabase
+publishes a new session. Cancellation or verification failure blocks that sign-in; unavailable or
+unenrolled biometry preserves password sign-in. Retained authenticated sessions reopen without a
+biometric challenge. Account cleanup still runs before local sign-out while the old session can
+detach Push state. `AppDelegate.swift` separately installs an opaque native privacy shield before
+resign/background and removes it only after the app becomes active.
 
 Before native release:
 
-- decide whether optional biometric preference plus default WebView token storage is the approved
-  release policy or whether Keychain-backed session work is required;
+- preserve the 2026-07-28 owner decision that retained sessions reopen without another biometric
+  prompt and manual password sign-in owns Face ID verification; do not present default WebView
+  token storage as Keychain-equivalent;
 - verify lost/shared/reassigned/disabled-user behavior on signed devices.
 
 ## Deep links and app lifecycle
@@ -270,29 +294,91 @@ allowlisted field/public paths, and route-specific query/hash shapes. Recovery f
 validated but never queued/logged/persisted. `nativeNavigationCoordinator.js` retains at most the
 latest protected Universal Link until the verified employee plus owner lease is ready, drops it on
 account change, requires an already-ready account for Push actions, and uses generic foreground
-Push feedback without exposing notification content. Unsafe/external/admin targets fail closed.
+Push feedback without exposing notification content. `capacitor.config.json` additionally requests
+iOS badge, sound, and alert presentation for a notification received while the native app is in the
+foreground. Native APNs alert copy comes from the exhaustive typed,
+privacy-conscious event presentation catalog and the action carries only an
+allowlisted route plus an opaque recipient binding. Raw producer copy is not an
+APNs presentation input. The worker applies the same
+pure route/query policy before provider serialization, with an additional
+Push-only rejection for the public signing bearer paths `/sign/:token` and
+`/s/:code`; unsafe or credential-bearing routes fall back to `/`, so client
+rejection is defense in depth. The signing paths remain valid Universal/App
+Links but never become Push payload data. The tap is dropped unless that binding
+matches the current employee. This native presentation setting
+does not alter browser/PWA delivery. Unsafe, external, and admin targets fail
+closed.
 
 The remaining gate is compiled-plugin and installed-device proof across cold, warm, background,
 terminated, sign-in/account switch, recovery/signing, and unsaved-work/back behavior.
 
 ## Native push
 
-Native Push enrollment runs only when `VITE_NATIVE_PUSH_ENABLED` is exactly `true`; the example and
-release posture are `false`. Listener setup is independent of enrollment and never requests
-permission/registers. Foreground receipt emits only a constant refresh signal; an explicit tap
-passes one normalized allowlisted route to the shared native coordinator.
+Native Push enrollment runs only when `VITE_NATIVE_PUSH_ENABLED` is exactly
+`true` and `VITE_APNS_ENV` is exactly `sandbox` or `production`; the example
+release posture remains disabled. Listener setup is independent of enrollment
+and never requests permission/registers. Foreground receipt emits only a
+constant refresh signal; an explicit tap passes one normalized allowlisted
+route to the shared native coordinator. The native Capacitor configuration
+allows the operating system to present badge, sound, and alert in the
+foreground, while the listener continues to avoid notification content.
+Native user intent is owner-lease-bound, so another account on the same phone
+defaults off; account cleanup also removes delivered iOS notifications.
+Generic SQLSTATE `42501` is not treated as foreign-token proof—only a parsed
+PostgREST body whose top-level `code` and full canonical `message` exactly match
+the foreign-owner response may release a provisional cleanup marker. Serialized,
+nested, partial-code, or unrelated error text remains journaled.
+
+Server delivery fans one trusted occurrence out to both exact APNs cohorts:
+development-signed sandbox tokens and TestFlight/App Store production tokens.
+The two provider calls retain separate token selection, hosts, fingerprints,
+delivery claims and stale-token pruning. `APNS_ENV` remains mandatory on the
+Worker as a fail-closed activation signal; dual delivery does not merge token
+environments or change the native build's exact `VITE_APNS_ENV`.
 
 Registration has generation/cancellation guards. Account cleanup invalidates late registration
 before awaiting, deletes the old installation's server binding while the old authenticated client
 is still available, revokes local delivery, and clears stored token state. Unknown/failed server or
 local detach prevents readiness.
 
-The hardened S1h source makes all raw token tables browser-inaccessible and permits browser
-endpoint/token refresh only for the same current owner; foreign ownership raises `42501`.
-Service-role dispatch/prune compatibility remains. S1h is unapplied and not exact
-database-behavior-verified, so the deployed database contract remains an independent blocker.
+Settings → Notifications separately exposes native Turn on/Turn off for the
+current app installation when the reviewed native build flags are present. New
+installations default off; an existing verified legacy binding remains on
+during preference migration; and an explicit off value survives restart and
+blocks login bootstrap before permission, registration, or database work.
+Turning off writes that intent before any await, unregisters locally, and uses
+the existing owner-bound pending-detach journal for server cleanup. A
+registration that overlaps Turn off keeps its marker until the upsert settles,
+then runs a final owner-scoped delete. The journal distinguishes a provisional
+enrollment from a confirmed binding: a definitive `42501` can release a
+provisional marker that never became owned, while a network-ambiguous write
+keeps its marker through the immediate delete and requires a later,
+same-owner reconciliation after a 60-second safety window. A failed explicit
+Turn on returns the durable intent to off. Settings silently refreshes iOS
+permission on resume and distinguishes verified delivery from blocked,
+unknown, and cleanup-pending states. The status helper never returns the APNs
+token.
 
-Do not enable native push until:
+The focused `20260728223000_native_apns_token_boundary.sql` source makes raw
+native tokens browser-inaccessible, derives the current active internal
+employee inside selector-free enrollment/deletion RPCs, and separates sandbox
+from production. Foreign ownership raises `42501`; existing environment-unknown
+rows stay inert. The ordered
+`20260728224000_native_push_delivery_guardrails.sql` source additionally closes
+cross-employee preference mutation, bounds installations/fanout, durably claims
+each source-event/device-fingerprint delivery independently of registration-row
+deletion, and compare-and-deletes stale tokens. Direct producers must provide a
+durable occurrence ID; explicit APNs 429/5xx refusal is retried once after
+release/reclaim, and an exhausted outbox refusal persists as native-only to
+avoid repeating other channels, while network ambiguity stays claimed. Their
+isolated behavioral matrices pass. Both focused migrations were applied and
+live-catalog verified on 2026-07-28; their exact live ledger versions and
+source hashes are recorded in `docs/mobile/push-activation-owner-gate.md`. The
+broader S1h source remains unapplied and is not required for this focused
+activation; its preflight must be reconciled after the focused preference
+boundary changes the expected input.
+
+Do not enable native push until both focused migrations are live and:
 
 - installation/account/APNs environment are bound;
 - token rotation/logout/revocation/reinstall are handled;
@@ -304,7 +390,11 @@ Do not enable native push until:
 
 ## OTA update boundary
 
-Capgo workflow is manual/paused and derives a SHA-qualified bundle upload version.
+Capgo workflow is manual/paused and its deploy job is hard-disabled with
+`if: ${{ false }}`. Its dormant source still binds `main`/production to
+`https://utahpros.app`, non-main/beta to `https://dev.utahpros.app`, and stamps
+the exact release SHA; removing the hard gate remains a separate reviewed OTA
+decision. It derives a SHA-qualified bundle upload version.
 `CapacitorUpdater.autoUpdate` is `false` and `VITE_NATIVE_OTA_ENABLED` must be exactly `true` before
 client updater calls run. No boot path calls `notifyAppReady()`: `markBundleReady()` refuses unless
 the caller supplies `healthVerified: true`, but the future explicit health checkpoint and call site
@@ -322,11 +412,13 @@ Release gates require:
 
 ## Store and release boundary
 
-The manual `main`-only iOS workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler 4.0.16 and
+The manual `main`-only iOS workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler 2.5.22 and
 Fastlane 2.237.0; separates verified archive creation from optional TestFlight upload; and verifies
 codesign, provisioning, build identity, bundle hashes, entitlements, encryption, and privacy
-manifest contents. It fails before signing material if `ios/Gemfile.lock` is absent. That lockfile
-is still missing.
+manifest contents. The checked-in `ios/Gemfile.lock` supplies the reviewed Ruby dependency lock.
+`ios/App/Version.xcconfig` is the single marketing-version source, while the workflow assigns the
+unique App Store build number from the GitHub run number and attempt. Native Settings reads the
+installed version and build from Capacitor `App.getInfo()`.
 
 `PrivacyInfo.xcprivacy` is registered in the app target. It declares no tracking, UserDefaults
 reason `CA92.1`, and exactly 12 linked/non-tracking App Functionality types: precise location,
@@ -335,15 +427,18 @@ support, other user content, device ID, and Other Financial Info for saved OOP q
 and margin. The artifact verifier pins those exact declarations; privacy-owner review against the
 exact signed build and App Store Connect entry remain external gates.
 
-No reviewed `cap sync ios` containing `CapacitorApp`, clean signed archive, TestFlight install,
+Reviewed `cap sync ios` output contains `CapacitorApp` and is clean. A distribution-signed
+archive/IPA was produced and independently verified from the dirty qualification worktree on
+2026-07-28, proving the local signing lane; its report correctly has no source commit, so it is not
+the final upload artifact. No clean-source distribution artifact, TestFlight install, complete
 physical-device matrix, or App Review proof exists.
 
 Native release requires:
 
 - fixed reproducible macOS pipeline and locked dependencies;
 - correct application ID, display/version/build numbers, signing/profile, capabilities/entitlements;
-- reviewed `ios/Gemfile.lock` generated under Ruby 3.3.12/Bundler 4.0.16;
-- reviewed Capacitor sync with `CapacitorApp` present and no unexpected native drift;
+- preserve the reviewed `ios/Gemfile.lock` under Ruby 3.3.12/Bundler 2.5.22;
+- preserve reviewed Capacitor sync with `CapacitorApp` present and no unexpected native drift;
 - privacy manifest present in the built artifact and declarations reconciled with plugins and App
   Store Connect;
 - supported-device/orientation policy;

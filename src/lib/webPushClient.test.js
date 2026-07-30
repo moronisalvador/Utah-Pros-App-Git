@@ -260,6 +260,93 @@ describe('bounded registration and subscription lifecycle', () => {
     expect(sub.unsubscribe).toHaveBeenCalledOnce();
   });
 
+  it('reports positive same-owner journal evidence when only the server delete fails', async () => {
+    const storage = memoryStorage();
+    const sub = subscription();
+    const serviceWorker = {
+      getRegistration: vi.fn(async () => activeRegistration(sub)),
+    };
+    vi.stubGlobal('navigator', { serviceWorker });
+    const db = { rpc: vi.fn(async () => { throw new Error('offline'); }) };
+
+    const result = await detachWebPushDevice(db, {
+      ownerKey: OWNER_A,
+      serviceWorker,
+      storage,
+      timeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      serverDetached: false,
+      localDetached: true,
+      residualJournaled: true,
+    });
+    expect(JSON.parse(
+      storage.getItem(WEB_PUSH_PENDING_DETACH_KEY),
+    )).toMatchObject({ ownerKey: OWNER_A, endpoint: sub.endpoint });
+  });
+
+  it('reports no journal evidence when no owner-bound marker could persist', async () => {
+    // No owner lease and no supplied ownerKey: the marker write must refuse,
+    // so a failed server delete has no durable memory and must never be
+    // classified as a journaled residual.
+    const storage = memoryStorage();
+    const sub = subscription();
+    const serviceWorker = {
+      getRegistration: vi.fn(async () => activeRegistration(sub)),
+    };
+    vi.stubGlobal('navigator', { serviceWorker });
+    const db = { rpc: vi.fn(async () => { throw new Error('offline'); }) };
+
+    const result = await detachWebPushDevice(db, {
+      serviceWorker,
+      storage,
+      timeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      serverDetached: false,
+      residualJournaled: false,
+    });
+    expect(storage.getItem(WEB_PUSH_PENDING_DETACH_KEY)).toBe(null);
+  });
+
+  it('keeps journal evidence but flags unknown local state when lookup fails', async () => {
+    // An unreachable service worker means nothing was observed about local
+    // delivery this session. The marker (with its recorded local proof) still
+    // surfaces, and lookupStatus stays 'unknown' so deferral callers refuse.
+    const storage = memoryStorage({
+      [WEB_PUSH_PENDING_DETACH_KEY]: JSON.stringify({
+        version: 1,
+        ownerKey: OWNER_A,
+        endpoint: 'https://push.example.test/device-token',
+        localDetached: true,
+      }),
+    });
+    const serviceWorker = {
+      getRegistration: vi.fn(async () => {
+        throw new Error('service worker unavailable');
+      }),
+    };
+    vi.stubGlobal('navigator', { serviceWorker });
+    const db = { rpc: vi.fn(async () => { throw new Error('offline'); }) };
+
+    const result = await detachWebPushDevice(db, {
+      ownerKey: OWNER_A,
+      serviceWorker,
+      storage,
+      timeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      lookupStatus: 'unknown',
+      residualJournaled: true,
+    });
+  });
+
   it('retries the same endpoint after local revoke outlives a denied void delete', async () => {
     const sub = subscription();
     const registration = activeRegistration(sub);

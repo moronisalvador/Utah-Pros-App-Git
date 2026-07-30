@@ -38,17 +38,18 @@
  */
 import { useTranslation } from 'react-i18next';
 import { formatTime, relativeDate } from '@/lib/techDateUtils';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Render ──────────────
 export default function NowNextTile({ appt, ctxType, onOpen }) {
   const { t } = useTranslation('tech');
   let label, bg, border, color;
   if (ctxType === 'now_active') {
-    if (appt.status === 'en_route')         { label = t('nowNext.onMyWay'); color = '#d97706'; bg = '#fffbeb'; border = '#fde68a'; }
-    else if (appt.status === 'in_progress') { label = t('nowNext.working'); color = '#059669'; bg = '#ecfdf5'; border = '#a7f3d0'; }
-    else                                     { label = t('nowNext.paused'); color = '#dc2626'; bg = '#fef2f2'; border = '#fecaca'; }
+    if (appt.status === 'en_route')         { label = t('nowNext.onMyWay'); color = 'var(--warning)'; bg = 'var(--warning-bg)'; border = 'var(--warning-border)'; }
+    else if (appt.status === 'in_progress') { label = t('nowNext.working'); color = 'var(--success)'; bg = 'var(--success-bg)'; border = 'var(--success-border)'; }
+    else                                     { label = t('nowNext.paused'); color = 'var(--danger)'; bg = 'var(--danger-bg)'; border = 'var(--danger-border)'; }
   } else if (ctxType === 'today') {
-    label = t('nowNext.today'); color = '#2563eb'; bg = '#eff6ff'; border = '#bfdbfe';
+    label = t('nowNext.today'); color = 'var(--info)'; bg = 'var(--info-bg)'; border = 'var(--info-border)';
   } else {
     label = t('nowNext.next'); color = 'var(--text-secondary)'; bg = 'var(--bg-secondary)'; border = 'var(--border-color)';
   }
@@ -101,7 +102,7 @@ export default function NowNextTile({ appt, ctxType, onOpen }) {
 // Returns { ctxType, appt } or null.
 export function pickNowNext(appointments, employeeId) {
   if (!appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   const crewHas = (a) => (a.crew || []).some(c => c.employee_id === employeeId);
   const live = ['en_route', 'in_progress', 'paused'];
 

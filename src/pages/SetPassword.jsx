@@ -1,6 +1,22 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { realtimeClient } from '@/lib/realtime';
+import {
+  isSessionEnded,
+  sessionIdFromAccessToken,
+} from '@/lib/endedSessionGuard';
+
+// A session the user explicitly ended on this device can be re-persisted by a
+// late token refresh (see endedSessionGuard.js). This page has its own auth
+// observer, so it must not disclose that ended account's email on what is, to
+// the user, a post-sign-out screen. AuthContext owns removing the session.
+function sessionEmail(session) {
+  if (!session?.user?.email) return null;
+  if (isSessionEnded(sessionIdFromAccessToken(session.access_token))) {
+    return null;
+  }
+  return session.user.email;
+}
 
 export default function SetPassword() {
   const navigate = useNavigate();
@@ -26,19 +42,22 @@ export default function SetPassword() {
         if (event === 'PASSWORD_RECOVERY') {
           setRecovery(true);
           setChecking(false);
-          if (session?.user?.email) setUserEmail(session.user.email);
+          const email = sessionEmail(session);
+          if (email) setUserEmail(email);
         }
-        if (event === 'SIGNED_IN' && session?.user?.email) {
-          setUserEmail((currentEmail) => (
-            currentEmail || session.user.email
-          ));
+        if (event === 'SIGNED_IN') {
+          const email = sessionEmail(session);
+          if (email) {
+            setUserEmail((currentEmail) => currentEmail || email);
+          }
         }
       }
     );
 
     // Get email from existing session (for password manager association)
     realtimeClient.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user?.email) setUserEmail(session.user.email);
+      const email = sessionEmail(session);
+      if (email) setUserEmail(email);
     });
 
     const timeout = setTimeout(() => setChecking(false), 4000);

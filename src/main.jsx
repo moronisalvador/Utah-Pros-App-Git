@@ -44,7 +44,16 @@ import { RELEASE } from './lib/releaseIdentity.js';
 import { installPwaDiagnostics, recordPwaDiagnostic } from './lib/pwaDiagnostics.js';
 import { reconcilePushServiceWorker } from './lib/pwaServiceWorker.js';
 import { configureNativeKeyboard } from './lib/nativeKeyboard.js';
+import { installNativeApiFetch } from './lib/nativeApiFetch.js';
 import './index.css';
+
+// FIRST STATEMENT ON PURPOSE. In the installed app there is no site underneath
+// the web layer, so a relative fetch('/api/...') resolves against
+// capacitor://localhost and Capacitor's router answers it from the bundle with
+// index.html and HTTP 200 — features do not error, they silently believe they
+// succeeded. This redirects those calls to the real deployed origin, and must be
+// in place before anything can issue one. No-op on web (see lib/nativeApiFetch).
+installNativeApiFetch();
 
 installPwaDiagnostics();
 

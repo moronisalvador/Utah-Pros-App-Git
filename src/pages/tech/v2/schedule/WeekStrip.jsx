@@ -33,6 +33,7 @@ import React, { useRef, useState, useLayoutEffect, useCallback, useEffect } from
 import { selection as hapticSelection } from '@/lib/nativeHaptics';
 import { startOfWeekStr, weekDaysStr, addDaysStr, monthKeyOf, parseLocal } from './scheduleSelectors.js';
 import { currentLocaleTag } from '@/lib/techDateUtils';
+import { scrollBehavior } from '@/lib/reducedMotion';
 
 const INITIAL_RADIUS = 12; // weeks each side at mount
 const EXTEND = 12; // weeks added when nearing an edge
@@ -133,7 +134,7 @@ export default function WeekStrip({ selectedDay, today, apptDates, onSelectDay, 
     const idx = weeks.indexOf(startOfWeekStr(selectedDay, 0));
     if (idx >= 0 && idx !== centerIndexRef.current) {
       centerIndexRef.current = idx;
-      el.scrollTo({ left: idx * el.clientWidth, behavior: 'smooth' });
+      el.scrollTo({ left: idx * el.clientWidth, behavior: scrollBehavior() });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDay]);

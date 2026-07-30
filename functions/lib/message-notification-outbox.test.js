@@ -49,7 +49,12 @@ describe('message notification outbox', () => {
       db: store,
       env: ENV,
       typeKey: 'message.inbound',
-      body: BASE_ROW.payload,
+      nativeRetryOnly: false,
+      body: {
+        ...BASE_ROW.payload,
+        notification_event_id: 'outbox-1',
+        message_id: undefined,
+      },
     });
     expect(store.update).toHaveBeenCalledWith(
       'message_notification_outbox',
@@ -57,6 +62,68 @@ describe('message notification outbox', () => {
       expect.objectContaining({ delivery_state: 'delivered', claim_token: null }),
     );
     expect(result).toMatchObject({ success: true, delivered: 1, claimed: 1 });
+  });
+
+  it('uses the durable outbox id when the live claim RPC omits provider and message ids', async () => {
+    const store = db();
+    const dispatch = vi.fn(async () => ({
+      recipients: 1,
+      results: [{
+        recipient_id: 'employee-private',
+        push: {
+          native: {
+            sent: 0,
+            attempted: 0,
+            pruned: 0,
+            skipped: true,
+            reason: 'no_tokens',
+          },
+        },
+      }],
+    }));
+
+    const result = await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: dispatch,
+    });
+
+    expect(dispatch.mock.calls[0][0].body.notification_event_id).toBe('outbox-1');
+    expect(result.native).toEqual({
+      recipients: 1,
+      sent: 0,
+      attempted: 0,
+      pruned: 0,
+      retryable: 0,
+      ambiguous: 0,
+      skipped: 1,
+      skip_reasons: { no_tokens: 1 },
+    });
+    expect(JSON.stringify(result.native)).not.toContain('employee-private');
+  });
+
+  it('redacts unknown native skip details from operational telemetry', async () => {
+    const store = db();
+    const result = await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: vi.fn(async () => ({
+        recipients: 1,
+        results: [{
+          push: {
+            native: {
+              sent: 0,
+              attempted: 0,
+              skipped: true,
+              reason: 'upstream-private-detail',
+            },
+          },
+        }],
+      })),
+    });
+
+    expect(result.native.skip_reasons).toEqual({ other: 1 });
+    expect(JSON.stringify(result.native)).not.toContain('upstream-private-detail');
   });
 
   it('retries a transient dispatch failure with bounded backoff', async () => {
@@ -79,6 +146,62 @@ describe('message notification outbox', () => {
       }),
     );
     expect(result).toMatchObject({ success: false, retryable: 1 });
+  });
+
+  it('persists a native-only retry after explicit APNs refusal', async () => {
+    const store = db();
+    const result = await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: vi.fn(async () => ({
+        recipients: 1,
+        results: [{
+          push: {
+            native: { sent: 0, attempted: 1, retryable: true },
+          },
+        }],
+      })),
+    });
+
+    expect(store.update).toHaveBeenCalledWith(
+      'message_notification_outbox',
+      expect.any(String),
+      expect.objectContaining({
+        delivery_state: 'retryable',
+        payload: expect.objectContaining({ _native_retry_only: true }),
+      }),
+    );
+    expect(result).toMatchObject({
+      success: false,
+      retryable: 1,
+      native: {
+        recipients: 1,
+        sent: 0,
+        attempted: 1,
+        retryable: 1,
+      },
+    });
+  });
+
+  it('replays a persisted native retry without re-requesting other channels', async () => {
+    const store = db([{
+      ...BASE_ROW,
+      payload: { ...BASE_ROW.payload, _native_retry_only: true },
+    }]);
+    const dispatch = vi.fn(async () => ({ recipients: 1, results: [] }));
+
+    await processMessageNotificationOutbox(store, ENV, {
+      now: NOW,
+      claimToken: 'claim-1',
+      dispatchImpl: dispatch,
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ nativeRetryOnly: true }),
+    );
+    expect(dispatch.mock.calls[0][0].body).not.toHaveProperty(
+      '_native_retry_only',
+    );
   });
 
   it('dead-letters the fifth failed dispatch', async () => {

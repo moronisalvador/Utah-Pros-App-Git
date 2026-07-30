@@ -42,5 +42,8 @@
   "privateBadge": "Private appointment",
   "btnDelete": "Delete Appointment",
   "btnDeleteConfirm": "Tap Again to Delete",
-  "btnDeleting": "Deleting..."
+  "btnDeleting": "Deleting...",
+  "timeError": "End time must be after start time",
+  "startTimeAria": "Start time",
+  "endTimeAria": "End time"
 }

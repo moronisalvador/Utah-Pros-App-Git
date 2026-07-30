@@ -9,6 +9,7 @@
     "build:native": "node scripts/build-native.mjs",
     "sync:ios": "cap sync ios",
     "build:ios": "npm run build:native && npm run sync:ios",
+    "build:ios:dev": "VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true npm run build:ios",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:worker && npm run test:qa",
@@ -16,6 +17,7 @@
     "test:worker": "node scripts/qa/run-vitest-lane.mjs worker",
     "test:qa": "node scripts/qa/run-vitest-lane.mjs qa",
     "test:db:local": "node scripts/qa/run-local-db-tests.mjs",
+    "test:db:branch": "node scripts/qa/run-qa-branch-db-tests.mjs",
     "test:browser:list": "node scripts/qa/run-playwright-lane.mjs --list",
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",
@@ -29,7 +31,12 @@
     "validate:figma-governance": "node scripts/validate-figma-governance.mjs",
     "test:provenance": "node --test scripts/check-migration-provenance.node-test.mjs",
     "validate:provenance": "node scripts/check-migration-provenance.mjs",
-    "smoke:deploy": "node scripts/smoke-deploy.mjs"
+    "test:lint-ratchet": "node --test scripts/check-eslint-ratchet.node-test.mjs",
+    "validate:lint-ratchet": "node scripts/check-eslint-ratchet.mjs",
+    "test:bundle-size": "node --test scripts/bundle-size-report.node-test.mjs",
+    "report:bundle-size": "node scripts/bundle-size-report.mjs",
+    "smoke:deploy": "node scripts/smoke-deploy.mjs",
+    "ios:dev": "node scripts/install-ios-dev.mjs"
   },
   "dependencies": {
     "@aparajita/capacitor-biometric-auth": "^10.0.0",

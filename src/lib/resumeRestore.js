@@ -40,6 +40,20 @@ export const PWA_ACCOUNT_OWNER_KEY = 'upr:pwa-account-owner:v1';
 export const PWA_ACCOUNT_EPOCH_KEY = 'upr:pwa-account-epoch:v1';
 export const PWA_ACCOUNT_TRANSITION_KEY = 'upr:pwa-account-transition:v1';
 
+/** Owner-scoped durable drafts (PRIV-01). */
+export const OWNED_DRAFT_PREFIX = 'upr:owned-draft:v1:';
+/**
+ * Pre-PRIV-01 draft prefixes. These were keyed only by conversation/sheet id,
+ * so account A's half-typed customer SMS and in-progress Scope Sheet were
+ * readable by account B on the same device. New writes are owner-scoped; these
+ * remain listed so an account switch or logout sweeps anything already on disk,
+ * including drafts written by surfaces this change does not otherwise touch.
+ */
+export const LEGACY_UNSCOPED_DRAFT_PREFIXES = Object.freeze([
+  'upr:conv-draft:',
+  'scopesheet:draft:',
+]);
+
 const OPAQUE_OWNER_PATTERN = /^v1\.[A-Za-z0-9_-]{12,}$/;
 const SESSION_EPOCH_PATTERN = /^e1\.[A-Za-z0-9_-]{5,}$/;
 
@@ -190,6 +204,21 @@ export function routeStorageKey(lease) {
   return `${ROUTE_KEY_PREFIX}${encodeURIComponent(normalized.owner)}:${encodeURIComponent(normalized.epoch)}`;
 }
 
+/**
+ * Owner/epoch-scoped key for any durable per-account draft (PRIV-01).
+ * Returns null when the lease is absent so every caller can fail closed —
+ * `pwaOwnerLease` is null until device state is verified, and writing an
+ * unowned draft is exactly the leak this prevents. `scope` separates draft
+ * families (conversation text, scope-sheet mirrors) so they cannot collide.
+ */
+export function ownedDraftStorageKey(lease, scope, id) {
+  const normalized = normalizePwaOwnerLease(lease);
+  if (!normalized || !scope || !id) return null;
+  return `${OWNED_DRAFT_PREFIX}${encodeURIComponent(scope)}:`
+    + `${encodeURIComponent(normalized.owner)}:${encodeURIComponent(normalized.epoch)}:`
+    + `${encodeURIComponent(id)}`;
+}
+
 export function isStandaloneDisplay() {
   try {
     return (
@@ -285,6 +314,46 @@ export function clearSavedRoute(
     // ROUTE_KEY is the pre-ownership legacy key. It is never restored.
     storage?.removeItem(ROUTE_KEY);
     if (key) storage?.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove durable drafts on logout or account change (PRIV-01).
+ *
+ * Sweeps BOTH the owner-scoped namespace and every legacy unscoped prefix.
+ * The legacy sweep is what protects surfaces that still write the old keys —
+ * an account switch clears them regardless of which screen created them, so a
+ * second account can never read the first account's text. Removal is by prefix
+ * rather than by exact key because the ids are not known at logout time.
+ */
+export function clearOwnedDrafts(
+  ownerLease,
+  { storage = browserStorage() } = {},
+) {
+  try {
+    if (!storage) return true;
+    // Enumeration is required to sweep by prefix. A storage that cannot be
+    // enumerated must report failure rather than silently claiming success —
+    // otherwise an unsweepable draft reads as "cleared" to the caller.
+    if (typeof storage.length !== 'number' || typeof storage.key !== 'function') {
+      return false;
+    }
+    const doomed = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (!key) continue;
+      const legacy = LEGACY_UNSCOPED_DRAFT_PREFIXES.some((p) => key.startsWith(p));
+      // The whole owned namespace goes, not just this lease's slice: at logout
+      // we cannot prove which owner an orphaned key belonged to, and leaving it
+      // is the leak. `ownerLease` is accepted for symmetry with clearSavedRoute
+      // and so a future per-owner retention policy has somewhere to live.
+      const owned = key.startsWith(OWNED_DRAFT_PREFIX);
+      if (legacy || owned) doomed.push(key);
+    }
+    doomed.forEach((key) => storage.removeItem(key));
     return true;
   } catch {
     return false;

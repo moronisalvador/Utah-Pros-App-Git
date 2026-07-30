@@ -10,12 +10,14 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
 import ClaimBilling from '@/components/ClaimBilling';
 import { withJobFinancials } from '@/lib/claimUtils';
 import { ErrorState } from '@/components/ui';
+import { publicSigningUrl } from '@/lib/publicSigningUrl';
 
 const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
@@ -705,8 +707,11 @@ function SignRequestsSection({signRequests,loading,onNew,onRefresh,db,job,setDoc
     }catch(e){errToast('Delete failed: '+e.message);setConfirmDeleteSigned(null);}
   };
   const copyLink=(token)=>{
-    // window.location.origin = https://dev.utahpros.app in dev, https://utahpros.app in prod
-    navigator.clipboard.writeText(`${window.location.origin}/sign/${token}`)
+    // ESIGN-01: the old comment assumed the origin is always dev./utahpros.app.
+    // True on the deployed web app, but it is a latent contract violation —
+    // a preview host or any future shell emits a link a customer cannot open.
+    // Same helper as the tech surface, so both stay correct together.
+    navigator.clipboard.writeText(publicSigningUrl(token))
       .then(()=>{setCopied(token);setTimeout(()=>setCopied(null),2000);});
   };
   const cancelReq=async(id)=>{
@@ -842,16 +847,25 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   };
   // Reload sign requests whenever a new request is sent (refreshKey incremented by parent)
   useEffect(()=>{ if(refreshKey>0) reloadSignRequests(); },[refreshKey]);
-  useEffect(()=>{
-    const onVisible=()=>{
-      if(document.visibilityState==='visible'){
-        reloadSignRequests();
-        db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});
-      }
-    };
-    document.addEventListener('visibilitychange',onVisible);
-    return()=>document.removeEventListener('visibilitychange',onVisible);
-  },[job.id]);
+  // One silent refetch for a hidden→visible resume, through the shared hook
+  // (page-lifecycle.md §2). Both queries belong here: a customer can sign while
+  // the tab is away, and a tech can upload from the field app.
+  //
+  // Generation-guarded, which the hand-rolled version was not: these are two
+  // bare selects, so a slow response for the job you just navigated away from
+  // could land on the new one's files. Pattern copied from
+  // NotificationsSection.jsx's refreshGenerationRef. Failures stay silent by
+  // design — a resume refetch never toasts (§4) — and the already-rendered rows
+  // stay on screen rather than being replaced by an error.
+  const resumeGenRef=useRef(0);
+  const refreshOnResume=()=>{
+    const gen=++resumeGenRef.current;
+    db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
+      .then(d=>{if(gen===resumeGenRef.current)setSignRequests(d||[]);}).catch(()=>{});
+    db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`)
+      .then(d=>{if(gen===resumeGenRef.current)setDocuments(d||[]);}).catch(()=>{});
+  };
+  useResumeRefetch({onResume:refreshOnResume});
   const[uploadProgress,setUploadProgress]=useState(null);
   const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null);

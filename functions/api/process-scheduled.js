@@ -64,6 +64,7 @@ import {
   DEFAULT_SMS_TIMEZONE,
 } from '../lib/automated-send.js';
 import { checkCronSecret, requireRole } from '../lib/auth.js';
+import { SCHEDULED_ACCEPTED_CONSENT_CODES, isAcceptedConsent } from '../lib/sms-consent.js';
 
 const WORKER_NAME = 'process-scheduled';
 const BATCH_LIMIT = 20;
@@ -211,13 +212,10 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
           continue;
         }
 
-        // Scheduled/automated traffic may consume only the existing global
-        // opt-in. Purpose-scoped SERVICE_CONSENT is staff P2P-only.
-        if (
-          consentStatus?.allowed !== true
-          || consentStatus?.code !== 'GLOBAL_OPT_IN'
-        ) {
-          await markFailed(db, scheduled.id, 'Blocked: contact not opted in');
+        // Scheduled traffic consumes GLOBAL_OPT_IN only. Purpose-scoped
+        // SERVICE_CONSENT and IMPLIED_CONSENT are staff P2P-only.
+        if (!isAcceptedConsent(consentStatus, SCHEDULED_ACCEPTED_CONSENT_CODES)) {
+          await markFailed(db, scheduled.id, 'Blocked: no consent for this contact');
           await db.insert('sms_consent_log', {
             contact_id: contact.id,
             phone: contact.phone,
@@ -226,7 +224,7 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
             details: `Scheduled message ${scheduled.id} blocked: ${consentStatus?.code || 'consent status unavailable'}.`,
             performed_by: scheduled.created_by,
           });
-          errors.push({ id: scheduled.id, error: 'No opt-in consent' });
+          errors.push({ id: scheduled.id, error: 'No consent for this contact' });
           continue;
         }
 

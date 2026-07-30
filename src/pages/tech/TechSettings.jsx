@@ -16,7 +16,8 @@
  * DEPENDS ON:
  *   Packages:  react-i18next, react-router-dom
  *   Internal:  @/components/tech/settings/AppearanceSection, LanguageSection,
- *              NotificationsSection, @/components/settings/AccountDeletionPanel
+ *              NotificationsSection, AppVersionSection,
+ *              @/components/settings/AccountDeletionPanel
  *   Data:      account-deletion status/request via AccountDeletionPanel; other
  *              sections own their own data and device preferences
  *
@@ -30,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import AccountDeletionPanel from '@/components/settings/AccountDeletionPanel';
 import AppearanceSection from '@/components/tech/settings/AppearanceSection';
+import AppVersionSection from '@/components/tech/settings/AppVersionSection';
 import LanguageSection from '@/components/tech/settings/LanguageSection';
 import NotificationsSection from '@/components/tech/settings/NotificationsSection';
 
@@ -49,6 +51,7 @@ export default function TechSettings() {
           <LanguageSection />
           <NotificationsSection />
           <AccountDeletionPanel variant="tech" />
+          <AppVersionSection />
 
           <section className="tech-settings-card" aria-labelledby="legal-support-title">
             <div className="tech-settings-card-head">

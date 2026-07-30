@@ -4,7 +4,7 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the two pure pieces of the inbound-SMS webhook's compliance logic:
+ *   Proves the pure pieces of the inbound-SMS webhook's compliance logic:
  *   (1) which keyword an incoming text maps to (STOP / START / HELP / none),
  *   and (2) what auto-reply we send back — including that we stay SILENT when
  *   Twilio's Advanced Opt-Out is handling the reply (so customers never get two
@@ -15,24 +15,19 @@
  *   Internal:  ./twilio-webhook.js (detectKeyword, keywordReplyBody)
  *
  * NOTES / GOTCHAS:
- *   - Only the pure helpers are unit-tested; the handler's DB writes/side effects
- *     are integration territory. The helpers are exported precisely so the
- *     keyword→reply decision is testable without mocking Supabase/Twilio.
+ *   - Handler durability/signature/media contracts live in the adjacent
+ *     twilio-webhook.handler.test.js suite.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
 import {
   detectKeyword,
   keywordReplyBody,
-  notifyInboundMessage,
   phoneMatchVariants,
   buildPhoneOrFilter,
   isAmbiguousContentReply,
   normalizeKeyword,
-  isDuplicateSidError,
 } from './twilio-webhook.js';
-
-const ENV = { SUPABASE_URL: 'https://db.test' };
 
 describe('detectKeyword (CTIA keyword mapping)', () => {
   it('maps STOP and its synonyms (case-insensitive)', () => {
@@ -86,18 +81,6 @@ describe('normalizeKeyword (Phase A punctuation/whitespace collapse)', () => {
     expect(normalizeKeyword('STOP ALL')).toBe('stopall');
     expect(normalizeKeyword('')).toBe('');
     expect(normalizeKeyword(null)).toBe('');
-  });
-});
-
-describe('isDuplicateSidError (F-9 dup-sid → 200 no-op, else 500 retry)', () => {
-  it('recognizes a UNIQUE(twilio_sid) / 409 violation', () => {
-    expect(isDuplicateSidError(new Error('Supabase INSERT messages: 409 conflict'))).toBe(true);
-    expect(isDuplicateSidError(new Error('duplicate key value violates unique constraint "messages_twilio_sid_key"'))).toBe(true);
-  });
-  it('does NOT treat a generic/transient error as a duplicate', () => {
-    expect(isDuplicateSidError(new Error('Supabase INSERT messages: 500 server error'))).toBe(false);
-    expect(isDuplicateSidError(new Error('fetch failed'))).toBe(false);
-    expect(isDuplicateSidError(null)).toBe(false);
   });
 });
 
@@ -179,56 +162,5 @@ describe('isAmbiguousContentReply (F-7 — never swallow a real "yes"/"info")', 
     for (const w of ['stop', 'start', 'help', 'unsubscribe', 'yes please', 'more info', 'hello', '', null, undefined]) {
       expect(isAmbiguousContentReply(w)).toBe(false);
     }
-  });
-});
-
-describe('notifyInboundMessage (message.inbound emit hook)', () => {
-  const conversation = { id: 'conv-1', assigned_to: null };
-  const contact = { id: 'c-1', name: 'Jane Doe' };
-
-  it('emits message.inbound with the right type + payload', async () => {
-    const calls = [];
-    const dispatchImpl = async (evt) => { calls.push(evt); return { ok: true }; };
-    await notifyInboundMessage({
-      db: {}, env: ENV, conversation, contact, from: '+15551234567',
-      text: 'Water is everywhere, please help!', dispatchImpl,
-    });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].typeKey).toBe('message.inbound');
-    expect(calls[0].body.entity_type).toBe('conversation');
-    expect(calls[0].body.entity_id).toBe('conv-1');
-    expect(calls[0].body.title).toContain('Jane Doe');
-    expect(calls[0].body.body).toContain('Water is everywhere');
-  });
-
-  it('targets the assigned rep when the conversation is assigned', async () => {
-    const calls = [];
-    const dispatchImpl = async (evt) => { calls.push(evt); };
-    await notifyInboundMessage({
-      db: {}, env: ENV, conversation: { id: 'conv-2', assigned_to: 'emp-9' },
-      contact, from: '+15551234567', text: 'hi', dispatchImpl,
-    });
-    expect(calls[0].body.recipient_ids).toEqual(['emp-9']);
-  });
-
-  it('leaves recipient_ids unset (office/admin fallback) when unassigned', async () => {
-    const calls = [];
-    const dispatchImpl = async (evt) => { calls.push(evt); };
-    await notifyInboundMessage({ db: {}, env: ENV, conversation, contact, from: '+1555', text: 'hi', dispatchImpl });
-    expect(calls[0].body.recipient_ids).toBeUndefined();
-  });
-
-  it('falls back to the phone number when the contact has no name', async () => {
-    const calls = [];
-    const dispatchImpl = async (evt) => { calls.push(evt); };
-    await notifyInboundMessage({ db: {}, env: ENV, conversation, contact: { id: 'c-2' }, from: '+15550000000', text: 'hi', dispatchImpl });
-    expect(calls[0].body.title).toContain('+15550000000');
-  });
-
-  it('swallows a dispatcher error (never throws into the SMS path)', async () => {
-    const dispatchImpl = async () => { throw new Error('notify down'); };
-    await expect(
-      notifyInboundMessage({ db: {}, env: ENV, conversation, contact, from: '+1555', text: 'hi', dispatchImpl }),
-    ).resolves.toBeUndefined();
   });
 });

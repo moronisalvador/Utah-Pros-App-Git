@@ -103,5 +103,25 @@
     "noteSaved": "Nota salva",
     "noteSaveFailed": "Falha ao salvar a nota: {{message}}",
     "actionFailed": "Falha na ação: {{message}}"
+  },
+  "fieldShell": {
+    "blockedTitle": "Esta conta não usa o app de campo",
+    "blockedSub": "O app de campo é para as equipes que trabalham na obra. Sua conta tem as próprias telas com tudo o que você precisa.",
+    "blockedAction": "Ir para minhas telas"
+  },
+  "onboarding": {
+    "a11yTitle": "Tour de boas-vindas",
+    "welcomeTitle": "Bem-vindo à Utah Pros",
+    "welcomeBody": "Todo o seu dia de trabalho — agenda, serviços, fotos e mensagens — em um só app feito para o campo.",
+    "valueTitle": "Feito para o seu dia",
+    "valueRow1": "Veja os serviços de amanhã na noite anterior.",
+    "valueRow2": "Registre o ponto, adicione fotos e leituras direto do serviço.",
+    "valueRow3": "Fale com o escritório sem ficar trocando ligações.",
+    "notifyTitle": "Saiba na hora certa",
+    "notifyBody": "Receba um aviso no momento em que um cliente mandar mensagem ou um serviço for agendado para você.",
+    "enableBtn": "Ativar notificações",
+    "enabling": "Ativando…",
+    "next": "Avançar",
+    "stepOf": "Etapa {{n}} de {{total}}"
   }
 }

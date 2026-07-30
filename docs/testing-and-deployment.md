@@ -27,7 +27,8 @@ NOTES / GOTCHAS:
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
 | `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
-| `npm run lint` | Repository ESLint | Current scope/debt may include non-product tooling; report actual result and lint changed product files |
+| `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
+| `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
 | `npm run test:provenance` | Exercises ledger, origin-blob, freshness, ancestry, function and policy drift failures | Pure Node fixtures; no network/database |
 | `npm run preflight:mobile` | Checks mobile program files, branch safety, Node/dependencies, neutral adapter drift and optional native/delivery tools | Reads local metadata only; warnings name optional or not-yet-required gates |
@@ -76,9 +77,14 @@ repository dependencies with global Vite, Capacitor, test-runner, or Fastlane in
 
 ## CI
 
-`.github/workflows/ci.yml` runs on `dev` and `main` changes. Build and test are intended merge gates;
-lint and bundle-size reporting currently provide non-blocking visibility. GitHub branch protection is
-external configuration and must be checked before relying on a workflow as an enforced gate.
+`.github/workflows/ci.yml` runs on `dev` and `main` changes. Build, test and the PR changed-file lint
+ratchet are intended merge gates. The full-tree lint report remains non-blocking. The changed-file
+ratchet compares findings by file, severity and rule against
+`scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
+shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
+`no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+GitHub branch protection is external configuration and must be checked before relying on a workflow
+as an enforced gate.
 
 CI also validates the disconnected Figma permission contract, installs its governed Chromium
 runtime, and runs the guarded browser matrix. The custom Vitest and Playwright runners fail if a
@@ -89,7 +95,24 @@ output containing auth material, production identifiers or realistic identity fi
 manual-only until Apple enrollment and signing secrets are owner-confirmed. GitHub Actions forbids
 using `secrets.*` directly in a step `if`; map the signing gate into job `env` and branch on
 `env.APPLE_TEAM_ID`. `scripts/ios-release-workflow.test.js` preserves both boundaries without
-dispatching a macOS job, signing an app or contacting Apple.
+dispatching a macOS job, signing an app or contacting Apple. A TestFlight-capable
+archive also fails closed unless `VITE_NATIVE_PUSH_ENABLED` is exact lowercase
+`true` and `VITE_APNS_ENV` is exact lowercase `production`; a development
+archive must use a separately built sandbox bundle.
+
+Native Push activation also requires the two focused migrations to pass in
+order against a disposable local Supabase database. The behavior proof must
+show that employee A cannot read or change employee B's notification
+preferences, the service role can resolve a target employee's effective
+preference, browser roles have no direct preference/token/claim-table access,
+a repeated source-event/device delivery cannot be claimed twice, and an APNs
+rejection cannot delete a newer token registration. Enrollment must reject a
+missing environment and retain at most five iOS tokens per
+employee/environment. Worker tests additionally pin exact sandbox/production
+routing, bounded fanout, sanitized route-only payload data, durable delivery
+identity, and fail-closed missing configuration. None of this local proof
+authorizes a shared-database apply, Cloudflare deployment, Apple provider
+request, physical-device installation, or TestFlight upload.
 
 CI should keep unit and database/browser lanes explicit, report unexpected skips, validate required
 environment bindings and retain machine-readable evidence. An isolated database is required before
@@ -176,23 +199,26 @@ The final contract pass also proves a thrown push subscription does not prevent 
 subscription from succeeding or remove the per-channel summary, and positively exercises all four
 human HTTP event shapes after exact object proof.
 
-The S1d database-dispatcher apply candidate is recorded in
+The live S1d database-dispatcher boundary is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`. Its credential-free
 contract suite proves exact live-body rollback, one-expression trusted-key hardening,
 `PUBLIC`/`anon`/`authenticated` denial, `service_role` retention, six-function/seven-call-site
 compatibility, trigger/cron metadata, no in-body role assertion, no browser caller, fail-closed
-drift checks, catalog-only pre/post-apply checks, and correct unapplied provenance treatment. The
+drift checks and catalog-only pre/post-apply checks. It is live as ledger entry
+`20260727233704 notify_emit_service_boundary`; a 2026-07-28 read-only recapture confirmed the
+reviewed body hash and owner/service-only EXECUTE. The
 tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
 
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
 authenticated denial, service-role retention, and sole owner-run database caller without invoking
-`create_notification` or reading notification rows. S1d, S1e, and S1f require separate explicit
-apply selections rather than a chronological all-pending command.
+`create_notification` or reading notification rows. S1e and S1f still require separate explicit
+apply selections rather than a chronological all-pending command; S1d must not be replayed.
 
-The S1g notification read/recipient candidate is recorded in
-`docs/audit/2026-07/evidence/mobile-readiness-s1g-notification-reads-2026-07-26.md`. Credential-free
+The S1g notification read/recipient boundary is live as
+`20260728192024_notification_read_recipient_boundary`; its corrected qualification is recorded in
+`docs/audit/2026-07/evidence/mobile-readiness-s1g-source-correction-2026-07-28.md`. Credential-free
 CI checks exact RPC signatures/results/defaults, caller reconstruction, foreign-recipient denial,
 private broadcast receipts, legacy read compatibility, Realtime RLS, least-privilege ACLs, drift
 guards, and the owner-gated unsafe rollback. Preflight/post-apply SQL is catalog-only and does not
@@ -201,7 +227,10 @@ read or mark notification rows. The synthetic multi-identity behavior script req
 transaction-rollback-only. `npm run test:db:local` now runs its exact pgTAP wrapper through
 `supabase test db --local` before the DB Vitest lane; the runner never offers `--linked` or
 `--db-url`. A temporary PGlite harness passed forward/post/behavior/rollback compilation, but the
-governed current-live-compatible local Supabase clone remains an execution gate. The obsolete
+exact-file sequence also passed in a disposable official local Supabase 2.110.0 stack. The live
+value-free postcondition, active-internal Moroni list/count, foreign/unmapped denial, advisors, and
+fresh provenance passed without reading notification contents or changing read state. Two-session
+PostgREST/Realtime plus PWA/Capacitor bell behavior remain release evidence gates. The obsolete
 anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
 integration coverage belongs to the separate identity/device/preferences slice.
 
@@ -234,17 +263,10 @@ Authorization rollback normally uses a reviewed forward fix because reverting a 
 reopens the bypass. An S1c emergency rollback must first disable the affected HTTP entrypoint or
 CallRail playback/notification trigger, then revert only the reviewed S1c source commits while
 explicitly accepting that any-employee recording or arbitrary-Bearer notification access reopens.
-No rollback rotates secrets or changes the shared database by implication. The separate
-authenticated `notify_emit` ACL residual now has an authored S1d migration and exact rollback but
-still needs its own owner-authorized apply/verification window. Immediately before apply, run
-`supabase/tests/notify_emit_service_boundary_preflight.sql` and confirm the reviewed hashes, ACL,
-six callers, three triggers, and one cron row. Apply only
-`20260726110000_notify_emit_service_boundary.sql` from the reviewed release commit; then run
-`supabase/tests/notify_emit_service_boundary_post_apply.sql`, representative role-denial checks,
-fresh provenance capture, and database advisors without invoking a real notification. Any
-synthetic trigger/service canary requires separate explicit authorization and non-customer
-fixtures. Rollback uses the paired SQL only after its forward-body drift guard passes and must
-record that authenticated arbitrary-emission capability was re-opened.
+No rollback rotates secrets or changes the shared database by implication. S1d is already live and
+must not be replayed. Its exact rollback remains emergency-only and must record that it re-opens
+authenticated arbitrary-emission capability. Any synthetic trigger/service canary still requires
+separate explicit authorization and a non-customer fixture.
 
 The private-media plan is a separate compatibility deployment and serialized live apply. Deploy
 dual-form path normalization and authorized delivery before a bucket flip; then recapture exact
@@ -478,6 +500,47 @@ and verification that a stale retained event becomes processed or durably retrya
 duplicate canonical history. A fresh immediate inbound MMS and owner-device rendering remain
 separate end-to-end evidence.
 
+### Twilio inbound durability verification
+
+The 2026-07-29 inactive Twilio parity source has credential-free Worker and QA coverage for exact
+and invalid signatures, future/repeated form parameters, schema/credential/account fail-closed
+gates, SMS/MMS normalization, MessageSid replay and concurrent duplicate behavior, transient
+projection retry, STOP/START/HELP ordering and TwiML, Advanced Opt-Out silence, private-media
+authentication/redirect/type/byte/size bounds, assigned/fallback audience, exact thread links, and
+stable outbox/native occurrence identity. The focused run passed 98 Worker tests plus 19 QA source
+contracts using the repository-pinned dependency tree from the primary checkout; this does not
+prove a database effect.
+
+Final repository verification passed `npm test` with 1,362 unit, 1,670 Worker, and 590 QA tests
+and zero unexpected skips; `npm run build`; changed-file eslint; migration hygiene (3 checked,
+0 failures); and `git diff --check`. The strict bundle report exited successfully but retained the
+existing advisory entry-graph overage: 259,110 bytes gzip, 2,215 bytes below its blocking line.
+The required consent-path, Worker-security, migration-safety, anon-grant, and UPR-pattern reviews
+all passed after their findings were resolved.
+
+`supabase/tests/twilio_inbound_notification_parity_isolated.sql` is the rollback-only behavioral
+proof for the post-migration database. It exercises one canonical/unread/outbox effect, replay
+no-op, duplicate-phone STOP, stale START suppression, visible HELP, private MMS, assigned
+recipient/fallback payloads, and service-role-only execution. It ran only against isolated
+`qa-staging`; fixtures were transactionally rolled back. This worktree has no `supabase/config.toml`,
+the local Colima Docker daemon is not running, and the historic migration ledger cannot reconstruct
+the legacy baseline, so `supabase start`/`npm run test:db:local` is not currently a reproducible
+local proof.
+
+On 2026-07-29 the exact reviewed migration was applied to seeded `qa-staging` under ledger version
+`20260729220202`; the rollback-only proof completed without exception and a post-proof query found
+zero fixture residue. Catalog checks proved invoker mode, pinned search path, service-only ACL,
+caller guard, shared phone lock, and outbox projection. The same source was then applied to the
+shared project under ledger version `20260729221116`; its deployed definition hash
+`58b9d8db71347fb317145e683b8919db`, ACL, and configuration exactly match `qa-staging`. Production
+verification was read-only and sent no traffic.
+
+The remaining release order is exact: keep Twilio inbound/provider switching untouched; obtain
+separate authorization for provider webhook/configuration and controlled test traffic; prove signed
+SMS/MMS and status canaries; then promote compatible code through a reviewed `dev → main` release
+before any production provider switch. Production mode, number routing, provider console,
+Cloudflare binding changes, deployment promotion, and traffic remain independent gates.
+
 ### Mobile messaging release acceptance
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
@@ -543,6 +606,15 @@ governed local SQL execution and live Auth/PostgREST verification remain open. S
 apply, deployment, providers, signing, and device qualification remain separate owner/external
 gates.
 
+The focused native Push qualification additionally proves that every direct
+production dispatcher supplies a durable occurrence identity; missing identity
+fails closed for APNs; two identical-copy events with different occurrences
+both deliver; a retry of one occurrence collapses; token deletion plus
+re-registration does not reopen a claimed delivery; an explicit APNs 429/5xx
+is release/reclaim retried once; an exhausted message-outbox refusal persists
+as native-only without repeating bell/Web Push/email; and a timeout retains its
+claim rather than double-sending.
+
 ### Initial mobile offline qualification
 
 The production source contract fixes `PRODUCTION_QUEUE_TYPES` to an empty list, requires zero
@@ -555,3 +627,57 @@ Passing those tests proves that the initial release does not automatically admit
 command. It does not prove offline mutation support. Web/PWA/Capacitor qualification must verify
 that online writes still work and offline attempts are not presented as saved; a future queue
 requires a separately reviewed end-to-end idempotency and crash-consistency contract.
+
+## Notification presentation release order
+
+The admin presentation control plane uses an additive, backward-compatible release:
+
+1. run Worker/library/UI/static migration tests plus web and native builds;
+2. apply and behavior-test the exact migration on `qa-staging`;
+3. commit reviewed source, deploy compatible Worker/UI code to `dev`, then apply the same committed
+   migration to the shared production database;
+4. verify production RLS/grants/function/catalog and the protected page without saving a live
+   override or sending a notification;
+5. promote reviewed `dev → main` and verify the production page/API.
+
+Old code ignores the additive tables. New runtime code fails safely to code-owned presentation if
+the schema/config read is missing or invalid. Application rollback therefore stops consuming
+overrides first and leaves audit data intact; dropping the tables/audit is a separate destructive
+rollback.
+
+Steps 1–5 completed on 2026-07-29. The exact migration is recorded in production as
+`20260729171946`, with post-apply RLS/grant/function checks and zero live override/audit rows.
+Reviewed PR `#547` merged `dev → main` as
+`3f456810162dad8c4407d354b36085778d138ae2`; the production bundle embeds that exact SHA.
+The protected API returns `401` JSON without authorization, the Settings route returns the SPA
+shell, both route-specific notification presentation assets have the correct JavaScript/CSS
+content types, and the 34-asset production deployment smoke passed. During the earlier dev
+verification, the smoke test detected a stale HTML response cached for a JavaScript chunk; a zone
+cache purge removed it, and the complete no-cache-bust smoke rerun passed.
+
+## Notification delivery diagnostic qualification
+
+The owner-only delivery tester has two separate proof layers:
+
+1. Credential-free Worker tests prove denial before side effects, strict request-field and channel
+   allowlists, the 15-key event allowlist, fixed self-recipient/copy/routes, durable claim/replay
+   before every side effect, browser-subscription pruning, distinct typed identities, stable APNs
+   and Resend request identities, and sanitized provider failures.
+2. Live delivery remains one separately owner-authorized send per selected channel. A local test
+   double, successful build, or protected endpoint response is not evidence that a bell, browser,
+   iPhone, or inbox presented the notification.
+
+The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
+diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
+authoritative catalog and requires exactly 15 entries, then sends each type to the owner bell, PWA,
+and environment-matched iPhone: 45 event/surface checks. Each PWA check fans out to every enrolled
+owner browser subscription, so the provider delivery count may be greater than 45. It sends no
+email/SMS/MMS and creates no business occurrence. Separate Web Push tags prevent different types
+from collapsing into one displayed notification; three surface calls run in parallel per event
+while events run sequentially to bound Worker/provider concurrency. The synthetic sweep requires
+each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
+qualifies presentation and transport, not whether a source workflow is activated or emits.
+
+Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
+migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
+contacting any provider.

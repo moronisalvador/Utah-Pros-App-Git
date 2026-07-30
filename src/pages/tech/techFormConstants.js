@@ -52,6 +52,36 @@ export const TIME_OPTIONS = (() => {
   return opts;
 })();
 
+/**
+ * PICK-03 — is this start/end pair invalid?
+ *
+ * TechNewEvent already validated this correctly while both appointment forms
+ * did not: TechNewAppointment gated submit on `job && date` and
+ * TechEditAppointment on `!date || saving`, so an appointment with
+ * time_start 14:00 and time_end 09:00 inserted cleanly. Lifted here — the one
+ * module all three forms already import — so the rule cannot drift between them.
+ *
+ * Values are 'HH:MM' 24-hour strings from TIME_OPTIONS, which compare correctly
+ * as strings because they are zero-padded and same-length.
+ *
+ * Equal times count as invalid: a zero-length appointment is not a thing a
+ * technician means to create, and it is indistinguishable from a mis-tap.
+ * Partial input is NOT invalid — a form is not wrong for being half-filled.
+ */
+export function isTimeRangeInvalid(start, end) {
+  if (!start || !end) return false;
+  return end <= start;
+}
+
+/**
+ * The last start time that still leaves a valid end time available.
+ *
+ * Selecting the final option as a start is a dead end — there is no later end
+ * to pick. The validator surfaces that rather than hiding it, but callers that
+ * want to prevent it up front can bound their start list with this.
+ */
+export const LAST_SELECTABLE_START = TIME_OPTIONS[TIME_OPTIONS.length - 2]?.val ?? null;
+
 export const MOBILE_TYPES = APPT_TYPES.filter(t =>
   ['reconstruction', 'inspection', 'monitoring', 'mitigation', 'estimate', 'other'].includes(t.value)
 );

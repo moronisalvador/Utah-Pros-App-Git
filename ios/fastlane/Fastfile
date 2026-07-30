@@ -3,9 +3,10 @@
 # ════════════════════════════════════════════════
 #
 # WHAT THIS DOES (plain language):
-#   Creates a manually signed App Store archive from the checked-in Xcode
-#   project, then exposes a separate lane that can upload an already verified
-#   IPA to TestFlight. Archive creation never contacts App Store Connect.
+#   Creates an App Store archive from the checked-in Xcode project, then
+#   exports the app with the named distribution profile. A separate lane can
+#   upload an already verified IPA to TestFlight. Archive creation never
+#   contacts App Store Connect.
 #
 # DEPENDS ON:
 #   Packages:  fastlane 2.237.0 (ios/Gemfile + reviewed Gemfile.lock)
@@ -17,7 +18,7 @@
 #   - The GitHub workflow is manual-only and refuses non-main refs.
 #   - Signing assets must already exist as runner-temporary files.
 #   - TestFlight authentication is accepted only by the upload lane.
-#   - A real signed archive/device run remains an external release gate.
+#   - TestFlight upload/install and production delivery remain external gates.
 # ════════════════════════════════════════════════
 
 require "fileutils"
@@ -50,7 +51,7 @@ def xcode_assignment(name, value)
 end
 
 platform :ios do
-  desc "Create a manually signed App Store archive without contacting App Store Connect"
+  desc "Create and manually export an App Store archive without contacting App Store Connect"
   lane :archive do
     team_id = required_environment!("APPLE_TEAM_ID")
     certificate_path = required_file!("APPLE_CERTIFICATE_PATH")
@@ -72,9 +73,7 @@ platform :ios do
 
     signing_settings = [
       xcode_assignment("DEVELOPMENT_TEAM", team_id),
-      xcode_assignment("CODE_SIGN_STYLE", "Manual"),
-      xcode_assignment("CODE_SIGN_IDENTITY", "Apple Distribution"),
-      xcode_assignment("PROVISIONING_PROFILE_SPECIFIER", provisioning_profile_name),
+      xcode_assignment("UPR_RELEASE_PROFILE_NAME", provisioning_profile_name),
       xcode_assignment("CURRENT_PROJECT_VERSION", build_number),
     ].join(" ")
 
@@ -113,7 +112,6 @@ platform :ios do
         output_name: File.basename(IPA_PATH),
         export_method: "app-store",
         export_team_id: team_id,
-        codesigning_identity: "Apple Distribution",
         skip_profile_detection: true,
         disable_package_automatic_updates: true,
         skip_package_repository_fetches: true,

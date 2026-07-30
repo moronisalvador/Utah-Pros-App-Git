@@ -239,9 +239,10 @@ archive, TestFlight, or representative physical-device verification.
 
 ## 6. Status
 
-- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; later unsigned generic and
-  iPhone 17 Pro/iOS 26.5 simulator build/install/launch evidence exists, while signed archive,
-  TestFlight, and physical-device proof remain owner/external gates
+- [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; a signed Debug build was
+  installed and launched on the owner's iPhone 17 Pro Max over Wi-Fi on 2026-07-28 with the
+  development Push entitlement. A clean distribution archive, TestFlight, and production Push
+  proof remain release gates.
 - [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning. The then-added boot acknowledgment is superseded by the 2026-07-26 exact-default-off OTA contract above.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
@@ -249,10 +250,16 @@ archive, TestFlight, or representative physical-device verification.
   `secrets.*` directly in step conditions (which made GitHub create no-job failures on every push);
   repository tests preserve its valid, manual-only signing gate. No iOS workflow was dispatched.
 - [x] Phase F2 (non-Xcode slice) — icon/splash + `/support` page + ASC metadata packet, 2026-07-17, PR #455 merged
-- [ ] Owner: kick off Apple Developer Program + ABM enrollment
+- [x] Owner: Apple Developer Program team `H6ZUT739T9` active; bundle identifier, development
+  certificate/profile, Associated Domains, and Push capability verified 2026-07-28. ABM is not
+  required for the selected public-App-Store path.
 - [x] Owner: distribution-model decision — public App Store (§0, 2026-07-18)
+- [x] Owner: native session prompt decision — 2026-07-28. A retained authenticated session may
+  reopen without another Face ID prompt; Face ID belongs at manual password sign-in. This approves
+  removing the former launch gate, not treating WebView token storage as Keychain-equivalent.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
-- [ ] Owner: Xcode build-verify of F1 before any real device sees it
+- [x] Owner: signed Debug Xcode build/install/launch of F1 on a physical iPhone, 2026-07-28.
+  Distribution archive verification remains open.
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
 
 ### 2026-07-26 current source reconciliation
@@ -264,27 +271,36 @@ Completed in source, pending final integration/release review:
   build keeps its full route graph;
 - `/privacy`, `/terms`, `/support`, `/sign/:token`, and `/s/:code` are present in native and web;
 - the account-deletion request panel is shared by desktop My Account and field Tech Settings;
-- enrolled biometrics fail closed through account/device cleanup and local sign-out; AppDelegate
-  installs an opaque app-switcher privacy shield before resign/background;
+- manual native password sign-in verifies enrolled biometrics after prior-account cleanup and
+  before session publication; retained sessions reopen without repeated Face ID prompts;
+  AppDelegate installs an opaque app-switcher privacy shield before resign/background;
 - custom scheme, Associated Domains, AASA, App-plugin cold/warm listener, and Push-action routing
   use one deny-by-default route/query resolver; `/tech/admin` is excluded;
 - native Push enrollment is exact-default-off and account cleanup detaches server/local state;
+  device intent is owner-lease-bound, APNs copy is generic, and taps require
+  an opaque current-recipient match; public signing bearer routes remain valid
+  app links but are rejected from Push payload data;
 - OTA is exact-default-off and has zero boot acknowledgment pending an explicit health gate;
 - app-target `PrivacyInfo.xcprivacy` is registered and declares no tracking, UserDefaults `CA92.1`,
   and exactly 12 linked/non-tracking App Functionality data types, including Other Financial Info
   for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;
 - the manual `main`-only archive workflow pins Xcode 26.6, Node 22.23.1, Ruby 3.3.12, Bundler
-  4.0.16, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
-  signing/provisioning/entitlements/privacy/build identity/hashes.
+  2.5.22, and Fastlane 2.237.0, separates archive from optional TestFlight upload, and verifies
+  signing/provisioning/entitlements/privacy/build identity/hashes; its native
+  bundle is pinned to `https://utahpros.app` and the exact release SHA;
+- `ios/App/Version.xcconfig` provides one marketing-version source, the workflow assigns a unique
+  build from its run number/attempt, and native Settings displays the installed values through
+  Capacitor `App.getInfo()`;
+- `ios/Gemfile.lock` is checked in and reviewed `cap sync ios` output contains `CapacitorApp`
+  without tracked drift.
 
 Open source/reproducibility gates:
 
-- `ios/Gemfile.lock` is absent; generate and review it only with Ruby 3.3.12/Bundler 4.0.16;
-- `@capacitor/app` is a direct dependency, but the managed
-  `ios/App/CapApp-SPM/Package.swift` has not been synchronized; a reviewed `cap sync ios` is
-  required and must not be replaced by hand-editing the generated file;
-- Supabase session tokens remain in default WebView storage; the owner must approve that optional
-  biometric policy or require a Keychain-backed design;
+- preserve clean-checkout Ruby/SPM reproducibility for the checked-in lockfiles and reviewed
+  `CapacitorApp` sync; never hand-edit the generated managed package;
+- Supabase session tokens remain in default WebView storage. The 2026-07-28 owner decision accepts
+  retained-session reopen without repeated Face ID for this release; Keychain-equivalent storage
+  was not claimed, and lost/shared/reassigned-device proof remains under APP-002;
 - rejected authenticated bootstrap, authorization-response typing, and cleanup-gated password
   recovery are source-fixed; observer work is serialized outside the Supabase Auth lock and the
   independent source review is clean; signed-device account-switch/recovery proof remains;
@@ -295,12 +311,40 @@ Open source/reproducibility gates:
 - account-deletion request intake exists, but fulfillment/SLA/retention/audit remains an owner/
   compliance process gate.
 
+Initial-release scope freeze:
+
+- APP-001 ships the current field UI from the release commit first. Do not merge, implement,
+  feature-flag, or retire the Apple Field Pro redesign as part of this release;
+- the redesign is tracked as `UPRF-TECH-REDESIGN-001`. Its clean prototype worktree is 697 commits
+  behind the 2026-07-28 `origin/dev` capture and two prototype-only commits ahead, so it must never
+  be blind-merged;
+- after APP-001 records a live current Capacitor version, recapture current `dev`, review the
+  accepted prototype against the shipped native contracts, and plan a separate selective
+  implementation/rollout.
+
 Open external/release gates:
 
-- Apple enrollment/account/team/certificates/profiles and App Store Connect keys;
-- clean signed archive/IPA verification, internal TestFlight upload/install, Universal/custom link,
-  recovery/signing, Push, background/privacy, biometric, account-switch, permission, and offline
-  physical-device matrix;
+- Apple Distribution certificate `3QA6GT9L28` and App Store provisioning
+  profile `UPR App Store 2026` are active. Their local signing lane produced and
+  verified a Release archive/IPA on 2026-07-28; CI environment configuration
+  and a clean-source final artifact remain open;
+- App Store Connect API access is active. The unusable first key was revoked;
+  replacement Admin team key `XV5CUK6XLC` is configured in GitHub environment
+  `ios-testflight` as encrypted `ASC_KEY_ID`, `ASC_ISSUER_ID`, and
+  `ASC_KEY_CONTENT_BASE64` secrets. The downloaded private-key file was removed
+  after GitHub confirmed all three secrets by name and timestamp;
+- App Store Connect app record **created** 2026-07-28 as “UPR Field Operations”
+  (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
+  screenshot fields remain incomplete;
+- APNs key and Cloudflare Preview/Production sender variables are configured;
+  the ordered focused native-token and delivery-guardrail migrations are live,
+  and one development-signed sandbox delivery succeeded. Enrollment remains
+  exact-default-off. Production token registration/delivery begins only from a
+  TestFlight/App Store build carrying `VITE_APNS_ENV=production`. Broad S1h is
+  not a Push activation prerequisite and remains deferred;
+- clean-source final archive/IPA verification, internal TestFlight upload/install,
+  Universal/custom link, recovery/signing, Push, background/privacy, biometric,
+  account-switch, permission, and offline physical-device matrix;
 - screenshots, demo credentials, privacy/legal review, App Store Connect entry, distribution, and
   App Review.
 

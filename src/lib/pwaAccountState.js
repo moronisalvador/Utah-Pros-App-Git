@@ -37,6 +37,7 @@ import {
   PWA_ACCOUNT_OWNER_KEY,
   PWA_ACCOUNT_TRANSITION_KEY,
   beginPwaOwnerTransition,
+  clearOwnedDrafts,
   clearSavedRoute,
   finishPwaOwnerTransition,
   invalidatePwaOwnerLease,
@@ -196,6 +197,7 @@ async function clearOwnedState({
   const clearMemory = cleanup.clearMemory || clearTechQueryMemory;
   const clearPersisted = cleanup.clearPersisted || clearPersistedTechQueries;
   const clearRoute = cleanup.clearRoute || clearSavedRoute;
+  const clearDrafts = cleanup.clearDrafts || clearOwnedDrafts;
   const inspect = cleanup.inspectOffline
     || cleanup.inspectQueue
     || inspectOfflineOwnership;
@@ -214,6 +216,15 @@ async function clearOwnedState({
     routeCleared = false;
   }
 
+  // PRIV-01: drafts are durable business/customer text. They must not survive
+  // an account switch, including drafts written under the pre-ownership keys.
+  let draftsCleared = false;
+  try {
+    draftsCleared = clearDrafts(previousLease) !== false;
+  } catch {
+    draftsCleared = false;
+  }
+
   const [persisted, queue, push] = await Promise.all([
     Promise.resolve()
       .then(() => clearPersisted(previousLease))
@@ -226,6 +237,7 @@ async function clearOwnedState({
   const ready = (
     memoryCleared
     && routeCleared
+    && draftsCleared
     && persisted.ready
     && queue.ready
     && push.ready
@@ -236,9 +248,19 @@ async function clearOwnedState({
     memoryCleared,
     persistedCleared: persisted.ready,
     routeCleared,
+    draftsCleared,
     serverPushCleared: push.serverDetached,
     localPushCleared: push.localDetached,
     pushCleanupReady: push.ready,
+    // Granular facts for the sign-out deferral decision (decided only in
+    // clearPwaAccountState — the bind path never defers). `deferrable` on the
+    // raw push result is computed by detachAccountPushDevices from positive
+    // journal evidence; the per-channel settled flags let the caller's
+    // bounded retry distinguish "was already clean" from "journal vanished".
+    pushCleanupDeferrable: push.ready !== true
+      && push.result?.deferrable === true,
+    pushWebSettled: push.result?.web?.ready === true,
+    pushNativeSettled: push.result?.native?.ready === true,
     queueQuarantined: queue.ready,
     queue: queue.result,
   };
@@ -379,6 +401,9 @@ export async function reconcilePwaAccountOwner({
     return {
       ...cleanupResult,
       ready: false,
+      // The bind path NEVER defers: a new owner publishes only behind a fully
+      // ready cleanup, regardless of how sign-out was allowed to complete.
+      deferrable: false,
       changed: true,
       owner: null,
       requestedOwner: nextOwner,
@@ -412,6 +437,7 @@ export async function reconcilePwaAccountOwner({
   return {
     ...cleanupResult,
     ready,
+    deferrable: false,
     changed: true,
     owner: ready ? nextOwner : null,
     requestedOwner: nextOwner,
@@ -447,6 +473,7 @@ export async function clearPwaAccountState({
   if (!transitionStarted) {
     return {
       ready: false,
+      deferrable: false,
       changed: !!previousOwner,
       owner: null,
       previousOwner,
@@ -472,10 +499,22 @@ export async function clearPwaAccountState({
     transitionFinished = finishPwaOwnerTransition(transitionToken, storage);
   }
   const ready = cleanupResult.ready && transitionFinished;
+  // Deferrable (explicit sign-out only): every local leg finished and the
+  // sole residual is journaled push server work. Any other failure keeps the
+  // caller's blocking behavior.
+  const deferrable = !ready
+    && transitionFinished
+    && cleanupResult.memoryCleared === true
+    && cleanupResult.routeCleared === true
+    && cleanupResult.draftsCleared === true
+    && cleanupResult.persistedCleared === true
+    && cleanupResult.queueQuarantined === true
+    && cleanupResult.pushCleanupDeferrable === true;
 
   return {
     ...cleanupResult,
     ready,
+    deferrable,
     changed: !!previousOwner,
     owner: null,
     previousOwner,

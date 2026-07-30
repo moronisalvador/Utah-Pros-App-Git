@@ -1,7 +1,50 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: SignPage.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   The page a customer uses to sign a document (work authorization,
+ *   completion certificate, agreement). They open a private link we text or
+ *   email them, read the document, type or draw their signature, and submit.
+ *   A staff member can also open this same page in the app to collect a
+ *   signature in person on their own phone.
+ *
+ * WHERE IT LIVES:
+ *   Route:        /sign/:token and /s/:code (public, no login)
+ *   Rendered by:  src/App.jsx (bare on web; PublicNativeShell in the iOS app)
+ *
+ * DEPENDS ON:
+ *   Packages:  react, react-router-dom
+ *   Internal:  @/components/ReconAgreementContent, @/lib/backNav,
+ *              @/lib/signSubmit (submitEsign, submitErrorText),
+ *              functions/lib/short-link.js (resolveSignToken)
+ *   Data:      reads  → sign_requests (get_sign_request_by_token RPC),
+ *                       document_templates (get_sign_document_templates RPC)
+ *              writes → none directly (submit posts to /api/submit-esign,
+ *                       which owns the write)
+ *
+ * NOTES / GOTCHAS:
+ *   - Nothing is saved before the final Submit — closing or leaving the page
+ *     abandons the attempt safely; the sign request simply stays pending.
+ *   - In-app escape hatch (field-polish 2026-07-29): when the router has
+ *     in-app history behind this screen (tech "Collect signature on-site"),
+ *     every state renders a way back; a customer's cold link open shows the
+ *     unchanged public page. See InAppBackButton below.
+ *   - This page deliberately uses its own fixed palette (raw hex) — it renders
+ *     for logged-out customers outside the app shells and must not re-tone
+ *     with the tech dark theme.
+ *   - Being outside both app shells, it has NO toast container. A failed submit
+ *     must therefore render inline (SubmitErrorNotice) — a toast call here would
+ *     be swallowed and the customer would land back on an unchanged form.
+ * ════════════════════════════════════════════════
+ */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
 import { resolveSignToken } from '../../functions/lib/short-link.js';
+import { canGoBack } from '@/lib/backNav';
+import { submitEsign, submitErrorText } from '@/lib/signSubmit';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -70,6 +113,37 @@ function isDesktop() {
   return window.matchMedia('(hover: hover) and (pointer: fine)').matches;
 }
 
+/* ── In-app escape hatch (field-polish 2026-07-29 — trapped-screens batch) ──
+   Rendered ONLY when the router has in-app history behind this screen — i.e. a
+   staff member navigated here inside the app ("Collect signature on-site" in
+   EsignRequestSheet). A customer opening the emailed/texted link in their own
+   browser has no in-app history, so the public page is unchanged. Leaving
+   abandons the attempt safely: nothing is written before the final atomic
+   submit — the sign request simply stays pending and can be reopened/re-sent. */
+function InAppBackButton({ onBack, disabled, color }) {
+  return (
+    <button
+      onClick={onBack}
+      disabled={disabled}
+      aria-label="Back"
+      style={{
+        // 44px min height — documented-secondary nav control per tech-mobile-ux.md
+        display: 'inline-flex', alignItems: 'center', gap: 4,
+        minHeight: 44, padding: '8px 12px 8px 6px', marginLeft: -6,
+        background: 'none', border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+        fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color,
+        touchAction: 'manipulation',
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+      Back
+    </button>
+  );
+}
+
 /* ── Markdown renderer ── */
 function renderMarkdown(text) {
   if (!text) return null;
@@ -129,12 +203,56 @@ function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
     .map(tpl => ({ heading: substituteVars(tpl.heading, job), body: substituteVars(tpl.body, job) }));
 }
 
+const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
+
+/* Declared above the component (they were below it until 2026-07-29, which the
+   no-use-before-define ratchet flags now that this file is under the frozen
+   shrink-only lint baseline). Values unchanged — a pure move. */
+const styles = {
+  page:          { minHeight: '100vh', background: '#f1f5f9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  header:        { background: '#1e293b', padding: '20px 24px' },
+  headerInner:   { maxWidth: 640, margin: '0 auto' },
+  company:       { margin: 0, fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.2px' },
+  companySub:    { margin: '2px 0 0', fontSize: 12, color: '#94a3b8' },
+  content:       { maxWidth: 640, margin: '0 auto', padding: '28px 20px 60px' },
+  titleBlock:    { textAlign: 'center', marginBottom: 24 },
+  docTitle:      { margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0f172a' },
+  titleLine:     { width: 80, height: 3, background: '#2563eb', borderRadius: 2, margin: '0 auto' },
+  infoGrid:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: 4 },
+  section:       { marginBottom: 16 },
+  sectionHeading:{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  sectionBody:   { margin: 0 },
+  authText:      { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.65 },
+  fieldGroup:    { marginBottom: 20 },
+  fieldLabel:    { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 },
+  input:         { width: '100%', padding: '12px 14px', fontSize: 15, borderRadius: 8, border: '1.5px solid #cbd5e1', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', background: '#fff', color: '#0f172a' },
+  canvasWrap:    { position: 'relative', background: '#fff', border: '1.5px solid #cbd5e1', borderRadius: 8, overflow: 'hidden' },
+  canvas:        { display: 'block', width: '100%', height: 140, touchAction: 'none', cursor: 'crosshair' },
+  canvasHint:    { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', margin: 0, fontSize: 13, color: '#94a3b8', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  clearBtn:      { fontSize: 12, fontWeight: 600, color: '#64748b', background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
+  checkLabel:    { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20, cursor: 'pointer' },
+  errorMsg:      { color: '#ef4444', fontSize: 13, marginBottom: 16, fontWeight: 500 },
+  submitError:   { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', marginBottom: 16 },
+  submitErrorTitle: { margin: '0 0 3px', fontSize: 13, fontWeight: 700, color: '#b91c1c' },
+  submitErrorBody:  { margin: 0, fontSize: 13, color: '#7f1d1d', lineHeight: 1.5 },
+  submitBtn:     { width: '100%', padding: '14px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, fontFamily: 'inherit', letterSpacing: '0.1px' },
+  footer:        { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8' },
+  heading:       { margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#0f172a' },
+  sub:           { margin: '0 0 8px', fontSize: 14, color: '#475569', lineHeight: 1.6 },
+  contact:       { margin: '16px 0 0', fontSize: 13, color: '#64748b' },
+  link:          { color: '#2563eb', textDecoration: 'none' },
+};
+
 export default function SignPage() {
   // Two routes land here: /sign/:token (the original, still live for every link
   // already sent) and /s/:code (the short form). Both resolve to the same UUID —
   // the short code is a denser spelling of it, not a different secret.
   const { token: routeToken, code } = useParams();
   const token = resolveSignToken(routeToken || code);
+  const navigate = useNavigate();
+  // In-app entry (tech collect-on-site) vs a customer's cold link open.
+  const inApp = canGoBack();
+  const exitToApp = () => navigate(-1);
 
   const [data,       setData]       = useState(null);
   const [templates,  setTemplates]  = useState([]);
@@ -142,6 +260,9 @@ export default function SignPage() {
   const [errorMsg,   setErrorMsg]   = useState('');
   const [signerName, setSignerName] = useState('');
   const [nameError,  setNameError]  = useState('');
+  // Separate from errorMsg (which belongs to the load-failure 'error' screen):
+  // this one renders inline in the 'ready' state next to the Submit button.
+  const [submitError, setSubmitError] = useState('');
   const [hasSig,     setHasSig]     = useState(false);
   const [agreed,     setAgreed]     = useState(false);
   // Four separately-attested consents for recon_agreement doc_type.
@@ -189,6 +310,10 @@ export default function SignPage() {
       renderTypedSig(canvas, typedSig);
       setHasSig(true);
     }
+    // Intentionally re-inits ONLY on a mode switch — adding typedSig/fontLoaded
+    // would clear and redraw the canvas on every keystroke (the [typedSig,
+    // sigMode, fontLoaded] effect above owns keystroke re-renders).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sigMode]);
 
   useEffect(() => {
@@ -227,6 +352,10 @@ export default function SignPage() {
       renderTypedSig(canvas, typedSig);
       setHasSig(true);
     }
+    // Intentionally fires ONLY on the loading→ready transition (first canvas
+    // mount) — sigMode/typedSig/fontLoaded changes are owned by their own
+    // effects; re-running this on them would double-clear the canvas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
   const getPos = (e, canvas) => {
@@ -268,6 +397,7 @@ export default function SignPage() {
 
   const handleSubmit = async () => {
     const isRecon = data?.doc_type === 'recon_agreement';
+    setSubmitError(''); // a fresh attempt clears the previous failure
     if (!signerName.trim()) { setNameError('Please enter your full name.'); return; }
     if (!hasSig)             { setNameError(sigMode === 'type' ? 'Please type your name in the signature box.' : 'Please provide your signature.'); return; }
     if (isRecon) {
@@ -294,20 +424,21 @@ export default function SignPage() {
         body.consent_esign       = consents.esign;
         body.consent_authority   = consents.authority;
       }
-      const res = await fetch('/api/submit-esign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Submission failed');
+      await submitEsign(body);
       setStatus('done');
-    } catch (err) { setErrorMsg(err.message); setStatus('ready'); }
+    } catch (err) { setSubmitError(submitErrorText(err)); setStatus('ready'); }
   };
 
-  if (status === 'loading') return <Screen><Spinner /></Screen>;
-  if (status === 'error')   return <Screen><Card><StatusIcon>⚠️</StatusIcon><h2 style={styles.heading}>Link Not Found</h2><p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p><p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
-  if (status === 'expired') return <Screen><Card><StatusIcon>🔒</StatusIcon><h2 style={styles.heading}>Link Expired</h2><p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p><p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
-  if (status === 'signed')  return <Screen><Card><StatusIcon>✅</StatusIcon><h2 style={styles.heading}>Already Signed</h2><p style={styles.sub}>This document was signed on{' '}{data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.</p><p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  const inAppBackBar = inApp ? (
+    <div style={{ maxWidth: 640, margin: '0 auto', width: '100%', padding: '12px 20px 0', boxSizing: 'border-box' }}>
+      <InAppBackButton onBack={exitToApp} color="#64748b" />
+    </div>
+  ) : null;
+
+  if (status === 'loading') return <Screen>{inAppBackBar}<Spinner /></Screen>;
+  if (status === 'error')   return <Screen>{inAppBackBar}<Card><StatusIcon>⚠️</StatusIcon><h2 style={styles.heading}>Link Not Found</h2><p style={styles.sub}>{errorMsg || 'This signing link is invalid.'}</p><p style={styles.contact}>Questions? Contact us at <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'expired') return <Screen>{inAppBackBar}<Card><StatusIcon>🔒</StatusIcon><h2 style={styles.heading}>Link Expired</h2><p style={styles.sub}>This signing link is no longer active. Please contact Utah Pros Restoration to receive a new one.</p><p style={styles.contact}><a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
+  if (status === 'signed')  return <Screen>{inAppBackBar}<Card><StatusIcon>✅</StatusIcon><h2 style={styles.heading}>Already Signed</h2><p style={styles.sub}>This document was signed on{' '}{data?.signed_at ? new Date(data.signed_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : 'a previous date'}.</p><p style={styles.contact}>Questions? <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a></p></Card></Screen>;
 
   if (status === 'done') return (
     <Screen>
@@ -316,11 +447,21 @@ export default function SignPage() {
           <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', fontSize: 36 }}>✅</div>
           <h1 style={{ margin: '0 0 12px', fontSize: 24, fontWeight: 800, color: '#0f172a' }}>You're all set!</h1>
           <p style={{ margin: '0 0 8px', fontSize: 16, color: '#334155', lineHeight: 1.6 }}>Your <strong>{DOC_LABELS[data?.doc_type] || 'document'}</strong> has been signed and saved successfully.</p>
-          <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. You may close this window.</p>
+          <p style={{ margin: '0 0 28px', fontSize: 14, color: '#64748b', lineHeight: 1.6 }}>Thank you, <strong>{signerName}</strong>. Utah Pros Restoration has been notified. {inApp ? 'Tap Done to return to the app.' : 'You may close this window.'}</p>
           <div style={{ background: '#f8fafc', borderRadius: 10, padding: '14px 18px', border: '1px solid #e2e8f0' }}>
             <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Signed on</p>
             <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p>
           </div>
+          {/* In-app collect flow only: hand the phone back and return to the job's
+              documents. 48px primary action per tech-mobile-ux.md. */}
+          {inApp && (
+            <button
+              onClick={exitToApp}
+              style={{ marginTop: 20, width: '100%', minHeight: 48, padding: '13px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', touchAction: 'manipulation' }}
+            >
+              Done
+            </button>
+          )}
         </div>
       </div>
     </Screen>
@@ -347,6 +488,9 @@ export default function SignPage() {
       <div style={styles.page}>
         <div style={styles.header}>
           <div style={styles.headerInner}>
+            {inApp && (
+              <InAppBackButton onBack={exitToApp} disabled={status === 'submitting'} color="#cbd5e1" />
+            )}
             <p style={styles.company}>Utah Pros Restoration</p>
             <p style={styles.companySub}>Licensed · Insured · Utah</p>
           </div>
@@ -492,6 +636,8 @@ export default function SignPage() {
 
           {nameError && <p style={styles.errorMsg}>⚠ {nameError}</p>}
 
+          {submitError && <SubmitErrorNotice message={submitError} />}
+
           <button
             style={{ ...styles.submitBtn, background: accentColor, opacity: status === 'submitting' ? 0.7 : 1, cursor: status === 'submitting' ? 'not-allowed' : 'pointer' }}
             onClick={handleSubmit} disabled={status === 'submitting'}
@@ -510,6 +656,28 @@ export default function SignPage() {
         </div>
       </div>
     </Screen>
+  );
+}
+
+/* ── Inline submit-failure notice ──
+   The only channel this page has for a failed POST: it is public, no-auth, and
+   outside both app shells, so there is no toast container to raise (Rule 2's
+   toast entry point exists only inside Layout/TechLayout). Rendered next to the
+   Submit button so it is already in view where the customer just tapped, and
+   role="alert" so a screen reader is told too. Deliberately does not claim
+   anything about what the server saved — see loading-error-states.md §1. */
+export function SubmitErrorNotice({ message }) {
+  return (
+    <div role="alert" style={styles.submitError}>
+      <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1.35 }}>⚠</span>
+      <div>
+        <p style={styles.submitErrorTitle}>We couldn&apos;t submit your signature</p>
+        <p style={styles.submitErrorBody}>
+          {message} Please try again. If it keeps happening, contact us at{' '}
+          <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a>.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -551,37 +719,3 @@ function buildSectionText(divisions, doc_type) {
   const results = sorted.map(d => map[d]).filter(Boolean);
   return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
-
-const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
-
-const styles = {
-  page:          { minHeight: '100vh', background: '#f1f5f9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
-  header:        { background: '#1e293b', padding: '20px 24px' },
-  headerInner:   { maxWidth: 640, margin: '0 auto' },
-  company:       { margin: 0, fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.2px' },
-  companySub:    { margin: '2px 0 0', fontSize: 12, color: '#94a3b8' },
-  content:       { maxWidth: 640, margin: '0 auto', padding: '28px 20px 60px' },
-  titleBlock:    { textAlign: 'center', marginBottom: 24 },
-  docTitle:      { margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0f172a' },
-  titleLine:     { width: 80, height: 3, background: '#2563eb', borderRadius: 2, margin: '0 auto' },
-  infoGrid:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: 4 },
-  section:       { marginBottom: 16 },
-  sectionHeading:{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  sectionBody:   { margin: 0 },
-  authText:      { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.65 },
-  fieldGroup:    { marginBottom: 20 },
-  fieldLabel:    { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 },
-  input:         { width: '100%', padding: '12px 14px', fontSize: 15, borderRadius: 8, border: '1.5px solid #cbd5e1', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', background: '#fff', color: '#0f172a' },
-  canvasWrap:    { position: 'relative', background: '#fff', border: '1.5px solid #cbd5e1', borderRadius: 8, overflow: 'hidden' },
-  canvas:        { display: 'block', width: '100%', height: 140, touchAction: 'none', cursor: 'crosshair' },
-  canvasHint:    { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', margin: 0, fontSize: 13, color: '#94a3b8', pointerEvents: 'none', whiteSpace: 'nowrap' },
-  clearBtn:      { fontSize: 12, fontWeight: 600, color: '#64748b', background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
-  checkLabel:    { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20, cursor: 'pointer' },
-  errorMsg:      { color: '#ef4444', fontSize: 13, marginBottom: 16, fontWeight: 500 },
-  submitBtn:     { width: '100%', padding: '14px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, fontFamily: 'inherit', letterSpacing: '0.1px' },
-  footer:        { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8' },
-  heading:       { margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#0f172a' },
-  sub:           { margin: '0 0 8px', fontSize: 14, color: '#475569', lineHeight: 1.6 },
-  contact:       { margin: '16px 0 0', fontSize: 13, color: '#64748b' },
-  link:          { color: '#2563eb', textDecoration: 'none' },
-};

@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-28T00:28:17Z",
+  "capturedAt": "2026-07-30T12:27:49Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "6341ef0ac68773e6fc49482b8e03eeadbdc63ee4",
+  "captureBaseCommit": "b346e256f611630e46aeab24388d553fe3ba7eee",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -183,6 +183,38 @@
     {
       "name": "mobile_employee_identity_containment",
       "version": "20260728002105"
+    },
+    {
+      "name": "notification_read_recipient_boundary",
+      "version": "20260728192024"
+    },
+    {
+      "name": "native_apns_token_boundary",
+      "version": "20260729021021"
+    },
+    {
+      "name": "native_push_delivery_guardrails",
+      "version": "20260729021050"
+    },
+    {
+      "name": "notification_presentation_settings",
+      "version": "20260729171946"
+    },
+    {
+      "name": "notification_delivery_diagnostic_claims",
+      "version": "20260729183731"
+    },
+    {
+      "name": "twilio_inbound_notification_parity",
+      "version": "20260729221116"
+    },
+    {
+      "version": "20260730115220",
+      "name": "tech_onboarding_state"
+    },
+    {
+      "version": "20260730121811",
+      "name": "sms_consent_opt_out_only"
     }
   ],
   "functions": [
@@ -430,6 +462,21 @@
       "config": [
         "search_path=public"
       ],
+      "rawMd5": "fefa4b58a7cf9faaae6d235c98faa1d6",
+      "identity": "get_notifications(integer,uuid)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "anonExecute": false,
+      "semanticMd5": "21126765667fca29bc9a08323bc7ba7c",
+      "publicExecute": false,
+      "securityDefiner": true,
+      "serviceRoleExecute": true,
+      "authenticatedExecute": true
+    },
+    {
+      "config": [
+        "search_path=public"
+      ],
       "rawMd5": "061c7658fd94fca6ad541b39df2c86b8",
       "identity": "get_pipeline_movement(date,date,uuid)",
       "language": "plpgsql",
@@ -445,12 +492,12 @@
       "config": [
         "search_path=\"\""
       ],
-      "rawMd5": "25789b7c994b99a6e8403050f424b9a9",
+      "rawMd5": "e106318eef49f04f16f295d881bc41fe",
       "identity": "get_service_sms_consent_status(uuid,text)",
       "language": "plpgsql",
       "volatility": "v",
       "anonExecute": false,
-      "semanticMd5": "9cdf8ab17d49680ffa3857f41c850466",
+      "semanticMd5": "09ca940b478ed5c0d927f186ba5a0f5b",
       "publicExecute": false,
       "securityDefiner": false,
       "serviceRoleExecute": true,
@@ -466,6 +513,51 @@
       "volatility": "s",
       "anonExecute": false,
       "semanticMd5": "3c3b72f8ceccf422fa5232031a4923c7",
+      "publicExecute": false,
+      "securityDefiner": true,
+      "serviceRoleExecute": true,
+      "authenticatedExecute": true
+    },
+    {
+      "config": [
+        "search_path=public"
+      ],
+      "rawMd5": "2b8706a1ff85ab821c44e084f66bc998",
+      "identity": "get_unread_notification_count(uuid)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "anonExecute": false,
+      "semanticMd5": "8c0a23cee0744f61eca335f3b2977691",
+      "publicExecute": false,
+      "securityDefiner": true,
+      "serviceRoleExecute": true,
+      "authenticatedExecute": true
+    },
+    {
+      "config": [
+        "search_path=public"
+      ],
+      "rawMd5": "17535104ecaa23b9eb98c9192921cf05",
+      "identity": "mark_all_notifications_read(uuid)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "anonExecute": false,
+      "semanticMd5": "3e91ff190f4a8d63b946be004c71c538",
+      "publicExecute": false,
+      "securityDefiner": true,
+      "serviceRoleExecute": true,
+      "authenticatedExecute": true
+    },
+    {
+      "config": [
+        "search_path=public"
+      ],
+      "rawMd5": "cbe82dd0652029a881944527e99b9091",
+      "identity": "mark_notification_read(uuid)",
+      "language": "plpgsql",
+      "volatility": "v",
+      "anonExecute": false,
+      "semanticMd5": "92347abd24889e8693deb4d6b5bb97ea",
       "publicExecute": false,
       "securityDefiner": true,
       "serviceRoleExecute": true,
@@ -540,6 +632,33 @@
       "command": "SELECT",
       "identity": "public.messages:messages_authenticated_select",
       "usingMd5": "9c8ae309142bdf52050262dd1b37b6fb",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "roles": [
+        "authenticated"
+      ],
+      "command": "ALL",
+      "identity": "public.notification_reads:notification_reads_no_direct_access",
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "68934a3e9455fa72420237eb05902327"
+    },
+    {
+      "roles": [
+        "authenticated"
+      ],
+      "command": "DELETE",
+      "identity": "public.notifications:notifications_delete_testrows",
+      "usingMd5": "68934a3e9455fa72420237eb05902327",
+      "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    {
+      "roles": [
+        "authenticated"
+      ],
+      "command": "SELECT",
+      "identity": "public.notifications:notifications_select",
+      "usingMd5": "f6a4b946f6d65eadf3bf4764e734d5b1",
       "withCheckMd5": "d41d8cd98f00b204e9800998ecf8427e"
     },
     {

@@ -19,7 +19,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  @/components/tech/v2 (StatusChip), @/components/tech/TechHelpButton,
- *              @/lib/techDateUtils (openMap)
+ *              @/lib/techDateUtils (openMap), @/lib/backNav
  *   Data:      none (all data arrives as props)
  *
  * NOTES / GOTCHAS:
@@ -35,6 +35,7 @@ import { useTranslation } from 'react-i18next';
 import { StatusChip } from '@/components/tech/v2';
 import TechHelpButton from '@/components/tech/TechHelpButton';
 import { openMap } from '@/lib/techDateUtils';
+import { canGoBack, goBackOr } from '@/lib/backNav';
 
 /**
  * @param {{
@@ -50,14 +51,17 @@ export default function HubHeader({
   const { t } = useTranslation('hub');
   const navigate = useNavigate();
 
-  const goBack = () => (claim ? navigate(`/tech/claims/${claim.id}`) : navigate(-1));
+  // Origin-aware Back (field-polish 2026-07-29): pop to wherever the tech came
+  // from (dashboard, schedule, claim, messages); the claim page is only the
+  // fallback for a cold open with no in-app history (deep link / saved URL).
+  const goBack = () => goBackOr(navigate, claim ? `/tech/claims/${claim.id}` : '/tech');
   const goSign = () =>
     navigate(`/tech/jobs/${jobId}/documents`, { state: { startEsign: 'work_auth' } });
 
   return (
     <header className="tv2-hub-header">
       <div className="tv2-hub-header__row">
-        <button type="button" className="tv2-hub-header__back" onClick={goBack} aria-label={claim ? t('header.backToClaim') : t('header.back')}>
+        <button type="button" className="tv2-hub-header__back" onClick={goBack} aria-label={!canGoBack() && claim ? t('header.backToClaim') : t('header.back')}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>

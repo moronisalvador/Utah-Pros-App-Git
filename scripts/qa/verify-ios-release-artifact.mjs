@@ -45,6 +45,7 @@ const VALUE_ARGUMENTS = new Map([
   ['--report', 'report'],
   ['--expected-bundle-id', 'expectedBundleId'],
   ['--expected-team-id', 'expectedTeamId'],
+  ['--expected-marketing-version', 'expectedMarketingVersion'],
   ['--expected-build-number', 'expectedBuildNumber'],
 ]);
 
@@ -53,6 +54,7 @@ const REQUIRED_ARGUMENTS = [
   'report',
   'expectedBundleId',
   'expectedTeamId',
+  'expectedMarketingVersion',
   'expectedBuildNumber',
 ];
 
@@ -150,6 +152,47 @@ function readPlistJson(plistPath, label) {
   }
 }
 
+function readPlistJsonKey(plistPath, keyPath, label) {
+  const result = runCommand(
+    '/usr/bin/plutil',
+    ['-extract', keyPath, 'json', '-o', '-', plistPath],
+    `read ${label}`,
+  );
+
+  try {
+    return JSON.parse(result.stdout);
+  } catch {
+    throw new Error(`${label} could not be decoded as JSON`);
+  }
+}
+
+function readPlistRawKey(plistPath, keyPath, label) {
+  return runCommand(
+    '/usr/bin/plutil',
+    ['-extract', keyPath, 'raw', '-o', '-', plistPath],
+    `read ${label}`,
+  ).stdout.trim();
+}
+
+function plistHasKey(plistPath, keyPath) {
+  const result = spawnSync(
+    '/usr/bin/plutil',
+    ['-type', keyPath, plistPath],
+    {
+      encoding: 'utf8',
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    },
+  );
+
+  if (result.error) {
+    throw new Error(
+      `inspect provisioning profile key failed to start: ${result.error.message}`,
+    );
+  }
+  return result.status === 0;
+}
+
 function extractPlistXml(result, label) {
   const combined = `${result.stdout || ''}\n${result.stderr || ''}`;
   const xmlStart = combined.indexOf('<?xml');
@@ -189,7 +232,41 @@ function readProvisioningProfile(appPath, temporaryDirectory, label) {
     `${label}-provisioning-profile.plist`,
   );
   writeFileSync(decodedProfilePath, result.stdout);
-  return readPlistJson(decodedProfilePath, `${label} provisioning profile`);
+
+  return {
+    Entitlements: readPlistJsonKey(
+      decodedProfilePath,
+      'Entitlements',
+      `${label} provisioning entitlements`,
+    ),
+    TeamIdentifier: readPlistJsonKey(
+      decodedProfilePath,
+      'TeamIdentifier',
+      `${label} provisioning team identifier`,
+    ),
+    ExpirationDate: readPlistRawKey(
+      decodedProfilePath,
+      'ExpirationDate',
+      `${label} provisioning expiration`,
+    ),
+    ProvisionsAllDevices: plistHasKey(
+      decodedProfilePath,
+      'ProvisionsAllDevices',
+    )
+      ? readPlistJsonKey(
+          decodedProfilePath,
+          'ProvisionsAllDevices',
+          `${label} all-device provisioning flag`,
+        )
+      : undefined,
+    ProvisionedDevices: plistHasKey(decodedProfilePath, 'ProvisionedDevices')
+      ? readPlistJsonKey(
+          decodedProfilePath,
+          'ProvisionedDevices',
+          `${label} provisioned devices`,
+        )
+      : undefined,
+  };
 }
 
 function requireNonEmptyString(value, label) {
@@ -297,6 +374,7 @@ function validateReleaseApp({
   appPath,
   expectedBundleId,
   expectedTeamId,
+  expectedMarketingVersion,
   expectedBuildNumber,
   temporaryDirectory,
   label,
@@ -336,6 +414,10 @@ function validateReleaseApp({
     `${label} marketing version`,
   );
   assertCondition(
+    version === expectedMarketingVersion,
+    `${label} marketing version does not match the release request`,
+  );
+  assertCondition(
     info.ITSAppUsesNonExemptEncryption === false,
     `${label} must declare ITSAppUsesNonExemptEncryption=false`,
   );
@@ -345,6 +427,10 @@ function validateReleaseApp({
     'NSPhotoLibraryUsageDescription',
     'NSPhotoLibraryAddUsageDescription',
     'NSLocationWhenInUseUsageDescription',
+    // Apple ITMS-90683 (build 1.0.0 (1), 2026-07-29): the Capacitor geolocation
+    // plugin references the Always API, so this purpose string must ship even
+    // though the app only requests when-in-use.
+    'NSLocationAlwaysAndWhenInUseUsageDescription',
     'NSFaceIDUsageDescription',
   ]) {
     requireNonEmptyString(
@@ -502,6 +588,7 @@ async function verifyReleaseArtifact(rawArguments) {
     const validationInputs = {
       expectedBundleId: argumentsMap.expectedBundleId,
       expectedTeamId: argumentsMap.expectedTeamId,
+      expectedMarketingVersion: argumentsMap.expectedMarketingVersion,
       expectedBuildNumber: argumentsMap.expectedBuildNumber,
       temporaryDirectory,
     };

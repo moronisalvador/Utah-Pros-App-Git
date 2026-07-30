@@ -269,11 +269,15 @@ export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, d
   try {
     if (!lead || lead.spam_flag) return;
     const { title, body, html } = buildLeadNotificationContent({ schema, data, formName, env, leadId: lead.id });
+    const customerName = title.startsWith('New lead · ')
+      ? title.slice('New lead · '.length)
+      : '';
     const leadsLink = lead.id ? `/crm/leads?lead=${lead.id}` : '/crm/leads';
     await dispatchImpl({
       db, env,
       typeKey: 'lead.new',
       body: {
+        notification_event_id: lead.id || null,
         title,
         body,
         html,
@@ -281,6 +285,10 @@ export async function notifyNewLeadFromForm({ db, env, lead, formName, schema, d
         entity_type: 'inbound_lead',
         entity_id: lead.id || null,
         payload: { source_type: 'form', callrail_id: lead.callrail_id || null },
+        presentation_context: {
+          customer_name: customerName,
+          lead_source: formName || 'Website form',
+        },
         data: { route: leadsLink, lead_id: lead.id || null },
       },
     });

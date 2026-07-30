@@ -82,7 +82,7 @@ export async function onRequestPost(context) {
   try {
     const inv = (await db.select(
       'invoices',
-      `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id,total,adjusted_total,amount_paid&limit=1`,
+      `id=eq.${invoiceId}&select=id,job_id,contact_id,qbo_invoice_id,invoice_number,qbo_doc_number,total,adjusted_total,amount_paid&limit=1`,
     ))?.[0];
     if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
     if (!inv.qbo_invoice_id) {
@@ -129,6 +129,8 @@ export async function onRequestPost(context) {
     await notifyPaymentReceived({
       db, env, amount, invoiceId: inv.id, jobId: inv.job_id || null,
       source: 'Card', reference: `Charge #${charge.id}`,
+      invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
+      paymentEventId: payRow?.id || `card:${charge.id}`,
     });
 
     // 3. Mirror to a QBO Payment applied to the invoice; stamp the id so the webhook dedups.

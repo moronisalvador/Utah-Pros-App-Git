@@ -57,7 +57,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DIV_GRADIENTS, DIV_PILL_COLORS, DIV_BORDER_COLORS, CLAIM_STATUS_COLORS } from './techConstants';
 import { DivisionIcon } from '@/components/DivisionIcons';
 import { toast } from '@/lib/toast';
-import { statusBarLight, statusBarDark } from '@/lib/nativeAppearance';
+import { pushStatusBarSurface, restoreStatusBarBase } from '@/lib/nativeAppearance';
 import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCamera';
 import { impact } from '@/lib/nativeHaptics';
 import MergeModal from '@/components/MergeModal';
@@ -72,6 +72,7 @@ import RoomCard from '@/components/tech/RoomCard';
 import AddRoomSheet from '@/components/tech/AddRoomSheet';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -83,7 +84,7 @@ function formatLossDate(dateStr) {
 
 function nextApptForJob(jobId, appointments) {
   if (!jobId || !appointments?.length) return null;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayInCompanyTimeZone();
   return appointments
     .filter(a => a.job_id === jobId && a.date >= today && !['completed', 'cancelled'].includes(a.status))
     .sort((a, b) => a.date.localeCompare(b.date) || (a.time_start || '').localeCompare(b.time_start || ''))[0] || null;
@@ -95,7 +96,7 @@ function nextApptForJob(jobId, appointments) {
 // ───────────────────────────────────────────────────────────────
 function JobTile({ job, taskSummary, nextAppt, onOpen }) {
   const { t } = useTranslation(['claimDetail', 'tech']);
-  const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+  const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
   const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
   const rawDivLabel = (job.division || '').charAt(0).toUpperCase() + (job.division || '').slice(1);
   const divLabel = job.division ? t('tech:division.' + job.division, { defaultValue: rawDivLabel }) : '';
@@ -150,14 +151,14 @@ function JobTile({ job, taskSummary, nextAppt, onOpen }) {
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>{t('tasks')}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: allDone ? '#059669' : 'var(--text-primary)' }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: allDone ? 'var(--success)' : 'var(--text-primary)' }}>
               {completed}/{total}
             </span>
           </div>
           <div style={{ width: '100%', height: 6, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
             <div style={{
               width: `${pct}%`, height: '100%',
-              background: allDone ? '#059669' : divColor,
+              background: allDone ? 'var(--success)' : divColor,
               transition: 'width 0.3s ease',
             }} />
           </div>
@@ -229,8 +230,8 @@ export default function TechClaimDetail() {
   // Page entry animation is now the shared View Transitions mechanism (motion-standard §2),
   // not a per-page entering flag — this effect only owns the status-bar tint.
   useEffect(() => {
-    statusBarLight();
-    return () => statusBarDark();
+    pushStatusBarSurface('dark');   // dark gradient hero
+    return () => restoreStatusBarBase();
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
@@ -238,37 +239,52 @@ export default function TechClaimDetail() {
     setLoading(true);
     setLoadError(null);
     try {
+      // LES-01 (loading-error-states.md §1): appointments, rooms, demo sheets
+      // and the document read each used to carry an inline `.catch(() => [])`.
+      // `db.rpc`/`db.select` THROW on any non-OK response, so each swallow
+      // turned a real outage into a successful-looking EMPTY result —
+      // "No appointments", no rooms, no scope sheets, no photos or notes — on a
+      // page a tech reads as the claim's actual state. They now reject into the
+      // outer catch. The per-job task summary below keeps its own catch: it is
+      // one call PER JOB, and a single bad job must degrade to a missing task
+      // count rather than blanking the whole claim.
       const [data, appts, roomList, sheets] = await Promise.all([
         db.rpc('get_claim_detail', { p_claim_id: claimId }),
-        db.rpc('get_claim_appointments', { p_claim_id: claimId }).catch(() => []),
+        db.rpc('get_claim_appointments', { p_claim_id: claimId }),
         roomsEnabled
-          ? db.rpc('get_claim_rooms', { p_claim_id: claimId }).catch(() => [])
+          ? db.rpc('get_claim_rooms', { p_claim_id: claimId })
           : Promise.resolve([]),
-        db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }).catch(() => []),
+        db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }),
       ]);
       if (!data?.claim) {
         setLoadError(t('notFound'));
         return;
       }
-      setDetail(data);
-      setAppointments(appts || []);
-      setRooms(roomList || []);
-      setDemoSheets(sheets || []);
 
       const jobIds = (data.jobs || []).map(j => j.id);
+      let summaryEntries = [];
+      let docList = [];
       if (jobIds.length > 0) {
         const idList = jobIds.map(id => `"${id}"`).join(',');
-        const [summaryEntries, docList] = await Promise.all([
+        [summaryEntries, docList] = await Promise.all([
           Promise.all(jobIds.map(id =>
             db.rpc('get_job_task_summary', { p_job_id: id })
               .then(s => [id, s])
               .catch(() => [id, null])
           )),
-          db.select('job_documents', `job_id=in.(${idList})&order=created_at.desc`).catch(() => []),
+          db.select('job_documents', `job_id=in.(${idList})&order=created_at.desc`),
         ]);
-        setTaskSummaries(Object.fromEntries(summaryEntries));
-        setDocs(docList || []);
       }
+
+      // Committed together, after every read resolves: a partial failure must
+      // never half-update the claim or slip past the `!detail?.claim` gate into
+      // a page of false empty sections.
+      setDetail(data);
+      setAppointments(appts || []);
+      setRooms(roomList || []);
+      setDemoSheets(sheets || []);
+      setTaskSummaries(Object.fromEntries(summaryEntries));
+      setDocs(docList || []);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
@@ -795,7 +811,7 @@ export default function TechClaimDetail() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {
-                const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+                const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
                 return (
                   <button
                     key={job.id}
@@ -878,8 +894,8 @@ export default function TechClaimDetail() {
                 >
                   <div style={{
                     width: 36, height: 36, borderRadius: 8,
-                    background: isSubmitted ? '#f0fdf4' : 'var(--accent-light)',
-                    color: isSubmitted ? '#16a34a' : 'var(--accent)',
+                    background: isSubmitted ? 'var(--success-bg)' : 'var(--accent-light)',
+                    color: isSubmitted ? 'var(--success)' : 'var(--accent)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 16, flexShrink: 0,
                   }}>
@@ -892,9 +908,9 @@ export default function TechClaimDetail() {
                       </span>
                       <span style={{
                         fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999,
-                        background: isSubmitted ? '#f0fdf4' : '#fffbeb',
-                        color:      isSubmitted ? '#16a34a' : '#d97706',
-                        border: `1px solid ${isSubmitted ? '#bbf7d0' : '#fde68a'}`,
+                        background: isSubmitted ? 'var(--success-bg)' : 'var(--warning-bg)',
+                        color:      isSubmitted ? 'var(--success)' : 'var(--warning)',
+                        border: `1px solid ${isSubmitted ? 'var(--success-border)' : 'var(--warning-border)'}`,
                       }}>
                         {isSubmitted ? t('submitted') : t('draft')}
                       </span>
@@ -1040,10 +1056,10 @@ export default function TechClaimDetail() {
               onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
               style={{
                 width: '100%', minHeight: 56, padding: '14px 16px',
-                borderRadius: 12, background: '#fef2f2',
-                border: '1px solid #fecaca',
+                borderRadius: 12, background: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
                 display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: 15, fontWeight: 600, color: '#dc2626',
+                fontSize: 15, fontWeight: 600, color: 'var(--danger)',
                 cursor: 'pointer', fontFamily: 'var(--font-sans)',
                 WebkitTapHighlightColor: 'transparent', textAlign: 'left',
               }}
@@ -1095,7 +1111,7 @@ export default function TechClaimDetail() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>{t('deleteTitle')}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)', marginBottom: 10 }}>{t('deleteTitle')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
               <Trans
                 t={t}
@@ -1143,7 +1159,7 @@ export default function TechClaimDetail() {
                 disabled={deleteInput !== 'DELETE' || deleting}
                 style={{
                   padding: '10px 18px', minHeight: 44, borderRadius: 10,
-                  background: deleteInput === 'DELETE' ? '#dc2626' : 'var(--bg-tertiary)',
+                  background: deleteInput === 'DELETE' ? 'var(--danger)' : 'var(--bg-tertiary)',
                   color: deleteInput === 'DELETE' ? '#fff' : 'var(--text-tertiary)',
                   border: 'none',
                   cursor: deleteInput === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',
