@@ -289,18 +289,22 @@ export function AuthProvider({ children }) {
       return false;
     }
     const persisted = readPersistedSessionDescriptor();
-    if (persisted.status === 'none') return false; // already gone
     const published = activePrincipalRef.current !== null
       || readyPrincipalRef.current !== null;
     if (persisted.status === 'session') {
       // A session that owns storage is removed only if it was itself ended.
       if (!isSessionEnded(persisted.sessionId)) return false;
     } else if (published || requirePersistedMatch) {
-      // Storage state is unknowable: purging could destroy a live session
+      // 'none' or 'unknown' storage: purging could destroy a live session
       // (published) or would be evidence-free (sweep). Stay conservative;
       // the durable registry re-checks on the next event.
       return false;
     }
+    // 'none'/'unknown' + unpublished + event evidence still purges: the
+    // event itself proved an ended session surfaced, signOut on empty
+    // storage is an idempotent no-op, and treating a storage-key derivation
+    // miss (which also reads as 'none') as benign would silently disable
+    // the guard — the 2026-07-30 test-env regression that caught this.
     const marker = published ? null : markResurrectionSignOut();
     try {
       await realtimeClient.auth.signOut({ scope: 'local' });
