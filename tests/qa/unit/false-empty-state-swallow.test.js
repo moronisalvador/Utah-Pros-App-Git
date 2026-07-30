@@ -24,7 +24,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -76,12 +76,21 @@ const ALLOWED_SWALLOWS = [
   },
 ];
 
+/**
+ * Emits POSIX-separated repo-relative paths on every platform. `relative()`
+ * yields `src\components\...` on Windows, so comparing it against the
+ * forward-slash ALLOWED_SWALLOWS literals asserted on separators rather than on
+ * content: green on CI's Linux, permanently red on the owner's machine. A test
+ * that is only green on CI teaches people to ignore local failures, which is
+ * worse than the test not existing. Same normalisation as
+ * mobile-employee-identity-authority.test.js and field-surface-invariants.test.js.
+ */
 const jsxFiles = (dir) => {
   const out = [];
   for (const name of readdirSync(join(ROOT, dir))) {
     const abs = join(ROOT, dir, name);
     if (statSync(abs).isDirectory()) out.push(...jsxFiles(join(dir, name)));
-    else if (name.endsWith('.jsx')) out.push(relative(ROOT, abs));
+    else if (name.endsWith('.jsx')) out.push(relative(ROOT, abs).split(sep).join('/'));
   }
   return out;
 };
