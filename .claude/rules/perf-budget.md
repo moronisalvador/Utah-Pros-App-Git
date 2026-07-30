@@ -3,7 +3,7 @@ paths: ["src/**", "index.html", "vite.config.js", "scripts/bundle-size-report.mj
 ---
 # Performance Budget Standard
 
-**Last verified:** 2026-07-27
+**Last verified:** 2026-07-30
 
 Linked from `CLAUDE.md`. **The law for boot weight, images, queries, and fonts.** Baselines are the
 2026-07 measured numbers; the point is to ratchet down, never up. Query hygiene is enforced by
@@ -43,11 +43,9 @@ headroom to spend. Entry-graph JS sits in that band today.
   `AuthContext` 35,866 · `i18n` 23,085 · `chunk-LFPYN7LY` 14,273 bytes gzip.
 - **Any single route chunk ≤ 175 KB raw = 179,200 bytes** (enforced; blocks CI). A heavy new dep must
   be route-lazy (`React.lazy`), never in the entry graph. Largest today: `Schedule` at 163,349 bytes.
-- **`index.css` ≤ 595,000 bytes raw** (enforced; blocks CI) — measured 2026-07-27 at
-  **574,596 bytes / 12,623 lines** (built: 423,398 bytes, 62,503 gzip; re-measured later the same
-  day by the CI-guard fix, which is why it is ~2.6 KB above the first figure recorded below).
-  The ceiling sits ~4% above current, the same headroom the
-  original 400 KB / 384 KB pair had. **Sizes are stated in bytes on purpose** — the old "400 KB"
+- **`index.css` ≤ 600,000 bytes raw** (enforced; blocks CI) — measured 2026-07-30 at
+  **597,620 bytes / 13,144 lines** (built: 436,693 bytes, 64,477 gzip).
+  **Sizes are stated in bytes on purpose** — the old "400 KB"
   was ambiguous between KB and KiB, which is part of why nobody noticed the breach. **Long-term
   ratchet target: 400 KB (409,600 bytes), unchanged** — the direction of travel is still down; new
   CSS lives in a reserved marker, not scattered. **Re-derive, never quote:**
@@ -59,6 +57,16 @@ headroom to spend. Entry-graph JS sits in that band today.
   > **Re-baselined 2026-07-27 (owner-directed):** the ceiling was moved from the drifted 400 KB
   > figure to measured+4%; the 400 KB ratchet target stays the goal, not the gate. Detail: git
   > history.
+  >
+  > **Raised 595,000 → 600,000 on 2026-07-30 (owner-directed, in conversation).** The tech-shell
+  > press-feedback change could not fit: the file sat at 594,153 B with **847 B** of headroom, and
+  > even a comment-free version of the rules was ~1,400 B, so no version of that feature fit.
+  > **This gate counts SOURCE bytes, so it charges for comments** — that change shipped
+  > **+736 B built / +199 B gzip** to users against **+3,467 B** of source, ~2/3 of it explanatory
+  > comment. Read a breach here as "the file needs a ratchet pass", not "delete the comments":
+  > the standing reclaim is the ~2,238 B of per-class `-webkit-tap-highlight-color` /
+  > `touch-action` declarations that the shared `:where(.tech-layout) :where(button)` rule now
+  > makes redundant (see the press-feedback block in `src/index.css`).
 - No new **render-blocking** third-party request (today there are 2 Google Fonts stylesheets; W5 self-hosts).
 
 ## 2. Image law
