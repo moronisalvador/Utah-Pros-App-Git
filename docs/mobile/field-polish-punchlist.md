@@ -41,6 +41,100 @@ verifiable in the next native build — group them accordingly.
       per-type self-recipient config that already exists server-side). (Owner request
       2026-07-29.)
 
+**Theme: message legibility / accessibility**
+
+- [ ] (P2) SMS thread text is hard to read — owner reports thread body copy is
+      genuinely hard to read in normal field use → rework size, weight, contrast and
+      bubble density so a thread is comfortably readable one-handed, outdoors, moving.
+      Run it through the `impeccable` design skill plus `design:accessibility-review`
+      (measure real contrast ratios and dynamic-type behaviour rather than eyeballing).
+      The bubble is shared — `src/components/conversations/MessageBubble.jsx` — so one
+      fix reaches `/conversations`, the CRM wrapper and the tech v2 pane together;
+      that also makes it a frozen consumed contract (tech-messages-v2 imports it), so
+      additive changes only. (Owner request 2026-07-30.)
+
+**Theme: conversation participants (feature-sized — finishing parked work)**
+
+- [ ] (P2) Manual participant control — no way to add or remove people from an existing
+      conversation → staff can add/remove technicians and any other users on a thread at
+      will. **State of the parked work, checked 2026-07-30:** the data model is already
+      live — `conversation_participants` carries `is_active`, and
+      `functions/api/send-message.js:524` already loads only `is_active=eq.true` rows, so
+      deactivating a participant already stops their sends. What was never built is the
+      control surface: a repo-wide grep finds no `add_participant` / `remove_participant`
+      RPC anywhere, and `src/pages/tech/v2/messages/useConvoMutations.js` exposes only
+      unread + DND mutations. So this is "add an RPC + UI over an existing table", not a
+      new subsystem. New RPC follows `database-standard.md` (invoker-preferred,
+      caller-validated, additive migration + paired rollback + a CI-visible contract
+      test in `tests/qa/unit/**`). (Owner request 2026-07-30.)
+
+**Theme: secondary contacts on a thread (feature-sized — sequenced after participant control)**
+
+- [ ] (P2) Add a client's secondary contact into the chat — no way to pull a spouse,
+      insurance agent or adjuster into an existing claim/client thread → staff can add a
+      secondary contact from the client or claim record straight into that conversation.
+      **Two constraints found 2026-07-30 — both need an owner decision before design:**
+      **(a) group is recognised, but CallRail is not a group provider.**
+      `send-message.js:534` already branches on `type === 'group' || 'broadcast'`, so
+      multi-recipient threads are understood — but `:541-549` explicitly refuses CallRail
+      for anything that is not 1:1 (`CALLRAIL_PURPOSE_UNSUPPORTED`). "CallRail is just
+      Twilio behind the scenes" therefore does not hold at our send path as written: a
+      group thread runs on Twilio, or lifting that refusal is its own reviewed change.
+      **(b) consent is per-person, and group is stricter than 1:1.** The 2026-07-28
+      opt-out-only rule (`IMPLIED_CONSENT`) covers staff 1:1 service SMS only; group and
+      broadcast still accept `GLOBAL_OPT_IN` only
+      (`.claude/rules/sms-experience-wave-ownership.md` §13). An adjuster or agent added
+      to a thread is a new recipient carrying their own consent, DND and STOP state — none
+      of it inherited from the client. Pick the intended lane before building.
+      (Owner request 2026-07-30.)
+
+**Theme: conversation list interaction**
+
+- [ ] (P3) Swipe actions on the conversation row — replace the reveal-below overflow with
+      the native iOS idiom → swipe left/right on a row reveals archive + mark unread, and
+      the "⋯" stays as the visible, non-gesture path to the same actions.
+      **Why the current one feels detached (confirmed in code 2026-07-30):** it isn't a
+      floating dropdown, but it does render as a new block BELOW the row
+      (`ConvoRow.jsx:100`, `showActions && <div className="tv2-msgs-row__actions">`), which
+      shoves every row beneath it down — so the action reads as belonging to the gap, not
+      to the thread you tapped. It also unmounts instantly on close with no exit, which
+      `motion-standard.md` §3 already classes as a defect. This is a real fix, not taste.
+      **Keep the "⋯" — it's required, not a redundant fallback.** Swipe is an invisible
+      gesture; the `tech-mobile-ux.md` persona (64, gloved, one hand, sunlight) and
+      VoiceOver both need a visible affordance, and Apple's own rule is that a swipe action
+      always has a non-gesture equivalent.
+      **One push-back for the owner to settle:** let the "⋯" reveal the SAME inline
+      actions, but not by replaying a fake swipe. `motion-standard.md` §6 is explicit that
+      finger-driven drag is a separate mechanism and a canned imitation of it "reads dead".
+      A tap should snap the actions open crisply (fade + slide, ≤ `--motion-duration-base`,
+      `--motion-ease-standard`); the SWIPE gets the real 1:1 finger tracking with velocity.
+      Same end state, motion matched to its input.
+      **Two gates before build:**
+      (a) `motion-standard.md` §6 sanctions exactly three gesture surfaces (bottom-sheet
+          drag-to-dismiss, `PullToRefresh`, swipe-to-dismiss toast) — "nothing else". A
+          swipe-to-reveal list row is a FOURTH, so it needs an explicit owner extension of
+          that list. **And the util it says to reuse does not exist** (checked 2026-07-30):
+          no gesture/spring util in `src/lib/`, `PullToRefresh.jsx` runs on raw
+          `onTouchStart/Move/End` rather than pointer events, `setPointerCapture` appears
+          only in `CrmLeads.jsx:790` (the ad-hoc kanban drag §6 itself flags), and there is
+          no bottom-sheet drag-to-dismiss. So the sanctioned path has to be BUILT first.
+          The Framer Motion / GSAP / react-spring ban stands regardless.
+      (b) Archive is half-built, not missing (corrected 2026-07-30 — an earlier note in
+          this entry wrongly called it a new column). `conversations.status` already
+          accepts `'archived'` (CHECK constraint, `20260709_sms_f01_drift_capture.sql:82`),
+          a partial index already excludes archived rows (`:91`), and
+          `get_tech_conversations` already accepts a `p_status` filter. What is missing:
+          nothing anywhere SETS a conversation to archived, and the default list view
+          (`p_status IS NULL`) returns archived threads along with everything else — so
+          archiving today would hide nothing. Changing that default is a live-RPC contract
+          change (`CREATE OR REPLACE`, same signature, new params `DEFAULT`, committed
+          backward-compat test). Archived threads also need a way back —
+          `loading-error-states.md` §5 forbids a silent dead-end.
+      Skills: `apple-design` (gesture + spring feel) plus `emil-design-eng`.
+      `review-animations` is a MANDATORY close-out gate here, and the on-device iPhone
+      check stays owner-gated — Playwright proves behaviour, never feel.
+      (Owner request 2026-07-30.)
+
 ## Done
 
 **Theme: trapped screens / navigation escape hatches (fixed as one batch, 2026-07-29)**
