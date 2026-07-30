@@ -369,10 +369,20 @@ Second internal-TestFlight build, same Path B route and the same hard gates.
   (now database-backed — its migration applied the same morning), signing/legal
   escape hatches, origin-aware job back, nav haptics, and the ITMS-90683
   location purpose string.
-- **Open owner gates for this build:** the on-device account-switch refusal
-  check (still never exercised — it was blocked by the sign-out defect this
-  build fixes), and decoding one real access token locally to confirm the
-  `session_id` claim shape the revival guard keys on.
+- **Sign-out VERIFIED on device (owner, 2026-07-30, build 2).** The owner ran
+  the sign-out path on the installed TestFlight build: sign-out completed
+  normally — no "Finish securing this device" wall, no session resurrection,
+  Login reachable — and **push delivery stopped afterwards**, confirming the
+  device-token detach ran for real against production. This closes the defect
+  found 2026-07-29 and exercises the cleanup path end-to-end on a
+  production-signed build.
+- **Still open owner gates:** the *second-account* half of the account-switch
+  check (sign in as a different employee and confirm native Push defaults OFF
+  for them, and that events for the first employee raise no banner while the
+  second is active) — sign-out and the token detach are now proven, but the
+  foreign-account default has not been observed; and decoding one real access
+  token locally to confirm the `session_id` claim shape the revival guard keys
+  on.
 
 ## First TestFlight release — verified evidence (2026-07-29 build night)
 
