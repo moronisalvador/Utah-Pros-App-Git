@@ -1,14 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToConversations } from '@/lib/realtime';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import OverflowDrawer from './OverflowDrawer';
-import CreateJobModal from './CreateJobModal';
-import AddContactModal from './AddContactModal';
-import NewInvoiceModal from './NewInvoiceModal';
-import NewEstimateModal from './NewEstimateModal';
+// Quick-action modals open on click and must not ride the cold-boot entry
+// graph (perf-budget.md §4; same idiom as TechLayout's lazy surfaces). Each
+// renders only while open, so the chunk loads on first use.
+const CreateJobModal = lazy(() => import('./CreateJobModal'));
+const AddContactModal = lazy(() => import('./AddContactModal'));
+const NewInvoiceModal = lazy(() => import('./NewInvoiceModal'));
+const NewEstimateModal = lazy(() => import('./NewEstimateModal'));
 import { IconDashboard, IconConversations, IconJobs, IconSchedule } from './Icons';
 
 // Bottom bar items — the 4 most-used + More
@@ -257,28 +260,36 @@ export default function Layout() {
       </main>
 
       {showCreateJob && (
-        <CreateJobModal
-          db={db}
-          onClose={() => setShowCreateJob(false)}
-          onCreated={handleJobCreated}
-        />
+        <Suspense fallback={null}>
+          <CreateJobModal
+            db={db}
+            onClose={() => setShowCreateJob(false)}
+            onCreated={handleJobCreated}
+          />
+        </Suspense>
       )}
 
       {showAddContact && (
-        <AddContactModal
-          onClose={() => setShowAddContact(false)}
-          onSave={handleContactSaved}
-          carriers={carriers}
-          referralSources={referralSources}
-        />
+        <Suspense fallback={null}>
+          <AddContactModal
+            onClose={() => setShowAddContact(false)}
+            onSave={handleContactSaved}
+            carriers={carriers}
+            referralSources={referralSources}
+          />
+        </Suspense>
       )}
 
       {showNewInvoice && (
-        <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />
+        <Suspense fallback={null}>
+          <NewInvoiceModal db={db} onClose={() => setShowNewInvoice(false)} />
+        </Suspense>
       )}
 
       {showNewEstimate && (
-        <NewEstimateModal db={db} onClose={() => setShowNewEstimate(false)} />
+        <Suspense fallback={null}>
+          <NewEstimateModal db={db} onClose={() => setShowNewEstimate(false)} />
+        </Suspense>
       )}
 
       {/* ── Bottom Tab Bar (mobile only) ── */}

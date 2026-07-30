@@ -88,6 +88,7 @@ import {
   isStandaloneDisplay,
   readPwaOwnerLease,
 } from '@/lib/resumeRestore';
+import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics';
 import { reconcilePushServiceWorker } from '@/lib/pwaServiceWorker';
 import { buildResetUrl } from '@/lib/staleChunkReload';
 import {
@@ -299,12 +300,18 @@ export function AuthProvider({ children }) {
       // (published) or would be evidence-free (sweep). Stay conservative;
       // the durable registry re-checks on the next event.
       return false;
+    } else {
+      // 'none'/'unknown' + unpublished + event evidence still purges: the
+      // event itself proved an ended session surfaced, signOut on empty
+      // storage is an idempotent no-op, and treating a storage-key
+      // derivation miss (which also reads as 'none') as benign would
+      // silently disable the guard — the 2026-07-30 test-env regression
+      // that caught this. This branch is also the only field signature of
+      // such a derivation drift, so it leaves a breadcrumb.
+      recordPwaDiagnostic('account-state', {
+        section: 'ended-session-storage-unreadable',
+      });
     }
-    // 'none'/'unknown' + unpublished + event evidence still purges: the
-    // event itself proved an ended session surfaced, signOut on empty
-    // storage is an idempotent no-op, and treating a storage-key derivation
-    // miss (which also reads as 'none') as benign would silently disable
-    // the guard — the 2026-07-30 test-env regression that caught this.
     const marker = published ? null : markResurrectionSignOut();
     try {
       await realtimeClient.auth.signOut({ scope: 'local' });

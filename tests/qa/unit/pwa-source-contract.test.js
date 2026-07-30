@@ -272,6 +272,21 @@ describe('headers, release identity, containment, and truthful install copy', ()
       'sessionIdFromAccessToken(tokenRef.current)',
     );
     expect(armHelper).toContain('recordEndedSessionId(sessionId)');
+    // The purge's storage precheck is only as good as its key derivation:
+    // pin the guard's template against the SDK's own defaultStorageKey line
+    // and pin that realtimeClient configures no custom storageKey, so a
+    // drift on either side fails here instead of silently reading 'none'.
+    const guardSource = read('src/lib/endedSessionGuard.js');
+    expect(guardSource).toMatch(
+      /`sb-\$\{\s*new URL\(supabaseUrl\)\.hostname\.split\('\.'\)\[0\]\s*\}-auth-token`/,
+    );
+    const sdkSource = read(
+      'node_modules/@supabase/supabase-js/src/SupabaseClient.ts',
+    );
+    expect(sdkSource).toContain(
+      "`sb-${baseUrl.hostname.split('.')[0]}-auth-token`",
+    );
+    expect(read('src/lib/realtime.js')).not.toContain('storageKey');
     expect(auth).toMatch(
       /event === 'SIGNED_OUT'[\s\S]*?clearRejectedPrincipalState\(priorDb, \{/,
     );
