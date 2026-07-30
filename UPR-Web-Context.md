@@ -2898,13 +2898,15 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
-    **Sign-out cleanup deferral (2026-07-29, owner-directed):** explicit sign-out runs a bounded
-    silent push-detach retry (~10s backoff, skipped offline) before any blocking UI, then completes
-    visually when the only residual is journaled push server work (same-owner marker positively
-    re-read — new `residualJournaled`/`enrollmentPending` detach result fields; `deferrable`
-    classification through `accountDeviceCleanup.js`/`pwaAccountState.js`; `allowDeferred` in
-    AuthContext, logout-only). Foreign-owner/invalid-marker/signed-out-reauth/password-recovery/
-    login/account-switch keep the hard "Finish securing this device" wall; the bind-time
+    **Sign-out always completes (2026-07-29, owner-directed):** explicit sign-out runs one bounded
+    best-effort cleanup pass and completes regardless of its outcome; unfinished server detach
+    stays in the durable owner-bound journal (new `residualJournaled`/`enrollmentPending` detach
+    result fields; `deferrable` classification through `accountDeviceCleanup.js`/
+    `pwaAccountState.js`; the bounded `transientPushRetry` mechanism exists but is unwired). A
+    durable signed-out-intent marker + boot/SIGNED_IN/TOKEN_REFRESHED/recoverSession guards and a
+    post-signOut sweep terminate resurrected post-sign-out sessions (the TestFlight
+    never-reached-Login defect); login() clears the marker before signInWithPassword.
+    Signed-out-reauth/password-recovery/login/account-switch keep their hard gates; the bind-time
     `retryPendingAccountPushDetaches` gate is unchanged. Contract:
     `docs/mobile/push-activation-owner-gate.md`.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)

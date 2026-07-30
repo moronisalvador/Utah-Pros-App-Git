@@ -22,6 +22,25 @@ verifiable in the next native build — group them accordingly.
       match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
       motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
 
+**Theme: perceived performance**
+
+- [ ] (P2) Notification bell first-open jank — the first tap after every cold app start
+      opens the panel at slideshow frame rate (feels "buggy, maybe 5 FPS"); every
+      subsequent open is smooth. Likely cause: the panel's lazy chunk loads + parses
+      during the open animation. Fix shape: idle-preload the chunk after shell mount
+      and/or gate the open animation on content readiness (perf-budget.md +
+      motion-standard.md §5 govern). (Found 2026-07-29, TestFlight 1.0.0 (1), recurs
+      every cold start.)
+
+**Theme: platform tech-debt**
+
+- [ ] (P2) UIScene lifecycle migration — the iOS 27 SDK (Xcode 27 beta) hard-traps the
+      app at launch because the Capacitor AppDelegate still uses the classic lifecycle
+      (verified on-device 2026-07-29, EXC_BREAKPOINT in UIKit's launch check). Fine
+      today (CI pins Xcode 26.6), but must land before Apple's toolchain requirement
+      catches up. Check Capacitor 8 upstream for official UIScene support first.
+      (Details: docs/mobile/dev-app-variant.md caveats.)
+
 **Theme: notifications surface (feature-sized — may fold into the onboarding session)**
 
 - [ ] (P3) Settings → Notifications — tapping the section should open a dedicated

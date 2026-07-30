@@ -71,19 +71,39 @@ development `aps-environment` entitlement; `VITE_NATIVE_PUSH_ENABLED=true` lets 
 Settings → Notifications native toggle enroll (enrollment itself stays fail-closed and
 user-initiated).
 
-Then, in Xcode (`ios/App/App.xcodeproj`):
+Then the one-command path (preferred — builds, installs, and launches over Wi-Fi/cable
+with the **stable CLI toolchain**; phone unlocked, same Wi-Fi or cabled):
 
-1. Select the **UPR Dev** scheme (it is shared/checked in) and your plugged-in iPhone.
-2. Run (⌘R). Automatic signing provisions `com.utahprosrestoration.upr.dev` under team
-   `H6ZUT739T9` on first build.
-3. The phone now shows two apps: **UPR** (TestFlight, production) and **UPR Dev**
-   (amber-badged icon). Installing/removing one never touches the other.
+```bash
+npm run ios:dev
+```
+
+(`scripts/install-ios-dev.mjs`; it runs `build:ios:dev` itself, so the first command
+above is only needed standalone. Multiple devices connected → set
+`UPR_DEV_DEVICE_UDID`.)
+
+The Xcode GUI alternative (scheme **UPR Dev** + your iPhone, ⌘R) works ONLY from a
+stable Xcode — on a Mac whose GUI Xcode is the 27 beta it builds a launch-trapping
+binary; see the first caveat below. Automatic signing provisions
+`com.utahprosrestoration.upr.dev` under team `H6ZUT739T9` on first build either way.
+The phone then shows two apps: **UPR** (TestFlight, production) and **UPR Dev**
+(amber-badged icon). Installing/removing one never touches the other.
 
 A development-signed install expires with its provisioning profile (typically 7 days on a
 free profile, up to a year on the paid team's Xcode-managed profile) — re-running from
 Xcode refreshes it.
 
 ## Caveats — read before trusting a test result
+
+- **Never build with the Xcode 27 beta (iOS 27 SDK) — the app traps at launch.**
+  Verified on-device 2026-07-29: a UPR Dev build made in Xcode 27.0 beta 4 hit
+  `EXC_BREAKPOINT` inside UIKit's launch runtime check with the console pointing at
+  the "scene-based life cycle" migration — the iOS 27 SDK enforces UIScene adoption,
+  which the Capacitor AppDelegate has not migrated to yet. Build with the stable
+  toolchain instead: CLI `xcodebuild` (uses `xcode-select`, currently Xcode 26.6 —
+  matching the CI pin) works even while the beta is the GUI default. Scene-lifecycle
+  migration is tracked in `field-polish-punchlist.md` and must land before the repo
+  ever moves its build toolchain to Xcode 27.
 
 - **One shared production Supabase sits behind BOTH apps.** The dev variant is a UI and
   native-shell sandbox, not a data sandbox: everything you create, edit, clock, message,
