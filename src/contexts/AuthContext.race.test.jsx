@@ -37,6 +37,7 @@ const harness = vi.hoisted(() => ({
   states: [],
   profileResponses: [],
   tokenGetter: null,
+  onAuthError: null,
   db: {
     rpc: vi.fn(),
     select: vi.fn(),
@@ -158,6 +159,10 @@ vi.mock('@/components/SessionExpiredBanner', () => ({
 }));
 
 import { AuthProvider } from './AuthContext.jsx';
+import {
+  ENDED_SESSIONS_KEY,
+  recordEndedSessionId,
+} from '@/lib/endedSessionGuard';
 
 const USER_STATE = 0;
 const EMPLOYEE_STATE = 1;
@@ -200,6 +205,28 @@ function memoryStorage() {
     setItem: vi.fn((key, value) => values.set(key, value)),
     removeItem: vi.fn((key) => values.delete(key)),
   };
+}
+
+const SESSION_IDS = Object.freeze({
+  'session-a': '44444444-4444-4444-8444-444444444444',
+  'session-b': '55555555-5555-4555-8555-555555555555',
+});
+
+// Structurally real access token: base64url header.payload.signature carrying
+// the session_id claim, exactly as Supabase mints it. No real key material.
+function fakeSessionToken(sessionKey, rotation = 0) {
+  const encode = (value) => globalThis.btoa(JSON.stringify(value))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return [
+    encode({ alg: 'none', typ: 'JWT' }),
+    encode({
+      session_id: SESSION_IDS[sessionKey] || sessionKey,
+      rotation,
+    }),
+    `signature-${rotation}`,
+  ].join('.');
 }
 
 function employee(id, role = 'admin') {
@@ -266,6 +293,7 @@ beforeEach(() => {
   harness.states = [];
   harness.profileResponses = [];
   harness.tokenGetter = null;
+  harness.onAuthError = null;
   harness.providerValue = null;
 
   vi.stubGlobal('localStorage', memoryStorage());
@@ -301,8 +329,9 @@ beforeEach(() => {
   });
   harness.auth.signOut.mockResolvedValue({ error: null });
 
-  harness.createTokenBoundClient.mockImplementation((getToken) => {
+  harness.createTokenBoundClient.mockImplementation((getToken, options) => {
     harness.tokenGetter = getToken;
+    harness.onAuthError = options?.onAuthError || null;
     return harness.db;
   });
   harness.db.rpc.mockImplementation((name) => {
@@ -358,6 +387,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -1754,6 +1784,314 @@ describe('AuthProvider latest-account-wins races', () => {
     expect(harness.tokenGetter()).toBe('token-a');
     expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
     expect(harness.states[LOADING_STATE]).toBe(true);
+
+    cleanup();
+  });
+});
+
+describe('post-sign-out session revival (2026-07-29 native defect #2)', () => {
+  // auth-js 2.99.3 signOut steals the auth lock from an in-flight refresh
+  // after lockAcquireTimeout; the orphaned refresh later re-persists the
+  // session (_callRefreshToken → _saveSession, no signed-out re-check) and the
+  // next resume/cold start re-emits it as SIGNED_IN.
+  async function reviveSessionAfterLogout() {
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+    expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeA);
+
+    // A degraded-network token refresh is in flight when logout() runs.
+    const refreshRelease = deferred();
+    harness.auth.refreshSession.mockReturnValueOnce(refreshRelease.promise);
+    const recovery = harness.onAuthError();
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.tokenGetter()).toBe(null);
+    const signOutCallsAtLogout = harness.auth.signOut.mock.calls.length;
+
+    // The zombie refresh resolves AFTER signOut with the SAME server-side
+    // session (identical session_id, rotated tokens) and re-persists it.
+    const revivedSession = {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 1),
+    };
+    refreshRelease.resolve({
+      data: { session: revivedSession },
+      error: null,
+    });
+    await expect(recovery).resolves.toBe(false);
+
+    return { employeeA, revivedSession, signOutCallsAtLogout };
+  }
+
+  it('refuses and purges the revived session instead of re-bootstrapping', async () => {
+    const cleanup = await mountProvider();
+    const {
+      employeeA,
+      revivedSession,
+      signOutCallsAtLogout,
+    } = await reviveSessionAfterLogout();
+
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    // The purge's own signOut emits SIGNED_OUT exactly as the SDK does; the
+    // finalized marker must absorb it (no second cleanup, no reauth wall).
+    harness.auth.signOut.mockImplementationOnce(async () => {
+      harness.sdkAuthCallback('SIGNED_OUT', null);
+      return { error: null };
+    });
+    const cleanupCallsAtLogout = harness
+      .cleanupAccountDeviceState.mock.calls.length;
+
+    // The SDK notifies TOKEN_REFRESHED when the zombie saves; the next app
+    // resume/_recoverAndRefresh re-emits the persisted session as SIGNED_IN.
+    await harness.authCallback('TOKEN_REFRESHED', revivedSession);
+    await harness.authCallback('SIGNED_IN', revivedSession);
+
+    // The explicitly ended session is refused: no profile load, no published
+    // account, no wall — the signed-out state simply holds.
+    expect(profileCallCount()).toBe(1);
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.tokenGetter()).toBe(null);
+    expect(harness.auth.signOut.mock.calls.length)
+      .toBeGreaterThan(signOutCallsAtLogout);
+    expect(harness.auth.signOut).toHaveBeenLastCalledWith({ scope: 'local' });
+    expect(harness.cleanupAccountDeviceState.mock.calls.length)
+      .toBe(cleanupCallsAtLogout);
+
+    cleanup();
+  });
+
+  it('accepts a fresh-session sign-in for the same user after sign-out', async () => {
+    const cleanup = await mountProvider();
+    const { employeeA } = await reviveSessionAfterLogout();
+
+    // Cross-tab / re-login sync: a legitimate new login mints a new
+    // session_id, so the guard must never match it — same user or not.
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+
+    expect(profileCallCount()).toBe(2);
+    expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
+    expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeA);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('purge never signs out a newer session that already owns storage', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://unit-test-ref.supabase.co');
+    const cleanup = await mountProvider();
+    const { revivedSession, signOutCallsAtLogout } = (
+      await reviveSessionAfterLogout()
+    );
+
+    // A newer legitimate session (fresh session_id) won storage between the
+    // zombie event's emission and its processing.
+    localStorage.setItem(
+      'sb-unit-test-ref-auth-token',
+      JSON.stringify({ access_token: fakeSessionToken('session-b', 0) }),
+    );
+
+    await harness.authCallback('SIGNED_IN', revivedSession);
+
+    // Re-entry is still refused, but the purge leaves the newer session alone.
+    expect(profileCallCount()).toBe(1);
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.auth.signOut.mock.calls.length)
+      .toBe(signOutCallsAtLogout);
+
+    cleanup();
+  });
+
+  it('tears down a published account whose storage a revived session clobbered', async () => {
+    vi.stubEnv('VITE_SUPABASE_URL', 'https://unit-test-ref.supabase.co');
+    const cleanup = await mountProvider();
+    const { employeeA, revivedSession } = await reviveSessionAfterLogout();
+
+    // Account B signs in legitimately after A's sign-out and publishes.
+    const employeeB = employee('employee-b', 'project_manager');
+    harness.profileResponses.push(Promise.resolve([employeeB]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-b', email: 'b@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+    expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeB);
+
+    // A's zombie refresh then clobbers storage (SDK-level _saveSession).
+    localStorage.setItem(
+      'sb-unit-test-ref-auth-token',
+      JSON.stringify({ access_token: revivedSession.access_token }),
+    );
+    harness.auth.signOut.mockImplementationOnce(async () => {
+      harness.sdkAuthCallback('SIGNED_OUT', null);
+      return { error: null };
+    });
+
+    await harness.authCallback('TOKEN_REFRESHED', revivedSession);
+    await vi.waitFor(() => {
+      // With a principal published, the purge must NOT absorb its SIGNED_OUT:
+      // B is torn down through the full observer path rather than left
+      // rendering authorized UI over a destroyed session.
+      expect(harness.states[USER_STATE]).toBe(null);
+      expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+      expect(harness.states[LOADING_STATE]).toBe(false);
+      expect(harness.tokenGetter()).toBe(null);
+    });
+    expect(harness.states[EMPLOYEE_STATE]).not.toEqual(employeeA);
+
+    cleanup();
+  });
+
+  it('ignores a broadcast SIGNED_OUT delivered to an already-clean tab', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    const cleanupCalls = harness.cleanupAccountDeviceState.mock.calls.length;
+
+    // Another tab's sign-out (or this device's purge) broadcasts SIGNED_OUT
+    // into a tab that already tore everything down.
+    await harness.authCallback('SIGNED_OUT', null);
+
+    expect(harness.cleanupAccountDeviceState.mock.calls.length)
+      .toBe(cleanupCalls);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('purges a revived ended session found at cold start instead of bootstrapping', async () => {
+    recordEndedSessionId(SESSION_IDS['session-a']);
+    harness.auth.getSession.mockResolvedValue({
+      data: {
+        session: {
+          user: { id: 'auth-a', email: 'a@example.invalid' },
+          access_token: fakeSessionToken('session-a', 1),
+        },
+      },
+    });
+
+    const cleanup = await mountProvider();
+
+    expect(profileCallCount()).toBe(0);
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+
+    cleanup();
+  });
+
+  it('fails open without throwing when the session id is unavailable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    // Undecodable token: the guard cannot arm for this sign-out.
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a-opaque',
+    });
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Ended-session guard could not read'),
+    );
+
+    // Documented fail-open: without a session id the revival cannot be
+    // refused — behavior degrades to pre-fix, it never breaks sign-in.
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a-opaque-revived',
+    });
+    expect(harness.states[EMPLOYEE_STATE]).toEqual(employeeA);
+
+    cleanup();
+  });
+
+  it('fails open without throwing when the registry storage is blocked', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+
+    const writeThrough = localStorage.setItem;
+    localStorage.setItem = vi.fn((key, value) => {
+      if (key === ENDED_SESSIONS_KEY) throw new Error('storage blocked');
+      return writeThrough(key, value);
+    });
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not persist its registry'),
+    );
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('still walls a foreign-owner journal after a deferred sign-out and a purge', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 0),
+    });
+
+    // The 2026-07-29 deferral: sign-out completes over a journaled residual.
+    harness.cleanupAccountDeviceState.mockResolvedValueOnce({
+      ready: false,
+      deferrable: true,
+    });
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(harness.states[ERROR_STATE]).toBe(null);
+
+    // A's zombie revival is purged without disturbing the journal…
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: fakeSessionToken('session-a', 1),
+    });
+    expect(profileCallCount()).toBe(1);
+
+    // …so B's real sign-in still hits the bind-time foreign-owner wall.
+    harness.retryPendingAccountPushDetaches.mockResolvedValue({
+      ready: false,
+      pending: true,
+      ownerMismatch: true,
+    });
+    harness.profileResponses.push(Promise.resolve([employee('employee-b')]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-b', email: 'b@example.invalid' },
+      access_token: fakeSessionToken('session-b', 0),
+    });
+
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(true);
+    expect(harness.states[ERROR_STATE]).toMatch(
+      /unfinished notification cleanup/,
+    );
+    expect(harness.registerPushForEmployee).not.toHaveBeenCalled();
 
     cleanup();
   });

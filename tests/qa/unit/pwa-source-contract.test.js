@@ -243,13 +243,30 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(logout).toBeTruthy();
     expect(logout.indexOf('clearRejectedPrincipalState(priorDb, {'))
       .toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+      logout.indexOf('await signOutLocalSession(transition)'),
     );
     expect(logout.indexOf('if (cleanupResult.cancelled) return;')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+      logout.indexOf('await signOutLocalSession(transition)'),
     );
     expect(logout.indexOf('if (!cleanupResult.ready)')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+      logout.indexOf('await signOutLocalSession(transition)'),
+    );
+    // The ONE local sign-out path (post-sign-out revival guard): it captures
+    // the ended session id BEFORE signOut and tombstones it only after a
+    // CONFIRMED sign-out, so a hard-wall retry never tombstones a live
+    // session and a late refresh re-persist can be refused later.
+    const signOutHelper = auth.match(
+      /const signOutLocalSession = useCallback\([\s\S]*?\n {2}\}, \[\]\);/,
+    )?.[0];
+    expect(signOutHelper).toBeTruthy();
+    expect(signOutHelper).toContain('realtimeClient.auth.signOut({');
+    expect(signOutHelper).toContain("scope: 'local'");
+    expect(signOutHelper.indexOf('sessionIdFromAccessToken(tokenRef.current)'))
+      .toBeLessThan(
+        signOutHelper.indexOf('realtimeClient.auth.signOut({'),
+      );
+    expect(signOutHelper).toMatch(
+      /if \(!signOutError \|\| transition\?\.signedOutObserved === true\) \{\s*recordEndedSessionId\(endedSessionId\);/,
     );
     expect(auth).toMatch(
       /event === 'SIGNED_OUT'[\s\S]*?clearRejectedPrincipalState\(priorDb, \{/,
