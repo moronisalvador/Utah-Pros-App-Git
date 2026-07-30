@@ -19,7 +19,8 @@
  *   Internal:  @/contexts/AuthContext (useAuth → db), @/lib/realtime
  *              (getAuthHeader for the recording proxy fetch),
  *              @/lib/crmCharts (isCountableLead — unanswered-call detection
- *              for the "Missed call — no recording" label)
+ *              for the "Missed call — no recording" label),
+ *              @/hooks/useResumeRefetch (15s poll + resume/focus refresh)
  *   Data:      reads  → inbound_leads (embeds contacts via contact_id FK;
  *                       incl. transcript_analysis for the conversation view);
  *                       crm_tracking_numbers titles via get_tracking_numbers RPC
@@ -50,6 +51,7 @@ import { IconCallLog } from '@/lib/crmIcons';
 import { formatPhone } from '@/lib/phone';
 import { isCountableLead } from '@/lib/crmCharts';
 import { ok, err } from '@/lib/toast';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 
 // Format a numeric lead value as "$1,500" (whole dollars); '' when unset.
 function formatValue(v) {
@@ -429,17 +431,17 @@ export default function CrmCallLog() {
   // every 15s while the tab is visible, and refetch immediately when the tab
   // regains focus. CallRail's post-call webhook can lag ~1 min after the call,
   // so the page keeps itself current instead of forcing a hard refresh.
-  useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') load({ silent: true }); };
-    const id = setInterval(refresh, 15000);
-    document.addEventListener('visibilitychange', refresh);
-    window.addEventListener('focus', refresh);
-    return () => {
-      clearInterval(id);
-      document.removeEventListener('visibilitychange', refresh);
-      window.removeEventListener('focus', refresh);
-    };
+  //
+  // All three signals go through the one shared hook (page-lifecycle.md §2),
+  // which owns the hidden→visible edge detection and the `document.hidden` poll
+  // guard §4 requires. The visibility check stays here because it is what keeps
+  // the `focus` path from firing while the document is still hidden — the hook
+  // does not guard onFocus, by design.
+  const silentRefresh = useCallback(() => {
+    if (document.visibilityState === 'visible') load({ silent: true });
   }, [load]);
+
+  useResumeRefetch({ onResume: silentRefresh, onFocus: silentRefresh, pollMs: 15000 });
 
   const handleStatusChange = async (leadId, status) => {
     setLeads(prev => prev.map(l => l.id === leadId ? { ...l, lead_status: status } : l));

@@ -89,6 +89,7 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 
 ---
 
+<<<<<<< ours
 ## Load-failure contract — an outage never renders as "empty" (LES-01, Jul 30 2026)
 
 `db.select` / `db.rpc` **THROW** on any non-OK response (400/404/500). They do not resolve to `[]`.
@@ -126,6 +127,50 @@ persisted as "exclude nobody".
 
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
+=======
+## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
+
+`src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
+comes back" (`page-lifecycle.md` §2). It owns the hidden→visible edge detection, the `focus`
+listener, and the `document.hidden` poll guard §4 requires:
+
+```js
+useResumeRefetch({ onResume, onFocus, pollMs, hiddenEdgeOnly = true, enabled = true })
+```
+
+Callbacks are held in refs, so passing a fresh inline function each render does **not** re-subscribe.
+`hiddenEdgeOnly` (default) fires `onResume` only on a real hidden→visible transition, not on every
+desktop refocus. Note the hook does **not** apply a visibility guard to `onFocus` — a page that also
+refreshes on focus keeps its own `document.visibilityState === 'visible'` check inside the callback
+(see `CrmCallLog`).
+
+**The last five page-level hand-rolled listeners were migrated Jul 30 2026**, so no page or
+component registers `visibilitychange`/`focus` itself any more:
+
+| Surface | Was | Now |
+|---|---|---|
+| `pages/crm/CrmCallLog.jsx` | visibilitychange + focus + 15s `setInterval` | `{ onResume, onFocus, pollMs: 15000 }` |
+| `pages/tech/admin/AdminLeadCenter.jsx` | same shape, 20s interval | `{ onResume, onFocus, pollMs: 20000 }` |
+| `pages/JobPage.jsx` (FilesTab) | visibilitychange → sign requests + an unguarded inline `job_documents` select | one generation-guarded `refreshOnResume` |
+| `pages/tech/v2/dash/AttentionStrip.jsx` | visibilitychange → `checkAway()` | `{ enabled: active, onResume: checkAway }` |
+| `pages/tech/TechJobDocuments.jsx` | visibilitychange → `loadRequests()` | `{ onResume: loadRequests }` |
+
+The two raw `setInterval` polls are gone with them — both now inherit the hook's hidden-guard, so a
+backgrounded phone no longer polls CallRail every 15–20s. JobPage's FilesTab additionally gained the
+request guard §2 requires (a `resumeGenRef` generation compared before each `setState`); previously
+two bare selects could land a stale job's files on the job you had just navigated to.
+
+**Sanctioned exceptions** (allowed to hold a raw listener because each is the one implementation of
+its concern): `components/overview/hooks/usePolledRpc.js` (the hidden-guard behavior model),
+`components/RouteRestorer.jsx` (the single scroll/route-restoration primitive, §5), and
+`lib/nativeKeyboardLayout.js` (keyboard metrics, not a refetch). `useResumeRefetch.js` itself
+attaches to **injected** `doc`/`win` params, which is what keeps its `subscribeResume` unit-testable
+without a DOM.
+
+**Guard:** `tests/qa/unit/resume-listener-lifecycle.test.js` sweeps all of `src/` and fails on a new
+hand-rolled listener anywhere outside that allowlist — it is not a snapshot of these five files.
+Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
+>>>>>>> theirs
 
 ---
 

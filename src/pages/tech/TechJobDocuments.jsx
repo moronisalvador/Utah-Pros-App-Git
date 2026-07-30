@@ -20,7 +20,8 @@
  *   Internal:  @/contexts/AuthContext, @/lib/realtime (getAuthHeader),
  *              @/lib/toast, ./techConstants,
  *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
- *              @/lib/backNav, @/components/tech/v2/nav (jobHref)
+ *              @/lib/backNav, @/components/tech/v2/nav (jobHref),
+ *              @/hooks/useResumeRefetch
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs, contact_jobs, contacts, sign_requests (direct db.select)
  *              writes → sign_requests (db.update — cancel; and indirectly via the
@@ -32,8 +33,10 @@
  *   - Navigating in with history state { startEsign: 'work_auth' } (from the
  *     job page's "no signed Work Auth" banner) auto-opens the request sheet on
  *     that doc type.
- *   - Reloads sign requests on tab re-focus so a freshly collected signature
- *     (signed on /sign/:token, then Back) shows up without a manual refresh.
+ *   - Reloads sign requests on a hidden→visible resume so a freshly collected
+ *     signature (signed on /sign/:token, then Back) shows up without a manual
+ *     refresh. That goes through the shared useResumeRefetch hook, never a
+ *     hand-rolled visibilitychange listener (page-lifecycle.md §2).
  *   - Curated to two doc types; legacy rows of other types still render via a
  *     titleCased fallback label.
  * ════════════════════════════════════════════════
@@ -48,6 +51,7 @@ import EsignRequestSheet from '@/components/tech/EsignRequestSheet';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { goBackOr } from '@/lib/backNav';
 import { jobHref } from '@/components/tech/v2/nav';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 
 // ─── SECTION: Helpers ──────────────
 const DOC_TYPE_LABELS = {
@@ -161,12 +165,13 @@ export default function TechJobDocuments() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Refresh when returning to the tab (e.g. back from the signing page)
-  useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') refreshRequests(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [refreshRequests]);
+  // Refresh when returning to the tab (e.g. back from the signing page), through
+  // the shared hook rather than a hand-rolled listener (page-lifecycle.md §2).
+  // onResume is refreshRequests, NOT loadRequests: loadRequests now rejects on a
+  // failed read by design (LES-01), and an unhandled rejection from a resume
+  // callback would be invisible. refreshRequests keeps the rendered rows on
+  // screen and logs instead.
+  useResumeRefetch({ onResume: refreshRequests });
 
   // ─── SECTION: Event handlers ──────────────
   const pdfUrl = (path) => `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;

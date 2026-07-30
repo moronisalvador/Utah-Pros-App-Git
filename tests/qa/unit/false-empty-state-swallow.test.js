@@ -164,7 +164,12 @@ describe('LES-01 — TechJobDocuments (one swallow behind five call sites)', () 
     // A bare `loadRequests()` from the resume listener would now be an unhandled
     // rejection; via refreshRequests the already-visible rows survive.
     expect(body).toContain('const refreshRequests = useCallback');
-    expect(body).toContain("if (document.visibilityState === 'visible') refreshRequests()");
+    // The resume path moved from a hand-rolled visibilitychange listener to the
+    // shared hook (page-lifecycle.md §2, LIFECYCLE-RESUME). What this test
+    // actually guards is unchanged: resume must call the NON-throwing wrapper,
+    // never loadRequests directly.
+    expect(body).toContain('useResumeRefetch({ onResume: refreshRequests })');
+    expect(body).not.toContain("document.addEventListener('visibilitychange'");
     expect(body).toContain('onSent={refreshRequests}');
     // Only the cold load may call the throwing version directly.
     expect(body.match(/\bloadRequests\(\)/g) || []).toHaveLength(2); // refreshRequests + cold load

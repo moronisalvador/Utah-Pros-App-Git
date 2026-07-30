@@ -10,6 +10,7 @@ import AddRelatedJobModal from '@/components/AddRelatedJobModal';
 import DatePicker from '@/components/DatePicker';
 import SendEsignModal from '@/components/SendEsignModal';
 import { DivisionIcon, DIVISION_COLORS, DIVISION_CONFIG } from '@/components/DivisionIcons';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import MergeModal from '@/components/MergeModal';
 import DocChecklist from '@/components/DocChecklist';
 import GoogleDriveButton from '@/components/GoogleDriveButton';
@@ -846,16 +847,25 @@ function FilesTab({job,documents,setDocuments,db,currentUser,onSignRequest,refre
   };
   // Reload sign requests whenever a new request is sent (refreshKey incremented by parent)
   useEffect(()=>{ if(refreshKey>0) reloadSignRequests(); },[refreshKey]);
-  useEffect(()=>{
-    const onVisible=()=>{
-      if(document.visibilityState==='visible'){
-        reloadSignRequests();
-        db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`).then(setDocuments).catch(()=>{});
-      }
-    };
-    document.addEventListener('visibilitychange',onVisible);
-    return()=>document.removeEventListener('visibilitychange',onVisible);
-  },[job.id]);
+  // One silent refetch for a hidden→visible resume, through the shared hook
+  // (page-lifecycle.md §2). Both queries belong here: a customer can sign while
+  // the tab is away, and a tech can upload from the field app.
+  //
+  // Generation-guarded, which the hand-rolled version was not: these are two
+  // bare selects, so a slow response for the job you just navigated away from
+  // could land on the new one's files. Pattern copied from
+  // NotificationsSection.jsx's refreshGenerationRef. Failures stay silent by
+  // design — a resume refetch never toasts (§4) — and the already-rendered rows
+  // stay on screen rather than being replaced by an error.
+  const resumeGenRef=useRef(0);
+  const refreshOnResume=()=>{
+    const gen=++resumeGenRef.current;
+    db.select('sign_requests',`job_id=eq.${job.id}&order=sent_at.desc`)
+      .then(d=>{if(gen===resumeGenRef.current)setSignRequests(d||[]);}).catch(()=>{});
+    db.select('job_documents',`job_id=eq.${job.id}&order=created_at.desc`)
+      .then(d=>{if(gen===resumeGenRef.current)setDocuments(d||[]);}).catch(()=>{});
+  };
+  useResumeRefetch({onResume:refreshOnResume});
   const[uploadProgress,setUploadProgress]=useState(null);
   const[filterCat,setFilterCat]=useState('all');const[uploadCategory,setUploadCategory]=useState('photo');const fileInputRef=useRef(null);
   const[confirmDeleteDoc,setConfirmDeleteDoc]=useState(null);
