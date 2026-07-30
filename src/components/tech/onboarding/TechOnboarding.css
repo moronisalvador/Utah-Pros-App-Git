@@ -1,0 +1,283 @@
+/* ═══════════════════════════════════════════════════════════════════
+   TECH ONBOARDING — first-run welcome tour
+   Component-scoped stylesheet (precedent: claim-page.css,
+   NotificationPresentation.css). Deliberately NOT in src/index.css:
+   that file sits ~1.3 KB under its BLOCKING CI budget, and this
+   once-ever surface is lazy — its styles ride the lazy chunk and cost
+   the boot path nothing.
+
+   Rare/first-run motion tier (motion-standard.md §3): this surface may
+   carry delight. Every animation here is transform/opacity only, uses
+   the :root motion tokens, and collapses under prefers-reduced-motion
+   (end states land instantly; JS timers own the unmounts). Durations
+   above 300ms are deliberate for this once-ever tier.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.tech-onb {
+  position: fixed;
+  inset: 0;
+  /* above nav + offline pill (500), below the toast layer (10000) */
+  z-index: 9000;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  padding: calc(env(safe-area-inset-top, 0px) + 32px) 24px
+           calc(env(safe-area-inset-bottom, 0px) + 20px);
+  overscroll-behavior: contain;
+  animation: techOnbIn var(--motion-duration-slow) var(--motion-ease-decelerate);
+}
+.tech-onb:focus { outline: none; }
+.tech-onb--closing {
+  animation: techOnbOut var(--motion-duration-base) var(--motion-ease-accelerate) forwards;
+  pointer-events: none;
+}
+@keyframes techOnbIn {
+  from { opacity: 0; }
+}
+@keyframes techOnbOut {
+  to { opacity: 0; transform: scale(0.985); }
+}
+
+.tech-onb-scene {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Steps overlap absolutely so the leaving one can fade under the new one. */
+.tech-onb-step {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  overflow-y: auto;
+  padding: 8px 4px;
+}
+.tech-onb-step--leaving {
+  animation: techOnbStepOut 150ms var(--motion-ease-accelerate) forwards;
+  pointer-events: none;
+}
+/* A leaving step must not replay its children's entrances under the fade. */
+.tech-onb-step--leaving .tech-onb-art,
+.tech-onb-step--leaving .tech-onb-halo,
+.tech-onb-step--leaving .tech-onb-icon,
+.tech-onb-step--leaving .tech-onb-icon svg,
+.tech-onb-step--leaving .tech-onb-title,
+.tech-onb-step--leaving .tech-onb-body,
+.tech-onb-step--leaving .tech-onb-row {
+  animation: none;
+}
+@keyframes techOnbStepOut {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+/* The enter IS the stagger: art, then title, then body/rows rise in.
+   `backwards` fill holds each element invisible through its delay. */
+@keyframes techOnbRise {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+.tech-onb-art {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 160px;
+  height: 160px;
+  margin-bottom: 28px;
+  animation: techOnbRise var(--motion-duration-base) var(--motion-ease-decelerate) backwards;
+}
+.tech-onb-halo {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  background: var(--accent-light);
+  /* first-run tier: soft 420ms halo bloom behind the icon */
+  animation: techOnbHalo 420ms var(--motion-ease-decelerate) backwards;
+}
+@keyframes techOnbHalo {
+  from { opacity: 0; transform: scale(0.6); }
+}
+.tech-onb-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  /* one-shot pop on the sanctioned spring (non-interruptible enter) */
+  animation: techOnbPop 480ms var(--motion-spring-in) 80ms backwards;
+}
+@keyframes techOnbPop {
+  from { opacity: 0; transform: scale(0.85); }
+}
+.tech-onb-icon--success {
+  color: var(--status-working-color, #059669);
+}
+/* One-shot bell ring, delayed until the priming copy has been read for a
+   beat — it points the eye at exactly what the button will turn on. */
+.tech-onb-icon[data-ring="true"] svg {
+  transform-origin: 50% 3px;
+  animation: techOnbRing 700ms var(--motion-ease-standard) 1s both;
+}
+@keyframes techOnbRing {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(9deg); }
+  45% { transform: rotate(-7deg); }
+  70% { transform: rotate(4deg); }
+}
+
+.tech-onb-title {
+  margin: 0 0 12px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  max-width: 17ch;
+  animation: techOnbRise var(--motion-duration-base) var(--motion-ease-decelerate) 60ms backwards;
+}
+.tech-onb-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 30ch;
+  animation: techOnbRise var(--motion-duration-base) var(--motion-ease-decelerate) 120ms backwards;
+}
+
+.tech-onb-rows {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  margin-top: 6px;
+  text-align: left;
+  max-width: 320px;
+  width: 100%;
+}
+.tech-onb-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  animation: techOnbRise var(--motion-duration-base) var(--motion-ease-decelerate)
+    calc(120ms + var(--onb-i, 0) * 50ms) backwards;
+}
+.tech-onb-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.tech-onb-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  animation: techOnbRise var(--motion-duration-base) var(--motion-ease-decelerate) 180ms backwards;
+}
+.tech-onb-dots {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.tech-onb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--border-color);
+}
+.tech-onb-dot-pill {
+  position: absolute;
+  left: calc(50% - (var(--onb-total, 3) * 18px - 10px) / 2);
+  top: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transform: translateX(calc(var(--onb-step, 0) * 18px));
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tech-onb-btn {
+  width: 100%;
+  min-height: 52px; /* ≥48px primary target, gloved hands */
+  border: none;
+  border-radius: var(--radius-xl);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.tech-onb-btn:active { transform: scale(0.97); }
+.tech-onb-btn:disabled { opacity: 0.6; cursor: default; }
+.tech-onb-btn--primary {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.tech-onb-btn--ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  min-height: 48px;
+}
+
+.tech-onb-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Short viewports (small phones, landscape): shrink the art so the copy and
+   the primary action always fit without scrolling. */
+@media (max-height: 620px) {
+  .tech-onb-art { width: 116px; height: 116px; margin-bottom: 18px; }
+  .tech-onb-title { font-size: 22px; }
+}
+
+/* HARD gate (motion-standard.md §5): collapse to instant; end states land;
+   JS fallback timers own the unmounts that animationend would have fired. */
+@media (prefers-reduced-motion: reduce) {
+  .tech-onb,
+  .tech-onb-step--leaving,
+  .tech-onb-art,
+  .tech-onb-halo,
+  .tech-onb-icon,
+  .tech-onb-icon[data-ring="true"] svg,
+  .tech-onb-title,
+  .tech-onb-body,
+  .tech-onb-row,
+  .tech-onb-footer {
+    animation: none;
+  }
+  .tech-onb--closing {
+    animation: none;
+    opacity: 0;
+  }
+  .tech-onb-dot-pill { transition: none; }
+  .tech-onb-btn { transition: none; }
+  .tech-onb-btn:active { transform: none; }
+}

@@ -42,6 +42,7 @@ import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
 import { isStandaloneDisplay } from '@/lib/resumeRestore.js';
 import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics.js';
 import { useTechConversations } from '@/pages/tech/v2/messages/useTechConversations.js';
+import { useTechOnboarding } from '@/hooks/useTechOnboarding.js';
 
 // Tech Mobile v2 panes render PERSISTENTLY in the pane host below, outside the
 // keyed <Outlet/>, so tab switches don't remount them.
@@ -50,6 +51,10 @@ const TechScheduleV2 = lazy(() => import('@/pages/tech/v2/TechScheduleV2.jsx'));
 // Tech Messages v2 (Phase F-M) — the dedicated messaging pane, behind
 // page:tech_msgs_v2 on web (legacy Conversations remains the rollback surface).
 const TechMessagesV2 = lazy(() => import('@/pages/tech/v2/TechMessagesV2.jsx'));
+// First-run welcome tour — lazy so the once-ever surface costs the entry
+// graph nothing; the useTechOnboarding gate decides (server flag + local
+// mirror, fail-closed) whether it mounts at all.
+const TechOnboarding = lazy(() => import('@/components/tech/onboarding/TechOnboarding.jsx'));
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -307,6 +312,7 @@ export default function TechLayout({ nativeBuild = false }) {
   const { employee, db, isFeatureEnabled } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const onboarding = useTechOnboarding({ db, employee });
 
   // ── Tech v2 pane host ──
   // Dashboard and Schedule have no legacy implementation, so their retired
@@ -623,6 +629,14 @@ export default function TechLayout({ nativeBuild = false }) {
         ))}
       </div>
       <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(8px)}}`}</style>
+
+      {/* First-run welcome tour (once per employee, versioned server-side).
+          Sits at z-index 9000 — above the shell, below the toast layer. */}
+      {onboarding.show && (
+        <Suspense fallback={null}>
+          <TechOnboarding onComplete={onboarding.complete} />
+        </Suspense>
+      )}
     </div>
   );
 }
