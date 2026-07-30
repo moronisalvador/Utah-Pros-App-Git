@@ -44,6 +44,15 @@ verifiable in the next native build — group them accordingly.
       motion-standard.md §5 govern). (Found 2026-07-29, TestFlight 1.0.0 (1), recurs
       every cold start.)
 
+**Theme: platform tech-debt**
+
+- [ ] (P2) UIScene lifecycle migration — the iOS 27 SDK (Xcode 27 beta) hard-traps the
+      app at launch because the Capacitor AppDelegate still uses the classic lifecycle
+      (verified on-device 2026-07-29, EXC_BREAKPOINT in UIKit's launch check). Fine
+      today (CI pins Xcode 26.6), but must land before Apple's toolchain requirement
+      catches up. Check Capacitor 8 upstream for official UIScene support first.
+      (Details: docs/mobile/dev-app-variant.md caveats.)
+
 **Theme: notifications surface (feature-sized — may fold into the onboarding session)**
 
 - [ ] (P3) Settings → Notifications — tapping the section should open a dedicated
