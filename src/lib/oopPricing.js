@@ -120,10 +120,16 @@ export function tierFor(pct) {
   return 'red';
 }
 
+// Margin-tier badge colors. These read the SEMANTIC tokens (not raw hex) so the
+// tech shell's dark theme re-tones them — TechOOPPricing renders this badge
+// inside `.tech-layout`, and a hex here would be the one frozen light patch left
+// on that page. Deliberately NOT the tech `--status-*` family: those tokens are
+// scoped to `.tech-layout`, and this module is also consumed by the desktop
+// src/pages/OOPPricing.jsx, where they would not resolve at all.
 export const TIER_COLORS = {
-  green: { bg: '#ecfdf5', fg: '#059669', border: '#a7f3d0' },
-  amber: { bg: '#fffbeb', fg: '#d97706', border: '#fde68a' },
-  red:   { bg: '#fef2f2', fg: '#dc2626', border: '#fecaca' },
+  green: { bg: 'var(--success-bg)', fg: 'var(--success)', border: 'var(--success-border)' },
+  amber: { bg: 'var(--warning-bg)', fg: 'var(--warning)', border: 'var(--warning-border)' },
+  red:   { bg: 'var(--danger-bg)',  fg: 'var(--danger)',  border: 'var(--danger-border)' },
   none:  { bg: 'var(--bg-tertiary)', fg: 'var(--text-tertiary)', border: 'var(--border-light)' },
 };
 

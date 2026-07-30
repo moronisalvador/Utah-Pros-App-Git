@@ -752,21 +752,21 @@ export default function TechAppointment() {
           style={{
             display: 'flex', alignItems: 'center', gap: 10, width: '100%',
             padding: '12px var(--space-4)', minHeight: 52,
-            background: '#fef2f2', borderTop: '1px solid #fecaca', borderBottom: '1px solid #fecaca',
+            background: 'var(--danger-bg)', borderTop: '1px solid var(--danger-border)', borderBottom: '1px solid var(--danger-border)',
             borderLeft: 'none', borderRight: 'none',
             cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{t('compliance.title')}</div>
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>{t('compliance.sub')}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>{t('compliance.title')}</div>
+            <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 1 }}>{t('compliance.sub')}</div>
           </div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -807,7 +807,7 @@ export default function TechAppointment() {
                       <span style={{
                         fontSize: 10, fontWeight: 600, padding: '1px 6px',
                         borderRadius: 'var(--radius-full)',
-                        background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a',
+                        background: 'var(--warning-bg)', color: 'var(--warning)', border: '1px solid var(--warning-border)',
                       }}>
                         {t('lead')}
                       </span>
@@ -917,7 +917,7 @@ export default function TechAppointment() {
                   <span style={{
                     fontSize: 11, fontWeight: 700,
                     padding: '2px 8px', borderRadius: 'var(--radius-full)',
-                    background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                    background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)',
                     letterSpacing: 'normal', textTransform: 'none',
                   }}>
                     {t('stalledCount', { count: stalledCount })}
@@ -946,9 +946,9 @@ export default function TechAppointment() {
                   const goal = r.drying_goal_pct;
                   let mcColor = 'var(--text-primary)';
                   if (mc != null && goal != null) {
-                    if (mc <= goal) mcColor = '#16a34a';
-                    else if (mc - goal <= 2) mcColor = '#d97706';
-                    else mcColor = '#dc2626';
+                    if (mc <= goal) mcColor = 'var(--success)';
+                    else if (mc - goal <= 2) mcColor = 'var(--warning)';
+                    else mcColor = 'var(--danger)';
                   }
                   return (
                     <div key={r.id} style={{
@@ -990,7 +990,7 @@ export default function TechAppointment() {
                         <span style={{
                           fontSize: 10, fontWeight: 700,
                           padding: '2px 6px', borderRadius: 'var(--radius-full)',
-                          background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca',
+                          background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid var(--danger-border)',
                         }}>
                           {t('stalled')}
                         </span>
@@ -1072,10 +1072,10 @@ export default function TechAppointment() {
                           minHeight: 36, minWidth: 48,
                           padding: '6px 10px',
                           fontSize: 12, fontWeight: 700,
-                          border: `1px solid ${isConfirming ? '#fecaca' : 'var(--border-light)'}`,
+                          border: `1px solid ${isConfirming ? 'var(--danger-border)' : 'var(--border-light)'}`,
                           borderRadius: 8,
-                          background: isConfirming ? '#fef2f2' : 'var(--bg-tertiary)',
-                          color: isConfirming ? '#dc2626' : 'var(--text-tertiary)',
+                          background: isConfirming ? 'var(--danger-bg)' : 'var(--bg-tertiary)',
+                          color: isConfirming ? 'var(--danger)' : 'var(--text-tertiary)',
                           cursor: 'pointer',
                           fontFamily: 'var(--font-sans)',
                         }}
@@ -1291,13 +1291,13 @@ export default function TechAppointment() {
           left: 16, right: 16,
           zIndex: 100,
           padding: '10px 14px',
-          background: '#f0fdf4', border: '1px solid #bbf7d0',
+          background: 'var(--success-bg)', border: '1px solid var(--success-border)',
           borderRadius: 'var(--radius-lg)',
           boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           animation: 'tech-fade-in 0.15s ease-out',
         }}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#16a34a' }}>{t('tech:toast.photoSaved')}</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--success)' }}>{t('tech:toast.photoSaved')}</span>
           <button
             onClick={openPhotoNoteSheet}
             style={{

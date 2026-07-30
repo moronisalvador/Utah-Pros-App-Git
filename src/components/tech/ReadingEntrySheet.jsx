@@ -770,10 +770,10 @@ function StepReadings({ mc, setMc, rh, setRh, tempF, setTempF, mcInputRef, gpp, 
         style={{
           marginTop: 10,
           padding: '10px 12px',
-          background: 'var(--accent-light)',
-          border: '1px solid #bfdbfe',
+          background: 'var(--info-bg)',
+          border: '1px solid var(--info-border)',
           borderRadius: 'var(--radius-md)',
-          color: 'var(--accent)',
+          color: 'var(--info)',
           fontSize: 12,
           lineHeight: 1.4,
         }}

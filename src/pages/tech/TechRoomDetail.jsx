@@ -393,7 +393,7 @@ export default function TechRoomDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {notes.map(n => {
                 const job = jobs.find(j => j.id === n.job_id);
-                const divColor = DIV_BORDER_COLORS[job?.division] || '#6b7280';
+                const divColor = DIV_BORDER_COLORS[job?.division] || 'var(--neutral)';
                 return (
                   <div
                     key={n.id}
@@ -591,7 +591,7 @@ function JobPicker({ jobs, onPick, onClose, title }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {jobs.map(job => {
-            const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+            const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
             return (
               <button
                 key={job.id}

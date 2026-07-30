@@ -328,6 +328,27 @@ src/
     ClaimCollectionPage.jsx       — Per-claim A/R view (older sibling of the Collections hub)
     settings/Payments.jsx         — Stripe pay-link + payout settings (route /settings/payments; was /payments/settings → redirect)
   pages/tech/
+    ** Dark-theme token migration (Jul 30 2026) — applies across this whole block and components/tech/.
+      Raw hex color literals on the field surface were swapped to the semantic design tokens
+      (var(--danger|success|warning|info|neutral) + their -bg/-border) so `[data-theme="dark"]
+      .tech-layout` re-tones them instead of leaving frozen light patches. 23 files: techConstants.js
+      (APPT_STATUS_COLORS + CLAIM_STATUS_COLORS now hold var() strings, same {bg,color,border} shape,
+      so consumers were untouched), TechAppointment, TechClaimDetail, TechClaimAlbum, TechRoomDetail,
+      TechOOPPricing, TechEditAppointment, TechNewAppointment, TechNewEvent, TechNewJob,
+      TechNewCustomer, TechTasks, and components/tech/{StalledWidget, OfflineStatusPill,
+      OfflineReconciliationPanel, ClockSupersedeSheet, EsignRequestSheet, GenerateReportButton,
+      NowNextTile, TimeTracker, ReadingEntrySheet, Hero, PhotosGroup}, plus src/lib/oopPricing.js
+      (TIER_COLORS, the margin-tier badge — it lives in lib/ but renders inside .tech-layout via
+      TechOOPPricing; it uses the semantic family and NOT --status-*, because --status-* is
+      .tech-layout-scoped and this module is also consumed by the desktop src/pages/OOPPricing.jsx,
+      where those tokens resolve to nothing). Verified in-browser at 390px in
+      both themes: light mode resolves to the original hex (a visual no-op), dark darkens the tint
+      while every foreground keeps its hue. Color-only — no layout, behavior, or index.css change.
+      DELIBERATELY still raw hex (all documented in place, none is a defect): the categorical division /
+      appointment-type palettes, TechDemoSheet's email-HTML palette (email clients can't resolve CSS
+      vars), the `p_phase_color` RPC arguments, #fff on saturated fills, and four armed two-click
+      destructive-confirm fills. Rules + the status-vs-categorical split: UPR-Design-System.md →
+      Dark-theme contract. NOT covered: TechJobDetail.jsx / TechJobDocuments.jsx (migrated separately).
     TechDash.jsx / TechSchedule.jsx — DELETED (Tech Mobile v2 Phase C, Jul 4 2026 cutover). Both
       v2 flags (page:tech_dash_v2, page:tech_sched_v2) baked and went live for all techs, so the
       legacy pages + their App.jsx swap shims were removed; /tech and /tech/schedule now always

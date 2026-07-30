@@ -47,7 +47,7 @@ export default function Hero({
 }) {
   const { t } = useTranslation('tech');
   const gradient = DIV_GRADIENTS[division] || DIV_GRADIENTS.water;
-  const pillColor = statusColors?.color || '#2563eb';
+  const pillColor = statusColors?.color || 'var(--info)';
 
   return (
     <div className="tech-hero" style={{ background: gradient, color: '#fff' }}>

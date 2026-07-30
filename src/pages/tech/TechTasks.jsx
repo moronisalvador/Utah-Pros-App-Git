@@ -65,7 +65,7 @@ function CompletionRing({ done, total }) {
         fill="none" stroke="var(--bg-tertiary)" strokeWidth={stroke} />
       {/* Progress */}
       <circle cx={size/2} cy={size/2} r={radius}
-        fill="none" stroke="#16a34a" strokeWidth={stroke}
+        fill="none" stroke="var(--success)" strokeWidth={stroke}
         strokeLinecap="round"
         strokeDasharray={circumference}
         strokeDashoffset={dashOffset}

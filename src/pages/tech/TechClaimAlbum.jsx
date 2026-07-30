@@ -307,7 +307,7 @@ export default function TechClaimAlbum() {
           jobs.map(job => {
             const photos = photosByJob[job.id] || [];
             if (photos.length === 0) return null;
-            const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+            const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
             return (
               <div key={job.id} id={`album-group-${job.id}`} style={{ marginBottom: 22 }}>
                 {jobs.length > 1 && (
@@ -471,7 +471,7 @@ export default function TechClaimAlbum() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {jobs.map(job => {
-                const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+                const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
                 const divPill = DIV_PILL_COLORS[job.division] || DIV_PILL_COLORS.water;
                 return (
                   <button

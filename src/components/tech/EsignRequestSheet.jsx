@@ -315,8 +315,8 @@ export default function EsignRequestSheet({ open, onClose, job, signerPrefill, e
 
           {error && (
             <div style={{
-              marginTop: 12, background: '#fef2f2', border: '1px solid #fecaca',
-              borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 13, color: '#dc2626',
+              marginTop: 12, background: 'var(--danger-bg)', border: '1px solid var(--danger-border)',
+              borderRadius: 'var(--radius-md)', padding: '10px 14px', fontSize: 13, color: 'var(--danger)',
             }}>
               {error}
             </div>

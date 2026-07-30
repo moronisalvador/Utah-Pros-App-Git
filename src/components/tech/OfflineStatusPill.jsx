@@ -178,9 +178,9 @@ export default function OfflineStatusPill() {
                   : 'Foreign, legacy, or unsupported local records remain quarantined and unchanged.'}
             style={{
               ...basePillStyle,
-              background: '#fff7ed',
-              color: '#c2410c',
-              borderColor: '#fed7aa',
+              background: 'var(--warning-bg)',
+              color: 'var(--warning)',
+              borderColor: 'var(--warning-border)',
               cursor: 'pointer',
             }}
           >
@@ -219,9 +219,9 @@ export default function OfflineStatusPill() {
         <span
           style={{
             ...basePillStyle,
-            background: '#fffbeb',
-            color: '#d97706',
-            borderColor: '#fde68a',
+            background: 'var(--warning-bg)',
+            color: 'var(--warning)',
+            borderColor: 'var(--warning-border)',
           }}
         >
           <SpinnerIcon />
@@ -237,9 +237,9 @@ export default function OfflineStatusPill() {
       <span
         style={{
           ...basePillStyle,
-          background: '#f0fdf4',
-          color: '#16a34a',
-          borderColor: '#bbf7d0',
+          background: 'var(--success-bg)',
+          color: 'var(--success)',
+          borderColor: 'var(--success-border)',
           transition: 'opacity 0.3s ease',
         }}
       >

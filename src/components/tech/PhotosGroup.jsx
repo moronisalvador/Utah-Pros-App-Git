@@ -44,7 +44,7 @@ import { fileUrl } from '@/lib/techDateUtils';
 export default function PhotosGroup({ job, photos, notes, isSingleJob, db, onOpenAlbum, onSeeAllForJob }) {
   const { t } = useTranslation('tech');
   if (photos.length === 0 && notes.length === 0) return null;
-  const divColor = DIV_BORDER_COLORS[job.division] || '#6b7280';
+  const divColor = DIV_BORDER_COLORS[job.division] || 'var(--neutral)';
   const maxPreview = 3;
   const visible = photos.slice(0, maxPreview);
   const remaining = Math.max(0, photos.length - maxPreview);

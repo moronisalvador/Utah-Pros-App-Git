@@ -21,6 +21,11 @@
  *   - Raw queue payloads, photo blobs, and foreign-owner rows are never passed in.
  *   - Legacy recovery is payload-free: preserve/close, retry an IndexedDB open,
  *     or explicitly two-click discard every local offline store.
+ *   - Colors read the semantic var(--danger|warning|success…) tokens so the tech
+ *     dark theme re-tones them. The three ARMED confirm fills (#991b1b, #b91c1c,
+ *     #166534) stay raw on purpose: they are saturated backgrounds carrying white
+ *     text, so they already read correctly in both themes, and the lighter tokens
+ *     would drop white-on-color below AA on a destructive control.
  * ════════════════════════════════════════════════
  */
 
@@ -285,10 +290,10 @@ export default function OfflineReconciliationPanel({
           style={{
             margin: '10px 0',
             padding: 10,
-            border: '1px solid #fed7aa',
+            border: '1px solid var(--warning-border)',
             borderRadius: 8,
-            background: '#fff7ed',
-            color: '#9a3412',
+            background: 'var(--warning-bg)',
+            color: 'var(--warning)',
             fontSize: 11,
             lineHeight: 1.45,
           }}
@@ -308,10 +313,10 @@ export default function OfflineReconciliationPanel({
               display: 'block',
               minHeight: 44,
               marginTop: 8,
-              border: '1px solid #fdba74',
+              border: '1px solid var(--warning-border)',
               borderRadius: 8,
-              background: '#fff',
-              color: '#9a3412',
+              background: 'var(--bg-primary)',
+              color: 'var(--warning)',
               padding: '7px 10px',
               fontSize: 11,
               fontWeight: 700,
@@ -355,10 +360,10 @@ export default function OfflineReconciliationPanel({
           style={{
             margin: '10px 0',
             padding: 10,
-            border: '1px solid #fecaca',
+            border: '1px solid var(--danger-border)',
             borderRadius: 8,
-            background: '#fef2f2',
-            color: '#991b1b',
+            background: 'var(--danger-bg)',
+            color: 'var(--danger)',
             fontSize: 11,
             lineHeight: 1.5,
           }}
@@ -402,14 +407,14 @@ export default function OfflineReconciliationPanel({
               onBlur={cancel}
               style={{
                 minHeight: 44,
-                border: '1px solid #fecaca',
+                border: '1px solid var(--danger-border)',
                 borderRadius: 8,
                 background: isArmed('discard-all-offline-data')
                   ? '#991b1b'
-                  : '#fff',
+                  : 'var(--bg-primary)',
                 color: isArmed('discard-all-offline-data')
                   ? '#fff'
-                  : '#991b1b',
+                  : 'var(--danger)',
                 padding: '7px 10px',
                 fontSize: 11,
                 fontWeight: 700,
@@ -432,7 +437,7 @@ export default function OfflineReconciliationPanel({
         </p>
       )}
       {!loading && loadError && (
-        <p role="alert" style={{ color: '#b91c1c', fontSize: 12 }}>
+        <p role="alert" style={{ color: 'var(--danger)', fontSize: 12 }}>
           Offline work could not be inspected. Close other UPR tabs, reload,
           and retry.
         </p>
@@ -463,8 +468,8 @@ export default function OfflineReconciliationPanel({
               <div style={{
                 marginTop: 2,
                 color: item.state === 'server-outcome-unknown'
-                  ? '#b45309'
-                  : '#b91c1c',
+                  ? 'var(--warning)'
+                  : 'var(--danger)',
                 fontSize: 11,
               }}>
                 {item.state === 'server-outcome-unknown'
@@ -488,10 +493,10 @@ export default function OfflineReconciliationPanel({
                     onBlur={cancel}
                     style={{
                       minHeight: 44,
-                      border: '1px solid #86efac',
+                      border: '1px solid var(--success-border)',
                       borderRadius: 8,
-                      background: isArmed(acceptKey) ? '#166534' : '#f0fdf4',
-                      color: isArmed(acceptKey) ? '#fff' : '#166534',
+                      background: isArmed(acceptKey) ? '#166534' : 'var(--success-bg)',
+                      color: isArmed(acceptKey) ? '#fff' : 'var(--success)',
                       padding: '5px 9px',
                       fontSize: 11,
                       fontWeight: 700,
@@ -512,10 +517,10 @@ export default function OfflineReconciliationPanel({
                   onBlur={cancel}
                   style={{
                     minHeight: 44,
-                    border: '1px solid #fecaca',
+                    border: '1px solid var(--danger-border)',
                     borderRadius: 8,
-                    background: isArmed(cancelKey) ? '#b91c1c' : '#fff',
-                    color: isArmed(cancelKey) ? '#fff' : '#b91c1c',
+                    background: isArmed(cancelKey) ? '#b91c1c' : 'var(--bg-primary)',
+                    color: isArmed(cancelKey) ? '#fff' : 'var(--danger)',
                     padding: '5px 9px',
                     fontSize: 11,
                     fontWeight: 700,

@@ -207,7 +207,7 @@ export default function TechNewCustomer() {
         {/* Name */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            {t('labelFullName')} <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelFullName')} <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <input
             type="text"
@@ -222,7 +222,7 @@ export default function TechNewCustomer() {
         {/* Phone */}
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>
-            {t('labelPhone')} <span style={{ color: '#ef4444' }}>*</span>
+            {t('labelPhone')} <span style={{ color: 'var(--danger)' }}>*</span>
           </label>
           <input
             type="tel"

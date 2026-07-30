@@ -166,7 +166,7 @@ export default function GenerateReportButton({ jobId, jobNumber }) {
             >
               <div style={{
                 width: 32, height: 32, borderRadius: 6,
-                background: '#fef2f2', color: '#dc2626',
+                background: 'var(--danger-bg)', color: 'var(--danger)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 10, fontWeight: 800, letterSpacing: '0.04em',
               }}>
