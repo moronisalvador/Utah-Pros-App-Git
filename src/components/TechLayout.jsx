@@ -8,7 +8,8 @@
  *   indicator, the install banner, and the toast pop-ups. It also hosts the Tech
  *   Mobile v2 "panes" — the rebuilt dashboard and schedule stay alive in the
  *   background so switching tabs is instant and nothing reloads; each other
- *   screen still renders in the normal spot.
+ *   screen still renders in the normal spot. On a technician's very first
+ *   visit it also shows the one-time welcome tour overlay.
  *
  * WHERE IT LIVES:
  *   Route:        wraps all /tech/* routes
@@ -18,8 +19,9 @@
  *   Packages:  react, react-router-dom, react-i18next
  *   Internal:  contexts/AuthContext, components/Icons, components/tech/OfflineStatusPill,
  *              components/ErrorBoundary, components/tech/v2 (TechPane, skeletons),
- *              lib/resumeRestore, lib/pwaDiagnostics, pages/tech/v2 (TechDashV2,
- *              TechScheduleV2 — lazy)
+ *              lib/nativeHaptics (light press tick on tab taps), lib/resumeRestore,
+ *              lib/pwaDiagnostics, pages/tech/v2 (TechDashV2, TechScheduleV2 — lazy),
+ *              hooks/useTechOnboarding, components/tech/onboarding/TechOnboarding (lazy)
  *   Data:      reads → get_assigned_tasks (60s poll for the "More" tab badge)
  *
  * NOTES / GOTCHAS:
@@ -34,6 +36,7 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect, Suspense, la
 import { Outlet, Link, useLocation, useNavigationType } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { impact } from '@/lib/nativeHaptics';
 import { IconSchedule, IconConversations } from '@/components/Icons';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import OfflineStatusPill from '@/components/tech/OfflineStatusPill';
@@ -42,6 +45,7 @@ import { SkeletonList } from '@/components/tech/v2/skeletons.jsx';
 import { isStandaloneDisplay } from '@/lib/resumeRestore.js';
 import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics.js';
 import { useTechConversations } from '@/pages/tech/v2/messages/useTechConversations.js';
+import { useTechOnboarding } from '@/hooks/useTechOnboarding.js';
 
 // Tech Mobile v2 panes render PERSISTENTLY in the pane host below, outside the
 // keyed <Outlet/>, so tab switches don't remount them.
@@ -50,6 +54,10 @@ const TechScheduleV2 = lazy(() => import('@/pages/tech/v2/TechScheduleV2.jsx'));
 // Tech Messages v2 (Phase F-M) — the dedicated messaging pane, behind
 // page:tech_msgs_v2 on web (legacy Conversations remains the rollback surface).
 const TechMessagesV2 = lazy(() => import('@/pages/tech/v2/TechMessagesV2.jsx'));
+// First-run welcome tour — lazy so the once-ever surface costs the entry
+// graph nothing; the useTechOnboarding gate decides (server flag + local
+// mirror, fail-closed) whether it mounts at all.
+const TechOnboarding = lazy(() => import('@/components/tech/onboarding/TechOnboarding.jsx'));
 
 /* ── Tab icons (inline SVGs for filled variants) ── */
 
@@ -307,6 +315,7 @@ export default function TechLayout({ nativeBuild = false }) {
   const { employee, db, isFeatureEnabled } = useAuth();
   const [taskCount, setTaskCount] = useState(0);
   const [toasts, setToasts] = useState([]);
+  const onboarding = useTechOnboarding({ db, employee });
 
   // ── Tech v2 pane host ──
   // Dashboard and Schedule have no legacy implementation, so their retired
@@ -554,14 +563,15 @@ export default function TechLayout({ nativeBuild = false }) {
               to={tab.path}
               viewTransition
               className={`tech-nav-tab${active ? ' active' : ''}`}
+              onClick={() => impact('light')}
             >
               <tab.Icon filled={active} />
               {tab.key === 'messages' && msgsV2 && <MessagesUnreadBadge />}
               {showDot && (
                 <span style={{
                   position: 'absolute', top: 4, right: '50%', marginRight: -16,
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: '#ef4444',
+                  width: 8, height: 8, borderRadius: 'var(--radius-full)',
+                  background: 'var(--status-needs-response)',
                 }} />
               )}
               <span>{t(tab.key, tab.label)}</span>
@@ -623,6 +633,19 @@ export default function TechLayout({ nativeBuild = false }) {
         ))}
       </div>
       <style>{`@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(8px)}}`}</style>
+
+      {/* First-run welcome tour (once per employee, versioned server-side).
+          Sits at z-index 9000 — above the shell, below the toast layer. The
+          boundary keeps a stale-chunk or render failure of this once-ever
+          surface degrading to "tour doesn't show" instead of taking down the
+          whole shell (same wrap as the sibling panes above). */}
+      {onboarding.show && (
+        <ErrorBoundary section="Technician onboarding" hidden>
+          <Suspense fallback={null}>
+            <TechOnboarding onComplete={onboarding.complete} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

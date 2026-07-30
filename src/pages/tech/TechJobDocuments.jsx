@@ -19,7 +19,8 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, @/lib/realtime (getAuthHeader),
  *              @/lib/toast, ./techConstants,
- *              @/components/tech/EsignRequestSheet
+ *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
+ *              @/lib/backNav, @/components/tech/v2/nav (jobHref)
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs, contact_jobs, contacts, sign_requests (direct db.select)
  *              writes → sign_requests (db.update — cancel; and indirectly via the
@@ -45,6 +46,8 @@ import { toast } from '@/lib/toast';
 import { DIV_GRADIENTS } from './techConstants';
 import EsignRequestSheet from '@/components/tech/EsignRequestSheet';
 import { publicSigningUrl } from '@/lib/publicSigningUrl';
+import { goBackOr } from '@/lib/backNav';
+import { jobHref } from '@/components/tech/v2/nav';
 
 // ─── SECTION: Helpers ──────────────
 const DOC_TYPE_LABELS = {
@@ -209,7 +212,7 @@ export default function TechJobDocuments() {
             {loadError || 'Documents not available'}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(`/tech/jobs/${jobId}`)}>Back</button>
+            <button className="btn btn-secondary" onClick={() => goBackOr(navigate, jobHref(jobId))}>Back</button>
             <button className="btn btn-primary" onClick={load}>Retry</button>
           </div>
         </div>
@@ -326,7 +329,7 @@ export default function TechJobDocuments() {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
-          onClick={() => navigate(`/tech/jobs/${jobId}`)}
+          onClick={() => goBackOr(navigate, jobHref(jobId))}
           aria-label="Back to job"
           style={{
             background: 'none', border: 'none', color: 'var(--text-primary)',

@@ -15,25 +15,6 @@ verifiable in the next native build — group them accordingly.
 
 ## Open
 
-**Theme: trapped screens / navigation escape hatches (fix as one batch)**
-
-- [ ] (P2) Document signing screen — no back/cancel control; the tech is stuck on the
-      screen until someone signs. Expected: an always-visible way out that safely
-      abandons the signing attempt. (Found 2026-07-29, TestFlight 1.0.0 (1).)
-- [ ] (P2) Legal & Support pages — the three screens (Privacy / Terms / Support) have no
-      top-left back button; once opened, the user is stuck. Expected: standard back
-      affordance on all three. (Found 2026-07-29.)
-- [ ] (P2) Job screen back button — always navigates to the claim page regardless of
-      where the user came from. Expected: origin-aware back (history back with claim
-      page as fallback only). (Found 2026-07-29.)
-
-**Theme: haptics consistency**
-
-- [ ] (P3) Tech nav bar — tab presses have no haptic feedback, while the notification bell
-      and the header trio by the technician's name feel great. Expected: primary nav taps
-      match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
-      motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
-
 **Theme: perceived performance**
 
 - [ ] (P2) Notification bell first-open jank — the first tap after every cold app start
@@ -62,4 +43,40 @@ verifiable in the next native build — group them accordingly.
 
 ## Done
 
-*(move items here with completion date + commit)*
+**Theme: trapped screens / navigation escape hatches (fixed as one batch, 2026-07-29)**
+
+- [x] (P2) Document signing screen — fixed 2026-07-29, commit acd7927e. The trapped
+      surface is SignPage (`/sign/:token`), reached in-app by the tech "Collect
+      signature on-site" flow; it now renders an escape hatch on every state when
+      in-app history exists (header Back, Back bar on error/expired/signed cards,
+      Done on the completion card). Abandon is safe — nothing is written before the
+      atomic submit. The public customer link intentionally stays unchanged (no
+      in-app history → no controls).
+- [x] (P2) Legal & Support pages — fixed 2026-07-29, commit acd7927e. Standard chevron
+      Back on all three (Legal.jsx LegalLayout): always visible in the tech shell at
+      /tech/legal/* (fallback /tech/settings), history-gated on the public copies so
+      the pre-login Login-footer path works and a cold direct visitor keeps the plain
+      document. Cross-links now stay inside /tech/legal/* in the tech shell.
+- [x] (P2) Job screen back button — fixed 2026-07-29, commit a7f27445. Origin-aware via
+      new src/lib/backNav.js (React Router history idx): pops to the real origin
+      (dashboard / schedule / claim / messages / push deep link); claim page only as
+      the no-history fallback, '/tech' when the job has no claim. Applied to
+      TechJobDetail + v2 TechJobHub/HubHeader (incl. not-found screens) and the
+      Album/Documents "Back to job" buttons (pop, no duplicate history entries).
+      Hub back control also brought up to the 44px tap floor + press feedback.
+
+**Theme: haptics consistency**
+
+- [x] (P3) Tech nav bar — tab presses have no haptic feedback, while the notification bell
+      and the header trio by the technician's name feel great. Expected: primary nav taps
+      match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
+      motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
+      **Done 2026-07-29, commit `86b00fc2`** — `impact('light')` on tab tap (the exact
+      bell/header-trio pattern; `selection()` deliberately not used — the reference the
+      owner praised is the impact tick) + the standard `:active` scale(0.97) press on
+      `.tech-nav-tab` with reduced-motion collapse. Haptic FEEL check on device pends the
+      next native build (code path pinned by `tests/qa/unit/tech-nav-haptics.test.js`).
+      Office/CRM shells deliberately untouched: the native app mounts only `/tech/*`.
+- [ ] (P3) Tech shell side-tab accent border (TechLayout.jsx ~L609) — design hook flags the
+      thick one-side accent; consider a subtler treatment in the next design pass.
+      (Flagged 2026-07-30 during overnight merge; pre-existing.)

@@ -17,7 +17,8 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/contexts/AuthContext, ./techConstants, @/lib/toast,
  *              @/lib/nativeCamera, @/lib/nativeHaptics,
- *              @/components/tech/Lightbox, @/lib/techDateUtils
+ *              @/components/tech/Lightbox, @/lib/techDateUtils,
+ *              @/lib/backNav, @/components/tech/v2/nav (jobHref)
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs (direct db.select); job_documents
  *                        (direct db.select, photos only)
@@ -43,6 +44,8 @@ import { isNativeCamera, takeNativePhoto, isUserCancelled } from '@/lib/nativeCa
 import { impact } from '@/lib/nativeHaptics';
 import Lightbox from '@/components/tech/Lightbox';
 import { fileUrl, photoDateTime } from '@/lib/techDateUtils';
+import { goBackOr } from '@/lib/backNav';
+import { jobHref } from '@/components/tech/v2/nav';
 
 export default function TechJobAlbum() {
   const kbInset = useNativeKeyboardInset();
@@ -164,7 +167,7 @@ export default function TechJobAlbum() {
             {loadError || 'Album not available'}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(`/tech/jobs/${jobId}`)}>Back</button>
+            <button className="btn btn-secondary" onClick={() => goBackOr(navigate, jobHref(jobId))}>Back</button>
             <button className="btn btn-primary" onClick={load}>Retry</button>
           </div>
         </div>
@@ -188,7 +191,7 @@ export default function TechJobAlbum() {
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
-          onClick={() => navigate(`/tech/jobs/${jobId}`)}
+          onClick={() => goBackOr(navigate, jobHref(jobId))}
           aria-label="Back to job"
           style={{
             background: 'none', border: 'none', color: 'var(--text-primary)',
