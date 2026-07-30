@@ -47,11 +47,15 @@
  *     left on this path are a recovery/reauth-owned block and a failed local
  *     Supabase signOut(). Other cleanup-blocked paths (password recovery,
  *     foreign-owner recovery, signed-out reauth, login) hard-wall unchanged.
- *   - A durable signed-out-intent marker + guards in boot/SIGNED_IN/
- *     TOKEN_REFRESHED/recoverSession terminate a session a racing token
- *     refresh re-persists after sign-out (the 2026-07-29 TestFlight defect
- *     where the app re-entered the account without ever reaching Login).
- *     login() clears the marker immediately before signInWithPassword.
+ *   - A durable ended-session registry (endedSessionGuard.js, keyed on the
+ *     JWT session_id — stable across token rotation, never reused by a new
+ *     login) + guards in boot/SIGNED_IN/TOKEN_REFRESHED/recoverSession
+ *     terminate a session a racing token refresh re-persists after sign-out
+ *     (the 2026-07-29 TestFlight defect where the app re-entered the account
+ *     without ever reaching Login). Because a real login always mints a new
+ *     session_id, nothing is cleared at login and cross-tab login sync is
+ *     structurally unaffected; a failure path that retains the live session
+ *     un-arms its registry entry so the walled session can still renew.
  * ════════════════════════════════════════════════
  */
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
@@ -68,6 +72,13 @@ import {
   detachAccountPushDevices,
   retryPendingAccountPushDetaches,
 } from '@/lib/accountDeviceCleanup';
+import {
+  isSessionEnded,
+  readPersistedSessionDescriptor,
+  recordEndedSessionId,
+  removeEndedSessionId,
+  sessionIdFromAccessToken,
+} from '@/lib/endedSessionGuard';
 import { WEB_PUSH_FLAG_MIRROR_KEY } from '@/lib/registerSW';
 import {
   fingerprintPwaPrincipal,
@@ -77,6 +88,7 @@ import {
   isStandaloneDisplay,
   readPwaOwnerLease,
 } from '@/lib/resumeRestore';
+import { recordPwaDiagnostic } from '@/lib/pwaDiagnostics';
 import { reconcilePushServiceWorker } from '@/lib/pwaServiceWorker';
 import { buildResetUrl } from '@/lib/staleChunkReload';
 import {
@@ -146,51 +158,15 @@ function cleanupBlockAllowsDeferral(block) {
     && block?.signedOutReauthRequired !== true;
 }
 
-// Durable signed-out intent (TestFlight defect 2026-07-29): a token refresh
-// racing signOut({scope:'local'}) can re-persist the session AFTER removal,
-// and the app then re-enters the account without ever showing Login. logout()
-// writes this marker before any await; boot, SIGNED_IN, TOKEN_REFRESHED and
-// recoverSession() refuse a session for the marked principal until an
-// explicit login() clears the marker. Fail-open on storage errors — the
-// marker is defense in depth behind the post-signOut sweep, never a login
-// gate of its own.
-const SIGNED_OUT_INTENT_KEY = 'upr:auth:signed-out-intent:v1';
-
-function readSignedOutIntent() {
-  try {
-    const raw = localStorage.getItem(SIGNED_OUT_INTENT_KEY);
-    if (!raw) return null;
-    const marker = JSON.parse(raw);
-    return marker?.version === 1 && isCanonicalUuid(marker.principalId)
-      ? marker
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSignedOutIntent(principalId) {
-  if (!isCanonicalUuid(principalId)) return false;
-  try {
-    localStorage.setItem(SIGNED_OUT_INTENT_KEY, JSON.stringify({
-      version: 1,
-      principalId,
-      at: Date.now(),
-    }));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function clearSignedOutIntent() {
-  try {
-    localStorage.removeItem(SIGNED_OUT_INTENT_KEY);
-  } catch {
-    // A failed clear only means a later zombie session for the SAME user is
-    // refused once more; login() clears again on the next attempt.
-  }
-}
+// Durable ended-session registry (TestFlight defect 2026-07-29): a token
+// refresh racing signOut({scope:'local'}) can re-persist the session AFTER
+// removal, and the app then re-enters the account without ever showing Login.
+// Sign-out flows arm the CURRENT session's id in endedSessionGuard.js before
+// any await; boot, SIGNED_IN, TOKEN_REFRESHED and recoverSession() refuse an
+// armed session until it is un-armed by the one failure path that retains it
+// live. session_id keying (not principal) means a real login never needs a
+// clear and can never be refused. Fail-open on storage errors — the registry
+// is defense in depth behind the post-signOut sweep, never a login gate.
 
 function localSignOutError(result) {
   if (
@@ -289,12 +265,23 @@ export function AuthProvider({ children }) {
     explicitLogoutRef.current = marker;
     return marker;
   }, [authLifecycle]);
-  // Terminate a zombie session for a signed-out principal. Skipped while a
+  // Terminate a zombie session this device explicitly ended. Skipped while a
   // deliberate sign-in is in flight and while a live (unfinalized) explicit
-  // sign-out transition exists — logout() owns that termination. A throwing
-  // signOut uninstalls the pre-finalized marker so a later genuine
+  // sign-out transition exists — logout() owns that termination. The precheck
+  // is a SIDE-EFFECT-FREE storage read on purpose: auth.getSession() refreshes
+  // a near-expiry session and would extend the very zombie being purged. It
+  // also means a newer legitimate session that already owns storage is never
+  // signed out. When a DIFFERENT account is published (a zombie clobbered its
+  // storage), no pre-finalized marker is installed so the full SIGNED_OUT
+  // teardown runs — authorized UI must never keep rendering over a destroyed
+  // session. A throwing signOut uninstalls the marker so a later genuine
   // SIGNED_OUT is never swallowed by a ghost transition.
-  const terminateResurrectedSession = useCallback(async () => {
+  const terminateResurrectedSession = useCallback(async ({
+    // The blind post-signOut sweep has no event evidence, so it may act only
+    // on a POSITIVE storage match; the boot/SIGNED_IN/TOKEN_REFRESHED guards
+    // pass false because the event itself proved an ended session surfaced.
+    requirePersistedMatch = false,
+  } = {}) => {
     if (pendingSignInRef.current) return false;
     if (
       explicitLogoutRef.current
@@ -302,19 +289,54 @@ export function AuthProvider({ children }) {
     ) {
       return false;
     }
-    const marker = markResurrectionSignOut();
+    const persisted = readPersistedSessionDescriptor();
+    const published = activePrincipalRef.current !== null
+      || readyPrincipalRef.current !== null;
+    if (persisted.status === 'session') {
+      // A session that owns storage is removed only if it was itself ended.
+      if (!isSessionEnded(persisted.sessionId)) return false;
+    } else if (published || requirePersistedMatch) {
+      // 'none' or 'unknown' storage: purging could destroy a live session
+      // (published) or would be evidence-free (sweep). Stay conservative;
+      // the durable registry re-checks on the next event.
+      return false;
+    } else {
+      // 'none'/'unknown' + unpublished + event evidence still purges: the
+      // event itself proved an ended session surfaced, signOut on empty
+      // storage is an idempotent no-op, and treating a storage-key
+      // derivation miss (which also reads as 'none') as benign would
+      // silently disable the guard — the 2026-07-30 test-env regression
+      // that caught this. This branch is also the only field signature of
+      // such a derivation drift, so it leaves a breadcrumb.
+      recordPwaDiagnostic('account-state', {
+        section: 'ended-session-storage-unreadable',
+      });
+    }
+    const marker = published ? null : markResurrectionSignOut();
     try {
       await realtimeClient.auth.signOut({ scope: 'local' });
       return true;
     } catch {
-      if (explicitLogoutRef.current === marker) {
+      if (marker && explicitLogoutRef.current === marker) {
         explicitLogoutRef.current = null;
       }
-      // The durable marker persists, so the next boot/SIGNED_IN refuses the
-      // zombie again.
+      // The durable registry entry persists, so the next boot/SIGNED_IN
+      // refuses the zombie again.
       return false;
     }
   }, [markResurrectionSignOut]);
+
+  // Arms the revival guard for the CURRENT session immediately before a
+  // sign-out flow's first await. Returns the armed id so the one failure path
+  // that retains the session live can un-arm it (removeEndedSessionId) —
+  // otherwise recoverSession would refuse to renew a walled, still-live
+  // session. session_id survives token rotation, so an id captured here still
+  // matches a zombie's rotated token later.
+  const armEndedSessionGuard = useCallback(() => {
+    const sessionId = sessionIdFromAccessToken(tokenRef.current);
+    recordEndedSessionId(sessionId);
+    return sessionId;
+  }, []);
   const bindAuthDb = (token) => {
     tokenRef.current = token;
     if (!stableDbRef.current) {
@@ -348,13 +370,15 @@ export function AuthProvider({ children }) {
     if (refreshingRef.current) return refreshingRef.current; // join the in-flight attempt
     const generation = authLifecycle.current();
     const principalId = activePrincipalRef.current;
-    // Never refresh without an active principal, and never refresh a
-    // principal that just signed out: refreshSession() PERSISTS the renewed
+    // Never refresh without an active principal, and never refresh a session
+    // this device already ended: refreshSession() PERSISTS the renewed
     // session as a side effect before our generation check can discard it,
     // which is exactly the resurrection path that kept the 2026-07-29
     // TestFlight sign-out from ever reaching Login.
     if (!principalId) return false;
-    if (readSignedOutIntent()?.principalId === principalId) return false;
+    if (isSessionEnded(sessionIdFromAccessToken(tokenRef.current))) {
+      return false;
+    }
     refreshingRef.current = (async () => {
       try {
         const { data, error: refreshError } = await realtimeClient.auth.refreshSession();
@@ -446,12 +470,12 @@ export function AuthProvider({ children }) {
         }
         if (
           session?.user
-          && readSignedOutIntent()?.principalId === session.user.id
+          && isSessionEnded(sessionIdFromAccessToken(session.access_token))
         ) {
-          // This principal explicitly signed out and never signed back in —
-          // the stored session is a resurrected zombie (a refresh raced the
-          // sign-out). Terminate it and land on Login instead of silently
-          // re-entering the account (TestFlight defect 2026-07-29).
+          // This device explicitly ended this session — the stored copy is a
+          // resurrected zombie (a refresh raced the sign-out). Terminate it
+          // and land on Login instead of silently re-entering the account
+          // (TestFlight defect 2026-07-29).
           await terminateResurrectedSession();
           return;
         }
@@ -576,17 +600,15 @@ export function AuthProvider({ children }) {
             return;
           }
 
-          // A SIGNED_IN for a principal that explicitly signed out and has
-          // not signed back in is a resurrected zombie (a refresh raced the
-          // sign-out) — never bootstrap it. login() clears the marker BEFORE
-          // signInWithPassword, so a real sign-in is never refused; the
-          // marker is re-read here, just before acting, so a login racing
-          // this queued event wins. Recovery sessions on /set-password keep
-          // their own gated path below.
-          if (
-            readSignedOutIntent()?.principalId === session.user.id
-            && !window.location.pathname.startsWith('/set-password')
-          ) {
+          // A SIGNED_IN for a session this device explicitly ended is a
+          // resurrected zombie (a refresh raced the sign-out) — never
+          // bootstrap it. A real sign-in ALWAYS mints a new session_id, so it
+          // can never match here — including a recovery session on
+          // /set-password and a same-user re-login from another tab.
+          const signedInSessionId = sessionIdFromAccessToken(
+            session.access_token,
+          );
+          if (signedInSessionId && isSessionEnded(signedInSessionId)) {
             await terminateResurrectedSession();
             return;
           }
@@ -659,10 +681,13 @@ export function AuthProvider({ children }) {
             || !session.user?.id
             || session.user.id !== activePrincipalRef.current
           ) {
-            // A refresh landing for a signed-out principal just re-persisted
-            // a zombie session (2026-07-29 TestFlight defect) — terminate it
-            // promptly rather than leaving it for the next boot to refuse.
-            if (readSignedOutIntent()?.principalId === session.user?.id) {
+            // A refresh landing for an ended session just re-persisted a
+            // zombie (2026-07-29 TestFlight defect) — terminate it promptly
+            // rather than leaving it for the next boot to refuse.
+            const refreshedSessionId = sessionIdFromAccessToken(
+              session.access_token,
+            );
+            if (refreshedSessionId && isSessionEnded(refreshedSessionId)) {
               await terminateResurrectedSession();
             }
             return;
@@ -1071,8 +1096,8 @@ export function AuthProvider({ children }) {
     }
 
     // Same resurrection guard as logout(): a refresh racing this sign-out
-    // must not re-establish the rejected principal at the next boot.
-    writeSignedOutIntent(principalId);
+    // must not re-establish the rejected session at the next boot.
+    const armedSessionId = armEndedSessionGuard();
     const transition = {
       cleanupPromise: Promise.resolve(cleanupResult),
       db: dbClient,
@@ -1094,6 +1119,18 @@ export function AuthProvider({ children }) {
       signOutError = error;
     }
     if (!authLifecycle.isCurrent(generation)) {
+      // Superseded mid-sign-out. If signOut FAILED (session retained live)
+      // and no newer sign-out took over the transition ref, un-arm and drop
+      // the stale transition — same hazard as logout()'s stale exit. When
+      // signOut succeeded, the session really ended: the arm must stand.
+      if (
+        signOutError
+        && !transition.signedOutObserved
+        && explicitLogoutRef.current === transition
+      ) {
+        removeEndedSessionId(armedSessionId);
+        explicitLogoutRef.current = null;
+      }
       return { ready: false, cancelled: true };
     }
 
@@ -1103,9 +1140,9 @@ export function AuthProvider({ children }) {
       if (explicitLogoutRef.current === transition) {
         explicitLogoutRef.current = null;
       }
-      // Session retained behind the block — un-arm the intent so its token
-      // can still renew while walled.
-      clearSignedOutIntent();
+      // Session retained behind the block — un-arm it so its token can still
+      // renew while walled.
+      removeEndedSessionId(armedSessionId);
       cleanupBlockRef.current = {
         db: dbClient,
         principalId,
@@ -1138,7 +1175,7 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
     return { ready: true };
-  }, [authLifecycle, clearPublishedPrincipal]);
+  }, [armEndedSessionGuard, authLifecycle, clearPublishedPrincipal]);
 
   // ── Match auth user → employee row ──
   const handleAuthUser = async (authUser, token, generation) => {
@@ -1344,14 +1381,10 @@ export function AuthProvider({ children }) {
           return;
         }
 
-        // Self-repair: a session that legitimately reached publication has
-        // passed every resurrection guard, so a stale signed-out intent for
-        // this principal (left by a future non-login() sign-in path) must
-        // not keep refusing it. No-op on the normal path — login() already
-        // cleared the marker.
-        if (readSignedOutIntent()?.principalId === authUser.id) {
-          clearSignedOutIntent();
-        }
+        // No signed-out-intent self-repair is needed here: the registry keys
+        // on session_id, and a session that legitimately reached publication
+        // was either never armed or was un-armed by the failure path that
+        // retained it — a fresh login's id can never collide with an entry.
 
         // Native enrollment remains fail-closed until a reviewed native build
         // explicitly enables the independently gated APNs channel.
@@ -1414,10 +1447,6 @@ export function AuthProvider({ children }) {
       setError(null);
       setLoading(true);
     });
-    // Set when this login signed out a previous account: the durable
-    // signed-out intent is re-armed if the new credentials fail, so a
-    // refresh racing that switch sign-out cannot resurrect the old account.
-    let switchedOutPrincipal = null;
     try {
       if (!await authLifecycle.waitForAccountState(generation)) return null;
       const priorPrincipal = cleanupBlockRef.current?.principalId
@@ -1444,11 +1473,11 @@ export function AuthProvider({ children }) {
         // local session. End that session before clearing A's published identity
         // or attempting B, otherwise a failed B credential request could expose
         // Login while A remained authenticated underneath it. The account
-        // switch is a sign-out of A — arm the same durable intent logout()
-        // writes so a racing refresh cannot resurrect A. `switchedOutPrincipal`
-        // is set only once A's sign-out actually succeeded, so the catch never
-        // re-arms the marker over a still-live retained session.
-        writeSignedOutIntent(priorPrincipal);
+        // switch is a sign-out of A — arm the same durable registry entry
+        // logout() writes so a racing refresh cannot resurrect A. The entry
+        // survives a failed B credential attempt (nothing clears it at login),
+        // so no re-arm bookkeeping is needed.
+        const armedSessionId = armEndedSessionGuard();
         const transition = {
           cleanupPromise: Promise.resolve(cleanupResult),
           db: priorDb,
@@ -1474,9 +1503,9 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === transition) {
             explicitLogoutRef.current = null;
           }
-          // A's session is retained behind the block — un-arm the intent so
+          // A's session is retained behind the block — un-arm it so
           // recoverSession can still renew its token while walled.
-          clearSignedOutIntent();
+          removeEndedSessionId(armedSessionId);
           cleanupBlockRef.current = {
             db: priorDb,
             principalId: priorPrincipal,
@@ -1490,7 +1519,6 @@ export function AuthProvider({ children }) {
           throw new Error(ACCOUNT_CLEANUP_BLOCKED_MESSAGE);
         }
         transition.finalized = true;
-        switchedOutPrincipal = priorPrincipal;
         if (explicitLogoutRef.current === transition) {
           explicitLogoutRef.current = null;
         }
@@ -1500,18 +1528,15 @@ export function AuthProvider({ children }) {
         await options.beforeSignIn();
         if (!authLifecycle.isCurrent(generation)) return null;
       }
-      // A deliberate sign-in supersedes any earlier sign-out intent. Cleared
-      // BEFORE signInWithPassword so the resulting SIGNED_IN (which can queue
-      // ahead of this function resuming) is never refused as a zombie; the
-      // in-flight flag keeps the resurrection kills from treating the new
-      // session as collateral during this window, and its email lets the
-      // observer drop a stale zombie SIGNED_IN for a different identity that
-      // slipped past the just-cleared marker.
+      // A deliberate sign-in mints a NEW session_id, so the registry never
+      // needs clearing and can never refuse it. The in-flight flag keeps the
+      // resurrection kills from touching storage during this window, and its
+      // email lets the observer drop a stale zombie SIGNED_IN for a different
+      // identity that raced this deliberate sign-in in the event queue.
       pendingSignInRef.current = {
         generation,
         email: String(email || '').trim().toLowerCase(),
       };
-      clearSignedOutIntent();
       const { data, error: authError } = await realtimeClient.auth.signInWithPassword({
         email,
         password,
@@ -1519,11 +1544,6 @@ export function AuthProvider({ children }) {
       if (authError) throw authError;
       return data;
     } catch (err) {
-      if (switchedOutPrincipal) {
-        // The previous account was signed out but no new session replaced it
-        // — keep the resurrection guard armed for that principal.
-        writeSignedOutIntent(switchedOutPrincipal);
-      }
       authLifecycle.commit(generation, () => setError(err.message));
       throw err;
     } finally {
@@ -1537,7 +1557,12 @@ export function AuthProvider({ children }) {
         () => setLoading(cleanupBlockRef.current !== null),
       );
     }
-  }, [authLifecycle, clearPublishedPrincipal, requireAccountCleanup]);
+  }, [
+    armEndedSessionGuard,
+    authLifecycle,
+    clearPublishedPrincipal,
+    requireAccountCleanup,
+  ]);
 
   // ── Logout ──
   const logout = useCallback(async () => {
@@ -1556,10 +1581,12 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setError(null);
     });
-    // Durable sign-out intent BEFORE any await: if a token refresh racing
+    // Durable revival guard armed BEFORE any await: if a token refresh racing
     // signOut re-persists the session, the boot/SIGNED_IN/TOKEN_REFRESHED
-    // guards read this marker and terminate the zombie (2026-07-29 defect).
-    writeSignedOutIntent(priorPrincipal);
+    // guards match its session_id and terminate the zombie (2026-07-29
+    // defect). Arming first also means a 401 during the cleanup pass below is
+    // not rescued by a refresh — the residual lands in the journal instead.
+    const armedSessionId = armEndedSessionGuard();
     const cleanupPromise = authLifecycle.enqueueAccountState(
       generation,
       // One bounded best-effort cleanup pass while the authenticated client
@@ -1587,9 +1614,24 @@ export function AuthProvider({ children }) {
     } catch (cleanupError) {
       cleanupResult = { ready: false, error: cleanupError };
     }
-    if (!authLifecycle.isCurrent(generation)) return;
+    if (!authLifecycle.isCurrent(generation)) {
+      // Superseded between arm and signOut. Only when NO newer sign-out took
+      // over the transition ref may this exit un-arm: the session was never
+      // signed out here, so leaving it armed would refuse a live session and
+      // the stale unfinalized transition would permanently gate the guard
+      // off. When a newer sign-out DID take over (ref points at its
+      // transition), its own arm/un-arm lifecycle owns the registry entry.
+      if (explicitLogoutRef.current === transition) {
+        removeEndedSessionId(armedSessionId);
+        explicitLogoutRef.current = null;
+      }
+      return;
+    }
     if (!cleanupBlockAllowsDeferral(cleanupBlockRef.current)) {
       // A recovery/reauth flow owns the current block — never sign past it.
+      // The session stays live behind that wall, so un-arm it: a still-live
+      // session must keep renewing its token and must not be purged.
+      removeEndedSessionId(armedSessionId);
       explicitLogoutRef.current = null;
       const cleanupError = new Error(ACCOUNT_CLEANUP_BLOCKED_MESSAGE);
       authLifecycle.commit(generation, () => {
@@ -1628,10 +1670,10 @@ export function AuthProvider({ children }) {
       if (explicitLogoutRef.current === transition) {
         explicitLogoutRef.current = null;
       }
-      // The session is retained behind the retry wall — un-arm the intent so
+      // The session is retained behind the retry wall — un-arm it so
       // recoverSession can still renew the live session's token while the
       // user is walled. The next Retry re-arms it at logout() start.
-      clearSignedOutIntent();
+      removeEndedSessionId(armedSessionId);
       cleanupBlockRef.current = {
         db: priorDb,
         principalId: priorPrincipal,
@@ -1668,34 +1710,17 @@ export function AuthProvider({ children }) {
     }
     // Resurrection sweep (2026-07-29 TestFlight defect): a refresh already in
     // flight when signOut ran can re-persist the session AFTER removal. One
-    // re-check catches the common case; the durable signed-out-intent marker
-    // covers anything that lands later. Deliberately NOT awaited — Login must
-    // appear immediately even when the auth lock is contended by the very
-    // refresh being raced ("a sign out button should just do that: sign
-    // out"). The sweep only ever terminates the principal that just signed
-    // out — another tab's fresh login is never collateral — and its second
-    // signOut is installed as a pre-finalized transition so its SIGNED_OUT
-    // can never take the observer-only reauth-wall path.
-    void (async () => {
-      try {
-        const { data } = await realtimeClient.auth.getSession();
-        if (
-          data?.session?.user?.id === priorPrincipal
-          && !pendingSignInRef.current
-        ) {
-          const marker = markResurrectionSignOut();
-          try {
-            await realtimeClient.auth.signOut({ scope: 'local' });
-          } catch {
-            if (explicitLogoutRef.current === marker) {
-              explicitLogoutRef.current = null;
-            }
-          }
-        }
-      } catch {
-        // Marker guards remain the durable backstop.
-      }
-    })();
+    // re-check catches the common case; the durable registry entry covers
+    // anything that lands later. Deliberately NOT awaited — Login must appear
+    // immediately even when the auth lock is contended by the very refresh
+    // being raced ("a sign out button should just do that: sign out").
+    // terminateResurrectedSession reads SDK storage without getSession()
+    // (which can refresh — the very race being swept) and only ever removes a
+    // session whose id this device explicitly ended, so another tab's fresh
+    // login is never collateral; its second signOut is installed as a
+    // pre-finalized transition so its SIGNED_OUT can never take the
+    // observer-only reauth-wall path.
+    void terminateResurrectedSession({ requirePersistedMatch: true });
     if (
       cleanupResult?.reloadRequired
       // The advisory reload runs only after a fully-ready cleanup so an
@@ -1710,7 +1735,8 @@ export function AuthProvider({ children }) {
     authDb,
     authLifecycle,
     clearRejectedPrincipalState,
-    markResurrectionSignOut,
+    armEndedSessionGuard,
+    terminateResurrectedSession,
     user?.id,
   ]);
 
@@ -1755,7 +1781,7 @@ export function AuthProvider({ children }) {
         });
         // Same resurrection guard as logout(): the recovery sign-out must
         // stay signed out until the previous account deliberately signs in.
-        writeSignedOutIntent(blocked.principalId);
+        const armedSessionId = armEndedSessionGuard();
         const transition = {
           cleanupPromise: Promise.resolve({
             ready: true,
@@ -1784,9 +1810,9 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === transition) {
             explicitLogoutRef.current = null;
           }
-          // Session retained behind the block — un-arm the intent so its
-          // token can still renew while walled.
-          clearSignedOutIntent();
+          // Session retained behind the block — un-arm it so its token can
+          // still renew while walled.
+          removeEndedSessionId(armedSessionId);
           authLifecycle.commit(generation, () => {
             setError('Secure account recovery sign out failed. Please retry.');
             setLoading(true);
@@ -1825,6 +1851,7 @@ export function AuthProvider({ children }) {
       setCleanupRetrying(false);
     }
   }, [
+    armEndedSessionGuard,
     authLifecycle,
     cleanupRetrying,
     finishPasswordRecoveryCleanup,

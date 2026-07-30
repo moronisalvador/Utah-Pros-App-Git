@@ -29,7 +29,7 @@ REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(CDPATH= cd -- "$_hook_dir/../.." && pwd)}"
 normalize_sql() {
   printf '%s' "$1" \
     | sed -E 's@/\*[^*]*\*+([^/*][^*]*\*+)*/@ @g' \
-    | sed -E 's/--[^\n]*//g' \
+    | sed -E 's/--.*$//' \
     | tr '\n\t' '  ' | tr -s ' ' | tr '[:lower:]' '[:upper:]'
 }
 

@@ -80,3 +80,5 @@ verifiable in the next native build — group them accordingly.
 - [ ] (P3) Tech shell side-tab accent border (TechLayout.jsx ~L609) — design hook flags the
       thick one-side accent; consider a subtler treatment in the next design pass.
       (Flagged 2026-07-30 during overnight merge; pre-existing.)
+- [ ] (P3) Side-tab accent borders (Layout.jsx ~L327, TechLayout.jsx ~L609) — design hook flags
+      the thick one-side card accent; revisit in a design pass. (Flagged 2026-07-30; pre-existing.)

@@ -241,16 +241,52 @@ describe('headers, release identity, containment, and truthful install copy', ()
     expect(auth).toContain('accountState.workerResult.reloadRequired');
 
     expect(logout).toBeTruthy();
+    // Post-sign-out revival guard (2026-07-29 defect #2): logout arms the
+    // ended-session registry BEFORE its first await (so a 401 during cleanup
+    // is never rescued by a refresh and a racing re-persist is refusable),
+    // runs cleanup before signOut, and un-arms on ALL THREE paths that can
+    // retain the session live (the recovery-owned block refusal, a failed
+    // local signOut, and the superseded-generation exit when no newer
+    // sign-out took over) so a walled or live session can still renew.
+    expect(logout.indexOf('const armedSessionId = armEndedSessionGuard()'))
+      .toBeLessThan(
+        logout.indexOf('clearRejectedPrincipalState(priorDb, {'),
+      );
     expect(logout.indexOf('clearRejectedPrincipalState(priorDb, {'))
       .toBeLessThan(
       logout.indexOf('realtimeClient.auth.signOut({'),
     );
-    expect(logout.indexOf('if (cleanupResult.cancelled) return;')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+    expect(
+      logout.match(/removeEndedSessionId\(armedSessionId\)/g),
+    ).toHaveLength(3);
+    expect(logout).toContain(
+      'terminateResurrectedSession({ requirePersistedMatch: true })',
     );
-    expect(logout.indexOf('if (!cleanupResult.ready)')).toBeLessThan(
-      logout.indexOf('realtimeClient.auth.signOut({'),
+    // The arm helper captures the session id from the live token ref; the id
+    // is rotation-stable so it still matches a zombie's refreshed token.
+    const armHelper = auth.match(
+      /const armEndedSessionGuard = useCallback\([\s\S]*?\n {2}\}, \[\]\);/,
+    )?.[0];
+    expect(armHelper).toBeTruthy();
+    expect(armHelper).toContain(
+      'sessionIdFromAccessToken(tokenRef.current)',
     );
+    expect(armHelper).toContain('recordEndedSessionId(sessionId)');
+    // The purge's storage precheck is only as good as its key derivation:
+    // pin the guard's template against the SDK's own defaultStorageKey line
+    // and pin that realtimeClient configures no custom storageKey, so a
+    // drift on either side fails here instead of silently reading 'none'.
+    const guardSource = read('src/lib/endedSessionGuard.js');
+    expect(guardSource).toMatch(
+      /`sb-\$\{\s*new URL\(supabaseUrl\)\.hostname\.split\('\.'\)\[0\]\s*\}-auth-token`/,
+    );
+    const sdkSource = read(
+      'node_modules/@supabase/supabase-js/src/SupabaseClient.ts',
+    );
+    expect(sdkSource).toContain(
+      "`sb-${baseUrl.hostname.split('.')[0]}-auth-token`",
+    );
+    expect(read('src/lib/realtime.js')).not.toContain('storageKey');
     expect(auth).toMatch(
       /event === 'SIGNED_OUT'[\s\S]*?clearRejectedPrincipalState\(priorDb, \{/,
     );

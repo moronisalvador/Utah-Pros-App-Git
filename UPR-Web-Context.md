@@ -271,7 +271,7 @@ src/
     tech/ClockSupersedeSheet.jsx  — Red bottom sheet (PhotoNoteSheet structure) shown before OMW when the tech is clocked in elsewhere: confirm-supersede mode ([Clock out & continue]) or hard-block mode ([Go to {job}]). Pure presentational; parent owns the RPC.
     tech/TechHelpSheet.jsx        — Bottom help sheet (PhotoNoteSheet structure: backdrop + slide-up, tech-fade-in/tech-slide-up, safe-area pad, grabber + ✕). Renders the requested topic's TopicCard first then the rest of TOPICS (from techHelpContent). NO navigation / no target=_blank (Capacitor-safe) — opens over the screen so an in-progress form isn't lost. Props {open,onClose,topicKey}.
     tech/TechHelpButton.jsx       — Self-contained "?" button (dash help-button styling) that owns its open state and renders TechHelpSheet. One-line drop-in: <TechHelpButton topicKey="newjob" />. Used on TechNewJob (newjob), TechAppointment (timer, white-on-hero variant), TechClaims (claims).
-    Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner
+    Layout.jsx                    — App shell: sidebar, bottom bar, toasts, offline banner. The four quick-action modals (CreateJob/AddContact/NewInvoice/NewEstimate) are React.lazy + Suspense, loading on first open (perf-budget §4; 2026-07-30, −22 KB gzip entry graph)
     Sidebar.jsx                   — Desktop nav + sign out button
     HelpLink.jsx                  — Reusable contextual "?" that deep-links into a /help guide section in a NEW TAB (so in-progress modals/forms aren't lost). Props: anchor ("guide[/section]"), label, size, variant; reuses IconHelp. Used on CreateJobModal, InvoiceEditor, Collections, ClaimsList.
     AddContactModal.jsx           — Add contact modal (9 roles) + LookupSelect component
@@ -2934,17 +2934,33 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
-    **Sign-out always completes (2026-07-29, owner-directed):** explicit sign-out runs one bounded
-    best-effort cleanup pass and completes regardless of its outcome; unfinished server detach
-    stays in the durable owner-bound journal (new `residualJournaled`/`enrollmentPending` detach
-    result fields; `deferrable` classification through `accountDeviceCleanup.js`/
-    `pwaAccountState.js`; the bounded `transientPushRetry` mechanism exists but is unwired). A
-    durable signed-out-intent marker + boot/SIGNED_IN/TOKEN_REFRESHED/recoverSession guards and a
-    post-signOut sweep terminate resurrected post-sign-out sessions (the TestFlight
-    never-reached-Login defect); login() clears the marker before signInWithPassword.
-    Signed-out-reauth/password-recovery/login/account-switch keep their hard gates; the bind-time
-    `retryPendingAccountPushDetaches` gate is unchanged. Contract:
-    `docs/mobile/push-activation-owner-gate.md`.
+    **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
+    security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
+    completes regardless of its outcome; unfinished server detach stays in the durable owner-bound
+    journal (`residualJournaled`/`enrollmentPending` detach result fields; `deferrable`
+    classification through `accountDeviceCleanup.js`/`pwaAccountState.js`; the bounded
+    `transientPushRetry` mechanism exists but is unwired). The revival defect (supabase-js
+    `signOut()` steals the SDK auth lock from an in-flight token refresh; the orphaned refresh
+    re-persists the ended session; the app re-entered without Login) is closed by
+    `src/lib/endedSessionGuard.js`: every sign-out path arms the session's JWT `session_id`
+    (stable across rotation, never reused by a new login) in `upr:auth-ended-sessions:v1` (bare
+    session UUIDs, cap 8, deliberately logout-surviving — never add it to logout sweep prefixes)
+    BEFORE its first await, and the two failure paths that retain the session live (failed local
+    signOut; logout refused by a recovery-owned block) un-arm it. Boot, SIGNED_IN,
+    TOKEN_REFRESHED, and `recoverSession()` refuse a revived armed session; the un-awaited
+    post-signOut sweep acts only on a positive SIDE-EFFECT-FREE storage match (never
+    `getSession()`, which refreshes); a zombie that clobbered a newer published account's storage
+    triggers the full SIGNED_OUT teardown instead of a silent absorb; a SIGNED_OUT reaching an
+    already-clean tab is a no-op (cross-tab broadcast safe). Nothing is cleared at login — a
+    fresh session id can never match, so same-user re-login and web cross-tab sync are
+    structurally safe. Fail-open (undecodable token / blocked storage), observable via
+    console.warn + `recordPwaDiagnostic('account-state', …)`. `SetPassword.jsx` skips populating
+    `userEmail` from a tombstoned session. Signed-out-reauth/password-recovery/login/
+    account-switch keep their hard gates; the bind-time `retryPendingAccountPushDetaches` gate is
+    unchanged. Tests: `src/contexts/AuthContext.race.test.jsx` (zombie repro + guard suites) and
+    `tests/qa/unit/pwa-source-contract.test.js` (arm/un-arm ordering source contracts). Contract:
+    `docs/mobile/push-activation-owner-gate.md`. On-device account-switch verification remains
+    the open owner gate.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
