@@ -290,8 +290,19 @@ Connect sign-in and the Organizer upload themselves.
   minimize/resume all **passed** the same evening. The **first production
   APNs token** is proven registered by that delivery (a direct value-free
   `device_tokens` read was permission-blocked and unnecessary).
-- **Account-switch refusal: not yet exercised** — the one open matrix item;
-  scheduled as an owner check before broad tech rollout.
+- **Account-switch refusal: not exercised — blocked by a sign-out defect
+  found during the attempt.** First sign-out raised the fail-closed
+  "Finish securing this device" wall on a network-ambiguous first attempt;
+  the owner's Retry succeeded (API log: `delete_my_native_device_token` 204
+  at 2026-07-30 01:58:33Z), but the app then bootstrapped straight back into
+  the same account (~02:00:06Z, fresh profile load + token re-upsert) without
+  ever reaching Login — the Supabase session was apparently never cleared, so
+  account switching is currently impossible on the native build. Owner
+  directive (2026-07-29): sign-out must always complete immediately; the
+  token detach becomes invisible best-effort/journaled. Fix in progress in a
+  dedicated session ("Soften secure sign-out UX without weakening cleanup"),
+  which received the directive and the log evidence. First-login flows for
+  fresh tech installs are unaffected.
 - Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
   `ios-signing` secrets), no App Review submission, no flag flips.
 
