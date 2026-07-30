@@ -31,6 +31,41 @@ before promoting.
   refusals, and the function stays `service_role`-only. Opt-out-only is live for staff 1:1 only.
   Detail + rollback posture: `.claude/rules/sms-experience-wave-ownership.md` §13.
 
+## CRM lead value (2026-07-30, owner-directed standalone) — APPLIED
+
+`20260730133000_crm_lead_value_from_claim.sql` → live ledger **`20260730155213`**. Proven on the
+`qa-staging` branch first (all 7 behavioural scenarios PASS, including the multi-job sum), then
+applied to production with 13 postconditions verified: 6 functions, `anon` EXECUTE false on every
+one, both constraints validated, 3 triggers, the invoice trigger watching all 7 decision columns,
+Won auto-advance preserved, and `crm_sync_lead_value` still present but unwired.
+
+**The staging run earned its keep:** it caught `crm_backfill_lead_values` granted to `anon` (a
+transcription slip in the apply payload, not in the reviewed file) plus two defects in the
+behavioural test's fixtures. Apply the reviewed FILE, not a retyped copy.
+
+Staff can type a lead's value by hand, and it
+otherwise fills itself from billing: **the SUM of every committed invoice across ALL jobs under the
+lead's claim** (88 of 157 claims have more than one job, so multi-job is the normal case).
+
+- **This replaced a feature that was live but dead.** `20260721_crm_lead_value_sync.sql` had been
+  applied for nine days and never ran once — 0 `crm_lead_value_synced` events, 0 of 156 leads valued
+  — because its trigger was `AFTER INSERT ON invoices` gated on `total > 0`, while every invoice is
+  inserted with no total and gets one later by UPDATE. The new trigger's `UPDATE OF` list names every
+  column the calculation reads, and a CI test fails if that list and the calculation drift apart.
+- **Owner rules:** a draft never counts; sent / QBO-emailed / converted-from-estimate / has-a-payment
+  all do. The payment arm carries the rule (71 invoices have a payment vs 9 emailed, 4 from an
+  estimate). A human-set value is never overwritten (`inbound_leads.value_source`).
+- **Multi-tenant seam:** `claims`/`jobs`/`invoices`/`contacts` carry no `org_id` (only the CRM tables
+  do), so the lead is the org anchor and the whole claim→jobs→invoices join lives in ONE function,
+  `crm_lead_claim_value()`. Add the tenant predicate there when billing gains `org_id`.
+- **Backfill is deliberately NOT run.** `crm_backfill_lead_values(p_days)` is admin-gated and scoped
+  to leads on the board within the window; since the sync never worked, its first run puts dollar
+  figures on real cards for the first time and stays an explicit owner step.
+- Superseded `crm_sync_lead_value` is left in place, unreferenced — it is granted to `authenticated`,
+  and dropping a live function is the contract removal `database-standard.md` §3 forbids.
+- History for the completed CRM wave stays in `docs/archive/rules/crm-wave-ownership.md`; this entry
+  is the live record. Delete it once the feature has baked.
+
 ## Standing operational state
 
 - **Consent model:** opt-out-only for staff 1:1 service SMS + named typed transactional notices;

@@ -13140,5 +13140,15 @@ html.ui-glass .tech-nav {
 :root[data-native="true"] .public-native-shell > .login-page,
 :root[data-native="true"] .public-native-shell > .set-pw-page {
   min-height: 0;
-  flex: 1;
+
+/* ─── CRM LEAD VALUE (2026-07-30) — display is a <button> so an unset value is keyboard-reachable ── */
+.crm-lead-value-display { display: inline-flex; align-items: center; gap: var(--space-2); background: none; font: inherit; border: 1px solid transparent; border-radius: var(--crm-radius); color: var(--crm-text-primary); cursor: pointer; }
+.crm-lead-value-display:hover { border-color: var(--crm-border); }
+.crm-lead-value-display:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 1px; }
+.crm-lead-value-edit { display: inline-flex; align-items: center; gap: var(--space-2); }
+.crm-lead-value-input { width: 120px; }
+@media (max-width: 768px) {
+  .crm-lead-value-edit { flex-wrap: wrap; justify-content: flex-end; }
+  .crm-lead-value-input { width: 100%; }
+  .crm-lead-value-edit .crm-btn { height: 44px; }
 }
