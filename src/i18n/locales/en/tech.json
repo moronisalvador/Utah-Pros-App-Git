@@ -119,14 +119,9 @@
     "valueRow3": "Message the office without phone tag.",
     "notifyTitle": "Know the moment it matters",
     "notifyBody": "Get a heads-up the moment a customer messages you or an appointment is booked for you.",
-    "notifyGrantedTitle": "You’re all set",
-    "notifyGrantedBody": "Alerts are on. You’ll know when a customer messages you or a job lands on your schedule.",
-    "notifyDeclinedBody": "No problem — you can turn alerts on anytime in Settings → Notifications.",
     "enableBtn": "Turn on notifications",
     "enabling": "Turning on…",
-    "notNow": "Not now",
     "next": "Next",
-    "done": "Done",
     "stepOf": "Step {{n}} of {{total}}"
   }
 }

@@ -6,9 +6,10 @@
  * WHAT THIS DOES (plain language):
  *   The one-time welcome tour a technician sees the very first time they open
  *   the app: what the app is, what it does for their day, and — after
- *   explaining WHY — an invitation to turn on notifications. Saying "Not now"
- *   finishes the tour just the same; Settings remains the way to turn
- *   notifications on later. It never shows again once finished.
+ *   explaining WHY — one button that asks the phone for notification
+ *   permission. Allowing and declining both finish the tour the same way,
+ *   with a polished hand-off into the dashboard underneath. It never shows
+ *   again once finished.
  *
  * WHERE IT LIVES:
  *   Route:        n/a (full-screen overlay inside the tech shell)
@@ -26,13 +27,23 @@
  *                       the existing fail-closed enrollment chokepoints
  *
  * NOTES / GOTCHAS:
+ *   - Owner spec (2026-07-29): three full-screen steps, FORWARD-ONLY — no X,
+ *     no skip, no dismiss. Screen 3 has exactly ONE button; the iOS system
+ *     prompt fires only from that press, and Allow/Deny both continue into
+ *     the same exit transition (no nagging — Settings → Notifications is the
+ *     recovery path). If permission was already decided on this install, the
+ *     press proceeds gracefully (enrolls when granted, continues when
+ *     denied) because both chokepoints resolve immediately in that case.
  *   - Push enrollment goes ONLY through enableNativePushForEmployee /
- *     enablePush — never the Capacitor plugin directly. Every failure reason
- *     (denied, unconfigured, owner lease missing…) lands on the same gentle
- *     "you can turn these on in Settings" path; the tour always completes.
- *   - The notifications step is skipped entirely when this build/device can't
- *     enroll (web push flag off, unsupported browser, permission already
- *     denied, native enrollment env off).
+ *     enablePush — never the Capacitor plugin directly. When this
+ *     build/device can't enroll at all (web-push flag off, unsupported
+ *     browser, native enrollment env off), the button simply continues.
+ *   - CONTENT vs MECHANISM (owner-confirmed What's-New intent): everything a
+ *     future version would change lives in the TOUR_STEPS descriptor list
+ *     below (art, copy keys, layout kind, which step primes notifications).
+ *     A future "What's New" bumps TECH_ONBOARDING_VERSION in
+ *     src/lib/techOnboarding.js and swaps TOUR_STEPS — the shell (gating,
+ *     state machine, focus trap, exit choreography) stays untouched.
  *   - Exit/step-out animations have JS timer fallbacks so reduced-motion
  *     (animation: none → no animationend) can never strand the overlay.
  * ════════════════════════════════════════════════
@@ -49,7 +60,6 @@ import {
 import {
   enablePush,
   isPushSupported,
-  pushPermission,
 } from '@/lib/webPushClient';
 import { runDevicePushAction } from '@/components/tech/settings/nativePushPresentation';
 // Component-scoped stylesheet: rides this lazy chunk instead of index.css
@@ -58,8 +68,8 @@ import './TechOnboarding.css';
 
 // Mirrors the toast exit safety net in TechLayout: reduced-motion collapses
 // animations to none, so animationend never fires — a timer must finish the
-// unmount instead.
-const EXIT_FALLBACK_MS = 400;
+// unmount instead. Covers the two-phase finale (content out, then cover out).
+const EXIT_FALLBACK_MS = 800;
 const STEP_LEAVE_FALLBACK_MS = 300;
 
 /* ── Step artwork (module scope so remounts can't restart animations
@@ -95,14 +105,6 @@ function ArtBell(props) {
   );
 }
 
-function ArtCheck(props) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
-      <path d="M20 6L9 17l-5-5" />
-    </svg>
-  );
-}
-
 function RowIconCalendar(props) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>
@@ -129,11 +131,25 @@ function RowIconChat(props) {
   );
 }
 
-const STEP_ART = {
-  welcome: ArtWelcome,
-  value: ArtValue,
-  notify: ArtBell,
-};
+/* ── CONTENT LAYER (v1) — the only thing a future What's New replaces.
+      key      → i18n prefix under tech.json `onboarding.*` ({key}Title etc.)
+      kind     → 'info' (title + body) | 'rows' (title + icon rows) |
+                 'notify' (title + body + the one permission button)
+      ring     → one-shot bell-wiggle accent on the art (notify priming) ── */
+const TOUR_STEPS = [
+  { key: 'welcome', kind: 'info', Art: ArtWelcome },
+  {
+    key: 'value',
+    kind: 'rows',
+    Art: ArtValue,
+    rows: [
+      { Icon: RowIconCalendar, textKey: 'valueRow1' },
+      { Icon: RowIconCamera, textKey: 'valueRow2' },
+      { Icon: RowIconChat, textKey: 'valueRow3' },
+    ],
+  },
+  { key: 'notify', kind: 'notify', Art: ArtBell, ring: true },
+];
 
 export default function TechOnboarding({ onComplete }) {
   // ─── State & hooks ──────────────
@@ -146,35 +162,27 @@ export default function TechOnboarding({ onComplete }) {
   } = useAuth();
 
   const isNativeApp = canRegisterPush();
-  // 'native' | 'web' | 'none' — decided once at mount. 'none' drops the
-  // notifications step entirely (grace over a dead-end prompt); Settings →
-  // Notifications remains the recovery path either way.
+  // Which enrollment ACTION the one button on screen 3 performs. The step
+  // itself always shows (owner: three steps, period); when this build/device
+  // can't enroll, the press just continues into the exit.
   const pushMode = useMemo(() => {
     if (isNativeApp) {
       return isNativePushEnrollmentEnabled() ? 'native' : 'none';
     }
     if (!isFeatureEnabled('feature:web_push')) return 'none';
-    if (!isPushSupported()) return 'none';
-    return pushPermission() === 'denied' ? 'none' : 'web';
+    return isPushSupported() ? 'web' : 'none';
   }, [isNativeApp, isFeatureEnabled]);
-
-  const steps = useMemo(() => (
-    pushMode === 'none'
-      ? ['welcome', 'value']
-      : ['welcome', 'value', 'notify']
-  ), [pushMode]);
 
   const [stepIndex, setStepIndex] = useState(0);
   const [leavingIndex, setLeavingIndex] = useState(null);
   const [closing, setClosing] = useState(false);
-  // 'idle' | 'busy' | 'granted' | 'declined'
-  const [enroll, setEnroll] = useState('idle');
+  const [busy, setBusy] = useState(false);
   const completedRef = useRef(false);
   const rootRef = useRef(null);
 
   // Focus trap (Modal.jsx idiom): focus enters on mount and Tab cycles inside
-  // the dialog. No Escape handler — finishing the tour is the only way out,
-  // and "Not now" / "Done" are always present.
+  // the dialog. No Escape handler — the flow is deliberately forward-only
+  // (owner spec: no dismiss affordance until it completes).
   useEffect(() => {
     const root = rootRef.current;
     root?.focus();
@@ -223,13 +231,16 @@ export default function TechOnboarding({ onComplete }) {
   // ─── Event handlers ──────────────
   const beginClose = () => {
     if (closing) return;
+    // A step still mid-leave would have its fade REPLACED by the finale's
+    // content animation (a brightness pop of stale content) — drop it now.
+    setLeavingIndex(null);
     setClosing(true);
   };
 
   const advance = () => {
     if (closing) return;
     impact('light');
-    if (stepIndex < steps.length - 1) {
+    if (stepIndex < TOUR_STEPS.length - 1) {
       setLeavingIndex(stepIndex);
       setStepIndex(stepIndex + 1);
     } else {
@@ -237,10 +248,20 @@ export default function TechOnboarding({ onComplete }) {
     }
   };
 
-  const enableNotifications = async () => {
-    if (enroll === 'busy' || closing) return;
+  // The one button on screen 3. The system permission prompt fires only from
+  // this press (both chokepoints request permission inside the action, and
+  // both resolve immediately when iOS has already decided for this install).
+  // Allow, deny, and can't-enroll all continue into the SAME exit — the only
+  // difference is a success haptic. Settings → Notifications is the recovery
+  // path; there is no retry loop here.
+  const primeNotifications = async () => {
+    if (busy || closing) return;
     impact('light');
-    setEnroll('busy');
+    if (pushMode === 'none') {
+      beginClose();
+      return;
+    }
+    setBusy(true);
     try {
       // The two existing fail-closed chokepoints — never the plugin directly.
       const res = await runDevicePushAction({
@@ -252,28 +273,24 @@ export default function TechOnboarding({ onComplete }) {
         ),
         webAction: () => enablePush(db),
       });
-      if (res?.ok) {
-        notify('success');
-        setEnroll('granted');
-      } else {
-        // Every refusal (denied, unconfigured, lease missing, timeout…) lands
-        // here: no nagging, no retry loop — Settings is the recovery path.
-        setEnroll('declined');
-      }
+      if (res?.ok) notify('success');
     } catch {
-      setEnroll('declined');
+      // Deliberately quiet: a refusal is a valid outcome of the one-press
+      // contract, and the tour must complete either way.
+    } finally {
+      // `busy` deliberately stays true: flipping it here would re-enable the
+      // button (label + opacity flicker) in the same commit that starts the
+      // finale. A stuck-busy state is unreachable — `closing` guards
+      // re-entry and the exit timer guarantees unmount.
+      beginClose();
     }
   };
 
-  const isLast = stepIndex === steps.length - 1;
-  const currentKey = steps[stepIndex];
-  const notifySettled = enroll === 'granted' || enroll === 'declined';
+  const step = TOUR_STEPS[stepIndex];
 
   // ─── Render ──────────────
-  const renderStep = (key, index) => {
-    const Art = key === 'notify' && enroll === 'granted'
-      ? ArtCheck
-      : STEP_ART[key];
+  const renderStep = (descriptor, index) => {
+    const { key, kind, Art, rows, ring } = descriptor;
     const leaving = index === leavingIndex;
     // Keyed by step name alone (names are unique per tour) so the leaving
     // step keeps its DOM node — children frozen mid-rise by the CSS pause
@@ -292,45 +309,26 @@ export default function TechOnboarding({ onComplete }) {
         <div className="tech-onb-art" data-step={key}>
           <span className="tech-onb-halo" aria-hidden="true" />
           <span
-            key={key === 'notify' && enroll === 'granted' ? 'success' : 'art'}
-            className={`tech-onb-icon${key === 'notify' && enroll === 'granted' ? ' tech-onb-icon--success' : ''}`}
-            data-ring={
-              key === 'notify' && (enroll === 'idle' || enroll === 'busy')
-                ? 'true'
-                : undefined
-            }
+            className="tech-onb-icon"
+            data-ring={ring ? 'true' : undefined}
           >
             <Art width={64} height={64} />
           </span>
         </div>
 
-        <h2 className="tech-onb-title">
-          {key === 'notify' && enroll === 'granted'
-            ? t('onboarding.notifyGrantedTitle')
-            : t(`onboarding.${key}Title`)}
-        </h2>
+        <h2 className="tech-onb-title">{t(`onboarding.${key}Title`)}</h2>
 
-        {key === 'value' ? (
+        {kind === 'rows' ? (
           <div className="tech-onb-rows">
-            {[
-              { Icon: RowIconCalendar, text: t('onboarding.valueRow1') },
-              { Icon: RowIconCamera, text: t('onboarding.valueRow2') },
-              { Icon: RowIconChat, text: t('onboarding.valueRow3') },
-            ].map((row, i) => (
-              <div className="tech-onb-row" key={i} style={{ '--onb-i': i }}>
+            {rows.map((row, i) => (
+              <div className="tech-onb-row" key={row.textKey} style={{ '--onb-i': i }}>
                 <span className="tech-onb-row-icon"><row.Icon width={20} height={20} /></span>
-                <span>{row.text}</span>
+                <span>{t(`onboarding.${row.textKey}`)}</span>
               </div>
             ))}
           </div>
         ) : (
-          <p className="tech-onb-body">
-            {key === 'notify' && enroll === 'granted'
-              ? t('onboarding.notifyGrantedBody')
-              : key === 'notify' && enroll === 'declined'
-                ? t('onboarding.notifyDeclinedBody')
-                : t(`onboarding.${key}Body`)}
-          </p>
+          <p className="tech-onb-body">{t(`onboarding.${key}Body`)}</p>
         )}
       </div>
     );
@@ -353,66 +351,45 @@ export default function TechOnboarding({ onComplete }) {
       }}
     >
       <div className="tech-onb-scene">
-        {leavingIndex !== null && renderStep(steps[leavingIndex], leavingIndex)}
-        {renderStep(currentKey, stepIndex)}
+        {leavingIndex !== null
+          && renderStep(TOUR_STEPS[leavingIndex], leavingIndex)}
+        {renderStep(step, stepIndex)}
       </div>
 
       <div className="tech-onb-footer">
         <div
           className="tech-onb-dots"
-          style={{ '--onb-step': stepIndex, '--onb-total': steps.length }}
+          style={{ '--onb-step': stepIndex, '--onb-total': TOUR_STEPS.length }}
           aria-hidden="true"
         >
-          {steps.map((key) => <span className="tech-onb-dot" key={key} />)}
+          {TOUR_STEPS.map(({ key }) => (
+            <span className="tech-onb-dot" key={key} />
+          ))}
           <span className="tech-onb-dot-pill" />
         </div>
         <span className="tech-onb-sr" aria-live="polite">
           {t('onboarding.stepOf', {
             n: stepIndex + 1,
-            total: steps.length,
+            total: TOUR_STEPS.length,
           })}
         </span>
 
-        {currentKey !== 'notify' && (
+        {step.kind !== 'notify' ? (
           <button
             type="button"
             className="tech-onb-btn tech-onb-btn--primary"
             onClick={advance}
           >
-            {isLast ? t('onboarding.done') : t('onboarding.next')}
+            {t('onboarding.next')}
           </button>
-        )}
-
-        {currentKey === 'notify' && !notifySettled && (
-          <>
-            <button
-              type="button"
-              className="tech-onb-btn tech-onb-btn--primary"
-              onClick={enableNotifications}
-              disabled={enroll === 'busy'}
-            >
-              {enroll === 'busy'
-                ? t('onboarding.enabling')
-                : t('onboarding.enableBtn')}
-            </button>
-            <button
-              type="button"
-              className="tech-onb-btn tech-onb-btn--ghost"
-              onClick={beginClose}
-              disabled={enroll === 'busy'}
-            >
-              {t('onboarding.notNow')}
-            </button>
-          </>
-        )}
-
-        {currentKey === 'notify' && notifySettled && (
+        ) : (
           <button
             type="button"
             className="tech-onb-btn tech-onb-btn--primary"
-            onClick={beginClose}
+            onClick={primeNotifications}
+            disabled={busy}
           >
-            {t('onboarding.done')}
+            {busy ? t('onboarding.enabling') : t('onboarding.enableBtn')}
           </button>
         )}
       </div>

@@ -119,14 +119,9 @@
     "valueRow3": "Fale com o escritório sem ficar trocando ligações.",
     "notifyTitle": "Saiba na hora certa",
     "notifyBody": "Receba um aviso no momento em que um cliente mandar mensagem ou um serviço for agendado para você.",
-    "notifyGrantedTitle": "Tudo pronto",
-    "notifyGrantedBody": "Avisos ativados. Você saberá quando um cliente mandar mensagem ou um serviço entrar na sua agenda.",
-    "notifyDeclinedBody": "Sem problema — você pode ativar os avisos quando quiser em Configurações → Notificações.",
     "enableBtn": "Ativar notificações",
     "enabling": "Ativando…",
-    "notNow": "Agora não",
     "next": "Avançar",
-    "done": "Concluir",
     "stepOf": "Etapa {{n}} de {{total}}"
   }
 }

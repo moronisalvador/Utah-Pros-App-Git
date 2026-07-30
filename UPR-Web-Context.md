@@ -989,16 +989,20 @@ the shared Supabase is a separate owner-authorized window.** Until it applies th
 frontend gate fails closed (tour never shows), so the code deploys safely first.
 
 Frontend: `src/components/TechLayout.jsx` mounts the lazy `src/components/tech/onboarding/
-TechOnboarding.jsx` (3 full-screen steps: welcome → day-to-day value → notification priming) when
-`src/hooks/useTechOnboarding.js` says the versioned flag is unseen. Show-once = server flag + an
-employee-scoped localStorage mirror (`upr:tech-onboarding-seen:v1`, lib `src/lib/techOnboarding.js` —
-instant offline decision, offline-ack resync, unit-tested in `tests/qa/unit/tech-onboarding-gate.test.js`).
-Push enrollment in step 3 goes ONLY through the existing fail-closed chokepoints
-(`enableNativePushForEmployee` native / `enablePush` web via `runDevicePushAction`); any refusal
-completes the tour with a Settings pointer, and the step is dropped when the build/device can't enroll.
-Styles ride the lazy chunk (`TechOnboarding.css` — index.css sits at its blocking CI budget). Strings:
-`tech.json → onboarding.*` (en/pt/es). Re-show a future redesign by bumping
-`TECH_ONBOARDING_VERSION` in `src/lib/techOnboarding.js`.
+TechOnboarding.jsx` (owner spec 2026-07-29: ALWAYS 3 full-screen steps, forward-only, no dismiss —
+welcome → day-to-day value → notification priming) when `src/hooks/useTechOnboarding.js` says the
+versioned flag is unseen. Show-once = server flag + an employee-scoped localStorage mirror
+(`upr:tech-onboarding-seen:v1`, lib `src/lib/techOnboarding.js` — instant offline decision,
+offline-ack resync, unit-tested in `tests/qa/unit/tech-onboarding-gate.test.js`). Screen 3 has ONE
+button; the system permission prompt fires only from that press, via the existing fail-closed
+chokepoints (`enableNativePushForEmployee` native / `enablePush` web via `runDevicePushAction`).
+Allow/deny/can't-enroll all continue identically into a two-phase exit that reveals the Dash beneath
+(success additionally fires the native success haptic); Settings → Notifications is the recovery
+path. Styles ride the lazy chunk (`TechOnboarding.css` — index.css sits at its blocking CI budget).
+Strings: `tech.json → onboarding.*` (en/pt/es). **What's New mechanism (owner-confirmed intent):**
+the content layer is the `TOUR_STEPS` descriptor list in TechOnboarding.jsx — a future version bumps
+`TECH_ONBOARDING_VERSION` in `src/lib/techOnboarding.js` and swaps that list; the shell (gating,
+state machine, focus trap, exit) is reused as-is.
 
 ### Workers & Dev
 ```

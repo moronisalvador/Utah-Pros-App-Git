@@ -119,14 +119,9 @@
     "valueRow3": "Escríbele a la oficina sin llamadas de ida y vuelta.",
     "notifyTitle": "Entérate al momento",
     "notifyBody": "Recibe un aviso en cuanto un cliente te escriba o te agenden una cita.",
-    "notifyGrantedTitle": "Todo listo",
-    "notifyGrantedBody": "Avisos activados. Sabrás cuando un cliente te escriba o un trabajo entre en tu agenda.",
-    "notifyDeclinedBody": "No hay problema — puedes activar los avisos cuando quieras en Configuración → Notificaciones.",
     "enableBtn": "Activar notificaciones",
     "enabling": "Activando…",
-    "notNow": "Ahora no",
     "next": "Siguiente",
-    "done": "Listo",
     "stepOf": "Paso {{n}} de {{total}}"
   }
 }

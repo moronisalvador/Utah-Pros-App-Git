@@ -44,15 +44,39 @@
   animation: techOnbIn var(--motion-duration-slow) var(--motion-ease-decelerate);
 }
 .tech-onb:focus { outline: none; }
+
+/* Finale (owner spec: a polished hand-off into the Dash underneath).
+   Two phases, ~360ms total (180ms content; cover 140ms delay + 220ms) — a
+   deliberate first-run-tier exception to the ≈75%-of-enter exit rule, used
+   exactly once per employee: the step copy drifts up and the footer drifts
+   down (the cover "opens"), then the cover lifts toward the viewer
+   (scale 1.02) while fading, revealing the dashboard already sitting
+   beneath. The cover runs on --motion-ease-standard ON PURPOSE, not the §3
+   exit accelerate: a reveal front-loads the fade so the dashboard shows
+   through early with a gentle landing — accelerate reads as a dismissal.
+   transform/opacity only; the JSX finishes on the root's techOnbOut
+   animationend (JS timer fallback for reduced motion). */
 .tech-onb--closing {
-  animation: techOnbOut var(--motion-duration-base) var(--motion-ease-accelerate) forwards;
+  animation: techOnbOut var(--motion-duration-base) var(--motion-ease-standard) 140ms both;
   pointer-events: none;
+}
+.tech-onb--closing .tech-onb-step {
+  animation: techOnbContentUp 180ms var(--motion-ease-accelerate) forwards;
+}
+.tech-onb--closing .tech-onb-footer {
+  animation: techOnbContentDown 180ms var(--motion-ease-accelerate) forwards;
 }
 @keyframes techOnbIn {
   from { opacity: 0; }
 }
 @keyframes techOnbOut {
-  to { opacity: 0; transform: scale(0.985); }
+  to { opacity: 0; transform: scale(1.02); }
+}
+@keyframes techOnbContentUp {
+  to { opacity: 0; transform: translateY(-14px); }
+}
+@keyframes techOnbContentDown {
+  to { opacity: 0; transform: translateY(14px); }
 }
 
 .tech-onb-scene {
@@ -132,9 +156,6 @@
 }
 @keyframes techOnbPop {
   from { opacity: 0; transform: scale(0.85); }
-}
-.tech-onb-icon--success {
-  color: var(--status-working-color);
 }
 /* One-shot bell ring, delayed until the priming copy has been read for a
    beat — it points the eye at exactly what the button will turn on. */
@@ -251,12 +272,6 @@
   background: var(--accent);
   color: var(--accent-text);
 }
-.tech-onb-btn--ghost {
-  background: transparent;
-  color: var(--text-secondary);
-  min-height: var(--tech-min-tap);
-}
-
 .tech-onb-sr {
   position: absolute;
   width: 1px;
@@ -297,8 +312,12 @@
   .tech-onb-step--leaving {
     opacity: 0;
   }
-  .tech-onb--closing {
+  .tech-onb--closing,
+  .tech-onb--closing .tech-onb-step,
+  .tech-onb--closing .tech-onb-footer {
     animation: none;
+  }
+  .tech-onb--closing {
     opacity: 0;
   }
   .tech-onb-dot-pill { transition: none; }
