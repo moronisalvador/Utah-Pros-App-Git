@@ -33,7 +33,17 @@ before promoting.
 
 ## CRM lead value (2026-07-30, owner-directed standalone) — APPLIED
 
-`20260730133000_crm_lead_value_from_claim.sql`. Staff can type a lead's value by hand, and it
+`20260730133000_crm_lead_value_from_claim.sql` → live ledger **`20260730155213`**. Proven on the
+`qa-staging` branch first (all 7 behavioural scenarios PASS, including the multi-job sum), then
+applied to production with 13 postconditions verified: 6 functions, `anon` EXECUTE false on every
+one, both constraints validated, 3 triggers, the invoice trigger watching all 7 decision columns,
+Won auto-advance preserved, and `crm_sync_lead_value` still present but unwired.
+
+**The staging run earned its keep:** it caught `crm_backfill_lead_values` granted to `anon` (a
+transcription slip in the apply payload, not in the reviewed file) plus two defects in the
+behavioural test's fixtures. Apply the reviewed FILE, not a retyped copy.
+
+Staff can type a lead's value by hand, and it
 otherwise fills itself from billing: **the SUM of every committed invoice across ALL jobs under the
 lead's claim** (88 of 157 claims have more than one job, so multi-job is the normal case).
 
