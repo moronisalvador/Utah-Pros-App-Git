@@ -1585,7 +1585,7 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
             {editingValue ? (
               <span className="crm-lead-value-edit">
                 <input
-                  className="crm-input crm-lead-value-input"
+                  className="crm-input"
                   value={valueDraft}
                   onChange={e => setValueDraft(e.target.value)}
                   onKeyDown={e => {
@@ -1609,17 +1609,21 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                 >Cancel</button>
               </span>
             ) : (
-              <button
-                type="button"
-                className="crm-lead-value-display"
-                onClick={() => { setValueDraft(lead.value == null ? '' : String(lead.value)); setEditingValue(true); }}
-                aria-label={lead.value == null ? 'Set lead value' : `Edit lead value, currently ${formatMoney(lead.value)}`}
-              >
-                {lead.value == null ? <span className="crm-panel-empty">Set value</span> : formatMoney(lead.value)}
+              <span>
+                <button
+                  type="button"
+                  className={`crm-lead-value${lead.value == null ? ' crm-lead-value-muted' : ''}`}
+                  onClick={() => { setValueDraft(lead.value == null ? '' : String(lead.value)); setEditingValue(true); }}
+                  aria-label={lead.value == null ? 'Set lead value' : `Edit lead value, currently ${formatMoney(lead.value)}`}
+                >
+                  {lead.value == null ? 'Set value' : formatMoney(lead.value)}
+                </button>
+                {/* Quiet note, not a pill — it should sit in the row like the
+                    label's own muted text rather than compete with the number. */}
                 {lead.value != null && lead.value_source === 'auto' && (
-                  <span className="crm-auto-badge">auto</span>
+                  <span className="crm-lead-value-muted"> · auto</span>
                 )}
-              </button>
+              </span>
             )}
           </div>
 
