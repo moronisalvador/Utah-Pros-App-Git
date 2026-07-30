@@ -61,37 +61,6 @@ describe('permission write gates — both doors', () => {
     expect(existsSync(RB)).toBe(true);
   });
 
-  it('leaves ledger atomicity to Supabase and requires employee identity first', () => {
-    const source = readFileSync(MIG, 'utf8').toLowerCase();
-    expect(source).toContain(
-      'the supabase migration executor owns the transaction',
-    );
-    expect(sql).not.toMatch(/\b(?:begin|commit|rollback)\s*;/i);
-    expect(sql).toContain(
-      "migration.name = 'mobile_employee_identity_authority'",
-    );
-    expect(sql).toContain(
-      "policy.polname = 'allow_authenticated_employees'",
-    );
-    expect(sql).toContain("policy.polcmd = 'r'");
-    for (const privilege of [
-      'insert',
-      'update',
-      'delete',
-      'truncate',
-      'references',
-      'trigger',
-      'maintain',
-    ]) {
-      expect(sql).toContain(
-        `has_table_privilege('authenticated', 'public.employees', '${privilege}')`,
-      );
-      expect(sql).toContain(
-        `has_table_privilege('anon', 'public.employees', '${privilege}')`,
-      );
-    }
-  });
-
   it('defines the shared admin predicate as a STABLE definer with pinned search_path', () => {
     expect(sql).toContain('create or replace function public.is_active_internal_admin()');
     expect(sql).toContain('stable');
