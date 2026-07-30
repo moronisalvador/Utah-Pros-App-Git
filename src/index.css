@@ -13094,14 +13094,17 @@ html.ui-glass .tech-nav {
 :root[data-native="true"] .public-native-shell > .set-pw-page {
   min-height: 0;
 
-/* ─── CRM LEAD VALUE (2026-07-30) — display is a <button> so an unset value is keyboard-reachable ── */
-.crm-lead-value-display { display: inline-flex; align-items: center; gap: var(--space-2); background: none; font: inherit; border: 1px solid transparent; border-radius: var(--crm-radius); color: var(--crm-text-primary); cursor: pointer; }
-.crm-lead-value-display:hover { border-color: var(--crm-border); }
-.crm-lead-value-display:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 1px; }
-.crm-lead-value-edit { display: inline-flex; align-items: center; gap: var(--space-2); }
-.crm-lead-value-input { width: 120px; }
+/* ─── CRM LEAD VALUE (2026-07-30) — the value must read as the row's own value, not a control dropped into it ── */
+.crm-lead-value {
+  background: none; border: 0; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; border-bottom: 1px dotted var(--crm-border);
+}
+.crm-lead-value:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 2px; }
+.crm-lead-value-muted { color: var(--crm-text-tertiary); }
+.crm-lead-value-edit { display: flex; align-items: center; gap: var(--space-2); }
+.crm-lead-value-edit .crm-input { width: 104px; padding: 4px 8px; font-size: 13px; }
 @media (max-width: 768px) {
   .crm-lead-value-edit { flex-wrap: wrap; justify-content: flex-end; }
-  .crm-lead-value-input { width: 100%; }
-  .crm-lead-value-edit .crm-btn { height: 44px; }
+  .crm-lead-value-edit .crm-input { width: 100%; }
+  .crm-lead-value-edit .crm-btn { min-height: 44px; }
 }
