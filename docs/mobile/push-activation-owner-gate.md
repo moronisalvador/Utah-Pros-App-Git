@@ -346,6 +346,34 @@ different stores; do not "fix" one to match the other. First dispatch should
 run with `publish_to_testflight: false` to prove the archive/signing lane
 before any upload is attempted.
 
+## Build 1.0.0 (2) — verified evidence (2026-07-30 morning)
+
+Second internal-TestFlight build, same Path B route and the same hard gates.
+
+- Source: clean `main` `5dfafb0ba67f6ead27e97d753f5a3e216fc46404` (promotions
+  #556 + #557), genuinely clean worktree, zero tracked drift after `cap sync ios`.
+- Bundle invariants confirmed in the minified output: `VITE_NATIVE_API_ORIGIN`
+  `https://utahpros.app`, `VITE_APNS_ENV` `production`, push flag exact `true`,
+  release SHA = that commit, and `VITE_DEV_TEST_*` empty.
+- `verify-ios-release-artifact.mjs` **PASS before upload**: 1.0.0 (2),
+  `aps-environment=production` on archive and IPA, `get-task-allow=false`,
+  App Store profile, privacy manifest, no tracking domains. IPA SHA-256
+  `d86be2b024e647116d5005b2f46581a489a13b79521902b7eeab5d8dec981811`; report
+  `ios/build/UPR-b2-release-verification.json`.
+- Uploaded 2026-07-30 07:11 MT via Organizer → TestFlight **Internal Only**
+  (owner signed in; Xcode initially defaulted to the wrong Apple ID). Apple
+  reported upload complete for 1.0.0 (2). No App Review submission, no
+  `ios-release.yml` dispatch — `ios-signing` secrets still unpopulated.
+- Carries: always-complete sign-out + the ended-session revival guard (the fix
+  for the 2026-07-29 stuck-sign-out defect), the first-run onboarding tour
+  (now database-backed — its migration applied the same morning), signing/legal
+  escape hatches, origin-aware job back, nav haptics, and the ITMS-90683
+  location purpose string.
+- **Open owner gates for this build:** the on-device account-switch refusal
+  check (still never exercised — it was blocked by the sign-out defect this
+  build fixes), and decoding one real access token locally to confirm the
+  `session_id` claim shape the revival guard keys on.
+
 ## First TestFlight release — verified evidence (2026-07-29 build night)
 
 **Build path used:** Path B (local Xcode archive) per
