@@ -720,6 +720,10 @@ nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table.
+employee_onboarding_state — **AUTHORED, NOT APPLIED (Jul 29 2026)** — per-employee versioned first-run
+                          onboarding flag (employee_id + surface PK, version_seen, updated_at). Deny-all
+                          RLS (enabled+forced, zero browser-role grants); reached only via the two
+                          selector-free definer RPCs (see "Tech first-run onboarding" RPC section).
 automation_rules        — Workflow automation rules
 insurance_carriers      — 29 rows — Carrier lookup table
 referral_sources        — 49 rows — Referral source lookup table
@@ -968,6 +972,38 @@ increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → in
 Shared lib: `functions/lib/twilio-errors.js` — `classifyTwilioError(code)` → `{label, suppress,
 contactFlag, uiClass}` for 21610/30006/30007/30034 (+ safe DEFAULT). Import-only for the wave (A applies
 suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `.claude/rules/sms-experience-wave-ownership.md` §9.
+
+### Tech first-run onboarding (Jul 29 2026 — authored, **NOT applied**)
+```
+get_my_onboarding_version_seen(p_surface TEXT) → integer — SECURITY DEFINER, search_path '', selector-free
+                                  (auth.uid() → active internal employee, same role list as
+                                  upsert_my_native_device_token); surface allowlist ('tech'); returns the
+                                  caller's version_seen or 0. REVOKE PUBLIC/anon before GRANT
+                                  authenticated+service_role.
+ack_my_onboarding_seen(p_surface TEXT, p_version INT) → integer — same posture; monotonic upsert
+                                  (GREATEST) into employee_onboarding_state so a replay can never re-arm
+                                  a finished tour; p_version validated 1..10000.
+```
+Migration `supabase/migrations/20260729220000_tech_onboarding_state.sql` (+ paired rollback, + CI
+contract test `tests/qa/unit/tech-onboarding-state-migration.test.js`) — **authored only; applying to
+the shared Supabase is a separate owner-authorized window.** Until it applies the RPC 404s and the
+frontend gate fails closed (tour never shows), so the code deploys safely first.
+
+Frontend: `src/components/TechLayout.jsx` mounts the lazy `src/components/tech/onboarding/
+TechOnboarding.jsx` (owner spec 2026-07-29: ALWAYS 3 full-screen steps, forward-only, no dismiss —
+welcome → day-to-day value → notification priming) when `src/hooks/useTechOnboarding.js` says the
+versioned flag is unseen. Show-once = server flag + an employee-scoped localStorage mirror
+(`upr:tech-onboarding-seen:v1`, lib `src/lib/techOnboarding.js` — instant offline decision,
+offline-ack resync, unit-tested in `tests/qa/unit/tech-onboarding-gate.test.js`). Screen 3 has ONE
+button; the system permission prompt fires only from that press, via the existing fail-closed
+chokepoints (`enableNativePushForEmployee` native / `enablePush` web via `runDevicePushAction`).
+Allow/deny/can't-enroll all continue identically into a two-phase exit that reveals the Dash beneath
+(success additionally fires the native success haptic); Settings → Notifications is the recovery
+path. Styles ride the lazy chunk (`TechOnboarding.css` — index.css sits at its blocking CI budget).
+Strings: `tech.json → onboarding.*` (en/pt/es). **What's New mechanism (owner-confirmed intent):**
+the content layer is the `TOUR_STEPS` descriptor list in TechOnboarding.jsx — a future version bumps
+`TECH_ONBOARDING_VERSION` in `src/lib/techOnboarding.js` and swaps that list; the shell (gating,
+state machine, focus trap, exit) is reused as-is.
 
 ### Workers & Dev
 ```

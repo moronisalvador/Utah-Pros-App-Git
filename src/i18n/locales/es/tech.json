@@ -108,5 +108,20 @@
     "blockedTitle": "Esta cuenta no usa la app de campo",
     "blockedSub": "La app de campo es para los equipos que trabajan en obra. Tu cuenta tiene sus propias pantallas con todo lo que necesitas.",
     "blockedAction": "Ir a mis pantallas"
+  },
+  "onboarding": {
+    "a11yTitle": "Recorrido de bienvenida",
+    "welcomeTitle": "Bienvenido a Utah Pros",
+    "welcomeBody": "Toda tu jornada — agenda, trabajos, fotos y mensajes — en una sola app hecha para el campo.",
+    "valueTitle": "Hecha para tu día",
+    "valueRow1": "Mira los trabajos de mañana desde la noche anterior.",
+    "valueRow2": "Marca entrada, agrega fotos y registra lecturas desde el trabajo.",
+    "valueRow3": "Escríbele a la oficina sin llamadas de ida y vuelta.",
+    "notifyTitle": "Entérate al momento",
+    "notifyBody": "Recibe un aviso en cuanto un cliente te escriba o te agenden una cita.",
+    "enableBtn": "Activar notificaciones",
+    "enabling": "Activando…",
+    "next": "Siguiente",
+    "stepOf": "Paso {{n}} de {{total}}"
   }
 }

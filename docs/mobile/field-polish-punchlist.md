@@ -77,3 +77,6 @@ verifiable in the next native build — group them accordingly.
       `.tech-nav-tab` with reduced-motion collapse. Haptic FEEL check on device pends the
       next native build (code path pinned by `tests/qa/unit/tech-nav-haptics.test.js`).
       Office/CRM shells deliberately untouched: the native app mounts only `/tech/*`.
+- [ ] (P3) Tech shell side-tab accent border (TechLayout.jsx ~L609) — design hook flags the
+      thick one-side accent; consider a subtler treatment in the next design pass.
+      (Flagged 2026-07-30 during overnight merge; pre-existing.)

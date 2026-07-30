@@ -24,6 +24,10 @@ before promoting.
 - `supabase/migrations/20260728000000_sms_consent_opt_out_only.sql` — opt-out-only consent
   (owner-directed 2026-07-28). Until it applies, the database never returns `IMPLIED_CONSENT`, so
   live behaviour is unchanged. Apply is a separate owner-authorized window.
+- `supabase/migrations/20260729220000_tech_onboarding_state.sql` — tech first-run onboarding flag
+  (owner request 2026-07-29): `employee_onboarding_state` + two selector-free definer RPCs. Until
+  it applies, the frontend gate fails closed and the tour never shows — deploy code first, apply
+  in a separate owner-authorized window.
 
 ## Standing operational state
 
