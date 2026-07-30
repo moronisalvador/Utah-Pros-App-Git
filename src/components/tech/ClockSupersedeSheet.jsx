@@ -63,14 +63,14 @@ export default function ClockSupersedeSheet({ precheck, busy, onConfirm, onCance
       >
         {/* Red header band */}
         <div style={{
-          background: 'var(--danger-bg)', borderBottom: '1px solid var(--danger-border)',
+          background: '#fef2f2', borderBottom: '1px solid #fecaca',
           borderTopLeftRadius: 18, borderTopRightRadius: 18,
           padding: '16px 18px',
         }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--danger)' }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#dc2626' }}>
             Still clocked in
           </div>
-          <div style={{ fontSize: 13, color: 'var(--danger)', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: '#b91c1c', marginTop: 2 }}>
             You're {statusWord} on {label} · {elapsed}
           </div>
         </div>
@@ -119,7 +119,7 @@ const primaryBtn = {
   width: '100%', minHeight: 48,
   borderRadius: 'var(--tech-radius-button)',
   fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-sans)',
-  background: 'var(--danger)', color: '#fff', border: '1px solid transparent',
+  background: '#dc2626', color: '#fff', border: '1px solid transparent',
   cursor: 'pointer', touchAction: 'manipulation',
 };
 

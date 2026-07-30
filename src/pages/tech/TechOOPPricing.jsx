@@ -436,9 +436,9 @@ export default function TechOOPPricing() {
               style={{
                 minHeight: 'var(--tech-min-tap)',
                 padding: '0 16px',
-                background: confirmReset ? 'var(--danger-bg)' : 'var(--bg-primary)',
-                color:      confirmReset ? 'var(--danger)' : 'var(--text-secondary)',
-                border:     `1px solid ${confirmReset ? 'var(--danger-border)' : 'var(--border-color)'}`,
+                background: confirmReset ? '#fef2f2' : 'var(--bg-primary)',
+                color:      confirmReset ? '#dc2626' : 'var(--text-secondary)',
+                border:     `1px solid ${confirmReset ? '#fecaca' : 'var(--border-color)'}`,
                 borderRadius: 'var(--tech-radius-button)',
                 fontSize: 14, fontWeight: 600, cursor: 'pointer',
                 fontFamily: 'var(--font-sans)',
@@ -455,9 +455,9 @@ export default function TechOOPPricing() {
                 style={{
                   minHeight: 'var(--tech-min-tap)',
                   padding: '0 16px',
-                  background: confirmDelete ? 'var(--danger-bg)' : 'var(--bg-primary)',
-                  color:      confirmDelete ? 'var(--danger)' : 'var(--danger)',
-                  border:     `1px solid ${confirmDelete ? 'var(--danger-border)' : 'var(--border-light)'}`,
+                  background: confirmDelete ? '#fef2f2' : 'var(--bg-primary)',
+                  color:      confirmDelete ? '#dc2626' : '#dc2626',
+                  border:     `1px solid ${confirmDelete ? '#fecaca' : 'var(--border-light)'}`,
                   borderRadius: 'var(--tech-radius-button)',
                   fontSize: 14, fontWeight: 600, cursor: 'pointer',
                   fontFamily: 'var(--font-sans)',
@@ -558,8 +558,8 @@ function TotalCard({ calc, marginTier, tierColors }) {
       {marginTier === 'red' && (
         <div style={{
           marginTop: 12, padding: '8px 10px',
-          fontSize: 12, color: 'var(--danger)',
-          background: 'var(--danger-bg)', border: '1px solid var(--danger-border)',
+          fontSize: 12, color: '#991b1b',
+          background: '#fef2f2', border: '1px solid #fecaca',
           borderRadius: 'var(--radius-md)', fontWeight: 500,
         }}>
           ⚠ Margin below 10% — decline or reprice
@@ -568,8 +568,8 @@ function TotalCard({ calc, marginTier, tierColors }) {
       {marginTier === 'amber' && (
         <div style={{
           marginTop: 12, padding: '8px 10px',
-          fontSize: 12, color: 'var(--warning)',
-          background: 'var(--warning-bg)', border: '1px solid var(--warning-border)',
+          fontSize: 12, color: '#92400e',
+          background: '#fffbeb', border: '1px solid #fde68a',
           borderRadius: 'var(--radius-md)',
         }}>
           ⚠ Below 20% target
@@ -615,7 +615,7 @@ function InternalPanel({ calc, marginTier }) {
       <div style={{ borderTop: '1px solid var(--border-light)', marginTop: 6, paddingTop: 6 }} />
       <BR label="Total cost + OH" value={internal.totalDirectCost + internal.overheadAlloc} strong />
       <BR label="Net profit" value={internal.netProfit} strong
-          color={internal.netProfit >= 0 ? 'var(--success)' : 'var(--danger)'} />
+          color={internal.netProfit >= 0 ? '#059669' : '#dc2626'} />
     </div>
   );
 }

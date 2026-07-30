@@ -123,10 +123,10 @@ function Station({ icon, label, timestamp, belowLabel, active, confirm, disabled
   const isCompleted = !!timestamp && !active;
   const iconColor = active ? '#fff' : isCompleted ? 'var(--text-tertiary)' : 'var(--text-tertiary)';
   const circleBg = active
-    ? (confirm ? 'var(--danger)' : 'var(--accent)')
+    ? (confirm ? '#dc2626' : 'var(--accent)')
     : 'var(--bg-tertiary)';
   const labelColor = active
-    ? (confirm ? 'var(--danger)' : 'var(--accent)')
+    ? (confirm ? '#dc2626' : 'var(--accent)')
     : isCompleted ? 'var(--text-secondary)' : 'var(--text-tertiary)';
 
   const content = (
@@ -493,9 +493,9 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             fontFamily: 'var(--font-sans)',
             cursor: 'pointer',
             touchAction: 'manipulation',
-            background: status === 'paused' ? 'var(--success-bg)' : 'transparent',
-            color: status === 'paused' ? 'var(--success)' : 'var(--text-primary)',
-            border: `1.5px solid ${status === 'paused' ? 'var(--success-border)' : 'var(--border-color)'}`,
+            background: status === 'paused' ? '#f0fdf4' : 'transparent',
+            color: status === 'paused' ? '#059669' : 'var(--text-primary)',
+            border: `1.5px solid ${status === 'paused' ? '#bbf7d0' : 'var(--border-color)'}`,
           }}
         >
           {status === 'on_site' ? t('pause') : t('resume')}
@@ -513,9 +513,9 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             fontSize: 13, fontWeight: 600,
             fontFamily: 'var(--font-sans)', cursor: 'pointer',
             touchAction: 'manipulation',
-            background: confirmReturn ? 'var(--warning-bg)' : 'transparent',
-            color: confirmReturn ? 'var(--warning)' : 'var(--text-secondary)',
-            border: `1.5px solid ${confirmReturn ? 'var(--warning-border)' : 'var(--border-color)'}`,
+            background: confirmReturn ? '#fffbeb' : 'transparent',
+            color: confirmReturn ? '#b45309' : 'var(--text-secondary)',
+            border: `1.5px solid ${confirmReturn ? '#fde68a' : 'var(--border-color)'}`,
             transition: 'background 0.15s, color 0.15s, border-color 0.15s',
           }}
         >
@@ -538,10 +538,6 @@ export default function TimeTracker({ appt, employee, db, onUpdate }) {
             style={{ fontSize: 16, marginBottom: 10, width: '100%' }}
           />
           <div style={{ display: 'flex', gap: 8 }}>
-            {/* The amber below is deliberately NOT var(--warning): it is a saturated
-                fill carrying white text, so it already reads correctly in both
-                themes, and the lighter token (#d97706) would drop white-on-amber
-                below AA. */}
             <button
               className="tech-tracker-btn"
               onClick={handleReturnClockIn}
