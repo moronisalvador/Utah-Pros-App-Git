@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-30T12:27:49Z",
+  "capturedAt": "2026-07-30T19:21:11Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "b346e256f611630e46aeab24388d553fe3ba7eee",
+  "captureBaseCommit": "1a93e5a8ef89a63f89daac780699466872eb083b",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -209,12 +209,16 @@
       "version": "20260729221116"
     },
     {
-      "version": "20260730115220",
-      "name": "tech_onboarding_state"
+      "name": "tech_onboarding_state",
+      "version": "20260730115220"
     },
     {
-      "version": "20260730121811",
-      "name": "sms_consent_opt_out_only"
+      "name": "sms_consent_opt_out_only",
+      "version": "20260730121811"
+    },
+    {
+      "name": "crm_lead_value_from_claim",
+      "version": "20260730155213"
     }
   ],
   "functions": [

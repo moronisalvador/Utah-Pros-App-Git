@@ -320,6 +320,12 @@
       "name": "sms_consent_opt_out_only",
       "path": "supabase/migrations/20260728000000_sms_consent_opt_out_only.sql",
       "reviewedOriginCommit": "40c992ec7ea286c84b399e95e72a2b23984cea80"
+    },
+    {
+      "version": "20260730155213",
+      "name": "crm_lead_value_from_claim",
+      "path": "supabase/migrations/20260730133000_crm_lead_value_from_claim.sql",
+      "reviewedOriginCommit": "8bf6be6b3e5120bb5ec6b81c2801aef9c63ce1b7"
     }
   ],
   "selectedFunctions": [

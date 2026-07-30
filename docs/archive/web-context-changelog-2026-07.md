@@ -5607,3 +5607,55 @@ Production and staging share deployed definition hash
 search path, caller guard, phone lock, and outbox markers. Production
 verification was read-only. No Twilio webhook/provider configuration changed,
 no provider switch occurred, and no live traffic was sent.
+
+## 2026-07-30 — Conflict markers, a dead-CSS structural defect, and the release-gate unblock
+
+Three pre-existing defects found and fixed while reconciling `dev` and `main` and
+promoting. None was introduced by this session.
+
+**1. Committed conflict markers in `UPR-Web-Context.md`.** Unresolved
+`<<<<<<< ours` / `=======` / `>>>>>>> theirs` at :132/:170/:213 had been committed
+and pushed by `f27fc366`, and were live in BOTH `dev` and `main` — the Rule 9
+source-of-truth doc was corrupted in production. The two sides documented
+different, independent topics (the LES-01 load-failure contract and the
+`useResumeRefetch` single-hook rule), so neither superseded the other; both were
+kept verbatim and only the three marker lines removed. A repo-wide sweep found no
+other occurrence.
+
+**2. One unclosed `{` in `src/index.css`, silently disabling all `.crm-lead-value`
+styling.** Details in the current-state doc. The short version: the last rule in
+the file never closed, so the build re-emitted the remainder as CSS nesting and 7
+selectors became inert. This was the true cause of the lead Value control showing
+native button chrome. Found independently and near-simultaneously by two sessions;
+the two fixes were converged by hand (merging two fixes for one missing brace can
+emit two braces and break the file the other way — brace delta was verified 0 after
+resolution, and `index.css` ended byte-identical to the CRM session's version).
+Now guarded by `tests/qa/unit/css-structural-integrity.test.js`.
+
+**3. The `dev → main` release gate could not have passed for anyone.**
+`validate:provenance --strict-freshness` failed for two reasons, only one of which
+was the 6-hour evidence clock (missed by 10 minutes). The real one:
+`Unmapped live ledger row 20260730155213:crm_lead_value_from_claim` — that
+migration was applied to production but never added to `ledgerMappings`, so every
+promotion was blocked until it was mapped. Mapped to its committed source at
+`reviewedOriginCommit 8bf6be6b`; the gate independently verifies source identity,
+so a wrong mapping fails rather than passes.
+
+Evidence was refreshed with the committed read-only catalog query — SELECT-only
+over `pg_proc`/`pg_policies`/`schema_migrations`, returning md5 hashes and
+privilege booleans, no table data and no secrets. **No migration was applied and
+no write touched the shared project**; the provenance commit is bookkeeping about
+an apply that had already happened. `capturedAt` is honest rather than re-stamped:
+the facts were re-queried immediately before assembly and matched exactly
+(`funcs_digest 1b029dac7d5c6d6688be77c1bb33cc04`, ledger 54, functions 27).
+
+Also landed: `ci_scripts/ci_post_clone.sh` now runs `npm ci` before validating the
+`VITE_SUPABASE_*` workflow variables, so a missing variable can no longer surface
+as a misleading missing-SPM-package error. Dormant — Xcode Cloud is not the
+canonical pipeline and is being paused; `.github/workflows/ios-release.yml` is
+canonical.
+
+Lesson recorded: three of these were invisible to diff review. Committed conflict
+markers, an unbalanced brace at end-of-file, and a missing provenance mapping all
+read as ordinary additions in a hunk. Each is now caught by a mechanical guard
+rather than an eye.
