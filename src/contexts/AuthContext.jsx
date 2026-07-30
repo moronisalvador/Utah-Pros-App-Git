@@ -554,7 +554,14 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === explicitLogout) {
             explicitLogoutRef.current = null;
           }
-          if (cleanupResult?.ready !== true) {
+          // Race backstop for the same explicit logout: its cleanup may have
+          // classified a journaled-transient residual as deferrable, and this
+          // observer must not re-wall what logout() is completing. An
+          // observer-only SIGNED_OUT (no explicit transition) never defers —
+          // the signed-out reauth wall stays exactly as before.
+          const deferredExplicitCleanup = !!explicitLogout
+            && cleanupResult?.deferrable === true;
+          if (cleanupResult?.ready !== true && !deferredExplicitCleanup) {
             const signedOutReauthRequired = !explicitLogout;
             cleanupBlockRef.current = {
               db: priorDb,
@@ -747,12 +754,13 @@ export function AuthProvider({ children }) {
   // be revoked before the login screen is exposed.
   const clearRejectedPrincipalState = useCallback(async (
     dbClient,
-    { ownerKey = null } = {},
+    { ownerKey = null, transientPushRetry = false } = {},
   ) => {
     writeWebPushMirror(null, null);
     return cleanupAccountDeviceState(dbClient, {
       clearCaches: false,
       ownerKey,
+      transientPushRetry,
     });
   }, []);
 
@@ -771,6 +779,7 @@ export function AuthProvider({ children }) {
       ownerKey = cleanupBlockRef.current?.ownerKey
         || readyOwnerRef.current,
       cleanupPromise = null,
+      allowDeferred = false,
     } = {},
   ) => {
     let cleanupResult;
@@ -800,6 +809,27 @@ export function AuthProvider({ children }) {
     if (cleanupResult?.ready === true) {
       cleanupBlockRef.current = null;
       return cleanupResult;
+    }
+
+    // Journaled-transient residual on an explicit sign-out (owner decision
+    // 2026-07-29): local delivery is revoked and a same-owner pending-detach
+    // journal survives, so the bind-time gate (handleAuthUser →
+    // retryPendingAccountPushDetaches) enforces reconciliation — or the
+    // previous-account recovery wall — before any account publishes again.
+    // Never defers over a recovery/reauth block another flow set.
+    if (
+      allowDeferred
+      && cleanupResult?.deferrable === true
+      && cleanupBlockRef.current?.recoveryRequired !== true
+      && cleanupBlockRef.current?.passwordRecovery !== true
+      && cleanupBlockRef.current?.signedOutReauthRequired !== true
+    ) {
+      cleanupBlockRef.current = null;
+      return {
+        ...cleanupResult,
+        ready: false,
+        deferred: true,
+      };
     }
 
     cleanupBlockRef.current = {
@@ -1317,8 +1347,11 @@ export function AuthProvider({ children }) {
     });
     const cleanupPromise = authLifecycle.enqueueAccountState(
       generation,
+      // Explicit sign-out is the one flow with the bounded silent push-detach
+      // retry window (~10s backoff) before any blocking UI.
       () => clearRejectedPrincipalState(priorDb, {
         ownerKey: priorOwnerKey,
+        transientPushRetry: true,
       }),
       { requireCurrent: false },
     );
@@ -1338,10 +1371,11 @@ export function AuthProvider({ children }) {
         principalId: priorPrincipal,
         ownerKey: priorOwnerKey,
         cleanupPromise,
+        allowDeferred: true,
       },
     );
     if (cleanupResult.cancelled) return;
-    if (!cleanupResult.ready) {
+    if (!cleanupResult.ready && cleanupResult.deferred !== true) {
       explicitLogoutRef.current = null;
       const cleanupError = new Error(ACCOUNT_CLEANUP_BLOCKED_MESSAGE);
       authLifecycle.commit(generation, () => {
@@ -1349,6 +1383,15 @@ export function AuthProvider({ children }) {
         setLoading(true);
       });
       throw cleanupError;
+    }
+    if (cleanupResult.deferred === true) {
+      // Deliberately silent for the user (owner precedent 2026-07-28: a banner
+      // about a self-resolving internal window is noise). The journal finishes
+      // at the next same-owner sign-in or blocks a foreign owner.
+      console.warn(
+        '[auth] Sign out completed with journaled push cleanup pending; '
+        + 'it reconciles at the next same-owner sign-in.',
+      );
     }
 
     let signOutError = null;
@@ -1400,6 +1443,9 @@ export function AuthProvider({ children }) {
     }
     if (
       cleanupResult?.reloadRequired
+      // A deferred sign-out skips the advisory reload so the settled journal
+      // (not an interrupted context) is the only memory the next boot needs.
+      && cleanupResult?.deferred !== true
       && authLifecycle.isCurrent(generation)
     ) {
       resetAfterServiceWorkerChange();
