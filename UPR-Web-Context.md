@@ -2137,7 +2137,7 @@ TWILIO_*                        — 7 vars (pending go-live)
 APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in Cloudflare Preview + Production
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
-APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
+APNS_TOPIC                      — iOS bundle id of the RECEIVING app: com.utahprosrestoration.upr (production); the side-by-side dev app needs Preview set to com.utahprosrestoration.upr.dev (owner-gated, not made — see docs/mobile/dev-app-variant.md)
 APNS_ENV                        — exact "sandbox" (development-signed builds) | "production" (TestFlight/App Store); missing/unknown fails closed
 ```
 
@@ -2880,10 +2880,32 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **Side-by-side dev variant (2026-07-29):** third build configuration `Dev` + shared scheme
+  **UPR Dev** in `App.xcodeproj` — bundle id `com.utahprosrestoration.upr.dev`, display name
+  "UPR Dev" (`CFBundleDisplayName` is now `$(UPR_APP_DISPLAY_NAME)`, set per configuration;
+  Debug/Release still resolve to `UPR`), badged `AppIcon-Dev` asset, automatic signing (team
+  `H6ZUT739T9`), development entitlements (`App.entitlements`, `aps-environment: development`).
+  Installs alongside the TestFlight app for testing dev-branch native work on-device.
+  `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
+  and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
+  Debug/Release configs and the TestFlight lane are untouched
+  (`scripts/ios-release-workflow.test.js` still passes). **Shared-DB caveat:** same production
+  Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** owner-gated Cloudflare
+  Preview `APNS_TOPIC` → `com.utahprosrestoration.upr.dev` change required before push reaches the
+  dev app (not made). Full doc: `docs/mobile/dev-app-variant.md`.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
+    **Sign-out cleanup deferral (2026-07-29, owner-directed):** explicit sign-out runs a bounded
+    silent push-detach retry (~10s backoff, skipped offline) before any blocking UI, then completes
+    visually when the only residual is journaled push server work (same-owner marker positively
+    re-read — new `residualJournaled`/`enrollmentPending` detach result fields; `deferrable`
+    classification through `accountDeviceCleanup.js`/`pwaAccountState.js`; `allowDeferred` in
+    AuthContext, logout-only). Foreign-owner/invalid-marker/signed-out-reauth/password-recovery/
+    login/account-switch keep the hard "Finish securing this device" wall; the bind-time
+    `retryPendingAccountPushDetaches` gate is unchanged. Contract:
+    `docs/mobile/push-activation-owner-gate.md`.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
@@ -3836,6 +3858,34 @@ TestFlight installation, production-token registration, and the real-device
 foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
+
+### First TestFlight release shipped (2026-07-29 build night, Path B)
+
+Most of the gates above closed on 2026-07-29 (MT evening). Build **1.0.0 (1)**
+was archived locally from clean `main` HEAD
+`29cc080aaea0df684cc2c4c7a9a53d8df2f53328` (zero tracked drift before and
+after `cap sync ios`) with the workflow invariants baked in as build-time env
+(production API origin, push flag exact `true`, `VITE_APNS_ENV=production`,
+release SHA = that commit; `VITE_DEV_TEST_*` forced empty and verified empty
+in the minified bundle). Signing was **manual, mirroring the CI Fastfile**
+(existing local Apple Distribution certificate + "UPR App Store 2026" profile;
+command-line overrides only, no project edits) rather than the runbook's
+automatic-signing fallback, which assumed no local signing material.
+`scripts/qa/verify-ios-release-artifact.mjs` **passed before upload**
+(`aps-environment=production`, IPA SHA-256
+`432de929decd75db5e7a48310635bf9abed57f4adde0763e4fb9dd07fb9b039a`), and the
+owner uploaded via Organizer → TestFlight **Internal Only** at 19:26 MT.
+Apple delivered with warning **ITMS-90683** (missing
+`NSLocationAlwaysAndWhenInUseUsageDescription`) — non-blocking; the plist key
+and a matching verifier guard are committed on `dev` for the next build.
+The owner installed from TestFlight on a physical iPhone and the **real
+assigned-appointment matrix passed on production**: foreground, background,
+and terminated delivery, tap routing, and minimize/resume. Production-token
+registration is proven by that delivery. Account-switch refusal remains the
+one open matrix item. No workflow dispatch and no App Review submission
+occurred; `ios-signing` secrets remain unpopulated (Path A follow-up).
+Evidence detail: `docs/mobile/push-activation-owner-gate.md`. Field polish
+findings now accumulate in `docs/mobile/field-polish-punchlist.md`.
 
 ## Admin notification presentation Settings (2026-07-29)
 

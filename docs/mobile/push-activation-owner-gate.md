@@ -45,6 +45,48 @@ The foreign-owner discriminator parses the top-level PostgREST body and
 requires the exact `42501` code plus the full canonical SQL message; nested,
 partial, malformed, or merely similar text never clears the journal.
 
+**Sign-out cleanup failure UX (owner-directed 2026-07-29).** After the first
+TestFlight sign-out walled behind "Finish securing this device" on a
+network-ambiguous `delete_my_native_device_token` (the owner's manual Retry
+immediately succeeded), explicit sign-out now (1) runs a bounded silent retry
+of the push detach legs (~10s with backoff, skipped while offline) before any
+blocking UI, and (2) completes visually when the ONLY residual is journaled
+push server work: local delivery revoked in this session, a same-owner
+pending-detach marker positively re-read from storage (`residualJournaled`,
+never the weaker `markerPersisted`), no foreign-owner conflict, no invalid
+marker, no in-flight enrollment, no unknown web subscription state, and every
+non-push cleanup leg clean. The journal is the durable memory: the next
+same-owner sign-in reconciles it (the 60-second provisional window and the
+`42501` discriminator are unchanged), and a different account is refused at
+the bind gate before it publishes or enrolls. Foreign-owner conflict, invalid
+markers, observer-only sign-out (signed-out reauth), password recovery,
+login/account-switch, rejected bootstrap, and any local cleanup failure keep
+the hard blocking screen. A deferred sign-out also skips the advisory
+service-worker reload so no in-flight settlement is orphaned. A retry that
+finds a residual channel's journal vanished, or discovers a foreign owner,
+escalates back to the blocking screen rather than completing. Known limit
+(pre-existing, shared with the composite ready path): each channel keeps ONE
+pending-detach marker and the detach prefers the marker's stale identity over
+the live one, so after a token rotation the journal may cover a stale row
+while a live row goes unjournaled — `residualJournaled` proves a same-owner
+journal exists, not that it names every row this session ever bound.
+
+**Status of the two 2026-07-29 sign-out defects:** this source change fixes
+the FIRST (the overprotective wall). The SECOND — after the owner's Retry
+succeeded, the app re-entered the same account without ever reaching Login
+(session apparently never cleared; see the amended account-switch bullet
+below) — is NOT fixed here. Leading hypothesis from source analysis: a
+token refresh already in flight under the same degraded network resolves
+AFTER `signOut({ scope: 'local' })`, supabase-js re-persists the session,
+and the next resume/recovery emits SIGNED_IN, which the auth observer
+correctly treats as a login and re-bootstraps (profile load + token
+re-upsert, matching the 02:00:06Z evidence). A fix needs its own reviewed
+design: any guard sits in the shared SIGNED_IN path and must not break web
+cross-tab login sync. Until it lands, account switching on the native build
+remains blocked, and the deferral below still leans on the bind-time gate
+whose on-device **account-switch refusal** check remains open — run that
+owner check before broad tech rollout.
+
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
 `Utah Pros notification` / `Open Utah Pros for details.` copy. Owner decision
@@ -139,6 +181,15 @@ failure rather than an explicit configuration error.
 
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
+
+**Side-by-side dev app (2026-07-29):** the `Dev` build configuration
+(`docs/mobile/dev-app-variant.md`) installs as bundle id
+`com.utahprosrestoration.upr.dev`. For push to reach it, Cloudflare **Preview**
+`APNS_TOPIC` must change to `com.utahprosrestoration.upr.dev` (Preview
+`APNS_ENV` stays `sandbox`) plus a Preview redeploy. That is an owner-gated
+dashboard change and has NOT been made; until then the dev app enrolls a
+sandbox token but deliveries are addressed to the production topic and will not
+arrive. Production's variable set is untouched by this.
 
 ## Live activation evidence
 
@@ -252,6 +303,59 @@ build-time* value must be exact `true` for the TestFlight build. These are
 different stores; do not "fix" one to match the other. First dispatch should
 run with `publish_to_testflight: false` to prove the archive/signing lane
 before any upload is attempted.
+
+## First TestFlight release — verified evidence (2026-07-29 build night)
+
+**Build path used:** Path B (local Xcode archive) per
+`docs/handoff/testflight-2026-07-30-macbook.md`, with one disclosed deviation:
+signing was **manual**, mirroring the CI Fastfile's exact overrides
+(`DEVELOPMENT_TEAM`, `UPR_RELEASE_PROFILE_NAME="UPR App Store 2026"`,
+`CURRENT_PROJECT_VERSION=1` on the `xcodebuild` command line, no project-file
+edits), because the 2026-07-28 qualification's Apple Distribution certificate
+and App Store profile were still installed locally. Automatic signing was not
+needed and no agent handled credentials; the owner performed the App Store
+Connect sign-in and the Organizer upload themselves.
+
+- Source: clean `main` HEAD `29cc080aaea0df684cc2c4c7a9a53d8df2f53328`,
+  zero tracked drift before and after `cap sync ios`.
+- Bundle invariants verified in the minified output: API origin
+  `https://utahpros.app`, `VITE_NATIVE_PUSH_ENABLED` exact `true`,
+  `VITE_APNS_ENV` exact `production`, `VITE_RELEASE_SHA` = the commit above,
+  and `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` forced to empty strings
+  (no dev credential reaches a distributed bundle).
+- `verify-ios-release-artifact.mjs` **PASS before upload**: 1.0.0 (1),
+  `aps-environment=production` on archive and IPA, `get-task-allow=false`,
+  App Store profile, privacy manifest bundled, no tracking domains,
+  non-exempt encryption false. IPA SHA-256
+  `432de929decd75db5e7a48310635bf9abed57f4adde0763e4fb9dd07fb9b039a`;
+  sanitized report generated at `ios/build/UPR-release-verification.json`
+  with `sourceCommit` set to the verified commit.
+- Uploaded 2026-07-29 19:26 MT via Organizer → TestFlight **Internal Only**.
+  Apple: delivery successful with warning **ITMS-90683** (missing
+  `NSLocationAlwaysAndWhenInUseUsageDescription`); the plist key and a
+  verifier required-key guard are committed on `dev` so the next archive
+  fails locally instead of warning at Apple.
+- **Production delivery matrix (owner-verified on a physical iPhone, real
+  assigned-appointment events on utahpros.app):** foreground, background,
+  and terminated delivery, tap → correct appointment route, and
+  minimize/resume all **passed** the same evening. The **first production
+  APNs token** is proven registered by that delivery (a direct value-free
+  `device_tokens` read was permission-blocked and unnecessary).
+- **Account-switch refusal: not exercised — blocked by a sign-out defect
+  found during the attempt.** First sign-out raised the fail-closed
+  "Finish securing this device" wall on a network-ambiguous first attempt;
+  the owner's Retry succeeded (API log: `delete_my_native_device_token` 204
+  at 2026-07-30 01:58:33Z), but the app then bootstrapped straight back into
+  the same account (~02:00:06Z, fresh profile load + token re-upsert) without
+  ever reaching Login — the Supabase session was apparently never cleared, so
+  account switching is currently impossible on the native build. Owner
+  directive (2026-07-29): sign-out must always complete immediately; the
+  token detach becomes invisible best-effort/journaled. Fix in progress in a
+  dedicated session ("Soften secure sign-out UX without weakening cleanup"),
+  which received the directive and the log evidence. First-login flows for
+  fresh tech installs are unaffected.
+- Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
+  `ios-signing` secrets), no App Review submission, no flag flips.
 
 ## Remaining activation sequence
 

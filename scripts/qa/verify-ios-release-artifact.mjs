@@ -427,6 +427,10 @@ function validateReleaseApp({
     'NSPhotoLibraryUsageDescription',
     'NSPhotoLibraryAddUsageDescription',
     'NSLocationWhenInUseUsageDescription',
+    // Apple ITMS-90683 (build 1.0.0 (1), 2026-07-29): the Capacitor geolocation
+    // plugin references the Always API, so this purpose string must ship even
+    // though the app only requests when-in-use.
+    'NSLocationAlwaysAndWhenInUseUsageDescription',
     'NSFaceIDUsageDescription',
   ]) {
     requireNonEmptyString(
