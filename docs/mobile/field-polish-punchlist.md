@@ -34,6 +34,16 @@ verifiable in the next native build — group them accordingly.
       match the dashboard header buttons' haptic (via src/lib/nativeHaptics.js, per
       motion-standard.md §4). (Found 2026-07-29, TestFlight 1.0.0 (1), iPhone 17 Pro Max.)
 
+**Theme: perceived performance**
+
+- [ ] (P2) Notification bell first-open jank — the first tap after every cold app start
+      opens the panel at slideshow frame rate (feels "buggy, maybe 5 FPS"); every
+      subsequent open is smooth. Likely cause: the panel's lazy chunk loads + parses
+      during the open animation. Fix shape: idle-preload the chunk after shell mount
+      and/or gate the open animation on content readiness (perf-budget.md +
+      motion-standard.md §5 govern). (Found 2026-07-29, TestFlight 1.0.0 (1), recurs
+      every cold start.)
+
 **Theme: notifications surface (feature-sized — may fold into the onboarding session)**
 
 - [ ] (P3) Settings → Notifications — tapping the section should open a dedicated
