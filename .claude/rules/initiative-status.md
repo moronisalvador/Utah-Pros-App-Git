@@ -58,9 +58,19 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 - **Multi-tenant seam:** `claims`/`jobs`/`invoices`/`contacts` carry no `org_id` (only the CRM tables
   do), so the lead is the org anchor and the whole claim→jobs→invoices join lives in ONE function,
   `crm_lead_claim_value()`. Add the tenant predicate there when billing gains `org_id`.
-- **Backfill is deliberately NOT run.** `crm_backfill_lead_values(p_days)` is admin-gated and scoped
-  to leads on the board within the window; since the sync never worked, its first run puts dollar
-  figures on real cards for the first time and stays an explicit owner step.
+- **Backfill RUN 2026-07-30 under explicit owner authorization**, 30-day window. Result: 12 leads
+  attached to a single unambiguous claim (a 13th was already attached by the live trigger), **2 leads
+  valued — $15,626.22 and $10,538.19 = $26,164.41** — matching the read-only dry run to the cent.
+  0 failures, 0 manual values touched. Both figures independently reconciled against their claims'
+  invoices; the $15,626.22 one sums **2 invoices across 2 jobs**, which is the multi-job case this
+  feature exists for. Only 2 of 61 board leads valued because 41 have no claim yet — billing lags the
+  call, and the triggers pick those up automatically as invoices are sent or paid.
+  - Run as service role, because `crm_backfill_lead_values` gates on an active admin **session** and
+    `auth.uid()` is NULL outside one (gate verified to fail closed). Scope was identical to that
+    function. Attachments are audited as `crm_lead_claim_attached_backfill` — a distinct event type,
+    so a backfill attachment is never mistaken for the claim-created trigger's own.
+  - **To undo:** `UPDATE inbound_leads SET value = NULL WHERE value_source = 'auto';` and clear
+    `claim_id` for the ids in the `crm_lead_claim_attached_backfill` events.
 - Superseded `crm_sync_lead_value` is left in place, unreferenced — it is granted to `authenticated`,
   and dropping a live function is the contract removal `database-standard.md` §3 forbids.
 - History for the completed CRM wave stays in `docs/archive/rules/crm-wave-ownership.md`; this entry
