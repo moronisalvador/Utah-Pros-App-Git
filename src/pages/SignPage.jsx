@@ -17,6 +17,7 @@
  * DEPENDS ON:
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/ReconAgreementContent, @/lib/backNav,
+ *              @/lib/signSubmit (submitEsign, submitErrorText),
  *              functions/lib/short-link.js (resolveSignToken)
  *   Data:      reads  → sign_requests (get_sign_request_by_token RPC),
  *                       document_templates (get_sign_document_templates RPC)
@@ -33,6 +34,9 @@
  *   - This page deliberately uses its own fixed palette (raw hex) — it renders
  *     for logged-out customers outside the app shells and must not re-tone
  *     with the tech dark theme.
+ *   - Being outside both app shells, it has NO toast container. A failed submit
+ *     must therefore render inline (SubmitErrorNotice) — a toast call here would
+ *     be swallowed and the customer would land back on an unchanged form.
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -40,6 +44,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import ReconAgreementContent from '@/components/ReconAgreementContent';
 import { resolveSignToken } from '../../functions/lib/short-link.js';
 import { canGoBack } from '@/lib/backNav';
+import { submitEsign, submitErrorText } from '@/lib/signSubmit';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -227,6 +232,9 @@ const styles = {
   clearBtn:      { fontSize: 12, fontWeight: 600, color: '#64748b', background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
   checkLabel:    { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20, cursor: 'pointer' },
   errorMsg:      { color: '#ef4444', fontSize: 13, marginBottom: 16, fontWeight: 500 },
+  submitError:   { display: 'flex', gap: 10, alignItems: 'flex-start', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '12px 14px', marginBottom: 16 },
+  submitErrorTitle: { margin: '0 0 3px', fontSize: 13, fontWeight: 700, color: '#b91c1c' },
+  submitErrorBody:  { margin: 0, fontSize: 13, color: '#7f1d1d', lineHeight: 1.5 },
   submitBtn:     { width: '100%', padding: '14px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, fontFamily: 'inherit', letterSpacing: '0.1px' },
   footer:        { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8' },
   heading:       { margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#0f172a' },
@@ -252,6 +260,9 @@ export default function SignPage() {
   const [errorMsg,   setErrorMsg]   = useState('');
   const [signerName, setSignerName] = useState('');
   const [nameError,  setNameError]  = useState('');
+  // Separate from errorMsg (which belongs to the load-failure 'error' screen):
+  // this one renders inline in the 'ready' state next to the Submit button.
+  const [submitError, setSubmitError] = useState('');
   const [hasSig,     setHasSig]     = useState(false);
   const [agreed,     setAgreed]     = useState(false);
   // Four separately-attested consents for recon_agreement doc_type.
@@ -386,6 +397,7 @@ export default function SignPage() {
 
   const handleSubmit = async () => {
     const isRecon = data?.doc_type === 'recon_agreement';
+    setSubmitError(''); // a fresh attempt clears the previous failure
     if (!signerName.trim()) { setNameError('Please enter your full name.'); return; }
     if (!hasSig)             { setNameError(sigMode === 'type' ? 'Please type your name in the signature box.' : 'Please provide your signature.'); return; }
     if (isRecon) {
@@ -412,14 +424,9 @@ export default function SignPage() {
         body.consent_esign       = consents.esign;
         body.consent_authority   = consents.authority;
       }
-      const res = await fetch('/api/submit-esign', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Submission failed');
+      await submitEsign(body);
       setStatus('done');
-    } catch (err) { setErrorMsg(err.message); setStatus('ready'); }
+    } catch (err) { setSubmitError(submitErrorText(err)); setStatus('ready'); }
   };
 
   const inAppBackBar = inApp ? (
@@ -629,6 +636,8 @@ export default function SignPage() {
 
           {nameError && <p style={styles.errorMsg}>⚠ {nameError}</p>}
 
+          {submitError && <SubmitErrorNotice message={submitError} />}
+
           <button
             style={{ ...styles.submitBtn, background: accentColor, opacity: status === 'submitting' ? 0.7 : 1, cursor: status === 'submitting' ? 'not-allowed' : 'pointer' }}
             onClick={handleSubmit} disabled={status === 'submitting'}
@@ -647,6 +656,28 @@ export default function SignPage() {
         </div>
       </div>
     </Screen>
+  );
+}
+
+/* ── Inline submit-failure notice ──
+   The only channel this page has for a failed POST: it is public, no-auth, and
+   outside both app shells, so there is no toast container to raise (Rule 2's
+   toast entry point exists only inside Layout/TechLayout). Rendered next to the
+   Submit button so it is already in view where the customer just tapped, and
+   role="alert" so a screen reader is told too. Deliberately does not claim
+   anything about what the server saved — see loading-error-states.md §1. */
+export function SubmitErrorNotice({ message }) {
+  return (
+    <div role="alert" style={styles.submitError}>
+      <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1.35 }}>⚠</span>
+      <div>
+        <p style={styles.submitErrorTitle}>We couldn&apos;t submit your signature</p>
+        <p style={styles.submitErrorBody}>
+          {message} Please try again. If it keeps happening, contact us at{' '}
+          <a href="mailto:restoration@utah-pros.com" style={styles.link}>restoration@utah-pros.com</a>.
+        </p>
+      </div>
+    </div>
   );
 }
 
