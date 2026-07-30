@@ -338,3 +338,65 @@ adding a search box to the Leads board.
   skinned through the `className` / `inputClassName` props it already exposes. The F-S2-owned file
   itself is untouched, per `ux-alignment-wave-ownership.md` §1.
 - Everything else in §§1–11 remains frozen.
+
+---
+
+## 13. Lead-value addendum (2026-07-30) — owner-directed standalone
+
+Recorded so §1's frozen list and §2's ownership matrix stay truthful. §2 assigns
+`src/pages/crm/CrmLeads.jsx` to Session E (Phase 7); Wave 1 is complete (Phase 6b merged
+2026-07-02), no parallel CRM session is in flight, and standalone owner-directed edits to this exact
+file are precedented by §11 (lead-notes log) and §12 (leads search). The **owner directed** two
+things: let staff type a lead's dollar value in by hand, and fill that value automatically from the
+work that actually got billed.
+
+- **Why this is a repair, not a new build.** `20260721_crm_lead_value_sync.sql` already shipped
+  `crm_sync_lead_value` wired into `crm_trg_invoice_created`, and it **is applied live** — but
+  verified read-only on 2026-07-30 it has **never once run**: 0 `crm_lead_value_synced` events and
+  **0 of 156 leads** carrying a value. Its trigger is `AFTER INSERT ON invoices` gated on
+  `total > 0`, while `create_invoice_for_job` inserts no total at all and
+  `recompute_invoice_from_lines()` supplies it later by UPDATE — so the condition was unsatisfiable
+  at insert time. That is `docs/crm-lead-lifecycle.md` §6 failure pattern #3 (a trigger whose fire
+  condition depends on a column a later statement writes), and #2 ("for any 'live' surface, find its
+  automatic writer; if you can't, it isn't live").
+- **Owner rules adopted 2026-07-30.** A draft never counts. An invoice counts when it is sent,
+  emailed by QuickBooks, converted from an estimate, or carries a payment — the payment arm is
+  load-bearing (live: 71 invoices have a payment vs 9 emailed and 4 from an estimate, so without it
+  60+ paid jobs would read as $0). Value is the **SUM across every job under the lead's claim**, not
+  one invoice: 88 of 157 claims already have more than one job. A human-entered value is never
+  overwritten.
+- **Authorized files (this initiative only):** the additive migration
+  `supabase/migrations/20260730120000_crm_lead_value_from_claim.sql` and its paired rollback;
+  `src/pages/crm/CrmLeads.jsx` (editable Value row + `set_lead_value` call + in-place patch); a new
+  `/* ─── CRM LEAD VALUE (standalone 2026-07-30) ─── */` marker appended to `src/index.css` (§5
+  applies unchanged — nothing outside the marker was touched);
+  `tests/qa/unit/crm-lead-value-from-claim.test.js`;
+  `supabase/tests/crm_lead_value_from_claim.test.js`; the `DARK_BASELINE` 79 → 80 line in
+  `tests/qa/unit/db-lane-coverage.test.js`; and `UPR-Web-Context.md`.
+- **Schema is additive only:** two nullable columns on `inbound_leads` (`claim_id`, `value_source`)
+  with constraints that bind only those new columns, added `NOT VALID` then validated to keep the
+  lock short. No table created or dropped, no existing column altered, no RLS policy or grant on any
+  existing object changed. `crm_sync_lead_value` is deliberately **left in place and unreferenced**
+  rather than dropped — it is granted to `authenticated`, and dropping a live function is the
+  contract removal `database-standard.md` §3 forbids.
+- **Frozen-RPC touch (precedented, signature-frozen):** function-**body**-only `CREATE OR REPLACE`
+  of `crm_trg_invoice_created` (`RETURNS trigger`, no arguments — the `crm_invoice_created_advance`
+  trigger is not re-created). Won auto-advance is preserved verbatim; only the superseded
+  `crm_sync_lead_value` call is removed, because keeping both would race a single invoice's total
+  against the claim-wide sum. Same class of change as the §1 AMENDED 2026-07-21 entry.
+- **The three initiative-owned workers are untouched.** `run-automations.js` (4d),
+  `process-crm-automations.js` (5-Ops) and `process-sequences.js` (Phase 8) are not read or edited —
+  this feature is database triggers plus UI only.
+- **Multi-tenant seam (owner asked).** Verified live: `inbound_leads` / `lead_pipeline_stage` /
+  `pipeline_stages` carry `org_id`; `claims`, `jobs`, `invoices` and `contacts` do **not**. The lead
+  is therefore the org anchor, and every `claim → jobs → invoices` join is confined to the single
+  function `crm_lead_claim_value()`. When the billing tables gain `org_id`, the tenant predicate goes
+  there and nowhere else.
+- **Backfill is defined but NOT run by the migration.** `crm_backfill_lead_values(p_days)` is
+  admin-gated and scoped to leads currently on the board within the window (the owner scoped this
+  feature to "leads on the pipeline right now, especially the last thirty days"). Since the sync has
+  never run, its first execution puts dollar figures on real cards for the first time and is left as
+  a deliberate owner step.
+- **Not applied by the authoring session.** The migration and rollback are authored and reviewed;
+  applying to the shared project is a separate owner-authorized window per `database-standard.md` §0.
+- Everything else in §§1–12 remains frozen.

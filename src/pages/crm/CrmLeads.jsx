@@ -1197,6 +1197,12 @@ export default function CrmLeads() {
           createdBy={employee?.id || null}
           actorId={employee?.id || null}
           onPromoted={() => { setSelectedLead(null); ok('Added as customer'); load({ silent: true }); }}
+          onValueChanged={(patch) => {
+            // Patch both the open panel and the board row so the card and its
+            // column subtotal update without a refetch.
+            setSelectedLead(prev => (prev ? { ...prev, ...patch } : prev));
+            setLeads(prev => prev.map(l => (l.id === selectedLead.id ? { ...l, ...patch } : l)));
+          }}
           db={db}
         />
       )}
@@ -1292,8 +1298,11 @@ function NewLeadPanel({ db, createdBy, onClose, onCreated }) {
 /* ═══════════════════════════════════════════════════
    LeadDetailPanel — contact info, stage select, activity timeline
    ═══════════════════════════════════════════════════ */
-function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, db }) {
+function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, createdBy, actorId, onPromoted, onValueChanged, db }) {
   const [promoting, setPromoting] = useState(false);
+  const [editingValue, setEditingValue] = useState(false);
+  const [valueDraft, setValueDraft] = useState('');
+  const [savingValue, setSavingValue] = useState(false);
   // Pre-filled from what the AI already pulled off the call, so promoting a
   // known caller to a customer doesn't mean re-typing what we already have.
   const [promoteName, setPromoteName] = useState(() => lead.caller_name || lead.contact?.name || '');
@@ -1359,6 +1368,40 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
     loadTasks(signal);
     return () => { signal.cancelled = true; };
   }, [loadTasks]);
+
+  // Save a hand-entered lead value. An empty box is NOT "zero" — it means
+  // "hand this back to the automatic sync", which is why it sends null rather
+  // than 0 (set_lead_value flips value_source back to 'auto' and immediately
+  // recomputes from the claim's invoices).
+  const saveValue = useCallback(async () => {
+    const raw = valueDraft.trim();
+    const parsed = raw === '' ? null : Number(raw);
+    if (parsed !== null && (!Number.isFinite(parsed) || parsed < 0)) {
+      err('Enter a dollar amount, or clear the box to use the billed total');
+      return;
+    }
+    setSavingValue(true);
+    try {
+      const row = await db.rpc('set_lead_value', {
+        p_lead_id: lead.id,
+        p_value: parsed,
+        p_updated_by: actorId,
+      });
+      // Patch in place — never re-run a spinner-gated load() from a mutation
+      // callback (page-lifecycle.md §3).
+      const saved = Array.isArray(row) ? row[0] : row;
+      onValueChanged?.({
+        value: saved?.value ?? parsed,
+        value_source: saved?.value_source ?? (parsed === null ? 'auto' : 'manual'),
+      });
+      setEditingValue(false);
+      ok(parsed === null ? 'Value back to the billed total' : 'Value saved');
+    } catch {
+      err('Failed to save the value');
+    } finally {
+      setSavingValue(false);
+    }
+  }, [db, lead.id, valueDraft, actorId, onValueChanged]);
 
   // Log a click-to-call as an activity event, then let the tel: link dial.
   // Fire-and-forget — never block or fail the call on a logging error.
@@ -1532,7 +1575,54 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
 
         <div className="crm-panel-section">
           <div className="crm-panel-row"><span>Source</span><span>{sourceLine(lead)}</span></div>
-          {lead.value != null && <div className="crm-panel-row"><span>Value</span><span>{formatMoney(lead.value)}</span></div>}
+
+          {/* Value is ALWAYS rendered, even when unset — it used to be hidden
+              behind `lead.value != null`, which is exactly why there was no way
+              to enter one. Click the amount to edit; clearing the box hands the
+              number back to the automatic claim-total sync. */}
+          <div className="crm-panel-row">
+            <span>Value</span>
+            {editingValue ? (
+              <span className="crm-lead-value-edit">
+                <input
+                  className="crm-input crm-lead-value-input"
+                  value={valueDraft}
+                  onChange={e => setValueDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') saveValue();
+                    if (e.key === 'Escape') setEditingValue(false);
+                  }}
+                  placeholder="0"
+                  inputMode="decimal"
+                  aria-label="Lead value in dollars"
+                  autoFocus
+                />
+                <button
+                  className="crm-btn crm-btn-primary crm-lead-value-btn"
+                  onClick={saveValue}
+                  disabled={savingValue}
+                >{savingValue ? 'Saving…' : 'Save'}</button>
+                <button
+                  className="crm-btn crm-btn-ghost crm-lead-value-btn"
+                  onClick={() => setEditingValue(false)}
+                  disabled={savingValue}
+                >Cancel</button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="crm-lead-value-display"
+                onClick={() => { setValueDraft(lead.value == null ? '' : String(lead.value)); setEditingValue(true); }}
+                aria-label={lead.value == null ? 'Set lead value' : `Edit lead value, currently ${formatMoney(lead.value)}`}
+              >
+                {lead.value == null ? <span className="crm-lead-value-empty">Set value</span> : formatMoney(lead.value)}
+                {lead.value != null && lead.value_source === 'auto' && (
+                  <span className="crm-lead-value-tag">auto</span>
+                )}
+              </button>
+            )}
+          </div>
+
           <div className="crm-panel-row"><span>Occurred</span><span>{lead.occurred_at ? new Date(lead.occurred_at).toLocaleString() : '—'}</span></div>
         </div>
 

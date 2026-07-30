@@ -12621,3 +12621,36 @@ html.ui-glass .tech-nav {
   .crm-leads-search { flex: 1 1 100%; max-width: none; }
   .crm-leads-search .crm-leads-search-input { height: 40px; }
 }
+
+/* ─── CRM LEAD VALUE (standalone 2026-07-30) ──────────────────────────────────
+   Editable Value row in the Leads panel. The display is a real <button> so an
+   unset value is keyboard-reachable — the row used to be hidden when null,
+   which is why there was no way in. `auto` tags a sync-owned number. ── */
+.crm-lead-value-display {
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  padding: 2px 6px; margin: -2px -6px; background: none; font: inherit;
+  border: 1px solid transparent; border-radius: var(--crm-radius);
+  color: var(--crm-text-primary); cursor: pointer;
+}
+.crm-lead-value-display:hover { border-color: var(--crm-border); }
+.crm-lead-value-display:focus-visible { outline: 2px solid var(--crm-accent); outline-offset: 1px; }
+.crm-lead-value-empty { color: var(--crm-text-tertiary); }
+.crm-lead-value-tag {
+  font-size: var(--text-xs); text-transform: uppercase;
+  color: var(--crm-text-tertiary); border: 1px solid var(--crm-border);
+  border-radius: var(--crm-radius); padding: 0 4px;
+}
+.crm-lead-value-edit { display: inline-flex; align-items: center; gap: var(--space-2); }
+.crm-lead-value-input {
+  width: 120px; height: 32px; font-size: var(--text-sm);
+  color: var(--crm-text-primary); background: var(--crm-bg-content);
+  border: 1px solid var(--crm-border); border-radius: var(--crm-radius);
+}
+.crm-lead-value-input:focus { border-color: var(--crm-accent); box-shadow: none; }
+.crm-lead-value-btn { height: 32px; padding: 0 10px; font-size: var(--text-xs); }
+/* 390px: own line for a 16px input (iOS zoom guard) + 44px touch targets. */
+@media (max-width: 768px) {
+  .crm-lead-value-edit { flex-wrap: wrap; justify-content: flex-end; }
+  .crm-lead-value-input { width: 100%; height: 40px; }
+  .crm-lead-value-btn { height: 44px; padding: 0 14px; }
+}
