@@ -45,6 +45,30 @@ The foreign-owner discriminator parses the top-level PostgREST body and
 requires the exact `42501` code plus the full canonical SQL message; nested,
 partial, malformed, or merely similar text never clears the journal.
 
+**Sign-out cleanup failure UX (owner-directed 2026-07-29).** After the first
+TestFlight sign-out walled behind "Finish securing this device" on a
+network-ambiguous `delete_my_native_device_token` (the owner's manual Retry
+immediately succeeded), explicit sign-out now (1) runs a bounded silent retry
+of the push detach legs (~10s with backoff, skipped while offline) before any
+blocking UI, and (2) completes visually when the ONLY residual is journaled
+push server work: local delivery revoked in this session, a same-owner
+pending-detach marker positively re-read from storage (`residualJournaled`,
+never the weaker `markerPersisted`), no foreign-owner conflict, no invalid
+marker, no in-flight enrollment, no unknown web subscription state, and every
+non-push cleanup leg clean. The journal is the durable memory: the next
+same-owner sign-in reconciles it (the 60-second provisional window and the
+`42501` discriminator are unchanged), and a different account is refused at
+the bind gate before it publishes or enrolls. Foreign-owner conflict, invalid
+markers, observer-only sign-out (signed-out reauth), password recovery,
+login/account-switch, rejected bootstrap, and any local cleanup failure keep
+the hard blocking screen. A deferred sign-out also skips the advisory
+service-worker reload so no in-flight settlement is orphaned. A retry that
+finds a residual channel's journal vanished, or discovers a foreign owner,
+escalates back to the blocking screen rather than completing. NOTE: this
+deferral leans on the bind-time gate whose on-device **account-switch
+refusal** check is the one open matrix item below — run that owner check
+before broad tech rollout.
+
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
 `Utah Pros notification` / `Open Utah Pros for details.` copy. Owner decision

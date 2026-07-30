@@ -126,9 +126,18 @@ Account/lifecycle source guarantees:
 Auth source now gates rejected-bootstrap Login on ready device cleanup plus strictly verified local
 Supabase sign-out, validates employee/permission/page-access/feature-flag response values before
 publishing authority, and gates SetPassword on cleanup while preserving the recovery session.
-Failure or malformed sign-out stays behind a retry hard lock. Auth observer callbacks now return
-synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out from
-deadlocking on the SDK observer lock. Independent review is clean; browser/device proof remains.
+Failure or malformed sign-out stays behind a retry hard lock — with one owner-directed 2026-07-29
+exception: an EXPLICIT sign-out first runs a bounded silent retry of the push detach legs (~10s
+with backoff, skipped offline) and then completes visually when the ONLY residual is journaled
+push server work (local delivery revoked this session, a same-owner pending-detach marker
+positively re-read from storage, no foreign owner, no invalid marker, no in-flight enrollment,
+every non-push leg clean). The journal is the durable memory: the next same-owner sign-in
+reconciles it and a different account is refused at the bind gate before it publishes or enrolls.
+Foreign-owner conflict, invalid markers, observer-only sign-out, password recovery,
+login/account-switch, and any local cleanup failure keep the hard lock. Auth observer callbacks
+now return synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out
+from deadlocking on the SDK observer lock. Independent review is clean; browser/device proof
+remains.
 
 Not guaranteed:
 
