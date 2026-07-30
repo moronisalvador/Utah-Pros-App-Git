@@ -129,7 +129,6 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 
 ---
 
-<<<<<<< ours
 ## Load-failure contract — an outage never renders as "empty" (LES-01, Jul 30 2026)
 
 `db.select` / `db.rpc` **THROW** on any non-OK response (400/404/500). They do not resolve to `[]`.
@@ -167,7 +166,7 @@ persisted as "exclude nobody".
 
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
-=======
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
@@ -210,7 +209,6 @@ without a DOM.
 **Guard:** `tests/qa/unit/resume-listener-lifecycle.test.js` sweeps all of `src/` and fails on a new
 hand-rolled listener anywhere outside that allowlist — it is not a snapshot of these five files.
 Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
->>>>>>> theirs
 
 ---
 
