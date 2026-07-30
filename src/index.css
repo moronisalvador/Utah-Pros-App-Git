@@ -6537,12 +6537,14 @@ tr:hover td { background: var(--bg-secondary); }
   padding: 10px var(--space-4) 8px;
 }
 .tv2-hub-header__row { display: flex; align-items: flex-start; gap: 10px; }
+/* 44px — documented-secondary nav floor (tech-mobile-ux.md); matches .tv2-icon-btn. */
 .tv2-hub-header__back {
-  flex-shrink: 0; width: 40px; height: 40px; margin-left: -8px;
+  flex-shrink: 0; width: 44px; height: 44px; margin-left: -10px;
   display: flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--text-secondary);
   cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
+.tv2-hub-header__back:active { opacity: 0.85; }
 .tv2-hub-header__id { flex: 1; min-width: 0; }
 .tv2-hub-header__idtop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tv2-hub-header__num { font-size: 13px; font-weight: 700; color: var(--text-secondary); font-family: var(--font-mono); }

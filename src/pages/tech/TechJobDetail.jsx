@@ -22,6 +22,7 @@
  *   Packages:  react, react-router-dom
  *   Internal:  ./techConstants, @/lib/toast, @/lib/nativeAppearance,
  *              @/lib/nativeCamera, @/lib/nativeHaptics, @/lib/techDateUtils,
+ *              @/lib/companyDate, @/lib/backNav,
  *              @/contexts/AuthContext, @/components/tech/Hero,
  *              @/components/tech/ActionBar, @/components/tech/NowNextTile,
  *              @/components/tech/PhotosGroup, @/components/tech/Lightbox,
@@ -74,6 +75,7 @@ import MergeModal from '@/components/MergeModal';
 import PullToRefresh from '@/components/PullToRefresh';
 import { formatTime, relativeDate, currentLocaleTag } from '@/lib/techDateUtils';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
+import { canGoBack, goBackOr } from '@/lib/backNav';
 
 // ─── SECTION: Helpers ──────────────
 function formatLossDate(dateStr) {
@@ -361,7 +363,7 @@ export default function TechJobDetail() {
             {t('notFoundSub')}
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-secondary" onClick={() => navigate(-1)}>{t('back')}</button>
+            <button className="btn btn-secondary" onClick={() => goBackOr(navigate, '/tech')}>{t('back')}</button>
             <button className="btn btn-primary" onClick={load}>{t('retry')}</button>
           </div>
         </div>
@@ -395,8 +397,8 @@ export default function TechJobDetail() {
         statusText={phaseLabel}
         statusColors={{ color: divPill.color }}
         meta={metaPieces}
-        onBack={() => (claim ? navigate(`/tech/claims/${claim.id}`) : navigate(-1))}
-        backLabel={claim ? t('backToClaim') : t('back')}
+        onBack={() => goBackOr(navigate, claim ? `/tech/claims/${claim.id}` : '/tech')}
+        backLabel={!canGoBack() && claim ? t('backToClaim') : t('back')}
         showMenu={isAdmin}
         onMenu={() => setMenuOpen(true)}
       />
