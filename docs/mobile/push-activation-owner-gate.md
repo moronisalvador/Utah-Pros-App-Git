@@ -71,21 +71,42 @@ the live one, so after a token rotation the journal may cover a stale row
 while a live row goes unjournaled — `residualJournaled` proves a same-owner
 journal exists, not that it names every row this session ever bound.
 
-**Status of the two 2026-07-29 sign-out defects:** this source change fixes
-the FIRST (the overprotective wall). The SECOND — after the owner's Retry
-succeeded, the app re-entered the same account without ever reaching Login
-(session apparently never cleared; see the amended account-switch bullet
-below) — is NOT fixed here. Leading hypothesis from source analysis: a
-token refresh already in flight under the same degraded network resolves
-AFTER `signOut({ scope: 'local' })`, supabase-js re-persists the session,
-and the next resume/recovery emits SIGNED_IN, which the auth observer
-correctly treats as a login and re-bootstraps (profile load + token
-re-upsert, matching the 02:00:06Z evidence). A fix needs its own reviewed
-design: any guard sits in the shared SIGNED_IN path and must not break web
-cross-tab login sync. Until it lands, account switching on the native build
-remains blocked, and the deferral below still leans on the bind-time gate
-whose on-device **account-switch refusal** check remains open — run that
-owner check before broad tech rollout.
+**Status of the two 2026-07-29 sign-out defects:** the sign-out deferral
+source change fixed the FIRST (the overprotective wall). The SECOND — after
+the owner's Retry succeeded, the app re-entered the same account without ever
+reaching Login — is now ALSO fixed at source (2026-07-29, security-reviewed
+design). The mechanism was confirmed in the installed `@supabase/auth-js`
+2.99.3, not just hypothesized: `signOut()` steals the SDK auth lock from an
+in-flight token refresh after 5s, and the orphaned refresh later re-persists
+the signed-out session (`_callRefreshToken → _saveSession` has no signed-out
+re-check); the next resume/cold start re-emits it as SIGNED_IN and the
+observer re-bootstraps (profile load + token re-upsert, matching the
+02:00:06Z evidence). The fix: every confirmed local sign-out records the
+ended session's stable JWT `session_id` in `src/lib/endedSessionGuard.js`
+(`upr:auth-ended-sessions:v1`, session UUIDs only, deliberately
+logout-surviving), and the auth observer refuses + purges a revived
+tombstoned session at SIGNED_IN, TOKEN_REFRESHED, and cold-start init. A
+legitimate login always mints a new `session_id`, so web cross-tab login
+sync is structurally unaffected; the purge prechecks SDK storage with a
+side-effect-free read so it can never sign out a newer legitimate session,
+and a SIGNED_OUT delivered to an already-clean tab is now a no-op (the
+purge's own broadcast cannot wall sibling tabs). Node-lane tests reproduce
+the zombie deterministically and pin the guard
+(`src/contexts/AuthContext.race.test.jsx`). Disclosed residuals: the guard
+fails OPEN (undecodable token / blocked storage → pre-fix behavior, warned +
+pwa-diagnostics breadcrumbed, never a broken login); `getAuthHeader()` in
+`realtime.js` calls `getSession()`, which can itself refresh — and so
+briefly extend — a zombie during the pre-purge window (workers still enforce
+authorization server-side); if a zombie clobbers a NEWER logged-in account's
+storage, that account is torn down to a clean signed-out state rather than
+left rendering over a destroyed session. One behavior change to note: the
+02:00:06Z re-entry had *accidentally* reconciled the push journal — after
+this fix the journal correctly waits for a real same-owner sign-in, per the
+deferral contract. Open evidence items: decoding one real deployed access
+token to confirm the canonical `session_id` claim shape (owner-gated; the
+guard is inert-but-observable without it), and the on-device
+**account-switch refusal** check below — run that owner check before broad
+tech rollout.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
@@ -347,13 +368,15 @@ Connect sign-in and the Organizer upload themselves.
   the owner's Retry succeeded (API log: `delete_my_native_device_token` 204
   at 2026-07-30 01:58:33Z), but the app then bootstrapped straight back into
   the same account (~02:00:06Z, fresh profile load + token re-upsert) without
-  ever reaching Login — the Supabase session was apparently never cleared, so
-  account switching is currently impossible on the native build. Owner
-  directive (2026-07-29): sign-out must always complete immediately; the
-  token detach becomes invisible best-effort/journaled. Fix in progress in a
-  dedicated session ("Soften secure sign-out UX without weakening cleanup"),
-  which received the directive and the log evidence. First-login flows for
-  fresh tech installs are unaffected.
+  ever reaching Login — a token refresh in flight during sign-out re-persisted
+  the session (supabase-js lock-steal race). Owner directive (2026-07-29):
+  sign-out must always complete immediately; the token detach becomes
+  invisible best-effort/journaled. Both defects are now fixed at source: the
+  deferral session shipped the wall fix, and the ended-session revival guard
+  (see the status paragraph above) shipped the session-clearing fix. Neither
+  is on-device-verified — the owner account-switch check on the physical
+  iPhone remains the open gate. First-login flows for fresh tech installs
+  are unaffected.
 - Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
   `ios-signing` secrets), no App Review submission, no flag flips.
 

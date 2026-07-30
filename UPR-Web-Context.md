@@ -2906,6 +2906,22 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
     login/account-switch keep the hard "Finish securing this device" wall; the bind-time
     `retryPendingAccountPushDetaches` gate is unchanged. Contract:
     `docs/mobile/push-activation-owner-gate.md`.
+    **Ended-session revival guard (2026-07-29, security-reviewed):** fixes native sign-out defect
+    #2 (post-logout account re-entry). supabase-js `signOut()` steals the SDK auth lock from an
+    in-flight token refresh, and the orphaned refresh re-persists the ended session afterwards.
+    New `src/lib/endedSessionGuard.js`: every confirmed local sign-out (single chokepoint
+    `signOutLocalSession` in AuthContext, all four call sites) records the JWT `session_id`
+    (stable across rotation, never reused by a new login) in `upr:auth-ended-sessions:v1`
+    (session UUIDs only, cap 8, deliberately logout-surviving — never add it to logout sweep
+    prefixes). The auth observer refuses + purges a revived tombstoned session at SIGNED_IN,
+    TOKEN_REFRESHED, and cold-start init; the purge prechecks SDK storage with a side-effect-free
+    read (never `getSession()`, which refreshes) so a newer legitimate session is never signed
+    out; a SIGNED_OUT reaching an already-clean tab is a no-op (cross-tab broadcast safe).
+    Fail-open (undecodable token / blocked storage), observable via console.warn +
+    `recordPwaDiagnostic('account-state', …)`. `SetPassword.jsx` skips populating `userEmail`
+    from a tombstoned session. Tests: `src/contexts/AuthContext.race.test.jsx` (zombie repro +
+    guard suite) and re-anchored `tests/qa/unit/pwa-source-contract.test.js`. On-device
+    account-switch verification remains the open owner gate.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
