@@ -195,3 +195,44 @@ test('database guard: every committed rollback is runnable, and the exemption is
 
   assert.deepEqual(failures, [], `\n  - ${failures.join('\n  - ')}\n`)
 })
+
+// ── Comment-stripper regression (2026-07-30) ──
+// POSIX sed treats a bracketed [^\n] as "any char except backslash or the
+// letter n", so the guard's old `s/--[^\n]*//g` stopped stripping at the first
+// 'n' and leaked comment fragments into the scanned SQL. A leaked comment
+// ("… re-applies EXECUTE TO PUBLIC on every new/replaced function") combined
+// with a legitimate "REVOKE … FROM PUBLIC, anon" to assemble a false
+// GRANT-TO-anon match, blocking the reviewed sms_consent_opt_out_only apply.
+test('database guard: -- comments are fully stripped and cannot fabricate a GRANT TO anon', (t) => {
+  if (!hasBash || !hasNode) { t.skip('bash/node unavailable'); return }
+
+  // The exact false-positive shape, minimized: a real service_role grant, then
+  // a comment whose first 'n' precedes "TO PUBLIC", then a legitimate revoke
+  // naming anon. Before the fix this exited 2; it must be allowed.
+  const leakShape = [
+    '-- ROLLBACK: re-grant the prior ACL (this is a synthetic regression case)',
+    'GRANT EXECUTE ON FUNCTION public.f(uuid) TO service_role;',
+    '-- Managed-Supabase re-applies EXECUTE TO PUBLIC on every new/replaced function',
+    'REVOKE ALL ON FUNCTION public.f(uuid) FROM PUBLIC, anon, authenticated;',
+  ].join('\n')
+  const leaked = run(sqlCall('mcp__x__apply_migration', leakShape))
+  assert.equal(leaked.code, 0,
+    `comment fragments still leak into the scan (exit ${leaked.code}): ${leaked.stderr.split('\n')[0]}`)
+
+  // The real reviewed migration that was falsely blocked must be applyable.
+  const smsPath = path.join(REPO, 'supabase/migrations/20260728000000_sms_consent_opt_out_only.sql')
+  if (existsSync(smsPath)) {
+    const real = run(sqlCall('mcp__x__apply_migration', readFileSync(smsPath, 'utf8')))
+    assert.equal(real.code, 0,
+      `reviewed sms_consent_opt_out_only migration is refused (exit ${real.code}): ${real.stderr.split('\n')[0]}`)
+  }
+
+  // The fix must not weaken the rule it false-positived on.
+  const realGrant = run(sqlCall('mcp__x__execute_sql', 'GRANT SELECT ON public.contacts TO anon;'))
+  assert.equal(realGrant.code, 2, 'a real GRANT TO anon must still be blocked')
+
+  // A comment must not HIDE a violation that shares its line context either:
+  // the statement after the comment line still gets scanned.
+  const afterComment = run(sqlCall('mcp__x__execute_sql', '-- harmless note\nGRANT ALL ON public.contacts TO anon;'))
+  assert.equal(afterComment.code, 2, 'a GRANT TO anon following a comment line must still be blocked')
+})
