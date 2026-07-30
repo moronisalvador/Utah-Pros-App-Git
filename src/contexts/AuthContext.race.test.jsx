@@ -2034,24 +2034,28 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
   });
 
   it('uninstalls the resurrection transition when its sign-out throws', async () => {
+    const OTHER_UUID = '66666666-6666-4666-8666-666666666666';
     const cleanup = await mountProvider();
+    await signInAsUuidUser();
     globalThis.localStorage.setItem(INTENT_KEY, JSON.stringify({
       version: 1,
-      principalId: AUTH_UUID,
+      principalId: OTHER_UUID,
       at: 1,
     }));
     harness.auth.signOut.mockRejectedValueOnce(
       new Error('sign out transport failed'),
     );
 
+    // A zombie SIGNED_IN for a marked (different) principal whose kill
+    // sign-out throws — the pre-finalized transition must be uninstalled.
     await harness.authCallback('SIGNED_IN', {
-      user: { id: AUTH_UUID, email: 'a@example.invalid' },
+      user: { id: OTHER_UUID, email: 'z@example.invalid' },
       access_token: 'zombie-token',
     });
-    expect(profileCallCount()).toBe(0);
+    expect(profileCallCount()).toBe(1);
 
     // A later genuine SIGNED_OUT must still be processed — a lingering
-    // pre-finalized ghost transition would swallow it silently.
+    // ghost transition would swallow it silently.
     harness.cleanupAccountDeviceState.mockResolvedValue({
       ready: true,
       reloadRequired: false,
@@ -2060,6 +2064,63 @@ describe('AuthProvider signed-out-intent resurrection guards', () => {
 
     expect(harness.cleanupAccountDeviceState).toHaveBeenCalledOnce();
     expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('never walls a clean sibling tab on a cross-tab SIGNED_OUT broadcast', async () => {
+    const cleanup = await mountProvider();
+
+    // Nothing was ever bound in this tab. A cross-tab broadcast (for example
+    // another tab's resurrection purge) must be ignored, not walled.
+    harness.cleanupAccountDeviceState.mockResolvedValue({ ready: false });
+    await harness.authCallback('SIGNED_OUT', null);
+
+    expect(harness.cleanupAccountDeviceState).not.toHaveBeenCalled();
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+
+    cleanup();
+  });
+
+  it('un-arms the intent when sign-out fails and the session is retained', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signOut.mockResolvedValueOnce({
+      error: new Error('local sign out failed'),
+    });
+
+    await expect(harness.providerValue.logout()).rejects.toThrow(
+      /local sign out failed/,
+    );
+    // The session is still live behind the retry wall: the marker must not
+    // block recoverSession from renewing its token.
+    expect(readIntent()).toBe(null);
+
+    await harness.providerValue.retrySecureAccountCleanup();
+    expect(readIntent()).toMatchObject({ principalId: AUTH_UUID });
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('does not re-arm the intent when the switch sign-out itself fails', async () => {
+    const cleanup = await mountProvider();
+    await signInAsUuidUser();
+
+    harness.auth.signOut.mockResolvedValueOnce({
+      error: new Error('local sign out failed'),
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'synthetic-password',
+    )).rejects.toThrow(/could not finish securing/);
+
+    // A is retained behind the block — no armed intent may refuse its
+    // token renewal.
+    expect(readIntent()).toBe(null);
 
     cleanup();
   });

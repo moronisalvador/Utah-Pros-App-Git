@@ -678,6 +678,19 @@ export function AuthProvider({ children }) {
             }
             return;
           }
+          // A clean tab — nothing bound, nothing blocked — has nothing to
+          // clean. A cross-tab SIGNED_OUT broadcast (including another tab's
+          // resurrection purge) must never wall a tab the user never touched
+          // behind the signed-out-reauth screen.
+          if (
+            !explicitLogout
+            && !activePrincipalRef.current
+            && !readyPrincipalRef.current
+            && !tokenRef.current
+            && !cleanupBlockRef.current
+          ) {
+            return;
+          }
           const priorPrincipal = cleanupBlockRef.current?.principalId
             || activePrincipalRef.current
             || readyPrincipalRef.current;
@@ -1090,6 +1103,9 @@ export function AuthProvider({ children }) {
       if (explicitLogoutRef.current === transition) {
         explicitLogoutRef.current = null;
       }
+      // Session retained behind the block — un-arm the intent so its token
+      // can still renew while walled.
+      clearSignedOutIntent();
       cleanupBlockRef.current = {
         db: dbClient,
         principalId,
@@ -1429,9 +1445,10 @@ export function AuthProvider({ children }) {
         // or attempting B, otherwise a failed B credential request could expose
         // Login while A remained authenticated underneath it. The account
         // switch is a sign-out of A — arm the same durable intent logout()
-        // writes so a racing refresh cannot resurrect A.
+        // writes so a racing refresh cannot resurrect A. `switchedOutPrincipal`
+        // is set only once A's sign-out actually succeeded, so the catch never
+        // re-arms the marker over a still-live retained session.
         writeSignedOutIntent(priorPrincipal);
-        switchedOutPrincipal = priorPrincipal;
         const transition = {
           cleanupPromise: Promise.resolve(cleanupResult),
           db: priorDb,
@@ -1457,6 +1474,9 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === transition) {
             explicitLogoutRef.current = null;
           }
+          // A's session is retained behind the block — un-arm the intent so
+          // recoverSession can still renew its token while walled.
+          clearSignedOutIntent();
           cleanupBlockRef.current = {
             db: priorDb,
             principalId: priorPrincipal,
@@ -1470,6 +1490,7 @@ export function AuthProvider({ children }) {
           throw new Error(ACCOUNT_CLEANUP_BLOCKED_MESSAGE);
         }
         transition.finalized = true;
+        switchedOutPrincipal = priorPrincipal;
         if (explicitLogoutRef.current === transition) {
           explicitLogoutRef.current = null;
         }
@@ -1607,6 +1628,10 @@ export function AuthProvider({ children }) {
       if (explicitLogoutRef.current === transition) {
         explicitLogoutRef.current = null;
       }
+      // The session is retained behind the retry wall — un-arm the intent so
+      // recoverSession can still renew the live session's token while the
+      // user is walled. The next Retry re-arms it at logout() start.
+      clearSignedOutIntent();
       cleanupBlockRef.current = {
         db: priorDb,
         principalId: priorPrincipal,
@@ -1759,6 +1784,9 @@ export function AuthProvider({ children }) {
           if (explicitLogoutRef.current === transition) {
             explicitLogoutRef.current = null;
           }
+          // Session retained behind the block — un-arm the intent so its
+          // token can still renew while walled.
+          clearSignedOutIntent();
           authLifecycle.commit(generation, () => {
             setError('Secure account recovery sign out failed. Please retry.');
             setLoading(true);

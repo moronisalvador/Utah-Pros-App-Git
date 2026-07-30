@@ -104,9 +104,19 @@ in the sub-second window after `login()` clears the marker can briefly
 publish the old account before the deliberate sign-in's own SIGNED_IN — the
 serialized account-switch gate then re-runs the full cleanup, and the
 fire-and-forget push re-enrollment self-deletes when superseded, so no
-unenforced cross-account binding results. Account switching is therefore
-unblocked in source — the on-device **account-switch refusal** check below
-remains the owner verification gate before broad tech rollout.
+unenforced cross-account binding results. A failed local `signOut()` that
+retains the session behind its retry wall UN-arms the intent so the walled
+session's token can still renew; the next Retry re-arms it. Known residuals
+of the single principal-keyed marker (cross-session review, 2026-07-29): a
+sibling clean tab receiving a cross-tab SIGNED_OUT broadcast is early-
+returned (never walled), but after logout-A → login-B clears the one marker,
+a zombie-A refresh still in flight across BOTH transitions that lands after
+B's session is saved would be unguarded until the next boot — a session_id-
+keyed multi-entry registry (implemented in the parallel "stoic-poitras"
+branch, unmerged) closes this class structurally and is the recommended
+follow-up hardening. Account switching is therefore unblocked in source —
+the on-device **account-switch refusal** check below remains the owner
+verification gate before broad tech rollout.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
