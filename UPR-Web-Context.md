@@ -2137,7 +2137,7 @@ TWILIO_*                        — 7 vars (pending go-live)
 APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in Cloudflare Preview + Production
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
-APNS_TOPIC                      — iOS bundle id, e.g. com.utahprosrestoration.upr
+APNS_TOPIC                      — iOS bundle id of the RECEIVING app: com.utahprosrestoration.upr (production); the side-by-side dev app needs Preview set to com.utahprosrestoration.upr.dev (owner-gated, not made — see docs/mobile/dev-app-variant.md)
 APNS_ENV                        — exact "sandbox" (development-signed builds) | "production" (TestFlight/App Store); missing/unknown fails closed
 ```
 
@@ -2880,6 +2880,19 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
+- **Side-by-side dev variant (2026-07-29):** third build configuration `Dev` + shared scheme
+  **UPR Dev** in `App.xcodeproj` — bundle id `com.utahprosrestoration.upr.dev`, display name
+  "UPR Dev" (`CFBundleDisplayName` is now `$(UPR_APP_DISPLAY_NAME)`, set per configuration;
+  Debug/Release still resolve to `UPR`), badged `AppIcon-Dev` asset, automatic signing (team
+  `H6ZUT739T9`), development entitlements (`App.entitlements`, `aps-environment: development`).
+  Installs alongside the TestFlight app for testing dev-branch native work on-device.
+  `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
+  and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
+  Debug/Release configs and the TestFlight lane are untouched
+  (`scripts/ios-release-workflow.test.js` still passes). **Shared-DB caveat:** same production
+  Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** owner-gated Cloudflare
+  Preview `APNS_TOPIC` → `com.utahprosrestoration.upr.dev` change required before push reaches the
+  dev app (not made). Full doc: `docs/mobile/dev-app-variant.md`.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators

@@ -47,6 +47,7 @@ an addendum or new audit.
 | [`motion-system.md`](motion-system.md) | Existing motion foundations plus proposed standardization and required reduced-motion behavior |
 | [`data-contracts.md`](data-contracts.md) | Workflow-to-RPC/table/Storage/worker contracts, authorization and mutation guarantees |
 | [`pwa-and-capacitor.md`](pwa-and-capacitor.md) | PWA/SW/install/offline/update and Capacitor/plugins/permissions/deep-link/release boundaries |
+| [`dev-app-variant.md`](dev-app-variant.md) | The side-by-side "UPR Dev" iOS build configuration/scheme, its install flow, and its shared-database + push-topic caveats |
 | [`testing-and-release.md`](testing-and-release.md) | Required safe validation, browser/device matrices, database compatibility, promotion and rollback evidence |
 | [`s1h-database-apply-runbook.md`](s1h-database-apply-runbook.md) | Source-only S1h dependency order, exact qualification requirements, and separately authorized database window |
 

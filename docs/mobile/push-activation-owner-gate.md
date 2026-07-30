@@ -192,6 +192,15 @@ failure rather than an explicit configuration error.
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
 
+**Side-by-side dev app (2026-07-29):** the `Dev` build configuration
+(`docs/mobile/dev-app-variant.md`) installs as bundle id
+`com.utahprosrestoration.upr.dev`. For push to reach it, Cloudflare **Preview**
+`APNS_TOPIC` must change to `com.utahprosrestoration.upr.dev` (Preview
+`APNS_ENV` stays `sandbox`) plus a Preview redeploy. That is an owner-gated
+dashboard change and has NOT been made; until then the dev app enrolls a
+sandbox token but deliveries are addressed to the production topic and will not
+arrive. Production's variable set is untouched by this.
+
 ## Live activation evidence
 
 The owner separately authorized and the operator applied the two reviewed
