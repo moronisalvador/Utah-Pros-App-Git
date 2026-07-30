@@ -78,6 +78,7 @@ const releaseEntitlements = readRepositoryFile(
 );
 const gemfile = readRepositoryFile('ios/Gemfile');
 const gemfileLock = readRepositoryFile('ios/Gemfile.lock');
+const xcodeCloudHook = readRepositoryFile('ci_scripts/ci_post_clone.sh');
 const iosGitignore = readRepositoryFile('ios/.gitignore');
 const nativeBuildScript = readRepositoryFile('scripts/build-native.mjs');
 const verifier = readRepositoryFile('scripts/qa/verify-ios-release-artifact.mjs');
@@ -654,5 +655,17 @@ describe('native release artifact safety contract', () => {
     ]) {
       expect(verifier).toContain(requiredContract);
     }
+  });
+});
+
+describe('Xcode Cloud post-clone hook', () => {
+  it('installs Capacitor packages before validating Vite configuration', () => {
+    expect(xcodeCloudHook.indexOf('npm ci')).toBeGreaterThanOrEqual(0);
+    expect(xcodeCloudHook.indexOf('VITE_SUPABASE_URL')).toBeGreaterThan(
+      xcodeCloudHook.indexOf('npm ci'),
+    );
+    expect(xcodeCloudHook.indexOf('VITE_SUPABASE_ANON_KEY')).toBeGreaterThan(
+      xcodeCloudHook.indexOf('npm ci'),
+    );
   });
 });

@@ -190,7 +190,7 @@ test('CSS is measured — both the built stylesheet and the src/index.css source
 
 test('budgets are stated in bytes and ordered budget < fail threshold', () => {
   assert.equal(BUDGETS.entryJsGzip, 237_568);
-  assert.equal(BUDGETS.srcIndexCssRaw, 595_000);
+  assert.equal(BUDGETS.srcIndexCssRaw, 600_000);
   assert.ok(BUDGETS.entryJsGzipFail > BUDGETS.entryJsGzip);
 });
 

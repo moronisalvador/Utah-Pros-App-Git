@@ -129,7 +129,6 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 
 ---
 
-<<<<<<< ours
 ## Load-failure contract — an outage never renders as "empty" (LES-01, Jul 30 2026)
 
 `db.select` / `db.rpc` **THROW** on any non-OK response (400/404/500). They do not resolve to `[]`.
@@ -167,7 +166,7 @@ persisted as "exclude nobody".
 
 Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
 repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
-=======
+
 ## Resume / focus / poll refetching — one hook, no exceptions (Jul 30 2026)
 
 `src/hooks/useResumeRefetch.js` is the **single** implementation of "quietly refresh when the user
@@ -210,7 +209,6 @@ without a DOM.
 **Guard:** `tests/qa/unit/resume-listener-lifecycle.test.js` sweeps all of `src/` and fails on a new
 hand-rolled listener anywhere outside that allowlist — it is not a snapshot of these five files.
 Hook behavior itself is covered by `src/hooks/hooks.test.jsx`.
->>>>>>> theirs
 
 ---
 
@@ -4088,6 +4086,27 @@ one open matrix item. No workflow dispatch and no App Review submission
 occurred; `ios-signing` secrets remain unpopulated (Path A follow-up).
 Evidence detail: `docs/mobile/push-activation-owner-gate.md`. Field polish
 findings now accumulate in `docs/mobile/field-polish-punchlist.md`.
+
+### Xcode Cloud post-clone hook — ordering guard (2026-07-30)
+
+`ci_scripts/ci_post_clone.sh` now runs `npm ci` **before** it validates the
+required `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` workflow variables.
+Previously a missing variable exited the hook first, so `node_modules` never
+existed, and Xcode's Capacitor SPM resolution then failed with an unrelated
+"cannot access `@capacitor/splash-screen`" — burying the real cause. Installing
+first makes the readable variable error the only error. Cost of the swap: a
+missing variable is now reported after `npm ci` rather than within seconds.
+
+**This hook is Xcode-Cloud-only, and Xcode Cloud is NOT the canonical pipeline.**
+`.github/workflows/ios-release.yml` is canonical (owner decision 2026-07-29); the
+auto-attached "App | Default" workflow is to be **paused** in App Store Connect —
+not deleted — because its builds bypass
+`scripts/qa/verify-ios-release-artifact.mjs` entirely and PR-triggered builds
+burn the free compute allowance. This change is therefore **dormant** unless
+Apple-managed CI is deliberately revisited. The two Supabase variables remain
+owner-controlled Xcode Cloud workflow configuration, and a real cloud build is
+still required to prove the complete path. Guard:
+`scripts/ios-release-workflow.test.js` → "Xcode Cloud post-clone hook".
 
 ## Admin notification presentation Settings (2026-07-29)
 

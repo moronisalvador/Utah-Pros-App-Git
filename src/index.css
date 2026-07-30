@@ -4960,10 +4960,9 @@ tr:hover td { background: var(--bg-secondary); }
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s, box-shadow 0.1s;
-}
-.tech-tracker-btn:active {
-  transform: scale(0.97);
+  /* Press scale comes from the shared tech-shell rule; `scale` named here because a
+     local `transition` outranks that rule's zero-specificity :where() base. */
+  transition: box-shadow 0.1s, scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .tech-tracker-btn:disabled {
   opacity: 0.6;
@@ -4983,10 +4982,8 @@ tr:hover td { background: var(--bg-secondary); }
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s;
-}
-.tech-tracker-btn-secondary:active {
-  transform: scale(0.97);
+  /* Press scale: shared tech-shell rule (see .tech-tracker-btn above). */
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 /* Mobile task checkboxes */
@@ -6362,7 +6359,11 @@ tr:hover td { background: var(--bg-secondary); }
   background: var(--accent); color: #fff; border: none;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-  transition: transform 0.2s ease; -webkit-tap-highlight-color: transparent;
+  /* `scale` named here so the shared tech-shell press still eases on this button —
+     its own `transition` would otherwise win over the zero-specificity :where() base. */
+  transition: transform 0.2s ease,
+              scale var(--motion-duration-fast) var(--motion-ease-standard);
+  -webkit-tap-highlight-color: transparent;
 }
 .tv2-fab[data-open='true'] { transform: rotate(45deg); }
 .tv2-fab-pill {
@@ -12197,7 +12198,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   background: var(--accent);
   color: #fff;
   cursor: pointer;
-  transition: opacity 120ms ease;
+  /* scale: see .tv2-fab — a local `transition` outranks the shared :where() base. */
+  transition: opacity 120ms ease,
+              scale var(--motion-duration-fast) var(--motion-ease-standard);
 }
 .tv2-msgs-send:disabled { opacity: 0.4; cursor: default; }
 
@@ -12225,7 +12228,7 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   background: var(--accent);
   cursor: pointer;
 }
-.tv2-msgs-new-btn:active { transform: scale(0.96); }
+/* Press scale: shared tech-shell rule (was a lone 0.96 — now the house 0.97). */
 .tv2-msgs-readall {
   display: inline-flex;
   align-items: center;
@@ -12704,8 +12707,9 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
    after the legacy rules so source order wins on equal specificity.
    (.tech-layout .btn:active is already covered by the F-S2 .btn reduced-motion rule above.) */
 @media (prefers-reduced-motion: reduce) {
-  .tech-tracker-btn:active,
-  .tech-tracker-btn-secondary:active,
+  /* The two tracker buttons dropped off this list when their local transform presses
+     were folded into the shared tech-shell rule below (which carries its own collapse).
+     .doc-cl-* are office-shell — JobPage renders DocChecklist — so they keep theirs. */
   .doc-cl-view-btn:active,
   .doc-cl-item:active { transform: none; }
 }
@@ -12715,6 +12719,52 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
   .ar-claim-card:hover,
   .coll-chat-fab:hover,
   .create-menu-fab:not(.active):hover { transform: none; }
+}
+
+/* ═══ TECH-SHELL PRESS FEEDBACK — one shared rule (motion-standard.md §3) ═══════
+   Owner, 2026-07-30 TestFlight: "clicking buttons in the iOS app has no animation at
+   all". The house press never reached the field shell — 72 interactive classes had no
+   :active rule, nearly all tv2-*. Applied once to every enabled button in the shell,
+   because per-class opt-in is exactly what drifted into this bug.
+   `scale` PROPERTY, not transform: .tv2-today-pill / .tv2-msgs-jump /
+   .tv2-hub-lightbox-action are centred with translateX(-50%) and .tv2-fab[data-open]
+   rotates — `scale` composes instead of overwriting, so nothing jumps on press.
+   High-frequency tier: ≤120ms, no bounce, no spring, no keyframes. ═══ */
+.tech-layout button:active:not(:disabled) { scale: 0.97; }
+
+/* Already own a transform-scale press; re-scaling compounds (0.97 × 0.92 = 0.89 on
+   .ui-icon-btn). Tech-only duplicates were deleted instead of listed. Kept exhaustive
+   by tests/qa/unit/tech-press-feedback.test.js. .tv2-dash-menu__item keeps its dim. */
+.tech-layout :is(.btn, .ui-icon-btn, .ui-seg-btn, .tech-nav-tab, .tech-settings-btn,
+                 .tv2-dash-menu__item, .coll-ghost, .coll-primary, .coll-chat-send,
+                 .devtools-tab, .devtools-advanced-subtab):active:not(:disabled) { scale: 1; }
+
+/* Full-width rows take the row idiom (§3, as .tv2-msgs-row/.tv2-sched-row already do) —
+   scaling a viewport-wide row reads as the whole screen flexing. Opaque rows swap
+   background; transparent ones dim, since a swap on `background:none` paints a box that
+   isn't there at rest. Both land instantly, like an iOS row highlight. */
+.tech-layout :is(.tv2-sheet__row, .tv2-hub-visit, .tv2-hub-nextvisit, .tv2-hub-claimcard,
+                 .tv2-hub-tool-row, .tv2-hub-task):active:not(:disabled) {
+  scale: 1; background: var(--bg-secondary);
+}
+.tech-layout :is(.tv2-dash-completed-row, .tv2-dash-hero__identity,
+                 .tv2-hub-collapse__head):active:not(:disabled) { scale: 1; opacity: 0.7; }
+.tech-layout .tech-task-row:active { opacity: 0.7; }  /* a <div>, so the rule above misses it */
+
+/* Zero specificity (:where) so a control with its own `transition` keeps it — the two
+   scaling ones that do (.tv2-fab, .tv2-msgs-send) name `scale` themselves. Transitions
+   ONLY scale: easing `background` would fade every high-frequency chip/tab/day
+   selection, which §3 keeps instant. */
+:where(.tech-layout) :where(button) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: scale var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+/* HARD gate (§5). The row background/dim is state, not motion, so it still lands. */
+@media (prefers-reduced-motion: reduce) {
+  .tech-layout button:active:not(:disabled) { scale: 1; }
+  :where(.tech-layout) :where(button) { transition: none; }
 }
 
 /* ─── Modal (role=dialog) — centered on desktop, bottom-sheet on mobile ─── */
@@ -12997,13 +13047,10 @@ html.ui-glass .tech-nav {
 .est-row:active { background: var(--bg-tertiary); }
 @media (prefers-reduced-motion: reduce) { .est-row { transition: none; } }
 
-/* Field-tech scope/tab pill (TechClaims/TechTasks) — a HIGH-FREQUENCY in-place switch:
-   press-scale ONLY. The selection-change (background/color) stays INSTANT — no transition
-   on the fill (motion-standard §3 frequency tier; animating the indicator is deferred to
-   Wave 3). transform-only transition so the switch never waits on a slide. */
-.tech-pill { transition: transform var(--motion-duration-fast) var(--motion-ease-standard); }
-.tech-pill:active:not(:disabled) { transform: scale(0.97); }
-@media (prefers-reduced-motion: reduce) { .tech-pill:active:not(:disabled) { transform: none; } }
+/* Field-tech scope/tab pill (TechClaims/TechTasks) — a HIGH-FREQUENCY in-place switch.
+   Press-scale now comes from the shared tech-shell rule (with its reduced-motion
+   collapse); the selection-change (background/color) stays INSTANT — no transition on
+   the fill (motion-standard §3 frequency tier). */
 
 /* ─── CRM LEAD NOTES (append-only notes log · standalone 2026-07-24) ───
    The lead detail panel's Notes section: many notes per lead, newest first,

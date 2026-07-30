@@ -338,4 +338,3 @@ adding a search box to the Leads board.
   skinned through the `className` / `inputClassName` props it already exposes. The F-S2-owned file
   itself is untouched, per `ux-alignment-wave-ownership.md` §1.
 - Everything else in §§1–11 remains frozen.
-
