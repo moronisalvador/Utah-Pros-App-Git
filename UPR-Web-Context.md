@@ -2897,6 +2897,15 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
+    **Sign-out cleanup deferral (2026-07-29, owner-directed):** explicit sign-out runs a bounded
+    silent push-detach retry (~10s backoff, skipped offline) before any blocking UI, then completes
+    visually when the only residual is journaled push server work (same-owner marker positively
+    re-read — new `residualJournaled`/`enrollmentPending` detach result fields; `deferrable`
+    classification through `accountDeviceCleanup.js`/`pwaAccountState.js`; `allowDeferred` in
+    AuthContext, logout-only). Foreign-owner/invalid-marker/signed-out-reauth/password-recovery/
+    login/account-switch keep the hard "Finish securing this device" wall; the bind-time
+    `retryPendingAccountPushDetaches` gate is unchanged. Contract:
+    `docs/mobile/push-activation-owner-gate.md`.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.

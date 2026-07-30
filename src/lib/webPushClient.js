@@ -676,9 +676,19 @@ export async function detachWebPushDevice(db, options = {}) {
     && !pendingMarkerInvalid
     && server.succeeded
     && (server.required || lookup.status !== 'unknown');
+  // Positive journal evidence for the caller's sign-out deferral decision:
+  // re-read the marker AFTER every write/clear above. `markerPersisted` alone
+  // is not proof (it initializes true when there was nothing to mark), so a
+  // deferral must key on this field, never on markerPersisted.
+  const residualMarker = readPendingWebPushDetach(storage);
+  const residualJournaled = !!residualMarker
+    && residualMarker.invalid !== true
+    && validDetachOwner(ownerKey)
+    && residualMarker.ownerKey === ownerKey;
   return {
     ok: ready,
     ready,
+    residualJournaled,
     reason: pendingMarkerInvalid
       ? 'pending_detach_marker_invalid'
       : pendingOwnerMismatch

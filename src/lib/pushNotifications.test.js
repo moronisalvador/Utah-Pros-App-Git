@@ -1312,6 +1312,147 @@ describe('detachNativePushDevice', () => {
       localStateCleared: true,
     });
   });
+
+  it('reports positive same-owner journal evidence when only the server delete fails', async () => {
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    };
+
+    const result = await detachNativePushDevice(db, {
+      storage,
+      timeoutMs: 50,
+      ownerKey: OWNER_A,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      serverDetached: false,
+      localDetached: true,
+      localStateCleared: true,
+      enrollmentPending: false,
+      residualJournaled: true,
+    });
+    const marker = JSON.parse(
+      storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY),
+    );
+    expect(marker.ownerKey).toBe(OWNER_A);
+    expect(marker.token).toBe(DEVICE_TOKEN);
+  });
+
+  it('reports no journal evidence when no owner-bound marker could persist', async () => {
+    // No owner lease and no supplied ownerKey: the marker write must refuse,
+    // so a failed server delete has no durable memory and must never be
+    // classified as a journaled residual.
+    const storage = memoryStorage({
+      [NATIVE_PUSH_BINDING_KEY]: DEVICE_TOKEN,
+    });
+    const db = {
+      rpc: vi.fn(async () => {
+        throw new Error('offline');
+      }),
+    };
+
+    const result = await detachNativePushDevice(db, {
+      storage,
+      timeoutMs: 50,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      serverDetached: false,
+      residualJournaled: false,
+    });
+    expect(storage.getItem(NATIVE_PUSH_PENDING_DETACH_KEY)).toBe(null);
+  });
+
+  it('surfaces an in-flight enrollment with no marker as unjournaled residual', async () => {
+    // The pre-token enrollment window: registration started but APNs has not
+    // returned a token, so no provisional marker exists yet. Detach must
+    // report enrollmentPending and no journal evidence — this state is never
+    // safe to defer because the enrollment may still commit an upsert later.
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    native.push.register.mockImplementation(async () => {});
+    const db = { rpc: vi.fn(async () => null) };
+
+    const enrollment = registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
+    await vi.waitFor(() => {
+      expect(native.push.register).toHaveBeenCalled();
+    });
+
+    const result = await detachNativePushDevice(db, {
+      storage,
+      timeoutMs: 50,
+      ownerKey: OWNER_A,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      enrollmentPending: true,
+      residualJournaled: false,
+    });
+
+    native.listeners.get('registration')?.({ value: DEVICE_TOKEN });
+    await expect(enrollment).resolves.toEqual({
+      ok: false,
+      reason: 'cancelled',
+    });
+  });
+
+  it('keeps journal evidence when an ambiguous in-flight upsert is detached', async () => {
+    // Mid-upsert the provisional marker is durable, so the residual IS
+    // journaled — but enrollmentPending must still be surfaced so callers
+    // refuse to defer until the possibly committed upsert settles.
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    const upsertRelease = deferred();
+    const db = {
+      rpc: vi.fn(async (name) => {
+        if (name === 'upsert_my_native_device_token') {
+          await upsertRelease.promise;
+        }
+      }),
+    };
+
+    const enrollment = registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    );
+    await vi.waitFor(() => {
+      expect(db.rpc).toHaveBeenCalledWith(
+        'upsert_my_native_device_token',
+        expect.any(Object),
+      );
+    });
+
+    const result = await detachNativePushDevice(db, {
+      storage,
+      timeoutMs: 50,
+      ownerKey: OWNER_A,
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      enrollmentPending: true,
+      residualJournaled: true,
+    });
+
+    upsertRelease.resolve();
+    await expect(enrollment).resolves.toEqual({
+      ok: false,
+      reason: 'cancelled',
+    });
+  });
 });
 
 describe('native Push event listeners', () => {

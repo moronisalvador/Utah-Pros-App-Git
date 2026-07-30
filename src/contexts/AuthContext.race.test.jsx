@@ -1608,4 +1608,153 @@ describe('AuthProvider latest-account-wins races', () => {
 
     cleanup();
   });
+
+  it('completes an explicit sign-out visually when cleanup defers on a journaled residual', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: false,
+      deferrable: true,
+      reason: 'cleanup-incomplete',
+    });
+
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+
+    expect(harness.cleanupAccountDeviceState).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ transientPushRetry: true }),
+    );
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
+    expect(harness.tokenGetter()).toBe(null);
+
+    cleanup();
+  });
+
+  it('still walls a foreign-owner journal at the next sign-in after a deferred sign-out', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+    harness.cleanupAccountDeviceState.mockResolvedValueOnce({
+      ready: false,
+      deferrable: true,
+    });
+    await expect(harness.providerValue.logout()).resolves.toBeUndefined();
+    expect(harness.states[USER_STATE]).toBe(null);
+
+    // The durable journal now belongs to A's owner. B's bind attempt must be
+    // refused before B publishes or enrolls — this gate is the cross-account
+    // privacy guarantee the deferred sign-out leans on.
+    harness.retryPendingAccountPushDetaches.mockResolvedValue({
+      ready: false,
+      pending: true,
+      ownerMismatch: true,
+    });
+    harness.profileResponses.push(Promise.resolve([employee('employee-b')]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-b', email: 'b@example.invalid' },
+      access_token: 'token-b',
+    });
+
+    expect(harness.states[EMPLOYEE_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(true);
+    expect(harness.states[ERROR_STATE]).toMatch(
+      /unfinished notification cleanup/,
+    );
+    expect(harness.registerPushForEmployee).not.toHaveBeenCalled();
+
+    cleanup();
+  });
+
+  it('never defers an observer-only SIGNED_OUT even when cleanup is deferrable', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    harness.cleanupAccountDeviceState.mockResolvedValue({
+      ready: false,
+      deferrable: true,
+    });
+    await harness.authCallback('SIGNED_OUT', null);
+
+    // Signed-out reauth stays a hard wall: only an explicit logout may defer.
+    expect(harness.states[LOADING_STATE]).toBe(true);
+    expect(harness.states[ERROR_STATE]).toMatch(
+      /unfinished notification cleanup/,
+    );
+
+    cleanup();
+  });
+
+  it('completes a deferred sign-out from the wall retry after an earlier hard block', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    harness.cleanupAccountDeviceState
+      .mockResolvedValueOnce({ ready: false, deferrable: false })
+      .mockResolvedValueOnce({ ready: false, deferrable: true });
+
+    await expect(harness.providerValue.logout()).rejects.toThrow(
+      /could not finish securing/,
+    );
+    expect(harness.auth.signOut).not.toHaveBeenCalled();
+    expect(harness.states[LOADING_STATE]).toBe(true);
+
+    await harness.providerValue.retrySecureAccountCleanup();
+
+    expect(harness.auth.signOut).toHaveBeenCalledOnce();
+    expect(harness.states[USER_STATE]).toBe(null);
+    expect(harness.states[LOADING_STATE]).toBe(false);
+    expect(harness.states[ERROR_STATE]).toBe(null);
+
+    cleanup();
+  });
+
+  it('login never defers even when cleanup reports a deferrable residual', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    harness.cleanupAccountDeviceState.mockResolvedValueOnce({
+      ready: false,
+      deferrable: true,
+    });
+
+    await expect(harness.providerValue.login(
+      'b@example.invalid',
+      'synthetic-password',
+    )).rejects.toThrow(/could not finish securing/);
+    expect(harness.auth.signInWithPassword).not.toHaveBeenCalled();
+    expect(harness.tokenGetter()).toBe('token-a');
+    expect(harness.states[USER_STATE]).toMatchObject({ id: 'auth-a' });
+    expect(harness.states[LOADING_STATE]).toBe(true);
+
+    cleanup();
+  });
 });
