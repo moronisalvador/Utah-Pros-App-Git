@@ -131,6 +131,15 @@ function isValidEmployeeProfile(employee) {
     && typeof employee.is_external === 'boolean';
 }
 
+// ONE copy of the deferral authorization decision, shared by
+// requireAccountCleanup and the SIGNED_OUT observer: a block set by a
+// recovery/reauth flow is never dropped through sign-out deferral.
+function cleanupBlockAllowsDeferral(block) {
+  return block?.recoveryRequired !== true
+    && block?.passwordRecovery !== true
+    && block?.signedOutReauthRequired !== true;
+}
+
 function localSignOutError(result) {
   if (
     !result
@@ -564,9 +573,12 @@ export function AuthProvider({ children }) {
           // classified a journaled-transient residual as deferrable, and this
           // observer must not re-wall what logout() is completing. An
           // observer-only SIGNED_OUT (no explicit transition) never defers —
-          // the signed-out reauth wall stays exactly as before.
+          // the signed-out reauth wall stays exactly as before. The shared
+          // refusal keeps a concurrent recovery flow's block intact (its
+          // begin() also makes this generation stale — defense in depth).
           const deferredExplicitCleanup = !!explicitLogout
-            && cleanupResult?.deferrable === true;
+            && cleanupResult?.deferrable === true
+            && cleanupBlockAllowsDeferral(cleanupBlockRef.current);
           if (cleanupResult?.ready !== true && !deferredExplicitCleanup) {
             const signedOutReauthRequired = !explicitLogout;
             cleanupBlockRef.current = {
@@ -826,9 +838,7 @@ export function AuthProvider({ children }) {
     if (
       allowDeferred
       && cleanupResult?.deferrable === true
-      && cleanupBlockRef.current?.recoveryRequired !== true
-      && cleanupBlockRef.current?.passwordRecovery !== true
-      && cleanupBlockRef.current?.signedOutReauthRequired !== true
+      && cleanupBlockAllowsDeferral(cleanupBlockRef.current)
     ) {
       cleanupBlockRef.current = null;
       return {

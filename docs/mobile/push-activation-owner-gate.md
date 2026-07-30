@@ -64,8 +64,13 @@ login/account-switch, rejected bootstrap, and any local cleanup failure keep
 the hard blocking screen. A deferred sign-out also skips the advisory
 service-worker reload so no in-flight settlement is orphaned. A retry that
 finds a residual channel's journal vanished, or discovers a foreign owner,
-escalates back to the blocking screen rather than completing. NOTE: this
-deferral leans on the bind-time gate whose on-device **account-switch
+escalates back to the blocking screen rather than completing. Known limit
+(pre-existing, shared with the composite ready path): each channel keeps ONE
+pending-detach marker and the detach prefers the marker's stale identity over
+the live one, so after a token rotation the journal may cover a stale row
+while a live row goes unjournaled — `residualJournaled` proves a same-owner
+journal exists, not that it names every row this session ever bound. NOTE:
+this deferral leans on the bind-time gate whose on-device **account-switch
 refusal** check is the one open matrix item below — run that owner check
 before broad tech rollout.
 

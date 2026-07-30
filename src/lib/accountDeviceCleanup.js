@@ -36,6 +36,13 @@
  *     is never deferrable. The bind-time gate in AuthContext (handleAuthUser →
  *     retryPendingAccountPushDetaches) stays the enforcement point before any
  *     account publishes again.
+ *   - Known limit (pre-existing single-slot journal): each channel keeps ONE
+ *     pending-detach marker and the detach prefers the marker's stale
+ *     token/endpoint identity over the live one, so after a token rotation
+ *     the journal may cover the stale row while a live row goes unjournaled.
+ *     `residualJournaled` proves a same-owner journal exists, not that it
+ *     names every row this session ever bound — the composite ready path has
+ *     always had the same limit.
  * ════════════════════════════════════════════════
  */
 
@@ -325,6 +332,11 @@ export async function cleanupAccountDeviceState(
     // report pending:true (its journal was found and reprocessed) until a
     // retry we observed settles it — a vanished journal under a residual
     // channel means the durable memory is gone, so escalate to the wall.
+    // Accepted consequence: a concurrent same-owner tab that reconciles and
+    // clears the journal during this window ALSO escalates (a false wall on
+    // a clean device, resolved by its Retry re-running logout with no marker
+    // left). Deliberate — never loosen this into laundering a journal that
+    // genuinely vanished.
     let webSettled = accountState?.pushWebSettled === true;
     let nativeSettled = accountState?.pushNativeSettled === true;
     const startedAt = now();

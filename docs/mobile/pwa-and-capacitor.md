@@ -134,7 +134,12 @@ positively re-read from storage, no foreign owner, no invalid marker, no in-flig
 every non-push leg clean). The journal is the durable memory: the next same-owner sign-in
 reconciles it and a different account is refused at the bind gate before it publishes or enrolls.
 Foreign-owner conflict, invalid markers, observer-only sign-out, password recovery,
-login/account-switch, and any local cleanup failure keep the hard lock. Auth observer callbacks
+login/account-switch, and any local cleanup failure keep the hard lock. Two accepted consequences
+are deliberate: a concurrent same-owner tab that reconciles the journal during the retry window
+produces a false wall on a clean device (its Retry immediately succeeds — never loosened into
+laundering a genuinely vanished journal), and a fully "ready" sign-out can still leave the native
+provisional-window journal behind, so a DIFFERENT employee's next sign-in can hit the
+previous-account wall through the bind gate even when no deferral happened. Auth observer callbacks
 now return synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out
 from deadlocking on the SDK observer lock. Independent review is clean; browser/device proof
 remains.
