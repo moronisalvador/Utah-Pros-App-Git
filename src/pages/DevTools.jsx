@@ -37,6 +37,10 @@ import { getAuthHeader } from '@/lib/realtime';
 import { toast } from '@/lib/toast';
 import { StatusPill } from '@/components/ui';
 import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
+import {
+  featureFlagUpsertArgs,
+  oopPricingRolloutState,
+} from '@/lib/oopPricingRollout';
 import { loadEmployeeDirectory } from '@/lib/employeeDirectory';
 import DeliverabilityHealth from '@/components/DeliverabilityHealth';
 import ProviderEventOps from '@/components/ProviderEventOps';
@@ -129,27 +133,23 @@ function FlagsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const toggle = async (flag) => {
+  const setGlobalEnabled = async (flag, enabled) => {
     setSaving(flag.key);
     try {
-      await db.rpc('upsert_feature_flag', {
-        p_key:             flag.key,
-        p_enabled:         !flag.enabled,
-        p_dev_only_user_id: flag.dev_only_user_id,
-        p_category:        flag.category,
-        p_label:           flag.label,
-        p_description:     flag.description,
-        p_updated_by:      employee?.id,
-        p_force_disabled:  flag.force_disabled || false,
-      });
-      setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, enabled: !f.enabled } : f));
-      ok(`${flag.label} ${!flag.enabled ? 'enabled' : 'disabled'}`);
+      await db.rpc('upsert_feature_flag', featureFlagUpsertArgs(flag, {
+        enabled,
+        updatedBy: employee?.id,
+      }));
+      setFlags(prev => prev.map(f => f.key === flag.key ? { ...f, enabled } : f));
+      ok(`${flag.label} ${enabled ? 'enabled' : 'disabled'}`);
     } catch (e) {
       err('Failed to update flag');
     } finally {
       setSaving(null);
     }
   };
+
+  const toggle = (flag) => setGlobalEnabled(flag, !flag.enabled);
 
   const toggleDevOnly = async (flag) => {
     const newVal = flag.dev_only_user_id === employee?.id ? null : employee?.id;
@@ -340,6 +340,8 @@ function FlagsTab() {
                 const isSaving  = saving === flag.key;
                 const isDevSave = saving === flag.key + '_dev';
                 const isDevOnly = flag.dev_only_user_id === employee?.id;
+                const isOopPricing = flag.key === 'tool:oop_pricing';
+                const oopState = isOopPricing ? oopPricingRolloutState(flag, employee?.id) : null;
                 const isLast    = idx === items.length - 1;
                 return (
                   <div key={flag.key} style={{
@@ -353,6 +355,8 @@ function FlagsTab() {
                     <button
                       onClick={() => toggle(flag)}
                       disabled={!!saving}
+                      aria-label={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for everyone` : `${flag.enabled ? 'Disable' : 'Enable'} ${flag.label} for everyone`}
+                      title={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for everyone` : undefined}
                       style={{
                         position: 'relative', flexShrink: 0,
                         width: 40, height: 22, borderRadius: 11,
@@ -407,10 +411,28 @@ function FlagsTab() {
                           {flag.description}
                         </div>
                       )}
+                      {isOopPricing && (
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 'var(--space-1)' }}>
+                          {oopState === 'global' && 'Access: available to everyone. The owner preview remains saved for a later global turn-off.'}
+                          {oopState === 'preview' && 'Access: owner preview only. Use “Make available to everyone” to open both OOP calculator routes for all staff.'}
+                          {oopState === 'hidden' && 'Access: hidden for everyone.'}
+                          {oopState === 'force_disabled' && 'Access: blocked for everyone by Force Off. Clear Force Off before enabling global access.'}
+                        </div>
+                      )}
                     </div>
 
                     {/* Actions */}
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      {isOopPricing && (
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => setGlobalEnabled(flag, true)}
+                          disabled={!!saving || oopState === 'global' || oopState === 'force_disabled'}
+                          title={oopState === 'force_disabled' ? 'Clear Force Off before enabling OOP Pricing for everyone' : 'Enable OOP Pricing for everyone'}
+                        >
+                          {oopState === 'global' ? 'Available to everyone' : 'Make available to everyone'}
+                        </button>
+                      )}
                       {/* Dev-only toggle */}
                       <button
                         onClick={() => toggleDevOnly(flag)}

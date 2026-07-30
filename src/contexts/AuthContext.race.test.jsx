@@ -158,7 +158,10 @@ vi.mock('@/components/SessionExpiredBanner', () => ({
   default: () => null,
 }));
 
-import { AuthProvider } from './AuthContext.jsx';
+import {
+  AuthProvider,
+  resolveFeatureFlagAccess,
+} from './AuthContext.jsx';
 import {
   ENDED_SESSIONS_KEY,
   recordEndedSessionId,
@@ -395,6 +398,96 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
+});
+
+describe('feature flag access resolution', () => {
+  const employeeA = employee('employee-a', 'estimator');
+
+  it('lets force-disabled override global enable and owner preview', () => {
+    const flags = {
+      'feature:test': featureFlag({
+        enabled: true,
+        force_disabled: true,
+        dev_only_user_id: employeeA.id,
+      }),
+    };
+
+    expect(resolveFeatureFlagAccess(
+      'feature:test',
+      flags,
+      employeeA,
+      {},
+    )).toBe(false);
+  });
+
+  it('preserves global, preview, missing-row, and CRM-partner behavior', () => {
+    expect(resolveFeatureFlagAccess(
+      'feature:test',
+      { 'feature:test': featureFlag({ enabled: true }) },
+      employeeA,
+      {},
+    )).toBe(true);
+    expect(resolveFeatureFlagAccess(
+      'feature:test',
+      { 'feature:test': featureFlag({ dev_only_user_id: employeeA.id }) },
+      employeeA,
+      {},
+    )).toBe(true);
+    expect(resolveFeatureFlagAccess(
+      'feature:test',
+      { 'feature:test': featureFlag() },
+      employeeA,
+      {},
+    )).toBe(false);
+    expect(resolveFeatureFlagAccess(
+      'feature:missing',
+      {},
+      employeeA,
+      {},
+    )).toBe(true);
+    expect(resolveFeatureFlagAccess(
+      'page:crm',
+      { 'page:crm': featureFlag({ key: 'page:crm' }) },
+      employee('employee-a', 'crm_partner'),
+      {},
+    )).toBe(true);
+  });
+});
+
+describe('Web Push feature-flag mirror', () => {
+  it('stays off when the flag is enabled but force-disabled', async () => {
+    const cleanup = await mountProvider();
+    const employeeA = employee('employee-a');
+    harness.profileResponses.push(Promise.resolve([employeeA]));
+    harness.db.rpc.mockImplementation((name) => {
+      if (name === 'get_my_employee_profile') {
+        return harness.profileResponses.shift();
+      }
+      if (name === 'get_feature_flags') {
+        return Promise.resolve([
+          featureFlag({
+            key: 'feature:web_push',
+            enabled: true,
+            force_disabled: true,
+            dev_only_user_id: employeeA.id,
+          }),
+        ]);
+      }
+      if (name === 'get_employee_page_access') return Promise.resolve([]);
+      throw new Error(`Unexpected RPC: ${name}`);
+    });
+    harness.db.select.mockResolvedValueOnce([navPermission()]);
+
+    await harness.authCallback('SIGNED_IN', {
+      user: { id: 'auth-a', email: 'a@example.invalid' },
+      access_token: 'token-a',
+    });
+
+    expect(localStorage.getItem('upr:test-web-push-flag')).toBe('0');
+    expect(harness.reconcilePushServiceWorker).toHaveBeenCalledWith(false);
+
+    cleanup();
+  });
 });
 
 describe('AuthProvider latest-account-wins races', () => {

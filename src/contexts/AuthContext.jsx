@@ -190,7 +190,9 @@ function localSignOutError(result) {
 // "missing = unrestricted": we never want to register the SW for everyone by
 // accident — the flag is seeded explicitly OFF).
 function writeWebPushMirror(flag, emp) {
-  const on = !!flag && (flag.enabled || (emp && flag.dev_only_user_id === emp.id));
+  const on = !!flag
+    && !flag.force_disabled
+    && (flag.enabled || (emp && flag.dev_only_user_id === emp.id));
   try {
     localStorage.setItem(WEB_PUSH_FLAG_MIRROR_KEY, on ? '1' : '0');
   } catch { /* storage blocked — main.jsx defaults to OFF */ }
@@ -207,6 +209,27 @@ function resetAfterServiceWorkerChange() {
   window.location.replace(
     buildResetUrl(window.location.pathname + window.location.search),
   );
+}
+
+// FeatureRoute/Nav access shares this one resolution order. Force Off is the
+// absolute kill switch; the CRM-partner bypass applies only after that check.
+// eslint-disable-next-line react-refresh/only-export-components
+export function resolveFeatureFlagAccess(
+  key,
+  featureFlags,
+  employee,
+  employeePageAccess,
+) {
+  const flag = featureFlags[key];
+  if (flag?.force_disabled) return false;
+  if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
+  if (!flag) return true;
+  if (flag.enabled) return true;
+  if (employee && flag.dev_only_user_id === employee.id) return true;
+  if (key === 'page:crm' && employee && employeePageAccess.crm === true) {
+    return true;
+  }
+  return false;
 }
 
 export function AuthProvider({ children }) {
@@ -1284,10 +1307,12 @@ export function AuthProvider({ children }) {
         ]);
         if (!authLifecycle.isCurrent(generation)) return;
 
-        const webPushEnabled = !!nextFeatureFlags['feature:web_push']
+        const webPushFlag = nextFeatureFlags['feature:web_push'];
+        const webPushEnabled = !!webPushFlag
+          && !webPushFlag.force_disabled
           && (
-            nextFeatureFlags['feature:web_push'].enabled
-            || nextFeatureFlags['feature:web_push'].dev_only_user_id === emp.id
+            webPushFlag.enabled
+            || webPushFlag.dev_only_user_id === emp.id
           );
         const hubFlag = nextFeatureFlags['page:tech_job_hub'];
         const hubEnabled = !!hubFlag
@@ -1882,27 +1907,17 @@ export function AuthProvider({ children }) {
   }, [employee, permissions, featureFlags, employeePageAccess]);
 
   // ── Feature flag check helper ──
-  // No flag row = unrestricted (backwards compatible — existing pages keep working)
-  // flag.enabled = globally on for everyone
-  // flag.dev_only_user_id === employee.id = visible only to that specific user
-  const isFeatureEnabled = useCallback((key) => {
-    // A crm_partner account exists solely to use the CRM — it always passes the
-    // page:crm gate regardless of the dev_only_user_id rollout flag that keeps
-    // CRM hidden from internal staff mid-build (that flag governs internal
-    // rollout timing, not whether an already-provisioned partner can log in).
-    if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
-    const flag = featureFlags[key];
-    if (!flag) return true;                                          // No row = unrestricted
-    if (flag.enabled) return true;                                   // Globally on
-    if (employee && flag.dev_only_user_id === employee.id) return true; // Dev-only for this user
-    // Explicit per-employee grant opens page:crm for one internal user (e.g. a
-    // second admin during the CRM rollout) WITHOUT enabling it for all staff.
-    // Grant-only (an override can add access here, never revoke); set from
-    // Admin → Page Access (employee_page_access.can_view). Phase 6b generalizes
-    // this into per-screen CRM roles.
-    if (key === 'page:crm' && employee && employeePageAccess.crm === true) return true;
-    return false;
-  }, [featureFlags, employee, employeePageAccess]);
+  // Force disabled is absolute. Otherwise: no row = unrestricted, enabled =
+  // global access, and dev_only_user_id = preview access for that employee.
+  const isFeatureEnabled = useCallback(
+    (key) => resolveFeatureFlagAccess(
+      key,
+      featureFlags,
+      employee,
+      employeePageAccess,
+    ),
+    [featureFlags, employee, employeePageAccess],
+  );
 
   const value = {
     user,

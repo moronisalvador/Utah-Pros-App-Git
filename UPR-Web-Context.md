@@ -1259,8 +1259,15 @@ global_search(p_term TEXT, p_limit INT DEFAULT 6)
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
-All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Dev-only behind
-`tool:oop_pricing` feature flag (initially Moroni Salvador).
+All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Access is gated by
+`tool:oop_pricing` (initially owner preview only). DevTools → Feature Flags now
+shows its rollout state explicitly: **owner preview**, **available to everyone**,
+**hidden for everyone**, or **force disabled**. “Make available to everyone” writes
+only `enabled: true` through the existing owner-gated `upsert_feature_flag` RPC and
+preserves `dev_only_user_id`, so switching global access off restores the existing
+owner preview. `force_disabled` is the absolute AuthContext/FeatureRoute kill switch
+and wins even if `enabled` is true or the viewer owns the preview. This repository
+surface does not change the live flag; current live state still requires a readback.
 ```
 generate_oop_quote_number()     — Returns next OOP-YYMM-XXX number (counts existing
                                    rows with current prefix + 1, zero-padded to 3 digits).

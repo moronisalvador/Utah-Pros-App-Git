@@ -42,9 +42,53 @@ vi.mock('@/lib/realtime', () => ({
   getAuthHeader: async () => ({}),
 }));
 
+import {
+  featureFlagUpsertArgs,
+  oopPricingRolloutState,
+} from '@/lib/oopPricingRollout';
+
 const { default: DevTools } = await import('./DevTools.jsx');
 
 describe('DevTools ops-health deep link', () => {
+  it('distinguishes the OOP owner preview from global availability', () => {
+    const ownerId = 'owner-1';
+
+    expect(oopPricingRolloutState({ enabled: false, force_disabled: false, dev_only_user_id: ownerId }, ownerId)).toBe('preview');
+    expect(oopPricingRolloutState({ enabled: true, force_disabled: false, dev_only_user_id: ownerId }, ownerId)).toBe('global');
+    expect(oopPricingRolloutState({ enabled: false, force_disabled: false, dev_only_user_id: null }, ownerId)).toBe('hidden');
+    expect(oopPricingRolloutState({ enabled: true, force_disabled: true, dev_only_user_id: ownerId }, ownerId)).toBe('force_disabled');
+  });
+
+  it('builds the global activation write without losing preview or force-disable state', () => {
+    const flag = {
+      key: 'tool:oop_pricing',
+      enabled: false,
+      force_disabled: false,
+      dev_only_user_id: 'owner-1',
+      category: 'tool',
+      label: 'OOP Pricing',
+      description: 'Controls the OOP calculator.',
+    };
+
+    expect(featureFlagUpsertArgs(flag, {
+      enabled: true,
+      updatedBy: 'owner-1',
+    })).toEqual({
+      p_key: 'tool:oop_pricing',
+      p_enabled: true,
+      p_dev_only_user_id: 'owner-1',
+      p_category: 'tool',
+      p_label: 'OOP Pricing',
+      p_description: 'Controls the OOP calculator.',
+      p_updated_by: 'owner-1',
+      p_force_disabled: false,
+    });
+    expect(featureFlagUpsertArgs(
+      { ...flag, force_disabled: true },
+      { enabled: true, updatedBy: 'owner-1' },
+    ).p_force_disabled).toBe(true);
+  });
+
   it('opens the messaging provider-events subtab from the alert URL', () => {
     const output = renderToStaticMarkup(
       <MemoryRouter initialEntries={['/dev-tools?tab=messaging&sub=events']}>
