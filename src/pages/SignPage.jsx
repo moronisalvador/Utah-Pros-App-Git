@@ -198,6 +198,43 @@ function buildSectionsFromTemplates(templates, divisions, doc_type, job) {
     .map(tpl => ({ heading: substituteVars(tpl.heading, job), body: substituteVars(tpl.body, job) }));
 }
 
+const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
+
+/* Declared above the component (they were below it until 2026-07-29, which the
+   no-use-before-define ratchet flags now that this file is under the frozen
+   shrink-only lint baseline). Values unchanged — a pure move. */
+const styles = {
+  page:          { minHeight: '100vh', background: '#f1f5f9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
+  header:        { background: '#1e293b', padding: '20px 24px' },
+  headerInner:   { maxWidth: 640, margin: '0 auto' },
+  company:       { margin: 0, fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.2px' },
+  companySub:    { margin: '2px 0 0', fontSize: 12, color: '#94a3b8' },
+  content:       { maxWidth: 640, margin: '0 auto', padding: '28px 20px 60px' },
+  titleBlock:    { textAlign: 'center', marginBottom: 24 },
+  docTitle:      { margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0f172a' },
+  titleLine:     { width: 80, height: 3, background: '#2563eb', borderRadius: 2, margin: '0 auto' },
+  infoGrid:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: 4 },
+  section:       { marginBottom: 16 },
+  sectionHeading:{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' },
+  sectionBody:   { margin: 0 },
+  authText:      { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.65 },
+  fieldGroup:    { marginBottom: 20 },
+  fieldLabel:    { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 },
+  input:         { width: '100%', padding: '12px 14px', fontSize: 15, borderRadius: 8, border: '1.5px solid #cbd5e1', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', background: '#fff', color: '#0f172a' },
+  canvasWrap:    { position: 'relative', background: '#fff', border: '1.5px solid #cbd5e1', borderRadius: 8, overflow: 'hidden' },
+  canvas:        { display: 'block', width: '100%', height: 140, touchAction: 'none', cursor: 'crosshair' },
+  canvasHint:    { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', margin: 0, fontSize: 13, color: '#94a3b8', pointerEvents: 'none', whiteSpace: 'nowrap' },
+  clearBtn:      { fontSize: 12, fontWeight: 600, color: '#64748b', background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
+  checkLabel:    { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20, cursor: 'pointer' },
+  errorMsg:      { color: '#ef4444', fontSize: 13, marginBottom: 16, fontWeight: 500 },
+  submitBtn:     { width: '100%', padding: '14px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, fontFamily: 'inherit', letterSpacing: '0.1px' },
+  footer:        { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8' },
+  heading:       { margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#0f172a' },
+  sub:           { margin: '0 0 8px', fontSize: 14, color: '#475569', lineHeight: 1.6 },
+  contact:       { margin: '16px 0 0', fontSize: 13, color: '#64748b' },
+  link:          { color: '#2563eb', textDecoration: 'none' },
+};
+
 export default function SignPage() {
   // Two routes land here: /sign/:token (the original, still live for every link
   // already sent) and /s/:code (the short form). Both resolve to the same UUID —
@@ -262,6 +299,10 @@ export default function SignPage() {
       renderTypedSig(canvas, typedSig);
       setHasSig(true);
     }
+    // Intentionally re-inits ONLY on a mode switch — adding typedSig/fontLoaded
+    // would clear and redraw the canvas on every keystroke (the [typedSig,
+    // sigMode, fontLoaded] effect above owns keystroke re-renders).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sigMode]);
 
   useEffect(() => {
@@ -300,6 +341,10 @@ export default function SignPage() {
       renderTypedSig(canvas, typedSig);
       setHasSig(true);
     }
+    // Intentionally fires ONLY on the loading→ready transition (first canvas
+    // mount) — sigMode/typedSig/fontLoaded changes are owned by their own
+    // effects; re-running this on them would double-clear the canvas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
   const getPos = (e, canvas) => {
@@ -643,37 +688,3 @@ function buildSectionText(divisions, doc_type) {
   const results = sorted.map(d => map[d]).filter(Boolean);
   return results.length ? results : [{ heading: 'Work Completed', body: 'I confirm that all restoration services performed by Utah Pros Restoration have been completed to my satisfaction. The work was performed in a professional manner and is 100% complete. I have no outstanding complaints or concerns.' }];
 }
-
-const DOC_LABELS = { coc: 'Certificate of Completion', work_auth: 'Work Authorization', direction_pay: 'Direction of Pay', change_order: 'Change Order', recon_agreement: 'Reconstruction Agreement' };
-
-const styles = {
-  page:          { minHeight: '100vh', background: '#f1f5f9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' },
-  header:        { background: '#1e293b', padding: '20px 24px' },
-  headerInner:   { maxWidth: 640, margin: '0 auto' },
-  company:       { margin: 0, fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '-0.2px' },
-  companySub:    { margin: '2px 0 0', fontSize: 12, color: '#94a3b8' },
-  content:       { maxWidth: 640, margin: '0 auto', padding: '28px 20px 60px' },
-  titleBlock:    { textAlign: 'center', marginBottom: 24 },
-  docTitle:      { margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0f172a' },
-  titleLine:     { width: 80, height: 3, background: '#2563eb', borderRadius: 2, margin: '0 auto' },
-  infoGrid:      { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 24px', marginBottom: 4 },
-  section:       { marginBottom: 16 },
-  sectionHeading:{ margin: '0 0 8px', fontSize: 12, fontWeight: 700, color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  sectionBody:   { margin: 0 },
-  authText:      { margin: 0, fontSize: 13, color: '#64748b', lineHeight: 1.65 },
-  fieldGroup:    { marginBottom: 20 },
-  fieldLabel:    { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 },
-  input:         { width: '100%', padding: '12px 14px', fontSize: 15, borderRadius: 8, border: '1.5px solid #cbd5e1', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box', background: '#fff', color: '#0f172a' },
-  canvasWrap:    { position: 'relative', background: '#fff', border: '1.5px solid #cbd5e1', borderRadius: 8, overflow: 'hidden' },
-  canvas:        { display: 'block', width: '100%', height: 140, touchAction: 'none', cursor: 'crosshair' },
-  canvasHint:    { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', margin: 0, fontSize: 13, color: '#94a3b8', pointerEvents: 'none', whiteSpace: 'nowrap' },
-  clearBtn:      { fontSize: 12, fontWeight: 600, color: '#64748b', background: 'none', border: '1px solid #cbd5e1', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' },
-  checkLabel:    { display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 20, cursor: 'pointer' },
-  errorMsg:      { color: '#ef4444', fontSize: 13, marginBottom: 16, fontWeight: 500 },
-  submitBtn:     { width: '100%', padding: '14px', background: '#2563eb', color: '#fff', fontSize: 16, fontWeight: 700, border: 'none', borderRadius: 10, fontFamily: 'inherit', letterSpacing: '0.1px' },
-  footer:        { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8' },
-  heading:       { margin: '0 0 12px', fontSize: 20, fontWeight: 700, color: '#0f172a' },
-  sub:           { margin: '0 0 8px', fontSize: 14, color: '#475569', lineHeight: 1.6 },
-  contact:       { margin: '16px 0 0', fontSize: 13, color: '#64748b' },
-  link:          { color: '#2563eb', textDecoration: 'none' },
-};
