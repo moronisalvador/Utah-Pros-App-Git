@@ -89,6 +89,46 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 
 ---
 
+## Load-failure contract — an outage never renders as "empty" (LES-01, Jul 30 2026)
+
+`db.select` / `db.rpc` **THROW** on any non-OK response (400/404/500). They do not resolve to `[]`.
+So an inline `.catch(() => [])` on a read does not "make it resilient" — it converts a real outage
+into a successful-looking **empty result**, which `loading-error-states.md` §1 names the
+highest-impact defect in the app. 31 of these existed across 18 files; 28 were removed on
+2026-07-30 and 3 kept with a `LES-01 triage — KEEP` comment stating why.
+
+**What the pattern looks like now** (reference: `TechJobDetail.jsx`, `TechJobAlbum.jsx`):
+
+- Reads inside a `load()` carry **no inline catch** — they reject into the one outer catch.
+- Every setter is **committed together after all reads resolve**, so a partial failure can neither
+  half-update the screen nor slip past the page's `if (!job)` / `if (!detail?.claim)` error gate
+  into a page of false empty sections.
+- The outer catch does `console.error(...)` — **a tech is never shown raw PostgREST JSON** — then
+  sets the error state and toasts.
+- **Two independent flags, never one.** `load({ silent, quiet })`:
+  | caller | flags | why |
+  |---|---|---|
+  | cold load | `load()` | gate the page, report the failure |
+  | pull-to-refresh | `{ silent: true }` | no gate (loading-error-states §6) but **still reports** — the tech chose the gesture, and silence leaves them pulling against a dead connection |
+  | post-mutation reload (upload / save) | `{ silent: true, quiet: true }` | no gate, **no second toast** — the mutation already reported itself; already-rendered rows stay put and the failure goes to the console |
+  A single boolean cannot express both, which is why `quiet` exists separately from `silent`.
+  Precedent for the silence gate: `src/pages/crm/CrmCallLog.jsx`.
+- A **secondary lookup** (a picker/filter beside un-swallowed primary content) may keep a catch, but
+  captures the error into a local, logs it, and toasts which control is degraded — an empty picker
+  must never read as "none exist". See `CrmAutomations` / `CrmSequences` / `CrmCampaigns`.
+
+Notable failures this closed: a FALSE "no signed Work Authorization" compliance banner on
+`TechJobDetail` + `TechAppointment`; resume silently erasing visible e-signature rows on
+`TechJobDocuments`; an all-unchecked permission matrix on `settings/Roles`; `settings/TemplatesEditor`
+opening built-in defaults as if they were the saved template (a save would have overwritten the real
+one); and `crm/CrmCampaigns` emptying a campaign's exclusion set, which the next save would have
+persisted as "exclude nobody".
+
+Guards: `tests/qa/unit/false-empty-state-swallow.test.js` (25 source-contract assertions, incl. a
+repo-wide inventory that fails if a 4th swallow appears) and `tests/qa/unit/job-detail-lifecycle.test.js`.
+
+---
+
 ## File Structure
 
 ```

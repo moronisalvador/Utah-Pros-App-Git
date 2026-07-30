@@ -95,11 +95,29 @@ export default function TechJobDocuments() {
   const [esignDocType] = useState(() => location.state?.startEsign || 'work_auth');
 
   // ─── SECTION: Data fetching ──────────────
+  // LES-01 (loading-error-states.md §1): this used to end in `.catch(() => [])`.
+  // `db.select` THROWS on any non-OK response, so that swallow turned a real
+  // outage into `setRequests([])` — and this one function backs the cold load,
+  // the return-to-tab refresh, and three post-mutation refreshes. A blip while
+  // the tab was backgrounded therefore ERASED already-visible pending and
+  // signed e-signature rows and rendered the success empty state in their
+  // place. It now rejects; each caller decides what that means.
   const loadRequests = useCallback(async () => {
-    const rows = await db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`).catch(() => []);
+    const rows = await db.select('sign_requests', `job_id=eq.${jobId}&order=sent_at.desc`);
     setRequests(rows || []);
     return rows || [];
   }, [db, jobId]);
+
+  // The standalone callers — resume and the three post-mutation refreshes —
+  // each already reported their own outcome, and none of them may blank the
+  // list or leak an unhandled rejection. Keep the rows on screen, log only.
+  const refreshRequests = useCallback(async () => {
+    try {
+      await loadRequests();
+    } catch (e) {
+      console.error('TechJobDocuments request refresh failed:', e?.message || e);
+    }
+  }, [loadRequests]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -108,7 +126,6 @@ export default function TechJobDocuments() {
       const rows = await db.select('jobs', `id=eq.${jobId}&select=id,job_number,division,insured_name,client_email,address,city,state`);
       const j = rows?.[0];
       if (!j) { setLoadError('Job not found'); return; }
-      setJob(j);
 
       // Primary contact for signer pre-fill (mirrors SendEsignModal)
       let primary = null;
@@ -124,9 +141,13 @@ export default function TechJobDocuments() {
           primary = cs?.[0] || null;
         }
       } catch { /* fall back to job fields below */ }
-      setContact(primary);
 
+      // LES-01: the requests read runs BEFORE `job` is committed, so a cold
+      // load that fails here lands on the `!job` error screen below instead of
+      // rendering "No signature requests yet" over an outage.
       await loadRequests();
+      setJob(j);
+      setContact(primary);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.
@@ -142,10 +163,10 @@ export default function TechJobDocuments() {
 
   // Refresh when returning to the tab (e.g. back from the signing page)
   useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') loadRequests(); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshRequests(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [loadRequests]);
+  }, [refreshRequests]);
 
   // ─── SECTION: Event handlers ──────────────
   const pdfUrl = (path) => `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/job-files/${path}`;
@@ -179,7 +200,7 @@ export default function TechJobDocuments() {
       if (!res.ok) throw new Error(json.error || 'Failed to resend');
       if (json.success !== true) throw new Error(json.error || 'Resend did not complete');
       toast(json.email_error ? `Email failed: ${json.email_error_detail || 'unknown error'}` : `Reminder sent to ${sr.signer_email}`, json.email_error ? 'error' : 'success');
-      loadRequests();
+      refreshRequests();
     } catch (e) {
       toast('Resend failed: ' + e.message, 'error');
     } finally {
@@ -193,7 +214,7 @@ export default function TechJobDocuments() {
     try {
       await db.update('sign_requests', `id=eq.${sr.id}`, { status: 'cancelled', updated_at: new Date().toISOString() });
       toast('Request cancelled');
-      loadRequests();
+      refreshRequests();
     } catch (e) {
       toast('Failed to cancel: ' + e.message, 'error');
     }
@@ -433,7 +454,7 @@ export default function TechJobDocuments() {
         signerPrefill={signerPrefill}
         employeeId={employee?.id || null}
         initialDocType={esignDocType}
-        onSent={loadRequests}
+        onSent={refreshRequests}
       />
     </div>
   );

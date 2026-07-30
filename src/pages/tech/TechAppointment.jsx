@@ -129,29 +129,48 @@ export default function TechAppointment() {
   }, []);
 
   // ─── SECTION: Data fetching ──────────────
-  const load = useCallback(async () => {
+  // LES-01 (loading-error-states.md §1): the two document reads and the Work
+  // Authorization check each used to carry an inline `.catch(() => [])`.
+  // `db.select` THROWS on any non-OK response, so those swallows turned a real
+  // outage into a successful-looking EMPTY result: "No photos or notes yet",
+  // and — worst — a FALSE "no signed Work Authorization" compliance banner
+  // telling a tech to stop and collect a signature that already exists. They
+  // now reject into the outer catch, which leaves whatever is already on screen
+  // untouched and reports the failure once.
+  //
+  // `quiet` = a post-mutation reload; the mutation already reported its own
+  // outcome, so a failed refresh must not stack a second toast. There is no
+  // `silent` flag here because `load` never re-gates the page: `loading` starts
+  // true and is only ever set false (page-lifecycle.md §1 cites this file as
+  // the gold standard), so pull-to-refresh already never unmounts it.
+  const load = useCallback(async ({ quiet = false } = {}) => {
     try {
       const [detail, taskList] = await Promise.all([
         db.rpc('get_appointment_detail', { p_appointment_id: id }),
         db.rpc('get_appointment_tasks', { p_appointment_id: id }),
       ]);
-      setAppt(detail);
-      setTasks(taskList || []);
       // Fetch docs by appointment_id OR job_id (catches older docs without appointment_id)
       const jobId = detail?.jobs?.id || detail?.job_id;
       const docList = jobId
-        ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`).catch(() => [])
-        : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`).catch(() => []);
-      setDocs(docList || []);
+        ? await db.select('job_documents', `or=(appointment_id.eq.${id},job_id.eq.${jobId})&select=*&order=created_at.desc`)
+        : await db.select('job_documents', `appointment_id=eq.${id}&select=*&order=created_at.desc`);
       // Work Authorization compliance — is there a signed one on the parent job?
-      if (jobId) {
-        const wa = await db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`).catch(() => []);
-        setWorkAuthSigned((wa || []).length > 0);
-      } else {
-        setWorkAuthSigned(true); // no parent job (e.g. private appt) → no alert
-      }
-    } catch {
-      toast(t('toastLoadFailed'), 'error');
+      // A failed read must NOT read as "unsigned": it rejects, and the previous
+      // value (initially `true`, i.e. assume signed) stands.
+      const wa = jobId
+        ? await db.select('sign_requests', `job_id=eq.${jobId}&doc_type=eq.work_auth&status=eq.signed&select=id&limit=1`)
+        : null;
+
+      // Committed after every read resolves, so a partial failure can neither
+      // half-update the screen nor slip past the `!appt` gate below.
+      setAppt(detail);
+      setTasks(taskList || []);
+      setDocs(docList || []);
+      setWorkAuthSigned(jobId ? (wa || []).length > 0 : true); // no parent job (e.g. private appt) → no alert
+    } catch (e) {
+      // Raw failures stay in the console for diagnosis and never reach the screen.
+      console.error('TechAppointment load failed:', e?.message || e);
+      if (!quiet) toast(t('toastLoadFailed'), 'error');
     }
     setLoading(false);
   }, [db, id, t]);
@@ -211,7 +230,7 @@ export default function TechAppointment() {
         p_uploaded_by: employee.id,
         p_appointment_id: id,
       });
-      load();
+      load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
       impact('light');
       const docId = doc?.id;
       setPhotoToast({ id: docId, filePath: `job-files/${path}` });
@@ -277,7 +296,7 @@ export default function TechAppointment() {
   const handleSavePhotoNote = async (text) => {
     if (!photoNoteSheet?.id) return;
     await db.update('job_documents', `id=eq.${photoNoteSheet.id}`, { description: text });
-    load();
+    load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
   };
 
   const handleAssignPhotoRoom = async (roomId) => {
@@ -290,7 +309,7 @@ export default function TechAppointment() {
       const r = await db.rpc('get_job_rooms', { p_job_id: jobIdForRooms });
       setRooms(r || []);
     }
-    load();
+    load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
   };
 
   const handleCreateRoom = async (name) => {
@@ -465,7 +484,7 @@ export default function TechAppointment() {
       toast(t('tech:toast.noteSaved'));
       setNoteText('');
       setNoteOpen(false);
-      load();
+      load({ quiet: true });   // LES-01: the mutation reported itself; no second toast
     } catch (err) {
       toast(t('tech:toast.noteSaveFailed', { message: err.message }), 'error');
     }
@@ -755,7 +774,7 @@ export default function TechAppointment() {
 
       <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} ref={fileRef} onChange={handlePhotoCaptured} />
 
-      <PullToRefresh onRefresh={load} style={{ flex: 1 }}>
+      <PullToRefresh onRefresh={() => load()} style={{ flex: 1 }}>
         {/* Time Tracker */}
         <div style={{ padding: '0 var(--space-4)' }}>
           <TimeTracker appt={appt} employee={employee} db={db} onUpdate={load} />

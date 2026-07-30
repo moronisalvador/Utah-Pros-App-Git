@@ -39,8 +39,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import TabLoading from '@/components/TabLoading';
 import { DOC_TYPES, buildTemplateSections } from './templates/templateData';
 import TemplateEditor from './templates/TemplateEditor';
+import { ok, err } from '@/lib/toast';
 
-const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 export default function TemplatesEditor() {
   const { db } = useAuth();
@@ -49,6 +49,8 @@ export default function TemplatesEditor() {
 
   const docMeta = DOC_TYPES.find(d => d.key === docType);
   const [initialSections, setInitialSections] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
   const [pendingLeave, setPendingLeave] = useState(false);
@@ -59,13 +61,25 @@ export default function TemplatesEditor() {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      setLoadError(null);
       try {
-        const rows = await db.rpc('get_document_templates').catch(() => []);
+        // LES-01 (loading-error-states.md §1): this used to end in
+        // `.catch(() => [])`. `db.rpc` THROWS on any non-OK response, so a
+        // failed read handed `buildTemplateSections` an empty override set and
+        // the editor opened showing the BUILT-IN DEFAULTS as if they were the
+        // saved template. Saving from that screen would have overwritten the
+        // real saved copy with defaults. It now rejects.
+        const rows = await db.rpc('get_document_templates');
         if (!cancelled) setInitialSections(buildTemplateSections(rows, docType));
+      } catch (e) {
+        console.error('TemplatesEditor load failed:', e?.message || e);
+        // Leave `initialSections` null — the editor stays gated and cannot save
+        // defaults over a template it never managed to read.
+        if (!cancelled) { setLoadError('Failed to load this template'); err('Failed to load this template — nothing was changed'); }
       } finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
-  }, [db, docType, docMeta, navigate]);
+  }, [db, docType, docMeta, navigate, reloadKey]);
 
   // Full-page reload / tab close guard.
   useEffect(() => {
@@ -85,6 +99,23 @@ export default function TemplatesEditor() {
   };
 
   if (!docMeta) return null;
+  // LES-01 (loading-error-states.md §1): a failed read must not sit on
+  // <TabLoading/> forever. `initialSections` stays null so the editor can never
+  // save built-in defaults over a template it did not manage to read.
+  if (loadError) {
+    return (
+      <div style={{ padding: 'var(--space-6)', textAlign: 'center' }}>
+        <div style={{ fontWeight: 600, fontSize: 'var(--text-base)', marginBottom: 4 }}>{loadError}</div>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-4)' }}>
+          Your saved template was not changed. Reload to try again.
+        </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)', justifyContent: 'center' }}>
+          <button className="btn btn-sm" onClick={() => navigate('/settings/templates')}>Back</button>
+          <button className="btn btn-sm btn-primary" onClick={() => setReloadKey(k => k + 1)}>Retry</button>
+        </div>
+      </div>
+    );
+  }
   if (loading || !initialSections) return <TabLoading />;
 
   return (
@@ -103,7 +134,7 @@ export default function TemplatesEditor() {
         initialSections={initialSections}
         onDirtyChange={setDirty}
         onBack={goBack}
-        onSaved={() => { okToast('Template saved'); goBack(); }}
+        onSaved={() => { ok('Template saved'); goBack(); }}
       />
     </>
   );

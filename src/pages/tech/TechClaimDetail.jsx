@@ -239,37 +239,52 @@ export default function TechClaimDetail() {
     setLoading(true);
     setLoadError(null);
     try {
+      // LES-01 (loading-error-states.md §1): appointments, rooms, demo sheets
+      // and the document read each used to carry an inline `.catch(() => [])`.
+      // `db.rpc`/`db.select` THROW on any non-OK response, so each swallow
+      // turned a real outage into a successful-looking EMPTY result —
+      // "No appointments", no rooms, no scope sheets, no photos or notes — on a
+      // page a tech reads as the claim's actual state. They now reject into the
+      // outer catch. The per-job task summary below keeps its own catch: it is
+      // one call PER JOB, and a single bad job must degrade to a missing task
+      // count rather than blanking the whole claim.
       const [data, appts, roomList, sheets] = await Promise.all([
         db.rpc('get_claim_detail', { p_claim_id: claimId }),
-        db.rpc('get_claim_appointments', { p_claim_id: claimId }).catch(() => []),
+        db.rpc('get_claim_appointments', { p_claim_id: claimId }),
         roomsEnabled
-          ? db.rpc('get_claim_rooms', { p_claim_id: claimId }).catch(() => [])
+          ? db.rpc('get_claim_rooms', { p_claim_id: claimId })
           : Promise.resolve([]),
-        db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }).catch(() => []),
+        db.rpc('get_claim_demo_sheets', { p_claim_id: claimId }),
       ]);
       if (!data?.claim) {
         setLoadError(t('notFound'));
         return;
       }
-      setDetail(data);
-      setAppointments(appts || []);
-      setRooms(roomList || []);
-      setDemoSheets(sheets || []);
 
       const jobIds = (data.jobs || []).map(j => j.id);
+      let summaryEntries = [];
+      let docList = [];
       if (jobIds.length > 0) {
         const idList = jobIds.map(id => `"${id}"`).join(',');
-        const [summaryEntries, docList] = await Promise.all([
+        [summaryEntries, docList] = await Promise.all([
           Promise.all(jobIds.map(id =>
             db.rpc('get_job_task_summary', { p_job_id: id })
               .then(s => [id, s])
               .catch(() => [id, null])
           )),
-          db.select('job_documents', `job_id=in.(${idList})&order=created_at.desc`).catch(() => []),
+          db.select('job_documents', `job_id=in.(${idList})&order=created_at.desc`),
         ]);
-        setTaskSummaries(Object.fromEntries(summaryEntries));
-        setDocs(docList || []);
       }
+
+      // Committed together, after every read resolves: a partial failure must
+      // never half-update the claim or slip past the `!detail?.claim` gate into
+      // a page of false empty sections.
+      setDetail(data);
+      setAppointments(appts || []);
+      setRooms(roomList || []);
+      setDemoSheets(sheets || []);
+      setTaskSummaries(Object.fromEntries(summaryEntries));
+      setDocs(docList || []);
     } catch (e) {
       // Raw failures stay in the console for diagnosis and never reach the screen:
       // a tech in a flooded basement must not be shown PostgREST JSON.

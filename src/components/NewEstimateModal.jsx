@@ -122,6 +122,11 @@ export default function NewEstimateModal({ db, onClose, contact = null }) {
     } catch (err) {
       const msg = err.message || '';
       if (msg.includes('contacts_phone_key') || msg.includes('23505')) {
+        // LES-01 triage — KEEP. This is a recovery probe inside the
+        // duplicate-phone handler, not a load. An empty result does not render
+        // an empty state: it falls through to the explicit "already exists —
+        // search by name" message and rethrows the original error, which is
+        // exactly what a failed probe should say.
         const ex = await db.select('contacts', `phone=eq.${encodeURIComponent(data.phone)}&select=*&limit=1`).catch(() => []);
         if (ex?.length) { setSelectedContact(ex[0]); setShowAddContact(false); toast(`Found existing customer: ${ex[0].name}`); return; }
         toast('A customer with this phone already exists — search by name.', 'error'); throw err;
