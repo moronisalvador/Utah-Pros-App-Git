@@ -69,10 +69,23 @@ escalates back to the blocking screen rather than completing. Known limit
 pending-detach marker and the detach prefers the marker's stale identity over
 the live one, so after a token rotation the journal may cover a stale row
 while a live row goes unjournaled — `residualJournaled` proves a same-owner
-journal exists, not that it names every row this session ever bound. NOTE:
-this deferral leans on the bind-time gate whose on-device **account-switch
-refusal** check is the one open matrix item below — run that owner check
-before broad tech rollout.
+journal exists, not that it names every row this session ever bound.
+
+**Status of the two 2026-07-29 sign-out defects:** this source change fixes
+the FIRST (the overprotective wall). The SECOND — after the owner's Retry
+succeeded, the app re-entered the same account without ever reaching Login
+(session apparently never cleared; see the amended account-switch bullet
+below) — is NOT fixed here. Leading hypothesis from source analysis: a
+token refresh already in flight under the same degraded network resolves
+AFTER `signOut({ scope: 'local' })`, supabase-js re-persists the session,
+and the next resume/recovery emits SIGNED_IN, which the auth observer
+correctly treats as a login and re-bootstraps (profile load + token
+re-upsert, matching the 02:00:06Z evidence). A fix needs its own reviewed
+design: any guard sits in the shared SIGNED_IN path and must not break web
+cross-tab login sync. Until it lands, account switching on the native build
+remains blocked, and the deferral below still leans on the bind-time gate
+whose on-device **account-switch refusal** check remains open — run that
+owner check before broad tech rollout.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic
