@@ -253,6 +253,48 @@ different stores; do not "fix" one to match the other. First dispatch should
 run with `publish_to_testflight: false` to prove the archive/signing lane
 before any upload is attempted.
 
+## First TestFlight release — verified evidence (2026-07-29 build night)
+
+**Build path used:** Path B (local Xcode archive) per
+`docs/handoff/testflight-2026-07-30-macbook.md`, with one disclosed deviation:
+signing was **manual**, mirroring the CI Fastfile's exact overrides
+(`DEVELOPMENT_TEAM`, `UPR_RELEASE_PROFILE_NAME="UPR App Store 2026"`,
+`CURRENT_PROJECT_VERSION=1` on the `xcodebuild` command line, no project-file
+edits), because the 2026-07-28 qualification's Apple Distribution certificate
+and App Store profile were still installed locally. Automatic signing was not
+needed and no agent handled credentials; the owner performed the App Store
+Connect sign-in and the Organizer upload themselves.
+
+- Source: clean `main` HEAD `29cc080aaea0df684cc2c4c7a9a53d8df2f53328`,
+  zero tracked drift before and after `cap sync ios`.
+- Bundle invariants verified in the minified output: API origin
+  `https://utahpros.app`, `VITE_NATIVE_PUSH_ENABLED` exact `true`,
+  `VITE_APNS_ENV` exact `production`, `VITE_RELEASE_SHA` = the commit above,
+  and `VITE_DEV_TEST_EMAIL`/`VITE_DEV_TEST_PASSWORD` forced to empty strings
+  (no dev credential reaches a distributed bundle).
+- `verify-ios-release-artifact.mjs` **PASS before upload**: 1.0.0 (1),
+  `aps-environment=production` on archive and IPA, `get-task-allow=false`,
+  App Store profile, privacy manifest bundled, no tracking domains,
+  non-exempt encryption false. IPA SHA-256
+  `432de929decd75db5e7a48310635bf9abed57f4adde0763e4fb9dd07fb9b039a`;
+  sanitized report generated at `ios/build/UPR-release-verification.json`
+  with `sourceCommit` set to the verified commit.
+- Uploaded 2026-07-29 19:26 MT via Organizer → TestFlight **Internal Only**.
+  Apple: delivery successful with warning **ITMS-90683** (missing
+  `NSLocationAlwaysAndWhenInUseUsageDescription`); the plist key and a
+  verifier required-key guard are committed on `dev` so the next archive
+  fails locally instead of warning at Apple.
+- **Production delivery matrix (owner-verified on a physical iPhone, real
+  assigned-appointment events on utahpros.app):** foreground, background,
+  and terminated delivery, tap → correct appointment route, and
+  minimize/resume all **passed** the same evening. The **first production
+  APNs token** is proven registered by that delivery (a direct value-free
+  `device_tokens` read was permission-blocked and unnecessary).
+- **Account-switch refusal: not yet exercised** — the one open matrix item;
+  scheduled as an owner check before broad tech rollout.
+- Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
+  `ios-signing` secrets), no App Review submission, no flag flips.
+
 ## Remaining activation sequence
 
 1. Re-enable Web Push independently in each reinstalled PWA and accept the

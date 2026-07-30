@@ -3837,6 +3837,34 @@ foreground/background/terminated/tap/account-switch matrix. Full source,
 verification, reviewer challenges, rollback, and release handoff:
 `docs/handoff/native-ios-push-and-pwa-session-2026-07-28.md`.
 
+### First TestFlight release shipped (2026-07-29 build night, Path B)
+
+Most of the gates above closed on 2026-07-29 (MT evening). Build **1.0.0 (1)**
+was archived locally from clean `main` HEAD
+`29cc080aaea0df684cc2c4c7a9a53d8df2f53328` (zero tracked drift before and
+after `cap sync ios`) with the workflow invariants baked in as build-time env
+(production API origin, push flag exact `true`, `VITE_APNS_ENV=production`,
+release SHA = that commit; `VITE_DEV_TEST_*` forced empty and verified empty
+in the minified bundle). Signing was **manual, mirroring the CI Fastfile**
+(existing local Apple Distribution certificate + "UPR App Store 2026" profile;
+command-line overrides only, no project edits) rather than the runbook's
+automatic-signing fallback, which assumed no local signing material.
+`scripts/qa/verify-ios-release-artifact.mjs` **passed before upload**
+(`aps-environment=production`, IPA SHA-256
+`432de929decd75db5e7a48310635bf9abed57f4adde0763e4fb9dd07fb9b039a`), and the
+owner uploaded via Organizer → TestFlight **Internal Only** at 19:26 MT.
+Apple delivered with warning **ITMS-90683** (missing
+`NSLocationAlwaysAndWhenInUseUsageDescription`) — non-blocking; the plist key
+and a matching verifier guard are committed on `dev` for the next build.
+The owner installed from TestFlight on a physical iPhone and the **real
+assigned-appointment matrix passed on production**: foreground, background,
+and terminated delivery, tap routing, and minimize/resume. Production-token
+registration is proven by that delivery. Account-switch refusal remains the
+one open matrix item. No workflow dispatch and no App Review submission
+occurred; `ios-signing` secrets remain unpopulated (Path A follow-up).
+Evidence detail: `docs/mobile/push-activation-owner-gate.md`. Field polish
+findings now accumulate in `docs/mobile/field-polish-punchlist.md`.
+
 ## Admin notification presentation Settings (2026-07-29)
 
 The web build now owns an admin-only `/settings/notification-presentation` page in the Settings
