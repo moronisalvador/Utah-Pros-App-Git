@@ -47,7 +47,8 @@ before promoting.
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| SMS experience | Tail: unapplied migration above | manifest still in `.claude/rules/` |
+| **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
+| SMS experience | Complete (both migrations applied 2026-07-30) | manifest still in `.claude/rules/` |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
 | Omni-inbox I/O/U | Unbuilt (O/U absorbed by sms-experience) | `docs/archive/rules/omni-inbox-wave-ownership.md` |
@@ -56,3 +57,44 @@ before promoting.
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
 | App-store readiness F1/A/B/D | Planned | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
 | Agent QA access P2+ | P1 done; P2a gated on local runtime | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
+
+## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
+
+**Do not build any of this until the owner chooses a direction.**
+
+**The problem (owner-stated, real):** one customer thread mixes three phases of the
+relationship, and the wrong people see the wrong things. Sales negotiates pricing with a
+lead; technicians then text the same customer about mitigation work and can read the sales
+history. A customer asking for another quote pings the technician's phone. Months later
+Marcelo/owner/Ben handle reconstruction — and mitigation technicians, long since finished,
+still get notified about a project that is no longer theirs.
+
+**Owner's proposal:** three phone numbers and three inboxes (sales / mitigation /
+reconstruction), with per-inbox access so technicians only reach mitigation. A variant
+considered and set aside: group texting, which needs RCS and cannot express the access
+rules anyway.
+
+**Counter-argument recorded (so this is not re-derived from zero):**
+- Three numbers move the misrouting onto the customer, who cannot know the org chart. They
+  save one number and text it forever.
+- **STOP becomes legally ambiguous.** Consent keys on the contact's phone
+  (`get_service_sms_consent_status`), not on which UPR number was texted. A STOP to the
+  sales number either stops everything (so why three?) or is scoped per number, which is
+  real TCPA risk at per-message penalties.
+- Triples the A2P registration surface, which is already owner-gated and pending.
+- Group chat is strictly worse: it puts access control inside the customer's phone, where
+  a technician can never be removed from a thread.
+- **The `conversations` table already carries `job_phase_context`, `job_id`, `assigned_to`
+  and a per-conversation `twilio_number`** — phase-scoped threads with phase-derived access
+  and notification audience are mostly a finishing job, not a rewrite. Notification audience
+  by phase mirrors what `appointment_crew` already does for appointment Push.
+- Inbound routing is the genuinely hard part either way (which thread does a reply join?),
+  and needs a staff "move to…" control regardless of how many numbers exist — which is the
+  argument that the extra numbers buy little.
+- A second number **is** defensible for marketing-vs-service (different compliance class,
+  different carrier treatment), but not for mitigation-vs-reconstruction, which is the same
+  compliance class and the same project.
+
+**Status:** the owner has heard the counter-argument and has NOT decided. When they do, this
+is `/masterplan` work — it touches consent, notification audience, RLS and the inbox UI.
+Fuller narrative: `docs/handoff/session-state-2026-07-30.md`.

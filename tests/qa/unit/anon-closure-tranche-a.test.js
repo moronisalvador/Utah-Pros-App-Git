@@ -77,6 +77,12 @@ describe('anon closure tranche (a) — migration source contract', () => {
     expect(sql).toContain('and not is_external');
   });
 
+  it('preserves the service-role automation path through both authorization tiers', () => {
+    expect(
+      sql.split("auth.role() <> 'service_role' and not exists").length - 1,
+    ).toBe(2);
+  });
+
   it('preserves the frozen Phase 4d signature (crm-wave-ownership.md §3)', () => {
     expect(sql).toContain('set_automation_setting( p_key text, p_value boolean, p_org_id uuid default null::uuid )');
     expect(sql).toContain('returns automation_settings');
@@ -151,7 +157,13 @@ describe('anon closure tranche (a) — rollback source contract', () => {
   });
 
   it('restores set_automation_setting without the authorization block', () => {
-    expect(sql).toContain('create or replace function public.set_automation_setting');
-    expect(sql).not.toContain('not_authorized: sms_sending_enabled is admin only');
+    const restoredBody = sql.slice(
+      sql.lastIndexOf('create or replace function public.set_automation_setting'),
+    );
+    expect(restoredBody).toContain(
+      'create or replace function public.set_automation_setting',
+    );
+    expect(restoredBody.slice(0, restoredBody.indexOf('$function$;')))
+      .not.toContain('not_authorized: sms_sending_enabled is admin only');
   });
 });
