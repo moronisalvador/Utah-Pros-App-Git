@@ -1108,6 +1108,18 @@ export function AuthProvider({ children }) {
       signOutError = error;
     }
     if (!authLifecycle.isCurrent(generation)) {
+      // Superseded mid-sign-out. If signOut FAILED (session retained live)
+      // and no newer sign-out took over the transition ref, un-arm and drop
+      // the stale transition — same hazard as logout()'s stale exit. When
+      // signOut succeeded, the session really ended: the arm must stand.
+      if (
+        signOutError
+        && !transition.signedOutObserved
+        && explicitLogoutRef.current === transition
+      ) {
+        removeEndedSessionId(armedSessionId);
+        explicitLogoutRef.current = null;
+      }
       return { ready: false, cancelled: true };
     }
 
@@ -1591,7 +1603,19 @@ export function AuthProvider({ children }) {
     } catch (cleanupError) {
       cleanupResult = { ready: false, error: cleanupError };
     }
-    if (!authLifecycle.isCurrent(generation)) return;
+    if (!authLifecycle.isCurrent(generation)) {
+      // Superseded between arm and signOut. Only when NO newer sign-out took
+      // over the transition ref may this exit un-arm: the session was never
+      // signed out here, so leaving it armed would refuse a live session and
+      // the stale unfinalized transition would permanently gate the guard
+      // off. When a newer sign-out DID take over (ref points at its
+      // transition), its own arm/un-arm lifecycle owns the registry entry.
+      if (explicitLogoutRef.current === transition) {
+        removeEndedSessionId(armedSessionId);
+        explicitLogoutRef.current = null;
+      }
+      return;
+    }
     if (!cleanupBlockAllowsDeferral(cleanupBlockRef.current)) {
       // A recovery/reauth flow owns the current block — never sign past it.
       // The session stays live behind that wall, so un-arm it: a still-live

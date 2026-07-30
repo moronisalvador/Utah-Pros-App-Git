@@ -244,9 +244,10 @@ describe('headers, release identity, containment, and truthful install copy', ()
     // Post-sign-out revival guard (2026-07-29 defect #2): logout arms the
     // ended-session registry BEFORE its first await (so a 401 during cleanup
     // is never rescued by a refresh and a racing re-persist is refusable),
-    // runs cleanup before signOut, and un-arms on BOTH failure paths that
-    // retain the session live (the recovery-owned block refusal and a failed
-    // local signOut) so a walled session can still renew its token.
+    // runs cleanup before signOut, and un-arms on ALL THREE paths that can
+    // retain the session live (the recovery-owned block refusal, a failed
+    // local signOut, and the superseded-generation exit when no newer
+    // sign-out took over) so a walled or live session can still renew.
     expect(logout.indexOf('const armedSessionId = armEndedSessionGuard()'))
       .toBeLessThan(
         logout.indexOf('clearRejectedPrincipalState(priorDb, {'),
@@ -257,7 +258,7 @@ describe('headers, release identity, containment, and truthful install copy', ()
     );
     expect(
       logout.match(/removeEndedSessionId\(armedSessionId\)/g),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(logout).toContain(
       'terminateResurrectedSession({ requirePersistedMatch: true })',
     );
