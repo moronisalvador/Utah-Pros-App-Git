@@ -13094,8 +13094,10 @@ html.ui-glass .tech-nav {
 :root[data-native="true"] .public-native-shell > .set-pw-page {
   min-height: 0;
 
-/* ─── CRM LEAD VALUE (2026-07-30) — the value must read as the row's own value, not a control dropped into it ── */
+/* CRM LEAD VALUE — the row's own value, not a control. appearance:none is
+   load-bearing: WebKit shows native button chrome with no solid background.*/
 .crm-lead-value {
+  appearance: none;
   background: none; border: 0; padding: 0; font: inherit; color: inherit;
   cursor: pointer; border-bottom: 1px dotted var(--crm-border);
 }
