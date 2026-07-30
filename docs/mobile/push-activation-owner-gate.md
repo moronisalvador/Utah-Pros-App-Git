@@ -45,47 +45,47 @@ The foreign-owner discriminator parses the top-level PostgREST body and
 requires the exact `42501` code plus the full canonical SQL message; nested,
 partial, malformed, or merely similar text never clears the journal.
 
-**Sign-out cleanup failure UX (owner-directed 2026-07-29).** After the first
+**Sign-out UX (owner-directed 2026-07-29, final).** After the first
 TestFlight sign-out walled behind "Finish securing this device" on a
-network-ambiguous `delete_my_native_device_token` (the owner's manual Retry
-immediately succeeded), explicit sign-out now (1) runs a bounded silent retry
-of the push detach legs (~10s with backoff, skipped while offline) before any
-blocking UI, and (2) completes visually when the ONLY residual is journaled
-push server work: local delivery revoked in this session, a same-owner
-pending-detach marker positively re-read from storage (`residualJournaled`,
-never the weaker `markerPersisted`), no foreign-owner conflict, no invalid
-marker, no in-flight enrollment, no unknown web subscription state, and every
-non-push cleanup leg clean. The journal is the durable memory: the next
-same-owner sign-in reconciles it (the 60-second provisional window and the
-`42501` discriminator are unchanged), and a different account is refused at
-the bind gate before it publishes or enrolls. Foreign-owner conflict, invalid
-markers, observer-only sign-out (signed-out reauth), password recovery,
-login/account-switch, rejected bootstrap, and any local cleanup failure keep
-the hard blocking screen. A deferred sign-out also skips the advisory
-service-worker reload so no in-flight settlement is orphaned. A retry that
-finds a residual channel's journal vanished, or discovers a foreign owner,
-escalates back to the blocking screen rather than completing. Known limit
-(pre-existing, shared with the composite ready path): each channel keeps ONE
-pending-detach marker and the detach prefers the marker's stale identity over
+network-ambiguous `delete_my_native_device_token`, the owner directed that
+"a sign out button should just do that: sign out." Explicit sign-out now
+ALWAYS completes: one bounded best-effort cleanup pass runs while the
+authenticated client still exists (the owner-scoped server deletes need it),
+its outcome never gates the sign-out, and anything unfinished stays in the
+durable owner-bound pending-detach journal. The journal is the durable
+memory: the next same-owner sign-in reconciles it (the 60-second provisional
+window and the `42501` discriminator are unchanged), and a different account
+is refused at the bind gate before it publishes or enrolls. The only walls
+left on the explicit path are a recovery/reauth-owned block and a failed
+local Supabase `signOut()`; observer-only sign-out (signed-out reauth),
+password recovery, login/account-switch, and rejected bootstrap keep their
+hard gates unchanged. The owner accepts a short window of lock-screen
+banners after a sign-out whose server detach is still journaled — the
+tap-refusal recipient binding prevents cross-account data access. The
+classification (`deferrable`, `residualJournaled`, `enrollmentPending`) and
+the bounded `transientPushRetry` mechanism in `accountDeviceCleanup.js`
+remain reviewed and tested but sign-out no longer waits on the retry. Known
+limit (pre-existing, shared with the composite ready path): each channel
+keeps ONE pending-detach marker and prefers the marker's stale identity over
 the live one, so after a token rotation the journal may cover a stale row
-while a live row goes unjournaled — `residualJournaled` proves a same-owner
-journal exists, not that it names every row this session ever bound.
+while a live row goes unjournaled.
 
-**Status of the two 2026-07-29 sign-out defects:** this source change fixes
-the FIRST (the overprotective wall). The SECOND — after the owner's Retry
-succeeded, the app re-entered the same account without ever reaching Login
-(session apparently never cleared; see the amended account-switch bullet
-below) — is NOT fixed here. Leading hypothesis from source analysis: a
-token refresh already in flight under the same degraded network resolves
-AFTER `signOut({ scope: 'local' })`, supabase-js re-persists the session,
-and the next resume/recovery emits SIGNED_IN, which the auth observer
-correctly treats as a login and re-bootstraps (profile load + token
-re-upsert, matching the 02:00:06Z evidence). A fix needs its own reviewed
-design: any guard sits in the shared SIGNED_IN path and must not break web
-cross-tab login sync. Until it lands, account switching on the native build
-remains blocked, and the deferral below still leans on the bind-time gate
-whose on-device **account-switch refusal** check remains open — run that
-owner check before broad tech rollout.
+**Post-sign-out session resurrection (the second 2026-07-29 defect) — fixed
+in source.** The Retry-then-re-entry evidence (204 at 01:58:33Z, then a
+fresh profile load + token re-upsert at 02:00:06Z with no credential entry
+and no Login screen) is explained by a token refresh racing
+`signOut({ scope: 'local' })`: supabase-js persists a refreshed session
+before any caller check can discard it — including UPR's own
+`recoverSession()` 401 handler. The fix: `logout()` writes a durable
+signed-out-intent marker before any await; boot, SIGNED_IN, and
+TOKEN_REFRESHED terminate a session for the marked principal instead of
+bootstrapping it; `recoverSession()` refuses to refresh a signed-out or
+absent principal; a time-boxed post-signOut sweep catches the common
+in-flight case; and `login()` clears the marker immediately before
+`signInWithPassword` so a real sign-in (including same-user re-login and
+web cross-tab login) is never refused. Account switching is therefore
+unblocked in source — the on-device **account-switch refusal** check below
+remains the owner verification gate before broad tech rollout.
 
 Every native APNs payload now uses the exhaustive typed presentation catalog
 and an opaque deterministic recipient binding. Unknown types retain generic

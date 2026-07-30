@@ -126,23 +126,23 @@ Account/lifecycle source guarantees:
 Auth source now gates rejected-bootstrap Login on ready device cleanup plus strictly verified local
 Supabase sign-out, validates employee/permission/page-access/feature-flag response values before
 publishing authority, and gates SetPassword on cleanup while preserving the recovery session.
-Failure or malformed sign-out stays behind a retry hard lock — with one owner-directed 2026-07-29
-exception: an EXPLICIT sign-out first runs a bounded silent retry of the push detach legs (~10s
-with backoff, skipped offline) and then completes visually when the ONLY residual is journaled
-push server work (local delivery revoked this session, a same-owner pending-detach marker
-positively re-read from storage, no foreign owner, no invalid marker, no in-flight enrollment,
-every non-push leg clean). The journal is the durable memory: the next same-owner sign-in
-reconciles it and a different account is refused at the bind gate before it publishes or enrolls.
-Foreign-owner conflict, invalid markers, observer-only sign-out, password recovery,
-login/account-switch, and any local cleanup failure keep the hard lock. Two accepted consequences
-are deliberate: a concurrent same-owner tab that reconciles the journal during the retry window
-produces a false wall on a clean device (its Retry immediately succeeds — never loosened into
-laundering a genuinely vanished journal), and a fully "ready" sign-out can still leave the native
-provisional-window journal behind, so a DIFFERENT employee's next sign-in can hit the
-previous-account wall through the bind gate even when no deferral happened. Auth observer callbacks
-now return synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out
-from deadlocking on the SDK observer lock. Independent review is clean; browser/device proof
-remains.
+EXPLICIT sign-out ALWAYS completes (owner directive 2026-07-29: "a sign out button should just do
+that: sign out"): one bounded best-effort cleanup pass runs while the authenticated client exists,
+its outcome never gates the sign-out, and anything unfinished stays in the durable owner-bound
+pending-detach journal. The journal is the durable memory: the next same-owner sign-in reconciles
+it and a different account is refused at the bind gate before it publishes or enrolls. The only
+walls left on the explicit path are a recovery/reauth-owned block and a failed local Supabase
+signOut(); observer-only sign-out (signed-out reauth), password recovery, login/account-switch,
+and rejected bootstrap keep their hard gates. A durable signed-out-intent marker plus guards at
+boot/SIGNED_IN/TOKEN_REFRESHED/recoverSession and a time-boxed post-signOut sweep terminate a
+session that a racing token refresh re-persists after sign-out (the 2026-07-29 TestFlight defect
+where the app re-entered the account without ever reaching Login); login() clears the marker
+immediately before signInWithPassword so real sign-ins — including same-user re-login and web
+cross-tab login — are never refused. Accepted consequence (deliberate): a fully "ready" sign-out
+can still leave the native provisional-window journal behind, so a DIFFERENT employee's next
+sign-in can hit the previous-account wall through the bind gate. Auth observer callbacks return
+synchronously and feed a serialized next-macrotask queue, preventing cleanup/sign-out from
+deadlocking on the SDK observer lock. Independent review is clean; browser/device proof remains.
 
 Not guaranteed:
 
