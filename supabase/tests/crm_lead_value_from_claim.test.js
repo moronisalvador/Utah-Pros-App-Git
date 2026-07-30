@@ -16,11 +16,11 @@
  *
  * WHERE IT LIVES:
  *   Route:        n/a (test file)
- *   Rendered by:  n/a — db lane; see NOTES, it does NOT run in `npm test`
+ *   Rendered by:  n/a — `db` lane; not part of the credential-free `npm test`
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js; the 20260730120000_crm_lead_value_from_claim
+ *   Internal:  src/lib/supabase.js; the 20260730133000_crm_lead_value_from_claim
  *              migration
  *   Data:      reads  → inbound_leads, claims, jobs, invoices
  *              writes → its own fixture rows only, all removed in cleanup
@@ -28,10 +28,10 @@
  * NOTES / GOTCHAS:
  *   - INTEGRATION test. Trigger behaviour cannot be proven as a pure unit test.
  *     Self-skips without credentials, like the other CRM suites.
- *   - This is the `db` lane, which `npm test` does NOT run (no isolated
- *     database target exists yet — close-out-standard.md §2b, backlog 6.1).
- *     The CI-visible guard is tests/qa/unit/crm-lead-value-from-claim.test.js.
- *     Never present a pass here as CI coverage.
+ *   - This is the `db` lane. It runs in CI against the `qa-staging` branch
+ *     database (docs/database/staging-branch-runbook.md), NOT in the
+ *     credential-free lanes `npm test` covers. The always-visible guard is
+ *     tests/qa/unit/crm-lead-value-from-claim.test.js.
  *   - Uses the is_test org and dedicated fixture ids, and NEVER asserts on live
  *     row counts — other sessions write to this shared project (tech-v2 §6).
  * ════════════════════════════════════════════════

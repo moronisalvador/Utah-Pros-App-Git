@@ -1598,12 +1598,12 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                   autoFocus
                 />
                 <button
-                  className="crm-btn crm-btn-primary crm-lead-value-btn"
+                  className="crm-btn crm-btn-primary crm-btn-sm"
                   onClick={saveValue}
                   disabled={savingValue}
                 >{savingValue ? 'Saving…' : 'Save'}</button>
                 <button
-                  className="crm-btn crm-btn-ghost crm-lead-value-btn"
+                  className="crm-btn crm-btn-ghost crm-btn-sm"
                   onClick={() => setEditingValue(false)}
                   disabled={savingValue}
                 >Cancel</button>
@@ -1615,9 +1615,9 @@ function LeadDetailPanel({ lead, stages, currentStageId, onClose, onMoveStage, c
                 onClick={() => { setValueDraft(lead.value == null ? '' : String(lead.value)); setEditingValue(true); }}
                 aria-label={lead.value == null ? 'Set lead value' : `Edit lead value, currently ${formatMoney(lead.value)}`}
               >
-                {lead.value == null ? <span className="crm-lead-value-empty">Set value</span> : formatMoney(lead.value)}
+                {lead.value == null ? <span className="crm-panel-empty">Set value</span> : formatMoney(lead.value)}
                 {lead.value != null && lead.value_source === 'auto' && (
-                  <span className="crm-lead-value-tag">auto</span>
+                  <span className="crm-auto-badge">auto</span>
                 )}
               </button>
             )}

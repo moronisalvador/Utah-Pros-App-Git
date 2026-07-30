@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
--- MIGRATION: 20260730120000_crm_lead_value_from_claim
+-- MIGRATION: 20260730133000_crm_lead_value_from_claim
 -- Phase: n/a — standalone production feature, owner-directed (2026-07-30)
 -- ════════════════════════════════════════════════
 --
@@ -61,7 +61,7 @@
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
---   supabase/rollbacks/20260730120000_crm_lead_value_from_claim.rollback.sql
+--   supabase/rollbacks/20260730133000_crm_lead_value_from_claim.rollback.sql
 --   Drops the three triggers and six functions, restores
 --   crm_trg_invoice_created's prior body verbatim, and drops the two added
 --   columns (with their constraints and index). Values already written stay —

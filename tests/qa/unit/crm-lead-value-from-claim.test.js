@@ -4,11 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Keeps the CRM lead-value migration's promises visible in normal CI. The
- *   behavioural SQL suite for this feature lives in supabase/tests/, which is
- *   the `db` lane and does NOT run in CI (there is no isolated database target
- *   yet — close-out-standard.md §2b, backlog 6.1). So this file reads the
- *   migration SOURCE and asserts what it claims: additive-only, no anon grant,
+ *   Keeps the CRM lead-value migration's promises visible in the credential-free
+ *   CI lanes. The behavioural suite for this feature lives in supabase/tests/,
+ *   which is the `db` lane — that lane now DOES run in CI against the
+ *   `qa-staging` branch database, but it needs credentials and a seeded schema,
+ *   so it can go dark or self-skip. This file needs neither: it reads the
+ *   migration SOURCE and asserts what it claims — additive-only, no anon grant,
  *   REVOKE before GRANT, a rollback that exists, and — the one that actually
  *   matters here — that the invoice trigger watches EVERY column the value
  *   calculation reads.
@@ -34,8 +35,8 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-const MIGRATION = 'supabase/migrations/20260730120000_crm_lead_value_from_claim.sql';
-const ROLLBACK = 'supabase/rollbacks/20260730120000_crm_lead_value_from_claim.rollback.sql';
+const MIGRATION = 'supabase/migrations/20260730133000_crm_lead_value_from_claim.sql';
+const ROLLBACK = 'supabase/rollbacks/20260730133000_crm_lead_value_from_claim.rollback.sql';
 
 const migration = readFileSync(join(root, MIGRATION), 'utf8');
 const rollback = readFileSync(join(root, ROLLBACK), 'utf8');

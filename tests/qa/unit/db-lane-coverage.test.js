@@ -52,10 +52,10 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
  * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
  * a guard that will not protect anything in CI until the db lane has a target.
  */
-// 79 → 80 on 2026-07-30: crm_lead_value_from_claim.test.js. Its CI-visible
+// 79 → 80 on 2026-07-30: crm_lead_value_from_claim.test.js. Its always-visible
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
-// the migration source; the behavioural trigger proof stays dark until the
-// isolated database lane exists (backlog 6.1).
+// the migration source in the credential-free lanes; the behavioural trigger
+// proof runs in the db lane against the qa-staging branch.
 const DARK_BASELINE = 80;
 // 2026-07-27: 76 -> 77, adding anon_closure_tranche_b.test.js. Acknowledged
 // deliberately, per the rule above: that file proves the customer-list closure
