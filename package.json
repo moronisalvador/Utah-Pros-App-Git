@@ -9,6 +9,7 @@
     "build:native": "node scripts/build-native.mjs",
     "sync:ios": "cap sync ios",
     "build:ios": "npm run build:native && npm run sync:ios",
+    "build:ios:dev": "VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true npm run build:ios",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "npm run test:unit && npm run test:worker && npm run test:qa",
