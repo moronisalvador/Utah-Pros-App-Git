@@ -205,6 +205,39 @@ describe('reconcilePwaAccountOwner', () => {
     expect(pushCleanup).toHaveBeenCalledOnce();
   });
 
+  it('never defers the bind path on a journaled push residual', async () => {
+    // Sign-out may complete through a deferrable result, but a new owner
+    // publishes only behind fully ready cleanup — deferral must be refused
+    // here regardless of what the push layer classified.
+    const target = storage({ owner: OWNER_A, epoch: 'e1.old-a' });
+    const result = await reconcilePwaAccountOwner({
+      authUserId: 'auth-b',
+      employeeId: 'employee-b',
+      storage: target,
+      fingerprint: async () => OWNER_B,
+      createEpoch: epochs(),
+      pushCleanup: {
+        ok: false,
+        ready: false,
+        deferrable: true,
+        serverDetached: false,
+        localDetached: true,
+        web: { ready: true },
+        native: { ready: false },
+      },
+      cleanup: cleanupSpies(),
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      deferrable: false,
+      owner: null,
+      requestedOwner: OWNER_B,
+      reason: 'cleanup-incomplete',
+    });
+    expect(target.getItem(PWA_ACCOUNT_OWNER_KEY)).toBe(null);
+  });
+
   it('does not record a new owner when required push cleanup is absent', async () => {
     const target = storage();
     const result = await reconcilePwaAccountOwner({
@@ -421,6 +454,81 @@ describe('clearPwaAccountState', () => {
       reason: 'cleanup-incomplete',
     });
     expect(target.getItem(PWA_ACCOUNT_OWNER_KEY)).toBe(null);
+  });
+
+  it('classifies a journaled push residual as deferrable when every local leg finished', async () => {
+    const target = storage({ owner: OWNER_A, epoch: 'e1.old-a' });
+    const result = await clearPwaAccountState({
+      storage: target,
+      createEpoch: epochs(),
+      pushCleanup: {
+        ok: false,
+        ready: false,
+        deferrable: true,
+        serverDetached: false,
+        localDetached: true,
+        web: { ready: true },
+        native: { ready: false },
+      },
+      cleanup: cleanupSpies(),
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      deferrable: true,
+      pushCleanupDeferrable: true,
+      pushWebSettled: true,
+      pushNativeSettled: false,
+      reason: 'cleanup-incomplete',
+    });
+    expect(target.getItem(PWA_ACCOUNT_OWNER_KEY)).toBe(null);
+  });
+
+  it('keeps a non-journaled push failure non-deferrable', async () => {
+    const target = storage({ owner: OWNER_A, epoch: 'e1.old-a' });
+    const result = await clearPwaAccountState({
+      storage: target,
+      createEpoch: epochs(),
+      pushCleanup: {
+        ok: false,
+        ready: false,
+        deferrable: false,
+        serverDetached: false,
+        localDetached: false,
+      },
+      cleanup: cleanupSpies(),
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      deferrable: false,
+      pushCleanupDeferrable: false,
+    });
+  });
+
+  it('never defers when another local leg failed alongside the push residual', async () => {
+    const target = storage({ owner: OWNER_A, epoch: 'e1.old-a' });
+    const result = await clearPwaAccountState({
+      storage: target,
+      createEpoch: epochs(),
+      pushCleanup: {
+        ok: false,
+        ready: false,
+        deferrable: true,
+        serverDetached: false,
+        localDetached: true,
+      },
+      cleanup: cleanupSpies({
+        clearRoute: vi.fn(() => false),
+      }),
+    });
+
+    expect(result).toMatchObject({
+      ready: false,
+      deferrable: false,
+      routeCleared: false,
+      pushCleanupDeferrable: true,
+    });
   });
 });
 
