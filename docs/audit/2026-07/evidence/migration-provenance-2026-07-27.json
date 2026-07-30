@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-30T11:26:25Z",
+  "capturedAt": "2026-07-30T12:27:49Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "0759fe85253ec39c9098b89fae656f068365a683",
+  "captureBaseCommit": "b346e256f611630e46aeab24388d553fe3ba7eee",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -207,6 +207,14 @@
     {
       "name": "twilio_inbound_notification_parity",
       "version": "20260729221116"
+    },
+    {
+      "version": "20260730115220",
+      "name": "tech_onboarding_state"
+    },
+    {
+      "version": "20260730121811",
+      "name": "sms_consent_opt_out_only"
     }
   ],
   "functions": [
@@ -484,12 +492,12 @@
       "config": [
         "search_path=\"\""
       ],
-      "rawMd5": "25789b7c994b99a6e8403050f424b9a9",
+      "rawMd5": "e106318eef49f04f16f295d881bc41fe",
       "identity": "get_service_sms_consent_status(uuid,text)",
       "language": "plpgsql",
       "volatility": "v",
       "anonExecute": false,
-      "semanticMd5": "9cdf8ab17d49680ffa3857f41c850466",
+      "semanticMd5": "09ca940b478ed5c0d927f186ba5a0f5b",
       "publicExecute": false,
       "securityDefiner": false,
       "serviceRoleExecute": true,

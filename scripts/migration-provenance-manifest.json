@@ -308,6 +308,18 @@
       "name": "twilio_inbound_notification_parity",
       "path": "supabase/migrations/20260729211728_twilio_inbound_notification_parity.sql",
       "reviewedOriginCommit": "9d464052f36ee2adea4be95ab841fbbc505f2a42"
+    },
+    {
+      "version": "20260730115220",
+      "name": "tech_onboarding_state",
+      "path": "supabase/migrations/20260729220000_tech_onboarding_state.sql",
+      "reviewedOriginCommit": "40c992ec7ea286c84b399e95e72a2b23984cea80"
+    },
+    {
+      "version": "20260730121811",
+      "name": "sms_consent_opt_out_only",
+      "path": "supabase/migrations/20260728000000_sms_consent_opt_out_only.sql",
+      "reviewedOriginCommit": "40c992ec7ea286c84b399e95e72a2b23984cea80"
     }
   ],
   "selectedFunctions": [
@@ -358,7 +370,7 @@
     },
     {
       "identity": "get_service_sms_consent_status(uuid,text)",
-      "path": "supabase/migrations/20260727005212_upr_work_authorization_sms_consent.sql",
+      "path": "supabase/migrations/20260728000000_sms_consent_opt_out_only.sql",
       "allowedRawDrift": "comments_or_whitespace",
       "expected": {
         "securityDefiner": false,
