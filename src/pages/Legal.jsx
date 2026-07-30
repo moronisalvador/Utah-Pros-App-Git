@@ -9,17 +9,22 @@
  *
  * DEPENDS ON:
  *   Packages:  react-router-dom
- *   Internal:  none
+ *   Internal:  @/lib/backNav
  *   Data:      none
  *
  * NOTES / GOTCHAS:
  *   - These routes stay public so signed-out users and store reviewers can read
  *     them. Keep their factual data-use statements aligned with the native
  *     privacy manifest and App Store Connect packet.
+ *   - The same components also render inside the field shell at /tech/legal/*
+ *     (see App.jsx). There the Back button is always visible (fallback:
+ *     /tech/settings); on the public copies it appears only when in-app
+ *     history exists, so a direct visitor keeps the plain document.
  * ════════════════════════════════════════════════
  */
 
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { canGoBack, goBackOr } from '@/lib/backNav';
 
 const UPDATED       = 'July 26, 2026';
 const COMPANY       = 'Utah Pros Restoration';
@@ -27,10 +32,55 @@ const CONTACT_EMAIL = 'restoration@utah-pros.com';
 
 const h2 = { fontSize: 18, fontWeight: 700, color: 'var(--text-primary, #111318)', margin: '28px 0 8px' };
 
+function IconBack(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="15 18 9 12 15 6" />
+    </svg>
+  );
+}
+
+/* Cross-links between the legal pages: inside the field shell they must stay on
+   the /tech/legal/* copies (the bare office paths render with no nav — the
+   force-quit trap TechSettings.jsx documents); everywhere else the public
+   paths are correct. */
+function LegalLink({ to, style, children }) {
+  const { pathname } = useLocation();
+  const base = pathname.startsWith('/tech/') ? '/tech/legal' : '';
+  return <Link to={`${base}${to}`} style={style}>{children}</Link>;
+}
+
 function LegalLayout({ title, children }) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // Back affordance (field-polish 2026-07-29 — trapped-screens batch).
+  // Inside the tech shell it is ALWAYS visible: the PWA/native container has no
+  // browser chrome, so a cold-opened page would otherwise be a dead end
+  // (fallback: Settings, where these pages are linked). On the public copies it
+  // renders only when the app itself has history — e.g. arrived from Login's
+  // footer — so a direct visitor or App Store reviewer keeps the plain document.
+  const inTechShell = pathname.startsWith('/tech/');
+  const showBack = inTechShell || canGoBack();
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-secondary, #f8f9fb)', padding: '40px 20px' }}>
-      <div style={{ maxWidth: 760, margin: '0 auto', background: 'var(--bg-primary, #fff)', border: '1px solid var(--border-color, #e2e5e9)', borderRadius: 12, padding: '40px 44px' }}>
+      <div style={{ maxWidth: 760, margin: '0 auto' }}>
+        {showBack && (
+          <button
+            onClick={() => goBackOr(navigate, inTechShell ? '/tech/settings' : '/login')}
+            aria-label="Back"
+            style={{
+              // 44px min height — documented-secondary nav control per tech-mobile-ux.md
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              minHeight: 44, padding: '8px 12px 8px 6px', marginBottom: 8, marginLeft: -6,
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--text-secondary, #5f6672)',
+              touchAction: 'manipulation',
+            }}
+          >
+            <IconBack width={20} height={20} /> Back
+          </button>
+        )}
+      <div style={{ background: 'var(--bg-primary, #fff)', border: '1px solid var(--border-color, #e2e5e9)', borderRadius: 12, padding: '40px 44px' }}>
         <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent, #2563eb)', marginBottom: 8 }}>{COMPANY}</div>
         <h1 style={{ fontSize: 28, fontWeight: 700, margin: '0 0 4px', color: 'var(--text-primary, #111318)' }}>{title}</h1>
         <div style={{ fontSize: 13, color: 'var(--text-tertiary, #8b929e)', marginBottom: 28 }}>Last updated: {UPDATED}</div>
@@ -39,9 +89,10 @@ function LegalLayout({ title, children }) {
         </div>
         <div style={{ marginTop: 36, paddingTop: 20, borderTop: '1px solid var(--border-light, #f0f1f3)', fontSize: 13, color: 'var(--text-tertiary, #8b929e)' }}>
           Questions? Contact us at <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: 'var(--accent, #2563eb)' }}>{CONTACT_EMAIL}</a>.
-          {' · '}<Link to="/privacy" style={{ color: 'var(--accent, #2563eb)' }}>Privacy</Link>
-          {' · '}<Link to="/terms" style={{ color: 'var(--accent, #2563eb)' }}>Terms</Link>
+          {' · '}<LegalLink to="/privacy" style={{ color: 'var(--accent, #2563eb)' }}>Privacy</LegalLink>
+          {' · '}<LegalLink to="/terms" style={{ color: 'var(--accent, #2563eb)' }}>Terms</LegalLink>
         </div>
+      </div>
       </div>
     </div>
   );
@@ -118,7 +169,7 @@ export function Support() {
       <p>Accounts are provisioned by {COMPANY} for its own staff — the app is not available for public sign-up. If you need an account, or need an existing account deactivated, contact us at the email above.</p>
 
       <h2 style={h2}>Related pages</h2>
-      <p>See our <Link to="/privacy" style={{ color: 'var(--accent, #2563eb)' }}>Privacy Policy</Link> and <Link to="/terms" style={{ color: 'var(--accent, #2563eb)' }}>Terms of Service</Link> for more on how the app handles data and its terms of use.</p>
+      <p>See our <LegalLink to="/privacy" style={{ color: 'var(--accent, #2563eb)' }}>Privacy Policy</LegalLink> and <LegalLink to="/terms" style={{ color: 'var(--accent, #2563eb)' }}>Terms of Service</LegalLink> for more on how the app handles data and its terms of use.</p>
     </LegalLayout>
   );
 }

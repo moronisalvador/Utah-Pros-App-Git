@@ -108,5 +108,20 @@
     "blockedTitle": "This account doesn’t use the field app",
     "blockedSub": "The field app is for crews working jobs on site. Your account has its own screens with everything you need.",
     "blockedAction": "Go to my screens"
+  },
+  "onboarding": {
+    "a11yTitle": "Welcome tour",
+    "welcomeTitle": "Welcome to Utah Pros",
+    "welcomeBody": "Your whole workday — schedule, jobs, photos, and messages — in one app built for the field.",
+    "valueTitle": "Built for your day",
+    "valueRow1": "See tomorrow’s jobs the night before.",
+    "valueRow2": "Clock in, add photos, and log readings right from the job.",
+    "valueRow3": "Message the office without phone tag.",
+    "notifyTitle": "Know the moment it matters",
+    "notifyBody": "Get a heads-up the moment a customer messages you or an appointment is booked for you.",
+    "enableBtn": "Turn on notifications",
+    "enabling": "Turning on…",
+    "next": "Next",
+    "stepOf": "Step {{n}} of {{total}}"
   }
 }

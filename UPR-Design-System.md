@@ -220,7 +220,7 @@ their own palettes deliberately (each `tokens.js` says so in a comment) until an
 - **Foreground + border keep their hue in dark; only the tinted background darkens** — that's how the
   `-bg`/`-border` overrides in the tech dark block are toned. Don't invert a status color for dark.
 
-## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-13, F-S2 + motion-polish: `--motion-spring-in` token, modal/sheet exit motion)*
+## Motion Catalog — the one tunable place motion lives *(law: `.claude/rules/motion-standard.md` · Last-verified: 2026-07-29, first-run/rare-delight tier row added with the tech onboarding tour)*
 
 All motion is defined in **two central places only**: the `:root` motion tokens (below) and this catalog.
 Change a token → the whole app retunes. **No bespoke `120ms`/`ease-in-out`/`@keyframes` in a page or
@@ -258,6 +258,7 @@ review failure).
 | **Dropdown / popover / menu** | fade + slight scale (0.96→1) from trigger, **springs** into place | `--motion-duration-fast` · `--motion-spring-in` | consume the tokens on the popover; e.g. `.create-menu-popup` (CSS `createMenuIn`). |
 | **Toast** | slide/fade from the container edge; enter **springs** | `--motion-duration-base` · `--motion-spring-in` (enter) | shell toast container; in-CSS `.conv-toast` uses `toastIn` on the spring (the shell's live toast is inline-styled in `Layout.jsx`). |
 | **Form focus** | border/ring transition | `--motion-duration-fast` | `.field:focus` / `.input:focus`. |
+| **First-run / rare delight** (onboarding, completion moments — `motion-standard.md` §3's rare tier) | full-screen cover fades in; content staggers up (50–60ms steps); icon **springs** in; one-shot accents (e.g. a single bell wiggle) | enter `--motion-duration-slow` · `--motion-ease-decelerate` · content `--motion-duration-base` · icon pop ~480ms `--motion-spring-in` · one-shot accents ≤700ms, always once, never looping · exit ≈75% of enter on `--motion-ease-accelerate` | Reference: `TechOnboarding.css` (tech first-run tour). Durations >300ms are sanctioned ONLY on this tier and state their reason in a comment; reduced-motion collapses everything with end states landing (JS timers own unmounts). |
 
 ### Haptics (native-feel multiplier — pairs with motion, never replaces it)
 `import { impact, selection, notify } from '@/lib/nativeHaptics'` (import-only; Taptic on native,
@@ -1155,6 +1156,11 @@ it must never out-shout status.
 - ❌ `window.confirm` for destructive actions — use two-click confirm pattern
 - ❌ Font size < 16px on mobile inputs — triggers iOS auto-zoom
 - ❌ Redefining constants that are imported (e.g. DIVISION_COLORS, LOSS_CONFIG) — causes build errors
-- ❌ Creating new CSS files — all styles go in `index.css` or inline styles
+- ❌ Creating new CSS files — all styles go in `index.css` or inline styles. **Narrow exception
+  (budget-driven, used by `claim-page.css`, `NotificationPresentation.css`, `TechOnboarding.css`):**
+  a ROUTE-LAZY component may carry its own component-scoped stylesheet when `index.css` is at or
+  near its CI-enforced size ceiling (`perf-budget.md` §1) — the styles then ride the lazy chunk
+  instead of the boot path. The file states this justification in its header; eagerly-loaded
+  surfaces still belong in `index.css`.
 - ❌ New utility classes without checking if they already exist in index.css
 - ❌ `100vh` for full-screen pages — use `100dvh` (handles iOS Safari toolbar)
