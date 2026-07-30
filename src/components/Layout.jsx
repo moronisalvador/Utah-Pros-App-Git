@@ -2,6 +2,7 @@ import { lazy, Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToConversations } from '@/lib/realtime';
+import { toast, ok, err as errToast } from '@/lib/toast';
 import Sidebar from './Sidebar';
 import TopNav from './TopNav';
 import OverflowDrawer from './OverflowDrawer';
@@ -181,7 +182,7 @@ export default function Layout() {
       setShowAddContact(false);
       window.dispatchEvent(new CustomEvent('upr:contact-created'));
       navigate(`/customers/${id}`);
-      window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type } }));
+      toast(msg, type);
     };
     try {
       const result = await db.insert('contacts', data);
@@ -199,14 +200,10 @@ export default function Layout() {
             return;
           }
         } catch { /* fall through */ }
-        window.dispatchEvent(new CustomEvent('upr:toast', {
-          detail: { message: 'A customer with this phone number already exists', type: 'error' }
-        }));
+        errToast('A customer with this phone number already exists');
         throw err;
       }
-      window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: 'Failed to save contact: ' + msg, type: 'error' }
-      }));
+      errToast('Failed to save contact: ' + msg);
       throw err;
     }
   };
@@ -217,9 +214,7 @@ export default function Layout() {
     const jobId = result?.job?.id || result?.id;
     if (jobId) {
       navigate(`/jobs/${jobId}`);
-      window.dispatchEvent(new CustomEvent('upr:toast', {
-        detail: { message: `Job created successfully`, type: 'success' }
-      }));
+      ok('Job created successfully');
     }
   };
 
