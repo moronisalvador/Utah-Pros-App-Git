@@ -45,7 +45,23 @@ cd "$REPO"
 
 echo "ci_post_clone: repository at $REPO"
 
+# ─── Toolchain ──────────────────────────────────────────────────────────────
+if ! command -v node > /dev/null 2>&1; then
+  echo "ci_post_clone: node not found, installing via Homebrew"
+  export HOMEBREW_NO_AUTO_UPDATE=1
+  brew install node
+fi
+echo "ci_post_clone: node $(node --version), npm $(npm --version)"
+
+# ─── Dependencies ───────────────────────────────────────────────────────────
+# `npm ci` (not `install`) so the lockfile is authoritative and the build is
+# reproducible. This is what creates the node_modules paths Package.swift needs.
+npm ci
+
 # ─── Required build-time configuration ──────────────────────────────────────
+# Xcode resolves the Capacitor SPM graph immediately after this hook returns.
+# Install its node-backed packages before validating Vite configuration, so a
+# missing workflow variable cannot be misreported as a missing Swift package.
 # Vite inlines these at build time. Absent, the app builds "successfully" and
 # then dies on launch while main.jsx is still evaluating its imports.
 : "${VITE_SUPABASE_URL:?ci_post_clone: set VITE_SUPABASE_URL in the Xcode Cloud workflow environment}"
@@ -62,18 +78,7 @@ else
   echo "ci_post_clone: API origin = $VITE_NATIVE_API_ORIGIN"
 fi
 
-# ─── Toolchain ──────────────────────────────────────────────────────────────
-if ! command -v node > /dev/null 2>&1; then
-  echo "ci_post_clone: node not found, installing via Homebrew"
-  export HOMEBREW_NO_AUTO_UPDATE=1
-  brew install node
-fi
-echo "ci_post_clone: node $(node --version), npm $(npm --version)"
 
-# ─── Dependencies ───────────────────────────────────────────────────────────
-# `npm ci` (not `install`) so the lockfile is authoritative and the build is
-# reproducible. This is what creates the node_modules paths Package.swift needs.
-npm ci
 
 # ─── Web bundle ─────────────────────────────────────────────────────────────
 # The native target: field/public pages only, with the web-only payload pruned.
