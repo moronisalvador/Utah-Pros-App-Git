@@ -13,7 +13,9 @@ DEPENDS ON:
             writes → documentation only
 
 NOTES / GOTCHAS:
-  - Staging and production currently share Supabase.
+  - The dev and production app deployments share the production Supabase project.
+  - `qa-staging` is a separate hosted database branch for write-testing; its schema is usable, but
+    its historical migration ledger/rebase is not parity.
   - A green build can exist with missing runtime variables; deployment smoke evidence still matters.
 -->
 
@@ -142,8 +144,11 @@ allowed origins and provider sandboxes.
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
 - `dev` deploys staging. Production is released through the reviewed `dev → main` path.
-- Both currently share Supabase, so schema changes use the production apply-window and sequencing
-  rules even when application code is staged.
+- The `dev` and production app deployments share the production Supabase project, so schema changes
+  use the production apply-window and sequencing rules even when application code is staged.
+  The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
+  is usable, but its historical migration ledger is not replay-compatible and must not be repaired
+  with ad-hoc ledger writes.
 - Do not apply a migration from an unmerged feature commit merely because its SQL is ready. Every
   production migration must map to reviewed source reachable from the designated release branch,
   unless an owner-authorized emergency exception records the commit, reason and reconciliation.

@@ -37,7 +37,9 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 
 The original feature source was verified on 2026-07-31 after semantic reconciliation with
 `origin/dev` `20436bec`; the `52a07d9e` containment revision then passed GitHub `verify` and
-`db-lane` checks plus Cloudflare Pages deployment and remains included in current `dev`:
+`db-lane` checks plus Cloudflare Pages deployment and remains included in current `dev`. The
+numeric results below belong to those exact historical runs; current promotion-head status is
+tracked separately by draft PR #565 checks:
 
 - `npm test` passed with zero unexpected skips: 1,507 unit tests, 1,877 Worker tests, and 784 QA
   tests (4,168 total).
