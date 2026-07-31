@@ -374,9 +374,9 @@ documented twin. Dated unresolved findings live in `docs/audit/2026-07/`.
   the owner decision dated 2026-07-29. This does not allow generic payload traversal, arbitrary
   provider/caller fields, HTML, scripts, secrets, paths, or URLs. Missing trusted values atomically
   use immutable generic copy; rendered copy and the final APNs payload are bounded before provider
-  use; office-only native destinations remain `/`. Setting the server
-  variable `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic native copy without
-  disabling ordinary Push.
+  use; office-only native destinations remain `/`. Detailed lock-screen copy is an explicit
+  server opt-in: only `NATIVE_RICH_NOTIFICATION_PRESENTATION=true` enables it. Unset, `false`, or
+  any other value keeps generic native copy without disabling ordinary Push.
 - Preview uses fixed synthetic values and never loads customer/payment/message/job/provider data or
   sends a notification. Every save/reset is revision-checked, idempotent, and audited.
 - Owner delivery diagnostics are deliberately separate from business-event dispatch. They use

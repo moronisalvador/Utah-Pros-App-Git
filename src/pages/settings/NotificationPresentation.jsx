@@ -614,9 +614,10 @@ export default function NotificationPresentation() {
 
           {surfaceKey === 'native_push' && (
             <div className="notif-pres-privacy-note">
-              <strong>Same approved details as PWA</strong>
-              Native iPhone notifications can use this event&apos;s approved variables. Tap destinations
-              remain limited to field-app routes, and each iPhone controls whether previews appear while locked.
+              <strong>Private by default · server opt-in required</strong>
+              Native iPhone notifications use generic lock-screen copy unless the protected server setting
+              explicitly enables approved details. When enabled, only this event&apos;s approved variables can
+              render; tap destinations remain limited to field-app routes.
             </div>
           )}
 
