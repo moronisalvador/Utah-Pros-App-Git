@@ -9,8 +9,10 @@
 --   creation. Every fixture is discarded by the final ROLLBACK.
 --
 -- DEPENDS ON:
---   20260731040337_conversation_participant_scoping.sql and its existing
---   messaging/employee identity dependencies.
+--   20260731040337_conversation_participant_scoping.sql,
+--   20260731040338_conversation_unread_state_compatibility.sql,
+--   20260731040339_conversation_participant_policy_enforcement.sql, and their
+--   existing messaging/employee identity dependencies.
 --
 -- RUN ONLY ON AN ISOLATED DATABASE:
 --   UPR_ISOLATED_DB=1 psql ... -f supabase/tests/conversation_participant_scoping_isolated.sql
@@ -40,16 +42,24 @@ BEGIN
      OR NOT EXISTS (
     SELECT 1
     FROM supabase_migrations.schema_migrations migration
+    WHERE migration.name = 'conversation_unread_state_compatibility'
+  )
+     OR NOT EXISTS (
+    SELECT 1
+    FROM supabase_migrations.schema_migrations migration
     WHERE migration.name = 'conversation_participant_policy_enforcement'
   ) THEN
-    RAISE EXCEPTION 'apply both conversation participant migrations to the disposable clone first';
+    RAISE EXCEPTION 'apply all three conversation participant migrations to the disposable clone first';
   END IF;
 
   IF to_regprocedure('public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)') IS NULL
      OR to_regprocedure('public.find_or_create_scoped_conversation(uuid,uuid)') IS NULL
      OR to_regprocedure('public.search_scoped_conversation_contacts(uuid,text,integer)') IS NULL
      OR to_regprocedure('public.get_conversation_notification_recipients(uuid)') IS NULL
-     OR to_regprocedure('public.get_message_author_directory(uuid[])') IS NULL THEN
+     OR to_regprocedure('public.get_message_author_directory(uuid[])') IS NULL
+     OR to_regprocedure(
+       'public.set_my_conversation_unread_state(uuid[],boolean)'
+     ) IS NULL THEN
     RAISE EXCEPTION 'conversation participant scoping RPC dependency is absent';
   END IF;
 END;
@@ -99,12 +109,16 @@ BEGIN
   PERFORM set_config('upr.cps.auth_removed', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.auth_unassigned', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.auth_no_cap', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.auth_inactive', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.auth_external', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_admin', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_default', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_removed', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_unassigned', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.employee_no_cap', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.employee_inactive', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.employee_external', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.contact_visible', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.contact_private', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.contact_new', gen_random_uuid()::text, true);
@@ -135,7 +149,9 @@ FROM unnest(ARRAY[
   'upr.cps.auth_default',
   'upr.cps.auth_removed',
   'upr.cps.auth_unassigned',
-  'upr.cps.auth_no_cap'
+  'upr.cps.auth_no_cap',
+  'upr.cps.auth_inactive',
+  'upr.cps.auth_external'
 ]) setting_key;
 
 INSERT INTO public.employees (id, full_name, display_name, email, auth_user_id, role, is_active, is_external)
@@ -145,7 +161,9 @@ VALUES
   (current_setting('upr.cps.employee_default')::uuid, '[CPS isolated] Default', 'CPS Default', 'cps-default@example.invalid', current_setting('upr.cps.auth_default')::uuid, 'field_tech', true, false),
   (current_setting('upr.cps.employee_removed')::uuid, '[CPS isolated] Removed', 'CPS Removed', 'cps-removed@example.invalid', current_setting('upr.cps.auth_removed')::uuid, 'field_tech', true, false),
   (current_setting('upr.cps.employee_unassigned')::uuid, '[CPS isolated] Unassigned', 'CPS Unassigned', 'cps-unassigned@example.invalid', current_setting('upr.cps.auth_unassigned')::uuid, 'field_tech', true, false),
-  (current_setting('upr.cps.employee_no_cap')::uuid, '[CPS isolated] No capability', 'CPS No capability', 'cps-no-cap@example.invalid', current_setting('upr.cps.auth_no_cap')::uuid, 'field_tech', true, false);
+  (current_setting('upr.cps.employee_no_cap')::uuid, '[CPS isolated] No capability', 'CPS No capability', 'cps-no-cap@example.invalid', current_setting('upr.cps.auth_no_cap')::uuid, 'field_tech', true, false),
+  (current_setting('upr.cps.employee_inactive')::uuid, '[CPS isolated] Inactive', 'CPS Inactive', 'cps-inactive@example.invalid', current_setting('upr.cps.auth_inactive')::uuid, 'field_tech', false, false),
+  (current_setting('upr.cps.employee_external')::uuid, '[CPS isolated] External', 'CPS External', 'cps-external@example.invalid', current_setting('upr.cps.auth_external')::uuid, 'field_tech', true, true);
 
 -- A per-employee Conversations grant distinguishes notification eligibility from
 -- mere membership. Admin capability is role-derived; the field technicians below
@@ -204,7 +222,9 @@ INSERT INTO public.conversation_default_members (employee_id, added_by)
 VALUES
   (current_setting('upr.cps.employee_default')::uuid, current_setting('upr.cps.employee_admin')::uuid),
   (current_setting('upr.cps.employee_removed')::uuid, current_setting('upr.cps.employee_admin')::uuid),
-  (current_setting('upr.cps.employee_no_cap')::uuid, current_setting('upr.cps.employee_admin')::uuid);
+  (current_setting('upr.cps.employee_no_cap')::uuid, current_setting('upr.cps.employee_admin')::uuid),
+  (current_setting('upr.cps.employee_inactive')::uuid, current_setting('upr.cps.employee_admin')::uuid),
+  (current_setting('upr.cps.employee_external')::uuid, current_setting('upr.cps.employee_admin')::uuid);
 
 -- Manual false is the highest non-privileged precedence and must defeat both the
 -- default row and appointment history for this employee.
@@ -237,6 +257,53 @@ VALUES
     'outbound'
   );
 
+DO $acl_postcondition$
+DECLARE
+  v_table text;
+  v_privilege text;
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'public.conversations',
+    'public.conversation_participants'
+  ]
+  LOOP
+    IF NOT has_table_privilege('authenticated', v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'authenticated SELECT is missing for %', v_table;
+    END IF;
+
+    FOREACH v_privilege IN ARRAY ARRAY[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ]
+    LOOP
+      IF has_table_privilege('authenticated', v_table, v_privilege) THEN
+        RAISE EXCEPTION 'authenticated % unexpectedly remains on %', v_privilege, v_table;
+      END IF;
+    END LOOP;
+  END LOOP;
+
+  IF NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'conversations'
+         AND policy.policyname = 'allow_authenticated_conversations'
+         AND policy.cmd = 'SELECT'
+         AND policy.roles = ARRAY['authenticated']::name[]
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'conversation_participants'
+         AND policy.policyname = 'allow_authenticated_conversation_participants'
+         AND policy.cmd = 'SELECT'
+         AND policy.roles = ARRAY['authenticated']::name[]
+     ) THEN
+    RAISE EXCEPTION 'participant enforcement policies are not SELECT-only';
+  END IF;
+END;
+$acl_postcondition$;
+
 SET LOCAL ROLE service_role;
 SELECT pg_temp.set_identity_actor(NULL, 'service_role');
 
@@ -268,6 +335,21 @@ BEGIN
        current_setting('upr.cps.employee_removed')::uuid, v_visible
      ) THEN
     RAISE EXCEPTION 'manual removal did not override appointment/default membership';
+  END IF;
+
+  IF public.messaging_employee_can_access_conversation(
+       current_setting('upr.cps.employee_inactive')::uuid, v_visible
+     )
+     OR public.messaging_employee_can_access_conversation(
+       current_setting('upr.cps.employee_external')::uuid, v_visible
+     )
+     OR public.messaging_employee_has_conversations_capability(
+       current_setting('upr.cps.employee_inactive')::uuid
+     )
+     OR public.messaging_employee_has_conversations_capability(
+       current_setting('upr.cps.employee_external')::uuid
+     ) THEN
+    RAISE EXCEPTION 'inactive or external default rows crossed an authorization boundary';
   END IF;
 
   SELECT array_agg(recipient.employee_id ORDER BY recipient.employee_id)
@@ -336,8 +418,10 @@ DECLARE
   v_inbox jsonb;
   v_visible uuid := current_setting('upr.cps.conversation_visible')::uuid;
   v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
+  v_visible_contact uuid := current_setting('upr.cps.contact_visible')::uuid;
   v_private_message uuid := current_setting('upr.cps.private_message')::uuid;
   v_visible_message uuid := current_setting('upr.cps.visible_message')::uuid;
+  v_unread integer;
 BEGIN
   -- Exact no-argument legacy call still has the established composite shape.
   v_inbox := public.get_tech_conversations();
@@ -394,8 +478,190 @@ BEGIN
       'needs_response'
     )
   );
+
+  PERFORM pg_temp.expect_sqlstate(
+    'authenticated cannot update trusted conversation fields',
+    format(
+      'UPDATE public.conversations SET title = %L, status = %L WHERE id = %L::uuid',
+      '[CPS isolated] forbidden title',
+      'archived',
+      v_visible
+    )
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'authenticated cannot delete a conversation',
+    format(
+      'DELETE FROM public.conversations WHERE id = %L::uuid',
+      v_visible
+    )
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'authenticated cannot update a customer participant',
+    format(
+      'UPDATE public.conversation_participants SET role = %L WHERE conversation_id = %L::uuid AND contact_id = %L::uuid',
+      'secondary',
+      v_visible,
+      v_visible_contact
+    )
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'authenticated cannot delete a customer participant',
+    format(
+      'DELETE FROM public.conversation_participants WHERE conversation_id = %L::uuid AND contact_id = %L::uuid',
+      v_visible,
+      v_visible_contact
+    )
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'non-admin cannot list internal conversation members',
+    format(
+      'SELECT public.get_conversation_members(%L::uuid)',
+      v_visible
+    )
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'non-admin cannot override another conversation member',
+    format(
+      'SELECT public.set_conversation_member_override(%L::uuid, %L::uuid, true)',
+      v_visible,
+      current_setting('upr.cps.employee_unassigned')
+    )
+  );
+
+  IF public.set_my_conversation_unread_state(ARRAY[v_visible], true) <> 1 THEN
+    RAISE EXCEPTION 'authorized unread RPC did not update exactly one conversation';
+  END IF;
+
+  SELECT conversation.unread_count
+    INTO v_unread
+  FROM public.conversations conversation
+  WHERE conversation.id = v_visible;
+
+  IF v_unread IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION 'authorized unread RPC did not set unread_count to one';
+  END IF;
+
+  PERFORM pg_temp.expect_sqlstate(
+    'unread RPC rejects an inaccessible conversation',
+    format(
+      'SELECT public.set_my_conversation_unread_state(ARRAY[%L::uuid], false)',
+      v_private
+    )
+  );
+
+  IF public.set_my_conversation_unread_state(NULL, false) < 1 THEN
+    RAISE EXCEPTION 'mark-all RPC did not clear the accessible unread conversation';
+  END IF;
+
+  SELECT conversation.unread_count
+    INTO v_unread
+  FROM public.conversations conversation
+  WHERE conversation.id = v_visible;
+
+  IF v_unread IS DISTINCT FROM 0 THEN
+    RAISE EXCEPTION 'mark-all RPC did not clear unread_count';
+  END IF;
+
+  PERFORM public.leave_conversation(v_visible);
+  PERFORM public.leave_conversation(v_visible);
+
+  IF public.messaging_can_access_conversation(v_visible) THEN
+    RAISE EXCEPTION 'self-leave did not create an effective manual removal';
+  END IF;
 END;
 $appointment_tech_inbox_and_author_isolation$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_admin')::uuid);
+
+DO $admin_member_control_denials_and_restore$
+DECLARE
+  v_visible uuid := current_setting('upr.cps.conversation_visible')::uuid;
+  v_members jsonb;
+BEGIN
+  PERFORM pg_temp.expect_sqlstate(
+    'privileged admin cannot leave a conversation',
+    format('SELECT public.leave_conversation(%L::uuid)', v_visible)
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'privileged target cannot be removed',
+    format(
+      'SELECT public.set_conversation_member_override(%L::uuid, %L::uuid, false)',
+      v_visible,
+      current_setting('upr.cps.employee_admin')
+    ),
+    '22023'
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'inactive target cannot be added',
+    format(
+      'SELECT public.set_conversation_member_override(%L::uuid, %L::uuid, true)',
+      v_visible,
+      current_setting('upr.cps.employee_inactive')
+    ),
+    'P0002'
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'external target cannot be added',
+    format(
+      'SELECT public.set_conversation_member_override(%L::uuid, %L::uuid, true)',
+      v_visible,
+      current_setting('upr.cps.employee_external')
+    ),
+    'P0002'
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'inactive target cannot become a default',
+    format(
+      'SELECT public.set_default_conversation_member(%L::uuid, true)',
+      current_setting('upr.cps.employee_inactive')
+    ),
+    '22023'
+  );
+
+  v_members := public.set_conversation_member_override(
+    v_visible,
+    current_setting('upr.cps.employee_appointment')::uuid,
+    true
+  );
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM jsonb_array_elements(v_members) member
+    WHERE (member ->> 'employee_id')::uuid
+          = current_setting('upr.cps.employee_appointment')::uuid
+      AND (member ->> 'included')::boolean
+      AND member ->> 'source' = 'manual_add'
+  ) THEN
+    RAISE EXCEPTION 'admin manual add did not restore the self-left member';
+  END IF;
+END;
+$admin_member_control_denials_and_restore$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_inactive')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'inactive employee cannot mutate unread state',
+  format(
+    'SELECT public.set_my_conversation_unread_state(ARRAY[%L::uuid], false)',
+    current_setting('upr.cps.conversation_visible')
+  )
+);
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_external')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'external employee cannot mutate unread state',
+  format(
+    'SELECT public.set_my_conversation_unread_state(ARRAY[%L::uuid], false)',
+    current_setting('upr.cps.conversation_visible')
+  )
+);
 
 RESET ROLE;
 SET LOCAL ROLE authenticated;
