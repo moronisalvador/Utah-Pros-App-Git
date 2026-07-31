@@ -199,8 +199,9 @@ staff-membership decision and keeps the page capability as a required outer gate
 nonemployees, inactive employees, external employees, force-disabled access, and denied
 overrides/roles remain excluded. A future tenant scope must tighten Worker and RLS together.
 
-The compatible participant foundation is now present only on isolated `qa-staging` (ledger
-`20260731143710`), not production. It defines one staff decision shared by the staged inbox,
+The compatible participant foundation and unread-state compatibility layer are now present only
+on isolated `qa-staging` (ledgers `20260731143710` and `20260731181046`), not production. They
+define one staff decision shared by the staged inbox,
 message-author lookup, admin membership controls, technician self-leave, and service-only
 recipient/search/create helpers: privileged internal roles always pass; `crm_partner` does not;
 then explicit per-chat choice wins over default field technician and historical appointment crew.
@@ -215,7 +216,7 @@ row identity while applying authoritative removals and additions.
 Successful desktop inbox omission clears every removed draft and lease; tech expiry removes only
 IDs whose own proof expired, after enumerating their thread/member/access/inbox/draft state. Because
 the tech inbox RPC is filtered, searched, and capped, absence from that result is never itself
-revocation proof. The candidate 40338 snapshot RPC rechecks IDs in actor-derived batches of at
+revocation proof. The QA-applied 40338 snapshot RPC rechecks IDs in actor-derived batches of at
 most 200: filtered hooks submit only their exact prior-page omissions, while the always-mounted
 default hook also submits current-generation leases and thread/member/access/draft cache IDs
 outside the top 50. Each allowed ID renews its own request-start lease; a denied ID is tombstoned
@@ -229,9 +230,11 @@ hidden→visible, both desktop and tech synchronously purge expired inbox labels
 starting revalidation, even when no thread is open.
 
 This staging schema does not make the product participant-scoped in production.
-`20260731040338_conversation_unread_state_compatibility.sql` adds the actor-derived unread writer;
-it also completes the standard `authenticated, service_role` grants without rewriting the
-already-applied staging foundation source. `20260731040339_conversation_participant_policy_enforcement.sql`
+`20260731040338_conversation_unread_state_compatibility.sql` adds the actor-derived unread writer
+and is applied only to QA as ledger `20260731181046`; catalog and rolled-back no-write behavior
+checks passed. It also completes the standard `authenticated, service_role` grants without
+rewriting the already-applied staging foundation source.
+`20260731040339_conversation_participant_policy_enforcement.sql`
 narrows the existing broad `ALL` policies in place to membership-scoped reads with a
 fail-closed write check, revokes browser direct table writes, and explicitly preserves
 `service_role`. Candidate Workers also

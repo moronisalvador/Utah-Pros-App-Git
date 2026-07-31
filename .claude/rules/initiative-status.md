@@ -28,14 +28,19 @@ before promoting.
   passed: both new membership tables use forced RLS, browser roles cannot read them, their rows
   remain empty, the intended RPC signatures/grants are present, and the legacy browser INSERT
   compatibility window remains open. Nothing was applied to the shared production project.
-  Follow-up `20260731040338_conversation_unread_state_compatibility.sql` and
-  `20260731040339_conversation_participant_policy_enforcement.sql` are committed but unapplied
+  Follow-up `20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
+  `qa-staging`, as ledger `20260731181046`, from immutable reconciled candidate `487ec641`
+  (source SHA-256 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`).
+  Catalog checks confirmed its two actor-derived RPCs, pinned `search_path`, intended
+  `authenticated, service_role` grants, and `anon=false` execution; an authorized empty-input,
+  nonexistent-conversation denial, and unmapped-actor denial proof completed inside a rolled-back
+  transaction. `20260731040339_conversation_participant_policy_enforcement.sql` remains unapplied
   everywhere. The release candidate now routes unread changes through the compatibility RPC,
   checks membership before sends/notes, resolves inbound notification recipients canonically,
   uses scoped contact search/creation, purges expired inbox/thread/draft caches, and revokes direct
   browser writes in 40339. The enforcement migration alters the existing policies in place with
   fail-closed write checks rather than dropping them, and 40338 completes the required service-role
-  grants without changing the exact 40337 source staged on QA. **Required order:** 40337 + 40338
+  grants without changing the exact 40337 source staged on QA. **Production order:** 40337 + 40338
   are one indivisible compatibility apply unit: apply 40338 immediately after 40337 in the same
   separately authorized window, without exposing an app between them. If 40338 fails, immediately
   run the paired 40337 rollback so the shared catalog is never intentionally left in the
@@ -47,7 +52,7 @@ before promoting.
   Simulator smoke passed: sender labels/readable bubbles, title-expanded info, and the native
   participant sheet rendered. The sheet's RPC correctly failed against production because 40337
   is not live there. Physical-device and supported native-release evidence remain gates.
-  No shared-database apply, push, deploy, or enforcement is authorized by this status entry.
+  No production apply, deployment, or enforcement is authorized by this status entry.
 - **`20260730150000_oop_pricing_builder.sql`** (authored 2026-07-30) — adds private, forced-RLS
   pricing revision/audit/save-request/snapshot tables plus admin-gated configuration and
   role-gated calculator RPCs. It does not change `oop_quotes` columns or table grants; it replaces
