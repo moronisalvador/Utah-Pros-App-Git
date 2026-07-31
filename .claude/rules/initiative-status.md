@@ -15,9 +15,11 @@ handback. Its work landed in `dev` via PR #525, merged 2026-07-27; the holder br
 `codex/mobile-readiness-current-origin-review` had zero commits not already in `dev` at
 acceptance.)*
 
-The 2026-07-27 `dev → main` promotion hold is **RELEASED** (owner-authorized). Promote from a
-quiet `dev` and re-check `git rev-list --left-right --count origin/main...origin/dev` immediately
-before promoting.
+The `dev → main` promotion hold is **ACTIVE** by owner direction on 2026-07-31. Draft PR
+[#565](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/565) stays open for dev testing and
+cross-session reconciliation; do not mark it ready, merge it, or otherwise promote `main` until the
+owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
+promotion.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
@@ -38,12 +40,11 @@ remain owner/external release gates and must not be inferred from repository sta
 
 ## Deliberately deferred database sources — not current apply candidates
 
-- `20260726183409_inbound_lead_recording_source_boundary.sql` remains reviewed source only. It
-  requires its compatible Worker deployment plus a fresh ledger/catalog recapture and serialized
-  owner-authorized apply window.
-- `20260727022920_mobile_personal_ownership_boundary.sql` remains source-hardened and unapplied.
-  Focused preference/token boundary work changed its expected input state, so its preflight should
-  refuse until the source and evidence are reconciled and re-qualified.
+- `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**, not a
+  deferred apply candidate. Its exact catalog preflight refused on both `qa-staging` and production
+  after the focused native-token and preference lineage superseded its assumptions. Any remaining
+  Page Access/Web Push hardening must ship as a new later migration that preserves the live
+  notification/native-token contracts.
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
@@ -52,23 +53,15 @@ ledger with its rollout flags still disabled:
 
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql`, merged to `dev` as `c41839b1` from
   `codex/qbo-multi-invoice-payments`, adds the disabled, service-only receipt/attempt/event
-  foundation for one QBO Payment allocated across several invoices. It has a containment rollback
-  and locally green source/static tests. On current `origin/dev` base `20436bec`, `npm test` passes
-  4,168 tests with zero unexpected skips; build, changed-file lint, bundle strict, and migration
-  hygiene pass; independent Worker-security, migration, grant/secret, project-law, design, and
-  lifecycle reviews pass. The migration and three supporting foreign-key indexes are applied to
-  `qa-staging`; forced-RLS/grant/flag readbacks and the complete transaction-rolled-back SQL behavior
-  suite pass with zero fixture or receipt residue. Production ledger
-  `20260731225654_qbo_multi_invoice_payment_receipts` is now present, and the live
-  `feature:qbo_receive_payment` row remains disabled. This reconciliation did not prove a Cloudflare
-  environment gate, create a QBO Payment, or activate the feature. The Intuit Development sandbox
-  matrix, authenticated browser QA, disabled code-first deployment, Cloudflare gate verification,
-  and named-admin proof remain release gates.
-  Follow-up source `20260731231000_qbo_receipt_service_grant_containment.sql` is committed on `dev`
-  as `52a07d9e` but remains unapplied: it removes the managed project's inherited direct
-  `service_role` writes from the three private receipt tables while keeping the reviewed
-  service-only RPC mutation path. Keep the feature disabled and apply that exact reviewed
-  containment in its own owner-authorized window before activation.
+  foundation for one QBO Payment allocated across several invoices. The foundation is live in the
+  shared ledger as `20260731225654_qbo_multi_invoice_payment_receipts`. Managed-default
+  `service_role` grant drift found by the post-apply readback is closed by containment revision
+  `52a07d9e`, live as `20260731230907_qbo_receipt_service_grant_containment`.
+  `payment_receipts` and `payment_receipt_attempts` are service-role SELECT-only;
+  `payment_receipt_events` has no direct service-role table privilege; all writes remain behind
+  seven service-only RPCs. Staging repeated the full transaction-rolled-back behavior suite after
+  containment with zero residue. The database flag remains disabled. No QBO Payment, sandbox call,
+  authenticated browser proof, feature activation, or `main` promotion occurred.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
@@ -95,7 +88,13 @@ use their apply timestamps:
   `20260731165215_pg_net_worker_url_allowlists`;
 - `20260731100000_transcribe_call_cron_allowlist.sql` →
   `20260731174734_transcribe_call_cron_allowlist`; and
-- `20260730150000_oop_pricing_builder.sql` → `20260731175328_oop_pricing_builder`.
+- `20260730150000_oop_pricing_builder.sql` → `20260731175328_oop_pricing_builder`;
+- `20260726183409_inbound_lead_recording_source_boundary.sql` →
+  `20260731225511_inbound_lead_recording_source_boundary`;
+- `20260731045407_qbo_multi_invoice_payment_receipts.sql` →
+  `20260731225654_qbo_multi_invoice_payment_receipts`; and
+- `20260731231000_qbo_receipt_service_grant_containment.sql` →
+  `20260731230907_qbo_receipt_service_grant_containment`.
 
 Live postconditions passed: the four OOP private tables are forced-RLS with no browser table
 grants, the exact role/flag boundary is enforced server-side, and published revision 1 plus draft
@@ -178,8 +177,11 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   `.claude/rules/sms-experience-wave-ownership.md` §13 (kept in place — a CI contract test reads
   it).
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
-  2026-07-29, parity-verified, CI db lane LIVE** (details: `docs/database/staging-branch-runbook.md`).
-  The only hosted DB agents may iterate against. Three signed-in fixture identities already exist.
+  2026-07-29; schema-usable and CI db lane LIVE, but its historical migration ledger is not
+  replay-compatible** (details: `docs/database/staging-branch-runbook.md`). Rebase currently fails
+  at historical migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded
+  schema already has dependent objects. Do not call it migration-ledger parity or repair that gap
+  with ad-hoc ledger writes. It remains the only hosted DB agents may write-test against.
   Open tail: convert the remaining anon-era tests to those identities, seed only their minimal
   non-production reference rows, and ratchet the shrink-only failure baseline
   (`scripts/qa/db-lane-baseline.json`) toward zero.
@@ -189,7 +191,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Source committed on `dev`; qa-staging verified; production schema applied with DB flag disabled; sandbox/deploy/activation proof owner-gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | Disabled source deployed on `dev`; QA + shared schema/ACL applies verified; sandbox, environment-gate, named-admin/provider proof, feature activation, and `main` promotion remain gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
