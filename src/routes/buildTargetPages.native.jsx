@@ -53,7 +53,7 @@ const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppoint
 const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
 const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
 const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
-const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
+const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 
 export const IS_NATIVE_BUILD = true;
