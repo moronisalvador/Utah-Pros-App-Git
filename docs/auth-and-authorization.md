@@ -207,14 +207,42 @@ then explicit per-chat choice wins over default field technician and historical 
 The admin/self mutation RPCs derive the actor from `auth.uid()` and the membership tables deny
 direct browser reads/writes.
 
+The candidate clients retain actor-scoped conversation data only under a 30-second proof measured
+from request start, not response receipt. A response resolving after that boundary is rejected.
+Desktop poll/resume requests are monotonic, so a superseded response cannot commit rows, leases, or
+active-thread effects after a newer proof. Silent refresh preserves existing order and unchanged
+row identity while applying authoritative removals and additions.
+Successful desktop inbox omission clears every removed draft and lease; tech expiry removes only
+IDs whose own proof expired, after enumerating their thread/member/access/inbox/draft state. Because
+the tech inbox RPC is filtered, searched, and capped, absence from that result is never itself
+revocation proof. The candidate 40338 snapshot RPC rechecks IDs in actor-derived batches of at
+most 200: filtered hooks submit only their exact prior-page omissions, while the always-mounted
+default hook also submits current-generation leases and thread/member/access/draft cache IDs
+outside the top 50. Each allowed ID renews its own request-start lease; a denied ID is tombstoned
+in place and loses only its thread, inbox row, member cache, and draft. Account-generation guards
+make delayed callbacks and timers from an ended account inert, and background-query errors retain
+visible data only while the current owner's last proof is still fresh. An expired list proof
+retains an explicit unverified marker even though React Query cache pruning changes query status;
+the UI presents verification/error-and-retry rather than a false successful empty state until an
+accepted proof clears the marker. On
+hidden→visible, both desktop and tech synchronously purge expired inbox labels/previews before
+starting revalidation, even when no thread is open.
+
 This staging schema does not make the product participant-scoped in production.
 `20260731040338_conversation_unread_state_compatibility.sql` adds the actor-derived unread writer;
-`20260731040339_conversation_participant_policy_enforcement.sql` replaces broad policies with
-membership-scoped SELECT and revokes authenticated direct table writes. Candidate Workers also
+it also completes the standard `authenticated, service_role` grants without rewriting the
+already-applied staging foundation source. `20260731040339_conversation_participant_policy_enforcement.sql`
+narrows the existing broad `ALL` policies in place to membership-scoped reads with a
+fail-closed write check, revokes browser direct table writes, and explicitly preserves
+`service_role`. Candidate Workers also
 recheck current membership before sends/notes, use scoped contact search/creation, and resolve
-inbound recipients only through the canonical helper. Apply 40337 + 40338 before deploying those
-callers; apply 40339 only after compatible web/supported native adoption, disposable DB proof, and
-a separate owner-authorized window.
+inbound recipients only through the canonical helper. 40337 + 40338 are one indivisible
+compatibility apply unit: in one separately authorized window, apply 40338 immediately after
+40337 and do not expose compatible callers between them. If 40338 fails, immediately run the
+paired 40337 rollback so the shared catalog is never intentionally left in the intermediate grant
+posture. Only deploy those callers after both migrations and catalog checks succeed; apply 40339
+only after compatible web/supported native adoption, disposable DB proof, and a separate
+owner-authorized window.
 
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed

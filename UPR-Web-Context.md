@@ -835,15 +835,46 @@ test and is unrelated to the participant assertions.
 `20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied everywhere.
 Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
 notification recipients, send-time membership checks, a short successful-access lease that
-purges warm thread/draft data when offline authorization cannot be renewed, admin
+purges warm inbox previews plus thread/draft data when offline authorization cannot be renewed, admin
 per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
+Desktop and tech access proof now starts when the actor-scoped request starts, so a response that
+arrives after the 30-second boundary is rejected instead of receiving a fresh receipt-time lease.
+Desktop inbox probes are also monotonic: an older poll/resume result cannot commit after a newer
+proof. Silent refresh retains existing list order and exact row identity when fields are unchanged,
+while still removing authoritative omissions and appending genuinely new conversations.
+A successful inbox omission clears every removed conversation draft and desktop lease; tech
+filtered/capped omissions are never treated as revocation. Tech revalidates omitted or standalone
+sensitive cache IDs in batches of at most 200 through the actor-derived
+`get_my_conversation_access_snapshot` RPC. Filtered hooks check only their exact prior-page
+omissions; the always-mounted unfiltered hook also checks current-generation thread/member/access/
+draft IDs outside the capped top 50 every 15 seconds. Allowed IDs renew independent request-start
+leases, while omitted snapshot IDs receive an in-place access tombstone and immediately lose
+their thread, member cache, inbox row, and draft. Expiry applies per ID and never erases a newer
+proof or detaches an active React Query observer; a newer positive proof replaces an older
+tombstone before the row can be reopened. Account-generation invalidation makes late responses
+and timers from a signed-out account inert. Expiry also leaves an explicit unverified marker, so
+neither desktop nor tech can render a successful “No conversations” state while access
+revalidation is pending or failed; only a fresh accepted proof clears it. Tech background/resume
+refreshes preserve the existing exact-key order and unchanged row identity, append new rows, and
+remove rows no longer returned for that view.
+Hidden→visible synchronously removes expired desktop and tech inbox
+rows/previews before network revalidation starts, including the no-active-thread list state.
+The still-unapplied 40338 completes the standard `authenticated, service_role` RPC grants without
+rewriting the exact 40337 source already staged on QA. The separately gated 40339 no longer drops
+and recreates policies: it alters the existing `ALL` policies in place to participant-scoped
+`USING` predicates with `WITH CHECK (false)`, revokes direct browser writes, and explicitly
+preserves service-role table access.
 `npm run build:ios:dev` and the unsigned Xcode iOS Simulator build passed on 2026-07-31. The
 compiled app then launched on an iPhone 17 Pro Simulator and visually proved the sender labels,
 readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
 showed the expected load error because that app points at production, where 40337 is deliberately
 unapplied; no production data was changed.
-The safe shared-database sequence is 40337 + 40338 before compatible code, compatible web/native
-adoption next, and 40339 enforcement only afterward in a separately reviewed window. Older
+The safe shared-database sequence treats 40337 + 40338 as one indivisible compatibility apply
+unit: apply 40338 immediately after 40337 in the same separately authorized window and do not
+expose compatible code between them. If 40338 fails, immediately run the paired 40337 rollback so
+the shared catalog is never intentionally left in the intermediate grant posture. Only after both
+migrations and catalog checks succeed may compatible web/native adoption begin; apply 40339
+enforcement only afterward in a separately reviewed window. Older
 Capacitor/web callers that directly update unread state remain compatible until 40339; that final
 grant/policy narrowing must not precede supported native adoption.
 Nothing has been applied to production or deployed from this candidate.

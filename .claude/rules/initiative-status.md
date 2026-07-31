@@ -32,11 +32,16 @@ before promoting.
   `20260731040339_conversation_participant_policy_enforcement.sql` are committed but unapplied
   everywhere. The release candidate now routes unread changes through the compatibility RPC,
   checks membership before sends/notes, resolves inbound notification recipients canonically,
-  uses scoped contact search/creation, purges removed-thread caches/drafts, and revokes direct
-  browser writes in 40339. **Required order:** apply 40337 + 40338 to the shared database in a
-  separately authorized window before deploying compatible code; deploy/promote compatible web
-  and supported native code; then apply 40339 only in its own reviewed window after older native
-  callers no longer depend on direct writes. The guarded behavior suite passed locally on
+  uses scoped contact search/creation, purges expired inbox/thread/draft caches, and revokes direct
+  browser writes in 40339. The enforcement migration alters the existing policies in place with
+  fail-closed write checks rather than dropping them, and 40338 completes the required service-role
+  grants without changing the exact 40337 source staged on QA. **Required order:** 40337 + 40338
+  are one indivisible compatibility apply unit: apply 40338 immediately after 40337 in the same
+  separately authorized window, without exposing an app between them. If 40338 fails, immediately
+  run the paired 40337 rollback so the shared catalog is never intentionally left in the
+  intermediate grant posture. Only after both apply and catalog verification may compatible web
+  and supported native code deploy/promote; then apply 40339 only in its own reviewed window
+  after older native callers no longer depend on direct writes. The guarded behavior suite passed locally on
   2026-07-31 against a disposable Colima/Supabase baseline clone with 40337–40339 applied; all
   fixtures rolled back. Capacitor sync, unsigned Xcode simulator compilation, and an iPhone 17 Pro
   Simulator smoke passed: sender labels/readable bubbles, title-expanded info, and the native
