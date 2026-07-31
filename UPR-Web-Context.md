@@ -776,7 +776,13 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
                           in_reply_to, email_references, email_from, email_to, subject, email_html,
                           sender_email. SMS-experience F-core (Jul 9 2026) additive: num_segments int,
                           price numeric (Twilio metering; Phase A fills from the status callback).
-conversation_participants — Omni-inbox adds nullable `email` (email participants)
+conversation_participants — External customer/contact recipients; Omni-inbox adds nullable `email`.
+                          This table is not internal staff membership.
+conversation_member_overrides — Per-conversation internal staff include/exclude decisions.
+                          Applied only to `qa-staging` on 2026-07-31; forced RLS, RPC-only.
+conversation_default_members — Field technicians included by default in every conversation unless
+                          a per-conversation override excludes them. Applied only to `qa-staging`
+                          on 2026-07-31; forced RLS, RPC-only.
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
@@ -808,6 +814,23 @@ notification_queue      — Queued notifications
 conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
+
+**Conversation participant scoping — QA-STAGING FOUNDATION ONLY (2026-07-31):**
+`20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
+`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. The
+canonical staff decision is privileged role → explicit per-chat choice → default field technician
+→ historical appointment crew for the conversation contact. Admin RPCs manage per-chat/default
+membership, a non-privileged participant may persist their own exclusion, the inbox and message
+author directory retain their deployed signatures, and service-only helpers support scoped
+creation/search/notification recipients. Post-apply catalog checks proved forced RLS, no
+anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
+and exactly one foundation ledger row. The guarded SQL behavior suite still requires a disposable
+database with both migrations and was not run on hosted staging.
+
+`20260731040338_conversation_participant_policy_enforcement.sql` remains unapplied everywhere.
+Before production or enforcement, narrow the legacy authenticated conversation UPDATE/DELETE
+authority, integrate and independently review notification-recipient consumption in the Worker,
+deploy/verify compatible UI/Worker callers, and obtain a separate owner apply authorization.
 
 ### Documents & Esign
 ```
