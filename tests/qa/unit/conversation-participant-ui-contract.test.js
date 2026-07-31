@@ -79,6 +79,7 @@ describe('conversation participant UI contract', () => {
   it('exposes the shared controls on both the tech thread and desktop inbox', () => {
     expect(techThread).toContain('<ConversationMemberEditor');
     expect(techThread).toContain('<LeaveConversationButton');
+    expect(globalCss).toMatch(/\.tv2-msgs-info\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*52px;/);
     expect(desktopInbox).toContain('<ConversationMemberEditor');
     expect(desktopInbox).toContain('<LeaveConversationButton');
   });
