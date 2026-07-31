@@ -14,8 +14,9 @@
  *                       draft key for the removed conversation
  *
  * NOTES / GOTCHAS:
- *   - Only 401/403 are authorization loss. A network timeout keeps stale rendered
- *     data available for retry and must not be misclassified as revocation.
+ *   - Only 401/403 prove immediate authorization loss. A network timeout may keep
+ *     the view stable only inside the short successful-access lease; lease expiry
+ *     purges it even when the network cannot prove the server-side decision.
  *   - Raw thread bodies and inbox previews are also excluded from disk persistence;
  *     this helper closes the same-account in-memory removal window.
  * ════════════════════════════════════════════════
