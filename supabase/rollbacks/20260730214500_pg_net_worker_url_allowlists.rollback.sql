@@ -2,10 +2,10 @@
 -- EMERGENCY ROLLBACK: 20260730214500_pg_net_worker_url_allowlists
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
--- Restores the exact pre-allowlist bodies of notify_google_calendar_sync
--- (20260630_client_appointment_notifications) and notify_emit
--- (20260728224000_native_push_delivery_guardrails), and re-declares the same
--- effective ACLs the forward migration preserved.
+-- Restores the exact recaptured pre-allowlist bodies of
+-- notify_google_calendar_sync (current production baseline) and notify_emit
+-- (20260728224000_native_push_delivery_guardrails), while preserving the
+-- forward migration's service-role-only ACL hardening.
 --
 -- WARNING: this rollback REOPENS the config-driven arbitrary-URL surface —
 -- after running it, a rewritten integration_config row can again point either
@@ -31,8 +31,8 @@ BEGIN
       VALUES
         (
           'public.notify_google_calendar_sync(uuid,text,jsonb)',
-          '9c12900f57b2516170dc374b5a63cc23',
-          true
+          '07ee1574e28447ddae2c868a841eb2d8',
+          false
         ),
         (
           'public.notify_emit(text,jsonb)',
@@ -69,7 +69,7 @@ BEGIN
 END;
 $allowlist_rollback_preflight$;
 
--- ─── 1. notify_google_calendar_sync — exact 20260630 body ───
+-- ─── 1. notify_google_calendar_sync — exact pre-allowlist live body ───
 CREATE OR REPLACE FUNCTION public.notify_google_calendar_sync(p_source_id UUID, p_op TEXT, p_cancel JSONB DEFAULT NULL)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -82,6 +82,7 @@ DECLARE
   v_body       JSONB;
 BEGIN
   IF p_source_id IS NULL THEN RETURN; END IF;
+  -- Inert until at least one employee has connected Google Calendar (the writer).
   IF NOT EXISTS (
     SELECT 1 FROM user_google_accounts
     WHERE refresh_token IS NOT NULL AND scopes ILIKE '%calendar%'
@@ -104,8 +105,10 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb)
+  TO service_role;
 
 -- ─── 2. notify_emit — exact 20260728224000 body ───
 CREATE OR REPLACE FUNCTION public.notify_emit(
@@ -173,8 +176,8 @@ BEGIN
       VALUES
         (
           'public.notify_google_calendar_sync(uuid,text,jsonb)',
-          '9c97af19a10e688964bc830f9d11c160',
-          true
+          'd1dcb8230af897aec350df9364d1bf84',
+          false
         ),
         (
           'public.notify_emit(text,jsonb)',

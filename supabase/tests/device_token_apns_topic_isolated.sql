@@ -148,7 +148,13 @@ BEGIN
        'EXECUTE'
      )
      OR has_table_privilege('authenticated', 'public.device_tokens', 'SELECT')
-     OR has_table_privilege('anon', 'public.device_tokens', 'SELECT') THEN
+     OR has_table_privilege('anon', 'public.device_tokens', 'SELECT')
+     OR EXISTS (
+       SELECT 1
+       FROM pg_policies
+       WHERE schemaname = 'public'
+         AND tablename = 'device_tokens'
+     ) THEN
     RAISE EXCEPTION 'per-token topic least-privilege boundary is open';
   END IF;
 END;

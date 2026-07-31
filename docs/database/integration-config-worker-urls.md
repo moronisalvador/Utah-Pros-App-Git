@@ -18,6 +18,11 @@ Two layers of defense, with different jobs:
 2. **This ops check** catches the outage class: on production posture, every production-critical
    key must point at `utahpros.app`, because `dev.utahpros.app` executes with Preview env vars.
 
+The pending `20260730214500` hardening also makes both covered side-effecting
+`SECURITY DEFINER` functions service-role-only. Repository caller tracing found
+`notify_google_calendar_sync` is invoked only by owner-executed appointment triggers; no browser
+caller depends on its former authenticated grant.
+
 ## Registry
 
 Derived from `supabase/migrations/` 2026-07-30 — re-derive when auditing, don't trust this table

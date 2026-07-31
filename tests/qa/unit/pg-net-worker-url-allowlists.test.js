@@ -10,7 +10,8 @@
  *   call whatever web address the integration_config settings table held.
  *   This test reads the migration SOURCE and asserts the fix is what it
  *   claims: an exact two-URL allowlist, a fail-closed secret gate, unchanged
- *   signatures, revoke-before-grant, no anon access, and a real rollback.
+ *   signatures, revoke-before-grant, service-role-only execution, and a real
+ *   rollback.
  *   It proves intent, not live effect — the behavioral proof runs against
  *   the qa-staging branch in the apply window (never presented as CI
  *   coverage, per close-out-standard.md 2b).
@@ -105,12 +106,12 @@ describe('pg_net worker-URL allowlists (20260730214500)', () => {
     expect(migrationSql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|TRUNCATE)\b/i);
   });
 
-  it('re-declares the managed-project ACLs: revoke before grant, no anon, no widening', () => {
+  it('makes both managed-project ACLs service-role-only', () => {
     const gcalRevoke = migrationSql.indexOf(
-      'REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) FROM PUBLIC, anon;',
+      'REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) FROM PUBLIC, anon, authenticated, service_role;',
     );
     const gcalGrant = migrationSql.indexOf(
-      'GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) TO authenticated, service_role;',
+      'GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) TO service_role;',
     );
     const emitRevoke = migrationSql.indexOf(
       'REVOKE EXECUTE ON FUNCTION public.notify_emit(text, jsonb) FROM PUBLIC, anon, authenticated;',
@@ -124,22 +125,22 @@ describe('pg_net worker-URL allowlists (20260730214500)', () => {
     expect(gcalRevoke).toBeLessThan(gcalGrant);
     expect(emitRevoke).toBeLessThan(emitGrant);
     expect(migrationSql).not.toMatch(/GRANT[^;]*TO[^;]*\b(?:anon|PUBLIC)\b/i);
-    // notify_emit stays service-role-only: no authenticated grant on it.
+    // Neither side-effecting definer remains directly browser-executable.
     expect(migrationSql).not.toMatch(
-      /GRANT EXECUTE ON FUNCTION public\.notify_emit\([^;]*TO[^;]*authenticated/i,
+      /GRANT EXECUTE ON FUNCTION public\.(?:notify_emit|notify_google_calendar_sync)\([^;]*TO[^;]*authenticated/i,
     );
   });
 
   it('anchors the apply to the reviewed live bodies via md5 drift guards', () => {
     // Pre-change fingerprints (the 3f97… value is independently confirmed by
     // the 20260728224000 rollback preflight, which expects the same body).
-    expect(migration).toContain('9c97af19a10e688964bc830f9d11c160');
+    expect(migration).toContain('d1dcb8230af897aec350df9364d1bf84');
     expect(migration).toContain('3f972d71b7995dd7787ef6ff2fb76872');
     // Post-change fingerprints in the migration postflight…
-    expect(migration).toContain('9c12900f57b2516170dc374b5a63cc23');
+    expect(migration).toContain('07ee1574e28447ddae2c868a841eb2d8');
     expect(migration).toContain('c72e0f7fd40a4abec42cce1cd912a45b');
     // …are the same ones the rollback preflight requires before undoing.
-    expect(rollback).toContain('9c12900f57b2516170dc374b5a63cc23');
+    expect(rollback).toContain('07ee1574e28447ddae2c868a841eb2d8');
     expect(rollback).toContain('c72e0f7fd40a4abec42cce1cd912a45b');
   });
 
@@ -152,9 +153,12 @@ describe('pg_net worker-URL allowlists (20260730214500)', () => {
       "IF v_url IS NULL OR btrim(v_url) = '' THEN RETURN; END IF;",
     );
     // …verified byte-exact against the source-migration fingerprints.
-    expect(rollback).toContain('9c97af19a10e688964bc830f9d11c160');
+    expect(rollback).toContain('d1dcb8230af897aec350df9364d1bf84');
     expect(rollback).toContain('3f972d71b7995dd7787ef6ff2fb76872');
     expect(rollbackSql).not.toMatch(/GRANT[^;]*TO[^;]*\b(?:anon|PUBLIC)\b/i);
+    expect(rollbackSql).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.(?:notify_emit|notify_google_calendar_sync)\([^;]*TO[^;]*authenticated/i,
+    );
     expect(rollback).toMatch(/REOPENS the config-driven arbitrary-URL surface/i);
   });
 
@@ -163,7 +167,7 @@ describe('pg_net worker-URL allowlists (20260730214500)', () => {
     expect(code).not.toMatch(
       /\b(?:INSERT|UPDATE|DELETE|ALTER|DROP|CREATE|GRANT|REVOKE|TRUNCATE)\b/i,
     );
-    expect(postApply).toContain('9c12900f57b2516170dc374b5a63cc23');
+    expect(postApply).toContain('07ee1574e28447ddae2c868a841eb2d8');
     expect(postApply).toContain('c72e0f7fd40a4abec42cce1cd912a45b');
     expect(code).toContain("has_function_privilege('anon', v_oid, 'EXECUTE')");
   });

@@ -18,12 +18,15 @@
 --   the same transaction with a signature that adds ONE trailing
 --   DEFAULT NULL parameter: the deployed two-argument named-parameter call
 --   shape still resolves, and rows written by older clients keep NULL (the
---   worker falls back to the env APNS_TOPIC for those). The replacement is a
+--   worker falls back to the env APNS_TOPIC for those). It also removes the
+--   obsolete authenticated SELECT policy from the raw token table and
+--   re-declares the existing browser table revocation; checked-in clients use
+--   only selector-free registration/deletion RPCs. The replacement is a
 --   DROP + CREATE rather than CREATE OR REPLACE because adding a parameter via
 --   CREATE OR REPLACE would create a SECOND overload, and two candidates for
 --   the same named-argument call is exactly what breaks the deployed frontend
---   (PostgREST PGRST203 ambiguity). No table, column, policy, or data is
---   dropped, renamed, or mutated.
+--   (PostgREST PGRST203 ambiguity). No table, column, or data is dropped,
+--   renamed, or mutated; the policy removal only tightens secret access.
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
@@ -35,6 +38,8 @@
 --   column is the removal database-standard.md §3 forbids. The delivery
 --   worker's own rollback is a code revert (env-topic fallback governs while
 --   rows are NULL / the worker no longer selects the column).
+--   The raw-token secrecy boundary is retained: rollback never restores a
+--   browser SELECT policy or direct table privilege.
 -- ════════════════════════════════════════════════
 
 DO $preflight$
@@ -128,6 +133,24 @@ BEGIN
     RAISE EXCEPTION
       'device token apns topic preflight: live RPC contract drift for public.upsert_my_native_device_token(text,text)';
   END IF;
+
+  -- The only tolerated policy is the historical own/admin SELECT policy.
+  -- It is already inert behind revoked authenticated table privileges, but a
+  -- raw APNs token store must not retain a browser SELECT policy at all.
+  IF EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'device_tokens'
+      AND (
+        policyname <> 'Own tokens or admin read'
+        OR cmd <> 'SELECT'
+        OR roles IS DISTINCT FROM ARRAY['authenticated']::name[]
+      )
+  ) THEN
+    RAISE EXCEPTION
+      'device token apns topic preflight: unexpected device_tokens policy drift';
+  END IF;
 END;
 $preflight$;
 
@@ -147,6 +170,15 @@ ALTER TABLE public.device_tokens
 
 ALTER TABLE public.device_tokens
   VALIDATE CONSTRAINT device_tokens_apns_topic_check;
+
+-- Raw APNs device tokens are worker-owned secrets. The current app has no
+-- direct browser table read; registration and deletion are selector-free
+-- SECURITY DEFINER RPCs. Remove the lingering policy object as well as
+-- re-declaring the already-live browser table revocation.
+ALTER TABLE public.device_tokens FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Own tokens or admin read" ON public.device_tokens;
+REVOKE ALL PRIVILEGES ON TABLE public.device_tokens
+  FROM PUBLIC, anon, authenticated;
 
 DO $constraint_postcondition$
 BEGIN
@@ -378,7 +410,37 @@ BEGIN
           ARRAY['authenticated','postgres','service_role']::text[]
      OR has_function_privilege('anon', v_oid, 'EXECUTE') THEN
     RAISE EXCEPTION
-      'device token apns topic postcondition: new RPC contract drift';
+     'device token apns topic postcondition: new RPC contract drift';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+       FROM pg_policies
+       WHERE schemaname = 'public'
+         AND tablename = 'device_tokens'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.device_tokens',
+       'SELECT'
+     )
+     OR has_table_privilege('anon', 'public.device_tokens', 'INSERT')
+     OR has_table_privilege('anon', 'public.device_tokens', 'UPDATE')
+     OR has_table_privilege('anon', 'public.device_tokens', 'DELETE')
+     OR has_table_privilege(
+       'authenticated',
+       'public.device_tokens',
+       'SELECT'
+     ) THEN
+    RAISE EXCEPTION
+      'device token apns topic postcondition: raw token table browser boundary is open';
+  END IF;
+
+  IF has_table_privilege('authenticated', 'public.device_tokens', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.device_tokens', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.device_tokens', 'DELETE') THEN
+    RAISE EXCEPTION
+      'device token apns topic postcondition: raw token table browser boundary is open';
   END IF;
 END;
 $postcondition$;
