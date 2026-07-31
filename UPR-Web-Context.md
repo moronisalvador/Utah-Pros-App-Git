@@ -136,11 +136,12 @@ No feature code, schema, or provider behaviour changed. What changed:
   2026-07-29 seed point (141 tables / 400 functions / 219 policies) and now deliberately drifts as
   migrations are qualified; standing QA identities are seeded, and the CI database lane is active.
   The fixture-password GitHub secret is configured and all three standing identities were
-  rotated without committing a usable password. The hosted receipt at commit `19b3e64a` is
-  163 / 375 assertions passed, 0 failed, and 212 skipped; the old failure budget is removed, so
-  every failed assertion now blocks CI. Six SQL/pgTAP proofs remain local-only. The Supabase
-  dashboard's `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually
-  restored schema is usable: a 2026-07-31 rebase again attempted historical
+  rotated without committing a usable password. The raw hosted receipt at `a513af37` is
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 failed setup suites across 44 files.
+  Failed assertions are gated at zero; the previously hidden setup-suite failures now have a
+  shrink-only baseline of 46. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
+  `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
+  schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
   `jobs.phase`. The schema-only restore did not baseline the migration ledger, so agents must not
   use rebase for parity or mark old entries applied ad hoc. The repository still has no

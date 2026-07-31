@@ -29,10 +29,11 @@ The owner-authorized production apply used the exact reviewed source at commit `
   `20260731205942_qbo_invoice_command_ledger`.
 
 The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
-`db-lane` job passed. The later hosted receipt at commit `19b3e64a` is 163 / 375 passed,
-0 failed, and 212 skipped; the failure budget has been removed, but the skips remain coverage
-debt. The compatible Worker/client source is on `dev` but not yet `main`; it preserves one
-operation id across ambiguous provider and post-provider-finalization failures, and
+`db-lane` job passed. The later raw hosted receipt at `a513af37` is 163 / 375 assertions passed,
+0 failed, 212 skipped, and 46 failed setup suites across 44 files. Assertions are gated at zero;
+the setup-suite debt has a shrink-only baseline of 46. The compatible Worker/client source is on
+`dev` but not yet `main`; it preserves one operation id across ambiguous provider and
+post-provider-finalization failures, and
 `/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
@@ -181,10 +182,11 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
   2026-07-29, parity-verified, CI db lane LIVE** (details: `docs/database/staging-branch-runbook.md`).
   The only hosted DB agents may iterate against. The fixture-password secret is configured, all
-  three signed-in fixture identities were rotated, and the latest hosted receipt at `19b3e64a` is
-  163 / 375 passed, 0 failed, and 212 skipped. The old failure baseline is retired: any failure
-  blocks CI. Open tail: convert the remaining skips with only minimal non-production reference
-  rows and run the six SQL/pgTAP proofs through the still-missing governed local runtime.
+  three signed-in fixture identities were rotated, and the raw hosted receipt at `a513af37` is
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 failed setup suites across 44 files.
+  Failed assertions are gated at zero; setup-suite failures carry a shrink-only baseline of 46.
+  Open tail: convert failed setups and skips with only minimal non-production reference rows, then
+  run the six SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)
@@ -200,7 +202,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 | UX alignment W1–W5 | Stalled since 2026-07-18; owner may restart from scratch | `docs/archive/rules/ux-alignment-wave-ownership.md` |
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
 | App-store readiness F1/A/B/D | Source phases and historical TestFlight/Push matrix complete; current per-token-source second-account proof open; submission deferred behind the field-documentation plan | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
-| Agent QA access P2+ | Hosted branch/rotated fixtures and zero-failure gate live; skip conversions and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
+| Agent QA access P2+ | Hosted branch/rotated fixtures live; zero assertion failures, but setup-suite/skip conversions and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
 
 ## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
 
