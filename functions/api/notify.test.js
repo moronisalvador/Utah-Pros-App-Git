@@ -34,6 +34,7 @@ import {
 } from './notify.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
+const CONVERSATION_ID = '11111111-1111-4111-8111-111111111111';
 
 // A flexible fake db. `types` maps type_key → catalog row; `prefsByEmp` maps
 // employee id → the get_effective_notification_prefs rows; other collections are
@@ -43,7 +44,8 @@ function makeDb(opts = {}) {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
     contactsById = {}, presentationOverrides = {}, webhookSecret = null,
-    selectErrorTable = null,
+    selectErrorTable = null, conversationRecipients = {},
+    conversationRecipientsError = false,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -114,6 +116,11 @@ function makeDb(opts = {}) {
     async rpc(fn, params) {
       rpcCalls.push({ fn, params });
       if (fn === 'get_effective_notification_prefs') return prefsByEmp[params.p_employee_id] || [];
+      if (fn === 'get_conversation_notification_recipients') {
+        if (conversationRecipientsError) throw new Error('recipient lookup failed');
+        return (conversationRecipients[params.p_conversation_id] || [])
+          .map((employee_id) => ({ employee_id }));
+      }
       return null;
     },
     async delete(table, filter) { deletes.push({ table, filter }); return null; },
@@ -219,14 +226,53 @@ describe('resolveAudience', () => {
     expect(ids).toEqual(['active']);
   });
 
-  it('role fallback excludes inactive and external employees', async () => {
+  it('message.inbound fails closed without a valid conversation id', async () => {
     const db = makeDb({ employees: [
       { id: 'active-admin', role: 'admin', is_active: true, is_external: false },
-      { id: 'inactive-admin', role: 'admin', is_active: false, is_external: false },
-      { id: 'external-admin', role: 'admin', is_active: true, is_external: true },
     ] });
-    const ids = await resolveAudience(db, 'message.inbound');
-    expect(ids).toEqual(['active-admin']);
+    await expect(resolveAudience(db, 'message.inbound')).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'message.inbound', {
+      recipient_ids: ['active-admin'],
+    })).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'message.inbound', {
+      recipient_ids: ['active-admin'],
+      data: { conversation_id: 'not-a-uuid' },
+    })).resolves.toEqual([]);
+    expect(db.rpcCalls).toEqual([]);
+  });
+
+  it('message.inbound uses only database-scoped active internal recipients', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'stale-admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'tech', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'inactive', role: 'field_tech', is_active: false, is_external: false },
+        { id: 'external', role: 'field_tech', is_active: true, is_external: true },
+      ],
+      conversationRecipients: {
+        [CONVERSATION_ID]: ['tech', 'inactive', 'external'],
+      },
+    });
+
+    await expect(resolveAudience(db, 'message.inbound', {
+      recipient_ids: ['stale-admin'],
+      data: { conversation_id: CONVERSATION_ID },
+    })).resolves.toEqual(['tech']);
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'get_conversation_notification_recipients',
+      params: { p_conversation_id: CONVERSATION_ID },
+    });
+  });
+
+  it('message.inbound fails closed when scoped recipient lookup errors', async () => {
+    const db = makeDb({
+      employees: [{ id: 'admin', role: 'admin', is_active: true, is_external: false }],
+      conversationRecipientsError: true,
+    });
+    await expect(resolveAudience(db, 'message.inbound', {
+      recipient_ids: ['admin'],
+      data: { conversation_id: CONVERSATION_ID },
+    })).resolves.toEqual([]);
   });
 
   it('assigned and crew audiences exclude inactive and external employees', async () => {
@@ -263,6 +309,37 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.skipped).toBe(true);
     expect(out.reason).toBe('type_disabled');
     expect(db.rpcCalls.filter(c => c.fn === 'create_notification')).toHaveLength(0);
+  });
+
+  it('re-resolves inbound membership on retry instead of reusing a stale audience', async () => {
+    const conversationRecipients = { [CONVERSATION_ID]: ['tech'] };
+    const db = makeDb({
+      types: {
+        'message.inbound': {
+          type_key: 'message.inbound',
+          label: 'New text message',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'tech', role: 'field_tech', is_active: true, is_external: false }],
+      prefsByEmp: { tech: prefRows('message.inbound', { bell: true }) },
+      conversationRecipients,
+    });
+    const body = {
+      notification_event_id: 'same-inbound-occurrence',
+      data: { conversation_id: CONVERSATION_ID },
+    };
+
+    await dispatchEvent({ db, env: ENV, typeKey: 'message.inbound', body });
+    conversationRecipients[CONVERSATION_ID] = [];
+    await dispatchEvent({ db, env: ENV, typeKey: 'message.inbound', body });
+
+    expect(db.rpcCalls.filter((call) => call.fn === 'create_notification')).toHaveLength(1);
+    expect(
+      db.rpcCalls.filter(
+        (call) => call.fn === 'get_conversation_notification_recipients',
+      ),
+    ).toHaveLength(2);
   });
 
   it('bell on / push off / email off → one bell row, nothing else', async () => {
@@ -317,6 +394,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
           contract_version: 1,
         },
       },
+      conversationRecipients: { [CONVERSATION_ID]: ['a1'] },
     });
 
     await dispatchEvent({
@@ -327,7 +405,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
         recipient_ids: ['a1'],
         notification_event_id: 'message-event-1',
         data: {
-          conversation_id: 'conversation-1',
+          conversation_id: CONVERSATION_ID,
           url: '/tech/conversations?c=producer-choice',
           secret_metadata: 'must-not-cross-provider-boundary',
         },
@@ -666,14 +744,14 @@ describe('message.inbound deep links', () => {
     expect(enrichInboundMessageBody({
       link: '/conversations',
       entity_type: 'conversation',
-      entity_id: 'conversation-1',
-      data: { conversation_id: 'conversation-1', route: '/conversations' },
+      entity_id: CONVERSATION_ID,
+      data: { conversation_id: CONVERSATION_ID, route: '/conversations' },
     })).toMatchObject({
-      link: '/conversations?c=conversation-1',
+      link: `/conversations?c=${CONVERSATION_ID}`,
       data: {
-        conversation_id: 'conversation-1',
+        conversation_id: CONVERSATION_ID,
         route: '/conversations',
-        url: '/tech/conversations?c=conversation-1',
+        url: `/tech/conversations?c=${CONVERSATION_ID}`,
       },
     });
 
@@ -698,6 +776,7 @@ describe('message.inbound deep links', () => {
           auth: 'a',
         }],
       },
+      conversationRecipients: { [CONVERSATION_ID]: ['admin-1'] },
     });
 
     await dispatchEvent({
@@ -707,8 +786,8 @@ describe('message.inbound deep links', () => {
       body: {
         link: '/conversations',
         entity_type: 'conversation',
-        entity_id: 'conversation-1',
-        data: { conversation_id: 'conversation-1' },
+        entity_id: CONVERSATION_ID,
+        data: { conversation_id: CONVERSATION_ID },
       },
       sendWebPushImpl: async (_subscription, payload) => {
         pushes.push(JSON.parse(payload));
@@ -717,8 +796,8 @@ describe('message.inbound deep links', () => {
     });
 
     const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
-    expect(bell.params.p_link).toBe('/conversations?c=conversation-1');
-    expect(pushes[0].url).toBe('/tech/conversations?c=conversation-1');
+    expect(bell.params.p_link).toBe(`/conversations?c=${CONVERSATION_ID}`);
+    expect(pushes[0].url).toBe(`/tech/conversations?c=${CONVERSATION_ID}`);
   });
 });
 
