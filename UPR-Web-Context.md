@@ -837,6 +837,11 @@ Candidate code now uses scoped contact search/creation, actor-derived unread cha
 notification recipients, send-time membership checks, a short successful-access lease that
 purges warm thread/draft data when offline authorization cannot be renewed, admin
 per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
+`npm run build:ios:dev` and the unsigned Xcode iOS Simulator build passed on 2026-07-31. The
+compiled app then launched on an iPhone 17 Pro Simulator and visually proved the sender labels,
+readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
+showed the expected load error because that app points at production, where 40337 is deliberately
+unapplied; no production data was changed.
 The safe shared-database sequence is 40337 + 40338 before compatible code, compatible web/native
 adoption next, and 40339 enforcement only afterward in a separately reviewed window. Older
 Capacitor/web callers that directly update unread state remain compatible until 40339; that final
