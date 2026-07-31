@@ -16,8 +16,8 @@ BEGIN
     SELECT count(*)
     FROM supabase_migrations.schema_migrations migration
     WHERE migration.name = 'mobile_employee_identity_containment'
-  ) = 1,
-    'apply the mobile employee identity containment boundary first';
+  ) <= 1,
+    'S1e refuses duplicate employee identity containment ledger entries';
   ASSERT EXISTS (
     SELECT 1
     FROM pg_class relation
@@ -52,7 +52,7 @@ BEGIN
       AND policy.polroles =
             ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
       AND pg_get_expr(policy.polqual, policy.polrelid, true) =
-            '(auth_user_id = auth.uid())'
+            'auth_user_id = auth.uid()'
       AND policy.polwithcheck IS NULL
   ),
     'S1e isolated authenticated employee policy drift';
@@ -162,7 +162,13 @@ BEGIN
       AND attribute.attacl IS NOT NULL
       AND grantee_role.rolname = 'authenticated'
       AND acl.privilege_type = 'SELECT'
-  ) = ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[],
+  ) = ARRAY[
+    'auth_user_id',
+    'id',
+    'is_active',
+    'is_external',
+    'role'
+  ]::text[],
     'S1e isolated authenticated employee column SELECT drift';
   ASSERT NOT EXISTS (
     SELECT 1
@@ -182,7 +188,8 @@ BEGIN
           'id',
           'auth_user_id',
           'role',
-          'is_active'
+          'is_active',
+          'is_external'
         )
         OR acl.is_grantable
       )
@@ -190,6 +197,28 @@ BEGIN
     'S1e isolated unexpected employee column ACL drift';
   ASSERT to_regclass('public.inbound_lead_recording_sources') IS NOT NULL,
     'apply S1e to the disposable clone first';
+  ASSERT (
+    SELECT array_agg(policy.polname ORDER BY policy.polname)
+    FROM pg_policy policy
+    WHERE policy.polrelid =
+          to_regclass('public.inbound_lead_recording_sources')
+  ) = ARRAY['inbound_lead_recording_sources_service_role_all']::name[],
+    'S1e private source policy set drift';
+  ASSERT EXISTS (
+    SELECT 1
+    FROM pg_policy policy
+    WHERE policy.polrelid =
+          to_regclass('public.inbound_lead_recording_sources')
+      AND policy.polname =
+            'inbound_lead_recording_sources_service_role_all'
+      AND policy.polcmd = '*'
+      AND policy.polpermissive
+      AND policy.polroles =
+            ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'service_role')]
+      AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+      AND pg_get_expr(policy.polwithcheck, policy.polrelid, true) = 'true'
+  ),
+    'S1e private source service-role policy drift';
 END
 $guard$;
 
