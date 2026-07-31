@@ -19,13 +19,13 @@ DEPENDS ON:
 NOTES / GOTCHAS:
   - This is a UI/native sandbox, NOT a data sandbox. Both apps talk to the one shared
     Supabase project.
-  - Push on the dev app is dormant until the owner changes Cloudflare Preview APNS_TOPIC
-    (owner-gated; do not change it from a session).
+  - Never change Cloudflare Preview `APNS_TOPIC`; both environments retain the production bundle
+    fallback. The live per-token topic records the dev bundle at enrollment.
 -->
 
 # UPR Dev — side-by-side development app variant
 
-**Last verified:** 2026-07-30
+**Last verified:** 2026-07-31
 
 The Xcode project carries a third build configuration, **Dev**, plus a shared scheme
 named **UPR Dev**. It produces a second, independently installed copy of the field app so
