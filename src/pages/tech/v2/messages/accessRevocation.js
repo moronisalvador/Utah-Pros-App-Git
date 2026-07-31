@@ -28,6 +28,10 @@ export function isConversationAccessDenied(error) {
   return error?.status === 401 || error?.status === 403;
 }
 
+export function isConversationSendAccessDenied(status, code) {
+  return status === 401 || code === 'CONVERSATION_NOT_AUTHORIZED';
+}
+
 export function pruneConversationFromInbox(data, conversationId) {
   if (!data || !Array.isArray(data.conversations)) return data;
   const removed = data.conversations.find((conversation) => conversation.id === conversationId);
