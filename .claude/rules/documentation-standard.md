@@ -1,6 +1,6 @@
 # Documentation Standard
 
-**Last-verified: 2026-07-24**
+**Last-verified: 2026-07-30**
 
 Linked from `CLAUDE.md` Rule 12. When asked to document a file, apply this format exactly and
 identically across every file. Consistency is the priority — the labels below are used as search

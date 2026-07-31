@@ -62,6 +62,31 @@ against both and change both in one commit.
   it does not grant a browser role or identify a human actor. OAuth connect, keyed card charge and
   attachment mutation remain Bearer-only. Capability retention, caller binding and
   rotation/retirement must be decided and rolled out across all dependent workers together.
+- OOP calculator pricing is a versioned business rule, not a collection of editable client
+  constants. Administrators may edit and save a draft, but only an explicit publish makes that
+  revision current for new quotes. Existing configured quotes remain pinned to the exact revision,
+  config and inputs used when they were saved; that detail lives in a private companion row, not on
+  the broadly readable legacy quote row.
+- The browser may preview OOP totals, but the versioned quote RPC recalculates the persisted total,
+  evaluated lines, project-minimum adjustment and margin from validated inputs. It never accepts a
+  browser-supplied final total as authoritative.
+- During the code-first compatibility window, the unchanged legacy quote-save signature remains
+  callable. Once the authored migration is applied, it bounds the legacy inputs and recomputes the
+  v1 total and margin server-side instead of trusting the browser snapshots.
+  Any authorized legacy/direct update clears the current private snapshot so a later v2 read cannot
+  combine new legacy values with stale configured-pricing details.
+- Line minimums apply only to positive line amounts. Project minimums apply only to a positive
+  visible subtotal. Hidden/internal lines never increase the customer subtotal or a customer
+  percentage base. Final-total internal allocations use the customer total after the project
+  minimum adjustment.
+- Pricing edits are admin-only at both the web-only Settings route and RPC boundary. Calculator
+  use is exactly for active internal `admin`, `office`, `supervisor`, `estimator` (sales rep), and
+  `project_manager` roles; each may see all OOP quotes company-wide. `field_tech`,
+  `crm_partner`/external, inactive, unsupported, and unauthenticated actors are denied. The
+  `tool:oop_pricing` flag is a separate fail-closed rollout gate: global means all eligible roles,
+  never all staff; a missing or force-disabled flag denies.
+- OOP quotes are internal pricing artifacts and do not post to QuickBooks or bypass the separate
+  human Save-to-QuickBooks gate.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 

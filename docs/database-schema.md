@@ -106,6 +106,35 @@ as a standing regression prohibition, not a convention to copy. Apply evidence:
 Object names evolve; verify them against the current catalog rather than copying this table into
 code.
 
+## OOP pricing builder source (repository-ready, not applied)
+
+`supabase/migrations/20260730150000_oop_pricing_builder.sql` is the reviewed source contract for
+versioned calculator pricing. It has not been applied to the shared Supabase project in this work,
+so these objects are repository intent rather than a live-schema claim:
+
+- `oop_pricing_revisions` stores one editable draft plus immutable published/superseded revisions;
+- `oop_pricing_audit` records idempotent admin save/publish actions and their actor/payload hash;
+- `oop_quote_save_requests` makes versioned quote saves replay-safe;
+- `oop_quote_pricing_snapshots` privately pins the revision, submitted inputs, full config,
+  evaluated lines, engine version and project-minimum adjustment for each configured quote;
+- existing `oop_quotes` columns and table grants remain unchanged; replacement policies use the
+  same calculator-access predicate as the RPCs;
+- admin configuration RPCs require an active internal `admin`, while calculator read/save behavior
+  requires an active internal `admin`, `office`, `supervisor`, `estimator` (sales rep), or
+  `project_manager`. Those roles may access all OOP quotes company-wide; `field_tech`,
+  `crm_partner`/external, inactive, unsupported, and unauthenticated actors are denied. A missing
+  or force-disabled `tool:oop_pricing` flag also denies, and no direct browser access to the new
+  tables is granted;
+- `get_oop_quote_v2` merges an uncleared private snapshot into JSON without changing the legacy
+  `get_oop_quote` composite-row contract; and
+- `upsert_oop_quote_v2` validates input shape/bounds and pricing revision, calculates all persisted
+  customer/internal amounts in SQL, enforces optimistic concurrency, and retains the legacy RPC
+  signature for the code-first compatibility window; the replacement legacy body also validates
+  and recomputes its persisted v1 total/margin while preserving the deployed signature and row shape.
+
+The paired owner-gated operational rollback is
+`supabase/rollbacks/20260730150000_oop_pricing_builder.rollback.sql`. Applying either file requires
+a separately authorized database window; this work applied neither file.
 ## Change rules
 
 - Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
@@ -513,7 +542,7 @@ provenance reconciliation. Browser token conflicts are same-owner refresh only; 
 Push/native token registration and deletion fail closed, while reviewed owner/service maintenance
 remains.
 
-The App Store activation path now uses a smaller pending boundary:
+The App Store activation path uses a smaller focused boundary:
 `20260728223000_native_apns_token_boundary.sql` adds nullable
 `device_tokens.apns_environment`, leaves existing rows inert, and introduces
 selector-free `upsert_my_native_device_token(text,text) -> jsonb` plus
@@ -521,7 +550,11 @@ selector-free `upsert_my_native_device_token(text,text) -> jsonb` plus
 internal employee from `auth.uid()`, never return a raw token, reject foreign
 ownership, and are the only native-token RPCs granted to `authenticated`; direct
 table access and legacy selector RPCs are revoked from browser roles. This
-focused source has passed an isolated local behavior test but is not yet live.
+focused source is live under reconciled ledger row
+`20260729021021 | native_apns_token_boundary`; 2026-07-30 readback confirmed
+forced RLS and no direct `anon`/`authenticated` table privileges. The obsolete
+authenticated SELECT policy object remains inert behind that revoked ACL and
+is removed by the pending per-token-topic migration below.
 
 The ordered focused companion
 `20260728224000_native_push_delivery_guardrails.sql` preserves the deployed
@@ -547,12 +580,21 @@ the four exact prior RPC bodies/ACLs, because that compatibility rollback
 deliberately re-opens the selector defect. This focused boundary means the deferred broad
 S1h preflight will intentionally refuse until it is reconciled and re-qualified.
 
+Pending `20260730170000_device_token_apns_topic.sql` adds nullable
+`device_tokens.apns_topic` and atomically replaces the two-parameter enrollment
+RPC with a single three-parameter definition whose trailing topic defaults to
+NULL, preserving the shipped two-argument call. It removes the lingering
+authenticated SELECT policy from the raw-token table, retains revoked browser
+table privileges, returns only redacted registration metadata, and keeps NULL
+legacy rows on the environment-level topic fallback.
+
 The earlier `20260726223610_mobile_personal_ownership_boundary.sql` artifact is rejected evidence,
 not an apply candidate. Its employee self-promotion and raw-token takeover paths are addressed by
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
 pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
 retained governed local database. Generated schema/RPC reports must continue describing deployed
-state; none of these source migrations is live or `ready_for_apply`.
+state. The broad S1h sequence remains unapplied; the two focused native migrations are live under
+reconciled ledger rows `20260729021021` and `20260729021050`.
 
 ## Notification presentation settings (2026-07-29)
 

@@ -296,9 +296,29 @@ Required guarantees:
 
 OOP pricing:
 
-`get_oop_quote`, `get_claim_jobs`, `upsert_oop_quote`, `delete_oop_quote` plus direct job prefill.
-Server enforces viewer role/object and returns an authoritative quote/version; delete/upsert must be
-idempotent and audited as business policy requires.
+The deployed compatibility surface is `get_oop_quote`, `get_claim_jobs`, `upsert_oop_quote`,
+`delete_oop_quote` plus direct job prefill. The authored, unapplied builder migration adds
+`get_oop_pricing_config`, `get_oop_quote_v2` and `upsert_oop_quote_v2`; its web-only admin surface
+uses `get_oop_pricing_admin_state`, `save_oop_pricing_draft` and
+`publish_oop_pricing_draft`.
+
+The release boundary is fail-closed and does not treat the client route as authorization:
+
+- every calculator RPC resolves an active internal employee with one of exactly `admin`, `office`,
+  `supervisor`, `estimator` (sales rep), or `project_manager`, then enforces server-side
+  `tool:oop_pricing` eligibility;
+- each eligible role may access all OOP quotes company-wide; no job-assignment or quote-creator
+  scope applies. `field_tech`, `crm_partner`/external, inactive, unsupported, and unauthenticated
+  actors are denied;
+- a supplied job must exist;
+- configured saves use a stable request UUID, optimistic version check and server calculation, then
+  return the authoritative quote plus its private versioned pricing snapshot; and
+- delete/upsert converge idempotently and preserve the legacy signatures during the code-first
+  compatibility window.
+
+The Capacitor bundle includes only the tech calculator wrapper, which remains available solely to
+the same eligible roles (never regular field technicians); the Settings builder is web-only,
+admin-only, and rejected by the native bundle boundary checks.
 
 ### Admin-mobile money and leads
 
@@ -360,6 +380,14 @@ producer APNs fields or generic payload traversal. Missing values use immutable
 generic event copy. Rendered values and final APNs JSON are bounded before
 provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
 presentation at the provider boundary.
+
+Native token registration is browser-RPC-only: the focused
+`20260728223000_native_apns_token_boundary.sql` source is live under reconciled
+ledger row `20260729021021`, and direct browser table privileges are revoked.
+Pending `20260730170000_device_token_apns_topic.sql` adds a nullable per-install
+bundle topic, keeps the deployed two-argument registration call resolving via
+a trailing default, removes the remaining inert authenticated SELECT policy
+from the raw-token table, and returns only redacted registration metadata.
 
 Appointment notification audiences are structural rather than caller-selected:
 `appointment.assigned` intersects the named employee with the appointment's
