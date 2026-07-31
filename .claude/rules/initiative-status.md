@@ -38,8 +38,11 @@ promotion.
 - Required order: apply `40337` + `40338` to the shared database in a separately authorized window
   before deploying compatible code; deploy/promote compatible web and supported native code; then
   run the disposable behavioral database suite and apply `40339` only in its own reviewed window
-  after older native callers no longer depend on direct writes. No shared-database apply, push,
-  deploy, or enforcement is authorized by this status entry.
+  after older native callers no longer depend on direct writes. The guarded behavior suite passed
+  locally on 2026-07-31 against a disposable Colima/Supabase baseline clone with `40337`–`40339`
+  applied; all fixtures rolled back. The supported native build and simulator/device evidence
+  remain gates. No shared-database apply, push, deploy, or enforcement is authorized by this status
+  entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
