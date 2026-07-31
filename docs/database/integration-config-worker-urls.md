@@ -1,6 +1,6 @@
 # integration_config worker URLs — registry & ops check
 
-**Last verified:** 2026-07-30
+**Last verified:** 2026-07-31
 
 Every database-initiated call to our own Cloudflare workers reads its target URL from an
 `integration_config` row. That row is **live configuration, not repository state** — several were
@@ -37,7 +37,7 @@ over the live catalog.
 | `ops_health_worker_url` | `/api/ops-health` | `wake_ops_health_worker()` | ✅ (20260725190000) | `https://utahpros.app/api/ops-health` |
 | `qbo_payments_sync_worker_url` | `/api/qbo-payments-sync` | `qbo_payments_sync_poll()` | ✅ (20260724180100) | `https://utahpros.app/api/qbo-payments-sync` |
 | `qbo_worker_url` | `/api/qbo-sync-customer` | `notify_qbo_customer_sync()` — **no-op since 20260701** (Phase B gate) | n/a (caller never posts) | dormant; repoint if the trigger body is ever restored |
-| `transcribe_call_worker_url` | `/api/transcribe-call` | two `pg_cron` command strings (`upr_calls_backfill_safety_net`, `upr_calls_reclassify_safety_net`) | ❌ **no allowlist** — the URL is inlined in the cron command; hardening deferred (see 20260730214500 header) | `https://utahpros.app/api/transcribe-call` |
+| `transcribe_call_worker_url` | `/api/transcribe-call` | `wake_transcribe_call_backfill()` / `wake_transcribe_call_reclassify()` (pg_cron `upr_calls_backfill_safety_net`, `upr_calls_reclassify_safety_net`) | ✅ authored 20260731100000 — **pending owner-authorized apply** (until then the live cron commands still inline the unguarded lookup) | `https://utahpros.app/api/transcribe-call` |
 
 ## The ops check (read-only; owner or owner-authorized session)
 
@@ -72,7 +72,9 @@ change and is **owner-gated**, one row at a time, verified afterward with query 
    used dev are what left the latent outage behind.
 2. The pg_net caller must carry the exact two-URL allowlist **and** the fail-closed secret check —
    copy `wake_ops_health_worker()` (20260725190000), don't invent a variant. Inlining the URL
-   lookup in a `cron.schedule` command string skips the allowlist — put the call in a function.
+   lookup in a `cron.schedule` command string skips the allowlist — put the call in a function
+   (this is exactly the transcribe-call gap 20260731100000 closes).
 3. Add the key to the registry table above and to the audit-query expectations in the same commit.
-4. `tests/qa/unit/pg-net-worker-url-allowlists.test.js` guards the two 20260730214500 allowlists;
-   extend it (or add a sibling) when a new allowlisted caller ships.
+4. `tests/qa/unit/pg-net-worker-url-allowlists.test.js` guards the two 20260730214500 allowlists
+   and `tests/qa/unit/transcribe-call-cron-allowlist.test.js` guards the 20260731100000 cron
+   repoint; extend one (or add a sibling) when a new allowlisted caller ships.
