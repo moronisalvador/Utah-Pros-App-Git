@@ -22,28 +22,38 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated REST client)
+ *   Internal:  src/lib/supabase.js (REST client bound to the QA admin token),
+ *              ./helpers/qaFixtures.mjs (standing QA identity)
  *   Data:      reads  → crm_orgs (via RPC's own org lookup)
  *              writes → inbound_leads (one TEST-org call lead), best-effort
  *              deleted in afterAll.
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase; self-skips without
- *     creds like the other CRM suites.
+ *   - INTEGRATION test against the qa-staging Supabase branch; self-skips
+ *     without branch creds like the other CRM suites.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, afterAll } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { createSupabaseClient } from '../../src/lib/supabase.js';
+import { signInFixture } from './helpers/qaFixtures.mjs';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 describe.skipIf(!hasCreds)('get_call_volume — null p_start derives a real floor, not a guessed one (integration)', () => {
   const runId = Date.now();
   let orgId;
+  let db;
   const leadIds = [];
 
+  beforeAll(async () => {
+    const admin = await signInFixture('admin');
+    db = createSupabaseClient(admin.token);
+  });
+
   afterAll(async () => {
-    for (const id of leadIds) await db.delete('inbound_leads', `id=eq.${id}`);
+    if (db) {
+      for (const id of leadIds) await db.delete('inbound_leads', `id=eq.${id}`);
+    }
   });
 
   it('an omitted p_start returns a small, non-truncated array that still reaches the fixture call', async () => {

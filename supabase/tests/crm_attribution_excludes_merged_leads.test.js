@@ -20,31 +20,41 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (unauthenticated REST client)
+ *   Internal:  src/lib/supabase.js (REST client bound to the QA admin token),
+ *              ./helpers/qaFixtures.mjs (standing QA identity)
  *   Data:      reads  → crm_orgs (via RPC's own org lookup)
  *              writes → inbound_leads (two TEST-org referral-channel leads),
  *              best-effort deleted in afterAll.
  *
  * NOTES / GOTCHAS:
- *   - INTEGRATION test against the live shared Supabase; self-skips without
- *     creds like the other CRM suites.
+ *   - INTEGRATION test against the qa-staging Supabase branch; self-skips
+ *     without branch creds like the other CRM suites.
  *   - Uses a before/after delta on the 'referral' channel (same deterministic
  *     channel choice as crm_pipeline_spam_filter.test.js), never an absolute
- *     count, so it is safe to run against live production data.
+ *     count, so it remains stable when other QA fixtures exist.
  * ════════════════════════════════════════════════
  */
-import { describe, it, expect, afterAll } from 'vitest';
-import { db } from '../../src/lib/supabase.js';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { createSupabaseClient } from '../../src/lib/supabase.js';
+import { signInFixture } from './helpers/qaFixtures.mjs';
 
 const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 describe.skipIf(!hasCreds)('get_attribution_rollup excludes merged-duplicate leads (integration)', () => {
   const runId = Date.now();
   let orgId;
+  let db;
   const leadIds = [];
 
+  beforeAll(async () => {
+    const admin = await signInFixture('admin');
+    db = createSupabaseClient(admin.token);
+  });
+
   afterAll(async () => {
-    for (const id of leadIds) await db.delete('inbound_leads', `id=eq.${id}`);
+    if (db) {
+      for (const id of leadIds) await db.delete('inbound_leads', `id=eq.${id}`);
+    }
   });
 
   it('a merged-into duplicate never adds to the leads count (before/after delta)', async () => {
