@@ -95,7 +95,7 @@ TCPA penalties are **per message**. Consent code is the highest-consequence code
   opt-out beats a stale `opt_in_status`. Current consent model (owner-directed 2026-07-28):
   opt-out-only for staff 1:1 service SMS and named typed transactional notices; all
   automated/bulk/marketing traffic remains global-opt-in-only. Detail:
-  `.claude/rules/sms-experience-wave-ownership.md` §13.
+  `.claude/rules/sms-consent-model.md` §13.
 - **No cross-channel and no adapter fallback.** A channel with no valid destination is refused,
   never silently retargeted.
 - **Automated and marketing sends go only through `sendAutomatedMessage()`.** `skip_compliance`
@@ -190,7 +190,7 @@ Read the smallest relevant set before planning or editing:
 | Database, RLS, RPC, Auth, Storage | `.claude/rules/database-standard.md`, `docs/database-schema.md`, `docs/auth-and-authorization.md`, `docs/database/staging-branch-runbook.md` |
 | Worker or external integration | `.claude/rules/workers-standard.md`, `docs/integrations.md`, `docs/business-rules.md` |
 | Billing, QBO, Stripe | `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md`, `docs/business-rules.md` |
-| Messaging / consent | `.claude/rules/sms-experience-wave-ownership.md` §13, `docs/crm-lead-lifecycle.md` |
+| Messaging / consent | `.claude/rules/sms-consent-model.md` §12–13, `docs/crm-lead-lifecycle.md` |
 | Testing, CI, deployment, release | `docs/testing-and-deployment.md`, `.claude/rules/close-out-standard.md` |
 | Active initiative work | `.claude/rules/initiative-status.md` + that initiative's roadmap |
 | Agent instructions, hooks, tooling | `docs/agent-runtime-reference.md`, `docs/tooling-governance.md` |

@@ -226,7 +226,7 @@ describe('sms consent: the client no longer pre-flights', () => {
 describe('sms consent: canonical caller contract', () => {
   it('documents the typed exception, its hard boundary, and current live truth', () => {
     for (const path of [
-      '.claude/rules/sms-experience-wave-ownership.md',
+      '.claude/rules/sms-consent-model.md',
       'docs/database-schema.md',
       'docs/integrations.md',
     ]) {
