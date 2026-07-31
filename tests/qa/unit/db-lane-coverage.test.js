@@ -56,7 +56,10 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
 // the migration source in the credential-free lanes; the behavioural trigger
 // proof runs in the db lane against the qa-staging branch.
-const DARK_BASELINE = 81;
+// 2026-07-31: 81 -> 82, adding conversation_participant_scoping.test.sql. Its
+// CI-visible source contract verifies the migration/rollback and rollout order;
+// the guarded behavioral proof remains isolated-database-only.
+const DARK_BASELINE = 82;
 // 2026-07-30: 80 -> 81, adding oop_pricing_builder.test.sql. The guarded local
 // proof covers active-internal authorization, canonical money, fractional-input
 // compatibility shadows, optimistic concurrency, and idempotent replay.
