@@ -58,6 +58,14 @@ describe('requireMessagingAccess', () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
+  it('forwards an injected fetch implementation to employee authentication', async () => {
+    const fetchImpl = vi.fn();
+
+    await requireMessagingAccess({}, {}, dbFor({ permission: { can_view: true } }), fetchImpl);
+
+    expect(h.auth).toHaveBeenCalledWith({}, {}, expect.any(Object), fetchImpl);
+  });
+
   it('rejects inactive employees', async () => {
     h.auth = vi.fn(async () => ({
       employee: { id: 'employee-1', role: 'admin', is_active: false, is_external: false },
