@@ -7,7 +7,7 @@ WHAT THIS DOES (plain language):
   source reconciliation instead of treating old gap statements as present truth.
 
 DEPENDS ON:
-  Internal: .claude/rules/app-store-readiness-wave-ownership.md,
+  Internal: docs/archive/rules/app-store-readiness-wave-ownership.md,
             docs/app-store-connect-metadata.md, docs/mobile/pwa-and-capacitor.md,
             .github/workflows/ios-release.yml, ios/
   Data:     reads → repository and owner decision records
@@ -22,7 +22,7 @@ NOTES / GOTCHAS:
 
 **Plan of record.** Committed 2026-07-17. Owner: Moroni Salvador. Slug: `app-store-readiness`.
 Read scope for any session touching this initiative: `CLAUDE.md` + this file's phase block +
-[`.claude/rules/app-store-readiness-wave-ownership.md`](../.claude/rules/app-store-readiness-wave-ownership.md).
+[`docs/archive/rules/app-store-readiness-wave-ownership.md`](archive/rules/app-store-readiness-wave-ownership.md).
 
 Execution model for this initiative: **run in-session via the Workflow tool** (parallel subagents
 in isolated git worktrees, orchestrated from one Claude Code session), not separate cold sessions —
@@ -60,6 +60,13 @@ business" fact pattern that weakens the 3.2/4.2 rejection risk (vs. a one-off in
 ABM Custom Apps stays documented as the fallback if App Review pushes back — see
 `docs/app-store-connect-metadata.md` for the submission copy written for this path. No phase's
 shipped code changes either way (§ above, unchanged).
+
+> **Superseded submission timing/distribution status (owner, 2026-07-29):** internal TestFlight is
+> the active distribution channel while H3, P8 signed media, rooms, dry logs/offline and reports are
+> completed. Public submission is deferred, and the eventual route must be reconfirmed between
+> Unlisted Distribution, ABM Custom Apps and the earlier public-store direction. Source phases do
+> not need to be undone; this is an external release decision. Current plan:
+> `docs/mobile/app-store-submission-strategy.md`.
 
 ## 1. Gap audit (live-verified 2026-07-17)
 
