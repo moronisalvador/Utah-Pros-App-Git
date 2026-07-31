@@ -391,7 +391,7 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
-## Conversation participant scoping (foundation on qa-staging only)
+## Conversation participant controls (release candidate; foundation on qa-staging only)
 
 Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
 `qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
@@ -408,10 +408,16 @@ authenticated INSERT compatibility window still open. Supabase advisors reported
 authenticated `SECURITY DEFINER` warnings for caller-gated RPCs plus informational indexes for the
 two nullable actor foreign keys.
 
-The enforcement migration `20260731040338_conversation_participant_policy_enforcement.sql` remains
-unapplied. It must not ship until legacy conversation UPDATE/DELETE privileges are narrowed, the
-trusted notification path consumes the canonical recipient helper, compatible Worker/UI code is
-deployed and verified, and a separate owner apply window is authorized.
+The additive compatibility migration
+`20260731040338_conversation_unread_state_compatibility.sql` and enforcement migration
+`20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied. The candidate
+uses the new unread RPC, canonical notification-recipient helper, scoped Worker creation/search,
+and send-time membership check; 40339 revokes every authenticated direct write on conversations
+and conversation participants and replaces the broad policies with SELECT-only membership
+predicates. Apply 40337 + 40338 before deploying candidate code, then deploy/promote compatible
+web and supported native clients. Apply 40339 only after disposable behavioral DB proof, older
+native direct-write callers are no longer supported, and a separate owner apply window is
+authorized.
 
 ## Pending mobile messaging and CallRail reconciliation hardening
 

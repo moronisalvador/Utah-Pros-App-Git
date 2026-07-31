@@ -946,7 +946,7 @@ conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
-**Conversation participant scoping — QA-STAGING FOUNDATION ONLY (2026-07-31):**
+**Conversation participant controls — RELEASE CANDIDATE; QA FOUNDATION ONLY (2026-07-31):**
 `20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
 `qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. The
 canonical staff decision is privileged role → explicit per-chat choice → default field technician
@@ -955,13 +955,19 @@ membership, a non-privileged participant may persist their own exclusion, the in
 author directory retain their deployed signatures, and service-only helpers support scoped
 creation/search/notification recipients. Post-apply catalog checks proved forced RLS, no
 anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
-and exactly one foundation ledger row. The guarded SQL behavior suite still requires a disposable
-database with both migrations and was not run on hosted staging.
+and exactly one foundation ledger row. The guarded SQL behavior suite requires a disposable
+database with all three migrations and has not yet been run.
 
-`20260731040338_conversation_participant_policy_enforcement.sql` remains unapplied everywhere.
-Before production or enforcement, narrow the legacy authenticated conversation UPDATE/DELETE
-authority, integrate and independently review notification-recipient consumption in the Worker,
-deploy/verify compatible UI/Worker callers, and obtain a separate owner apply authorization.
+`20260731040338_conversation_unread_state_compatibility.sql` and
+`20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied everywhere.
+Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
+notification recipients, send-time membership checks, cache/draft purging after removal, admin
+per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
+The safe shared-database sequence is 40337 + 40338 before compatible code, compatible web/native
+adoption next, and 40339 enforcement only afterward in a separately reviewed window. Older
+Capacitor/web callers that directly update unread state remain compatible until 40339; that final
+grant/policy narrowing must not precede supported native adoption and the disposable SQL suite.
+Nothing has been applied to production or deployed from this candidate.
 
 ### Documents & Esign
 ```

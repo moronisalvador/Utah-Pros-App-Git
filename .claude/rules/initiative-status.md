@@ -29,9 +29,17 @@ promotion.
   verification passed: both new membership tables use forced RLS, browser roles cannot read them,
   their rows remain empty, the intended RPC signatures/grants are present, and the legacy browser
   INSERT compatibility window remains open. Nothing was applied to the shared production project.
-- Follow-up `20260731040338_conversation_participant_policy_enforcement.sql` is committed but
-  unapplied everywhere. It is blocked until its legacy conversation UPDATE/DELETE authority is
-  narrowed and the full Worker notification-recipient integration receives independent review.
+- Follow-up `20260731040338_conversation_unread_state_compatibility.sql` and
+  `20260731040339_conversation_participant_policy_enforcement.sql` are committed but unapplied
+  everywhere. The release candidate now routes unread changes through the compatibility RPC,
+  checks membership before sends/notes, resolves inbound notification recipients canonically,
+  uses scoped contact search/creation, purges removed-thread caches/drafts, and revokes direct
+  browser writes in `40339`.
+- Required order: apply `40337` + `40338` to the shared database in a separately authorized window
+  before deploying compatible code; deploy/promote compatible web and supported native code; then
+  run the disposable behavioral database suite and apply `40339` only in its own reviewed window
+  after older native callers no longer depend on direct writes. No shared-database apply, push,
+  deploy, or enforcement is authorized by this status entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
