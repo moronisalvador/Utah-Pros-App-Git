@@ -16,9 +16,11 @@ resolves the fixture employee. Tests authenticate via
 `supabase/tests/helpers/qaFixtures.mjs` (`signInFixture('admin').rpc(...)`) — reference
 conversion: `settings_f_demo_schema_delete.test.js` (3/3 green against the branch). Path to full
 green: convert the remaining anon-era suites with that pattern, add their reference rows to the
-seed script, ratchet the baseline down each time, delete it at zero. The branch's dashboard
-`MIGRATIONS_FAILED` badge is a cosmetic artifact of creation (§1) — the seeded schema is what's
-real.
+seed script, ratchet the baseline down each time, delete it at zero. The branch's seeded schema is
+real and usable, but the dashboard `MIGRATIONS_FAILED` badge is **not merely cosmetic**: its
+migration ledger was never baselined after the manual schema restore, so automated rebase still
+replays old history and fails (§1). Do not use rebase as the parity mechanism until that ledger
+gap is deliberately repaired.
 
 ## 1. What happened and what we learned (2026-07-29)
 
@@ -103,9 +105,13 @@ there and no outbound worker request was used as staging evidence.
   lane).
 - **Run the db lane locally** (pgTAP proofs included): `npm run test:db:local` against a local
   `supabase start` stack — unchanged.
-- The branch drifts from production as production migrations apply. Periodically rebase
-  (MCP `rebase_branch`) — after the seed, rebase only replays NEW ledger entries, which are
-  post-discipline and replayable.
+- The branch drifts from production as production migrations apply. **Do not currently use MCP
+  `rebase_branch` to reconcile it.** A fresh 2026-07-31 attempt again started at historical
+  `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
+  `jobs.phase`; the manual schema seed did not baseline the migration ledger. Qualify a reviewed
+  migration directly on the branch, then reconcile production parity through an explicit
+  baseline/ledger-repair initiative. Never mark old migrations applied ad hoc merely to clear the
+  badge.
 
 ## 4. The longer-term fix this exposes (recommended follow-up)
 
