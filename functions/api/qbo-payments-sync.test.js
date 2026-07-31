@@ -27,18 +27,20 @@ vi.mock('../lib/cors.js', () => ({
   jsonResponse: (data, status) => ({ data, status }),
 }));
 vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboRequest: vi.fn(async () => ({ ok: true })) }));
-vi.mock('../lib/supabase.js', () => ({
-  supabase: () => ({
-    insert: vi.fn(async () => null),
-    update: vi.fn(async (table, filter, row) => {
-      dbWrites.updates.push({ table, filter, row });
-      return null;
-    }),
-    upsert: vi.fn(async (table, row) => {
-      dbWrites.upserts.push({ table, row });
-      return null;
-    }),
+const db = {
+  insert: vi.fn(async () => null),
+  select: vi.fn(async () => []),
+  update: vi.fn(async (table, filter, row) => {
+    dbWrites.updates.push({ table, filter, row });
+    return null;
   }),
+  upsert: vi.fn(async (table, row) => {
+    dbWrites.upserts.push({ table, row });
+    return null;
+  }),
+};
+vi.mock('../lib/supabase.js', () => ({
+  supabase: () => db,
 }));
 vi.mock('../lib/quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() }));
 vi.mock('../lib/qbo-payment-sync.js', () => ({
@@ -90,7 +92,12 @@ describe('qbo-payments-sync estimate sweep', () => {
 
     const res = await onRequestPost(CTX);
 
-    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(ENV, expect.anything(), 'P1');
+    expect(syncQboPaymentToUpr).toHaveBeenCalledWith(
+      ENV,
+      expect.anything(),
+      'P1',
+      { receiptEnabled: false },
+    );
     const sweptIds = syncQboEstimateToUpr.mock.calls.map((c) => c[2]);
     expect(sweptIds).toEqual(['5812', '5823', '5900']);
     expect(res.data.estimates).toEqual({
