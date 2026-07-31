@@ -241,8 +241,9 @@ archive, TestFlight, or representative physical-device verification.
 
 - [x] Phase F1 — code shipped 2026-07-17, PR #451 merged into `dev`; a signed Debug build was
   installed and launched on the owner's iPhone 17 Pro Max over Wi-Fi on 2026-07-28 with the
-  development Push entitlement. A clean distribution archive, TestFlight, and production Push
-  proof remain release gates.
+  development Push entitlement. Clean `main` builds 1.0.0 (1) and (2) subsequently passed
+  archive/IPA verification and uploaded to internal TestFlight; production Push passed
+  foreground/background/terminated delivery, tap routing, and minimize/resume on the same device.
 - [x] Phase A — built 2026-07-17, PR #452 merged: `device_tokens` RLS scoped to own-row-or-admin (migration applied live to the shared Supabase + verified), `send-push.js` admin-role-gated + `400 BadDeviceToken` pruning. The then-added boot acknowledgment is superseded by the 2026-07-26 exact-default-off OTA contract above.
 - [x] Phase B — dispatched 2026-07-17, PR #454 merged (migration applied live)
 - [x] Phase D — dispatched 2026-07-17, PR #453 merged
@@ -259,7 +260,13 @@ archive, TestFlight, or representative physical-device verification.
   removing the former launch gate, not treating WebView token storage as Keychain-equivalent.
 - [x] Owner: merge PRs #451/#452/#453/#454/#455 into `dev` — confirmed via `git log` (9ed2e85, 66a7d4d, 6062e52, d3aa72f, 669f36c)
 - [x] Owner: signed Debug Xcode build/install/launch of F1 on a physical iPhone, 2026-07-28.
-  Distribution archive verification remains open.
+- [x] Owner: clean signed archive/IPA verification plus internal TestFlight uploads for builds
+  1.0.0 (1) and (2), 2026-07-29/30.
+- [x] Owner: production APNs token and assigned-appointment delivery in foreground, background,
+  and terminated states; tap route and minimize/resume passed, 2026-07-29.
+- [x] Owner: Build 2 sign-out reached Login without session resurrection and production Push
+  stopped afterward, verifying token detach, 2026-07-30.
+- [ ] Owner: second-account half of account-switch proof.
 - [ ] Owner: screenshots + demo credentials + App Store Connect data entry
 
 ### 2026-07-26 current source reconciliation
@@ -337,14 +344,18 @@ Open external/release gates:
   (`6795664765`, bundle `com.utahprosrestoration.upr`, SKU `UPR-IOS-2026`); metadata/privacy/
   screenshot fields remain incomplete;
 - APNs key and Cloudflare Preview/Production sender variables are configured;
-  the ordered focused native-token and delivery-guardrail migrations are live,
-  and one development-signed sandbox delivery succeeded. Enrollment remains
-  exact-default-off. Production token registration/delivery begins only from a
-  TestFlight/App Store build carrying `VITE_APNS_ENV=production`. Broad S1h is
-  not a Push activation prerequisite and remains deferred;
-- clean-source final archive/IPA verification, internal TestFlight upload/install,
-  Universal/custom link, recovery/signing, Push, background/privacy, biometric,
-  account-switch, permission, and offline physical-device matrix;
+  the ordered focused native-token and delivery-guardrail migrations are live.
+  Clean `main` builds 1.0.0 (1) and (2) passed archive/IPA verification and
+  uploaded to internal TestFlight. A production token plus foreground,
+  background, terminated, tap-route, minimize/resume, sign-out, and detach
+  behavior are owner-verified. Enrollment remains exact-default-off. Broad S1h
+  is not a Push activation prerequisite and remains deferred;
+- second-account account-switch proof, local confirmation of the access-token
+  `session_id` claim shape, and the remaining Universal/custom-link,
+  recovery/signing, background/privacy, biometric, permission, and offline
+  physical-device checks not already recorded as passed;
+- a final clean-source archive/IPA from the exact App Store submission SHA and
+  App Review submission. The internal TestFlight uploads do not close those gates;
 - screenshots, demo credentials, privacy/legal review, App Store Connect entry, distribution, and
   App Review.
 

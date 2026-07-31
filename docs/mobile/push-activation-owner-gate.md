@@ -2,13 +2,13 @@
 
 **Last verified:** 2026-07-31
 
-Native push has historical end-to-end evidence and the focused database boundary plus per-token
-topic schema are live. Apple and Cloudflare sender configuration exists, and an earlier
-development-signed build enrolled a sandbox token and received one authorized background
-delivery through the legacy fallback path. The compatible per-token source is on `dev`, but its
-deployment, fresh re-enrollment and signed-device proof remain separate gates. The broader S1h
-program remains deferred; tap routing and the production-signed matrix also remain separate
-TestFlight gates.
+Native Push now has production-signed end-to-end evidence. The focused database boundary and
+per-token topic schema are live; Apple/Cloudflare sender configuration exists; clean `main` builds
+1.0.0 (1) and (2) passed archive/IPA verification and uploaded to internal TestFlight. On the
+owner's physical iPhone, production-token delivery passed foreground, background, terminated,
+tap-to-correct-route, and minimize/resume checks. Build 2 also verified sign-out and production
+token detach. The remaining device gate is the second-account half of account switching; the
+broader S1h program remains deferred.
 
 ## Already built — do not rebuild
 
@@ -450,25 +450,29 @@ Connect sign-in and the Organizer upload themselves.
 - Not done, by design: no `ios-release.yml` dispatch (Path A awaits the
   `ios-signing` secrets), no App Review submission, no flag flips.
 
-## Remaining activation sequence
+## Remaining activation and release sequence
 
 1. Re-enable Web Push independently in each reinstalled PWA and accept the
-   system permission prompt when offered.
-2. Build the final clean-source signed native archive and verify the archive
-   carries
-   `aps-environment=production`. The local qualification archive above proves
-   the signing lane, but does not replace this final-source artifact.
-3. Upload that exact verified IPA to internal TestFlight. Install it, turn on
-   Push so the installation registers a production token, then verify a real
-   assigned-appointment event in foreground and background plus its tap route.
+   system permission prompt when offered. This is per-install operational state,
+   not an unfinished repository migration or deployment.
+2. Complete the second-account device check: sign in as a different employee,
+   verify native Push defaults OFF for that account, and confirm events for the
+   first employee do not display while the second account is active. Separately
+   decode one real access token locally to confirm the `session_id` claim shape
+   used by the revival guard.
+3. When App Store submission is scheduled, build and verify a clean-source
+   archive/IPA from the exact reviewed release SHA, then upload/submit that
+   artifact. Internal TestFlight upload and production delivery proof are
+   already complete; App Review is not.
 
 The Dev Tools → Notifications diagnostic is single-environment BY DESIGN: it
 targets only tokens matching the worker's currently configured `APNS_ENV`, so
 it proves the exact installed build it reaches and nothing more. A green
 diagnostic is NOT evidence that the cross-environment production fan-out works,
 and a TestFlight (production-token) device exercised against Preview will read
-`no_tokens` as a false failure. First-TestFlight push proof is a real
-assigned-appointment event on `utahpros.app`, per step 3.
+`no_tokens` as a false failure. The first-TestFlight proof was therefore the
+owner-verified real assigned-appointment matrix on `utahpros.app`, not the
+Preview diagnostic.
 
 `isNativePushEnrollmentEnabled()` remains deliberately fail-closed: `TRUE`, `1`,
 unset, and every value other than exact lowercase `true` keep enrollment off;
