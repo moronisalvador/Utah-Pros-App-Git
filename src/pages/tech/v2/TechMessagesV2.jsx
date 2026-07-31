@@ -46,8 +46,16 @@ import NewConversationView from './messages/NewConversationView.jsx';
 import { useTechConversations } from './messages/useTechConversations.js';
 import { useConvoMutations } from './messages/useConvoMutations.js';
 import { mergeConvoIntoList } from './messages/msgsSelectors.js';
-import { purgeConversationAccess } from './messages/accessRevocation.js';
-import { techKeys } from '@/lib/techQuery';
+import {
+  hasFreshTechConversationAccess,
+  loadTechConversationAccess,
+  purgeConversationAccess,
+} from './messages/accessRevocation.js';
+import {
+  captureTechQueryAccountGeneration,
+  techKeys,
+  techQueryAccountGenerationIsCurrent,
+} from '@/lib/techQuery';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import {
   conversationAccessLeaseIsFresh,
@@ -58,6 +66,7 @@ export default function TechMessagesV2({ active = true }) {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const accountGeneration = captureTechQueryAccountGeneration();
 
   const activeId = searchParams.get('c');
   const newConversationOpen = searchParams.get('new') === '1';
@@ -81,6 +90,7 @@ export default function TechMessagesV2({ active = true }) {
 
   const revokeConversationAccess = useCallback((conversationId) => {
     if (!conversationId) return;
+    if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     purgeConversationAccess(queryClient, conversationId);
     setDeepLinked((current) => (
       current?.id === conversationId ? null : current
@@ -90,7 +100,7 @@ export default function TechMessagesV2({ active = true }) {
       if (next.get('c') === conversationId) next.delete('c');
       return next;
     }, { replace: true });
-  }, [queryClient, setSearchParams]);
+  }, [accountGeneration, queryClient, setSearchParams]);
 
   // One actor-owned access probe handles both deep links and same-account removal.
   // It silently rechecks on focus/reconnect and every minute; an offline error keeps
@@ -98,28 +108,30 @@ export default function TechMessagesV2({ active = true }) {
   const activeConversationQuery = useQuery({
     queryKey: techKeys.conversationAccess(employee?.id, activeId),
     enabled: Boolean(db && employee?.id && activeId && !newConversationOpen),
-    queryFn: async () => {
-      const result = await db.rpc('get_tech_conversations', {
-        p_conversation_id: activeId,
-      });
-      return result?.conversations?.[0] || null;
-    },
+    queryFn: () => loadTechConversationAccess({
+      db,
+      queryClient,
+      conversationId: activeId,
+      accountOwner: employee.id,
+      accountGeneration,
+    }),
     staleTime: 15_000,
     refetchInterval: 15_000,
     refetchOnWindowFocus: false,
     retry: false,
   });
 
-  // Query success is the only renewal path. `dataUpdatedAt` advances only after a
-  // successful actor-scoped RPC response, so cached rows cannot renew this lease.
-  const accessLeaseIsFresh = useCallback((updatedAt = activeConversationQuery.dataUpdatedAt) => (
-    conversationAccessLeaseIsFresh(updatedAt)
-  ), [activeConversationQuery.dataUpdatedAt]);
-  const hasActiveAccessLease = Boolean(
-    activeId
-    && activeConversationQuery.isSuccess
-    && activeConversationQuery.data?.id === activeId
-    && accessLeaseIsFresh()
+  // The lease begins when the actor-scoped request starts. React Query's
+  // dataUpdatedAt is receipt-time and must never extend a slow proof.
+  const accessLeaseIsFresh = useCallback((
+    verifiedAt = activeConversationQuery.data?.actorAccessVerifiedAt
+  ) => (
+    conversationAccessLeaseIsFresh(verifiedAt)
+  ), [activeConversationQuery.data?.actorAccessVerifiedAt]);
+  const hasActiveAccessLease = hasFreshTechConversationAccess(
+    activeConversationQuery.data,
+    employee?.id,
+    activeId,
   );
 
   const revalidateActiveAccess = useCallback(async () => {
@@ -130,7 +142,7 @@ export default function TechMessagesV2({ active = true }) {
       return;
     }
     const result = await activeConversationQuery.refetch();
-    if (!result.isSuccess && !accessLeaseIsFresh(result.dataUpdatedAt)) {
+    if (!result.isSuccess && !accessLeaseIsFresh(result.data?.actorAccessVerifiedAt)) {
       revokeConversationAccess(activeId);
     }
   }, [accessLeaseIsFresh, activeConversationQuery, activeId, newConversationOpen, revokeConversationAccess]);
@@ -146,25 +158,28 @@ export default function TechMessagesV2({ active = true }) {
     () => (
       conversations.find((conversation) => conversation.id === activeId)
       || (
-        activeConversationQuery.isSuccess
-        && activeConversationQuery.data?.id === activeId
-          ? activeConversationQuery.data
+        activeConversationQuery.data?.accountOwner === employee?.id
+        && activeConversationQuery.data?.conversation?.id === activeId
+          ? activeConversationQuery.data.conversation
           : null
       )
       || (deepLinked?.id === activeId ? deepLinked : null)
     ),
     [
       activeConversationQuery.data,
-      activeConversationQuery.isSuccess,
       conversations,
       activeId,
       deepLinked,
+      employee?.id,
     ],
   );
 
   useEffect(() => {
-    if (!activeId || !activeConversationQuery.isSuccess) return;
-    const conversation = activeConversationQuery.data;
+    if (
+      !activeId
+      || activeConversationQuery.data?.accountOwner !== employee?.id
+    ) return;
+    const conversation = activeConversationQuery.data?.conversation;
     if (!conversation) {
       const revokeTimer = window.setTimeout(
         () => revokeConversationAccess(activeId),
@@ -181,8 +196,8 @@ export default function TechMessagesV2({ active = true }) {
     });
   }, [
     activeConversationQuery.data,
-    activeConversationQuery.isSuccess,
     activeId,
+    employee?.id,
     queryClient,
     revokeConversationAccess,
   ]);
