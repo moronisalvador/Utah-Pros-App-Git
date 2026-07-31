@@ -4273,9 +4273,22 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   `tests/qa/unit/pg-net-worker-url-allowlists.test.js`; apply-window check:
   `supabase/tests/pg_net_worker_url_allowlists_post_apply.sql`. The full key registry +
   the read-only "everything points at production" ops query:
-  **`docs/database/integration-config-worker-urls.md`**. Known remaining gap (deferred):
-  the two `transcribe_call_worker_url` pg_cron command strings inline their `net.http_post`
-  with no allowlist.
+  **`docs/database/integration-config-worker-urls.md`**. The gap it deferred — the two
+  `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
+  no allowlist — is closed by the follow-up below.
+- **Cron-command allowlist follow-up (2026-07-31, authored — NOT applied):**
+  `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
+  transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
+  `upr_calls_reclassify_safety_net`) into new zero-grant SECURITY DEFINER functions
+  `wake_transcribe_call_backfill()` / `wake_transcribe_call_reclassify()` carrying the
+  exact two-URL allowlist + fail-closed blank-secret gate (the wake_ops_health_worker
+  pattern). Job names, schedules (`20 */6 * * *` / `40 */6 * * *`), payloads
+  (`{"backfill":true,"days":3}` / `{"reclassify":true}`) and the 60s timeout are
+  unchanged; pg_cron executes as the postgres job owner, so no role holds EXECUTE. CI
+  contract test: `tests/qa/unit/transcribe-call-cron-allowlist.test.js`; apply-window
+  check: `supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`; rollback
+  restores the exact 20260722 inlined commands (and reopens the SSRF surface — its
+  header says so).
 
 ## Admin notification presentation Settings (2026-07-29)
 

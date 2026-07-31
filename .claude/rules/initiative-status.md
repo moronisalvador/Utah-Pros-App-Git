@@ -51,6 +51,16 @@ before promoting.
   never by a browser. Paired rollback + CI contract test committed.
   Reviewer advisory satisfied by live evidence 2026-07-30: `gcal_worker_url` and `notify_worker_url`
   both read exactly `https://utahpros.app/api/...` live, so the new gate will not no-op them.
+- **`20260731100000_transcribe_call_cron_allowlist.sql`** (authored 2026-07-31) — closes the
+  20260730214500 DEFERRED item, the last config-driven pg_net caller with no allowlist: the two
+  transcribe-call pg_cron commands move into zero-grant SECURITY DEFINER wake functions carrying
+  the exact two-URL allowlist + blank-secret no-op; job names, schedules and payloads unchanged.
+  Paired rollback (restores the 20260722 inlined commands, then drops the functions) + CI contract
+  test (`tests/qa/unit/transcribe-call-cron-allowlist.test.js`) + apply-window check
+  (`supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`) committed. No code-deploy
+  sequencing; before applying, confirm live `transcribe_call_worker_url` still reads
+  `https://utahpros.app/api/transcribe-call` (registry ops check) — off-allowlist values fail
+  closed and would silently stop the safety nets.
   No sequencing dependency; apply in any window. Ops registry:
   `docs/database/integration-config-worker-urls.md`.
 
