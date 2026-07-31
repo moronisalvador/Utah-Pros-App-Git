@@ -26,6 +26,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const migration = read('supabase/migrations/20260731045407_qbo_multi_invoice_payment_receipts.sql');
 const rollback = read('supabase/rollbacks/20260731045407_qbo_multi_invoice_payment_receipts.rollback.sql');
+const grantContainment = read('supabase/migrations/20260731231000_qbo_receipt_service_grant_containment.sql');
+const grantContainmentRollback = read('supabase/rollbacks/20260731231000_qbo_receipt_service_grant_containment.rollback.sql');
 const behavior = read('supabase/tests/qbo_multi_invoice_payment_receipts.test.sql');
 const claimUtils = read('src/lib/claimUtils.js');
 const executable = (sql) => sql.split('\n').filter((line) => !line.trimStart().startsWith('--')).join('\n').replace(/\s+/g, ' ');
@@ -108,6 +110,32 @@ describe('QBO multi-invoice payment receipts migration contract', () => {
       expect(migration).not.toMatch(new RegExp(`GRANT\\s+(?:ALL|SELECT|INSERT|UPDATE|DELETE)[^;]*ON TABLE public\\.${table}[^;]*TO\\s+(?:anon|authenticated)`, 'i'));
     }
     expect(migration).toContain("'feature:qbo_receive_payment', false");
+  });
+
+  it('closes managed-default direct receipt writes while retaining service reads', () => {
+    for (const table of ['payment_receipts', 'payment_receipt_attempts', 'payment_receipt_events']) {
+      for (const source of [grantContainment, grantContainmentRollback]) {
+        expect(source).toContain(
+          `REVOKE ALL PRIVILEGES ON TABLE public.${table}\n`
+            + '  FROM PUBLIC, anon, authenticated, service_role;',
+        );
+        expect(source).not.toMatch(new RegExp(
+          `GRANT\\s+(?:ALL|INSERT|UPDATE|DELETE|TRUNCATE|REFERENCES|TRIGGER)[^;]*public\\.${table}`,
+          'i',
+        ));
+      }
+    }
+    for (const table of ['payment_receipts', 'payment_receipt_attempts']) {
+      expect(grantContainment).toContain(`GRANT SELECT ON TABLE public.${table} TO service_role;`);
+      expect(grantContainmentRollback).toContain(`GRANT SELECT ON TABLE public.${table} TO service_role;`);
+    }
+    expect(grantContainment).not.toContain('GRANT SELECT ON TABLE public.payment_receipt_events');
+    expect(grantContainmentRollback).not.toContain('GRANT SELECT ON TABLE public.payment_receipt_events');
+    expect(grantContainment).toContain("v_should_select := v_table <> 'payment_receipt_events'");
+    expect(grantContainment).toContain("has_table_privilege('service_role', format('public.%I', v_table), 'INSERT')");
+    expect(grantContainment).toContain('QBO receipt service-role grant containment failed');
+    expect(grantContainment).toContain("key = 'feature:qbo_receive_payment'");
+    expect(grantContainment).toContain('AND NOT enabled');
   });
 
   it('requires stable idempotency, cents, receipt/invoice uniqueness, and the receipt state vocabulary', () => {
