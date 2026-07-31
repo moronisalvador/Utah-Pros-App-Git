@@ -81,7 +81,6 @@ export default function LeaveConversationButton({
       leave();
       return;
     }
-    selection();
     arm(conversationId);
   };
 
@@ -91,6 +90,7 @@ export default function LeaveConversationButton({
       className={`btn btn-secondary conversation-members__leave${isArmed(conversationId) ? ' is-armed' : ''}${className ? ` ${className}` : ''}`}
       disabled={busy}
       onBlur={cancel}
+      onPointerUp={selection}
       onClick={handleClick}
     >
       {busy ? 'Leaving…' : isArmed(conversationId) ? 'Tap again to leave' : 'Leave this chat'}

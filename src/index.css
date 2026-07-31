@@ -12907,9 +12907,13 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
   position: relative; z-index: 1; border: none; background: none; cursor: pointer;
   font-family: inherit; font-size: var(--text-xs); font-weight: 500; padding: 5px 14px;
   color: var(--text-secondary); border-radius: calc(var(--radius-md) - 2px);
-  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard),
+              color var(--motion-duration-fast) var(--motion-ease-standard);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .ui-seg-btn[data-active="true"] { color: var(--accent); font-weight: 600; }
+.ui-seg-btn:active:not(:disabled) { transform: scale(0.97); }
 .ui-seg-indicator {
   /* Position + size via transform ONLY (translateX + scaleX) so selection animates on
      the GPU with no layout/reflow — the wiring component sets the transform, never width
@@ -12921,6 +12925,7 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ui-seg-btn, .ui-seg-indicator { transition: none; }
+  .ui-seg-btn:active:not(:disabled) { transform: none; }
 }
 
 /* ─── Chat bubble motion — reusable enter classes (wired by the sms-experience

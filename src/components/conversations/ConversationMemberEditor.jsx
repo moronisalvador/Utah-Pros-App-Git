@@ -169,8 +169,15 @@ export default function ConversationMemberEditor({
       updateChatMember(member, false);
       return;
     }
-    selection();
     arm(key);
+  };
+
+  const handleAutomatic = (member) => {
+    updateChatMember(member, null);
+  };
+
+  const handleAdd = (member) => {
+    updateChatMember(member, true);
   };
 
   const handleDefaultOff = (member) => {
@@ -179,8 +186,11 @@ export default function ConversationMemberEditor({
       updateDefaultMember(member, false);
       return;
     }
-    selection();
     arm(key);
+  };
+
+  const handleDefaultOn = (member) => {
+    updateDefaultMember(member, true);
   };
 
   const renderMember = (member) => {
@@ -205,7 +215,8 @@ export default function ConversationMemberEditor({
                   type="button"
                   className="btn btn-sm btn-ghost conversation-members__text-action"
                   disabled={busy}
-                  onClick={() => updateChatMember(member, null)}
+                  onPointerUp={selection}
+                  onClick={() => handleAutomatic(member)}
                 >
                   Automatic
                 </button>
@@ -216,6 +227,7 @@ export default function ConversationMemberEditor({
                   className={`btn btn-sm btn-secondary conversation-members__pill${isArmed(actionKey) ? ' is-armed' : ''}`}
                   disabled={busy}
                   onBlur={cancel}
+                  onPointerUp={selection}
                   onClick={() => handleRemove(member)}
                 >
                   {busy ? 'Saving…' : isArmed(actionKey) ? 'Confirm' : 'Remove'}
@@ -225,7 +237,8 @@ export default function ConversationMemberEditor({
                   type="button"
                   className="btn btn-sm btn-primary conversation-members__pill"
                   disabled={busy}
-                  onClick={() => updateChatMember(member, true)}
+                  onPointerUp={selection}
+                  onClick={() => handleAdd(member)}
                 >
                   {busy ? 'Saving…' : 'Add'}
                 </button>
@@ -261,6 +274,7 @@ export default function ConversationMemberEditor({
             className={`btn btn-sm btn-primary conversation-members__switch is-on${isArmed(actionKey) ? ' is-armed' : ''}`}
             disabled={busy}
             onBlur={cancel}
+            onPointerUp={selection}
             onClick={() => handleDefaultOff(member)}
           >
             <span className="conversation-members__switch-label">
@@ -275,7 +289,8 @@ export default function ConversationMemberEditor({
             aria-checked="false"
             className="btn btn-sm btn-secondary conversation-members__switch"
             disabled={busy}
-            onClick={() => updateDefaultMember(member, true)}
+            onPointerUp={selection}
+            onClick={() => handleDefaultOn(member)}
           >
             <span className="conversation-members__switch-label">{busy ? 'Saving…' : 'Off'}</span>
             <span className="conversation-members__switch-knob" />
@@ -298,13 +313,23 @@ export default function ConversationMemberEditor({
         Office leaders always keep access.
       </p>
 
-      <div className="conversation-members__tabs" role="tablist" aria-label="Participant settings">
+      <div
+        className="ui-seg conversation-members__tabs"
+        role="tablist"
+        aria-label="Participant settings"
+      >
+        <span
+          aria-hidden="true"
+          className={`ui-seg-indicator conversation-members__tab-indicator is-position-${tab === 'defaults' ? 1 : 0}`}
+        />
         <button
           type="button"
           role="tab"
           aria-selected={tab === 'chat'}
-          className={`btn ${tab === 'chat' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => { selection(); cancel(); setTab('chat'); }}
+          data-active={tab === 'chat'}
+          className="ui-seg-btn"
+          onPointerUp={selection}
+          onClick={() => { cancel(); setTab('chat'); }}
         >
           This chat
         </button>
@@ -312,8 +337,10 @@ export default function ConversationMemberEditor({
           type="button"
           role="tab"
           aria-selected={tab === 'defaults'}
-          className={`btn ${tab === 'defaults' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => { selection(); cancel(); setTab('defaults'); }}
+          data-active={tab === 'defaults'}
+          className="ui-seg-btn"
+          onPointerUp={selection}
+          onClick={() => { cancel(); setTab('defaults'); }}
         >
           Chat defaults
         </button>

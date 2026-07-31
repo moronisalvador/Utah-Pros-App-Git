@@ -32,6 +32,7 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { convoUnread, isMultiConversation, recipientCount } from './msgsSelectors';
 import { listTime } from './msgDateUtils';
+import { conversationAccessLeaseIsFresh } from '@/components/conversations/conversationAccessState';
 
 function cleanName(s) { return (s || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 function initials(name) {
@@ -52,6 +53,9 @@ function IconGroup(props) {
 export default function ConvoRow({ conv, onOpen, onSetUnread }) {
   const { t } = useTranslation('msgs');
   const [showActions, setShowActions] = useState(false);
+  // Never render a cached name or preview unless useTechConversations attached a
+  // current actor-scoped lease to this exact response.
+  if (!conversationAccessLeaseIsFresh(conv?.accessLeaseVerifiedAt)) return null;
   const { isUnread, count } = convoUnread(conv);
   const name = cleanName(conv.title);
   const preview = conv.last_message_preview || '';
