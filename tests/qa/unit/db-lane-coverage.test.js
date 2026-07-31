@@ -56,10 +56,12 @@ describe('db-lane coverage contracts', () => {
     const runner = read('scripts/qa/run-qa-branch-db-tests.mjs');
     const baseline = JSON.parse(read('scripts/qa/db-lane-baseline.json'));
     expect(baseline.maxFailedTests).toBe(0);
-    expect(baseline.maxFailedSuites).toBe(46);
+    expect(baseline.maxFailedFiles).toBe(44);
+    expect(baseline.maxFailedSuiteNodes).toBe(90);
     expect(runner).toContain('failedTests > baseline.maxFailedTests');
-    expect(runner).toContain('failedSuites > baseline.maxFailedSuites');
-    expect(runner).toContain('Ratchet opportunity: failed setup suites are below baseline');
+    expect(runner).toContain('failedFiles > baseline.maxFailedFiles');
+    expect(runner).toContain('failedSuiteNodes > baseline.maxFailedSuiteNodes');
+    expect(runner).toContain('Ratchet opportunity: setup debt is below baseline');
   });
 
   it('keeps the local-only SQL proof inventory exact', () => {
