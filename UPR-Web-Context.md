@@ -132,10 +132,15 @@ No feature code, schema, or provider behaviour changed. What changed:
   `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
   they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
 - **Staging database:** `qa-staging` is seeded and live at the isolated ref recorded in
-  `docs/database/staging-branch-runbook.md`. Its public schema matches production (141 tables /
-  400 functions / 219 policies), standing QA identities are seeded, and the CI database lane is
-  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even
-  though the manually restored schema is usable: a 2026-07-31 rebase again attempted historical
+  `docs/database/staging-branch-runbook.md`. Its public schema matched production at the
+  2026-07-29 seed point (141 tables / 400 functions / 219 policies) and now deliberately drifts as
+  migrations are qualified; standing QA identities are seeded, and the CI database lane is active.
+  The fixture-password GitHub secret is configured and all three standing identities were
+  rotated without committing a usable password. The hosted receipt at commit `19b3e64a` is
+  163 / 375 assertions passed, 0 failed, and 212 skipped; the old failure budget is removed, so
+  every failed assertion now blocks CI. Six SQL/pgTAP proofs remain local-only. The Supabase
+  dashboard's `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually
+  restored schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
   `jobs.phase`. The schema-only restore did not baseline the migration ledger, so agents must not
   use rebase for parity or mark old entries applied ad hoc. The repository still has no
