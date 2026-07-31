@@ -43,7 +43,8 @@ verifiable in the next native build — group them accordingly.
 
 **Theme: message legibility / accessibility**
 
-- [ ] (P2) SMS thread text is hard to read — owner reports thread body copy is
+- [ ] (P2) SMS thread text is hard to read — **repository release candidate implemented
+      2026-07-31; device/release proof remains.** Owner reports thread body copy is
       genuinely hard to read in normal field use → rework size, weight, contrast and
       bubble density so a thread is comfortably readable one-handed, outdoors, moving.
       Run it through the `impeccable` design skill plus `design:accessibility-review`
@@ -51,22 +52,27 @@ verifiable in the next native build — group them accordingly.
       The bubble is shared — `src/components/conversations/MessageBubble.jsx` — so one
       fix reaches `/conversations`, the CRM wrapper and the tech v2 pane together;
       that also makes it a frozen consumed contract (tech-messages-v2 imports it), so
-      additive changes only. (Owner request 2026-07-30.)
+      additive changes only. Candidate uses the shared 18px mobile type token and quiet
+      sender labels above every staff message and every customer message in a multi-recipient
+      chat. Physical iOS/Capacitor readability proof remains. (Owner request 2026-07-30.)
 
 **Theme: conversation participants (feature-sized — finishing parked work)**
 
-- [ ] (P2) Manual participant control — no way to add or remove people from an existing
-      conversation → staff can add/remove technicians and any other users on a thread at
-      will. **State of the parked work, checked 2026-07-30:** the data model is already
-      live — `conversation_participants` carries `is_active`, and
-      `functions/api/send-message.js:524` already loads only `is_active=eq.true` rows, so
-      deactivating a participant already stops their sends. What was never built is the
-      control surface: a repo-wide grep finds no `add_participant` / `remove_participant`
-      RPC anywhere, and `src/pages/tech/v2/messages/useConvoMutations.js` exposes only
-      unread + DND mutations. So this is "add an RPC + UI over an existing table", not a
-      new subsystem. New RPC follows `database-standard.md` (invoker-preferred,
-      caller-validated, additive migration + paired rollback + a CI-visible contract
-      test in `tests/qa/unit/**`). (Owner request 2026-07-30.)
+- [ ] (P2) Manual participant control — **repository release candidate implemented
+      2026-07-31; database/deployment/device gates remain.** `conversation_participants`
+      represents customer recipients, not internal staff. Staff visibility now has separate
+      forced-RLS `conversation_member_overrides` and `conversation_default_members` tables:
+      active internal admins can add/remove technicians per chat and choose default technicians;
+      eligible technicians can remove themselves; privileged office roles cannot be removed.
+      Tap the conversation title in the tech thread to expand its info, then open
+      **Chat participants**. Source includes paired rollbacks, credential-free contracts, and
+      isolated behavioral SQL; the latter still needs a disposable database run.
+      (Owner request 2026-07-30.)
+
+      Future dry-log lifecycle (context only, explicitly deferred): after the final appointment
+      marks a mitigation job dry and equipment picked up, derived mitigation technicians should
+      fall out automatically unless privileged or manually re-added. Until rooms/dry logs and that
+      lifecycle exist, removal is manual or technician self-leave.
 
 **Theme: secondary contacts on a thread (feature-sized — sequenced after participant control)**
 

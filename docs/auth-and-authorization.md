@@ -195,12 +195,11 @@ precedence, employee override, admin allowance, then role permission. The worker
 `sent_by` from that identity and rejects a forged actor before service-role domain reads or
 provider calls.
 
-The current product is single-organization and treats conversations as company-wide for internal
-employees who have that capability; there is no narrower conversation assignment/ownership model
-to enforce today. The proposed `messages` RLS predicate mirrors the same capability and excludes
-anonymous users, nonemployees, inactive employees, external employees, force-disabled access, and
-denied overrides/roles. A future tenant or assignment scope must tighten both Worker and RLS
-together.
+The currently deployed production policies still treat conversations as company-wide for internal
+employees who have that capability. The participant-control release candidate adds a narrower
+staff-membership decision and keeps the page capability as a required outer gate. Anonymous users,
+nonemployees, inactive employees, external employees, force-disabled access, and denied
+overrides/roles remain excluded. A future tenant scope must tighten Worker and RLS together.
 
 The compatible participant foundation is now present only on isolated `qa-staging` (ledger
 `20260731143710`), not production. It defines one staff decision shared by the staged inbox,
@@ -210,10 +209,14 @@ then explicit per-chat choice wins over default field technician and historical 
 The admin/self mutation RPCs derive the actor from `auth.uid()` and the membership tables deny
 direct browser reads/writes.
 
-This staging schema does not make the product participant-scoped in production. The later policy
-enforcement remains blocked until authenticated conversation UPDATE/DELETE authority is narrowed
-and the trusted Worker notification path is integrated and independently reviewed. Compatible
-Worker/UI deployment and a separate owner-authorized production apply remain mandatory.
+This staging schema does not make the product participant-scoped in production.
+`20260731040338_conversation_unread_state_compatibility.sql` adds the actor-derived unread writer;
+`20260731040339_conversation_participant_policy_enforcement.sql` replaces broad policies with
+membership-scoped SELECT and revokes authenticated direct table writes. Candidate Workers also
+recheck current membership before sends/notes, use scoped contact search/creation, and resolve
+inbound recipients only through the canonical helper. Apply 40337 + 40338 before deploying those
+callers; apply 40339 only after compatible web/supported native adoption, disposable DB proof, and
+a separate owner-authorized window.
 
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed
