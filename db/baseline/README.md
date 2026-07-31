@@ -5,6 +5,8 @@ This directory (deliberately **not** `docs/generated/`) holds the committed
 It is the reference `scripts/db-drift-check.mjs` compares against.
 
 ## Files
+- **`schema.sql`** — full `pg_dump --schema-only` capture of the live public schema, committed at
+  `8e1cf9cc` as the disaster-recovery/local-bootstrap seed. Machine-generated; do not hand-edit.
 - **`live-schema-snapshot.json`** — the committed inventory of live `public` tables
   and functions (object names + counts), captured via `scripts/db-drift-check.sql`.
   Machine-generated; do not hand-edit.

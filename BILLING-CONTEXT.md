@@ -323,11 +323,10 @@ authenticated-browser, or Intuit provider proof until those separate gates have 
   conversion); UPR's own conversion echoes back from QBO as `Converted` with `converted_invoice_id`
   already set → no-op; if the target invoice already has line items the sync approves WITHOUT
   appending (double-billing guard, `needs_confirm`) and leaves conversion to a human.
-- *Disclosed residual (security review 2026-07-31):* the webhook and the hourly sweep could in
-  principle process the same estimate concurrently — the shared `convert_estimate_to_invoice` RPC
-  does no row locking, so a truly simultaneous pair could double-append lines. Judged low
-  probability at current volume (sweep is serial; webhook events are claim-deduped); revisit with a
-  `SELECT ... FOR UPDATE`/claim if ever observed in `worker_runs`/`qbo_events`.
+- Concurrency hardening is live: `convert_estimate_to_invoice` row-locks the estimate before making
+  the conversion decision, and the QBO decision application holds the same lock while adopting or
+  reconciling a provider-side invoice. The earlier webhook-vs-hourly-sweep double-append residual is
+  superseded by `20260731180000_qbo_estimate_conversion_concurrency.sql`.
 - **The human Save-to-QuickBooks gate is untouched** — nothing here calls `/api/qbo-invoice`; the
   converted UPR invoice waits for a human to push/send it.
 - **Intuit dashboard gate:** the webhook subscription must include the **Estimate** entity (it was
