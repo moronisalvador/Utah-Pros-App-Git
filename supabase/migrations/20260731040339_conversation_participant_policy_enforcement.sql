@@ -11,12 +11,15 @@
 --
 -- DEPLOYMENT ORDER:
 --   1. Apply 20260731040337_conversation_participant_scoping.sql.
---   2. Deploy and verify the Worker/UI source that uses the scoped search/create RPCs.
---   3. Apply this enforcement migration in a separate reviewed window.
+--   2. Apply 20260731040338_conversation_unread_state_compatibility.sql.
+--   3. Deploy and verify the Worker/UI source that uses the scoped RPCs.
+--   4. Apply this enforcement migration in a separate reviewed window.
 --
 -- CONTRACT:
 --   No table/column/function signature changes. Existing policy objects are
---   altered only after an exact baseline preflight. No existing row is changed.
+--   replaced only after an exact baseline preflight. Authenticated browsers keep
+--   SELECT access through participant-aware RLS and lose every direct table write;
+--   read/unread mutations use the actor-derived compatibility RPC instead.
 --
 -- ROLLBACK:
 --   Run
@@ -38,6 +41,9 @@ BEGIN
      ) IS NULL
      OR to_regprocedure(
        'public.search_scoped_conversation_contacts(uuid,text,integer)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.set_my_conversation_unread_state(uuid[],boolean)'
      ) IS NULL THEN
     RAISE EXCEPTION 'conversation policy enforcement: foundation RPCs are absent';
   END IF;
@@ -92,23 +98,77 @@ BEGIN
        'authenticated',
        'public.conversation_participants',
        'INSERT'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'UPDATE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'DELETE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'UPDATE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'DELETE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'TRUNCATE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'REFERENCES'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'TRIGGER'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'TRUNCATE'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'REFERENCES'
+     )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'TRIGGER'
      ) THEN
     RAISE EXCEPTION 'conversation policy enforcement: deployed policy/ACL baseline drifted';
   END IF;
 END;
 $conversation_policy_preflight$;
 
-ALTER POLICY allow_authenticated_conversations
+DROP POLICY allow_authenticated_conversations
+  ON public.conversations;
+CREATE POLICY allow_authenticated_conversations
   ON public.conversations
+  FOR SELECT
   TO authenticated
-  USING (public.messaging_can_access_conversation(id))
-  WITH CHECK (public.messaging_can_access_conversation(id));
+  USING (public.messaging_can_access_conversation(id));
 
-ALTER POLICY allow_authenticated_conversation_participants
+DROP POLICY allow_authenticated_conversation_participants
+  ON public.conversation_participants;
+CREATE POLICY allow_authenticated_conversation_participants
   ON public.conversation_participants
+  FOR SELECT
   TO authenticated
-  USING (public.messaging_can_access_conversation(conversation_id))
-  WITH CHECK (public.messaging_can_access_conversation(conversation_id));
+  USING (public.messaging_can_access_conversation(conversation_id));
 
 ALTER POLICY messages_authenticated_select
   ON public.messages
@@ -118,5 +178,7 @@ ALTER POLICY messages_authenticated_select
     AND public.messaging_can_access_conversation(conversation_id)
   );
 
-REVOKE INSERT ON TABLE public.conversations, public.conversation_participants
+REVOKE ALL ON TABLE public.conversations, public.conversation_participants
   FROM authenticated;
+GRANT SELECT ON TABLE public.conversations, public.conversation_participants
+  TO authenticated;
