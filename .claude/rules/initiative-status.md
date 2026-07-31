@@ -40,9 +40,11 @@ promotion.
   run the disposable behavioral database suite and apply `40339` only in its own reviewed window
   after older native callers no longer depend on direct writes. The guarded behavior suite passed
   locally on 2026-07-31 against a disposable Colima/Supabase baseline clone with `40337`–`40339`
-  applied; all fixtures rolled back. The supported native build and simulator/device evidence
-  remain gates. No shared-database apply, push, deploy, or enforcement is authorized by this status
-  entry.
+  applied; all fixtures rolled back. Capacitor sync, unsigned Xcode simulator compilation, and an
+  iPhone 17 Pro Simulator smoke passed: sender labels/readable bubbles, title-expanded info, and the
+  native participant sheet rendered. The sheet's RPC correctly failed against production because
+  `40337` is not live there. Physical-device and supported native-release evidence remain gates. No
+  shared-database apply, push, deploy, or enforcement is authorized by this status entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
