@@ -15,7 +15,7 @@
  *                      nav_permissions
  *
  * EXPORTS:
- *   requireMessagingAccess(request, env, db)
+ *   requireMessagingAccess(request, env, db, fetchImpl?)
  *
  * NOTES / GOTCHAS:
  *   - Priority matches AuthContext: force-disable → employee override → admin →
@@ -33,8 +33,8 @@ function denied(error, code = 'MESSAGING_NOT_AUTHORIZED') {
   return { error, code, status: 403 };
 }
 
-export async function requireMessagingAccess(request, env, db) {
-  const auth = await requireEmployee(request, env, db);
+export async function requireMessagingAccess(request, env, db, fetchImpl = fetch) {
+  const auth = await requireEmployee(request, env, db, fetchImpl);
   if (auth.error) return auth;
 
   const { employee } = auth;
