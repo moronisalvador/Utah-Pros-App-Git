@@ -54,9 +54,10 @@ against both and change both in one commit.
 - The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
   recovery is not an automatic-post mechanism. Browser actions require active internal admin
   authorization, and the shared QBO server secret is rejected by the invoice endpoint.
-- The authored multi-invoice receipt path is a separate human-confirmed action: one active internal
-  administrator may create exactly one QBO Payment and allocate positive integer cents across
-  1–100 UPR invoices only when every invoice belongs to one UPR contact and the same QBO customer.
+- The live-but-disabled multi-invoice receipt foundation defines a separate human-confirmed action:
+  one active internal administrator may create exactly one QBO Payment and allocate positive integer
+  cents across 1–100 UPR invoices only when every invoice belongs to one UPR contact and the same
+  QBO customer. It remains inactive until both rollout gates are explicitly enabled.
 - Before that provider write, the Worker re-reads the QBO invoices and balances. It projects
   receipt-backed `payments` rows only after the returned Payment preserves the reviewed customer,
   date, method, reference, deposit account, total and exact allocations and fresh invoice balances
@@ -116,6 +117,11 @@ against both and change both in one commit.
   rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
   flag grants authority; the Worker still requires an active, non-external literal `admin` before
   private reads, durable reservation, or a QBO call.
+- The receipt foundation is live under production ledger `20260731225654_qbo_multi_invoice_payment_receipts`
+  and its grant containment under `20260731230907_qbo_receipt_service_grant_containment`. Browser
+  roles have no receipt-table or RPC access; `service_role` has direct `SELECT` only on receipt and
+  attempt headers, no direct privilege on append-only events, and all writes go through seven gated
+  `SECURITY DEFINER` RPCs. No provider/payment action is implied while the feature remains disabled.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 
@@ -295,8 +301,10 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   those authority fields.
 - Trusted service-role dispatchers may resolve employee preferences and directly read/prune
   subscription/token rows only after their own Worker authorization or trusted scheduler/webhook
-  boundary. All four personal tables are browser-RPC-only after S1h; browser roles do not inherit
-  that service capability.
+  boundary. The stale S1h personal-ownership migration is retired and must never apply: newer live
+  notification-preference and native-token lineage supersedes it. Remaining Page Access/Web Push
+  ownership work needs a new, later, narrowly scoped migration; browser roles do not inherit any
+  service capability.
 
 ## Initial mobile offline boundary
 

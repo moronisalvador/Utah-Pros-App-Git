@@ -388,7 +388,7 @@ The compatible Worker/client source ships in the same `dev` release as this docu
 repository state does not prove it is deployed. Cloudflare binding/deployment,
 authenticated-browser and provider proof remain separate owner/external gates.
 
-### Multi-invoice receipt authorization (source only; disabled)
+### Multi-invoice receipt authorization (database live; rollout disabled)
 
 The authored `/api/qbo-receive-payment` route uses the human-only
 `authorizeQboBrowserRequest` path: a valid Bearer session must resolve to an active, non-external
@@ -399,8 +399,14 @@ through `AdminRoute` is defense-in-depth. The Worker independently reads the exa
 as the separate literal `QBO_RECEIVE_PAYMENT_ENABLED=true` switch, before any QBO work. Both are
 rollout containment, not authority.
 
-Receipt, attempt, and event tables have forced RLS and no `anon`/`authenticated` grants. The same
-migration revokes every `anon` privilege on `payments` and drops its four inherited broad
+The foundation is live under production ledger
+`20260731225654_qbo_multi_invoice_payment_receipts`; its service-grant containment is live under
+`20260731230907_qbo_receipt_service_grant_containment`. Receipt, attempt, and event tables have
+forced RLS and no `anon`/`authenticated` grants. `service_role` has direct `SELECT` only on
+`payment_receipts` and `payment_receipt_attempts`, and no direct privilege on
+`payment_receipt_events`; receipt writes remain exclusively behind the seven gated
+`SECURITY DEFINER` RPCs. The foundation migration also revokes every `anon` privilege on
+`payments` and drops its four inherited broad
 `allow_anon_*_payments` policies while retaining the existing authenticated policy. A
 `SECURITY INVOKER` receipt-link trigger independently rejects any non-service JWT role that tries
 to set or change `payments.receipt_id`. Their six state-mutation RPCs plus the atomic QBO-event
@@ -413,8 +419,9 @@ active-admin gate.
 Required negative proof before activation is: missing/invalid session, wrong role, inactive or
 external employee, either rollout gate disabled/missing/malformed, malformed request,
 cross-customer invoice, and stale balance all fail before the QBO create call; direct browser
-table/RPC access is denied. These are repository tests until the migration is separately qualified
-in `qa-staging`; they are not live authorization evidence.
+table/RPC access is denied. The migration was qualified in `qa-staging` before its owner-authorized
+production apply; the feature flag and environment gate remain disabled, and no provider or payment
+action has been performed under this foundation.
 
 ## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
 
@@ -512,16 +519,19 @@ open; source-only addenda are
 `docs/audit/2026-07/evidence/mobile-readiness-s1c-callrail-notify-2026-07-26.md`. A React admin
 route is not a substitute for the remaining Worker, RPC or RLS boundaries.
 
-## Mobile S1e recording-source authority (authored, not applied)
+## Mobile S1e recording-source authority (live)
 
-`get_inbound_leads` will require an active, non-external employee and either `admin` or the existing
+Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is live under QA ledger
+`20260731224513_inbound_lead_recording_source_boundary` and production ledger
+`20260731225511_inbound_lead_recording_source_boundary`. `get_inbound_leads` requires an active,
+non-external employee and either `admin` or the existing
 `crm_call_log` employee/role capability. Its only browser callers remain the mobile Admin Lead
 Center and desktop Call Log. Direct `inbound_leads` SELECT remains company-wide for active internal
 employees because the current model has no employee organization membership or lead assignment;
 `crm_tasks.assignee_id` is task ownership, not lead visibility. Authenticated direct DML is removed.
 
-Raw provider URLs move to forced-RLS, service-only `inbound_lead_recording_sources`; nested
-recording-source keys are removed from `raw_payload` on backfill and future writes. Browser and
+Raw provider URLs are held in forced-RLS, service-only `inbound_lead_recording_sources`; nested
+recording-source keys were removed from `raw_payload` on backfill and are removed from future writes. Browser and
 legacy composite RPC responses see only a truthy opaque marker. Authenticated execution of the
 service ingestion RPC is revoked. The approved CallRail proxy keeps
 the narrower admin/`crm_call_log` boundary and is the only interactive audio-delivery path.
@@ -572,16 +582,13 @@ policies. Two-session PostgREST/Realtime sockets plus PWA/Capacitor bell behavio
 close-out gate; S1d/S1e/S1f, private media, providers, deployment, signing, and device work remain
 separate.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**S1g apply-order prerequisite:** its entry gate still requires the separately verified
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence, compatible browser/PWA/native
+clients, and retirement of old clients or an explicit owner risk decision. The completed S1e
+postcondition is recorded above; it is not an authorization to combine S1g with any later window.
 
-## Mobile S1h identity and personal ownership source (authored, not applied)
+## Mobile S1h identity and personal ownership source (retired; do not apply)
 
 The browser authentication path is selector-free. `AuthContext` starts from a genuine Supabase
 session, resolves the caller through `get_my_employee_profile()`, validates profile/role/feature and
@@ -590,7 +597,7 @@ bootstrap succeeds. The former anonymous employee picker and `devLogin` bypass a
 Account transitions suspend old-account work immediately and keep the app in a cleanup/error lock
 when local session or device detachment cannot be confirmed.
 
-S1h is an ordered four-migration source sequence, not one apply:
+The old S1h proposal was an ordered four-migration source sequence, not one apply:
 
 1. `20260726180000_mobile_employee_identity_authority.sql` adds selector-free profile and employee
    directory RPCs without revoking the deployed table contract.
@@ -599,7 +606,7 @@ S1h is an ordered four-migration source sequence, not one apply:
    employee writes, narrow direct identity reads, and gate roster/commission RPCs.
 3. `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` normalizes the
    already-live permission-writer body fingerprint without changing behavior.
-4. `20260727022920_mobile_personal_ownership_boundary.sql` replaces the nine existing personal
+4. `20260727022920_mobile_personal_ownership_boundary.sql` would replace the nine existing personal
    RPC bodies while preserving identities, defaults, return types, successful authorized fields,
    ordering, and reviewed service compatibility.
 
@@ -617,16 +624,15 @@ write employee authority fields after containment, and they cannot enumerate or 
 employee's raw Web/native token. The rejected filename and reasoning are retained only as dated
 evidence under `docs/audit/2026-07/evidence/rejected-sql/`.
 
-None of the four migrations is applied. Credential-free source tests and negative auth/account
-transition tests pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain
-has not run in a retained governed local database, and live GoTrue/PostgREST/RLS behavior is
-unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. Use
-`docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
-test, rollback, provider action, signing step, and device qualification remains a separate
-owner-authorized gate.
+`20260727022920_mobile_personal_ownership_boundary.sql` is retired and must never be applied. Its
+preflight correctly refused catalog/function drift: newer notification-preference and native-token
+lineage supersedes the old bodies, including the live native APNs token boundary and APNs-topic
+addition. Applying the stale source would overwrite newer contracts and reopen legacy raw-token
+paths. Any remaining Page Access or Web Push ownership work requires a new, later, narrowly scoped
+migration that preserves the live notification and native-token contracts; it is not an S1h apply.
 
-The narrower native-token activation boundary is separate from that deferred
-four-migration S1h sequence. `20260728223000_native_apns_token_boundary.sql` is
+The narrower native-token activation boundary is separate from the retired
+four-migration S1h proposal. `20260728223000_native_apns_token_boundary.sql` is
 live under reconciled ledger row `20260729021021`; direct browser table
 privileges are revoked and native registration/deletion use selector-free
 self-scoped RPCs. `20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
@@ -651,14 +657,16 @@ no configuration write or provider call.
 
 ## Payment table authorization
 
-The authored QBO receipt migration removes the inherited anonymous payment policies and the broad
+The live QBO receipt foundation removes the inherited anonymous payment policies and the broad
 `allow_authenticated_payments FOR ALL` policy before adding `payments.receipt_id`. Replacement
 policies are operation-specific: active, non-external internal employees may read payment history;
 manual ungrouped payment INSERT/UPDATE/DELETE is limited to active admin employees, matching the
 effective `canEditBilling` boundary; and browser inserts must set `recorded_by` to the caller's own employee row.
 Provider-originated, Stripe, and grouped receipt rows are not browser-mutable. Receipt linkage is
-independently guarded by a service-role-only trigger, while the new receipt RPCs remain callable
-only by `service_role`.
+independently guarded by a service-role-only trigger; the seven receipt RPCs remain callable only
+by `service_role`, while direct service access is limited to `SELECT` on receipt/attempt headers
+and denied entirely on append-only receipt events. The feature remains disabled, so this is schema
+and authorization evidence only, not evidence of a QBO payment or provider action.
 
 ## Owner notification delivery diagnostics
 
