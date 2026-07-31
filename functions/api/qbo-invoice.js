@@ -1,288 +1,369 @@
-// POST /api/qbo-invoice — push a UPR invoice to QuickBooks Online.
-//
-// Auth: x-webhook-secret (server-side) or an active internal admin Supabase session.
-// Body:
-//   { "invoice_id": "<uuid>" }                       — create OR update the QBO invoice
-//   { "invoice_id": "<uuid>", "action": "delete" }   — delete it from QBO (cleanup)
-//   { "invoice_id": "<uuid>", "action": "send",      — ask QBO to EMAIL the invoice to
-//     "send_to": "name@x.com" (optional) }             the customer (defaults to the
-//                                                       invoice contact's email)
-//
-// Builds one summary line from the job's division (Item + Class) at the invoice
-// total, customer = the contact's qbo_customer_id, with the claim/job ref in the
-// private note. If the invoice already has a qbo_invoice_id it is UPDATED in place
-// (sparse update) — this is what makes auto-push on edit work (Phase 0.5). Detailed
-// line items / adjustments come in phase 2b.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: qbo-invoice.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Executes one ledger-frozen QuickBooks invoice save, send, or delete. The
+ *   private command record is written before the provider call so a lost HTTP
+ *   response is recovered without creating a second accounting side effect.
+ *
+ * DEPENDS ON:
+ *   Internal: qbo auth, QuickBooks adapter, qbo-invoice-commands, Supabase RPCs
+ *   Data: qbo_invoice_commands and the invoice/contact/job source records
+ * ════════════════════════════════════════════════
+ */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
-import { authorizeQboRequest } from '../lib/qbo-auth.js';
+import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, ensureQboCustomer, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
+import { recordReconciliation } from '../lib/qbo-reconciliation.js';
+import { sha256hex } from '../lib/intuit.js';
+import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
 
-// Snap a money value to whole cents. QBO rejects line Amounts with more than 2
-// decimals ("...has more precision than allowed"), and a qty×unit_price fallback
-// (or an over-precise stored value) can carry sub-cent noise — so round before
-// pushing. Mirrors round2 in src/components/admin-mobile/invoice/invoiceMath.js.
 export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
-
-// Amount pushed to QBO for one invoice line: the stored line_total when present,
-// else qty × unit_price — always snapped to cents.
-export const qboLineAmount = (li) =>
-  round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
-
-// No-lines fallback Amount: the billable (adjusted_total ?? total), snapped to cents.
+export const qboLineAmount = (li) => round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
 export const qboFallbackAmount = (inv) => round2(inv.adjusted_total ?? inv.total ?? 0);
 
-async function logRun(db, status, processed, errorMessage, startedAt) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: 'qbo-invoice', status, records_processed: processed,
-      error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort */ }
+export async function qboInvoiceRequestId(action, invoiceId, clientRequestId, stage = 'primary') {
+  const code = { create: 'c', update: 'u', send: 's', delete: 'd' }[action];
+  if (!code) throw new Error('Unsupported QBO invoice request action');
+  const digest = await sha256hex(JSON.stringify({ action, invoice_id: String(invoiceId), client_request_id: String(clientRequestId), stage: String(stage) }));
+  return `upr-i-${code}-${digest.slice(0, 40)}`;
 }
 
-export async function onRequestOptions(context) {
-  return handleOptions(context.request, context.env);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const emailOk = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const rpcObject = (value) => Array.isArray(value) ? value[0] : value;
+const definitive = (e) => Number.isFinite(Number(e?.status)) && Number(e.status) >= 400 && Number(e.status) < 500;
+const ambiguous = (e) => !Number.isFinite(Number(e?.status)) || Number(e.status) >= 500;
+const providerError = (e) => ({ error: e?.message || String(e), intuit_tid: e?.intuitTid || null, retry_same_request: ambiguous(e) });
+
+async function logRun(db, status, processed, errorMessage, startedAt) {
+  try { await db.insert('worker_runs', { worker_name: 'qbo-invoice', status, records_processed: processed, error_message: errorMessage || null, started_at: startedAt, completed_at: new Date().toISOString() }); } catch { /* telemetry must not change money semantics */ }
 }
+
+async function reconcile(db, invoiceId, attempted, current, operation) {
+  try { await recordReconciliation(db, { entity: 'InvoiceLinkConflict', qboId: `upr:${invoiceId}:operation:${operation}:attempted:${attempted}:current:${current || 'none'}`, reason: 'qbo-invoice-mismatch', context: { upr_invoice_id: invoiceId, operation, attempted_qbo_invoice_id: attempted, current_qbo_invoice_id: current || 'none' } }); } catch { /* durable command remains the source of truth */ }
+}
+
+function replay(command, request, env) {
+  return jsonResponse(command.response_payload || { error: command.error || 'QuickBooks invoice command did not retain a response' }, Number(command.response_status) || (command.status === 'succeeded' ? 200 : 500), request, env);
+}
+
+async function finalize(db, commandId, status, responseStatus, responsePayload, error = null, providerResult = null, intuitRequestId = null) {
+  await setQboInvoiceCommandState(db, { commandId, status, providerResult, responseStatus, responsePayload, error, intuitRequestId });
+}
+
+async function needsReconciliation(db, command, request, env, message, current = null) {
+  const payload = { error: message, code: 'qbo-invoice-mismatch', current_qbo_invoice_id: current || null };
+  await finalize(db, command.id, 'needs_reconciliation', 409, payload, message);
+  await reconcile(db, command.invoice_id, command.target_qbo_invoice_id || command.provider_result?.qbo_invoice_id || 'none', current, command.action);
+  return jsonResponse(payload, 409, request, env);
+}
+
+// QBO has already accepted a side effect when this helper is used.  Never let
+// a later ledger/CAS/finalization error make the browser retire its operation
+// id: the stored provider request id is the only safe retry identity.
+async function postProviderFailure(db, command, request, env) {
+  const payload = {
+    error: 'QuickBooks may have accepted this request, but local finalization did not complete. Retry the same request.',
+    code: 'post-provider-finalization-failed',
+    retry_same_request: true,
+  };
+  try {
+    await setQboInvoiceCommandState(db, {
+      commandId: command.id,
+      status: 'ambiguous',
+      responseStatus: 500,
+      responsePayload: payload,
+      error: payload.error,
+    });
+  } catch {
+    // provider_started already durably holds the exact QBO request id; the
+    // browser signal below preserves its matching client operation id too.
+  }
+  return jsonResponse(payload, 500, request, env);
+}
+
+// A timeout from QBO is already an unknown side-effect outcome.  The response
+// must retain the client operation id even when recording that ambiguity fails.
+async function ambiguousProviderFailure(db, command, error, request, env) {
+  const payload = providerError(error);
+  try {
+    await setQboInvoiceCommandState(db, {
+      commandId: command.id,
+      status: 'ambiguous',
+      responseStatus: 500,
+      responsePayload: payload,
+      error: error.message,
+      intuitRequestId: error.intuitTid || null,
+    });
+  } catch {
+    // The pre-provider_started row still freezes the QBO request id.  The
+    // retry_same_request response keeps its matching browser operation id.
+  }
+  return jsonResponse(payload, 500, request, env);
+}
+
+async function buildSaveIntent(db, env, request, inv) {
+  const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
+  if (!job) throw new Error('Job not found for invoice');
+  let contact = inv.contact_id ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] : null;
+  if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
+  const map = divisionToQbo(job.division);
+  if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
+  const claim = job.claim_id ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null : null;
+  const items = await db.select('invoice_line_items', `invoice_id=eq.${inv.id}&order=sort_order.asc.nullslast,created_at.asc`) || [];
+  const lines = items.length ? items.map((li) => {
+    const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
+    if (li.qbo_class_id) detail.ClassRef = { value: String(li.qbo_class_id) };
+    if (li.quantity != null) detail.Qty = Number(li.quantity); if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
+    return { DetailType: 'SalesItemLineDetail', Amount: qboLineAmount(li), ...(li.description ? { Description: li.description } : {}), SalesItemLineDetail: detail };
+  }) : [{ DetailType: 'SalesItemLineDetail', Amount: qboFallbackAmount(inv), SalesItemLineDetail: { ItemRef: { value: String(map.itemId) } } }];
+  if (!(lines.reduce((sum, line) => sum + Number(line.Amount || 0), 0) > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
+  const fmt = (d) => { const p = String(d || '').split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : ''; };
+  const address = [job.address || claim?.loss_address, job.city || claim?.loss_city, job.state || claim?.loss_state, job.zip || claim?.loss_zip].filter(Boolean).join(', ');
+  const memo = `Date of loss: ${fmt(job.date_of_loss || claim?.date_of_loss)} · Job: ${job.job_number || ''} · Claim: ${inv.claim_number || claim?.claim_number || ''} · Service Address: ${address}`;
+  let docNumber = inv.qbo_doc_number || null;
+  if (!docNumber && job.job_number) { const siblings = await db.select('invoices', `job_id=eq.${inv.job_id}&select=id,created_at&order=created_at.asc,id.asc`) || []; const pos = siblings.findIndex((row) => row.id === inv.id); const suffix = pos > 0 ? `-${pos + 1}` : ''; docNumber = String(job.job_number).slice(0, 21 - suffix.length) + suffix; }
+  const shipAddr = Object.fromEntries(Object.entries({ Line1: job.address || claim?.loss_address || null, City: job.city || claim?.loss_city || null, CountrySubDivisionCode: job.state || claim?.loss_state || null, PostalCode: job.zip || claim?.loss_zip || null }).filter(([, value]) => value));
+  let linkedTxn = null;
+  if (inv.estimate_id) { const estimate = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0]; if (estimate?.qbo_estimate_id) linkedTxn = [{ TxnId: String(estimate.qbo_estimate_id), TxnType: 'Estimate' }]; }
+  const payCfg = await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value') || [];
+  const onlinePay = Object.fromEntries([['AllowOnlineCreditCardPayment', 'accept_card'], ['AllowOnlineACHPayment', 'accept_ach']].filter(([, key]) => payCfg.find((row) => row.key === key)?.value === 'true').map(([field]) => [field, true]));
+  const shared = { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
+  const action = inv.qbo_invoice_id ? 'update' : 'create';
+  const payload = inv.qbo_invoice_id ? shared : { CustomerRef: { value: String(contact.qbo_customer_id) }, ...shared };
+  // Fallback payloads are frozen now; they are selected only after a definitive 4xx.
+  return { action: 'save', expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: action, default_class_name: map.className || null, primary_payload: payload, without_online_pay_payload: Object.keys(onlinePay).length ? (() => { const { AllowOnlineCreditCardPayment, AllowOnlineACHPayment, ...rest } = payload; return rest; })() : null, without_doc_number_payload: docNumber ? (() => { const { DocNumber, ...rest } = payload; return rest; })() : null, customer_relink_contact_id: !inv.qbo_invoice_id ? inv.contact_id || null : null };
+}
+
+async function currentIntent(db, env, request, action, inv, body) {
+  if (action === 'delete') return { action, expected_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), target_qbo_invoice_id: inv.qbo_invoice_id == null ? null : String(inv.qbo_invoice_id), provider_action: 'delete', primary_payload: { missing_is_success: true } };
+  if (action === 'send') {
+    let recipient = String(body.send_to || '').trim();
+    if (!recipient && inv.contact_id) recipient = String((await db.select('contacts', `id=eq.${inv.contact_id}&select=email&limit=1`))?.[0]?.email || '').trim();
+    if (!inv.qbo_invoice_id) throw new Error('Invoice has not been sent to QuickBooks yet — push it first, then email.');
+    if (!recipient) throw new Error('No email address on file for this customer — add one to the contact (or pass send_to) before emailing.');
+    if (!emailOk(recipient)) throw new Error(`Customer email looks invalid: ${recipient}`);
+    return { action, expected_qbo_invoice_id: String(inv.qbo_invoice_id), target_qbo_invoice_id: String(inv.qbo_invoice_id), recipient, provider_action: 'send', primary_payload: { recipient } };
+  }
+  return buildSaveIntent(db, env, request, inv);
+}
+
+function attemptFromIntent(intent, invoiceId, clientRequestId, stage = 'primary') {
+  const providerAction = intent.provider_action;
+  return qboInvoiceRequestId(providerAction, invoiceId, clientRequestId, stage).then((providerRequestId) => ({ stage, providerAction, providerTargetId: intent.target_qbo_invoice_id, providerRequestId, providerPayload: intent.primary_payload }));
+}
+
+async function executeProvider(env, attempt) {
+  if (attempt.providerAction === 'create') return createInvoice(env, attempt.providerPayload, { requestId: attempt.providerRequestId });
+  if (attempt.providerAction === 'update') return updateInvoice(env, attempt.providerTargetId, attempt.providerPayload, { requestId: attempt.providerRequestId });
+  if (attempt.providerAction === 'send') return sendInvoice(env, attempt.providerTargetId, attempt.providerPayload.recipient, { requestId: attempt.providerRequestId });
+  return deleteInvoice(env, attempt.providerTargetId, { requestId: attempt.providerRequestId, missingIsSuccess: true });
+}
+
+function stagedSavePayload(intent, command) {
+  const stage = command.provider_stage || 'primary';
+  let payload = intent.primary_payload;
+  if (stage === 'without-online-pay') payload = intent.without_online_pay_payload;
+  if (stage === 'without-doc-number') payload = intent.without_doc_number_payload;
+  if (stage === 'customer-relinked') payload = { ...payload, CustomerRef: command.provider_payload?.CustomerRef };
+  return payload;
+}
+
+function fillMissingClassRefs(payload, classId) {
+  if (!classId || !Array.isArray(payload?.Line)) return payload;
+  return {
+    ...payload,
+    Line: payload.Line.map((line) => {
+      if (line?.DetailType !== 'SalesItemLineDetail' || line.SalesItemLineDetail?.ClassRef) return line;
+      return { ...line, SalesItemLineDetail: { ...line.SalesItemLineDetail, ClassRef: { value: String(classId) } } };
+    }),
+  };
+}
+
+function alignLocalClassesWithStored(localPayload, storedPayload) {
+  if (!Array.isArray(localPayload?.Line) || !Array.isArray(storedPayload?.Line)) return localPayload;
+  return {
+    ...localPayload,
+    Line: localPayload.Line.map((line, index) => {
+      const storedClass = storedPayload.Line[index]?.SalesItemLineDetail?.ClassRef;
+      if (line?.SalesItemLineDetail?.ClassRef || !storedClass) return line;
+      return { ...line, SalesItemLineDetail: { ...line.SalesItemLineDetail, ClassRef: storedClass } };
+    }),
+  };
+}
+
+async function currentMatchesStoredAttempt(db, env, request, command, inv, body) {
+  if (command.action === 'delete') return inv.qbo_invoice_id == null || String(inv.qbo_invoice_id) === String(command.expected_qbo_invoice_id);
+  if (command.action === 'send') {
+    const current = await currentIntent(db, env, request, 'send', inv, body);
+    return String(inv.qbo_invoice_id || '') === String(command.target_qbo_invoice_id || '') && current.recipient === command.intent_payload.recipient;
+  }
+  // Freeze create/update selection to the command's pre-provider link.  A
+  // successful CAS may have changed the live link from null to the created QBO
+  // id; that is proof of completion, not an invoice edit.
+  const frozen = { ...inv, qbo_invoice_id: command.expected_qbo_invoice_id, qbo_doc_number: command.intent_payload?.primary_payload?.DocNumber || null };
+  const rebuilt = await buildSaveIntent(db, env, request, frozen);
+  const stored = command.provider_payload || stagedSavePayload(command.intent_payload, command);
+  const local = alignLocalClassesWithStored(stagedSavePayload(rebuilt, command), stored);
+  return stableJsonStringify(local) === stableJsonStringify(stored);
+}
+
+export async function onRequestOptions(context) { return handleOptions(context.request, context.env); }
 
 export async function onRequestPost(context) {
-  const { request, env } = context;
-  const startedAt = new Date().toISOString();
-
-  const db = supabase(env);
-  const auth = await authorizeQboRequest(request, env, db);
-  if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
-
-  const conn = await getConnection(env);
-  if (!conn || !conn.refresh_token) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
-
-  let body = {};
-  try { body = await request.json(); } catch { /* empty */ }
-  const invoiceId = body.invoice_id;
-  if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
-  // Reject non-UUID ids before they reach a PostgREST filter string (a value
-  // containing '&' would splice extra query params into the filter).
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(invoiceId))) {
-    return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
+  const { request, env } = context; const startedAt = new Date().toISOString(); const db = supabase(env);
+  // Invoice writes are a human Save-to-QuickBooks action.  Unlike the
+  // background-safe QBO workers, they never accept the shared webhook secret.
+  const auth = await authorizeQboBrowserRequest(request, env, db); if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
+  const commandId = (request.headers.get('Idempotency-Key') || '').trim();
+  if (!QBO_COMMAND_ID_RE.test(commandId)) return jsonResponse({ error: 'A UUIDv4 Idempotency-Key is required for QuickBooks invoice actions' }, 400, request, env);
+  let body = {}; try { body = await request.json(); } catch { /* handled below */ }
+  const invoiceId = body.invoice_id; if (!invoiceId) return jsonResponse({ error: 'Provide invoice_id' }, 400, request, env);
+  if (!UUID_RE.test(String(invoiceId))) return jsonResponse({ error: 'invoice_id must be a UUID' }, 400, request, env);
+  const action = ['send', 'delete'].includes(body.action) ? body.action : 'save';
+  const conn = await getConnection(env); if (!conn?.refresh_token || !conn.realm_id) return jsonResponse({ error: 'QuickBooks not connected' }, 409, request, env);
+  const actor = qboCommandActor(auth); const realmId = String(conn.realm_id);
+  const existing = await getQboInvoiceCommand(db, commandId);
+  if (existing?.ok) {
+    if (!qboCommandIdentityMatches(existing, { invoiceId, action, actor, realmId })) return jsonResponse({ error: 'Idempotency-Key belongs to a different invoice, action, account, or QuickBooks realm' }, 409, request, env);
+    if (isTerminalQboInvoiceCommand(existing)) return replay(existing, request, env);
   }
-
-  const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
-  if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
-
-  // ── Cleanup path: delete from QBO ──
-  if (body.action === 'delete') {
-    if (!inv.qbo_invoice_id) return jsonResponse({ error: 'No qbo_invoice_id to delete' }, 400, request, env);
-    try {
-      await deleteInvoice(env, inv.qbo_invoice_id);
-      // Removed from QuickBooks → back to a plain draft (clears saved/sent too).
-      await db.update('invoices', `id=eq.${invoiceId}`, { qbo_invoice_id: null, qbo_synced_at: null, qbo_sync_error: null, status: 'draft' });
-      return jsonResponse({ deleted: inv.qbo_invoice_id }, 200, request, env);
-    } catch (e) {
-      return jsonResponse({ error: e.message }, 500, request, env);
-    }
-  }
-
-  // ── Send path: ask QBO to email the invoice to the customer ──
-  if (body.action === 'send') {
-    if (!inv.qbo_invoice_id) return jsonResponse({ error: 'Invoice has not been sent to QuickBooks yet — push it first, then email.' }, 400, request, env);
-
-    // Recipient: explicit override, else the invoice contact's email on file.
-    let sendTo = (body.send_to || '').trim() || null;
-    if (!sendTo && inv.contact_id) {
-      const c = (await db.select('contacts', `id=eq.${inv.contact_id}&select=email&limit=1`))?.[0];
-      sendTo = (c?.email || '').trim() || null;
-    }
-    if (!sendTo) return jsonResponse({ error: 'No email address on file for this customer — add one to the contact (or pass send_to) before emailing.' }, 400, request, env);
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sendTo)) return jsonResponse({ error: `Customer email looks invalid: ${sendTo}` }, 400, request, env);
-
-    try {
-      const qboInv = await sendInvoice(env, inv.qbo_invoice_id, sendTo);
-      const nowIso = new Date().toISOString();
-      await db.update('invoices', `id=eq.${invoiceId}`, {
-        qbo_emailed_at:   nowIso,
-        qbo_email_status: qboInv?.EmailStatus || 'EmailSent',
-        sent_to_email:    sendTo,
-        qbo_sync_error:   null,
-        // Emailed to the customer → 'sent'. Only advance from a pre-send tier so a
-        // later paid/partially_paid state is never overwritten by a resend.
-        ...((inv.status === 'draft' || inv.status === 'saved') ? { status: 'sent' } : {}),
-      });
-      await logRun(db, 'completed', 1, null, startedAt);
-      return jsonResponse({ ok: true, emailed_to: sendTo, email_status: qboInv?.EmailStatus || 'EmailSent' }, 200, request, env);
-    } catch (e) {
-      await logRun(db, 'error', 0, e.message, startedAt);
-      return jsonResponse({ error: e.message, intuit_tid: e.intuitTid || null }, 500, request, env);
-    }
-  }
-
-  try {
-    const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
-    if (!job) throw new Error('Job not found for invoice');
-
-    let contact = inv.contact_id
-      ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0]
-      : null;
-    // On-demand: create the QBO customer now (when actually invoiced) if it
-    // doesn't exist yet — the contact-insert auto-sync trigger is being retired.
-    if (inv.contact_id && !contact?.qbo_customer_id) {
-      await ensureQboCustomer(request, env, inv.contact_id);
-      contact = (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0];
-    }
-    if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
-
-    const map = divisionToQbo(job.division);
-    if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
-
-    const claim = job.claim_id
-      ? (await db.select('claims', `id=eq.${job.claim_id}&select=claim_number,date_of_loss,loss_address,loss_city,loss_state,loss_zip&limit=1`))?.[0] || null
-      : null;
-    const claimNo = inv.claim_number || claim?.claim_number || null;
-
-    const divClassId = map.className ? await findClassId(env, map.className) : null;
-
-    // Build QBO lines from the invoice's line items (itemized — each line carries its
-    // own QBO Item + Class). Fall back to a single division-summary line for invoices
-    // that have no line items yet.
-    const items = await db.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc.nullslast,created_at.asc`) || [];
-    let lines;
-    if (items.length) {
-      lines = items.map(li => {
-        const amt = qboLineAmount(li);
-        const detail = { ItemRef: { value: String(li.qbo_item_id || map.itemId) } };
-        const cls = li.qbo_class_id || divClassId;
-        if (cls) detail.ClassRef = { value: String(cls) };
-        if (li.quantity != null) detail.Qty = Number(li.quantity);
-        if (li.unit_price != null) detail.UnitPrice = Number(li.unit_price);
-        return {
-          DetailType: 'SalesItemLineDetail',
-          Amount: amt,
-          ...(li.description ? { Description: li.description } : {}),
-          SalesItemLineDetail: detail,
-        };
-      });
-    } else {
-      const amount = qboFallbackAmount(inv);
-      const detail = { ItemRef: { value: map.itemId } };
-      if (divClassId) detail.ClassRef = { value: divClassId };
-      lines = [{ DetailType: 'SalesItemLineDetail', Amount: amount, SalesItemLineDetail: detail }];
-    }
-    const lineTotal = lines.reduce((s, l) => s + Number(l.Amount || 0), 0);
-    if (!(lineTotal > 0)) throw new Error('Invoice total is 0 — add a line item with an amount before syncing');
-
-    // Standard memo + the job's service/loss address (can differ from billing). Address from
-    // the job, falling back to the claim's loss address; date of loss likewise.
-    const fmtDol = (d) => { if (!d) return ''; const p = String(d).split('T')[0].split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}/${p[0]}` : String(d); };
-    const dol = fmtDol(job.date_of_loss || claim?.date_of_loss);
-    const serviceAddr = ([job.address, job.city, job.state, job.zip].filter(Boolean).join(', '))
-      || ([claim?.loss_address, claim?.loss_city, claim?.loss_state, claim?.loss_zip].filter(Boolean).join(', '));
-    // Printed on the invoice (CustomerMemo) + kept internally (PrivateNote).
-    const memo = `Date of loss: ${dol} · Job: ${job.job_number || ''} · Claim: ${claimNo || ''} · Service Address: ${serviceAddr}`;
-    // Service address → the invoice's structured Ship To (no length limit; prints when QBO's
-    // Sales > Shipping toggle is on). Per-field: job first, then the claim's loss address.
-    const shipAddr = Object.fromEntries(Object.entries({
-      Line1: job.address || claim?.loss_address || null,
-      City: job.city || claim?.loss_city || null,
-      CountrySubDivisionCode: job.state || claim?.loss_state || null,
-      PostalCode: job.zip || claim?.loss_zip || null,
-    }).filter(([, v]) => v));
-    const hasShip = Object.keys(shipAddr).length > 0;
-
-    // QBO invoice number (DocNumber) — must be UNIQUE across all QBO invoices. A job can
-    // have more than one invoice (e.g. a supplement billed after the first was paid), so the
-    // bare job_number collides on the 2nd+ ("Duplicate Document Number"). Reuse the number
-    // QBO already assigned (stable once synced); otherwise use job_number for the first
-    // invoice on the job and job_number-N for the Nth (matches the R-2604-009 / R-2604-009-2
-    // scheme). Requires "Custom transaction numbers" ON in QBO to take effect; if OFF, QBO
-    // ignores it and auto-numbers instead. (QBO DocNumber max is 21 chars.)
-    let docNumber = inv.qbo_doc_number || null;
-    if (!docNumber && job.job_number) {
-      const siblings = await db.select('invoices', `job_id=eq.${inv.job_id}&select=id,created_at&order=created_at.asc,id.asc`) || [];
-      const pos = siblings.findIndex((r) => r.id === inv.id);   // 0-based position among the job's invoices
-      const base = String(job.job_number);
-      const suffix = pos > 0 ? `-${pos + 1}` : '';
-      docNumber = base.slice(0, 21 - suffix.length) + suffix;
-    }
-
-    // Estimate → Invoice link: if this invoice was converted from a UPR estimate
-    // that already exists in QBO, link the QBO invoice to that QBO estimate. This is
-    // how QBO marks the estimate "converted" (Closed) and rolls it into the invoice —
-    // so finishing a convert in UPR completes the conversion in QBO too.
-    let linkedTxn = null;
-    if (inv.estimate_id) {
-      const est = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0];
-      if (est?.qbo_estimate_id) linkedTxn = [{ TxnId: String(est.qbo_estimate_id), TxnType: 'Estimate' }];
-    }
-
-    // Online-payment flags — make the emailed QBO invoice show a "Pay now" card/ACH
-    // button. Driven by the accept_card / accept_ach billing toggles (integration_config).
-    // Only set a flag when true (never write false,false), so this stays inert until
-    // QuickBooks Payments is enabled on the company AND the toggles are on.
-    const payCfg = (await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value')) || [];
-    const cfgOn = (k) => payCfg.find((r) => r.key === k)?.value === 'true';
-    const onlinePay = {};
-    if (cfgOn('accept_card')) onlinePay.AllowOnlineCreditCardPayment = true;
-    if (cfgOn('accept_ach')) onlinePay.AllowOnlineACHPayment = true;
-    const hasOnlinePay = Object.keys(onlinePay).length > 0;
-
-    // Update in place if already synced, else create. `extra` carries the online-pay flags
-    // so we can retry without them if QBO rejects (Payments not enabled on the company yet).
-    const pushInvoice = (extra) =>
-      inv.qbo_invoice_id
-        ? updateInvoice(env, inv.qbo_invoice_id, { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...extra })
-        : createInvoice(env, { CustomerRef: { value: String(contact.qbo_customer_id) }, Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(hasShip ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...extra });
-
-    const mode = inv.qbo_invoice_id ? 'updated' : 'created';
-    let qboInv, onlinePayWarning = null, customerRelink = null;
-    try {
-      qboInv = await pushInvoice(onlinePay);
-    } catch (e) {
-      const msg = e.message || '';
-      // If QBO rejected specifically because of the online-pay flags, retry without them so
-      // the invoice still syncs; surface a clear hint instead of a cryptic QBO fault.
-      if (hasOnlinePay && /payment|online|merchant/i.test(msg)) {
-        qboInv = await pushInvoice({});
-        onlinePayWarning = 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.';
-      } else if (docNumber && (e.qboCode === '6140' || /duplicate document number/i.test(msg))) {
-        // The forced DocNumber still collided (e.g. a number entered by hand in QBO). Drop it
-        // and retry: QBO keeps the invoice's existing number (update) or auto-assigns (create),
-        // and the writeback below captures whatever it lands on. Keeps Save from hard-failing.
-        docNumber = null;
-        qboInv = await pushInvoice(onlinePay);
-      } else if (!inv.qbo_invoice_id && inv.contact_id && isStaleCustomerRef(e)) {
-        // The stored qbo_customer_id points at a customer QBO no longer has (deleted/merged
-        // duplicate, cross-realm id — the INV-000104 incident). Self-heal: re-match the contact
-        // against QBO on every signal (email, both name formats, phone), or create the customer
-        // if truly absent, write the mapping back, and retry ONCE. Ambiguous matches throw a
-        // clear "link manually" error instead of guessing — this is a money path.
-        const relink = await relinkQboCustomer(env, db, inv.contact_id);
-        contact.qbo_customer_id = relink.id;
-        qboInv = await pushInvoice(onlinePay);
-        customerRelink = `QuickBooks customer was re-linked automatically (matched by ${relink.matchedBy}).`;
-      } else {
-        throw e;
+  const inv = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0]; if (!inv) return jsonResponse({ error: 'Invoice not found' }, 404, request, env);
+  // A same-key retry after the request was started must never silently use a
+  // newly edited invoice, recipient, or QBO link.  Keep the stored attempt
+  // authoritative when unchanged; otherwise return a durable review response
+  // before touching QBO.
+  if (existing?.ok && ['provider_started', 'ambiguous', 'provider_succeeded'].includes(existing.status)) {
+    let unchanged = false;
+    try { unchanged = await currentMatchesStoredAttempt(db, env, request, existing, inv, body); } catch { unchanged = false; }
+    if (!unchanged) {
+      const payload = { error: 'Invoice changed after this QuickBooks command started; reload and review before retrying.', code: 'command-source-mismatch' };
+      if (existing.status === 'provider_started') {
+        await setQboInvoiceCommandState(db, { commandId: existing.id, status: 'ambiguous', responseStatus: 409, responsePayload: payload, error: payload.error });
+        await setQboInvoiceCommandState(db, { commandId: existing.id, status: 'needs_reconciliation', responseStatus: 409, responsePayload: payload, error: payload.error });
       }
+      else if (existing.status === 'ambiguous') await setQboInvoiceCommandState(db, { commandId: existing.id, status: 'needs_reconciliation', responseStatus: 409, responsePayload: payload, error: payload.error });
+      else await setQboInvoiceCommandState(db, { commandId: existing.id, status: 'needs_reconciliation', responseStatus: 409, responsePayload: payload, error: payload.error });
+      await reconcile(db, existing.invoice_id, existing.target_qbo_invoice_id || existing.provider_result?.qbo_invoice_id || 'none', inv.qbo_invoice_id || null, existing.action);
+      return jsonResponse(payload, 409, request, env);
     }
-
-    const nowIso = new Date().toISOString();
-    // Capture QBO's own invoice number (DocNumber) so UPR can display the matching number.
-    const patch = { qbo_invoice_id: String(qboInv.Id), qbo_synced_at: nowIso, qbo_sync_error: null, qbo_doc_number: qboInv.DocNumber != null ? String(qboInv.DocNumber) : null };
-    if (mode === 'created') {
-      // First time it reaches QBO: stamp the push time + default the due date to today.
-      if (!inv.sent_at) patch.sent_at = nowIso;
-      if (!inv.due_date) patch.due_date = nowIso.slice(0, 10);
+  }
+  let intent;
+  try { intent = await currentIntent(db, env, request, action, inv, body); } catch (e) { return jsonResponse({ error: e.message }, 400, request, env); }
+  let command;
+  // Once QBO has succeeded, the frozen command (not a source rebuilt after
+  // CAS) owns finalization.  This is the post-CAS crash-recovery path.
+  if (existing?.ok && existing.status === 'provider_succeeded') command = existing;
+  else {
+    const prepared = await prepareQboInvoiceCommand(db, { commandId, invoiceId, action, actor, realmId, expectedQboInvoiceId: intent.expected_qbo_invoice_id, targetQboInvoiceId: intent.target_qbo_invoice_id, intent });
+    if (!prepared?.ok) return jsonResponse({ error: 'QuickBooks command requires review before retrying.', code: prepared?.reason || 'command-conflict' }, 409, request, env);
+    command = await getQboInvoiceCommand(db, prepared.command_id || commandId);
+  }
+  if (!command?.ok || !qboCommandIdentityMatches(command, { invoiceId, action, actor, realmId })) return jsonResponse({ error: 'QuickBooks command identity could not be verified' }, 409, request, env);
+  if (isTerminalQboInvoiceCommand(command)) return replay(command, request, env);
+  if (command.status === 'needs_reconciliation') return replay(command, request, env);
+  let providerResult = command.provider_result;
+  // A delete of an already-unlinked invoice is a local idempotent completion.
+  // It still flows through the ledger and CAS, but never manufactures a null
+  // provider target or calls QBO.
+  if (action === 'delete' && command.status === 'prepared' && command.expected_qbo_invoice_id == null) {
+    await setQboInvoiceCommandState(db, { commandId: command.id, status: 'succeeded', responseStatus: 200, responsePayload: { deleted: null, idempotent: true } });
+    return replay(await getQboInvoiceCommand(db, command.id), request, env);
+  }
+  if (command.status !== 'provider_succeeded') {
+    let attempt;
+    if (command.status === 'prepared') {
+      let providerPayload = command.intent_payload.primary_payload;
+      if (command.action === 'save' && command.intent_payload.default_class_name) {
+        const defaultClassId = await findClassId(env, command.intent_payload.default_class_name);
+        if (!defaultClassId) {
+          const payload = { error: `QuickBooks class "${command.intent_payload.default_class_name}" is not available; sync the class catalog and retry.` };
+          await finalize(db, command.id, 'rejected', 409, payload, payload.error);
+          return jsonResponse(payload, 409, request, env);
+        }
+        providerPayload = fillMissingClassRefs(providerPayload, defaultClassId);
+      }
+      attempt = { ...(await attemptFromIntent(command.intent_payload, command.invoice_id, command.id)), providerPayload };
+      const started = await startQboInvoiceCommandAttempt(db, { commandId: command.id, ...attempt });
+      if (!started?.ok) return jsonResponse({ error: 'QuickBooks command attempt could not be started', code: started?.reason }, 409, request, env);
+      attempt = { stage: started.provider_stage, providerAction: started.provider_action, providerTargetId: started.provider_target_id, providerRequestId: started.provider_request_id, providerPayload: started.provider_payload };
+    } else {
+      attempt = { stage: command.provider_stage, providerAction: command.provider_action, providerTargetId: command.provider_target_id, providerRequestId: command.provider_request_id, providerPayload: command.provider_payload };
     }
-    // Once it's recorded in QuickBooks it's a real invoice, not a draft — move the status
-    // to 'saved' (in QBO, current, not yet emailed). This also re-clears the 'draft' the
-    // editor set when the invoice was edited since the last push. Only touch a 'draft'
-    // row so we never clobber a later saved/sent/paid/partially_paid state on re-save.
-    if (inv.status === 'draft') patch.status = 'saved';
+    try {
+      providerResult = await executeProvider(env, attempt, command);
+    } catch (e) {
+      if (ambiguous(e)) return ambiguousProviderFailure(db, command, e, request, env);
+      // A fallback is permitted only after a definitive 4xx and becomes a new frozen attempt.
+      let fallback = null;
+      if (action === 'save' && command.intent_payload.without_online_pay_payload && /payment|online|merchant/i.test(e.message || '')) {
+        const { AllowOnlineCreditCardPayment, AllowOnlineACHPayment, ...payload } = attempt.providerPayload;
+        fallback = { stage: 'without-online-pay', payload };
+      }
+      if (action === 'save' && !fallback && command.intent_payload.without_doc_number_payload && (e.qboCode === '6140' || /duplicate document number/i.test(e.message || ''))) {
+        const { DocNumber, ...payload } = attempt.providerPayload;
+        fallback = { stage: 'without-doc-number', payload };
+      }
+      if (action === 'save' && !fallback && command.intent_payload.customer_relink_contact_id && isStaleCustomerRef(e)) {
+        try {
+          const relink = await relinkQboCustomer(env, db, command.intent_payload.customer_relink_contact_id);
+          const payload = { ...attempt.providerPayload, CustomerRef: { value: String(relink.id) } }; fallback = { stage: 'customer-relinked', payload, customerRelink: `QuickBooks customer was re-linked automatically (matched by ${relink.matchedBy}).` };
+        } catch (relinkError) {
+          if (ambiguous(relinkError)) return ambiguousProviderFailure(db, command, relinkError, request, env);
+          await finalize(db, command.id, 'rejected', 500, providerError(relinkError), relinkError.message, null, relinkError.intuitTid || null);
+          return jsonResponse(providerError(relinkError), 500, request, env);
+        }
+      }
+      if (!definitive(e) || !fallback) { await finalize(db, command.id, 'rejected', 500, providerError(e), e.message, null, e.intuitTid || null); return jsonResponse(providerError(e), 500, request, env); }
+      const fallbackAttempt = { stage: fallback.stage, providerAction: attempt.providerAction, providerTargetId: attempt.providerTargetId, providerRequestId: await qboInvoiceRequestId(attempt.providerAction, command.invoice_id, command.id, fallback.stage), providerPayload: fallback.payload };
+      const advanced = await advanceQboInvoiceCommandAttempt(db, { commandId: command.id, expectedStage: attempt.stage, ...fallbackAttempt });
+      if (!advanced?.ok) return jsonResponse({ error: 'QuickBooks fallback requires review', code: advanced?.reason }, 409, request, env);
+      const persistedFallback = { stage: advanced.provider_stage, providerAction: advanced.provider_action, providerTargetId: advanced.provider_target_id, providerRequestId: advanced.provider_request_id, providerPayload: advanced.provider_payload };
+      try { providerResult = await executeProvider(env, persistedFallback, command); } catch (fallbackError) { if (ambiguous(fallbackError)) return ambiguousProviderFailure(db, command, fallbackError, request, env); await finalize(db, command.id, 'rejected', 500, providerError(fallbackError), fallbackError.message, null, fallbackError.intuitTid || null); return jsonResponse(providerError(fallbackError), 500, request, env); }
+    }
+    try {
+    if (action !== 'delete' && !String(providerResult?.Id || '').trim()) {
+      const payload = { error: 'QuickBooks accepted the request without an invoice Id; reconciliation is required.', code: 'missing-provider-invoice-id', retry_same_request: true };
+      await setQboInvoiceCommandState(db, { commandId: command.id, status: 'ambiguous', responseStatus: 500, responsePayload: payload, error: payload.error });
+      return jsonResponse(payload, 500, request, env);
+    }
+    const result = action === 'delete' ? { local_target_qbo_invoice_id: null } : { qbo_invoice_id: String(providerResult.Id), id: String(providerResult.Id), doc_number: providerResult.DocNumber ?? null, email_status: providerResult.EmailStatus ?? null, total: providerResult.TotalAmt ?? null };
+    await setQboInvoiceCommandState(db, { commandId: command.id, status: 'provider_succeeded', providerResult: result, intuitRequestId: providerResult?.intuitTid || null });
+    command = await getQboInvoiceCommand(db, command.id); providerResult = command.provider_result;
+    if (action !== 'delete' && command.target_qbo_invoice_id && String(providerResult?.qbo_invoice_id || providerResult?.id) !== String(command.target_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'QuickBooks returned a different invoice than the frozen command target.');
+    } catch {
+      return postProviderFailure(db, command, request, env);
+    }
+  }
+  try {
+  const fresh = (await db.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
+  if (!fresh) return needsReconciliation(db, command, request, env, 'Invoice disappeared before QuickBooks finalization.');
+  if (action === 'save' && !(await currentMatchesStoredAttempt(db, env, request, command, fresh, body))) return needsReconciliation(db, command, request, env, 'Invoice changed after QuickBooks accepted the frozen save; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+  if (action === 'send') {
+    let currentSend;
+    try { currentSend = await currentIntent(db, env, request, 'send', fresh, body); } catch { return needsReconciliation(db, command, request, env, 'Invoice recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id); }
+    if (String(fresh.qbo_invoice_id || '') !== String(command.target_qbo_invoice_id || '') || currentSend.recipient !== command.intent_payload.recipient) return needsReconciliation(db, command, request, env, 'Invoice link or recipient changed after QuickBooks accepted the send; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+  }
+  if (action === 'delete' && fresh.qbo_invoice_id != null && String(fresh.qbo_invoice_id) !== String(command.expected_qbo_invoice_id)) return needsReconciliation(db, command, request, env, 'Invoice link changed after QuickBooks accepted the delete; reload and reconcile before retrying.', fresh.qbo_invoice_id);
+  const target = action === 'delete' ? null : String(providerResult.qbo_invoice_id || providerResult.id || command.target_qbo_invoice_id);
+  const cas = rpcObject(await db.rpc('cas_qbo_invoice_link', { p_invoice_id: invoiceId, p_expected_qbo_invoice_id: command.expected_qbo_invoice_id, p_new_qbo_invoice_id: target, p_qbo_doc_number: action === 'delete' ? null : (providerResult.doc_number ?? null), ...(action === 'send' ? { p_qbo_emailed_at: new Date().toISOString(), p_qbo_email_status: providerResult.email_status || 'EmailSent', p_sent_to_email: command.intent_payload.recipient, p_write_email_metadata: true } : {}) }));
+  if (!cas?.ok) return needsReconciliation(db, command, request, env, 'QuickBooks invoice link changed concurrently; reload and review before retrying.', cas?.current_qbo_invoice_id || null);
+  if (action === 'save') {
+    const now = new Date().toISOString();
+    const patch = { qbo_synced_at: now, qbo_sync_error: null };
+    if (!command.expected_qbo_invoice_id) { if (!fresh.sent_at) patch.sent_at = now; if (!fresh.due_date) patch.due_date = now.slice(0, 10); }
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
-    await logRun(db, 'completed', 1, null, startedAt);
-    return jsonResponse({ ok: true, mode, qbo_invoice_id: qboInv.Id, doc_number: qboInv.DocNumber, total: qboInv.TotalAmt, online_pay_warning: onlinePayWarning, customer_relink: customerRelink }, 200, request, env);
-  } catch (e) {
-    await db.update('invoices', `id=eq.${invoiceId}`, { qbo_sync_error: (e.message || 'push failed').slice(0, 500) });
-    await logRun(db, 'error', 0, e.message, startedAt);
-    return jsonResponse({ error: e.message, intuit_tid: e.intuitTid || null }, 500, request, env);
+  }
+  const response = action === 'delete' ? { deleted: command.expected_qbo_invoice_id } : action === 'send' ? { ok: true, emailed_to: command.intent_payload.recipient, email_status: providerResult.email_status || 'EmailSent' } : { ok: true, mode: command.expected_qbo_invoice_id ? 'updated' : 'created', qbo_invoice_id: target, doc_number: providerResult.doc_number, total: providerResult.total ?? null, online_pay_warning: command.provider_stage === 'without-online-pay' ? 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.' : null, customer_relink: command.provider_stage === 'customer-relinked' ? 'QuickBooks customer was re-linked automatically.' : null };
+  await finalize(db, command.id, 'succeeded', 200, response);
+  await logRun(db, 'completed', 1, null, startedAt);
+    return jsonResponse(response, 200, request, env);
+  } catch {
+    return postProviderFailure(db, command, request, env);
   }
 }
