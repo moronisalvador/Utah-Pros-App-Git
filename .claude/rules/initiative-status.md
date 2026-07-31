@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-30 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-07-31 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -28,9 +28,16 @@ before promoting.
   passed: both new membership tables use forced RLS, browser roles cannot read them, their rows
   remain empty, the intended RPC signatures/grants are present, and the legacy browser INSERT
   compatibility window remains open. Nothing was applied to the shared production project.
-  Follow-up `20260731040338_conversation_participant_policy_enforcement.sql` is committed but
-  unapplied everywhere. It is blocked until its legacy conversation UPDATE/DELETE authority is
-  narrowed and the full Worker notification-recipient integration receives independent review.
+  Follow-up `20260731040338_conversation_unread_state_compatibility.sql` and
+  `20260731040339_conversation_participant_policy_enforcement.sql` are committed but unapplied
+  everywhere. The release candidate now routes unread changes through the compatibility RPC,
+  checks membership before sends/notes, resolves inbound notification recipients canonically,
+  uses scoped contact search/creation, purges removed-thread caches/drafts, and revokes direct
+  browser writes in 40339. **Required order:** apply 40337 + 40338 to the shared database in a
+  separately authorized window before deploying compatible code; deploy/promote compatible web
+  and supported native code; then run the disposable behavioral database suite and apply 40339
+  only in its own reviewed window after older native callers no longer depend on direct writes.
+  No shared-database apply, push, deploy, or enforcement is authorized by this status entry.
 - **`20260730150000_oop_pricing_builder.sql`** (authored 2026-07-30) — adds private, forced-RLS
   pricing revision/audit/save-request/snapshot tables plus admin-gated configuration and
   role-gated calculator RPCs. It does not change `oop_quotes` columns or table grants; it replaces
