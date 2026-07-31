@@ -4,10 +4,11 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   A safety net for the QuickBooks payment webhook. On a schedule (and on demand),
- *   it asks QuickBooks for recent payments and makes sure each one is recorded in
- *   UPR. If a webhook was ever missed (network hiccup, downtime), this catches it so
- *   invoices don't silently drift out of date.
+ *   A safety net for the QuickBooks webhook. On a schedule (and on demand), it asks
+ *   QuickBooks for recent payments and makes sure each one is recorded in UPR, and
+ *   for recent estimate answers (a customer accepted or declined an estimate online)
+ *   and mirrors those too. If a webhook was ever missed (network hiccup, downtime,
+ *   a missing Intuit subscription), this catches it within the hour.
  *
  * WHERE IT LIVES:
  *   Route:   GET/POST /api/qbo-payments-sync  (point an hourly cron at this, like
@@ -15,14 +16,20 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  lib/supabase.js, lib/cors.js, lib/quickbooks.js (qboFetch, getConnection),
- *              lib/qbo-payment-sync.js (syncQboPaymentToUpr)
- *   Data:      reads → QBO Payments (Intuit), invoices/payments (Supabase)
- *              writes → payments (insert, via qbo-payment-sync; deduped)
+ *   Internal:  lib/supabase.js, lib/cors.js, lib/qbo-auth.js (authorizeQboRequest),
+ *              lib/quickbooks.js (qboFetch, getConnection),
+ *              lib/qbo-payment-sync.js (syncQboPaymentToUpr),
+ *              lib/qbo-estimate-sync.js (syncQboEstimateToUpr),
+ *              lib/worker-runs.js (recordWorkerRun)
+ *   Data:      reads → QBO Payments + Estimates (Intuit), invoices/payments/estimates (Supabase)
+ *              writes → payments (insert, via qbo-payment-sync; deduped);
+ *                       estimates status (via qbo-estimate-sync; guarded/idempotent)
  *
  * NOTES / GOTCHAS:
- *   - Idempotent: syncQboPaymentToUpr skips payments already recorded, so re-running is safe.
- *   - Looks back LOOKBACK_DAYS by TxnDate; tune if needed. Low volume → cheap.
+ *   - Idempotent: syncQboPaymentToUpr skips payments already recorded and
+ *     syncQboEstimateToUpr skips estimates already decided, so re-running is safe.
+ *   - Looks back LOOKBACK_DAYS by TxnDate / LastUpdatedTime; tune if needed. Low volume → cheap.
+ *   - An estimate-sweep failure never blocks payment reconciliation (and payments run first).
  *   - No-ops cleanly when QuickBooks isn't connected.
  * ════════════════════════════════════════════════
  */
@@ -32,9 +39,37 @@ import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
 import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 const MINOR_VERSION = '70';
 const LOOKBACK_DAYS = 7;
+
+// Customer answers worth mirroring; Pending/Closed estimates are noise.
+const ESTIMATE_STATUSES_TO_SYNC = new Set(['Accepted', 'Rejected', 'Converted']);
+
+// ─── SECTION: Estimate sweep ──────────────
+// Mirror recent QBO estimate answers (accept/decline/convert) into UPR. The
+// real-time path is the Estimate webhook; this sweep catches anything missed.
+async function sweepEstimates(env, db, since) {
+  const q = `SELECT Id, TxnStatus FROM Estimate WHERE MetaData.LastUpdatedTime >= '${since}' MAXRESULTS 500`;
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) return { ok: false, error: `QBO estimate query ${res.status}` };
+  const data = await res.json().catch(() => ({}));
+  const all = data?.QueryResponse?.Estimate || [];
+  const candidates = all.filter((e) => ESTIMATE_STATUSES_TO_SYNC.has(String(e.TxnStatus || '')));
+
+  let acted = 0, skipped = 0;
+  for (const e of candidates) {
+    try {
+      const r = await syncQboEstimateToUpr(env, db, String(e.Id));
+      if (r?.result?.action) acted++; else skipped++;
+    } catch (err) {
+      console.error('qbo-payments-sync: estimate', e.Id, err?.message || err);
+    }
+  }
+  return { ok: true, scanned: candidates.length, acted, skipped };
+}
 
 // ─── SECTION: Reconcile ──────────────
 async function reconcile(env) {
@@ -61,14 +96,23 @@ async function reconcile(env) {
     }
   }
 
+  // Estimate answers sweep — isolated so it can never break payment reconciliation.
+  let estimates;
   try {
-    await db.insert('worker_runs', {
-      worker_name: 'qbo-payments-sync', status: 'completed', records_processed: recorded,
-      error_message: null, started_at: startedAt, completed_at: new Date().toISOString(),
-    });
-  } catch { /* best-effort logging */ }
+    estimates = await sweepEstimates(env, db, since);
+  } catch (err) {
+    console.error('qbo-payments-sync: estimate sweep', err?.message || err);
+    estimates = { ok: false, error: String(err?.message || err) };
+  }
 
-  return { ok: true, scanned: payments.length, recorded, skipped };
+  // records_processed keeps its historical meaning (payments recorded); the
+  // estimate sweep outcome rides along in meta.
+  await recordWorkerRun(db, {
+    workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: recorded,
+    startedAt, meta: { estimates },
+  });
+
+  return { ok: true, scanned: payments.length, recorded, skipped, estimates };
 }
 
 // ─── SECTION: Handlers ──────────────

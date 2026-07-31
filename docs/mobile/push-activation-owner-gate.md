@@ -1,13 +1,14 @@
 # Native push activation and release gate
 
-**Last verified:** 2026-07-30
+**Last verified:** 2026-07-31
 
-Native push is wired end to end and the focused database boundary is live. Apple
-and Cloudflare sender configuration exists, the compatible `dev` bundle is
-deployed, and the owner's development-signed iPhone build enrolled a fresh APNs
-sandbox token. The broader S1h program remains deferred. One authorized
-background delivery succeeded; tap routing and the production-signed matrix
-remain separate TestFlight gates.
+Native push has historical end-to-end evidence and the focused database boundary plus per-token
+topic schema are live. Apple and Cloudflare sender configuration exists, and an earlier
+development-signed build enrolled a sandbox token and received one authorized background
+delivery through the legacy fallback path. The compatible per-token source is on `dev`, but its
+deployment, fresh re-enrollment and signed-device proof remain separate gates. The broader S1h
+program remains deferred; tap routing and the production-signed matrix also remain separate
+TestFlight gates.
 
 ## Already built — do not rebuild
 
@@ -215,31 +216,30 @@ failure rather than an explicit configuration error.
 | `APNS_P8_KEY` | encrypted secret; full `.p8`, newlines preserved |
 | `APNS_KEY_ID` | `JX22945D4T` |
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
-| `APNS_TOPIC` | `com.utahprosrestoration.upr` — same in BOTH sets, and stays there: once the authored per-token topic change is live it is only the fallback for legacy `device_tokens` rows with no recorded `apns_topic`. Never flip it per app (2026-07-30 outage). |
+| `APNS_TOPIC` | `com.utahprosrestoration.upr` — same in BOTH sets, and stays there: with the per-token topic change now live it is only the fallback for legacy `device_tokens` rows with no recorded `apns_topic`. Never flip it per app (2026-07-30 outage). |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
 | `NATIVE_RICH_NOTIFICATION_PRESENTATION` | unset = typed rich copy enabled (fail-open by design); exact string `false` reverts native copy to the generic fallback WITHOUT disabling push delivery — this is the copy-level rollback seam |
-| `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until the focused native-token migration is live-verified |
+| `VITE_NATIVE_PUSH_ENABLED` | default/hold value `false`; the focused native-token migration is live-verified as ledger `20260731154315`, but enabling a build and proving its signed-device path remain separate owner gates |
 | `VITE_APNS_ENV` | native debug/Preview: `sandbox`; TestFlight/App Store: `production` |
 
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
 
-**Side-by-side dev app (2026-07-29; superseded plan struck 2026-07-30):** the
+**Side-by-side dev app (2026-07-29; topic-flip plan superseded 2026-07-30):** the
 `Dev` build configuration (`docs/mobile/dev-app-variant.md`) installs as bundle
-id `com.utahprosrestoration.upr.dev`. ~~For push to reach it, Cloudflare
-**Preview** `APNS_TOPIC` must change to `com.utahprosrestoration.upr.dev`.~~
-**Do NOT flip `APNS_TOPIC` — that exact flip caused the 2026-07-30
+id `com.utahprosrestoration.upr.dev`. **Do NOT flip `APNS_TOPIC` — that exact
+change caused the 2026-07-30
 production-fleet outage** (the dev-hosted message outbox sent every
 production-token push with the dev topic; Apple rejected all of them
 `400 DeviceTokenNotForTopic`). The durable replacement is per-token topics:
 `device_tokens.apns_topic` records each registration's own bundle id at
 enrollment and `apns.js` addresses each token with it, `APNS_TOPIC` serving
 only as the legacy-row fallback (`com.utahprosrestoration.upr` in BOTH
-variable sets, permanently). Authored 2026-07-30 — migration
-`20260730170000_device_token_apns_topic.sql` + worker + client — pending the
-separate owner-authorized apply, then deploy (schema first: the worker selects
-the new column and the client passes the new parameter), then a dev-app
-launch to re-enroll its token with its topic. The same migration removes the
+variable sets, permanently). The schema landed first on 2026-07-31 as ledger
+`20260731154315_device_token_apns_topic`; the compatible worker/client source is
+on `dev`. A deployed native build and a dev-app launch must still re-enroll its
+token with its topic before dev-app delivery is considered device-proven. The
+migration removes the
 obsolete authenticated SELECT policy from the raw-token table; browser table
 privileges are already revoked, and checked-in clients use only selector-free
 registration/deletion RPCs. Production's variable set is untouched throughout.

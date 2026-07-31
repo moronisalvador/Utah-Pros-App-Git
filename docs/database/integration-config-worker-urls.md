@@ -18,7 +18,7 @@ Two layers of defense, with different jobs:
 2. **This ops check** catches the outage class: on production posture, every production-critical
    key must point at `utahpros.app`, because `dev.utahpros.app` executes with Preview env vars.
 
-The pending `20260730214500` hardening also makes both covered side-effecting
+The live `20260731165215_pg_net_worker_url_allowlists` hardening also makes both covered side-effecting
 `SECURITY DEFINER` functions service-role-only. Repository caller tracing found
 `notify_google_calendar_sync` is invoked only by owner-executed appointment triggers; no browser
 caller depends on its former authenticated grant.
@@ -31,13 +31,13 @@ over the live catalog.
 | `integration_config` key | Worker route | Database caller | URL allowlist | Production value must be |
 |---|---|---|---|---|
 | `callrail_event_recovery_worker_url` | `/api/process-callrail-events` | `wake_callrail_event_recovery_worker()` | ✅ (20260724002500) | `https://utahpros.app/api/process-callrail-events` |
-| `gcal_worker_url` | `/api/google-calendar-sync` | `notify_google_calendar_sync(uuid,text,jsonb)` | ✅ authored 20260730214500 — **pending owner-authorized apply** | `https://utahpros.app/api/google-calendar-sync` |
+| `gcal_worker_url` | `/api/google-calendar-sync` | `notify_google_calendar_sync(uuid,text,jsonb)` | ✅ live as `20260731165215_pg_net_worker_url_allowlists` | `https://utahpros.app/api/google-calendar-sync` |
 | `message_notification_outbox_worker_url` | `/api/process-message-notification-outbox` | `wake_message_notification_outbox_worker()` | ✅ (20260724001500) | `https://utahpros.app/api/process-message-notification-outbox` |
-| `notify_worker_url` | `/api/notify` | `notify_emit(text,jsonb)` | ✅ authored 20260730214500 — **pending owner-authorized apply** | `https://utahpros.app/api/notify` |
+| `notify_worker_url` | `/api/notify` | `notify_emit(text,jsonb)` | ✅ live as `20260731165215_pg_net_worker_url_allowlists` | `https://utahpros.app/api/notify` |
 | `ops_health_worker_url` | `/api/ops-health` | `wake_ops_health_worker()` | ✅ (20260725190000) | `https://utahpros.app/api/ops-health` |
 | `qbo_payments_sync_worker_url` | `/api/qbo-payments-sync` | `qbo_payments_sync_poll()` | ✅ (20260724180100) | `https://utahpros.app/api/qbo-payments-sync` |
 | `qbo_worker_url` | `/api/qbo-sync-customer` | `notify_qbo_customer_sync()` — **no-op since 20260701** (Phase B gate) | n/a (caller never posts) | dormant; repoint if the trigger body is ever restored |
-| `transcribe_call_worker_url` | `/api/transcribe-call` | `wake_transcribe_call_backfill()` / `wake_transcribe_call_reclassify()` (pg_cron `upr_calls_backfill_safety_net`, `upr_calls_reclassify_safety_net`) | ✅ authored 20260731100000 — **pending owner-authorized apply** (until then the live cron commands still inline the unguarded lookup) | `https://utahpros.app/api/transcribe-call` |
+| `transcribe_call_worker_url` | `/api/transcribe-call` | `wake_transcribe_call_backfill()` / `wake_transcribe_call_reclassify()` (pg_cron `upr_calls_backfill_safety_net`, `upr_calls_reclassify_safety_net`) | ✅ live as `20260731174734_transcribe_call_cron_allowlist` | `https://utahpros.app/api/transcribe-call` |
 
 ## The ops check (read-only; owner or owner-authorized session)
 

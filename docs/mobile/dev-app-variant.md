@@ -19,13 +19,13 @@ DEPENDS ON:
 NOTES / GOTCHAS:
   - This is a UI/native sandbox, NOT a data sandbox. Both apps talk to the one shared
     Supabase project.
-  - Push on the dev app is dormant until the owner changes Cloudflare Preview APNS_TOPIC
-    (owner-gated; do not change it from a session).
+  - Never change Cloudflare Preview `APNS_TOPIC`; both environments retain the production bundle
+    fallback. The live per-token topic records the dev bundle at enrollment.
 -->
 
 # UPR Dev — side-by-side development app variant
 
-**Last verified:** 2026-07-30
+**Last verified:** 2026-07-31
 
 The Xcode project carries a third build configuration, **Dev**, plus a shared scheme
 named **UPR Dev**. It produces a second, independently installed copy of the field app so
@@ -109,21 +109,21 @@ Xcode refreshes it.
   native-shell sandbox, not a data sandbox: everything you create, edit, clock, message,
   or upload in UPR Dev is real production data, exactly as if done in the production app.
   Test data discipline (delete TEST rows) applies in full.
-- **Push does not work on the dev app yet — the durable fix is authored but not live.**
+- **Dev-app push still needs a signed-device proof; the durable schema is now live.**
   `functions/api/notify.js` sends through `functions/lib/apns.js`, and Apple validates
   each request's `apns-topic` against the *receiving app's* bundle id. The old design
   had exactly one env-derived topic per Cloudflare deployment, which cannot serve two
   bundle ids — flipping Preview's `APNS_TOPIC` to the dev bundle id is what caused the
   2026-07-30 production-fleet outage (every push from the dev-hosted outbox rejected
-  400 DeviceTokenNotForTopic). The durable fix (authored 2026-07-30, pending
-  owner-authorized apply + deploy): `device_tokens.apns_topic` records each
+  400 DeviceTokenNotForTopic). The durable schema fix is live as ledger
+  `20260731154315_device_token_apns_topic`: `device_tokens.apns_topic` records each
   registration's own bundle id (migration `20260730170000_device_token_apns_topic.sql`),
   the client reports it from `App.getInfo()` at enrollment, and `apns.js` addresses each
   token with its own topic — `APNS_TOPIC` remains only the fallback for legacy rows, so
   it stays `com.utahprosrestoration.upr` in BOTH variable sets and never flips again.
-  Until the migration applies, the compatible code deploys, and the dev app re-enrolls
-  (any launch of a signed-in, push-enabled install re-upserts its token), dev-app
-  deliveries are still addressed to the production topic and will not arrive.
+  Compatible source is on `dev`; a deployed signed build and dev-app re-enrollment
+  (any launch of a signed-in, push-enabled install re-upserts its token) remain required
+  before dev-app delivery can be claimed as device-proven.
 - **Custom URL scheme is shared.** `Info.plist` registers the
   `com.utahprosrestoration.upr://` scheme in both variants (the literal is load-bearing
   in `src/lib/nativeNavigationTarget.js`). With both apps installed, iOS picks one
