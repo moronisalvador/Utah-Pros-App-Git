@@ -209,8 +209,12 @@ describe('native notification presentation catalog', () => {
         source: 'Credit card',
         reference: 'Charge #ch_demo',
       },
-      presentation_context: { invoice_number: 'INV-1042' },
-    }, 'Payment received', '$1,250.00 recorded via Credit card · Charge #ch_demo'],
+      presentation_context: {
+        invoice_number: 'INV-1042',
+        customer_name: 'Jordan Lee',
+        job_number: 'JOB-1042',
+      },
+    }, 'Payment received', '$1,250.00 from Jordan Lee · Job JOB-1042 · via Credit card'],
     ['lead.new', {
       presentation_context: {
         customer_name: 'Jordan Lee',
@@ -379,6 +383,8 @@ describe('admin notification presentation contract', () => {
 
     expect(variableKeys).toEqual(expect.arrayContaining([
       'amount',
+      'customer_name',
+      'job_number',
       'payment_source',
       'invoice_number',
       'payment_reference',

@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-29 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-07-31 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -21,7 +21,34 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-**None.** Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
+**None at current `origin/dev`.**
+
+## Applied and reconciled 2026-07-31
+
+The owner-authorized release applied the exact reviewed committed sources to the shared
+project (verbatim file content, per-file drift-guard preflights). Production ledger names
+use their apply timestamps:
+
+- `20260730170000_device_token_apns_topic.sql` → `20260731154315_device_token_apns_topic`;
+- `20260730214500_pg_net_worker_url_allowlists.sql` →
+  `20260731165215_pg_net_worker_url_allowlists`;
+- `20260731100000_transcribe_call_cron_allowlist.sql` →
+  `20260731174734_transcribe_call_cron_allowlist`; and
+- `20260730150000_oop_pricing_builder.sql` → `20260731175328_oop_pricing_builder`.
+
+Live postconditions passed: the four OOP private tables are forced-RLS with no browser table
+grants, the exact role/flag boundary is enforced server-side, and published revision 1 plus draft
+revision 2 each retain the 13-item legacy configuration. `device_tokens.apns_topic` is live with
+one default-preserving enrollment RPC and zero raw-token policies/browser grants. Both pg_net
+notifiers are allowlisted, fail closed on a blank secret and are service-role-only — the applied
+bodies match the reviewed file md5s exactly (07ee1574… / c72e0f7f…). The two transcribe cron jobs
+retain their names/schedules/payloads and now call postgres-owned, zero-grant allowlisted wake
+functions. The OOP flag itself remains disabled, not force-disabled, and scoped to the existing
+preview user; no global activation occurred. **The dev→main promotion gate carried by the
+per-token topic migration is CLEARED** — the worker/client code may now reach production, and
+all four ledger rows are mapped in the provenance manifest with fresh evidence.
+
+Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
 - `20260729220000_tech_onboarding_state.sql` → live ledger `20260730115220`. Postconditions and an
   independent check passed (RLS enabled+forced, no browser-role table grant, `anon` EXECUTE false on

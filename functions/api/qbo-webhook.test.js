@@ -4,11 +4,12 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Proves the QuickBooks payment webhook does the right thing when something goes wrong.
- *   Three behaviours matter: it must never look up a payment belonging to a DIFFERENT
+ *   Proves the QuickBooks webhook does the right thing when something goes wrong.
+ *   Three behaviours matter: it must never look up a record belonging to a DIFFERENT
  *   QuickBooks company, it must remember the difference between "try this again later" and
  *   "this will never work", and it must always tell Intuit "received" so Intuit does not
- *   switch our endpoint off.
+ *   switch our endpoint off. Estimate events (customer accepted/declined) must route to
+ *   the estimate sync and obey the exact same rules.
  *
  * WHERE IT LIVES:
  *   Tests: functions/api/qbo-webhook.js
@@ -38,6 +39,9 @@ vi.mock('../lib/qbo-payment-sync.js', () => ({
   syncQboPaymentToUpr: vi.fn(async () => ({ ok: true, results: [] })),
   removeQboPaymentFromUpr: vi.fn(async () => ({ ok: true })),
 }));
+vi.mock('../lib/qbo-estimate-sync.js', () => ({
+  syncQboEstimateToUpr: vi.fn(async () => ({ ok: true, result: {} })),
+}));
 vi.mock('../lib/quickbooks.js', () => ({ getConnection: vi.fn() }));
 
 const updates = [];
@@ -49,17 +53,19 @@ vi.mock('../lib/supabase.js', () => ({
 }));
 
 import { onRequestPost } from './qbo-webhook.js';
+import { verifyIntuitSignature } from '../lib/intuit.js';
 import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { getConnection } from '../lib/quickbooks.js';
 
 const OUR_REALM = '9341453160223706';
 const ENV = { QBO_WEBHOOK_VERIFIER_TOKEN: 'tok', SUPABASE_URL: 'https://db.test' };
 
-function eventPost(realmId, { id = '5796', operation = 'Create' } = {}) {
+function eventPost(realmId, { id = '5796', operation = 'Create', name = 'Payment' } = {}) {
   const body = JSON.stringify({
     eventNotifications: [{
       realmId,
-      dataChangeEvent: { entities: [{ name: 'Payment', id, operation, lastUpdated: '2026-07-24T19:49:37-07:00' }] },
+      dataChangeEvent: { entities: [{ name, id, operation, lastUpdated: '2026-07-24T19:49:37-07:00' }] },
     }],
   });
   return { request: { text: async () => body, headers: { get: () => 'sig' } }, env: ENV };
@@ -69,6 +75,8 @@ beforeEach(() => {
   updates.length = 0;
   syncQboPaymentToUpr.mockClear();
   syncQboPaymentToUpr.mockResolvedValue({ ok: true, results: [] });
+  syncQboEstimateToUpr.mockClear();
+  syncQboEstimateToUpr.mockResolvedValue({ ok: true, result: {} });
   getConnection.mockResolvedValue({ realm_id: OUR_REALM });
 });
 
@@ -97,6 +105,60 @@ describe('qbo-webhook realm scoping', () => {
     getConnection.mockRejectedValueOnce(new Error('no connection'));
     await onRequestPost(eventPost(OUR_REALM));
     expect(syncQboPaymentToUpr).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('qbo-webhook estimate events', () => {
+  it('routes an Estimate Update to the estimate sync, not the payment sync', async () => {
+    await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
+    expect(syncQboEstimateToUpr).toHaveBeenCalledTimes(1);
+    expect(syncQboEstimateToUpr.mock.calls[0][2]).toBe('5812');
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(updates[0].row.status).toBe('processed');
+  });
+
+  it('marks an Estimate Delete ignored without syncing (UPR owns estimate deletion)', async () => {
+    await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Delete', name: 'Estimate' }));
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(updates[0].row.status).toBe('ignored');
+    expect(updates[0].row.error).toMatch(/not mirrored/);
+    expect(updates[0].row.processed_at).toBeTruthy();
+  });
+
+  it('refuses a cross-realm estimate event WITHOUT reading it', async () => {
+    await onRequestPost(eventPost('99999999999999', { id: '5812', operation: 'Update', name: 'Estimate' }));
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(updates[0].row.status).toBe('ignored');
+    expect(updates[0].row.error).toMatch(/realm_mismatch/);
+  });
+
+  it('still skips entities that are neither Payment nor Estimate', async () => {
+    const res = await onRequestPost(eventPost(OUR_REALM, { id: '42', operation: 'Update', name: 'Customer' }));
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0); // skipped before claiming — no qbo_events row at all
+    expect(res.status).toBe(200);
+  });
+
+  it('classifies an estimate sync failure with the same retry/error split as payments', async () => {
+    const err = new Error('QBO get estimate 503');
+    err.retryable = true;
+    syncQboEstimateToUpr.mockRejectedValueOnce(err);
+
+    const res = await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
+    expect(updates[0].row.status).toBe('retry');
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects an invalid Intuit signature before any estimate work (negative auth)', async () => {
+    verifyIntuitSignature.mockResolvedValueOnce(false);
+
+    const res = await onRequestPost(eventPost(OUR_REALM, { id: '5812', operation: 'Update', name: 'Estimate' }));
+
+    expect(res.status).toBe(401);
+    expect(syncQboEstimateToUpr).not.toHaveBeenCalled();
+    expect(syncQboPaymentToUpr).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0); // nothing claimed, nothing written
   });
 });
 

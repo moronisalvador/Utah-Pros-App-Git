@@ -206,20 +206,23 @@ S1d continues from exact S1c tip `352be211`, in a fresh
 `d54b6ba` was merged without rewriting S1c; it maps the second already-applied
 `ops_health_alerting` ledger row and changes no product/migration contract.
 
-The bounded read-only live capture at `2026-07-26 16:52:53 UTC` confirmed one exact
+The bounded read-only live capture at `2026-07-26 16:52:53 UTC` initially confirmed one exact
 `notify_emit(text,jsonb) -> void` overload, owner `postgres`, `SECURITY DEFINER`,
-`search_path=public`, and current grants to `authenticated` plus `service_role`. Six owner-run
+`search_path=public`, and then-current grants to `authenticated` plus `service_role`. Six owner-run
 definer functions contain seven direct calls across appointment/estimate triggers, timesheet RPCs,
 and the abandoned-clock scan/`postgres` cron. No browser/Pages source caller exists.
 `20260726110000_notify_emit_service_boundary.sql`, its exact rollback, catalog-only apply checks,
-and credential-free contracts are authored locally. The patch removes browser EXECUTE, retains
+and credential-free contracts were authored from that capture. The patch removes browser EXECUTE, retains
 `service_role`, and changes only the JSON object merge order so `p_body` cannot replace the trusted
 type key; trigger/scheduler URL, secret, header, payload, pg_net, ignored-response, caller and
 schedule contracts remain frozen.
 
-S1d is **ready for an owner apply gate, not applied**. Live `authenticated` execution therefore
-still prevents closure of `MOB-SEC-014`. Direct `get_inbound_leads`/broad `inbound_leads`
-recording-source access, authenticated `create_notification`, shared Auth/Web Push timeouts, the
+S1d is **live** as ledger row `20260727233704_notify_emit_service_boundary`; authenticated
+execution is denied and service-role execution retained. The later live
+`20260731165215_pg_net_worker_url_allowlists` migration adds the two-origin URL allowlist and
+blank-secret no-op without changing the owner-run caller graph. Direct
+`get_inbound_leads`/broad `inbound_leads` recording-source access, authenticated
+`create_notification`, shared Auth/Web Push timeouts, the
 wider RPC/direct-policy inventory, and the external-partner playback UI mismatch remain separate.
 No private bucket flip was attempted and `MOB-SEC-015` remains open.
 
@@ -239,7 +242,7 @@ gate after compatible Worker deployment.
 S1f authenticated `create_notification` bell-emission containment is now authored and locally
 verified, not applied. The attribute-only migration removes browser EXECUTE, retains the
 service-role Worker and owner-run midnight-clock caller, and leaves the function body/signature and
-recipient/broadcast behavior unchanged. S1d, S1e, and S1f apply windows remain separate.
+recipient/broadcast behavior unchanged. S1d is live; S1e and S1f retain separate apply windows.
 
 S1g notification read/mark recipient authorization is live as
 `20260728192024_notification_read_recipient_boundary`. It preserves the four deployed RPC

@@ -128,6 +128,7 @@ export async function onRequestPost(context) {
     // payment webhook lands on 'already-synced' and won't re-notify.
     await notifyPaymentReceived({
       db, env, amount, invoiceId: inv.id, jobId: inv.job_id || null,
+      contactId: inv.contact_id || null,
       source: 'Card', reference: `Charge #${charge.id}`,
       invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
       paymentEventId: payRow?.id || `card:${charge.id}`,

@@ -24,7 +24,8 @@
  *
  * NOTES / GOTCHAS:
  *   - The "OOP Pricing" row only appears when the "tool:oop_pricing" feature
- *     flag is on for the current user; the route itself is also flag-gated.
+ *     flag is on for the current user and their role is in the OOP allowlist;
+ *     the route independently applies both gates.
  *   - The task-count fetch fails silently — a hiccup there must never break the
  *     menu, the badge just stays at 0.
  *   - "Coming soon" rows render as a plain div (no Link) so they're not tappable.
@@ -34,6 +35,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { canUseOopPricing } from '@/lib/oopPricingAccess';
 import {
   canAccessAdminMobile,
   ADMIN_MOBILE_FLAG,
@@ -266,7 +268,7 @@ export default function TechMore() {
       title: t('sectionWork'),
       items: [
         { key: 'tasks', label: t('rowTasks'), Icon: IconChecklist, path: '/tech/tasks', badge: taskCount },
-        ...(isFeatureEnabled('tool:oop_pricing')
+        ...(canUseOopPricing(employee?.role) && isFeatureEnabled('tool:oop_pricing')
           ? [{ key: 'oop_pricing', label: t('rowOopPricing'), Icon: IconCalculator, path: '/tech/tools/oop-pricing' }]
           : []),
         { key: 'collections', label: t('rowCollections'), Icon: IconDollar, comingSoon: true },

@@ -25,6 +25,11 @@
 #     with no database address. That failure mode is a blank white screen with a
 #     clean console (see the resolveEnvDir comment in vite.config.js), which is
 #     far more expensive to diagnose than a failed build.
+#   - Same posture for the push enrollment gates: VITE_NATIVE_PUSH_ENABLED and
+#     VITE_APNS_ENV are validated against the exact values
+#     src/lib/pushNotifications.js requires, because a bundle built without
+#     them ships with push enrollment silently disabled (no permission prompt,
+#     no token registration) and otherwise looks perfectly healthy.
 #   - Duplicated at ios/App/ci_scripts/ci_post_clone.sh, which sources this one.
 #     Xcode Cloud looks beside the .xcodeproj OR at the repository root depending
 #     on how the workflow resolves its primary repository; a CI script that is
@@ -66,6 +71,28 @@ npm ci
 # then dies on launch while main.jsx is still evaluating its imports.
 : "${VITE_SUPABASE_URL:?ci_post_clone: set VITE_SUPABASE_URL in the Xcode Cloud workflow environment}"
 : "${VITE_SUPABASE_ANON_KEY:?ci_post_clone: set VITE_SUPABASE_ANON_KEY in the Xcode Cloud workflow environment}"
+
+# Native push enrollment is fail-closed (src/lib/pushNotifications.js,
+# isNativePushEnrollmentEnabled): VITE_NATIVE_PUSH_ENABLED must be exactly
+# "true" and VITE_APNS_ENV exactly "sandbox" or "production", baked into the
+# bundle at Vite build time. Absent or wrong, the app still builds — and ships
+# with push silently disabled: no permission prompt, no token registration.
+if [ "${VITE_NATIVE_PUSH_ENABLED:-}" != "true" ]; then
+  echo "ci_post_clone: VITE_NATIVE_PUSH_ENABLED must be exactly 'true' (got '${VITE_NATIVE_PUSH_ENABLED:-unset}')." >&2
+  echo "ci_post_clone: Without it this build ships with native push enrollment silently disabled." >&2
+  echo "ci_post_clone: Set it in App Store Connect -> Xcode Cloud -> workflow -> Environment variables." >&2
+  exit 1
+fi
+case "${VITE_APNS_ENV:-}" in
+  sandbox|production) ;;
+  *)
+    echo "ci_post_clone: VITE_APNS_ENV must be exactly 'sandbox' or 'production' (got '${VITE_APNS_ENV:-unset}')." >&2
+    echo "ci_post_clone: Without it this build ships with native push enrollment silently disabled." >&2
+    echo "ci_post_clone: Set it in App Store Connect -> Xcode Cloud -> workflow -> Environment variables." >&2
+    exit 1
+    ;;
+esac
+echo "ci_post_clone: push enrollment enabled, APNs environment = $VITE_APNS_ENV"
 
 # Optional, but a TestFlight build almost certainly wants production. Unset means
 # the app talks to dev.utahpros.app — deliberate (see src/lib/nativeApiOrigin.js),

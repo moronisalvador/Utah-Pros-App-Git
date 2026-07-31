@@ -56,7 +56,10 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
 // the migration source in the credential-free lanes; the behavioural trigger
 // proof runs in the db lane against the qa-staging branch.
-const DARK_BASELINE = 80;
+const DARK_BASELINE = 81;
+// 2026-07-30: 80 -> 81, adding oop_pricing_builder.test.sql. The guarded local
+// proof covers active-internal authorization, canonical money, fractional-input
+// compatibility shadows, optimistic concurrency, and idempotent replay.
 // 2026-07-27: 76 -> 77, adding anon_closure_tranche_b.test.js. Acknowledged
 // deliberately, per the rule above: that file proves the customer-list closure
 // actually took effect, and it will NOT protect anything in CI until the db lane

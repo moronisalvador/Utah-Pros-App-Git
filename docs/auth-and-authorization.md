@@ -43,6 +43,29 @@ Client gates improve navigation and UX. They do not protect Workers, RPCs or dir
 Feature flags must not become an authorization source unless that design is explicitly documented
 and enforced again on the server/database.
 
+### OOP pricing access boundary
+
+The repository OOP builder keeps rollout and authority separate:
+
+- `/settings/oop-pricing` is web-only and `AdminRoute`-protected; its draft-save and publish RPCs
+  independently resolve `auth.uid()` to an active, non-external employee with literal role
+  `admin`;
+- desktop and native/tech operational calculator routes remain behind `tool:oop_pricing`. Their
+  config read and quote read/save RPCs independently require an active internal employee whose
+  role is exactly `admin`, `office`, `supervisor`, `estimator` (sales rep), or `project_manager`;
+  those eligible roles may access all OOP quotes company-wide. `field_tech`, `crm_partner`/
+  external, inactive, unsupported, and unauthenticated actors are denied;
+- the four new pricing/snapshot tables are forced-RLS with no direct browser grants, so config and
+  internal-rate snapshots are exposed only through the role-gated RPC shapes; and
+- DevTools may switch the calculator flag from owner preview to availability for all eligible roles
+  (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
+  server kill switch. Neither state grants database access.
+
+The supporting migration is live under reconciled ledger row
+`20260731175328_oop_pricing_builder`. Direct production verification confirmed the four private
+tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
+boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
+
 ## Worker authorization
 
 Use `functions/lib/auth.js`:
@@ -379,11 +402,11 @@ HTTP `/api/notify` retains two distinct identities:
 
 There is no checked-in mobile/desktop/browser HTTP Bearer caller. Trusted Workers continue to
 import `dispatchEvent` in-process, and the secret-authenticated database trigger path is unchanged.
-This HTTP-only slice is not complete notification containment: `notify_emit(text,jsonb)` is a
-`SECURITY DEFINER` RPC still executable by `authenticated` in the dated generated/live inventory,
-so an authenticated browser can cause the database to present the valid secret and arbitrary
-payload to the Worker. Its ACL/body containment requires a separate reviewed migration and live
-apply. S1c neither authors nor applies that migration.
+The database-RPC residual that existed when S1c was authored is now closed: live
+`20260727233704_notify_emit_service_boundary` removed authenticated execution and made the trusted
+event type authoritative, and live `20260731165215_pg_net_worker_url_allowlists` added the
+two-origin URL allowlist plus blank-secret no-op. S1c did not author those later boundaries, but an
+authenticated browser can no longer execute `notify_emit(text,jsonb)`.
 The authenticated-executable `create_notification` definer is another direct bell-emission path
 outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
 browser execution and retains `service_role`; it is not live until its separate owner apply.
@@ -411,6 +434,9 @@ response, no-op gates, signature, result, security mode, and search path.
 A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
 `27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
 `service_role`; `authenticated` can no longer execute the function.
+The 2026-07-31 allowlist hardening subsequently replaced the body again; current live fingerprint
+`c72e0f7fd40a4abec42cce1cd912a45b` retains the same service-role-only ACL and adds the
+two-origin URL gate plus blank-secret no-op.
 `create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
 and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
 evidence are recorded in
@@ -553,6 +579,17 @@ unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. 
 `docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
 test, rollback, provider action, signing step, and device qualification remains a separate
 owner-authorized gate.
+
+The narrower native-token activation boundary is separate from that deferred
+four-migration S1h sequence. `20260728223000_native_apns_token_boundary.sql` is
+live under reconciled ledger row `20260729021021`; direct browser table
+privileges are revoked and native registration/deletion use selector-free
+self-scoped RPCs. `20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
+`20260731154315_device_token_apns_topic`; it removes
+the remaining inert authenticated SELECT policy from `device_tokens`, adds the
+per-install APNs topic, and preserves the old two-argument registration call
+through one trailing defaulted parameter. No checked-in browser caller reads
+the raw token table directly.
 
 ## Notification presentation administration
 

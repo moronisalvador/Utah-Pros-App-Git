@@ -42,6 +42,7 @@ import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
 import { anySettingsChildVisible } from '@/lib/navItems';
+import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
@@ -106,6 +107,7 @@ const {
   NotificationPresentation,
   NotificationsSettings,
   OOPPricing,
+  OopPricingSettings,
   PageAccess,
   PaymentSettings,
   PrivacyPolicy,
@@ -177,7 +179,8 @@ function RoleRoute({ roles, children }) {
 }
 
 // Feature-flagged pages — redirects to / when flag is disabled
-// No flag row in DB = unrestricted (isFeatureEnabled returns true)
+// No flag row is generally unrestricted. OOP Pricing is the deliberate
+// fail-closed exception because its calculator and quote data are role-gated.
 function FeatureRoute({ flag, children }) {
   const { isFeatureEnabled } = useAuth();
   if (!isFeatureEnabled(flag)) return <Navigate to="/" replace />;
@@ -348,9 +351,11 @@ function TechRoutes() {
       <Route path="tech/legal/terms" element={<ErrorBoundary section="TermsOfService"><TermsOfService /></ErrorBoundary>} />
       <Route path="tech/legal/support" element={<ErrorBoundary section="Support"><Support /></ErrorBoundary>} />
       <Route path="tech/tools/oop-pricing" element={
-        <FeatureRoute flag="tool:oop_pricing">
-          <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
-        </FeatureRoute>
+        <RoleRoute roles={OOP_PRICING_ROLES}>
+          <FeatureRoute flag="tool:oop_pricing">
+            <ErrorBoundary section="TechOOPPricing"><TechOOPPricing /></ErrorBoundary>
+          </FeatureRoute>
+        </RoleRoute>
       } />
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
@@ -562,9 +567,11 @@ function WebRoutes() {
 
         {/* Tools */}
         <Route path="tools/oop-pricing" element={
-          <FeatureRoute flag="tool:oop_pricing">
-            <ErrorBoundary section="OOP Pricing"><OOPPricing /></ErrorBoundary>
-          </FeatureRoute>
+          <RoleRoute roles={OOP_PRICING_ROLES}>
+            <FeatureRoute flag="tool:oop_pricing">
+              <ErrorBoundary section="OOP Pricing"><OOPPricing /></ErrorBoundary>
+            </FeatureRoute>
+          </RoleRoute>
         } />
 
         {/* Help — unwrapped from the settings hub shell (it's a knowledge surface,
@@ -579,16 +586,18 @@ function WebRoutes() {
           {/* Index — GC3 any-visible-child gate. */}
           <Route path="settings" element={<SettingsIndexRoute><ErrorBoundary section="Settings"><SettingsHome /></ErrorBoundary></SettingsIndexRoute>} />
 
-          {/* Workspace — Lists & Values/Templates/Commissions gate on
-              canAccess('settings') (the old /settings gate, incl. payroll rates);
-              Scope Sheets on demo_sheet_builder; Payments self-guards in-component
-              (canEditBilling) exactly as the retired /payments/settings did. */}
+          {/* Workspace + pricing: Lists, Templates, and Commissions gate on
+              canAccess('settings'); Scope Sheets uses demo_sheet_builder; Payments self-guards
+              with canEditBilling; OOP Pricing is admin-only and excluded from native. */}
           <Route path="settings/lists" element={<AccessRoute navKey="settings"><ErrorBoundary section="Lists & Values"><ListsAndValues /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/templates" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates"><Templates /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/templates/:docType" element={<AccessRoute navKey="settings"><ErrorBoundary section="Templates Editor"><TemplatesEditor /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/commissions" element={<AccessRoute navKey="settings"><ErrorBoundary section="Commissions"><Commissions /></ErrorBoundary></AccessRoute>} />
           <Route path="settings/payments" element={<ErrorBoundary section="Payment Settings"><PaymentSettings /></ErrorBoundary>} />
           <Route path="settings/scope-sheets" element={<AccessRoute navKey="demo_sheet_builder"><ErrorBoundary section="Scope Sheets"><AdminDemoSheetBuilder /></ErrorBoundary></AccessRoute>} />
+          {!IS_NATIVE && (
+            <Route path="settings/oop-pricing" element={<AdminRoute><ErrorBoundary section="OOP Pricing Settings"><OopPricingSettings /></ErrorBoundary></AdminRoute>} />
+          )}
 
           {/* Team & access — all AdminRoute (unchanged effective access). */}
           <Route path="settings/team" element={<AdminRoute><ErrorBoundary section="Team"><Team /></ErrorBoundary></AdminRoute>} />

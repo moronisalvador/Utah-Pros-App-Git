@@ -40,6 +40,14 @@ vi.mock('@capacitor/push-notifications', () => ({
   PushNotifications: native.push,
 }));
 
+const appInfo = vi.hoisted(() => ({
+  getInstalledAppBundleId: vi.fn(async () => 'com.example.upr.dev'),
+}));
+
+vi.mock('./nativeAppInfo.js', () => ({
+  getInstalledAppBundleId: appInfo.getInstalledAppBundleId,
+}));
+
 import {
   NATIVE_PUSH_BINDING_KEY,
   NATIVE_PUSH_PENDING_DETACH_KEY,
@@ -61,6 +69,7 @@ import {
 } from './pushNotifications.js';
 
 const DEVICE_TOKEN = 'synthetic-native-device-token';
+const BUNDLE_ID = 'com.example.upr.dev';
 const OWNER_A = 'v1.owner-a-fixture-token';
 const OWNER_B = 'v1.owner-b-fixture-token';
 
@@ -116,6 +125,7 @@ beforeEach(() => {
   native.listeners.clear();
   native.listenerHandles.length = 0;
   native.isNativePlatform.mockReturnValue(true);
+  appInfo.getInstalledAppBundleId.mockResolvedValue(BUNDLE_ID);
   native.push.checkPermissions.mockResolvedValue({ receive: 'granted' });
   native.push.requestPermissions.mockResolvedValue({ receive: 'granted' });
   native.push.removeAllDeliveredNotifications.mockResolvedValue();
@@ -258,6 +268,7 @@ describe('registerPushForEmployee', () => {
     expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
       p_apns_environment: 'sandbox',
+      p_apns_topic: BUNDLE_ID,
     });
     expect(storage.setItem).toHaveBeenCalledWith(
       NATIVE_PUSH_BINDING_KEY,
@@ -273,6 +284,46 @@ describe('registerPushForEmployee', () => {
     expect([...storage.values.values()].join(' ')).not.toContain(
       'employee-fixture-a',
     );
+  });
+
+  it('still enrolls with a null topic when the installed bundle id is unresolvable', async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    appInfo.getInstalledAppBundleId.mockResolvedValue(null);
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toEqual({ ok: true, token: DEVICE_TOKEN });
+
+    expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
+      p_token: DEVICE_TOKEN,
+      p_apns_environment: 'sandbox',
+      p_apns_topic: null,
+    });
+  });
+
+  it('still enrolls with a null topic when the bundle id lookup throws', async () => {
+    const storage = memoryStorage();
+    vi.stubGlobal('localStorage', storage);
+    appInfo.getInstalledAppBundleId.mockRejectedValue(
+      new Error('App plugin unavailable'),
+    );
+    const db = { rpc: vi.fn(async () => null) };
+
+    await expect(registerPushForEmployee(
+      db,
+      'employee-fixture-a',
+      { storage, ownerKey: OWNER_A },
+    )).resolves.toEqual({ ok: true, token: DEVICE_TOKEN });
+
+    expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
+      p_token: DEVICE_TOKEN,
+      p_apns_environment: 'sandbox',
+      p_apns_topic: null,
+    });
   });
 
   it('does not touch APNs or the database when the environment is malformed', async () => {
@@ -372,6 +423,7 @@ describe('registerPushForEmployee', () => {
       expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
         p_token: DEVICE_TOKEN,
         p_apns_environment: 'sandbox',
+        p_apns_topic: BUNDLE_ID,
       });
     });
 
@@ -461,6 +513,7 @@ describe('registerPushForEmployee', () => {
     expect(secondDb.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
       p_apns_environment: 'sandbox',
+      p_apns_topic: BUNDLE_ID,
     });
     expect(storage.getItem(NATIVE_PUSH_BINDING_KEY)).toBe(DEVICE_TOKEN);
   });
@@ -598,6 +651,7 @@ describe('user-controlled native Push preference', () => {
     expect(db.rpc).toHaveBeenCalledWith('upsert_my_native_device_token', {
       p_token: DEVICE_TOKEN,
       p_apns_environment: 'sandbox',
+      p_apns_topic: BUNDLE_ID,
     });
   });
 
@@ -734,6 +788,7 @@ describe('user-controlled native Push preference', () => {
         {
           p_token: DEVICE_TOKEN,
           p_apns_environment: 'sandbox',
+          p_apns_topic: BUNDLE_ID,
         },
       ],
       [

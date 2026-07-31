@@ -298,6 +298,8 @@ function presentationContext(typeKey, body = {}) {
       context.payment_source = contextValue(payload.source);
       context.payment_reference = contextValue(payload.reference);
       context.invoice_number = contextValue(explicit.invoice_number);
+      context.customer_name = contextValue(explicit.customer_name);
+      context.job_number = contextValue(explicit.job_number);
       break;
     case 'lead.new':
       context.lead_source = contextValue(explicit.lead_source || payload.source_type);
@@ -555,8 +557,8 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
   }),
   'payment.received': browserAndNative({
     title: 'Payment received',
-    body: '{{amount}} recorded via {{payment_source}} · {{payment_reference}}',
-    variables: ['amount', 'payment_source', 'invoice_number', 'payment_reference'],
+    body: '{{amount}} from {{customer_name}} · Job {{job_number}} · via {{payment_source}}',
+    variables: ['amount', 'customer_name', 'job_number', 'payment_source', 'invoice_number', 'payment_reference'],
     bellRoutes: ['invoice.detail', 'collections.home', 'office.home'],
     pwaRoutes: ['invoice.detail', 'collections.home', 'field.home'],
     nativeRoute: 'field.home',

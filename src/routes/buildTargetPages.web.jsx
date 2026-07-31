@@ -70,7 +70,8 @@ const Support = lazyRetry(() => import('@/pages/Legal')
   .then((module) => ({ default: module.Support })));
 const AdminFeedback = lazyRetry(() => import('@/pages/settings/FeedbackInbox'));
 const Feedback = lazyRetry(() => import('@/pages/Feedback'));
-const OOPPricing = lazyRetry(() => import('@/pages/OOPPricing'));
+const OOPPricing = lazyRetry(() => import('@/pages/OOPPricingConfigured'));
+const OopPricingSettings = lazyRetry(() => import('@/pages/settings/OopPricingBuilder'));
 const AdminDemoSheetBuilder = lazyRetry(() => import('@/pages/settings/ScopeSheets'));
 const AdminIntegrations = lazyRetry(() => import('@/pages/settings/Integrations'));
 const EncircleImport = lazyRetry(() => import('@/pages/EncircleImport'));
@@ -115,7 +116,7 @@ const TechEditAppointment = lazyRetry(() => import('@/pages/tech/TechEditAppoint
 const TechFeedback = lazyRetry(() => import('@/pages/tech/TechFeedback'));
 const TechMore = lazyRetry(() => import('@/pages/tech/TechMore'));
 const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
-const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricing'));
+const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 const AdminMobileRoutes = lazyRetry(() => import('@/pages/tech/admin/AdminMobileRoutes'));
 
@@ -173,6 +174,7 @@ export default Object.freeze({
   NotificationPresentation,
   NotificationsSettings,
   OOPPricing,
+  OopPricingSettings,
   PageAccess,
   PaymentSettings,
   PrivacyPolicy,

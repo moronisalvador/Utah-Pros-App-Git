@@ -668,4 +668,29 @@ describe('Xcode Cloud post-clone hook', () => {
       xcodeCloudHook.indexOf('npm ci'),
     );
   });
+
+  it('fails closed unless the push enrollment gates are baked into the bundle', () => {
+    // Mirrors isNativePushEnrollmentEnabled (src/lib/pushNotifications.js):
+    // VITE_NATIVE_PUSH_ENABLED must be exactly "true" and VITE_APNS_ENV
+    // exactly "sandbox" or "production", validated before the web bundle is
+    // built so a misconfigured Xcode Cloud workflow fails the build instead
+    // of shipping with push enrollment silently disabled.
+    const pushCheckIndex = xcodeCloudHook.indexOf(
+      '"${VITE_NATIVE_PUSH_ENABLED:-}" != "true"',
+    );
+    const apnsCheckIndex = xcodeCloudHook.indexOf('case "${VITE_APNS_ENV:-}" in');
+    const buildIndex = xcodeCloudHook.indexOf('scripts/build-native.mjs');
+    expect(pushCheckIndex).toBeGreaterThan(xcodeCloudHook.indexOf('npm ci'));
+    expect(apnsCheckIndex).toBeGreaterThan(pushCheckIndex);
+    expect(buildIndex).toBeGreaterThan(apnsCheckIndex);
+    expect(xcodeCloudHook).toMatch(/case "\$\{VITE_APNS_ENV:-\}" in\s*\n\s*sandbox\|production\)/);
+    // Both refusals name where the operator sets the variables and hard-fail.
+    const pushGateSection = xcodeCloudHook.slice(pushCheckIndex, buildIndex);
+    expect(
+      pushGateSection.match(
+        /App Store Connect -> Xcode Cloud -> workflow -> Environment variables/g,
+      ),
+    ).toHaveLength(2);
+    expect(pushGateSection.match(/exit 1/g)).toHaveLength(2);
+  });
 });

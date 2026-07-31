@@ -149,7 +149,7 @@ describe('sendNativePushToEmployee', () => {
     expect(db.select).toHaveBeenCalledWith(
       'device_tokens',
       'employee_id=eq.employee-1&platform=eq.ios'
-        + '&apns_environment=eq.sandbox&select=id,token,updated_at'
+        + '&apns_environment=eq.sandbox&select=id,token,updated_at,apns_topic'
         + '&order=updated_at.desc&limit=5',
     );
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -193,6 +193,51 @@ describe('sendNativePushToEmployee', () => {
       }],
     });
     expect(JSON.stringify(result)).not.toContain('private-token');
+  });
+
+  it('addresses each registration with its own recorded topic, falling back for legacy rows', async () => {
+    const db = dbWithTokens([
+      {
+        id: 'token-dev-app',
+        token: 'dev-app-token',
+        updated_at: '2026-07-30T12:00:00.000Z',
+        apns_topic: 'com.example.upr.dev',
+      },
+      {
+        id: 'token-legacy',
+        token: 'legacy-token',
+        updated_at: '2026-07-29T12:00:00.000Z',
+        apns_topic: null,
+      },
+      {
+        id: 'token-blank-topic',
+        token: 'blank-topic-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+        apns_topic: '   ',
+      },
+    ]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: '1' },
+      eventKey: 'appointment.updated:topic-mix',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(result.sent).toBe(3);
+    const topicByToken = Object.fromEntries(fetchImpl.mock.calls.map(
+      ([url, options]) => [url.split('/3/device/')[1], options.headers['apns-topic']],
+    ));
+    expect(topicByToken).toEqual({
+      'dev-app-token': 'com.example.upr.dev',
+      'legacy-token': 'com.example.upr',
+      'blank-topic-token': 'com.example.upr',
+    });
   });
 
   it.each([
@@ -442,7 +487,11 @@ describe('sendNativePushToEmployee', () => {
           source: 'Credit card',
           reference: 'Charge #ch_demo',
         },
-        presentation_context: { invoice_number: 'INV-1042' },
+        presentation_context: {
+          invoice_number: 'INV-1042',
+          customer_name: 'Jordan Lee',
+          job_number: 'JOB-1042',
+        },
       },
       eventKey: 'payment.received:rich',
       fetchImpl,
@@ -452,7 +501,7 @@ describe('sendNativePushToEmployee', () => {
     const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(payload.aps.alert).toEqual({
       title: 'Payment received',
-      body: '$1,250.00 recorded via Credit card · Charge #ch_demo',
+      body: '$1,250.00 from Jordan Lee · Job JOB-1042 · via Credit card',
     });
     expect(payload.data.url).toBe('/');
   });

@@ -28,7 +28,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-  isSettingsItemVisible, anySettingsChildVisible, isItemVisible, SETTINGS_GROUPS,
+  isSettingsItemVisible, anySettingsChildVisible, isItemVisible, NAV_ITEMS, SETTINGS_GROUPS,
 } from '@/lib/navItems';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { buildTemplateSections } from '@/pages/settings/templates/templateData';
@@ -41,6 +41,8 @@ const NONE = () => false;
 const admin      = { role: 'admin', email: 'a@utahpros.com' };
 const office     = { role: 'office', email: 'o@utahpros.com' };
 const supervisor = { role: 'supervisor', email: 's@utahpros.com' };
+const estimator  = { role: 'estimator', email: 'e@utahpros.com' };
+const projectManager = { role: 'project_manager', email: 'm@utahpros.com' };
 const fieldTech  = { role: 'field_tech', email: 't@utahpros.com' };
 const crmPartner = { role: 'crm_partner', email: 'p@partner.com' };
 
@@ -71,7 +73,7 @@ describe('isSettingsItemVisible — per-item gates', () => {
   });
 
   it('Payments (GC6) is visible to a canEditBilling role (admin) but not office/field_tech', () => {
-    const payments = item('Workspace', 'payments');
+    const payments = item('Pricing & billing', 'payments');
     // BILLING_EDIT_ROLES = ['admin','manager']; only admin is a live enum value.
     expect(isSettingsItemVisible(payments, { canAccess: NONE, employee: admin, isMoroni: false })).toBe(true);
     expect(isSettingsItemVisible(payments, { canAccess: NONE, employee: office, isMoroni: false })).toBe(false);
@@ -130,6 +132,31 @@ describe('NAV_ITEMS settings entry — settingsHub visibility', () => {
 });
 
 describe('SETTINGS_REDIRECTS — the 5 permanent retired-URL redirects', () => {
+describe('NAV_ITEMS OOP pricing entry — fixed role boundary', () => {
+  const oopEntry = NAV_ITEMS.find(item => item.key === 'oop_pricing');
+  const ctx = (employee, enabled = true, canAccess = NONE) => ({
+    canAccess,
+    isFeatureEnabled: () => enabled,
+    employee,
+    isMoroni: false,
+  });
+
+  it('shows for every owner-approved role even when stale nav permissions deny it', () => {
+    for (const employee of [admin, office, supervisor, estimator, projectManager]) {
+      expect(isItemVisible(oopEntry, ctx(employee))).toBe(true);
+    }
+  });
+
+  it('blocks regular technicians and external partners even if a stale override grants the key', () => {
+    expect(isItemVisible(oopEntry, ctx(fieldTech, true, grants('oop_pricing')))).toBe(false);
+    expect(isItemVisible(oopEntry, ctx(crmPartner, true, grants('oop_pricing')))).toBe(false);
+  });
+
+  it('keeps the feature flag authoritative for eligible roles', () => {
+    expect(isItemVisible(oopEntry, ctx(admin, false))).toBe(false);
+  });
+});
+
   it('maps every retired route to its new IA target', () => {
     const map = Object.fromEntries(SETTINGS_REDIRECTS.map(r => [r.from, r.to]));
     expect(map).toEqual({

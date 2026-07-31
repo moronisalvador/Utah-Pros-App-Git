@@ -10,7 +10,8 @@
  *
  * DEPENDS ON:
  *   Packages:  @capacitor/core, @capacitor/push-notifications
- *   Internal:  nativeNavigationTarget.js; callers pass the authenticated database client
+ *   Internal:  nativeAppInfo.js, nativeNavigationTarget.js; callers pass the
+ *              authenticated database client
  *   Data:      writes → device_tokens through upsert_my_native_device_token
  *                       and delete_my_native_device_token
  *
@@ -34,6 +35,7 @@
  */
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
+import { getInstalledAppBundleId } from './nativeAppInfo.js';
 import { resolveNativeNavigationTarget } from './nativeNavigationTarget.js';
 import { readPwaOwnerLease } from './resumeRestore.js';
 
@@ -765,10 +767,27 @@ async function performNativePushRegistration(
       return { ok: false, reason: 'storage_unavailable' };
     }
 
+    // The installed app's bundle id is the APNs topic this token was minted
+    // for; recording it lets the delivery worker address each registration
+    // exactly (the side-by-side dev app broke the one-topic-per-deployment
+    // assumption). Enrollment never fails on this lookup: an unresolvable id
+    // stores NULL and the worker falls back to its deployment-wide topic.
+    let apnsTopic = null;
+    try {
+      apnsTopic = await withDeadline(
+        getInstalledAppBundleId(),
+        NATIVE_PUSH_DETACH_TIMEOUT_MS,
+        'native app bundle id lookup',
+      );
+    } catch {
+      apnsTopic = null;
+    }
+
     upsertAttempted = true;
     await db.rpc('upsert_my_native_device_token', {
       p_token: token,
       p_apns_environment: apnsEnvironment,
+      p_apns_topic: apnsTopic,
     });
     if (!writePendingNativePushDetach(storage, {
       ownerKey,
