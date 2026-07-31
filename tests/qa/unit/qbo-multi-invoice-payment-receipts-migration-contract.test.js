@@ -117,6 +117,9 @@ describe('QBO multi-invoice payment receipts migration contract', () => {
       'CREATE UNIQUE INDEX payment_receipt_attempts_qbo_payment_uniq ON public.payment_receipt_attempts (qbo_realm_id, qbo_payment_id) WHERE qbo_payment_id IS NOT NULL;',
     );
     expect(migration).toContain('payment_receipts_qbo_payment_uniq');
+    expect(migration).toContain('payment_receipts_actor_employee_idx');
+    expect(migration).toContain('payment_receipt_attempts_actor_employee_idx');
+    expect(migration).toContain('payment_receipt_events_attempt_idx');
     expect(migration).toContain('payment_receipts_cents_balance');
     expect(migration).toContain("'unknown_outcome', 'rejected', 'conflict', 'voided', 'deleted'");
     expect(migration).toContain('pg_advisory_xact_lock');

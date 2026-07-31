@@ -288,6 +288,7 @@ BEGIN
     '{"Id":"qa-upr-payment-1"}'::jsonb
   );
   v_receipt := jsonb_build_object(
+    'attempt_id', v_first->>'attempt_id',
     'qbo_realm_id', 'qa-qbo-realm', 'qbo_customer_id', v_customer_id,
     'qbo_payment_id', 'qa-upr-payment-1', 'txn_date', '2026-07-30',
     'total_cents', 100, 'applied_cents', 100, 'unapplied_cents', 0,

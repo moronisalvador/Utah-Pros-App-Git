@@ -63,6 +63,9 @@ CREATE UNIQUE INDEX payment_receipts_qbo_payment_uniq
   WHERE qbo_payment_id IS NOT NULL;
 CREATE INDEX payment_receipts_contact_txn_idx
   ON public.payment_receipts (contact_id, txn_date DESC);
+CREATE INDEX payment_receipts_actor_employee_idx
+  ON public.payment_receipts (actor_employee_id)
+  WHERE actor_employee_id IS NOT NULL;
 
 CREATE TABLE public.payment_receipt_attempts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,6 +106,9 @@ CREATE UNIQUE INDEX payment_receipt_attempts_qbo_payment_uniq
   WHERE qbo_payment_id IS NOT NULL;
 CREATE INDEX payment_receipt_attempts_receipt_idx
   ON public.payment_receipt_attempts (receipt_id, created_at DESC);
+CREATE INDEX payment_receipt_attempts_actor_employee_idx
+  ON public.payment_receipt_attempts (actor_employee_id)
+  WHERE actor_employee_id IS NOT NULL;
 
 CREATE TABLE public.payment_receipt_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -128,6 +134,9 @@ CREATE UNIQUE INDEX payment_receipt_events_event_key_uniq
   ON public.payment_receipt_events (event_key) WHERE event_key IS NOT NULL;
 CREATE INDEX payment_receipt_events_receipt_created_idx
   ON public.payment_receipt_events (receipt_id, created_at DESC);
+CREATE INDEX payment_receipt_events_attempt_idx
+  ON public.payment_receipt_events (attempt_id)
+  WHERE attempt_id IS NOT NULL;
 
 -- destructive-approved: owner-approved 2026-07-31 QBO receipt release closes
 -- legacy broad payment policies before exposing the receipt link on payments.
