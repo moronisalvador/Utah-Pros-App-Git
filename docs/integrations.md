@@ -388,11 +388,12 @@ runtime values or invoke the schedule. The real-time half remains owner/dashboar
 `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
 **Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
 
-## QuickBooks multi-invoice payment receipts (source only; disabled 2026-07-30)
+## QuickBooks multi-invoice payment receipts (dev deployed; shared schema live and disabled 2026-07-31)
 
-The isolated `codex/qbo-multi-invoice-payments` source adds a separate, human-initiated UPR→QBO
-receipt path. It is not deployed, its migration is not applied, no Intuit sandbox/production
-Payment was created, and both rollout gates default off.
+The reconciled `dev` source adds a separate, human-initiated UPR→QBO receipt path. It is deployed on
+the dev app; the foundation migration is live as `20260731225654` and its grant containment as
+`20260731230907`. No Intuit sandbox/production Payment was created, and both rollout gates remain
+off.
 
 `POST /api/qbo-receive-payment` is Bearer-only and requires an active, non-external literal
 `admin`; the shared scheduler capability is not accepted. The endpoint also checks the exact
@@ -423,6 +424,12 @@ Neither is authorization. The safe release order is backward-compatible code dep
 → owner-authorized additive migration → catalog/ACL proof → separately authorized Intuit
 Development sandbox matrix → named-admin activation proof. See
 `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+
+Live ACL proof leaves `payment_receipts` and `payment_receipt_attempts` service-role SELECT-only,
+`payment_receipt_events` with no direct table grant, all browser grants at zero, and all lifecycle
+writes behind the seven service-only RPCs. The tables contain zero production rows and the database
+flag remains disabled. Sandbox, authenticated browser, provider, activation, and `main` promotion
+remain separate gates.
 
 ## Messaging transport build state (2026-07-23)
 
@@ -603,7 +610,7 @@ CallRail `message.sent` recipients may omit the `+1` stored on the original UPR 
 projection normalizes only validated NANP forms; it does not loosen non-NANP, body, conversation,
 provider-message, or attempt identity checks.
 
-### CallRail recording-source isolation (S1e authored, not applied)
+### CallRail recording-source isolation (S1e live 2026-07-31)
 
 The recording proxy keeps its URL allowlist, lead UUID/provider-call binding, credential ordering,
 direct/signed audio streaming, private cache header, and JSON error contracts. Its source lookup
@@ -612,8 +619,11 @@ changes from browser-readable `inbound_leads.recording_url` to service-only
 only `upr-recording://available`, preserving mobile/desktop truthiness without disclosing a
 provider URL. Both Workers retain a validated legacy-column fallback so compatible code can deploy
 before the table; the marker is never accepted as a source. Ingestion recursively strips
-`recording` and `recording_url` keys from stored `raw_payload`. No provider request, playback,
-credential read, or live setting change occurred.
+`recording` and `recording_url` keys from stored `raw_payload`. Migration
+`20260726183409_inbound_lead_recording_source_boundary.sql` is live as staging ledger
+`20260731224513` and production ledger `20260731225511`; postconditions found zero residual raw
+URLs/payload keys and no browser source-table grant. No provider request, playback, credential read,
+or provider setting change occurred.
 
 Outbound MMS media is already copied into UPR's private `message-attachments` bucket before the
 provider submission. A signed `message.sent` event therefore confirms the exact send-attempt ledger
@@ -625,7 +635,7 @@ database migration rolls out. Inbound MMS remains
 fail-closed: it must download the verified provider media endpoint, validate the response bytes,
 and persist an owned private reference before canonical projection.
 
-### Mobile subscription and native-token ownership (S1h authored, not applied)
+### Mobile personal-ownership source S1h (retired; do not apply)
 
 Web Push registration keeps the deployed endpoint/key/user-agent contract, but authenticated source
 resolves the one active, non-external employee from `auth.uid()`. Same-owner registration refreshes
@@ -633,20 +643,17 @@ keys and metadata. A foreign-owned endpoint is rejected rather than transferred.
 redacted to ID, label, creation time, and a short endpoint hash; delete rejects a foreign endpoint.
 Notification dispatch retains service-role direct reads and stale-subscription pruning.
 
-Native `upsert_device_token(uuid,text,text)` preserves its client shape and validates the supplied
-employee against the session. Same-owner refresh succeeds; a token owned by another employee is
-rejected. The reviewed service-role branch retains cross-owner registration and pruning for trusted
-server/device lifecycle work. Browser roles receive no raw subscription endpoint, Web Push key, or
-native token through direct table access: all four personal tables become forced-RLS,
-policy-free, and browser-RPC-only after the ordered S1h sequence.
+The old `20260727022920_mobile_personal_ownership_boundary.sql` attempted to combine Page Access,
+Web Push, notification preferences, and native tokens. It is now historical source only. Its exact
+read-only preflight refused on both hosted databases because the focused live native-token,
+delivery-guardrail, preference, and per-token-topic lineage superseded its assumptions. Applying it
+would overwrite newer contracts and reintroduce legacy raw-token-returning RPCs.
 
-The revised containment and S1h source address the rejected artifact's employee self-promotion and
-raw-token takeover findings, but they are not applied or exact database-behavior-verified. Repository
-source also journals old-account Web/APNs detachment until cleanup is confirmed and locks account
-transitions on cleanup/session errors; that is not evidence that either provider is configured or
-delivers.
+Any remaining Page Access/Web Push ownership work requires a new, later migration limited to that
+residual surface. It must preserve the current notification-preference and native-token RPCs,
+grants, return shapes, and APNs topic behavior.
 
 Provider credentials, VAPID/APNs configuration, feature activation, notification fan-out,
 compatible deployment, native logout/account-switch device proof, entitlements, signing,
 simulator/device tests, and distribution remain independent. No provider call or device
-registration occurred while authoring S1h.
+registration occurred while reviewing and retiring S1h.

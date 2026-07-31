@@ -520,11 +520,11 @@ Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with 
 behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
 poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.
 
-## QBO multi-invoice payment receipts (repository source only; not applied)
+## QBO multi-invoice payment receipts (shared schema live; feature disabled)
 
 Migration `20260731045407_qbo_multi_invoice_payment_receipts.sql` and its containment rollback are
-authored only on `codex/qbo-multi-invoice-payments`. They have not been applied to `qa-staging` or
-the shared project, and this section is not a claim about the live catalog.
+live on `qa-staging` as `20260731223150` and the shared project as `20260731225654`. No receipt
+feature gate or provider path was activated.
 
 - `payment_receipts` is the grouped accounting header, uniquely identifying a QBO Payment by
   `(qbo_realm_id, qbo_payment_id)` and retaining totals, provider metadata, source, actor, status,
@@ -553,7 +553,11 @@ the shared project, and this section is not a claim about the live catalog.
   `claim_qbo_receipt_event` atomically persists that retry identity with the event claim, and the
   recovery worker also reclaims metadata-bearing `processing` rows stranded for over ten minutes.
 
-All three new tables have RLS enabled and forced, no browser grants, and service-role SELECT only.
+All three new tables have RLS enabled and forced with no browser grants. Managed defaults initially
+left direct service-role writes; correction
+`20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging as `20260731230543`
+and production as `20260731230907`. `payment_receipts` and `payment_receipt_attempts` are now
+service-role SELECT-only; `payment_receipt_events` has no direct service-role privilege.
 Seven worker-only `SECURITY DEFINER` functions—`claim_qbo_receipt_event`,
 `reserve_qbo_payment_receipt`,
 `mark_qbo_payment_receipt_created`, `finalize_qbo_payment_receipt`,
@@ -570,10 +574,10 @@ receipt, attempt, event, `payments.receipt_id`, its service-only link guard, the
 access closure, and provider-event metadata as financial/audit evidence; destructive cleanup or
 authorization reopening would require a separate owner-reviewed migration.
 
-## Mobile S1e inbound recording-source boundary (authored 2026-07-26)
+## Mobile S1e inbound recording-source boundary (live 2026-07-31)
 
-Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is reviewed source only and
-has not been applied. It adds forced-RLS, service-role-only
+Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is live on `qa-staging` as
+`20260731224513` and the shared project as `20260731225511`. It adds forced-RLS, service-role-only
 `inbound_lead_recording_sources`, keyed one-to-one to `inbound_leads`. Provider URLs move there;
 `inbound_leads.recording_url` remains in its deployed position but contains only the opaque truthy
 marker `upr-recording://available`. An AFTER trigger captures new URLs once the lead ID exists and
@@ -596,13 +600,14 @@ then separately apply and verify `20260726182000_mobile_employee_identity_contai
 S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
 ledger row exists and its browser-read-only employee contract still matches. Recapture that
 catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+S1e or S1g; each remained its own owner-approved window. S1e's live pre/postconditions and
+readbacks passed; do not replay it.
 
-## Pending final mobile personal-ownership boundary (S1h, 2026-07-27)
+## Retired mobile personal-ownership boundary (S1h, 2026-07-31)
 
-S1h consists of four reviewed source migrations. The first three dependencies are live and mapped
-in `scripts/migration-provenance-manifest.json`; only the final personal-ownership boundary is
-absent from the shared live ledger:
+The first three historical dependencies are live and mapped in
+`scripts/migration-provenance-manifest.json`. The former final personal-ownership source is absent
+from the shared ledger because it is retired, not pending:
 
 - Live `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
   selector-safe employee read RPCs and changes no existing table, policy, grant, row, or function.
@@ -612,11 +617,10 @@ absent from the shared live ledger:
 - Live `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
   already-live permission writer with its reviewed body fingerprint; behavior and grants do not
   change.
-- Pending `20260727022920_mobile_personal_ownership_boundary.sql` replaces nine existing personal RPC
-  bodies, adds one private owner-only helper, forces RLS on `employee_page_access`,
-  `notification_prefs`, `push_subscriptions`, and `device_tokens`, and removes every browser policy
-  and table privilege from those four tables. Their columns, constraints, indexes, triggers,
-  publications, views, and business rows remain unchanged.
+- Retired `20260727022920_mobile_personal_ownership_boundary.sql` would replace nine existing
+  personal RPC bodies and combine page access, preferences, Web Push, and native tokens. Its exact
+  preflight now refuses on both hosted databases because newer focused migrations changed those
+  contracts.
 
 The live permission dependency exists as assigned version
 `20260727012825 permission_write_gates`; repository provenance maps it to reviewed source
@@ -661,7 +665,7 @@ APNs environment check uses `NOT VALID` followed by `VALIDATE CONSTRAINT`.
 The companion rollback requires an explicit unsafe session flag before restoring
 the four exact prior RPC bodies/ACLs, because that compatibility rollback
 deliberately re-opens the selector defect. This focused boundary means the deferred broad
-S1h preflight will intentionally refuse until it is reconciled and re-qualified.
+S1h preflight intentionally refuses; the old file must not be reconciled into an apply candidate.
 
 `20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
 `20260731154315_device_token_apns_topic`. It adds nullable
@@ -677,8 +681,9 @@ not an apply candidate. Its employee self-promotion and raw-token takeover paths
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
 pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
 retained governed local database. Generated schema/RPC reports must continue describing deployed
-state. The final broad S1h boundary remains unapplied; the two focused native migrations are live under
-reconciled ledger rows `20260729021021` and `20260729021050`.
+state. The broad S1h file is retired; any residual Page Access/Web Push work must be a new later
+migration that preserves the focused native/preference contracts. The two focused native migrations
+are live under reconciled ledger rows `20260729021021` and `20260729021050`.
 
 ## Notification presentation settings (2026-07-29)
 
