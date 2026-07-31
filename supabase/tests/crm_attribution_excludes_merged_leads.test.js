@@ -110,7 +110,8 @@ describe.skipIf(!hasCreds)('get_attribution_rollup excludes merged-duplicate lea
     // The original (real) lead.
     const [original] = await fixtureDb.insert('inbound_leads', {
       org_id: orgId, callrail_id: `qa-attribution-original-${runId}`, source: 'Referral', source_type: 'call',
-      spam_flag: false, occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-orig-${runId}`,
+      duration_sec: 60, spam_flag: false, raw_payload: { answered: true },
+      occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-orig-${runId}`,
     });
     leadIds.push(original.id);
 
@@ -118,7 +119,8 @@ describe.skipIf(!hasCreds)('get_attribution_rollup excludes merged-duplicate lea
     // system produces: its own row, non-spam, but merged_into_lead_id set.
     const [duplicate] = await fixtureDb.insert('inbound_leads', {
       org_id: orgId, callrail_id: `qa-attribution-duplicate-${runId}`, source: 'Referral', source_type: 'call',
-      spam_flag: false, merged_into_lead_id: original.id,
+      duration_sec: 60, spam_flag: false, raw_payload: { answered: true },
+      merged_into_lead_id: original.id,
       occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-dup-${runId}`,
     });
     leadIds.push(duplicate.id);
