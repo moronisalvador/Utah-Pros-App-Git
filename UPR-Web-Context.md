@@ -901,9 +901,10 @@ oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-ge
                           (air_mover, lgr, xlgr, air_scrubber, neg_air — neg_air mold only),
                           materials_actual_cost, antimicrobial_sqft, disposal_trips,
                           containment_linear_ft + prv_invoice_cost (mold only).
-                          Legacy snapshots: quote_total and net_margin_pct. The authored,
-                          not-yet-applied builder migration leaves this table's columns, policies
-                          and grants unchanged. Configured quotes keep revision, normalized inputs,
+                          Legacy snapshots: quote_total and net_margin_pct. The live builder
+                          migration leaves this table's columns and grants unchanged and replaces
+                          its policies with the exact calculator role/flag predicate. Configured
+                          quotes keep revision, normalized inputs,
                           full config, evaluated lines, engine version and minimum adjustment in
                           private oop_quote_pricing_snapshots rows keyed by quote_id. Denormalized
                           insured_name + address support standalone quotes without a linked job.
@@ -922,7 +923,7 @@ employees               — 15 rows as of Jul 1 2026 (8 auth-linked, 7 unlinked)
                           with hiring — see the Employees section below or query live for current roster.
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
-oop_pricing_revisions   — **AUTHORED, NOT APPLIED (Jul 30 2026)** — one editable draft plus
+oop_pricing_revisions   — **LIVE (ledger `20260731175328`, Jul 31 2026)** — one editable draft plus
                           immutable published/superseded calculator price lists.
 oop_pricing_audit       — Idempotent admin draft-save/publish audit rows.
 oop_quote_save_requests — Stable request ledger for replay-safe configured quote saves.
@@ -930,7 +931,7 @@ oop_quote_pricing_snapshots — Private configured-quote revision, inputs, confi
                           engine version and project-minimum adjustment keyed by quote_id.
                           All four tables are forced-RLS with no direct browser-role grants.
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
-device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table. **apns_topic (Jul 30 2026 — AUTHORED, NOT APPLIED):** nullable text column recording the installed app's bundle id per token (see "Per-token APNs topic" section) — NULL on every existing row until the migration applies and clients re-enroll.
+device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (Jul 31 2026):** enabled+forced with zero policies and no direct `anon`/`authenticated` table grants; native registration/deletion use selector-free SECURITY DEFINER RPCs and workers read via service role. **apns_topic (LIVE, ledger `20260731154315`):** nullable text column recording the installed app's bundle id per token (see "Per-token APNs topic" section); legacy rows remain NULL until clients re-enroll and therefore use the environment fallback.
 employee_onboarding_state — **LIVE (applied Jul 30 2026, ledger `20260730115220`)** — per-employee versioned first-run
                           onboarding flag (employee_id + surface PK, version_seen, updated_at). Deny-all
                           RLS (enabled+forced, zero browser-role grants); reached only via the two
@@ -1218,7 +1219,7 @@ the content layer is the `TOUR_STEPS` descriptor list in TechOnboarding.jsx — 
 `TECH_ONBOARDING_VERSION` in `src/lib/techOnboarding.js` and swaps that list; the shell (gating,
 state machine, focus trap, exit) is reused as-is.
 
-### Per-token APNs topic (Jul 30 2026 — authored, **NOT applied**)
+### Per-token APNs topic (Jul 31 2026 — **LIVE**, ledger `20260731154315`)
 ```
 upsert_my_native_device_token(p_token TEXT, p_apns_environment TEXT, p_apns_topic TEXT DEFAULT NULL)
                                   → jsonb — replaces the live 2-param definition in one transaction
@@ -1234,9 +1235,12 @@ upsert_my_native_device_token(p_token TEXT, p_apns_environment TEXT, p_apns_topi
                                   table; browser table grants were already revoked and no checked-in
                                   client reads device_tokens directly.
 ```
-Migration `supabase/migrations/20260730170000_device_token_apns_topic.sql` (+ paired rollback that
-restores the prior body under the SAME 3-param signature, + CI contract test
-`tests/qa/unit/device-token-apns-topic.test.js`, + behavioral db-lane test
+Migration `supabase/migrations/20260730170000_device_token_apns_topic.sql` applied through the
+governed release path as live ledger row `20260731154315_device_token_apns_topic`. Its post-apply
+catalog proof passed: the column/constraint are live, exactly one three-parameter RPC remains, the
+two-argument call is preserved by its trailing default, RLS is forced, and browser table access is
+absent. The paired rollback restores the prior body under the SAME 3-param signature. The CI
+contract test is `tests/qa/unit/device-token-apns-topic.test.js`; the behavioral db-lane test is
 `supabase/tests/device_token_apns_topic_isolated.sql` proving the 2-arg call still succeeds and the
 COALESCE topic-preservation — db lane runs at the apply window against an isolated DB, it is NOT CI
 coverage). **Why:** one env-wide `APNS_TOPIC` per Cloudflare
@@ -1247,9 +1251,9 @@ production outbox (every push 400 DeviceTokenNotForTopic). Now `functions/lib/ap
 `APNS_TOPIC` for legacy/NULL rows (APNS_TOPIC stays mandatory); `src/lib/pushNotifications.js` passes
 the installed bundle id (ground truth via `getInstalledAppBundleId()` in `src/lib/nativeAppInfo.js`,
 null-safe) on every enrollment re-upsert. **Sequencing: schema FIRST** — the worker selects the new
-column and the native client passes the new param, so the migration must apply before this code
-deploys to dev (auto-deploy on commit) and before any native rebuild; deployed-first code would read
-`token_lookup_failed` (worker) / PGRST202 (client). Apply + commit are separate owner-authorized gates.
+column and the native client passes the new param, so schema had to land before the compatible code
+deploy/rebuild. That database prerequisite is now satisfied; deployment and signed-device proof
+remain separate release evidence.
 
 ### Workers & Dev
 ```
@@ -1342,7 +1346,7 @@ global_search(p_term TEXT, p_limit INT DEFAULT 6)
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
- Under the authored but unapplied builder migration, callable OOP RPCs are SECURITY DEFINER;
+ Under the live builder migration, callable OOP RPCs are SECURITY DEFINER;
  browser execution is granted only on the named
  authenticated surface, while internal helpers remain revoked. Calculator access is exactly active
 internal `admin`, `office`, `supervisor`, `estimator` (sales rep), and `project_manager`; each may
@@ -1354,11 +1358,11 @@ available to eligible roles” writes
 only `enabled: true` through the existing owner-gated `upsert_feature_flag` RPC and
 preserves `dev_only_user_id`, so switching global access off restores the existing
 owner preview. A missing flag or `force_disabled` is the absolute AuthContext/FeatureRoute and
-server-side kill switch, winning even if `enabled` is true or the viewer owns the preview. The Jul
-30 dev readback showed owner preview; this work did not click the control or otherwise change the
-live flag value.
+server-side kill switch, winning even if `enabled` is true or the viewer owns the preview. The July
+31 live readback shows exactly one flag row: disabled, not force-disabled, and scoped to the
+existing preview user. This release did not activate it for eligible roles.
 
-Repository source now adds a fully configurable, versioned pricing builder at
+The builder adds a fully configurable, versioned pricing surface at
 **Settings > Pricing & billing > OOP Pricing** (admin-only, web-only). Administrators can set
 standard/internal rates, quantity and charge minimums, project minimums, defaults, formulas,
 visibility and water/mold applicability; add/reorder/archive/restore items; save a draft; and
@@ -1366,9 +1370,10 @@ two-click publish it. Desktop and tech routes render one shared pricing engine w
 their main-app and field-tech visual kits. Saved v2 quotes keep their revision, normalized inputs,
 config snapshot and evaluated lines in a private forced-RLS companion row; the database recalculates
 the persisted total and margin.
-`20260730150000_oop_pricing_builder.sql` and its paired rollback are authored but **not applied** in
- this work. The shared database remains an owner-gated release step; source changes alone do not
- alter its schema or publish the builder.
+`20260730150000_oop_pricing_builder.sql` is live as reconciled ledger row
+`20260731175328_oop_pricing_builder`; its paired rollback remains an owner-gated emergency action.
+Live postconditions confirm all four private tables, 18 functions, eight OOP policies, the exact
+role matrix and the published/draft legacy configuration. The flag remains owner-preview only.
 ```
 generate_oop_quote_number()     — Returns the next OOP-YYMM-XXX number from the maximum existing
                                    suffix for the Denver month, serialized by an advisory lock.
@@ -4278,8 +4283,9 @@ workflow configuration, like the Supabase pair. Guard: same test file,
 - **Standing constraint:** each deployment carries ONE env-level `APNS_TOPIC`, so the
   deployment that dispatches pushes must match the bundle id its recipients run.
   Production-critical notifiers belong on `utahpros.app`; Preview's topic may serve the
-  UPR Dev variant only. The durable per-token topic fix is authored in
-  `20260730170000_device_token_apns_topic.sql` and pending the governed apply below.
+  UPR Dev variant only. The durable per-token topic fix is live from
+  `20260730170000_device_token_apns_topic.sql` under ledger row `20260731154315`;
+  legacy NULL-topic rows still use the production fallback until they re-enroll.
 - **Diagnostics:** owner-only `POST /api/send-push` returns Apple's per-token `reason`
   verbatim — the only place it is visible; `worker_runs.meta.native` stores counters only.
   Counter fingerprint `attempted>0, sent=0, retryable=0, pruned=0` = non-retryable 4xx
@@ -4287,7 +4293,7 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   `/api/notification-test`, which flattens failures to `delivery_failed`.
 - Verified end-to-end 2026-07-30 19:55 MT: real inbound text → `sent:4 / attempted:4` →
   banner on device.
-- **Follow-up audit (2026-07-30, authored — NOT applied):**
+- **Follow-up audit (applied 2026-07-31, ledger `20260731165215`):**
   `supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql` gives the last two
   unguarded config-driven pg_net callers — `notify_google_calendar_sync()` and
   `notify_emit()` — the same exact two-URL allowlist + fail-closed secret gate the four
@@ -4297,10 +4303,11 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   `tests/qa/unit/pg-net-worker-url-allowlists.test.js`; apply-window check:
   `supabase/tests/pg_net_worker_url_allowlists_post_apply.sql`. The full key registry +
   the read-only "everything points at production" ops query:
-  **`docs/database/integration-config-worker-urls.md`**. The gap it deferred — the two
+  **`docs/database/integration-config-worker-urls.md`**. Separate live readback confirmed the exact
+  replacement bodies and service-role-only ACL. The gap it deferred — the two
   `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
   no allowlist — is closed by the follow-up below.
-- **Cron-command allowlist follow-up (2026-07-31, authored — NOT applied):**
+- **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
   `upr_calls_reclassify_safety_net`) into new zero-grant SECURITY DEFINER functions
@@ -4310,7 +4317,10 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   (`{"backfill":true,"days":3}` / `{"reclassify":true}`) and the 60s timeout are
   unchanged; pg_cron executes as the postgres job owner, so no role holds EXECUTE. CI
   contract test: `tests/qa/unit/transcribe-call-cron-allowlist.test.js`; apply-window
-  check: `supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`; rollback
+  check: `supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`. Live readback confirmed
+  exactly one active postgres-owned job per name, the expected schedules and wrapped commands,
+  postgres-owned zero-grant functions, the production allowlisted URL, and a nonblank secret
+  without exposing it. The rollback
   restores the exact 20260722 inlined commands (and reopens the SSRF surface — its
   header says so).
 
