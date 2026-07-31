@@ -520,6 +520,56 @@ Why it mattered: the QBO payment dedup was a non-atomic SELECT-then-INSERT with 
 behind it, and as of 2026-07-24 two feeds write payments (the hourly `upr_qbo_payments_sync_hourly`
 poller and the real-time webhook), so overlapping runs could each read "absent" and both insert.
 
+## QBO multi-invoice payment receipts (repository source only; not applied)
+
+Migration `20260731045407_qbo_multi_invoice_payment_receipts.sql` and its containment rollback are
+authored only on `codex/qbo-multi-invoice-payments`. They have not been applied to `qa-staging` or
+the shared project, and this section is not a claim about the live catalog.
+
+- `payment_receipts` is the grouped accounting header, uniquely identifying a QBO Payment by
+  `(qbo_realm_id, qbo_payment_id)` and retaining totals, provider metadata, source, actor, status,
+  and normalized snapshot.
+- `payment_receipt_attempts` reserves realm-scoped unique client and Intuit request IDs plus the
+  canonical request fingerprint before the provider mutation. A partial unique
+  `(qbo_realm_id, qbo_payment_id)` fence prevents one provider Payment from binding to two durable
+  attempts. Its status records submitting, provider-created, local-finalization, reconciliation,
+  ambiguous, rejected, conflict, and terminal outcomes.
+- `payment_receipt_events` is the append-only lifecycle/audit stream. Realm-scoped event keys,
+  per-payment transaction advisory locks, provider version checks, and terminal tombstones make
+  duplicate/out-of-order webhook and CDC work converge safely.
+- `payments.receipt_id` links each active invoice allocation projection to its header. Only a
+  service-role receipt worker can set or change that link: a `SECURITY INVOKER` trigger rejects
+  every non-service JWT role. This migration also revokes all `anon` table privileges and drops the
+  four inherited `allow_anon_{select,insert,update,delete}_payments` policies plus the broad
+  `allow_authenticated_payments FOR ALL` policy. It replaces them with operation-specific policies:
+  active internal employees may read payment history; only active, non-external admin employees
+  (the effective `canEditBilling` role boundary) may insert/update/delete manual, ungrouped payments; and a
+  browser insert must attribute `recorded_by` to the caller's employee row. Provider/grouped rows
+  remain worker-owned. The existing
+  partial UNIQUE `(qbo_payment_id, invoice_id)` contract is retained, with an additional unique
+  `(receipt_id, invoice_id)` projection contract. Insert/delete still drives the established
+  payment trigger; the receipt RPCs never write trigger-owned invoice/job totals.
+- `qbo_events` gains QBO realm/entity/provider-update identity and bounded retry scheduling fields.
+  `claim_qbo_receipt_event` atomically persists that retry identity with the event claim, and the
+  recovery worker also reclaims metadata-bearing `processing` rows stranded for over ten minutes.
+
+All three new tables have RLS enabled and forced, no browser grants, and service-role SELECT only.
+Seven worker-only `SECURITY DEFINER` functions—`claim_qbo_receipt_event`,
+`reserve_qbo_payment_receipt`,
+`mark_qbo_payment_receipt_created`, `finalize_qbo_payment_receipt`,
+`reconcile_qbo_payment_receipt`, `remove_qbo_payment_receipt`, and
+`fail_qbo_payment_receipt_attempt`—pin `search_path`, verify the service JWT role, revoke
+`PUBLIC`/`anon`/`authenticated`, and grant only `service_role`. The first is the atomic retry-claim
+boundary; the other six mutate receipt lifecycle state. Finalization/reconciliation reject empty or
+over-100 allocation arrays, cross-contact/customer mappings, duplicate invoices,
+fractional/imbalanced cents, and invalid payer/method values.
+
+The operational rollback first requires the UI/Worker gates disabled, then removes only the new
+RPC execution surface and force-disables `feature:qbo_receive_payment`. It deliberately retains
+receipt, attempt, event, `payments.receipt_id`, its service-only link guard, the payments anonymous
+access closure, and provider-event metadata as financial/audit evidence; destructive cleanup or
+authorization reopening would require a separate owner-reviewed migration.
+
 ## Mobile S1e inbound recording-source boundary (authored 2026-07-26)
 
 Migration `20260726183409_inbound_lead_recording_source_boundary.sql` is reviewed source only and

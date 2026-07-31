@@ -46,6 +46,7 @@ import { canEditBilling } from '@/lib/claimUtils';
 import { toast } from '@/lib/toast';
 import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
+import ErrorState from '@/components/ui/ErrorState';
 import SearchSelect from '@/components/collections/SearchSelect';
 import DatePicker from '@/components/DatePicker';
 import ActionMenu from '@/components/collections/ActionMenu';
@@ -153,6 +154,8 @@ export default function InvoiceEditor() {
 
   const dbRef = useRef(db);
   dbRef.current = db;
+  const employeeRoleRef = useRef(employee?.role);
+  employeeRoleRef.current = employee?.role;
 
   // ─── SECTION: State & hooks ──────────────
   const [inv, setInv] = useState(null);
@@ -165,6 +168,7 @@ export default function InvoiceEditor() {
   const [qboClasses, setQboClasses] = useState([]);
   const [catalogMsg, setCatalogMsg] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState(false);
   const [payForm, setPayForm] = useState(null); // null = closed, else the form draft (.id set when editing)
@@ -199,13 +203,12 @@ export default function InvoiceEditor() {
   // ─── SECTION: Data fetching ──────────────
   const load = useCallback(async () => {
     const d = dbRef.current;
-    setLoading(true);
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
       // Invoices always default their due date to today until one is picked — prefill and
       // persist it (not a content edit, so it must NOT flip the invoice back to draft).
-      if (!i.due_date && canEditBilling(employee?.role) && !i.locked) {
+      if (!i.due_date && canEditBilling(employeeRoleRef.current) && !i.locked) {
         i.due_date = today();
         d.update('invoices', `id=eq.${invoiceId}`, { due_date: i.due_date }).catch(() => {});
       }
@@ -223,7 +226,10 @@ export default function InvoiceEditor() {
       setContact(cid ? (await d.select('contacts', `id=eq.${cid}&select=name,email&limit=1`))?.[0] || null : null);
       let ls = await d.select('invoice_line_items', `invoice_id=eq.${invoiceId}&order=sort_order.asc,created_at.asc`) || [];
       // Start a fresh editable draft with one blank line so the builder opens ready to type.
-      if (ls.length === 0 && canEdit && !i.qbo_invoice_id) {
+      if (ls.length === 0
+          && canEditBilling(employeeRoleRef.current)
+          && !i.locked
+          && !i.qbo_invoice_id) {
         try {
           const created = await d.insert('invoice_line_items', { invoice_id: invoiceId, description: '', quantity: 1, unit_price: 0, sort_order: 0 });
           const row = Array.isArray(created) ? created[0] : created;
@@ -232,12 +238,15 @@ export default function InvoiceEditor() {
       }
       setLines(ls);
       setPayments(await d.select('payments', `invoice_id=eq.${invoiceId}&order=payment_date.desc,created_at.desc`) || []);
+      setLoadError('');
     } catch (e) {
-      toast('Failed to load invoice: ' + (e.message || e), 'error');
+      const message = 'Failed to load invoice: ' + (e.message || e);
+      setLoadError(message);
+      toast(message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [invoiceId, navigate, canEdit, employee]);
+  }, [invoiceId, navigate]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -540,6 +549,17 @@ export default function InvoiceEditor() {
 
   // ─── SECTION: Derived values ──────────────
   if (loading) return <div className={`coll-page ${slide}`}><InvoiceSkeleton /></div>;
+  if (!inv && loadError) {
+    return (
+      <div className={`coll-page ${slide}`}>
+        <ErrorState
+          message={loadError}
+          onRetry={load}
+          secondary={<GhostButton onClick={() => navigate('/collections')}>Back to invoices</GhostButton>}
+        />
+      </div>
+    );
+  }
   if (!inv) return null;
   if (!isFeatureEnabled('feature:billing')) {
     return <div style={{ maxWidth: 900, margin: '40px auto', padding: 24, color: C.muted }}>Billing is turned off (feature flag <code>feature:billing</code>).</div>;
@@ -572,6 +592,9 @@ export default function InvoiceEditor() {
   // Payment modal: view (read-only) → edit (form) → save; new = recording fresh.
   const payMode = payForm ? (payForm.id ? 'edit' : 'new') : (payView ? 'view' : null);
   const payStripe = (payView?.source || '') === 'stripe';
+  // A QBO-imported or grouped receipt is an accounting entity, not a one-row
+  // payment. Editing/deleting it here could alter every linked invoice.
+  const payManagedExternally = !!payView && (payView.source === 'qbo' || !!payView.receipt_id);
   const payDirty = payMode === 'edit'
     ? !!payView && (
         String(payForm.amount ?? '') !== String(payView.amount ?? '')
@@ -602,7 +625,9 @@ export default function InvoiceEditor() {
             </PrimaryButton>
           )}
           {canEdit && balance > 0.005 && (
-            <GhostButton onClick={receivePayment} leftIcon={<IconDollar />}>Receive payment</GhostButton>
+            <GhostButton onClick={() => employee?.role === 'admin' && isFeatureEnabled('feature:qbo_receive_payment') && inv.contact_id && inv.qbo_invoice_id
+              ? navigate(`/collections/receive-payment?contact=${encodeURIComponent(inv.contact_id)}&invoice=${encodeURIComponent(inv.id)}`)
+              : receivePayment()} leftIcon={<IconDollar />}>Receive payment</GhostButton>
           )}
           {canEdit && !synced && job?.id && isFeatureEnabled('feature:ai_xactimate') && (
             <GhostButton onClick={() => !xactBusy && xactInputRef.current?.click()} title="Upload an Xactimate estimate PDF — AI reads it and pre-fills this invoice"
@@ -935,7 +960,8 @@ export default function InvoiceEditor() {
                   {payStripe && <div style={{ marginTop: 14, fontSize: 12, lineHeight: 1.5, color: STATUS.info.text, background: STATUS.info.tint, border: `1px solid ${STATUS.info.border}`, borderRadius: 9, padding: '9px 11px' }}>💳 Card payment — recorded automatically from Stripe. To refund or adjust it, do so in QuickBooks so the card reconciliation stays intact.</div>}
                   <div style={{ marginTop: 18, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <GhostButton onClick={closePayModal}>Close</GhostButton>
-                    {canEdit && !payStripe && <PrimaryButton onClick={() => editPayment(payView)}>Edit</PrimaryButton>}
+                    {canEdit && !payStripe && !payManagedExternally && <PrimaryButton onClick={() => editPayment(payView)}>Edit</PrimaryButton>}
+                    {payManagedExternally && <span style={{ fontSize: 12, color: C.muted }}>Managed in QuickBooks</span>}
                   </div>
                 </>
               ) : (

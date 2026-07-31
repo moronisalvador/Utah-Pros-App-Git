@@ -70,6 +70,12 @@ const EXPLICIT_FLAGS = [
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',
   },
+  {
+    key: 'feature:qbo_receive_payment',
+    label: 'QuickBooks Receive Payment',
+    description: 'Admin-only flow that creates one QuickBooks payment and allocates it across several open invoices.',
+    enabled: false,
+  },
   // ── UX polish previews (owner-gated, instantly reversible) ───────────────────
   // enabled:false is LOAD-BEARING — the DevTools auto-seed creates any missing
   // registry key ENABLED. The live rows are seeded enabled:false + dev_only_user_id

@@ -113,6 +113,7 @@ const {
   PrivacyPolicy,
   Production,
   PublicRoadmap,
+  ReceivePayment,
   Roles,
   Schedule,
   ScheduleTemplates,
@@ -508,6 +509,9 @@ function WebRoutes() {
           <FeatureRoute flag="page:collections">
             <ErrorBoundary section="Collections"><Collections /></ErrorBoundary>
           </FeatureRoute>
+        } />
+        <Route path="collections/receive-payment" element={
+          <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
         } />
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">

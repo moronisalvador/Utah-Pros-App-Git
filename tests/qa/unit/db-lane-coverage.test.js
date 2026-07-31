@@ -52,11 +52,17 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
  * Recorded 2026-07-26. Raising this is a deliberate act: it means you are adding
  * a guard that will not protect anything in CI until the db lane has a target.
  */
+// 83 → 84 on 2026-07-31: qbo_multi_invoice_payment_receipts.test.sql. Its
+// always-visible counterpart is
+// tests/qa/unit/qbo-multi-invoice-payment-receipts-migration-contract.test.js,
+// which guards migration source in the credential-free lanes; the behavioural
+// receipt/RPC proof runs only in the db lane against the qa-staging branch.
+//
 // 79 → 80 on 2026-07-30: crm_lead_value_from_claim.test.js. Its always-visible
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
 // the migration source in the credential-free lanes; the behavioural trigger
 // proof runs in the db lane against the qa-staging branch.
-const DARK_BASELINE = 83;
+const DARK_BASELINE = 84;
 // 2026-07-31: 82 -> 83, adding qbo_invoice_command_ledger.test.js. Its
 // qa-staging proof covers service-only ACLs, active-command serialization,
 // immutable provider attempt replay/fallback, legal recovery transitions, and

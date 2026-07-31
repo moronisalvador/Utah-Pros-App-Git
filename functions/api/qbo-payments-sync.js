@@ -4,11 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   A safety net for the QuickBooks webhook. On a schedule (and on demand), it asks
- *   QuickBooks for recent payments and makes sure each one is recorded in UPR, and
- *   for recent estimate answers (a customer accepted or declined an estimate online)
- *   and mirrors those too. If a webhook was ever missed (network hiccup, downtime,
- *   a missing Intuit subscription), this catches it within the hour.
+ *   A safety net for QuickBooks webhooks. On a schedule (and on demand), it
+ *   reconciles recent payment changes, retries durable receipt work that could
+ *   not finish, and mirrors customer estimate answers missed by their webhook.
  *
  * WHERE IT LIVES:
  *   Route:   GET/POST /api/qbo-payments-sync  (point an hourly cron at this, like
@@ -18,17 +16,16 @@
  *   Packages:  none
  *   Internal:  lib/supabase.js, lib/cors.js, lib/qbo-auth.js (authorizeQboRequest),
  *              lib/quickbooks.js (qboFetch, getConnection),
- *              lib/qbo-payment-sync.js (syncQboPaymentToUpr),
+ *              lib/qbo-payment-sync.js (payment reconciliation/removal),
  *              lib/qbo-estimate-sync.js (syncQboEstimateToUpr),
  *              lib/worker-runs.js (recordWorkerRun)
- *   Data:      reads → QBO Payments + Estimates (Intuit), invoices/payments/estimates (Supabase)
- *              writes → payments (insert, via qbo-payment-sync; deduped);
- *                       estimates status (via qbo-estimate-sync; guarded/idempotent)
+ *   Data:      reads → QBO Payment CDC + Estimates, qbo_events, receipt/invoice/payment data
+ *              writes → payment projections, qbo_events, receipt service RPCs, worker_runs;
+ *                       estimates status through qbo-estimate-sync
  *
  * NOTES / GOTCHAS:
- *   - Idempotent: syncQboPaymentToUpr skips payments already recorded and
- *     syncQboEstimateToUpr skips estimates already decided, so re-running is safe.
- *   - Looks back LOOKBACK_DAYS by TxnDate / LastUpdatedTime; tune if needed. Low volume → cheap.
+ *   - CDC catches payment updates and deletions even when their transaction date is old.
+ *   - The seven-day overlap, durable retry queue, and idempotent estimate sync make re-runs safe.
  *   - An estimate-sweep failure never blocks payment reconciliation (and payments run first).
  *   - No-ops cleanly when QuickBooks isn't connected.
  * ════════════════════════════════════════════════
@@ -36,15 +33,121 @@
 
 import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { authorizeQboRequest } from '../lib/qbo-auth.js';
 import { qboFetch, getConnection } from '../lib/quickbooks.js';
-import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
+import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
+import { isReceivePaymentsGateOpen } from '../lib/qbo-receipt.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
 import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
 
 const MINOR_VERSION = '70';
 const LOOKBACK_DAYS = 7;
+const CDC_OVERLAP_DAYS = 7;
+const RECEIPT_PROCESSING_STALE_MS = 10 * 60 * 1000;
+
+export function cdcPayments(body) {
+  const changes = [];
+  for (const response of body?.CDCResponse || []) {
+    for (const query of response?.QueryResponse || []) {
+      for (const payment of query?.Payment || []) changes.push(payment);
+    }
+  }
+  return changes;
+}
+
+export async function drainReceiptRetries(env, db, realmId, { receiptEnabled = false } = {}) {
+  if (!receiptEnabled) return { processed: 0, failed: 0 };
+  const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - RECEIPT_PROCESSING_STALE_MS).toISOString();
+  const dueRetries = await db.select(
+    'qbo_events',
+    `entity=eq.Payment&status=eq.retry&qbo_entity_id=not.is.null&or=(next_retry_at.is.null,next_retry_at.lte.${encodeURIComponent(now)})&select=id,operation,qbo_realm_id,qbo_entity_id,retry_count&order=created_at.asc&limit=100`,
+  );
+  // A worker can be interrupted after its atomic claim but before it persists a terminal
+  // outcome. Recover only old receipt-mode claims; a fresh processing row is still owned by
+  // the webhook invocation that created it.
+  const staleProcessing = await db.select(
+    'qbo_events',
+    `entity=eq.Payment&status=eq.processing&qbo_realm_id=not.is.null&qbo_entity_id=not.is.null&created_at=lte.${encodeURIComponent(staleBefore)}&select=id,operation,qbo_realm_id,qbo_entity_id,retry_count&order=created_at.asc&limit=100`,
+  );
+  const events = [...new Map([...(dueRetries || []), ...(staleProcessing || [])]
+    .map((event) => [event.id, event])).values()];
+  let processed = 0;
+  let failed = 0;
+  for (const event of events || []) {
+    if (event.qbo_realm_id && String(event.qbo_realm_id) !== String(realmId)) {
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: 'ignored',
+        error: 'realm_mismatch',
+        processed_at: new Date().toISOString(),
+      });
+      continue;
+    }
+    try {
+      const operation = String(event.operation || '');
+      if (['Delete', 'Void', 'Merge'].includes(operation)) {
+        await removeQboPaymentFromUpr(db, event.qbo_entity_id, {
+          receiptEnabled: true,
+          status: operation === 'Delete' ? 'deleted' : 'voided',
+          eventKey: event.id,
+          realmId,
+        });
+      } else {
+        await syncQboPaymentToUpr(env, db, event.qbo_entity_id, { receiptEnabled: true });
+      }
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: 'processed',
+        error: null,
+        processed_at: new Date().toISOString(),
+        next_retry_at: null,
+        retry_count: Number(event.retry_count || 0) + 1,
+      });
+      processed++;
+    } catch (error) {
+      const retryCount = Number(event.retry_count || 0) + 1;
+      const transientDatabaseFailure =
+        /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
+      const retryable = (error?.retryable === true || transientDatabaseFailure) && retryCount < 8;
+      await db.update('qbo_events', `id=eq.${encodeURIComponent(event.id)}`, {
+        status: retryable ? 'retry' : 'error',
+        error: String(error?.message || error).slice(0, 500),
+        retry_count: retryCount,
+        next_retry_at: retryable
+          ? new Date(Date.now() + Math.min(6 * 60, 5 * (2 ** retryCount)) * 60 * 1000).toISOString()
+          : null,
+      });
+      failed++;
+    }
+  }
+  return { processed, failed };
+}
+
+async function persistCdcFailure(env, db, realmId, payment, error, receiptEnabled) {
+  if (!receiptEnabled) return;
+  const eventId = `cdc-retry:${realmId}:${payment.Id}:${payment.MetaData?.LastUpdatedTime || payment.SyncToken || 'current'}`;
+  const retryable = error?.retryable === true
+    || /Supabase (?:SELECT|UPDATE|RPC|INSERT|DELETE) [^:]+: 5\d\d\b/.test(String(error?.message || ''));
+  try {
+    const claimed = await db.rpc('claim_qbo_receipt_event', {
+      p_id: eventId,
+      p_entity: 'Payment',
+      p_operation: 'CDC',
+      p_realm_id: String(realmId),
+      p_entity_id: String(payment.Id),
+      p_provider_updated_at: payment.MetaData?.LastUpdatedTime || null,
+    });
+    if (!claimed) return;
+    await db.update('qbo_events', `id=eq.${encodeURIComponent(eventId)}`, {
+      status: retryable ? 'retry' : 'error',
+      error: String(error?.message || error).slice(0, 500),
+      next_retry_at: retryable ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null,
+    });
+  } catch (queueError) {
+    console.error('qbo-payments-sync: could not persist CDC failure', queueError);
+  }
+}
 
 // Customer answers worth mirroring; Pending/Closed estimates are noise.
 const ESTIMATE_STATUSES_TO_SYNC = new Set(['Accepted', 'Rejected', 'Converted']);
@@ -86,20 +189,37 @@ async function reconcile(env) {
   const conn = await getConnection(env);
   if (!conn || !conn.refresh_token) return { ok: false, error: 'QuickBooks not connected' };
 
-  const db = supabase(env);
-  const since = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
-  const q = `SELECT Id, TxnDate FROM Payment WHERE TxnDate >= '${since}' MAXRESULTS 500`;
-
-  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-  if (!res.ok) return { ok: false, error: `QBO query ${res.status}` };
-  const data = await res.json().catch(() => ({}));
-  const payments = data?.QueryResponse?.Payment || [];
+  const db = supabase(env, fetchWithTimeout);
+  const receiptEnabled = await isReceivePaymentsGateOpen(env, db);
+  const changedSince = new Date(Date.now() - CDC_OVERLAP_DAYS * 86400000).toISOString();
+  const cdc = await qboFetch(env, `/cdc?entities=Payment&changedSince=${encodeURIComponent(changedSince)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  let payments;
+  if (cdc.ok) {
+    payments = cdcPayments(await cdc.json().catch(() => ({})));
+  } else {
+    // Compatibility fallback while a realm's CDC behavior is being qualified.
+    const since = new Date(Date.now() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+    const q = `SELECT Id, TxnDate FROM Payment WHERE TxnDate >= '${since}' MAXRESULTS 500`;
+    const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+    if (!res.ok) return { ok: false, error: `QBO query ${res.status}` };
+    payments = (await res.json().catch(() => ({})))?.QueryResponse?.Payment || [];
+  }
 
   let recorded = 0, skipped = 0;
   const paymentReconciliation = [];
   for (const p of payments) {
     try {
-      const r = await syncQboPaymentToUpr(env, db, String(p.Id));
+      if (String(p.status || '').toLowerCase() === 'deleted') {
+        await removeQboPaymentFromUpr(db, String(p.Id), {
+          receiptEnabled,
+          status: 'deleted',
+          eventKey: `cdc:${conn.realm_id}:${p.Id}:${p.MetaData?.LastUpdatedTime || 'deleted'}`,
+          realmId: String(conn.realm_id),
+        });
+        skipped++;
+        continue;
+      }
+      const r = await syncQboPaymentToUpr(env, db, String(p.Id), { receiptEnabled });
       for (const x of (r.results || [])) {
         if (x.recorded) recorded++; else skipped++;
         const entity = x?.qboInvoiceId ? 'Invoice' : 'Payment';
@@ -110,22 +230,23 @@ async function reconcile(env) {
       }
     } catch (err) {
       console.error('qbo-payments-sync: payment', p.Id, err?.message || err);
+      await persistCdcFailure(env, db, String(conn.realm_id), p, err, receiptEnabled);
+      skipped++;
     }
   }
 
   // Estimate answers sweep — isolated so it can never break payment reconciliation.
   let estimates;
   try {
-    estimates = await sweepEstimates(env, db, since);
+    estimates = await sweepEstimates(env, db, changedSince);
   } catch (err) {
     console.error('qbo-payments-sync: estimate sweep', err?.message || err);
     estimates = { ok: false, error: String(err?.message || err) };
   }
 
-  // records_processed keeps its historical meaning (payments recorded); the
-  // estimate sweep outcome rides along in meta.
+  const retry = await drainReceiptRetries(env, db, String(conn.realm_id), { receiptEnabled });
   await recordWorkerRun(db, {
-    workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: recorded,
+    workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: recorded + retry.processed,
     startedAt, meta: {
       estimates,
       reconciliation_count: paymentReconciliation.length + (estimates?.reconciliation_count || 0),
@@ -133,10 +254,12 @@ async function reconcile(env) {
         ...paymentReconciliation.map((item) => item.reason),
         ...(estimates?.reconciliation_reasons || []),
       ],
+      source: cdc.ok ? 'cdc' : 'query-fallback',
+      retry,
     },
   });
 
-  return { ok: true, scanned: payments.length, recorded, skipped, estimates };
+  return { ok: true, scanned: payments.length, recorded, skipped, estimates, retry };
 }
 
 // ─── SECTION: Handlers ──────────────
@@ -145,13 +268,13 @@ export async function onRequestOptions(context) {
 }
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env));
+  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout));
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   return jsonResponse(await reconcile(env), 200, request, env);
 }
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const auth = await authorizeQboRequest(request, env, supabase(env));
+  const auth = await authorizeQboRequest(request, env, supabase(env, fetchWithTimeout));
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   return jsonResponse(await reconcile(env), 200, request, env);
 }

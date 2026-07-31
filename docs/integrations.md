@@ -388,6 +388,42 @@ runtime values or invoke the schedule. The real-time half remains owner/dashboar
 `QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare (Production + Preview) + redeploy, and subscribe the
 **Payment** webhook in Intuit Developer (production) to `https://utahpros.app/api/qbo-webhook`.
 
+## QuickBooks multi-invoice payment receipts (source only; disabled 2026-07-30)
+
+The isolated `codex/qbo-multi-invoice-payments` source adds a separate, human-initiated UPR→QBO
+receipt path. It is not deployed, its migration is not applied, no Intuit sandbox/production
+Payment was created, and both rollout gates default off.
+
+`POST /api/qbo-receive-payment` is Bearer-only and requires an active, non-external literal
+`admin`; the shared scheduler capability is not accepted. The endpoint also checks the exact
+enabled/unforced database feature row and literal Worker switch server-side, so either closed gate
+blocks direct API callers before QBO. Before any provider call it validates 1–100
+same-contact/same-QBO-customer invoice allocations in integer cents and reserves a durable attempt
+with a caller UUID, canonical fingerprint, and stable realm-scoped Intuit `requestid`.
+The Worker then creates one QBO Payment with multiple Invoice `LinkedTxn` lines and an explicit
+date, PaymentMethod, reference, and DepositToAccount. It re-reads the returned Payment plus every
+QBO invoice balance before atomically finalizing the local receipt/projections. A provider timeout
+is retained as `unknown_outcome` and an unchanged retry resolves the original request; it is never
+converted into a fresh payment.
+
+When `QBO_RECEIVE_PAYMENT_ENABLED === 'true'`, the existing signed webhook and CDC/poller switch
+from the legacy per-invoice mapper to grouped receipt reconciliation. `qbo_events` carries
+realm/entity/provider-update identity plus retry count/due time; per-payment advisory locks,
+event keys, terminal tombstones, and provider timestamp/SyncToken checks protect duplicate and
+out-of-order delivery. The receipt-mode event claim stores all retry identity atomically, and the
+recovery drain reclaims old metadata-bearing `processing` rows as well as due retries. Supported
+current Payment state replaces every active allocation together. Unsupported/unmapped state fails
+closed; QBO Update can restore a corrected receipt, while Void/Delete removes active `payments`
+projections and keeps receipt/attempt/event audit evidence.
+
+The two gates are independent: browser navigation and the receive endpoint require the database flag
+`feature:qbo_receive_payment`, while receipt creation also requires the Cloudflare value
+`QBO_RECEIVE_PAYMENT_ENABLED=true`; the latter controls receipt-aware webhook/recovery behavior.
+Neither is authorization. The safe release order is backward-compatible code deployed with both off
+→ owner-authorized additive migration → catalog/ACL proof → separately authorized Intuit
+Development sandbox matrix → named-admin activation proof. See
+`docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+
 ## Messaging transport build state (2026-07-23)
 
 Phase 1 is published with Twilio behavior unchanged. The integrated transport foundation adds a
