@@ -42,13 +42,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { toast } from '@/lib/toast';
 import TabLoading from '@/components/TabLoading';
 import { AdminMobilePage, MoneyStatCard } from '@/components/admin-mobile';
 import { createPaymentRecorder } from '@/components/admin-mobile/invoice/recordPayment';
 import { invoiceTotals, invoiceStatusKind, STATUS_LABELS, fmtMoney, fmtDate } from '@/components/admin-mobile/invoice/invoiceMath';
 import PaymentSheet from '@/components/admin-mobile/invoice/PaymentSheet';
-
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 const PAYER_LABELS = { insurance: 'Insurance', homeowner: 'Homeowner', other: 'Other' };
 const METHOD_LABELS = { check: 'Check', eft: 'EFT / ACH', ach: 'EFT / ACH', credit_card: 'Card', cash: 'Cash', other: 'Other' };

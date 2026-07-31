@@ -43,13 +43,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
+import { toast } from '@/lib/toast';
 import { AdminMobilePage, adminEstimateEditorHref, adminInvoiceHref } from '@/components/admin-mobile';
 import TabLoading from '@/components/TabLoading';
 import { buildEstimateSendPayload, interpretConvertResult, deriveEstimateView } from '@/components/admin-mobile/estimate/estimateActions';
 import EstimateHeader from '@/components/admin-mobile/estimate/EstimateHeader';
 import EstimateLines from '@/components/admin-mobile/estimate/EstimateLines';
-
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 
 const divLabel = (d) => {
   if (!d) return 'Estimate';

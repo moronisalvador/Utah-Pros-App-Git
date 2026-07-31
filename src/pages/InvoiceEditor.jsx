@@ -43,6 +43,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
+import { toast } from '@/lib/toast';
 import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
@@ -64,7 +65,6 @@ const XACT_STAGES = [
   'Pre-filling your invoice draft…',
 ];
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 const today = () => new Date().toISOString().slice(0, 10);
 // Compact saved stamp: "06-22-26 2:30 PM"
@@ -79,6 +79,14 @@ const fmtStamp = (iso) => {
 const PAYER_TYPES = [['insurance', 'Insurance'], ['homeowner', 'Homeowner'], ['other', 'Other']];
 const METHODS = [['check', 'Check'], ['eft', 'EFT / ACH'], ['credit_card', 'Credit card'], ['cash', 'Cash'], ['other', 'Other']];
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
+const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
+const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
+const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
+const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
+const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
 
 // ─── SECTION: Toolbar icons (stroke style — matches the nav bar; sized for buttons) ──────────────
 // Same recipe as src/components/Icons.jsx (viewBox 24, currentColor, 2px round strokes) so the
@@ -1000,12 +1008,3 @@ function ViewRow({ label, value, valueColor }) {
     </div>
   );
 }
-
-const PAY_GRID = '92px minmax(0,1fr) 96px minmax(0,1.1fr)';
-const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
-const cellTxt = { ...cellInp, display: 'block' };
-const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
-const fieldWrap = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 };
-const fieldLbl = { fontSize: 10.5, fontWeight: 600, color: C.muted };
-const fieldInp = { width: '100%', padding: '6px 8px', fontSize: 12.5, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };

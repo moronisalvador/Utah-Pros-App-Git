@@ -42,6 +42,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
+import { toast } from '@/lib/toast';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
 import ActionMenu from '@/components/collections/ActionMenu';
@@ -51,7 +52,6 @@ import { C, STATUS, fmt$2, fmtDate, mono, tnum, divLabel } from '@/components/co
 import QboAttachments from '@/components/collections/QboAttachments';
 import usePageTransition from '@/hooks/usePageTransition';
 
-const toast = (m, t = 'success') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 // Compact saved stamp: "06-22-26 2:30 PM"
 const fmtStamp = (iso) => {
@@ -63,6 +63,11 @@ const fmtStamp = (iso) => {
 };
 const TYPE_LABEL = { initial: 'Initial', supplement: 'Supplement', change_order: 'Change order', final: 'Final' };
 const EST_STATUS = { Converted: STATUS.success, Sent: STATUS.info, Saved: STATUS.neutral, Draft: STATUS.neutral };
+const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
+// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
+const cellTxt = { ...cellInp, display: 'block' };
+const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
+const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
 
 // Loading skeleton — mirrors the estimate silhouette (toolbar → header card → line items)
 // so the slide reveals page shape, not a spinner. Bars reuse the .coll-skel shimmer.
@@ -278,6 +283,9 @@ export default function EstimateEditor() {
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
+  const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
+  const total = round2(subtotal);
+
   // Convert an accepted estimate into the job's invoice (and link it in QuickBooks).
   const convertToInvoice = async () => {
     const force = confirmConvert;
@@ -322,8 +330,6 @@ export default function EstimateEditor() {
   const converted = !!est.converted_invoice_id;
   const editable = canEdit && !converted;
   const division = divLabel(est.intended_division || job?.division) || 'Estimate';
-  const subtotal = lines.reduce((s, l) => s + Number(l.line_total || 0), 0);
-  const total = round2(subtotal);
   const docNumber = est.qbo_doc_number || est.estimate_number || 'New estimate';
   const statusLabel = converted ? 'Converted' : !synced ? 'Draft' : est.qbo_emailed_at ? 'Sent' : 'Saved';
   const st = EST_STATUS[statusLabel] || STATUS.neutral;
@@ -583,9 +589,3 @@ function Field({ label, value, mono: isMono }) {
     </div>
   );
 }
-
-const cellInp = { width: '100%', padding: '6px 8px', fontSize: 13, border: `1px solid ${C.inputBorder}`, borderRadius: 7, background: '#fff', color: C.ink, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' };
-// Same box metrics as the inputs so a 0/1-line description matches their height; grows on wrap.
-const cellTxt = { ...cellInp, display: 'block' };
-const btnSm = { fontSize: 12.5, fontWeight: 600, padding: '8px 13px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' };
-const bannerStyle = (s) => ({ background: s.tint, border: `1px solid ${s.border}`, color: s.text, borderRadius: 10, padding: '9px 13px', fontSize: 13, marginBottom: 12 });
