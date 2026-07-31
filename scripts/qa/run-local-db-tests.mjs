@@ -57,6 +57,7 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
       'supabase/tests/notification_read_recipient_boundary.test.sql',
       'supabase/tests/mobile_personal_ownership_boundary.test.sql',
       'supabase/tests/oop_pricing_builder.test.sql',
+      'supabase/tests/scheduled_message_delivery.test.sql',
     ];
 
     for (const sqlProofFile of sqlProofFiles) {

@@ -67,7 +67,11 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
 // Its hosted qa-staging proof creates only tagged disposable rows and temporary
 // branch Auth identities, and exercises browser/service authorization plus
 // same-estimate conversion serialization without any QuickBooks provider call.
-const DARK_BASELINE = 84;
+// 2026-07-31: 84 -> 85, adding scheduled_message_delivery.test.sql. The
+// rollback-only local proof covers actor-derived idempotent create, a single
+// durable attempt reservation, linked-row non-reclaim, fresh in-flight
+// reconciliation, accepted materialization once, and final grants.
+const DARK_BASELINE = 85;
 // 2026-07-30: 80 -> 81, adding oop_pricing_builder.test.sql. The guarded local
 // proof covers active-internal authorization, canonical money, fractional-input
 // compatibility shadows, optimistic concurrency, and idempotent replay.

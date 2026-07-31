@@ -417,6 +417,56 @@ web and supported native clients. Apply 40339 only after disposable behavioral D
 native direct-write callers are no longer supported, and a separate owner apply window is
 authorized.
 
+## Scheduled-message delivery hardening (authored; not applied)
+
+The reviewed, repository-only sequence `20260731220000_scheduled_message_delivery_compatibility.sql`
+then `20260731220100_scheduled_message_delivery_enforcement.sql` hardens
+`scheduled_messages` without representing either migration as live. The two stages must not be
+collapsed or applied in a mixed-caller window: apply compatibility first, deploy and verify all
+web/native/Worker callers, and only then separately authorize enforcement. No provider send,
+database apply, or deployment is implied by the authored source.
+
+Compatibility is additive. It adds nullable `claim_token` (the random fencing token for the
+current worker) and nullable `delivery_attempt_id` (a restricted foreign key to
+`message_send_attempts`), plus a partial unique index on non-null `delivery_attempt_id`. That
+durable one-to-one link is the irreversible scheduled submission boundary: a linked row is
+reconciled rather than claimed or submitted again, preventing a crash/retry from authorizing a
+second provider invocation. Legacy `claim_scheduled_message(uuid)` remains callable during this
+compatibility window, but refuses rows that already have a delivery link.
+
+The browser path becomes actor-derived RPC-only. `create_scheduled_message` resolves the active,
+internal actor from `auth.uid()`, requires the Conversations capability and current access to the
+target conversation, stores that resolved employee as `created_by`, and accepts only exactly one
+active customer participant with a non-empty phone. Its caller-supplied UUID is an idempotency key:
+the same actor and identical conversation/body/send time return the existing row, while a changed
+payload conflicts. Queue reads and cancellation remain explicitly DevTools-owner-only contracts;
+cancel may affect only an unreserved pending row and never clears an irreversible delivery link.
+
+The worker lifecycle is a separate service-role-only, `SECURITY INVOKER` RPC set:
+`claim_scheduled_message_v2`, release/fail by matching `claim_token`, reservation, and
+reconciliation. Each has an in-function `current_user = 'service_role'` fence and no browser-role
+execution. Reservation repeats the creator capability and conversation-access checks, exact
+one-recipient check, recipient contact/phone equality, and immutable canonical-body check inside
+the transaction immediately before it creates and links the one send attempt. The Worker repeats
+the creator and recipient checks at dequeue as defense in depth; removal, deactivation, capability
+loss, or a recipient change therefore fails closed both before and at the final reservation
+boundary.
+
+Enforcement removes the three broad legacy policies and all browser table privileges on
+`scheduled_messages`; only `service_role` retains the ordinary table lifecycle privileges.
+Browser callers retain only the actor-derived create, owner queue, and owner cancel RPCs. The
+legacy claim signature is preserved only to fail closed, while the token-fenced v2 lifecycle is
+the sole service execution path. The paired isolated database test must prove actor derivation,
+idempotent create, exactly one reservation/materialized message, stale/legacy claim refusal after
+reservation, and final role grants; source tests additionally guard the grant/policy sequence.
+
+Both migrations carry rollbacks, but neither is a normal reversal. Enforcement rollback has an
+unresolved-reservation preflight and intentionally restores the prior broad queue posture only for
+an emergency caller rollback. Compatibility rollback must follow enforcement rollback where
+applicable, refuses unresolved linked pending rows, and deliberately retains the delivery columns
+and index so an erased reservation cannot enable a duplicate send. Run those rollback bodies only
+in a separately authorized recovery window after caller reconciliation.
+
 ## Pending mobile messaging and CallRail reconciliation hardening
 
 `20260724173000_harden_find_or_create_conversation.sql` changes no table shape. It preserves

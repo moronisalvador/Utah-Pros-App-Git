@@ -300,6 +300,52 @@ worker's claim authority; browser sessions cannot claim or replay provider event
 under migration-ledger version `20260724051500`; read-only catalog verification confirmed the
 reviewed body fingerprint and the same service-only invoker boundary.
 
+### Scheduled-message delivery boundary (authored; not applied)
+
+The authored scheduled-message hardening is a two-stage compatibility/enforcement release
+candidate, not evidence of a deployed or applied control. Compatibility first preserves deployed
+callers while moving browser scheduling to `create_scheduled_message`, which derives the employee
+from `auth.uid()` rather than accepting an actor ID. The RPC requires an active, non-external
+employee with the Conversations capability and current conversation membership/access, then
+requires exactly one active customer participant with a non-empty phone. It persists the derived
+creator and rejects an idempotency-key reuse with changed content. `get_scheduled_queue` and
+`cancel_scheduled_message` are exact DevTools-owner contracts; cancellation is restricted to an
+unreserved pending row.
+
+After compatible web/native/Worker callers are deployed and verified, the separate enforcement
+migration removes every `anon` and `authenticated` privilege/policy on the raw
+`scheduled_messages` table. Browser roles then have no raw queue read/write route and retain only
+the narrow authenticated RPCs above. The frozen legacy
+`claim_scheduled_message(uuid)` signature becomes a fail-closed retirement stub; it cannot claim
+or initiate a send.
+
+All lifecycle operations after browser creation are `SECURITY INVOKER`, service-role-only RPCs
+with an explicit `current_user = 'service_role'` fence: token-fenced claim, token-matched
+release/failure, reservation, and reconciliation. `claim_token` prevents an old worker from
+releasing or finishing a newer claim. A nullable `delivery_attempt_id`, uniquely linked to one
+`message_send_attempts` row, prevents a linked scheduled row from being reclaimed for another
+provider submission; it must be reconciled instead. Reservation revalidates the stored creator's
+capability and conversation access, exact active recipient contact/phone, and canonical body in
+the same transaction. The Worker also repeats creator access and exact-recipient checks at
+dequeue, so capability revocation, membership removal, deactivation, or recipient drift fails
+closed before provider dispatch.
+
+`GET`/`POST /api/process-scheduled` is not public: it accepts either the validated scheduler
+secret or the exact DevTools-owner identity, and the human path must also retain Messages
+capability. The direct platform `scheduled()` handler is a distinct non-HTTP scheduler capability.
+Authorized delivery still routes through `sendAutomatedMessage()` and its consent/DND gates; the
+new reservation/reconciliation boundary does not authorize a provider bypass or automatic replay
+of an ambiguous outcome.
+
+Required release evidence is negative as well as positive: browser raw-table and lifecycle-RPC
+calls must be denied; wrong, inactive, external, revoked-capability, non-member, or non-owner
+actors must fail before queue mutation or provider work; exact recipient changes must fail at
+dequeue/reservation; and a durable link must allow only one attempt/materialization. Run the
+behavioral SQL proof only against an isolated disposable database, plus source-level ACL/rollback
+tests. The paired rollbacks are emergency-only, preflight unresolved reservations, and can restore
+the former broad queue posture; neither rollback, migration apply, Worker deployment, scheduler
+secret configuration, nor provider activation is authorized by this repository documentation.
+
 ## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 
 `POST /api/attest-sms-consent` requires a valid Supabase session and an active, non-external

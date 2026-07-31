@@ -17,6 +17,8 @@
  *              (emailAllows), functions/lib/sms-consent.js (consentAllows),
  *              functions/lib/twilio.js (sendMessage), functions/lib/phone.js
  *              (normalizePhone), functions/lib/supabase.js (service-role client),
+ *              functions/lib/messaging-attempts.js (durable scheduled delivery
+ *              attempt completion),
  *              functions/lib/email-template.js (wrapEmailBody — the branded
  *              shell every send is wrapped in, kept in sync with the CRM
  *              Campaigns builder's live preview, src/lib/emailTemplate.js)
@@ -37,7 +39,8 @@
  *     message_templates row by title, then calls sendGatedEmail / sendGatedSms.
  *     Pass extra.orgId to scope the SMS kill-switch to a specific org.
  *   sendGatedSms(env, { contact, body, orgId, now, mediaUrls, conversationId,
- *                       sentBy, recordBody, markWaitingOnClient })
+ *                       sentBy, recordBody, markWaitingOnClient,
+ *                       reserveDelivery, maxProviderAttempts })
  *     — the gated SMS/MMS send.
  *     Checks the automation_settings.sms_sending_enabled kill-switch (default
  *     OFF), then consentAllows() (TCPA), then quiet-hours (per-recipient tz)
@@ -47,6 +50,9 @@
  *     via a Twilio statusCallback, and retries transient/429 send errors with
  *     backoff (permanent errors — invalid number, opt-out — fail fast). Return
  *     shape is FROZEN: { ok, skipped, reason?, sid?, error?, permanent? }.
+ *     A scheduled caller may add a service-only reserveDelivery callback after
+ *     every compliance gate and cap maxProviderAttempts at one. This keeps the
+ *     consent door structurally intact while preventing crash/retry duplicates.
  *   sendGatedEmail(env, { contact, subject, html, recipientId })
  *     — the actual gated send. Both sendAutomatedMessage('email', ...) and
  *     the bulk campaign worker (functions/api/send-email-campaign.js) call
@@ -105,6 +111,7 @@ import { normalizePhone } from './phone.js';
 import { supabase } from './supabase.js';
 import { wrapEmailBody } from './email-template.js';
 import { classifyTwilioError } from './twilio-errors.js';
+import { completeMessageAttempt } from './messaging-attempts.js';
 
 // ─── SECTION: Helpers ──────────────
 export function renderTemplate(body, variables = {}) {
@@ -187,7 +194,7 @@ async function smsSendingEnabled(db, orgId) {
   return rows[0]?.sms_sending_enabled === true;
 }
 
-async function logSmsConsent(db, contact, eventType, details) {
+async function logSmsConsent(db, contact, eventType, details, performedBy = null) {
   // Best-effort audit — never let a logging failure change a send decision.
   try {
     await db.insert('sms_consent_log', {
@@ -196,6 +203,7 @@ async function logSmsConsent(db, contact, eventType, details) {
       event_type: eventType,
       source: 'automation',
       details,
+      performed_by: performedBy,
     });
   } catch { /* swallow — the return value already carries the outcome */ }
 }
@@ -478,6 +486,8 @@ export async function sendGatedSms(env, {
   sentBy,
   recordBody,
   markWaitingOnClient,
+  reserveDelivery,
+  maxProviderAttempts,
 } = {}) {
   const db = supabase(env);
   const phone = normalizePhone(contact?.phone);
@@ -485,7 +495,13 @@ export async function sendGatedSms(env, {
 
   // Gate 1: global kill-switch (OFF by default).
   if (!(await smsSendingEnabled(db, org))) {
-    await logSmsConsent(db, contact, 'send_blocked_disabled', 'Automated SMS skipped: sms_sending_enabled is OFF');
+    await logSmsConsent(
+      db,
+      contact,
+      'send_blocked_disabled',
+      'Automated SMS skipped: sms_sending_enabled is OFF',
+      sentBy,
+    );
     return { ok: false, skipped: true, reason: 'sms_disabled' };
   }
 
@@ -527,7 +543,13 @@ export async function sendGatedSms(env, {
     const eventType = reason === 'dnd'
       ? 'send_blocked_dnd'
       : reason === 'no_consent' ? 'send_blocked_no_consent' : 'send_blocked_no_phone';
-    await logSmsConsent(db, contact, eventType, `Automated SMS skipped: ${reason}`);
+    await logSmsConsent(
+      db,
+      contact,
+      eventType,
+      `Automated SMS skipped: ${reason}`,
+      sentBy,
+    );
     return { ok: false, skipped: true, reason };
   }
 
@@ -537,13 +559,54 @@ export async function sendGatedSms(env, {
   // "Recipient-local" is resolved per-contact from the phone's area code (F-12).
   const tz = timezoneForContact(contact, env);
   if (isWithinQuietHours(now ? new Date(now) : new Date(), tz)) {
-    await logSmsConsent(db, contact, 'send_deferred_quiet_hours',
-      `Automated SMS deferred: outside ${QUIET_HOURS_START}:00–${QUIET_HOURS_END}:00 ${tz}`);
+    await logSmsConsent(
+      db,
+      contact,
+      'send_deferred_quiet_hours',
+      `Automated SMS deferred: outside ${QUIET_HOURS_START}:00–${QUIET_HOURS_END}:00 ${tz}`,
+      sentBy,
+    );
     return { ok: false, skipped: true, reason: 'quiet_hours' };
   }
 
-  // All gates passed → send (transient/429-aware, permanent = fail fast) with a
-  // delivery status callback, then mirror the text into its thread (best-effort).
+  // All gates passed. A scheduled caller reserves its one durable provider
+  // attempt HERE — after kill-switch/consent/quiet-hours, but before credentials
+  // or the provider request. A replay that finds an existing reservation never
+  // reaches Twilio again.
+  let deliveryAttemptId = null;
+  if (typeof reserveDelivery === 'function') {
+    let reservation;
+    try {
+      reservation = await reserveDelivery({
+        phone,
+        body,
+        mediaUrls: Array.isArray(mediaUrls) ? mediaUrls : [],
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        skipped: false,
+        error: error?.message || 'Scheduled delivery could not be reserved',
+        permanent: true,
+        reservationFailed: true,
+      };
+    }
+
+    deliveryAttemptId = reservation?.attemptId || null;
+    if (reservation?.shouldSubmit !== true || !deliveryAttemptId) {
+      return {
+        ok: false,
+        skipped: true,
+        reason: reservation?.reason || 'delivery_reserved',
+        deliveryAttemptId,
+      };
+    }
+  }
+
+  // Send with a delivery status callback, then mirror the text into its thread.
+  // Normal automated traffic retains transient retry/backoff. Scheduled traffic
+  // passes maxProviderAttempts=1 because its reservation authorizes exactly one
+  // provider invocation; an ambiguous outcome is reconciled, never resubmitted.
   const statusCallback = buildStatusCallbackUrl(env);
   try {
     const result = await sendSmsWithBackoff(env, {
@@ -551,26 +614,125 @@ export async function sendGatedSms(env, {
       body,
       mediaUrls,
       statusCallback,
+      // A durable reservation itself forces one provider invocation. The
+      // caller-provided cap remains useful for non-reserved internal traffic,
+      // but can never widen a scheduled reservation above one.
+      maxAttempts: deliveryAttemptId ? 1 : maxProviderAttempts,
     });
-    await logSmsConsent(db, contact, 'automated_send', `Automated SMS sent (sid ${result.sid})`);
-    const recorded = await recordAutomatedSms(db, {
+    await logSmsConsent(
+      db,
       contact,
-      phone,
-      body: recordBody ?? body,
-      sid: result.sid,
-      mediaUrls,
-      conversationId,
+      'automated_send',
+      `Automated SMS sent (sid ${result.sid})`,
       sentBy,
-      markWaitingOnClient,
-    });
+    );
+    let messageId = null;
+    if (deliveryAttemptId) {
+      try {
+        const completedAt = new Date().toISOString();
+        await completeMessageAttempt(db, deliveryAttemptId, {
+          state: 'accepted',
+          provider_message_id: result.sid,
+          provider_status: 'queued',
+          sender_address: result.from || null,
+          actual_channel: Array.isArray(mediaUrls) && mediaUrls.length > 0
+            ? 'mms'
+            : 'sms',
+          response_at: completedAt,
+          completed_at: completedAt,
+          reconcile_after: null,
+          error_code: null,
+          error_message: null,
+        });
+        const rawProjection = await db.rpc('materialize_message_send_attempt', {
+          p_attempt_id: deliveryAttemptId,
+        });
+        const projection = Array.isArray(rawProjection)
+          ? rawProjection[0]
+          : rawProjection;
+        if (!projection?.message_id) {
+          throw new Error('Scheduled delivery was accepted but not materialized');
+        }
+        messageId = projection.message_id;
+      } catch (persistenceError) {
+        // Twilio returned a SID, so provider acceptance itself is known even
+        // when the first ledger/materialization write failed. Make one
+        // best-effort, provider-free persistence pass that retains that SID for
+        // reconciliation. A failure here still never authorizes another
+        // provider invocation; the durable reservation remains linked.
+        const completedAt = new Date().toISOString();
+        await completeMessageAttempt(db, deliveryAttemptId, {
+          state: 'accepted',
+          provider_message_id: result.sid,
+          provider_status: 'queued',
+          sender_address: result.from || null,
+          actual_channel: Array.isArray(mediaUrls) && mediaUrls.length > 0
+            ? 'mms'
+            : 'sms',
+          response_at: completedAt,
+          completed_at: completedAt,
+          reconcile_after: null,
+          error_code: 'SCHEDULED_MATERIALIZATION_PENDING',
+          error_message: String(
+            persistenceError?.message || 'Scheduled delivery materialization is pending',
+          ).slice(0, 500),
+        }).catch(() => {});
+
+        // The provider already accepted this reservation. Report an ambiguous
+        // local persistence outcome so the scheduler reconciles the linked
+        // attempt without issuing another provider request.
+        return {
+          ok: false,
+          skipped: false,
+          sid: result.sid,
+          error: 'Provider accepted the scheduled message; database reconciliation is pending',
+          permanent: false,
+          ambiguous: true,
+          deliveryAttemptId,
+        };
+      }
+    } else {
+      const recorded = await recordAutomatedSms(db, {
+        contact,
+        phone,
+        body: recordBody ?? body,
+        sid: result.sid,
+        mediaUrls,
+        conversationId,
+        sentBy,
+        markWaitingOnClient,
+      });
+      messageId = recorded?.id || null;
+    }
     return {
       ok: true,
       skipped: false,
       sid: result.sid,
-      messageId: recorded?.id || null,
+      messageId,
+      ...(deliveryAttemptId ? { deliveryAttemptId } : {}),
     };
   } catch (e) {
-    await logSmsConsent(db, contact, 'send_failed', `Automated SMS failed: ${e.message}`);
+    if (deliveryAttemptId) {
+      const ambiguous = e.ambiguous === true;
+      await completeMessageAttempt(db, deliveryAttemptId, {
+        state: ambiguous ? 'ambiguous' : 'failed',
+        provider_http_status: e?.status || null,
+        response_at: new Date().toISOString(),
+        completed_at: ambiguous ? null : new Date().toISOString(),
+        reconcile_after: null,
+        error_code: ambiguous
+          ? 'TWILIO_SEND_AMBIGUOUS'
+          : e?.code != null ? String(e.code) : null,
+        error_message: String(e?.message || 'Scheduled provider send failed').slice(0, 500),
+      }).catch(() => {});
+    }
+    await logSmsConsent(
+      db,
+      contact,
+      'send_failed',
+      `Automated SMS failed: ${e.message}`,
+      sentBy,
+    );
     // `permanent` (additive to the frozen return) lets run-automations stop
     // retrying an invalid number instead of re-attempting it every cron tick.
     const permanent = e.permanent ?? !classifySendError(e).transient;
@@ -580,6 +742,7 @@ export async function sendGatedSms(env, {
       error: e.message,
       permanent,
       ambiguous: e.ambiguous === true,
+      ...(deliveryAttemptId ? { deliveryAttemptId } : {}),
     };
   }
 }
@@ -624,6 +787,8 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
       sentBy: extra.sentBy,
       recordBody: extra.recordBody,
       markWaitingOnClient: extra.markWaitingOnClient,
+      reserveDelivery: extra.reserveDelivery,
+      maxProviderAttempts: extra.maxProviderAttempts,
     });
   }
 

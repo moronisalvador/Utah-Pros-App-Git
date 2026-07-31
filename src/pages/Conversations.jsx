@@ -22,14 +22,16 @@
  *              @/lib/messageMedia (image attach), @/components/conversations/*,
  *              @/components/Icons, @/components/DatePicker, @/components/ui,
  *              @/components/TabLoading, @/hooks/useResumeRefetch,
- *              @/lib/nativeHaptics, @/lib/toast
+ *              @/lib/nativeHaptics, @/lib/toast,
+ *              @/lib/scheduledMessageOperation
  *   Data:      reads  → conversations, conversation_participants, messages, jobs,
  *                       message_templates, service_sms_consents and
  *                       message_provider_events through GET /api/attest-sms-consent
  *              writes → conversation unread state through
  *                       set_my_conversation_unread_state; contact search and atomic
  *                       conversation creation through /api/message-conversations;
- *                       scheduled_messages, contacts (dnd), sms_consent_log,
+ *                       scheduled_messages through create_scheduled_message;
+ *                       contacts (dnd), sms_consent_log,
  *                       service_sms_consents and service_sms_consent_attestations through
  *                       POST /api/attest-sms-consent,
  *                       private message-attachments storage (MMS attachments). Outbound SMS/MMS is sent
@@ -99,6 +101,10 @@ import { impact } from '@/lib/nativeHaptics';
 import { toast as emitToast, err as showError } from '@/lib/toast';
 import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { resolveConversationId } from '@/lib/openInAppThread';
+import {
+  clearScheduledMessageOperation,
+  getScheduledMessageOperation,
+} from '@/lib/scheduledMessageOperation';
 import {
   getDraft,
   setDraft,
@@ -215,7 +221,7 @@ const LIST_PAGE = 40;    // conversations fetched per list page
 // ═══════════════════════════════════════════════════════════════════
 
 export default function Conversations({ replyAssist } = {}) {
-  const { db, employee } = useAuth();
+  const { db, employee, pwaOwnerLease } = useAuth();
   const queryClient = useQueryClient();
   const { data: employeeDirectory = [] } = useLookup('employees');
   const location = useLocation();
@@ -291,6 +297,7 @@ export default function Conversations({ replyAssist } = {}) {
   const attachCounter = useRef(0);
   const contactSearchRequestRef = useRef(0);
   const scheduleSendingRef = useRef(false);
+  const scheduledMessageOperationsRef = useRef(new Map());
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
@@ -1307,17 +1314,49 @@ export default function Conversations({ replyAssist } = {}) {
     if (showSchedule && scheduleDate && scheduleTime) {
       if (!text) return;
       // Synchronous guard: Enter bypasses the disabled button, so a same-tick
-      // double-Enter would otherwise insert two scheduled rows before `sending` flips.
+      // double-Enter would otherwise create two scheduled rows before `sending` flips.
       if (scheduleSendingRef.current) return;
       const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
       if (new Date(sendAt) <= new Date()) { emitToast('Scheduled time must be in the future', 'error'); return; }
+      // Keep this operation id after an ambiguous/lost response. The same exact
+      // conversation/body/time retry then reaches the RPC with the same id
+      // instead of creating a second scheduled row.
+      const scheduledOperation = getScheduledMessageOperation(
+        scheduledMessageOperationsRef.current,
+        { conversationId: activeId, body: text, sendAt },
+        { ownerLease: pwaOwnerLease },
+      );
       scheduleSendingRef.current = true;
       setSending(true);
       try {
-        await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
+        await db.rpc('create_scheduled_message', {
+          p_id: scheduledOperation.id,
+          p_conversation_id: activeId,
+          p_body: text,
+          p_send_at: sendAt,
+        });
+        clearScheduledMessageOperation(
+          scheduledMessageOperationsRef.current,
+          scheduledOperation,
+        );
         clearCompose(); clearDraft(activeId); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
         emitToast('Message scheduled', 'success');
-      } catch (err) { console.error('Schedule error:', err); emitToast('Failed to schedule', 'error'); }
+      } catch (err) {
+        console.error('Schedule error:', err);
+        const scheduleError = `${err?.code || ''} ${err?.message || ''}`.toLowerCase();
+        const message = scheduleError.includes('exactly one')
+          || scheduleError.includes('ambiguous')
+          || scheduleError.includes('group')
+          || scheduleError.includes('broadcast')
+          ? 'Scheduled messages are only available for one-to-one conversations'
+          : scheduleError.includes('42501')
+              || scheduleError.includes('not_authorized')
+              || scheduleError.includes('access denied')
+              || scheduleError.includes('messages access')
+            ? 'You no longer have access to this conversation'
+            : 'Failed to schedule';
+        emitToast(message, 'error');
+      }
       finally { setSending(false); scheduleSendingRef.current = false; }
       return;
     }

@@ -279,6 +279,31 @@ Required send semantics:
 Thread pagination uses stable chronological cursors/limits. Realtime inserts deduplicate against
 optimistic/canonical messages and unsubscribe on scope change.
 
+#### Scheduled-message hardening (authored, not live)
+
+The pending Jul 31 scheduled-message source is a shared Conversations contract for web and CRM;
+the native scheduling caller remains out of scope. It is **not** evidence that either migration,
+deployment, provider path, or device path has been verified.
+
+- Browser creation calls `create_scheduled_message` with a stable operation UUID. The database
+  derives the active internal actor, requires their Conversations capability and conversation access,
+  and accepts only exactly one active customer recipient. Retrying the same payload returns the same
+  row; reusing the UUID for a changed payload is rejected.
+- That operation UUID is retained in an owner-scoped durable WebView key for the same unresolved
+  conversation/body/send-time payload, so an owner-scoped Capacitor WebView restart can retry rather
+  than duplicate it. It is cleared only after server confirmation.
+- Queue inspection and cancellation are exact DevTools-owner contracts. The queued row cannot be
+  cancelled once a delivery reservation exists. Direct browser `scheduled_messages` access is closed
+  only by the later enforcement migration, after the in-scope web/worker callers have been deployed and
+  verified; it must not be represented as already closed.
+- Service processing uses a fresh random fencing token for claim, release, failure, reservation, and
+  reconciliation. It rechecks the creator's capability/access and the exact-one active customer
+  recipient at dequeue and again atomically at reservation.
+- After the worker's consent/DND checks and the central automated-send gates, reservation links one
+  irreversible `message_send_attempt`; scheduled delivery permits one Twilio invocation. Accepted
+  attempts materialize the canonical message. Fresh linked in-flight work is preserved; an unknown
+  outcome is failed for owner review and is never automatically resent.
+
 ### Demo/scope sheet and OOP pricing
 
 Scope sheet:

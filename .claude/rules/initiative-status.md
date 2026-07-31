@@ -54,6 +54,22 @@ before promoting.
   is not live there. Physical-device and supported native-release evidence remain gates.
   No production apply, deployment, or enforcement is authorized by this status entry.
 
+- **Scheduled-message participant-boundary hardening:** authored but unapplied migrations
+  `20260731220000_scheduled_message_delivery_compatibility.sql` and
+  `20260731220100_scheduled_message_delivery_enforcement.sql` plus paired guarded rollbacks.
+  Compatibility adds actor-derived stable-ID create, owner-only queue/cancel, token-fenced
+  service lifecycle RPCs, and one irreversible `delivery_attempt_id` reservation; enforcement
+  removes all browser table access and retires the legacy claim fail closed. The Worker rechecks
+  creator capability/conversation access and exactly one active phone recipient, reserves only
+  after the existing kill-switch/consent/DND/quiet-hours gates, permits one Twilio invocation,
+  preserves fresh in-flight work, and reconciles linked outcomes without automatic resubmission.
+  The compatibility migration depends on participant foundation `40337`; production therefore
+  cannot apply this pair before the separately governed participant `40337 + 40338` unit.
+  Focused Worker/QA tests and migration hygiene pass; the rollback-only isolated database proof
+  is authored but not run because no governed local target is configured. Neither migration has
+  been applied to QA or production, and no commit, push, deploy, provider call, or device claim is
+  authorized by this entry.
+
 Two additive QBO money-boundary migrations are staged for production only after their exact
 source is committed, pushed, and the hosted database lane passes:
 

@@ -5752,3 +5752,26 @@ its live `authenticated` EXECUTE grant (no browser caller found; tightening is a
 ACL-only change); (2) the two `transcribe_call_worker_url` pg_cron command strings inline
 `net.http_post` with no allowlist — hardening a cron command string is a different shape
 (unschedule/reschedule) and gets its own change.
+
+## 2026-07-31 — Scheduled-message participant boundary and one-submission source authored
+
+The conversation-participant release review found a pre-existing escape hatch: any authenticated
+browser could write `scheduled_messages`, choose `created_by`, and the dequeue Worker did not
+recheck that creator's current Messages capability or conversation access. A retry could also
+reclaim a stale scheduled row after an unknown provider outcome.
+
+Repository source now contains a compatibility/enforcement pair, both **unapplied**. Compatibility
+adds actor-derived stable-ID creation, exact-owner queue/cancel, random token-fenced service
+lifecycle RPCs, and one irreversible `delivery_attempt_id` reservation made only after the central
+kill-switch/consent/DND/quiet-hours gates. The Worker rechecks creator access and exactly one active
+phone recipient at dequeue and reservation, permits one Twilio invocation, preserves fresh
+in-flight work, and reconciles accepted/unknown outcomes without automatic resubmission. The
+browser retains only an opaque owner-scoped operation ID across a Capacitor WebView restart so a
+lost create response can be retried rather than duplicated. Enforcement later removes raw browser
+table access and retires the frozen legacy claim fail closed.
+
+Focused Worker and credential-free QA tests, migration hygiene, syntax, lint, and the mocked
+provider-barrier concurrency proof passed during authoring. A rollback-only isolated database proof
+was added to the governed local runner but was not run because no approved isolated local target
+was configured. No hosted migration, deployment, provider call, production data change, or device
+claim occurred.

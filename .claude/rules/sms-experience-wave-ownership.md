@@ -1,6 +1,6 @@
 # SMS Experience — File & RPC Ownership Manifest
 
-**Last verified:** 2026-07-28
+**Last verified:** 2026-07-31
 
 **Committed with the plan of record (2026-07-09). Binding for every sms-experience session.**
 Linked from `docs/sms-experience-roadmap.md` (plan of record) and `docs/sms-experience-dispatch.md`
@@ -88,6 +88,23 @@ gate; throttle to review bandwidth** (suggested: H0 → F-core → then wave).
 - **omni §7 wrong-channel invariants** (adopted, not redefined): the worker is the sole writer of any
   `sms_*` message row (the client inserts only `internal_note`); no cross-channel fallback; consent
   gate selected by channel.
+
+### 3.1 Owner-directed scheduled-delivery safety amendment (2026-07-31)
+
+The owner explicitly authorized scheduled-message authorization hardening and one provider
+submission per scheduled text. That bounded safety change may:
+
+- pass optional `reserveDelivery` and `maxProviderAttempts` controls through the existing
+  `sendAutomatedMessage(..., extra)` / `sendGatedSms(env, options)` object arguments;
+- add `deliveryAttemptId` and `ambiguous` reconciliation metadata to results while preserving the
+  positional signatures and the required `{ ok, skipped, reason }` fields;
+- replace the frozen `claim_scheduled_message(uuid) → boolean` body first to exclude rows with a
+  durable delivery link, then make that same signature fail closed during enforcement; and
+- add service-only token-fenced claim/reserve/reconcile RPCs owned by this safety patch.
+
+This does **not** permit a second send door, provider fallback, a retry after reservation, or any
+rename/removal of `sms_disabled` or `quiet_hours`. Both non-owned held-retry callers remain covered
+by committed backward-compatibility tests.
 
 ---
 

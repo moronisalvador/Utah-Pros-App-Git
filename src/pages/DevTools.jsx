@@ -19,7 +19,7 @@
  *   Data:      reads  → feature_flags, contacts, claims, message_templates,
  *                       scheduled_messages, worker_runs, message_provider_events,
  *                       and owner-selected diagnostic tables
- *              writes → feature_flags, scheduled_messages, and
+ *              writes → feature_flags; scheduled_messages through cancel_scheduled_message; and
  *                       message_provider_events through owner-gated workers
  *
  * NOTES / GOTCHAS:
@@ -1501,9 +1501,13 @@ function ScheduledQueue() {
     if (confirmCancel !== item.id) { setConfirmCancel(item.id); return; }
     setConfirmCancel(null);
     try {
-      await db.update('scheduled_messages', 'id=eq.' + item.id, { status: 'cancelled' });
-      ok('Message cancelled');
-      load();
+      const cancelled = await db.rpc('cancel_scheduled_message', { p_id: item.id });
+      if (cancelled === true) {
+        ok('Message cancelled');
+      } else {
+        toast('Message was not cancelled. The queue has been refreshed.', 'warning');
+      }
+      await load();
     } catch (e) {
       err('Failed to cancel: ' + e.message);
     }

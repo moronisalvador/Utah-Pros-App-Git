@@ -152,11 +152,20 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
 - Scheduled SMS/MMS must call `sendAutomatedMessage()` rather than a provider primitive. That
-  central boundary rechecks the global `sms_sending_enabled` switch, global opt-in, DND and
-  recipient-local quiet hours immediately before Twilio submission. A disabled switch or quiet
-  hours releases the scheduled claim for a later retry; durable consent failures remain terminal.
-  The HTTP trigger accepts only the scheduler secret or an active internal admin, office or
-  project-manager session; authentication without that role is insufficient.
+  central boundary rechecks the unchanged global `sms_sending_enabled` switch, global opt-in, DND
+  and recipient-local quiet hours immediately before Twilio submission. Only after all of those
+  gates pass may a scheduled worker create and link its one durable provider-attempt reservation;
+  that reservation permits one Twilio invocation, never a retrying second submission. A disabled
+  switch or quiet hours releases the unreserved claim for a later retry; durable consent failures
+  remain terminal. Once a row is linked, replay reconciles the durable attempt and never submits
+  again: a fresh linked attempt remains in flight, while an unknown stale outcome fails closed for
+  owner review. The creator's active internal membership and conversation capability, plus exactly
+  one active customer recipient with a usable phone, are checked at creation/dequeue and again at
+  the final reservation boundary. The browser supplies a stable, owner-scoped operation ID for an
+  identical retry; the RPC derives the actor and rejects a changed payload for that ID. The HTTP
+  trigger accepts only the scheduler secret or the exact active internal DevTools owner, who must
+  also retain the Conversations capability; an ordinary authenticated or privileged session is
+  insufficient.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.

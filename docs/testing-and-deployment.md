@@ -342,6 +342,37 @@ The combined Phase 2–4 build is not a one-step deploy:
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
 
+### Scheduled-message delivery hardening release gate
+
+The scheduled-message hardening source is a two-step, compatibility-first release; it is not
+applied or live evidence. After the participant authorization foundation is present, apply
+`20260731220000_scheduled_message_delivery_compatibility.sql` in a separately owner-approved
+low-traffic database window. It adds the contracts while preserving the legacy claim/table caller
+window. Then deploy and verify the compatible browser and scheduler callers, including the stable
+browser operation ID and the central `sendAutomatedMessage()` reservation hook. Only after those
+callers are proven may a separate owner-approved apply of
+`20260731220100_scheduled_message_delivery_enforcement.sql` remove browser table access and retire
+the legacy claim. Never apply enforcement during a mixed-client window.
+
+The compatibility migration is additive and introduces the fenced claim plus one durable linked
+attempt. Its reconciliation path is provider-free: accepted provider evidence materializes once,
+a fresh linked attempt stays `in_flight`, and an unknown stale result is failed for owner review
+rather than re-sent. The enforcement rollback intentionally restores the previous broad legacy
+posture only after its unresolved-reservation preflight passes. Compatibility rollback must first
+restore callers that do not depend on the new RPCs and must retain reservation evidence; deleting a
+link could authorize a later legacy worker to duplicate a customer text.
+
+Required repository checks cover actor/membership and exactly-one-recipient revalidation, stable
+operation-ID retry semantics, direct-browser-table denial, reservation/reconciliation contracts,
+and the provider barrier/concurrent scheduler case proving one reservation permits only one
+provider invocation. `supabase/tests/scheduled_message_delivery.test.sql` is the paired guarded,
+rollback-only isolated-database proof for RPC ACLs, idempotent creation, one reservation,
+fresh-in-flight preservation and exactly-once materialization. It must run only on a disposable
+local clone with the isolation sentinel; it is not CI or hosted proof. At this authored state, the
+mocked provider-barrier concurrency test is locally green, while the isolated database proof is
+unrun because no governed local target is configured. No migration apply, deployment, provider
+traffic, or live scheduled-message claim follows from repository tests.
+
 ## Prior SMS consent attestation release sequence
 
 The owner-approved database apply completed on 2026-07-23 from exact reviewed commit

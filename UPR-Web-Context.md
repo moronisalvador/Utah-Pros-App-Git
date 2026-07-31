@@ -537,7 +537,7 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is **authenticated** by scheduler `x-webhook-secret` or an active, non-external admin/office/project-manager session; the `scheduled()` cron handler stays platform-authenticated. Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. **Central-gate repair (Jul 24 2026):** after the worker's defense-in-depth consent check, every scheduled SMS/MMS now calls `sendAutomatedMessage()` instead of Twilio directly, so the global `sms_sending_enabled` kill-switch, global opt-in/DND, recipient-local quiet hours, retry policy, status callback and worker-owned thread row cannot be bypassed. `sms_disabled`/`quiet_hours` release the claim and leave the row pending; durable refusal remains terminal. Provider outcomes marked ambiguous are submitted only once and become terminal reconciliation cases instead of automatic retries. Writes a `worker_runs` row.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). GET/POST accepts the scheduler `x-webhook-secret` or the exact internal DevTools owner with the Conversations capability; `scheduled()` remains platform-authenticated. **Scheduled-message delivery hardening (Jul 31 2026, authored source only — not applied/deployed/provider- or device-verified):** the compatibility migration replaces the legacy claim with token-fenced service-only claim/release/fail/reserve/reconcile RPCs. A current worker may reserve exactly one durable delivery attempt only after the worker consent checks and the central `sendAutomatedMessage()` gates; it then makes at most one Twilio submission. Fresh linked `prepared`/`submitting`/`ambiguous` work stays in-flight, while accepted work is materialized into the canonical message and unknown outcomes become owner-review failures with no automatic resend. The reservation repeats creator capability/conversation access and exact-one active customer-recipient checks at the pre-provider boundary. The later enforcement migration closes browser raw `scheduled_messages` access and retires the legacy claim only after the in-scope web/worker callers are deployed and verified; no native scheduling caller is introduced by this slice. The existing batch quiet-hours guard (America/Denver) defers the queue; central `sms_disabled`/`quiet_hours` results release an unreserved claim. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
@@ -834,7 +834,17 @@ conversation_default_members — Field technicians included by default in every 
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
-                          claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
+                          claimed_at timestamptz (legacy compare-and-set marker). Scheduled-message
+                          delivery hardening (Jul 31 2026) is authored only, not applied: adds nullable
+                          `claim_token` (current-worker fence) and `delivery_attempt_id` (unique,
+                          irreversible message_send_attempt link). `create_scheduled_message` derives
+                          the active internal actor and accepts a stable client UUID only for that
+                          actor's accessible conversation with exactly one active customer recipient;
+                          identical retry returns the existing row and divergent reuse fails.
+                          `cancel_scheduled_message` and `get_scheduled_queue` are exact DevTools-owner
+                          contracts. Raw browser table closure is deliberately deferred to the subsequent
+                          enforcement migration, after in-scope web/worker caller deployment and verification;
+                          no native scheduling caller is introduced by this slice.
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
                           Live `attest_prior_sms_consent` RPC (applied Jul 23 2026) atomically
@@ -1241,7 +1251,7 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 ### Messaging Tools (Phase 5 — complete)
 ```
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
-get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+get_scheduled_queue(p_limit)    — Exact DevTools-owner scheduled queue with contact + template info (joins via conversation_participants)
 ```
 
 Dev Tools now includes an owner-only **Provider Events** subtab, reached directly from ops-health
@@ -1270,12 +1280,21 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
 
 ### SMS-experience — F-core (Foundation, Jul 9 2026)
 ```
-claim_scheduled_message(p_id UUID) → boolean — SECURITY DEFINER, GRANT authenticated+service_role
-                                  (never anon). Atomic compare-and-set on scheduled_messages.claimed_at:
-                                  TRUE to exactly ONE caller claiming a still-'pending' row (unclaimed,
-                                  or stale-claimed >10 min ago → crash recovery); FALSE otherwise. Kills
-                                  the process-scheduled double-send (finding F-11). Does NOT set 'status'
-                                  (the status CHECK has no 'processing' value). Consumed by Phase A.
+Scheduled-message delivery hardening (Jul 31 2026) — **authored source only; neither migration is
+applied, deployed, provider-verified, nor device-verified.** `create_scheduled_message(p_id,
+p_conversation_id,p_body,p_send_at)` derives the active internal actor, validates Conversations
+capability/access and exactly one active customer recipient, and treats the stable client UUID as an
+idempotency key. `get_scheduled_queue(p_limit)` and `cancel_scheduled_message(p_id)` are exact
+DevTools-owner contracts; cancellation only succeeds for an unreserved pending row. The compatibility
+migration preserves the legacy `claim_scheduled_message(uuid)` signature during the caller transition,
+but adds service-role-only `claim_scheduled_message_v2`, release/fail, reservation, and reconciliation
+RPCs fenced by a random claim token. Reservation rechecks creator capability/access and the exact-one
+recipient condition, links one irreversible `message_send_attempt`, and permits one provider attempt
+only after the worker and central automated-send consent/DND/kill-switch/quiet-hours gates. Reconciliation
+materializes accepted delivery, preserves fresh in-flight work, and sends an unknown outcome to owner
+review without automatic resubmission. The later enforcement migration removes browser raw-table access
+and makes legacy claim fail closed; apply it only after every in-scope web/worker caller is deployed and
+verified, never in a mixed-client window. This slice adds no native scheduling caller.
 increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → integer — SECURITY DEFINER,
                                   GRANT authenticated+service_role (never anon). One atomic UPDATE (no
                                   read-modify-write race); clamps at 0; returns new unread_count, NULL if
