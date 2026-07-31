@@ -46,7 +46,7 @@ release gates and must not be inferred from repository state.
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
-A third isolated QBO money-boundary migration is authored and unapplied:
+A third isolated QBO money-boundary migration is authored and remains unapplied to production:
 
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql` on
   `codex/qbo-multi-invoice-payments` adds the disabled, service-only receipt/attempt/event
@@ -54,10 +54,12 @@ A third isolated QBO money-boundary migration is authored and unapplied:
   and locally green source/static tests. On current `origin/dev` base `4bdb815a`, `npm test` passes
   4,162 tests with zero unexpected skips; build, changed-file lint, bundle strict, and migration
   hygiene pass; independent Worker-security, migration, grant/secret, project-law, design, and
-  lifecycle reviews pass. It has **not** been applied to
-  `qa-staging` or the shared project; no deploy, QBO Payment, or feature/env activation occurred.
-  Exact SQL behavior proof, the Intuit Development sandbox matrix, authenticated browser QA,
-  disabled code-first deployment, shared-DB apply, and named-admin proof remain release gates.
+  lifecycle reviews pass. The migration and three supporting foreign-key indexes are applied to
+  `qa-staging`; forced-RLS/grant/flag readbacks and the complete transaction-rolled-back SQL behavior
+  suite pass with zero fixture or receipt residue. It has **not** been applied to the shared project;
+  no deploy, QBO Payment, or feature/env activation occurred. The Intuit Development sandbox matrix,
+  authenticated browser QA, disabled code-first deployment, shared-DB apply, and named-admin proof
+  remain release gates.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31

@@ -1,8 +1,8 @@
 # QBO Multi-Invoice Payment Receipts
 
-**Status:** Source implemented and locally verified on `codex/qbo-multi-invoice-payments`,
-based on `origin/dev` `4bdb815a`; isolated-database, provider, browser, and release gates remain
-pending
+**Status:** Source implemented and locally plus `qa-staging` verified on
+`codex/qbo-multi-invoice-payments`, based on `origin/dev` `4bdb815a`; provider, browser,
+production-apply, and release gates remain pending
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
@@ -19,13 +19,14 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 - The owner authorized the sequenced release path on 2026-07-31; every external step still stops
   on a failed prerequisite or provider/database mismatch.
 - The source branch is isolated from the dirty shared `dev` checkout.
-- No migration in this roadmap is applied to the shared Supabase project.
+- The committed migration is applied only to `qa-staging`; it is not applied to the shared
+  production Supabase project.
 - No QuickBooks sandbox or production Payment is created by repository tests.
 - The database flag `feature:qbo_receive_payment` is seeded disabled.
 - The money endpoint requires that exact row enabled and not force-disabled plus
   `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
-- No commit, push, deployment, database apply, provider Payment mutation, or feature activation has
-  occurred from this branch.
+- Six local commits and a `qa-staging` migration apply occurred. No push, deployment, production
+  database apply, provider Payment mutation, or feature activation occurred from this branch.
 
 ## Local verification evidence
 
@@ -47,10 +48,20 @@ Current feature source was verified on 2026-07-31 after semantic reconciliation 
   closed combined-invoice receipt ambiguity, blocked Estimate adoption, broad payment-table browser
   access, mutation refetch blanking, and cold-load failure rendering before release.
 
-These checks do **not** prove the hosted system. The isolated SQL behavior file was not executed
-because no isolated local PostgreSQL/Supabase target was available, and this work did not use the
-owner-gated `qa-staging` branch. No authenticated rendered-browser session, Intuit Development
-sandbox call, provider webhook, deployment, migration apply, or production proof occurred.
+The committed migration is recorded on `qa-staging` as
+`20260731223150_qbo_multi_invoice_payment_receipts`; the three staging-discovered supporting
+foreign-key indexes are recorded there as
+`20260731223813_qbo_multi_invoice_payment_receipt_fk_indexes`. Authoritative readback confirmed
+the database feature flag remains disabled, all three receipt tables have forced RLS, browser
+roles cannot execute the receipt RPCs, and all receipt RPCs remain service-role-only. The full
+transactional SQL behavior suite passed with two synthetic same-contact/QBO-linked invoices and
+then rolled back; readback confirmed zero fixture, receipt, attempt, or event residue. Supabase
+security/performance advisors reported no new receipt-surface security warning; the supporting
+indexes close all six new foreign-key paths.
+
+These checks still do **not** prove a deployed or provider-connected system. No authenticated
+rendered-browser session, Intuit Development sandbox call, provider webhook, deployment,
+production migration apply, or production proof occurred.
 
 ## Frozen v1 product contract
 
