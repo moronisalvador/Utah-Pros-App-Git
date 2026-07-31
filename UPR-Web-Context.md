@@ -2394,6 +2394,8 @@ record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnosti
   store local date+TIME, no TZ). `status='cancelled'` or a deleted appointment removes the events.
 - **`integration_config`:** `gcal_worker_url` — **already flipped to production**
   (`https://utahpros.app/api/google-calendar-sync`, confirmed live Jul 1 2026) + `gcal_webhook_secret`.
+  URL-allowlist hardening for `notify_google_calendar_sync()` authored 2026-07-30 (pending
+  apply); registry + ops audit: `docs/database/integration-config-worker-urls.md`.
 - **Requires** the same Google Cloud OAuth client + Cloudflare env vars as Drive
   (`GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`), plus the calendar scope on the OAuth consent screen.
 
@@ -4153,6 +4155,18 @@ still required to prove the complete path. Guard:
   `/api/notification-test`, which flattens failures to `delivery_failed`.
 - Verified end-to-end 2026-07-30 19:55 MT: real inbound text → `sent:4 / attempted:4` →
   banner on device.
+- **Follow-up audit (2026-07-30, authored — NOT applied):**
+  `supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql` gives the last two
+  unguarded config-driven pg_net callers — `notify_google_calendar_sync()` and
+  `notify_emit()` — the same exact two-URL allowlist + fail-closed secret gate the four
+  wake functions already have (body-only replaces, signatures/ACLs unchanged, md5 drift
+  guards, paired rollback). CI contract test:
+  `tests/qa/unit/pg-net-worker-url-allowlists.test.js`; apply-window check:
+  `supabase/tests/pg_net_worker_url_allowlists_post_apply.sql`. The full key registry +
+  the read-only "everything points at production" ops query:
+  **`docs/database/integration-config-worker-urls.md`**. Known remaining gap (deferred):
+  the two `transcribe_call_worker_url` pg_cron command strings inline their `net.http_post`
+  with no allowlist.
 
 ## Admin notification presentation Settings (2026-07-29)
 

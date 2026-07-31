@@ -5715,3 +5715,40 @@ deployment can serve both the production app and the UPR Dev variant — until t
 env-level `APNS_TOPIC` per deployment is a standing constraint. Enrollment census at
 close: native = Moroni, Matheus, Juani; web push = Ben, Nano; no push channel = Bighetti,
 Marcelo E., and one active employee with no display_name set.
+
+## 2026-07-30 — pg_net worker-URL allowlists authored (outage-audit follow-up, NOT applied)
+
+The 2026-07-30 outage audit found the same latent class elsewhere: two SECURITY DEFINER
+pg_net callers still dispatch to WHATEVER URL their `integration_config` row holds —
+`notify_google_calendar_sync(uuid,text,jsonb)` (only a NULL/blank check, from 20260630) and
+`notify_emit(text,jsonb)` (same, from 20260728224000). A rewritten config row would turn
+either into an SSRF vector that also hands the webhook-secret header to the attacker's host.
+
+**Authored (owner apply pending):** `20260730214500_pg_net_worker_url_allowlists.sql` —
+function-body-only replaces giving both callers the exact two-URL allowlist
+(`dev.utahpros.app` + `utahpros.app` worker paths) and the fail-closed
+`NULLIF(btrim(v_secret),'')` gate the four wake functions (outbox, ops-health,
+CallRail-recovery, QBO-payments) already carry. Signatures, return types, owners and
+effective ACLs unchanged; REVOKE-before-GRANT re-declared for the managed-project PUBLIC
+re-grant trap. md5 drift guards anchor both directions: pre-change fingerprints
+`9c97af19…` (gcal, computed from 20260630 source) and `3f972d71…` (notify_emit,
+independently confirmed by the 20260728224000 rollback preflight); post-change
+fingerprints are shared by the migration postflight, the paired rollback's preflight, and
+the post-apply check. The secret gate is behavior-preserving: both receiving workers
+(`google-calendar-sync.js:42-47`, `notify.js` `authorizeNotifyRequest`) already 401 a
+blank secret.
+
+**Shipped alongside:** paired rollback (restores byte-exact prior bodies — verified by
+hash), CI contract test `tests/qa/unit/pg-net-worker-url-allowlists.test.js` (9
+assertions, green; proves intent, not live effect), read-only
+`supabase/tests/pg_net_worker_url_allowlists_post_apply.sql` for the apply window, and
+**`docs/database/integration-config-worker-urls.md`** — the registry of all 8
+`*_worker_url` keys plus the read-only ops query that catches the actual outage class
+(a production-critical key pointing at dev; the allowlists deliberately permit both
+origins, so they do not catch it — the ops check does).
+
+**Deferred, recorded in the migration header:** (1) `notify_google_calendar_sync` keeps
+its live `authenticated` EXECUTE grant (no browser caller found; tightening is a separate
+ACL-only change); (2) the two `transcribe_call_worker_url` pg_cron command strings inline
+`net.http_post` with no allowlist — hardening a cron command string is a different shape
+(unschedule/reschedule) and gets its own change.
