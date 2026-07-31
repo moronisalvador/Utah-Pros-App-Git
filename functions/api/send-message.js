@@ -61,12 +61,21 @@ import {
   findMessageAttempt,
 } from '../lib/messaging-attempts.js';
 import { resolveMessageMedia } from '../lib/message-media.js';
-import { handleOptions, jsonResponse } from '../lib/cors.js';
+import { handleOptions, jsonResponse as corsJsonResponse } from '../lib/cors.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { STAFF_ACCEPTED_CONSENT_CODES, isAcceptedConsent } from '../lib/sms-consent.js';
 
 // ─── SECTION: Helpers ───────────────────────────────────────────────────────
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// This route returns private conversation, contact, and provider data. Keep every
+// JSON outcome out of browser and intermediary caches while preserving CORS.
+function jsonResponse(data, status = 200, request = null, env = null) {
+  const response = corsJsonResponse(data, status, request, env);
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
+}
 
 function normalizedPhoneIdentity(value) {
   const digits = String(value || '').replace(/\D/g, '');
@@ -372,12 +381,12 @@ export async function onRequestOptions(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const foundationSchema = resolveMessagingSchemaMode(env) === 'foundation';
 
   // Resolve a real active employee and the same conversations capability the UI
   // uses before any service-role read, consent audit, note write, or provider call.
-  const auth = await requireMessagingAccess(request, env, db);
+  const auth = await requireMessagingAccess(request, env, db, fetchWithTimeout);
   if (auth.error) {
     const payload = { error: auth.error };
     if (auth.code) payload.code = auth.code;
