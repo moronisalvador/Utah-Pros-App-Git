@@ -32,7 +32,9 @@
  *     (the hourly qbo-payments-sync sweep is the safety net either way). Each event
  *     is claimed once (idempotent) so duplicate Intuit deliveries no-op.
  *   - Always returns 200 quickly after claiming so Intuit doesn't hammer retries;
- *     per-event failures are recorded on qbo_events.error for later inspection.
+ *     retryable provider failures stay on the claimed event; manual decisions are
+ *     delegated to deterministic `reconcile:*` rows so the provider event itself
+ *     can finish terminally instead of becoming a second stale to-do item.
  * ════════════════════════════════════════════════
  */
 
@@ -42,6 +44,8 @@ import { verifyIntuitSignature, sha256hex } from '../lib/intuit.js';
 import { syncQboPaymentToUpr, removeQboPaymentFromUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { getConnection } from '../lib/quickbooks.js';
+import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 // Entities this endpoint mirrors into UPR; anything else is skipped before claiming.
 const SYNCED_ENTITIES = new Set(['Payment', 'Estimate']);
@@ -75,7 +79,9 @@ export async function onRequestPost(context) {
   // make is scoped to the realm on our STORED connection (qboFetch builds
   // /v3/company/{conn.realm_id}/...), so an event from any other realm would silently be looked
   // up in the wrong company — and Intuit answers that with a bare 400. Resolve our realm once
-  // and refuse mismatches explicitly instead of issuing a cross-company read.
+  // and refuse any event unless both realms are present and exactly equal. This must fail
+  // closed: without a resolved stored realm, qboFetch could read an arbitrary entity from a
+  // different company and the subsequent sync could mutate UPR business records.
   let ourRealmId = null;
   try {
     const conn = await getConnection(env);
@@ -85,7 +91,7 @@ export async function onRequestPost(context) {
   }
 
   for (const note of notifications) {
-    const realmId = note.realmId || '';
+    const realmId = typeof note.realmId === 'string' ? note.realmId.trim() : '';
     const entities = note.dataChangeEvent?.entities || [];
     for (const e of entities) {
       if (!SYNCED_ENTITIES.has(e.name)) continue;
@@ -100,9 +106,33 @@ export async function onRequestPost(context) {
       }
       if (!claimed) continue; // duplicate delivery
 
+      // A missing stored realm may be transient, so preserve it for the recovery path without
+      // reading QBO or mutating UPR business data. We still claim it first, keeping duplicate
+      // delivery protection and the 200 acknowledgement contract intact.
+      if (!ourRealmId) {
+        console.warn('qbo-webhook: ignoring event until the connected realm can be resolved');
+        await db.update('qbo_events', `id=eq.${key}`, {
+          status: 'retry',
+          error: 'realm_unavailable: connected QBO realm could not be resolved',
+        });
+        continue;
+      }
+
+      // A notification without a realm is malformed and cannot safely be scoped. Terminal by
+      // nature — it cannot become attributable to this connected company later.
+      if (!realmId) {
+        console.warn('qbo-webhook: ignoring event without a realm');
+        await db.update('qbo_events', `id=eq.${key}`, {
+          status: 'ignored',
+          error: 'realm_missing: event realm is blank',
+          processed_at: new Date().toISOString(),
+        });
+        continue;
+      }
+
       // Cross-realm event: never read it out of the wrong company. Terminal by nature — a
       // different company's record will never become ours, so this is not retry-eligible.
-      if (ourRealmId && realmId && realmId !== ourRealmId) {
+      if (realmId !== ourRealmId) {
         console.warn('qbo-webhook: ignoring event from another realm', realmId);
         await db.update('qbo_events', `id=eq.${key}`, {
           status: 'ignored',
@@ -114,6 +144,8 @@ export async function onRequestPost(context) {
 
       try {
         const op = String(e.operation || '');
+        let outcome;
+        let reconciliationItems = [];
         if (e.name === 'Estimate') {
           if (op === 'Delete' || op === 'Void' || op === 'Merge') {
             // UPR owns estimate deletion (qbo-estimate.js action:'delete' clears the
@@ -125,13 +157,38 @@ export async function onRequestPost(context) {
             });
             continue;
           }
-          await syncQboEstimateToUpr(env, db, String(e.id));
+          outcome = await syncQboEstimateToUpr(env, db, String(e.id));
+          const item = reconciliationItem('Estimate', e.id, outcome?.result);
+          if (item) reconciliationItems.push(await recordReconciliation(db, item));
+          else await resolveReconciliation(db, 'Estimate', e.id);
         } else if (op === 'Delete' || op === 'Void' || op === 'Merge') {
           await removeQboPaymentFromUpr(db, String(e.id));
         } else {
-          await syncQboPaymentToUpr(env, db, String(e.id));
+          outcome = await syncQboPaymentToUpr(env, db, String(e.id));
+          for (const result of (outcome?.results || [])) {
+            const entity = result?.qboInvoiceId ? 'Invoice' : 'Payment';
+            const qboId = result?.qboInvoiceId || e.id;
+            const item = reconciliationItem(entity, qboId, result);
+            if (item) reconciliationItems.push(await recordReconciliation(db, item));
+            else await resolveReconciliation(db, entity, qboId);
+          }
         }
-        await db.update('qbo_events', `id=eq.${key}`, { status: 'processed', processed_at: new Date().toISOString() });
+        if (reconciliationItems.length) {
+          const reasons = reconciliationItems.map((item) => `${item.entity}=${item.qboId}:${item.reason}`).join(', ');
+          const delegatedIds = reconciliationItems.map((item) => item.id).join(', ');
+          await db.update('qbo_events', `id=eq.${key}`, {
+            status: 'processed',
+            error: `reconciliation_delegated: ${delegatedIds}; ${reasons}`.slice(0, 500),
+            processed_at: new Date().toISOString(),
+          });
+          await recordWorkerRun(db, {
+            workerName: 'qbo-webhook', status: 'error', recordsProcessed: 0,
+            errorMessage: `needs_reconciliation: ${reasons}`,
+            meta: { reconciliation_count: reconciliationItems.length, reconciliation_reasons: reconciliationItems.map((item) => item.reason) },
+          });
+        } else {
+          await db.update('qbo_events', `id=eq.${key}`, { status: 'processed', processed_at: new Date().toISOString() });
+        }
       } catch (err) {
         console.error('qbo-webhook process error', e.id, err);
         // We always ack 200 to Intuit (it retries only at 20/30/50 min and then DISABLES the

@@ -60,7 +60,17 @@ function makeDb(estRow, { rpcResult } = {}) {
       return [];
     },
     async update(table, filter, patch) { updates.push({ table, filter, patch }); return null; },
-    async rpc(fn, params) { rpcs.push({ fn, params }); return rpcResult ?? { ok: true, invoice_id: 'inv-new' }; },
+    async rpc(fn, params) {
+      rpcs.push({ fn, params });
+      if (rpcResult !== undefined) return rpcResult;
+      if (estRow?.converted_invoice_id) return { ok: true, skipped: 'already-converted', status: estRow.status, invoice_id: estRow.converted_invoice_id };
+      if (params.p_action === 'accept' && estRow?.status === 'approved') return { ok: true, skipped: 'already-decided', status: 'approved' };
+      if (params.p_action === 'accept' && estRow?.status === 'denied') return { ok: true, skipped: 'already-decided', status: 'denied' };
+      if (params.p_action === 'reject' && estRow?.status === 'denied') return { ok: true, skipped: 'already-denied', status: 'denied' };
+      if (params.p_action === 'reject') return { ok: true, action: 'denied' };
+      if (params.p_action === 'approve_only') return { ok: true, action: 'approved-needs-manual-convert', invoice_id: null };
+      return { ok: true, action: 'approved-and-converted', invoice_id: 'inv-new' };
+    },
   };
 }
 
@@ -85,7 +95,7 @@ describe('acceptedDateToIso', () => {
 });
 
 describe('syncQboEstimateToUpr — Accepted', () => {
-  it('approves + converts a submitted estimate via the staff RPC (p_force false)', async () => {
+  it('approves + converts a submitted estimate through the locked decision RPC', async () => {
     qboFetch.mockResolvedValue(estimateResponse());
     const db = makeDb({ ...SUBMITTED_EST });
 
@@ -93,25 +103,22 @@ describe('syncQboEstimateToUpr — Accepted', () => {
 
     expect(out.result.action).toBe('approved-and-converted');
     expect(out.result.invoice_id).toBe('inv-new');
-    // Acceptance metadata is stamped first, WITHOUT status (the notify trigger
-    // fires on the status flip inside the RPC — exactly once).
-    expect(db.updates).toHaveLength(1);
-    expect(db.updates[0].patch).toEqual({ approved_at: '2026-07-21T12:00:00.000Z', approved_amount: 1500 });
-    expect(db.updates[0].patch.status).toBeUndefined();
-    expect(db.rpcs).toEqual([{ fn: 'convert_estimate_to_invoice', params: { p_estimate_id: 'est-1', p_force: false } }]);
+    expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toEqual([{ fn: 'apply_qbo_estimate_decision', params: {
+      p_estimate_id: 'est-1', p_action: 'accept',
+      p_approved_at: '2026-07-21T12:00:00.000Z', p_approved_amount: 1500,
+    } }]);
   });
 
   it('approves WITHOUT copying lines when the target invoice already has some (needs_confirm)', async () => {
     qboFetch.mockResolvedValue(estimateResponse());
-    const db = makeDb({ ...SUBMITTED_EST }, { rpcResult: { needs_confirm: true, invoice_id: 'inv-existing', existing_line_count: 3 } });
+    const db = makeDb({ ...SUBMITTED_EST }, { rpcResult: { ok: true, action: 'approved-needs-manual-convert', invoice_id: 'inv-existing' } });
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
     expect(out.result.action).toBe('approved-needs-manual-convert');
     expect(out.result.invoice_id).toBe('inv-existing');
-    // Second update flips status only — the estimate is approved, the line
-    // append is left to a human (double-billing guard).
-    expect(db.updates[1].patch).toEqual({ status: 'approved' });
+    expect(db.updates).toHaveLength(0);
     expect(db.rpcs).toHaveLength(1);
   });
 
@@ -123,7 +130,7 @@ describe('syncQboEstimateToUpr — Accepted', () => {
 
     expect(out.result.skipped).toBe('already-decided');
     expect(db.updates).toHaveLength(0);
-    expect(db.rpcs).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(1);
   });
 
   it('no-ops when the estimate is already converted', async () => {
@@ -131,8 +138,9 @@ describe('syncQboEstimateToUpr — Accepted', () => {
     const db = makeDb({ ...SUBMITTED_EST, converted_invoice_id: 'inv-9' });
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
-    expect(out.result.skipped).toBe('already-decided');
+    expect(out.result.skipped).toBe('already-converted');
     expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(1);
   });
 
   it('never overwrites a staff denial with a customer acceptance', async () => {
@@ -142,8 +150,9 @@ describe('syncQboEstimateToUpr — Accepted', () => {
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
     expect(out.result.skipped).toBe('already-decided');
     expect(out.result.status).toBe('denied');
+    expect(out.result.manual_reconciliation).toBe('staff-decision-conflict');
     expect(db.updates).toHaveLength(0);
-    expect(db.rpcs).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(1);
   });
 });
 
@@ -155,11 +164,10 @@ describe('syncQboEstimateToUpr — Rejected', () => {
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
     expect(out.result.action).toBe('denied');
-    expect(db.updates).toEqual([{
-      table: 'estimates', filter: 'id=eq.est-1',
-      patch: { status: 'denied', denied_reason: 'Declined by customer in QuickBooks' },
-    }]);
-    expect(db.rpcs).toHaveLength(0);
+    expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toEqual([{ fn: 'apply_qbo_estimate_decision', params: {
+      p_estimate_id: 'est-1', p_action: 'reject', p_approved_at: null, p_approved_amount: null,
+    } }]);
   });
 
   it('never regresses an approved/converted estimate to denied', async () => {
@@ -167,8 +175,9 @@ describe('syncQboEstimateToUpr — Rejected', () => {
     const db = makeDb({ ...SUBMITTED_EST, status: 'approved', converted_invoice_id: 'inv-9' });
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
-    expect(out.result.skipped).toBe('already-decided');
+    expect(out.result.skipped).toBe('already-converted');
     expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(1);
   });
 });
 
@@ -184,7 +193,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
     expect(db.updates).toHaveLength(0);
   });
 
-  it('adopts a QBO-side conversion through the deposit-path helper', async () => {
+  it('adopts an ordinary QBO-side conversion only through the non-forcing helper path', async () => {
     qboFetch.mockResolvedValue(estimateResponse({
       TxnStatus: 'Converted',
       LinkedTxn: [{ TxnType: 'Invoice', TxnId: '901' }],
@@ -193,7 +202,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901');
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
     expect(out.result.action).toBe('adopted-qbo-conversion');
     expect(out.result.invoice_id).toBe('inv-adopted');
   });
@@ -223,7 +232,7 @@ describe('syncQboEstimateToUpr — Converted', () => {
 
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
-    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901');
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
     expect(out.result.action).toBe('adopted-qbo-conversion');
   });
 
@@ -238,7 +247,30 @@ describe('syncQboEstimateToUpr — Converted', () => {
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
 
     expect(out.result.action).toBe('approved-needs-manual-convert');
-    expect(db.updates.at(-1).patch).toEqual({ status: 'approved' });
+    expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toEqual([{ fn: 'apply_qbo_estimate_decision', params: {
+      p_estimate_id: 'est-1', p_action: 'approve_only',
+      p_approved_at: '2026-07-21T12:00:00.000Z', p_approved_amount: 1500,
+    } }]);
+  });
+
+  it('cannot append estimate lines to a populated invoice after a Converted event', async () => {
+    // The real helper returns null for convert_estimate_to_invoice(needs_confirm)
+    // when this ordinary status path passes p_force:false. The sync therefore
+    // records approval only and leaves the existing invoice for manual review.
+    adoptInvoiceFromQboEstimate.mockResolvedValueOnce(null);
+    qboFetch.mockResolvedValue(estimateResponse({
+      TxnStatus: 'Converted',
+      LinkedTxn: [{ TxnType: 'Invoice', TxnId: '901' }],
+    }));
+    const db = makeDb({ ...SUBMITTED_EST });
+
+    const out = await syncQboEstimateToUpr(ENV, db, '5812');
+
+    expect(adoptInvoiceFromQboEstimate).toHaveBeenCalledWith(ENV, db, '901', false, true);
+    expect(out.result).toMatchObject({ ok: true, action: 'approved-needs-manual-convert', invoice_id: null });
+    expect(db.rpcs).toHaveLength(1);
+    expect(db.updates).toHaveLength(0);
   });
 });
 
@@ -250,6 +282,31 @@ describe('syncQboEstimateToUpr — boundaries', () => {
     const out = await syncQboEstimateToUpr(ENV, db, '5812');
     expect(out.result.skipped).toBe('not-tracked');
     expect(db.updates).toHaveLength(0);
+  });
+
+  it('does not choose an arbitrary UPR estimate for a combined QBO estimate id', async () => {
+    qboFetch.mockResolvedValue(estimateResponse());
+    const updates = [];
+    const rpcs = [];
+    const db = {
+      updates,
+      rpcs,
+      async select() {
+        return [
+          { ...SUBMITTED_EST, id: 'est-1' },
+          { ...SUBMITTED_EST, id: 'est-2' },
+        ];
+      },
+      async update(...args) { updates.push(args); },
+      async rpc(...args) { rpcs.push(args); },
+    };
+
+    const out = await syncQboEstimateToUpr(ENV, db, '5812');
+
+    expect(out.result.skipped).toBe('combined-estimate-manual-reconciliation');
+    expect(db.updates).toHaveLength(0);
+    expect(db.rpcs).toHaveLength(0);
+    expect(adoptInvoiceFromQboEstimate).not.toHaveBeenCalled();
   });
 
   it('ignores statuses that carry no customer answer (Pending)', async () => {

@@ -29,6 +29,7 @@ vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn() }));
 import {
   notifyPaymentReceived,
   syncQboPaymentToUpr,
+  adoptInvoiceFromQboEstimate,
   readQboFault,
   isQboNotFound,
   QboRequestError,
@@ -170,6 +171,291 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
     expect(out.results.some(r => r.skipped === 'already-synced')).toBe(true);
     expect(db.inserts).toHaveLength(0);
     expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('treats a concurrent unique-index winner as already synced without notifying twice', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      }
+      return { ok: false, status: 404 };
+    });
+    let paymentReads = 0;
+    const db = makeDb({ existingPayment: false });
+    db.select = async (table) => {
+      if (table === 'invoices') {
+        return [{
+          id: 'inv-1',
+          job_id: 'job-1',
+          contact_id: 'c-1',
+          invoice_number: 'INV-1001',
+          qbo_doc_number: 'QB-1001',
+        }];
+      }
+      if (table === 'payments') {
+        paymentReads += 1;
+        return paymentReads > 1 ? [{ id: 'pay-race-winner' }] : [];
+      }
+      return [];
+    };
+    db.insert = async () => {
+      throw new Error('Supabase INSERT payments: 409 duplicate key value violates unique constraint');
+    };
+
+    const out = await syncQboPaymentToUpr(ENV, db, 'QB-PAY-1');
+
+    expect(out.results).toEqual([{ qboInvoiceId: 'QB-INV-1', skipped: 'already-synced' }]);
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('adoptInvoiceFromQboEstimate — deposit-payment safety', () => {
+  it('uses a non-forcing conversion for the payment-driven deposit adoption path', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: {
+        DocNumber: 'QB-EST-1',
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }),
+    });
+    const rpcs = [];
+    const db = {
+      async select(table) {
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: null }];
+        if (table === 'invoices') return [{
+          id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', qbo_invoice_id: null,
+          invoice_number: 'INV-1', qbo_doc_number: null,
+        }];
+        return [];
+      },
+      async rpc(fn, params) {
+        rpcs.push({ fn, params });
+        if (fn === 'apply_qbo_estimate_decision') return { ok: true, action: 'approved-and-converted', invoice_id: 'inv-1' };
+        return { ok: true, id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', invoice_number: 'INV-1', qbo_doc_number: 'QB-EST-1', qbo_invoice_id: 'QB-INV-1' };
+      },
+      async update() { return null; },
+    };
+
+    const adopted = await adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1');
+
+    expect(adopted.id).toBe('inv-1');
+    expect(rpcs).toEqual([
+      { fn: 'apply_qbo_estimate_decision', params: { p_estimate_id: 'est-1', p_action: 'convert', p_approved_at: null, p_approved_amount: null } },
+      { fn: 'cas_qbo_invoice_link', params: { p_invoice_id: 'inv-1', p_expected_qbo_invoice_id: null, p_new_qbo_invoice_id: 'QB-INV-1', p_qbo_doc_number: 'QB-EST-1' } },
+    ]);
+  });
+
+  it('refuses to adopt through a non-forcing path when the target invoice has lines', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: {
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }),
+    });
+    const rpcs = [];
+    const db = {
+      async select(table) {
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: null }];
+        return [];
+      },
+      async rpc(fn, params) {
+        rpcs.push({ fn, params });
+        return { ok: true, action: 'approved-needs-manual-convert', invoice_id: 'inv-populated' };
+      },
+    };
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false)).resolves.toBeNull();
+    expect(rpcs).toEqual([{
+      fn: 'apply_qbo_estimate_decision',
+      params: { p_estimate_id: 'est-1', p_action: 'convert', p_approved_at: null, p_approved_amount: null },
+    }]);
+  });
+
+  it('reports a different existing QBO invoice as a blocked adoption without overwriting it', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: {
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }),
+    });
+    const updates = [];
+    const db = {
+      async select(table, query) {
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: 'inv-1' }];
+        // The sync's first lookup is by the incoming QBO id and must miss so
+        // the adoption helper sees the converted UPR invoice by its UUID.
+        if (table === 'invoices' && query.startsWith('qbo_invoice_id=')) return [];
+        if (table === 'invoices') return [{
+          id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', qbo_invoice_id: 'QB-OTHER',
+        }];
+        return [];
+      },
+      async update(...args) { updates.push(args); },
+    };
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false, true))
+      .resolves.toEqual({ blocked: 'qbo-invoice-mismatch' });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('does not let a competing link winner be overwritten after the invoice read', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: {
+        DocNumber: 'QB-EST-1',
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }),
+    });
+    const updates = [];
+    const db = {
+      async select(table) {
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: 'inv-1' }];
+        if (table === 'invoices') return [{
+          id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', qbo_invoice_id: null,
+          invoice_number: 'INV-1', qbo_doc_number: null,
+        }];
+        return [];
+      },
+      async rpc(fn, params) {
+        expect(fn).toBe('cas_qbo_invoice_link');
+        expect(params.p_expected_qbo_invoice_id).toBeNull();
+        return { ok: false, reason: 'qbo-invoice-mismatch', current_qbo_invoice_id: 'QB-HUMAN-WON' };
+      },
+      async update(...args) { updates.push(args); },
+    };
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false, true))
+      .resolves.toEqual({ blocked: 'qbo-invoice-mismatch' });
+    expect(updates).toHaveLength(0);
+  });
+
+  it('maps an already-decided conversion response to the durable staff-decision conflict reason', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: { LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }] } }),
+    });
+    const db = {
+      async select(table) { return table === 'estimates' ? [{ id: 'est-1', converted_invoice_id: null }] : []; },
+      async rpc() { return { ok: true, skipped: 'already-decided', status: 'denied' }; },
+    };
+    await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false, true))
+      .resolves.toEqual({ blocked: 'staff-decision-conflict' });
+  });
+});
+
+describe('syncQboPaymentToUpr — blocked deposit adoption', () => {
+  it('does not choose an arbitrary UPR invoice when combined billing has the same QBO invoice id', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      return { ok: false, status: 404 };
+    });
+    const inserts = [];
+    const db = {
+      async select(table) {
+        if (table === 'invoices') return [
+          { id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1' },
+          { id: 'inv-2', job_id: 'job-2', contact_id: 'contact-2' },
+        ];
+        return [];
+      },
+      async insert(...args) { inserts.push(args); },
+    };
+
+    const out = await syncQboPaymentToUpr(ENV, db, 'QB-PAY-1');
+
+    expect(out.results).toEqual([{ qboInvoiceId: 'QB-INV-1', skipped: 'combined-invoice-manual-reconciliation' }]);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('does not record a payment when conversion needs manual reconciliation', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      if (path.startsWith('/invoice/')) return { ok: true, json: async () => ({ Invoice: {
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }) };
+      return { ok: false, status: 404 };
+    });
+    const inserts = [];
+    const rpcs = [];
+    const db = {
+      async select(table) {
+        if (table === 'invoices') return [];
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: null }];
+        return [];
+      },
+      async rpc(fn, params) {
+        rpcs.push({ fn, params });
+        return { ok: true, action: 'approved-needs-manual-convert', invoice_id: 'inv-populated' };
+      },
+      async insert(...args) { inserts.push(args); },
+    };
+
+    const out = await syncQboPaymentToUpr(ENV, db, 'QB-PAY-1');
+
+    expect(rpcs).toEqual([{
+      fn: 'apply_qbo_estimate_decision',
+      params: { p_estimate_id: 'est-1', p_action: 'convert', p_approved_at: null, p_approved_amount: null },
+    }]);
+    expect(out.results).toEqual([{ qboInvoiceId: 'QB-INV-1', skipped: 'needs-manual-reconciliation' }]);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('does not record a payment when the converted UPR invoice belongs to another QBO invoice', async () => {
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) return paymentResponse();
+      if (path.startsWith('/paymentmethod/')) return { ok: true, json: async () => ({ PaymentMethod: { Name: 'Visa' } }) };
+      if (path.startsWith('/invoice/')) return { ok: true, json: async () => ({ Invoice: {
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }) };
+      return { ok: false, status: 404 };
+    });
+    const inserts = [];
+    const updates = [];
+    const db = {
+      async select(table, query) {
+        if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: 'inv-1' }];
+        if (table === 'invoices' && query.startsWith('qbo_invoice_id=')) return [];
+        if (table === 'invoices') return [{
+          id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', qbo_invoice_id: 'QB-OTHER',
+        }];
+        return [];
+      },
+      async insert(...args) { inserts.push(args); },
+      async update(...args) { updates.push(args); },
+    };
+
+    const out = await syncQboPaymentToUpr(ENV, db, 'QB-PAY-1');
+
+    expect(out.results).toEqual([{ qboInvoiceId: 'QB-INV-1', skipped: 'qbo-invoice-mismatch' }]);
+    expect(inserts).toHaveLength(0);
+    expect(updates).toHaveLength(0);
+  });
+
+  it('does not adopt a payment when one QBO estimate maps to combined UPR estimates', async () => {
+    qboFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ Invoice: {
+        LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }],
+      } }),
+    });
+    const rpcs = [];
+    const db = {
+      async select(table) {
+        if (table === 'estimates') return [
+          { id: 'est-1', converted_invoice_id: null },
+          { id: 'est-2', converted_invoice_id: null },
+        ];
+        return [];
+      },
+      async rpc(...args) { rpcs.push(args); },
+    };
+
+    await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false, true))
+      .resolves.toEqual({ blocked: 'combined-estimate-manual-reconciliation' });
+    expect(rpcs).toHaveLength(0);
   });
 });
 

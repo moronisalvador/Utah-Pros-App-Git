@@ -41,6 +41,7 @@ import { qboFetch, getConnection } from '../lib/quickbooks.js';
 import { syncQboPaymentToUpr } from '../lib/qbo-payment-sync.js';
 import { syncQboEstimateToUpr } from '../lib/qbo-estimate-sync.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
+import { recordReconciliation, reconciliationItem, resolveReconciliation } from '../lib/qbo-reconciliation.js';
 
 const MINOR_VERSION = '70';
 const LOOKBACK_DAYS = 7;
@@ -60,15 +61,23 @@ async function sweepEstimates(env, db, since) {
   const candidates = all.filter((e) => ESTIMATE_STATUSES_TO_SYNC.has(String(e.TxnStatus || '')));
 
   let acted = 0, skipped = 0;
+  const reconciliation = [];
   for (const e of candidates) {
     try {
       const r = await syncQboEstimateToUpr(env, db, String(e.Id));
       if (r?.result?.action) acted++; else skipped++;
+      const item = reconciliationItem('Estimate', e.Id, r?.result);
+      if (item) reconciliation.push(await recordReconciliation(db, item));
+      else await resolveReconciliation(db, 'Estimate', e.Id);
     } catch (err) {
       console.error('qbo-payments-sync: estimate', e.Id, err?.message || err);
     }
   }
-  return { ok: true, scanned: candidates.length, acted, skipped };
+  return {
+    ok: true, scanned: candidates.length, acted, skipped,
+    reconciliation_count: reconciliation.length,
+    reconciliation_reasons: reconciliation.map((item) => item.reason),
+  };
 }
 
 // ─── SECTION: Reconcile ──────────────
@@ -87,10 +96,18 @@ async function reconcile(env) {
   const payments = data?.QueryResponse?.Payment || [];
 
   let recorded = 0, skipped = 0;
+  const paymentReconciliation = [];
   for (const p of payments) {
     try {
       const r = await syncQboPaymentToUpr(env, db, String(p.Id));
-      for (const x of (r.results || [])) { if (x.recorded) recorded++; else skipped++; }
+      for (const x of (r.results || [])) {
+        if (x.recorded) recorded++; else skipped++;
+        const entity = x?.qboInvoiceId ? 'Invoice' : 'Payment';
+        const qboId = x?.qboInvoiceId || p.Id;
+        const item = reconciliationItem(entity, qboId, x);
+        if (item) paymentReconciliation.push(await recordReconciliation(db, item));
+        else await resolveReconciliation(db, entity, qboId);
+      }
     } catch (err) {
       console.error('qbo-payments-sync: payment', p.Id, err?.message || err);
     }
@@ -109,7 +126,14 @@ async function reconcile(env) {
   // estimate sweep outcome rides along in meta.
   await recordWorkerRun(db, {
     workerName: 'qbo-payments-sync', status: 'completed', recordsProcessed: recorded,
-    startedAt, meta: { estimates },
+    startedAt, meta: {
+      estimates,
+      reconciliation_count: paymentReconciliation.length + (estimates?.reconciliation_count || 0),
+      reconciliation_reasons: [
+        ...paymentReconciliation.map((item) => item.reason),
+        ...(estimates?.reconciliation_reasons || []),
+      ],
+    },
   });
 
   return { ok: true, scanned: payments.length, recorded, skipped, estimates };
