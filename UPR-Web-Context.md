@@ -2686,9 +2686,9 @@ Bearer; tokens stay server-side.
 
 **QBO→UPR payment sync — HOURLY CRON LIVE (2026-07-24; ledger `20260724190848`, running since 19:17 UTC).** `qbo-payments-sync` had no cron. Migration `supabase/migrations/20260724180100_qbo_payments_sync_cron.sql` schedules it via Supabase **pg_cron + pg_net** (same mechanism as `process-scheduled`/message-outbox): hourly `net.http_post` → `https://utahpros.app/api/qbo-payments-sync` carrying `integration_config.qbo_webhook_secret` as `x-webhook-secret` (already set in Cloudflare as `QBO_WEBHOOK_SECRET`). Wrapped in the locked-down `qbo_payments_sync_poll()` SECURITY DEFINER helper (REVOKEd from all roles; exact URL allowlist; fail-closed). Applied and healthy — four consecutive `succeeded` runs returning HTTP 200 `{"ok":true,"scanned":1,...}`; its source reached `dev` only on 2026-07-24 via PR #516 (see the concurrent-session reconciliation section). Real-time webhook half still needs `QBO_WEBHOOK_VERIFIER_TOKEN` + the Intuit Payment subscription. The companion `20260724200000_payments_qbo_dedup_index.sql` is also live under ledger `20260724230933`.
 
-**QBO multi-invoice receive-payment receipts — DEV COMMITTED, QA-STAGING VERIFIED, PRODUCTION UNAPPLIED, DISABLED (2026-07-31).** Source merged to `dev` as `c41839b1` from `codex/qbo-multi-invoice-payments`; it adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request.
+**QBO multi-invoice receive-payment receipts — DEV COMMITTED, QA-STAGING VERIFIED, PRODUCTION SCHEMA APPLIED, DISABLED (2026-07-31).** Source merged to `dev` as `c41839b1` from `codex/qbo-multi-invoice-payments`; it adds `/collections/receive-payment` and `POST /api/qbo-receive-payment` for an active internal admin to create one QBO Payment allocated across 1–100 open invoices belonging to one UPR contact/QBO customer. The Worker reserves a durable UUID/fingerprint plus stable Intuit `requestid` before the provider call, writes multiple Invoice `LinkedTxn` lines with explicit date/method/reference/deposit account, verifies the returned Payment and fresh invoice-balance deltas, then finalizes one receipt plus existing-trigger-compatible `payments` projections. Timeout/transport ambiguity remains `unknown_outcome`; retrying unchanged resolves the original provider request.
 
-Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The migration is applied only to `qa-staging`, where forced-RLS/service-only grant readbacks and the complete transaction-rolled-back SQL behavior suite pass with zero fixture/receipt residue; production remains unapplied. No deploy, provider Payment, or feature activation occurred; the Production Intuit webhook subscription already includes Payment, Estimate, and PaymentMethod with its endpoint and verifier token unchanged. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+Schema source `20260731045407_qbo_multi_invoice_payment_receipts.sql` adds private forced-RLS/service-only `payment_receipts`, `payment_receipt_attempts`, `payment_receipt_events`, `payments.receipt_id`, six receipt-state RPCs plus one atomic event-claim RPC, and realm/entity/provider-version/retry metadata on `qbo_events`; its paired containment rollback retains financial audit evidence. It also removes inherited anonymous policies and the broad authenticated payment writer: active internal staff retain SELECT, while manual ungrouped INSERT/UPDATE/DELETE is limited to active non-external admins—the effective `canEditBilling` boundary—and browser inserts must attribute the caller. Provider/grouped rows remain worker-owned. Realm-scoped uniqueness prevents one QBO Payment from binding to multiple attempts. When—and only when—`QBO_RECEIVE_PAYMENT_ENABLED=true`, webhook/CDC reconcile the complete grouped projection, atomically retain retry identity, recover stale processing claims, preserve a UPR receipt's actor/payer, ignore older provider versions, durably retry transient failures, and let QBO Update/Void/Delete update or remove active projections without destroying receipt/event evidence. The money endpoint independently requires the seeded-false `feature:qbo_receive_payment` row to be enabled and not force-disabled as well as the Worker gate; the database flag also gates the admin UI. Neither flag is authorization. The source is applied to `qa-staging`, where forced-RLS/service-only grant readbacks and the complete transaction-rolled-back SQL behavior suite pass with zero fixture/receipt residue, and to shared production as ledger `20260731225654_qbo_multi_invoice_payment_receipts`. The live database flag remains disabled. This reconciliation did not prove the Cloudflare environment gate, deploy a compatible Worker, create a provider Payment, or activate the feature; the Production Intuit webhook subscription already includes Payment, Estimate, and PaymentMethod with its endpoint and verifier token unchanged. See `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 **Invoice/Estimate attachments → QuickBooks — NEW (2026-07-24).** Staff attach a file (photo, scope, PDF) to a synced invoice/estimate; it's pushed to QBO via the **Attachable API** with `IncludeOnSend` so it rides along on the QBO-sent email AND shows on the transaction in QBO.
 - **`functions/api/qbo-attach.js`** (`POST {entity_type,id,file_name,content_type,file_base64,include_on_send}` + `Idempotency-Key`; `{action:'delete',attachment_id}`) — `requireRole(['admin','manager'])` plus explicit external-employee denial; requires the entity synced; ≤20 MB; idempotent (pre-check + UNIQUE key); logs `worker_runs` as `qbo-attach`. Uses the already-granted **accounting** scope (no Payments reconnect needed). Direct UI metadata reads still use a role-scoped policy without `is_external=false`; that RLS residual is separately gated.
@@ -4159,9 +4159,10 @@ Bidirectional and both channels — a genuine end-to-end activation, not a confi
 + redeploy). Rollback is `MESSAGING_SEND_MODE=disabled` + redeploy — sends short-circuit before any
 provider call, with no database or code change.
 
-**Guardrail correction (read-only, 2026-07-31):** the production org now has
-`automation_settings.sms_sending_enabled=true` and `missed_call_textback_enabled=true`; the test org
-remains false, and the other named automation toggles remain false. This switch does **not** gate
+**Guardrail correction (verified live, 2026-07-31):** the production org now has
+`automation_settings.sms_sending_enabled=false`; the test org remains false, and the other named
+automation toggles remain false. `missed_call_textback_enabled=true` remains configured for the
+production org but is inert behind the master switch. This switch does **not** gate
 staff P2P CallRail sends—`send-message.js` never reads it. It arms the separate automated SMS path,
 which is still Twilio-only and does not consult `MESSAGING_SEND_MODE`. Redacted configuration checks
 found no Twilio auth token, account SID, messaging-service SID or phone number in the managed
@@ -4474,10 +4475,11 @@ not prove that every real producer emits at the correct business moment. Source 
 tests alone still do not prove live presentation, and every future live send remains separately
 owner-authorized.
 
-**Producer/activation reconciliation (read-only, 2026-07-31):** source contains a producer for all
-15 catalog keys, and the shared production `notification_types` catalog currently has all 15
-`enabled=true`. Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history,
-not current state. Real production evidence exists for assigned appointments and inbound texts;
+**Producer/activation reconciliation (verified live, 2026-07-31):** source contains a producer for
+all 15 catalog keys. Ten shared-production catalog rows remain enabled; the three `appointment.*`
+and two `timesheet.change_*` keys are deliberately disabled by the containment described below.
+Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history, not current state.
+Real production evidence exists for assigned appointments and inbound texts;
 the owner sweep is not real-business evidence for the other types. Two authorization dependencies
 remain explicit: `appointments` still exposes anon all-row writes and `appointment_crew` permits
 all-row writes to any authenticated session, so the three `appointment.*` trigger paths inherit a
@@ -4487,10 +4489,11 @@ those producer boundaries before treating the affected types as fully qualified.
 `clock.abandoned` scan also writes its once-only `system_events` marker before `notify_emit`; while
 the type is enabled today, disabling it during a scan would consume the occurrence without an alert.
 Changing that ordering is a reviewed migration/rollback task, not a dashboard toggle.
-Repository-only containment source
-`20260731223000_notification_unsafe_producer_containment.sql` disables the three appointment and
-two timesheet types without touching their producer tables or any messaging provider; its paired
-rollback restores the same five keys. The migration refuses unless all five keys exist and are
-enabled immediately before apply, so rollback is an exact restoration rather than a blind toggle.
-It is **UNAPPLIED** until a separate shared-database window is authorized. Re-enable only after
-caller-derived appointment/timesheet authorization and negative tests pass.
+Exact containment source `20260731223000_notification_unsafe_producer_containment.sql` applied as
+production ledger `20260731225855_notification_unsafe_producer_containment`. It disables the three
+appointment and two timesheet types without touching their producer tables, notification payloads,
+or any messaging provider; its paired rollback restores the same five keys. The rollback was
+rehearsed on `qa-staging`, then the forward source was reapplied so QA also ends contained. Live
+production readback confirms all five are false. CallRail configuration and the working staff P2P
+send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
+authorization and negative tests pass.

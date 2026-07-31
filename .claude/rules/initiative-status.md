@@ -44,13 +44,11 @@ remain owner/external release gates and must not be inferred from repository sta
 - `20260727022920_mobile_personal_ownership_boundary.sql` remains source-hardened and unapplied.
   Focused preference/token boundary work changed its expected input state, so its preflight should
   refuse until the source and evidence are reconciled and re-qualified.
-- `20260731223000_notification_unsafe_producer_containment.sql` is a data-only, reversible
-  containment for the three appointment and two timesheet notification types whose producers still
-  have broader write authority. It is unapplied; CallRail/provider behavior is outside its scope.
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
-A third QBO money-boundary migration is committed on `dev` and remains unapplied to production:
+A third QBO money-boundary migration is committed on `dev` and now present in the shared production
+ledger with its rollout flags still disabled:
 
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql`, merged to `dev` as `c41839b1` from
   `codex/qbo-multi-invoice-payments`, adds the disabled, service-only receipt/attempt/event
@@ -60,13 +58,28 @@ A third QBO money-boundary migration is committed on `dev` and remains unapplied
   hygiene pass; independent Worker-security, migration, grant/secret, project-law, design, and
   lifecycle reviews pass. The migration and three supporting foreign-key indexes are applied to
   `qa-staging`; forced-RLS/grant/flag readbacks and the complete transaction-rolled-back SQL behavior
-  suite pass with zero fixture or receipt residue. It has **not** been applied to the shared project;
-  no deploy, QBO Payment, or feature/env activation occurred. The Intuit Development sandbox matrix,
-  authenticated browser QA, disabled code-first deployment, shared-DB apply, and named-admin proof
-  remain release gates.
+  suite pass with zero fixture or receipt residue. Production ledger
+  `20260731225654_qbo_multi_invoice_payment_receipts` is now present, and the live
+  `feature:qbo_receive_payment` row remains disabled. This reconciliation did not prove a Cloudflare
+  environment gate, create a QBO Payment, or activate the feature. The Intuit Development sandbox
+  matrix, authenticated browser QA, disabled code-first deployment, Cloudflare gate verification,
+  and named-admin proof remain release gates.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
+
+The reversible notification producer containment also applied from exact reviewed source:
+
+- `20260731223000_notification_unsafe_producer_containment.sql` → production ledger
+  `20260731225855_notification_unsafe_producer_containment`. All three `appointment.*` and both
+  `timesheet.change_*` target catalog rows are disabled. The rollback was rehearsed on
+  `qa-staging`, then the forward source was reapplied so QA also ends contained. No CallRail,
+  provider, consent, message, appointment, or timesheet row/configuration changed. Re-enable only
+  after caller-derived producer authorization and negative tests pass.
+- The production org's separate automated-SMS master switch is now
+  `automation_settings.sms_sending_enabled=false`; the test org remains false.
+  `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
+  that master switch. Staff P2P CallRail SMS/MMS does not read this switch and was untouched.
 
 The owner-authorized release applied the exact reviewed committed sources to the shared
 project (verbatim file content, per-file drift-guard preflights). Production ledger names
@@ -171,7 +184,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Source committed on `dev`, qa-staging verified; sandbox/apply/release owner-gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | Source committed on `dev`; qa-staging verified; production schema applied with DB flag disabled; sandbox/deploy/activation proof owner-gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
