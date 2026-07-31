@@ -30,6 +30,7 @@ import {
 } from '../lib/quickbooks.js';
 import {
   notifyPaymentReceived,
+  removeQboPaymentFromUpr,
   syncQboPaymentToUpr,
 } from '../lib/qbo-payment-sync.js';
 import { recordWorkerRun } from '../lib/worker-runs.js';
@@ -58,6 +59,7 @@ vi.mock('../lib/quickbooks.js', () => ({
 
 vi.mock('../lib/qbo-payment-sync.js', () => ({
   notifyPaymentReceived: vi.fn(),
+  removeQboPaymentFromUpr: vi.fn(),
   syncQboPaymentToUpr: vi.fn(),
 }));
 
@@ -84,6 +86,7 @@ const downstreamCalls = [
   notifyPaymentReceived,
   qboFetch,
   recordWorkerRun,
+  removeQboPaymentFromUpr,
   syncQboPaymentToUpr,
   uploadAttachable,
 ];

@@ -390,8 +390,8 @@ Capture provenance/readback after apply and before the reviewed `dev` → `main`
 
 ## QuickBooks Online attachments + payment-sync cron release sequence (2026-07-24)
 
-Two authored, not-yet-applied migrations (`20260724180000_qbo_attachments.sql`,
-`20260724180100_qbo_payments_sync_cron.sql`). Repository proof done: `npm run build`, worker+unit
+Historical release sequence for the now-live `20260724180000_qbo_attachments.sql` and
+`20260724180100_qbo_payments_sync_cron.sql` migrations. Repository proof included `npm run build`, worker+unit
 vitest lanes green, `npx eslint` clean on changed files, plus a static migration test
 (`functions/api/qbo-attachments-migration.test.js`) and a pure-helper unit test
 (`functions/lib/quickbooks-attachable.test.js`). Reviewer gauntlet:
@@ -411,6 +411,50 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `QBO_WEBHOOK_VERIFIER_TOKEN` set + the Intuit **Payment** webhook subscribed to
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
+
+## QBO multi-invoice payment receipts release sequence (source authored 2026-07-30)
+
+This slice is isolated on `codex/qbo-multi-invoice-payments`; it is not committed/deployed, migration
+`20260731045407_qbo_multi_invoice_payment_receipts.sql` is not applied, and no QuickBooks Payment
+was created during repository verification. The database flag `feature:qbo_receive_payment` and
+Cloudflare Worker switch `QBO_RECEIVE_PAYMENT_ENABLED` both default off.
+
+Before any external step, pin an exact committed revision and require: credential-free unit,
+Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
+lost-response, bad provider echo, authorization, webhook/CDC retry, stale-event, terminal-event,
+legacy compatibility, and rollback tests; changed-file ESLint; build; migration hygiene; paired
+isolated SQL behavior proof; and independent migration-safety, anonymous-grant, Worker-security,
+project-law, design, and page-lifecycle reviews. Repository tests must mock Intuit and block network;
+they are not provider proof.
+
+Release is deliberately code-first and serialized:
+
+1. Deploy the backward-compatible Worker/UI with both gates disabled. Verify the legacy
+   single-invoice payment and inbound payment-sync paths still work; do not expose the new route.
+2. In a separate owner-authorized `qa-staging` window, apply the exact reviewed migration and run
+   the transactional SQL behavior test. Verify tables, constraints, indexes, forced RLS, zero
+   browser grants, seven service-only RPC signatures/bodies, retry fields, disabled feature flag,
+   and rollback containment.
+3. With separate provider authority, run the documented Intuit Development sandbox matrix: one and
+   multiple invoices, partial/full application, same-request concurrency/replay, timeout after
+   acceptance, local-finalization failure, explicit method/reference/deposit readback, stale/cross-
+   customer rejection, unsupported currency/unapplied credit, update/void/delete, out-of-order
+   webhook, a two-session webhook-first/outbound-finalize race with monotonic attempt state and no
+   deadlock, two distinct Payments racing on one invoice without a rollup-trigger deadlock, missed
+   webhook recovered by CDC, and a backdated transaction.
+4. Only after sandbox evidence, review/promote the exact revision. In a separate owner window apply
+   the migration to the shared project, recapture catalog/ACL/provenance evidence, configure the
+   Worker switch in each intended Cloudflare environment, redeploy, and verify both gates are still
+   off before activation.
+5. Separately enable the Worker switch, then the database flag, and run one named-admin production
+   proof. Retain the client/Intuit request ID, one QBO Payment ID, every linked invoice/allocation,
+   fresh QBO balances, one UPR receipt, projections, event convergence, and Worker run without
+   exposing credentials or unrelated customer data.
+
+Rollback starts by disabling the database flag, setting `QBO_RECEIVE_PAYMENT_ENABLED` away from
+literal `true`, and redeploying. Only then use the paired containment rollback to revoke/remove
+receipt RPCs. Receipt/attempt/event/projection-link evidence remains; deleting financial audit
+records is never part of an operational rollback.
 
 ### 2026-07-23 Preview messaging proof
 

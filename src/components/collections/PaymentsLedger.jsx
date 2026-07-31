@@ -16,7 +16,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ./collKit (palette, formatters, primitives), receives { db, navigate }
+ *   Internal:  ./collKit (palette, formatters, primitives), TabLoading,
+ *              receives { db, navigate }
  *   Data:      reads  → get_payments_ledger() RPC · writes → none
  *
  * NOTES / GOTCHAS:
@@ -35,8 +36,11 @@ import {
 import {
   CollCard, Kpi, KpiGrid, SearchBox, DivisionSquare, EmptyState, Pill,
 } from './collKit';
+import { groupPaymentLedgerRows } from './paymentAllocation';
+import { err } from '@/lib/toast';
+import TabLoading from '@/components/TabLoading';
+import ErrorState from '@/components/ui/ErrorState';
 
-const toast = (m, t = 'error') => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: m, type: t } }));
 const cap = (s) => (s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '');
 
 const GRID = '0.8fr 1.4fr 1.4fr 1fr 1.4fr 1fr 0.5fr';
@@ -44,6 +48,7 @@ const GRID = '0.8fr 1.4fr 1.4fr 1fr 1.4fr 1fr 0.5fr';
 export default function PaymentsLedger({ db, navigate }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [search, setSearch] = useState('');
 
   // ─── SECTION: Data fetching ──────────────
@@ -51,14 +56,20 @@ export default function PaymentsLedger({ db, navigate }) {
   // refresh on tab refocus rebuilds `db`; the old [db] dep re-fired load() and flashed the
   // loading state ("blink"). Same pattern as InvoiceEditor/EstimateEditor.
   const dbRef = useRef(db);
+  const hadRowsRef = useRef(false);
   dbRef.current = db;
   const load = useCallback(async () => {
-    setLoading(true);
     try {
       const data = await dbRef.current.rpc('get_payments_ledger', { p_limit: 1000 });
-      setRows(data || []);
-    } catch (e) {
-      toast('Failed to load payments: ' + (e.message || e));
+      const nextRows = data || [];
+      setRows(nextRows);
+      hadRowsRef.current = nextRows.length > 0;
+      setLoadError(null);
+    } catch {
+      // Never let a failed cold load read as an empty ledger. On later retries,
+      // retain the last successful rows and surface the refresh problem by toast.
+      setLoadError('Couldn’t load payments. Check your connection and try again.');
+      if (hadRowsRef.current) err('Couldn’t refresh — showing last-loaded payments.');
     } finally {
       setLoading(false);
     }
@@ -66,48 +77,50 @@ export default function PaymentsLedger({ db, navigate }) {
   useEffect(() => { load(); }, [load]);
 
   // ─── SECTION: Derived totals + filter ──────────────
+  const groupedRows = useMemo(() => groupPaymentLedgerRows(rows), [rows]);
   const k = useMemo(() => {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const monthName = now.toLocaleString('en-US', { month: 'long' });
     let total = 0, month = 0, monthCount = 0, synced = 0;
-    rows.forEach(r => {
+    groupedRows.forEach(r => {
       total += Number(r.amount || 0);
       if ((r.payment_date || '').startsWith(ym)) { month += Number(r.amount || 0); monthCount += 1; }
       if (r.qbo_payment_id) synced += 1;
     });
-    return { total, month, monthCount, synced, count: rows.length, monthName };
-  }, [rows]);
+    return { total, month, monthCount, synced, count: groupedRows.length, monthName };
+  }, [groupedRows]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(r => {
-      const hay = `${r.client_name || ''} ${r.claim_number || ''} ${r.job_number || ''} ${r.invoice_number || ''} ${r.qbo_doc_number || ''} ${r.reference_number || ''} ${r.division || ''}`.toLowerCase();
+    if (!q) return groupedRows;
+    return groupedRows.filter(r => {
+      const hay = `${r.client_name || ''} ${(r.claim_numbers || []).join(' ')} ${(r.job_numbers || []).join(' ')} ${(r.invoice_numbers || []).join(' ')} ${r.reference_number || ''} ${r.division || ''}`.toLowerCase();
       return hay.includes(q);
     });
-  }, [rows, search]);
+  }, [groupedRows, search]);
 
   const shownTotal = useMemo(() => filtered.reduce((a, r) => a + Number(r.amount || 0), 0), [filtered]);
 
   const exportCsv = () => {
     const header = ['Date', 'Client', 'Claim', 'Job', 'Division', 'Invoice', 'Method', 'Source', 'Amount', 'QB synced', 'Reference'];
     const data = filtered.map(r => [
-      r.payment_date ? fmtDate(r.payment_date) : '', r.client_name || '', r.claim_number || '', r.job_number || '',
-      divLabel(r.division), r.qbo_doc_number || r.invoice_number || '', cap(r.payment_method), cap(r.payer_type),
+      r.payment_date ? fmtDate(r.payment_date) : '', r.client_name || '', (r.claim_numbers || []).join(' | '), (r.job_numbers || []).join(' | '),
+      divLabel(r.division), (r.invoice_numbers || []).join(' | '), cap(r.payment_method), cap(r.payer_type),
       Number(r.amount || 0).toFixed(2), r.qbo_payment_id ? 'yes' : 'no', r.reference_number || '',
     ]);
     downloadCsv('payments.csv', header, data);
   };
 
-  if (loading) return <div className="coll-loading">Loading payments…</div>;
+  if (loading) return <TabLoading label="Loading payments…" />;
+  if (loadError && rows.length === 0) return <ErrorState message={loadError} onRetry={load} />;
 
   // ─── SECTION: Render ──────────────
   return (
     <div>
       <KpiGrid cols={3}>
-        <Kpi label="Collected (all time)" value={fmt$(k.total)} valueColor={STATUS.success.text}>{k.count} payment{k.count === 1 ? '' : 's'}</Kpi>
-        <Kpi label="This month" value={fmt$(k.month)} valueColor={STATUS.success.text}>{k.monthCount} payment{k.monthCount === 1 ? '' : 's'} in {k.monthName}</Kpi>
+        <Kpi label="Collected (all time)" value={fmt$(k.total)} valueColor={STATUS.success.text}>{k.count} receipt{k.count === 1 ? '' : 's'}</Kpi>
+        <Kpi label="This month" value={fmt$(k.month)} valueColor={STATUS.success.text}>{k.monthCount} receipt{k.monthCount === 1 ? '' : 's'} in {k.monthName}</Kpi>
         <Kpi label="Synced to QuickBooks" value={`${k.synced}/${k.count}`} valueColor={k.synced === k.count ? STATUS.success.text : STATUS.warning.text}>
           {k.synced === k.count
             ? <span style={{ color: STATUS.success.text, fontWeight: 600 }}>all synced</span>
@@ -131,18 +144,18 @@ export default function PaymentsLedger({ db, navigate }) {
                 <div style={{ textAlign: 'right' }}>Amount</div><div style={{ textAlign: 'center' }}>QB</div>
               </div>
               {filtered.map(r => (
-                <div key={r.payment_id} className={`coll-row${r.claim_id ? '' : ' coll-static'}`} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 14 }}
+                <div key={r.ledger_group_key} className={`coll-row${r.claim_id ? '' : ' coll-static'}`} style={{ display: 'grid', gridTemplateColumns: GRID, gap: 14 }}
                   onClick={() => r.claim_id && navigate(`/collections/${r.claim_id}`)}>
                   <div style={{ fontSize: 12.5, fontWeight: 600, color: C.body, ...tnum }}>{fmtDate(r.payment_date)}</div>
                   <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.client_name || '—'}</div>
                   <div style={{ display: 'flex', gap: 8, minWidth: 0, alignItems: 'flex-start' }}>
                     <span style={{ marginTop: 3, flex: 'none' }}><DivisionSquare division={r.division} /></span>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ ...mono, fontSize: 12, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.claim_number || '—'}</div>
-                      <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{divLabel(r.division)}{r.job_number ? ` · ${r.job_number}` : ''}</div>
+                      <div style={{ ...mono, fontSize: 12, color: C.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.cross_claim ? `${r.claim_ids.length} claims` : (r.claim_number || '—')}</div>
+                      <div style={{ fontSize: 11, color: C.faint, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.cross_claim ? `${r.job_numbers.length} jobs` : `${divLabel(r.division)}${r.job_number ? ` · ${r.job_number}` : ''}`}</div>
                     </div>
                   </div>
-                  <div style={{ ...mono, fontSize: 11.5, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.qbo_doc_number || r.invoice_number || '—'}</div>
+                  <div style={{ ...mono, fontSize: 11.5, color: C.muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.grouped ? `${r.allocation_count} invoices` : (r.qbo_doc_number || r.invoice_number || '—')}</div>
                   <div style={{ fontSize: 12, color: C.body, minWidth: 0 }}>
                     {r.payment_method ? cap(r.payment_method) : '—'}
                     {r.payer_type && <span style={{ color: C.faint }}> · {cap(r.payer_type)}</span>}
@@ -165,7 +178,7 @@ export default function PaymentsLedger({ db, navigate }) {
 
         <div className="coll-foot">
           <span style={{ fontSize: 12, fontWeight: 600, color: C.body }}>
-            {filtered.length} payment{filtered.length === 1 ? '' : 's'} · <b style={{ color: C.ink, fontWeight: 800, ...tnum }}>{fmt$(shownTotal)}</b> collected
+            {filtered.length} receipt{filtered.length === 1 ? '' : 's'} · <b style={{ color: C.ink, fontWeight: 800, ...tnum }}>{fmt$(shownTotal)}</b> collected
           </span>
           <button type="button" className="coll-link" onClick={exportCsv}>Export payments →</button>
         </div>

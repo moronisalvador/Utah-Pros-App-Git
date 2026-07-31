@@ -8569,6 +8569,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 /* Loading */
 .coll-loading { padding: 40px 18px; text-align: center; color: #98a2b3; font-size: 13px; }
 
+/* Receive payment — layout only; colors come from the canonical collTokens.js palette. */
+.coll-receive-payment-field{font:inherit}
+
 /* Responsive */
 @media (max-width: 900px) {
   .coll-kpi-4 { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -8580,6 +8583,13 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
   .coll-kpi-4, .coll-kpi-3 { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .coll-aging-buckets { grid-template-columns: repeat(2, 1fr); gap: 12px 0; }
   .coll-kpi-value { font-size: 24px; }
+  .coll-receive-payment-grid{--coll-receive-payment-columns:1fr}
+  .coll-receive-payment-field{font-size:var(--text-lg)}
+  .coll-receive-payment-allocation{--coll-receive-payment-allocation-align:flex-start;--coll-receive-payment-allocation-gap:10px}
+  .coll-receive-payment-amount{--coll-receive-payment-amount-width:112px;flex:none}
+  .coll-receive-payment-review{--coll-receive-payment-review-columns:1fr}
+  .coll-receive-payment-actions{--coll-receive-payment-actions-direction:column-reverse}
+  .coll-receive-payment-actions>*{min-height:44px}
 }
 @media (max-width: 540px) {
   .coll-kpi-4, .coll-kpi-3 { grid-template-columns: 1fr 1fr; }

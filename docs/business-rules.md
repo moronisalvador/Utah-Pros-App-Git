@@ -54,6 +54,22 @@ against both and change both in one commit.
 - The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
   recovery is not an automatic-post mechanism. Browser actions require active internal admin
   authorization, and the shared QBO server secret is rejected by the invoice endpoint.
+- The authored multi-invoice receipt path is a separate human-confirmed action: one active internal
+  administrator may create exactly one QBO Payment and allocate positive integer cents across
+  1–100 UPR invoices only when every invoice belongs to one UPR contact and the same QBO customer.
+- Before that provider write, the Worker re-reads the QBO invoices and balances. It projects
+  receipt-backed `payments` rows only after the returned Payment preserves the reviewed customer,
+  date, method, reference, deposit account, total and exact allocations and fresh invoice balances
+  show the expected deltas.
+- A canonical `client_request_id` plus request fingerprint and derived Intuit `requestid` identify
+  an unchanged retry. A timeout or transport ambiguity is `unknown_outcome`, never proof of
+  rejection; deterministic provider refusal is `rejected`; accepted lifecycle states are
+  `qbo_created`, `locally_finalized`, and `reconciled`.
+- A realm-scoped QBO Payment identity can belong to only one receipt header and one durable outbound
+  attempt. A second attempted claim stops as an audited conflict before local finalization.
+- In receipt mode QBO is authoritative for later accounting corrections. Update replaces the
+  complete active allocation projection; Void/Delete removes those projections together while
+  retaining receipt, attempt, event, and terminal-tombstone evidence.
 - Financial dates use the Denver business day, not UTC string slicing.
 - Current employee roles contain `project_manager`, not `manager`. The historical
   `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`
@@ -96,6 +112,10 @@ against both and change both in one commit.
   never all staff; a missing or force-disabled flag denies.
 - OOP quotes are internal pricing artifacts and do not post to QuickBooks or bypass the separate
   human Save-to-QuickBooks gate.
+- `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent default-OFF
+  rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
+  flag grants authority; the Worker still requires an active, non-external literal `admin` before
+  private reads, durable reservation, or a QBO call.
 
 Detailed authority: `BILLING-CONTEXT.md`, `UPR-QBO-SYNC-PROTOCOL.md` and the current billing code/tests.
 

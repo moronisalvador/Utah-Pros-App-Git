@@ -1,9 +1,24 @@
-// QuickBooks Online (Intuit) helper for Cloudflare Workers.
-// No SDK — pure fetch(), works in V8 isolates. Mirrors functions/lib/supabase.js.
-//
-// Tokens live in the `integration_credentials` table (provider = 'quickbooks'),
-// readable/writable only by the service-role key. Access tokens last ~1 hour;
-// refresh tokens roll forward on each refresh and are persisted automatically.
+/**
+ * ════════════════════════════════════════════════
+ * FILE: quickbooks.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Connects UPR's protected server tasks to QuickBooks Online. It refreshes
+ *   the private connection when needed and provides the shared customer,
+ *   invoice, estimate, payment, attachment, and card-payment operations.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  supabase, http
+ *   Data:      reads/writes → integration_credentials and QuickBooks Online
+ *
+ * NOTES / GOTCHAS:
+ *   - This module is server-only; browser code must never receive OAuth credentials.
+ *   - Accounting creates that can be retried accept stable provider request IDs.
+ *   - Multi-invoice payment amounts stay as integer cents until the JSON payload.
+ * ════════════════════════════════════════════════
+ */
 
 import { supabase } from './supabase.js';
 import { fetchWithTimeout } from './http.js';
@@ -79,13 +94,13 @@ export function refreshTokens(env, refreshToken) {
 
 // ── Connection persistence ──────────────────────────────────────────────────────
 export async function getConnection(env) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const rows = await db.select('integration_credentials', `provider=eq.${PROVIDER}&limit=1`);
   return rows && rows[0] ? rows[0] : null;
 }
 
 export async function saveTokens(env, tokens, extra = {}) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const now = Date.now();
   const ttlMs = (tokens.expires_in ? Number(tokens.expires_in) : 3600) * 1000;
   const row = {
@@ -741,19 +756,41 @@ export async function getEstimateRef(env, qboEstimateId) {
 // `depositAccountId` (optional) sets DepositToAccountRef — used for Stripe payments so
 // the gross deposits into the "Stripe Clearing" bank account (fee + payout reconcile
 // against it). Omitted for hand-entered payments → QBO uses its default (Undeposited Funds).
-export async function createPayment(env, { customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId }) {
+export async function createAllocatedPayment(env, {
+  customerId, allocations, txnDate, privateNote, depositAccountId, paymentMethodId, paymentRefNum, requestId,
+} = {}) {
+  if (!customerId) throw new Error('QBO customer is required');
+  if (!Array.isArray(allocations) || !allocations.length) throw new Error('At least one QBO invoice allocation is required');
+  if (allocations.length > 100) throw new Error('No more than 100 QBO invoice allocations are allowed');
+  const invoiceIds = new Set();
+  const lines = allocations.map(({ qboInvoiceId, amountCents }) => {
+    if (!qboInvoiceId || !Number.isSafeInteger(amountCents) || amountCents <= 0) {
+      throw new Error('Each QBO allocation requires an invoice and positive integer cents');
+    }
+    const invoiceId = String(qboInvoiceId);
+    if (invoiceIds.has(invoiceId)) throw new Error('A QBO invoice may only appear once in a payment');
+    invoiceIds.add(invoiceId);
+    return {
+      Amount: amountCents / 100,
+      LinkedTxn: [{ TxnId: invoiceId, TxnType: 'Invoice' }],
+    };
+  });
+  const totalCents = allocations.reduce((sum, allocation) => sum + allocation.amountCents, 0);
+  if (!Number.isSafeInteger(totalCents)) throw new Error('QBO payment total is too large');
+  if (requestId && String(requestId).length > 50) throw new Error('QBO request ID exceeds 50 characters');
+  if (paymentRefNum && String(paymentRefNum).length > 100) throw new Error('QBO payment reference is too long');
   const payload = {
     CustomerRef: { value: String(customerId) },
-    TotalAmt: Number(amount),
+    TotalAmt: totalCents / 100,
     ...(txnDate ? { TxnDate: txnDate } : {}),
     ...(privateNote ? { PrivateNote: privateNote } : {}),
     ...(depositAccountId ? { DepositToAccountRef: { value: String(depositAccountId) } } : {}),
-    Line: [{
-      Amount: Number(amount),
-      LinkedTxn: [{ TxnId: String(qboInvoiceId), TxnType: 'Invoice' }],
-    }],
+    ...(paymentMethodId ? { PaymentMethodRef: { value: String(paymentMethodId) } } : {}),
+    ...(paymentRefNum ? { PaymentRefNum: String(paymentRefNum) } : {}),
+    Line: lines,
   };
-  const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}`, {
+  const requestQuery = requestId ? `&requestid=${encodeURIComponent(String(requestId))}` : '';
+  const res = await qboFetch(env, `/payment?minorversion=${MINOR_VERSION}${requestQuery}`, {
     method: 'POST', body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -764,7 +801,66 @@ export async function createPayment(env, { customerId, qboInvoiceId, amount, txn
     e.qboCode = fault?.code; e.status = res.status; e.intuitTid = tid;
     throw e;
   }
+  if (!data?.Payment?.Id) throw new Error('QBO create payment returned no Payment');
   return data.Payment;
+}
+
+// Backwards-compatible single-invoice facade retained for the existing payment and Stripe paths.
+export async function createPayment(env, {
+  customerId, qboInvoiceId, amount, txnDate, privateNote, depositAccountId, requestId,
+}) {
+  const amountCents = Math.round(Number(amount) * 100);
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || Math.abs(Number(amount) * 100 - amountCents) > 1e-7) {
+    throw new Error('Payment amount must be a positive whole number of cents');
+  }
+  return createAllocatedPayment(env, {
+    customerId,
+    allocations: [{ qboInvoiceId, amountCents }],
+    txnDate,
+    privateNote,
+    depositAccountId,
+    requestId,
+  });
+}
+
+export async function getQboInvoice(env, qboInvoiceId) {
+  const res = await qboFetch(env, `/invoice/${encodeURIComponent(String(qboInvoiceId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.Invoice) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault?.Message || `QBO get invoice ${res.status}`);
+    e.status = res.status; e.qboCode = fault?.code; e.intuitTid = res.headers.get('intuit_tid') || null;
+    throw e;
+  }
+  return data.Invoice;
+}
+
+export async function getQboPayment(env, qboPaymentId) {
+  const res = await qboFetch(env, `/payment/${encodeURIComponent(String(qboPaymentId))}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data?.Payment) {
+    const fault = data?.Fault?.Error?.[0];
+    const e = new Error(fault?.Message || `QBO get payment ${res.status}`);
+    e.status = res.status; e.qboCode = fault?.code; e.intuitTid = res.headers.get('intuit_tid') || null;
+    throw e;
+  }
+  return data.Payment;
+}
+
+export async function listQboPaymentMethods(env) {
+  const q = 'SELECT Id, Name, Active FROM PaymentMethod WHERE Active = true MAXRESULTS 1000';
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) throw new Error(`QBO list payment methods ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  return data?.QueryResponse?.PaymentMethod || [];
+}
+
+export async function listQboDepositAccounts(env) {
+  const q = "SELECT Id, Name, AccountType, Active FROM Account WHERE Active = true AND AccountType IN ('Bank','Other Current Asset') MAXRESULTS 1000";
+  const res = await qboFetch(env, `/query?query=${encodeURIComponent(q)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
+  if (!res.ok) throw new Error(`QBO list deposit accounts ${res.status}`);
+  const data = await res.json().catch(() => ({}));
+  return data?.QueryResponse?.Account || [];
 }
 
 // Delete a QBO Payment (used when a UPR payment is removed). Looks up SyncToken first.

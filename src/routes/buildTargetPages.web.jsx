@@ -58,6 +58,7 @@ const NotificationPresentation = lazyRetry(() => import('@/pages/settings/Notifi
 const SignPage = lazyRetry(() => import('@/pages/SignPage'));
 const SetPassword = lazyRetry(() => import('@/pages/SetPassword'));
 const Collections = lazyRetry(() => import('@/pages/Collections'));
+const ReceivePayment = lazyRetry(() => import('@/pages/ReceivePayment'));
 const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'));
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
 const Status = lazyRetry(() => import('@/pages/Status'));
@@ -180,6 +181,7 @@ export default Object.freeze({
   PrivacyPolicy,
   Production,
   PublicRoadmap,
+  ReceivePayment,
   Roles,
   Schedule,
   ScheduleTemplates,

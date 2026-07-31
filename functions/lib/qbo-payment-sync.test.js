@@ -24,7 +24,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the dispatcher + the QBO fetch so the sync runs offline.
 vi.mock('../api/notify.js', () => ({ dispatchEvent: vi.fn(async () => ({ ok: true })) }));
-vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn() }));
+vi.mock('./quickbooks.js', () => ({ qboFetch: vi.fn(), getConnection: vi.fn() }));
 
 import {
   notifyPaymentReceived,
@@ -33,15 +33,17 @@ import {
   readQboFault,
   isQboNotFound,
   QboRequestError,
+  removeQboPaymentFromUpr,
 } from './qbo-payment-sync.js';
 import { dispatchEvent } from '../api/notify.js';
-import { qboFetch } from './quickbooks.js';
+import { getConnection, qboFetch } from './quickbooks.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test' };
 
 beforeEach(() => {
   dispatchEvent.mockClear();
   qboFetch.mockReset();
+  getConnection.mockReset();
 });
 
 describe('notifyPaymentReceived (payment.received emit hook)', () => {
@@ -456,6 +458,334 @@ describe('syncQboPaymentToUpr — blocked deposit adoption', () => {
     await expect(adoptInvoiceFromQboEstimate(ENV, db, 'QB-INV-1', false, true))
       .resolves.toEqual({ blocked: 'combined-estimate-manual-reconciliation' });
     expect(rpcs).toHaveLength(0);
+  });
+});
+
+function receiptPayment(patch = {}) {
+  return {
+    Id: 'QB-PAY-MULTI',
+    SyncToken: '2',
+    TxnDate: '2026-07-29',
+    CustomerRef: { value: 'QB-CUSTOMER-1' },
+    CurrencyRef: { value: 'USD' },
+    PaymentMethodRef: { value: 'pm-check' },
+    DepositToAccountRef: { value: 'bank-1', name: 'Operating' },
+    PaymentRefNum: '7956',
+    TotalAmt: 300,
+    UnappliedAmt: 0,
+    Line: [
+      { Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] },
+      { Amount: 200, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-2' }] },
+    ],
+    MetaData: { LastUpdatedTime: '2026-07-29T12:00:00Z' },
+    ...patch,
+  };
+}
+
+function receiptDb({ attempt = null, existingReceipt = null } = {}) {
+  const rpc = vi.fn(async () => ({ receipt_id: 'receipt-1', status: 'reconciled' }));
+  return {
+    rpc,
+    select: vi.fn(async (table, query) => {
+      if (table === 'invoices' && query.includes('QB-INV-1')) {
+        return [{ id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1', invoice_number: 'INV-1', qbo_doc_number: 'QBO-1' }];
+      }
+      if (table === 'invoices' && query.includes('QB-INV-2')) {
+        return [{ id: 'inv-2', job_id: 'job-2', contact_id: 'contact-1', invoice_number: 'INV-2', qbo_doc_number: 'QBO-2' }];
+      }
+      if (table === 'payment_receipts') return existingReceipt ? [existingReceipt] : [];
+      if (table === 'payment_receipt_attempts') return attempt ? [attempt] : [];
+      return [];
+    }),
+  };
+}
+
+function mockReceiptProvider(payment) {
+  getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+  qboFetch.mockImplementation(async (_env, path) => {
+    if (path.startsWith('/payment/')) {
+      return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+    }
+    if (path.startsWith('/paymentmethod/')) {
+      return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+    }
+    return { ok: false, status: 404, json: async () => ({}) };
+  });
+}
+
+describe('syncQboPaymentToUpr — durable receipt reconciliation', () => {
+  const receiptEnv = { ...ENV, QBO_RECEIVE_PAYMENT_ENABLED: 'true' };
+
+  it('defers a combined UPR invoice mapping without finalizing a partial receipt', async () => {
+    mockReceiptProvider(receiptPayment({
+      TotalAmt: 100,
+      Line: [{ Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] }],
+    }));
+    const db = receiptDb({ existingReceipt: { id: 'receipt-1', source: 'qbo' } });
+    db.select.mockImplementation(async (table) => {
+      if (table === 'invoices') {
+        return [
+          { id: 'inv-1', job_id: 'job-1', contact_id: 'contact-1' },
+          { id: 'inv-2', job_id: 'job-2', contact_id: 'contact-2' },
+        ];
+      }
+      if (table === 'payment_receipts') return [{ id: 'receipt-1', source: 'qbo' }];
+      return [];
+    });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{
+        qboInvoiceId: 'QB-INV-1',
+        skipped: 'combined-invoice-manual-reconciliation',
+      }],
+    });
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-MULTI',
+      p_status: 'conflict',
+    }));
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('defers blocked estimate adoption without finalizing a receipt', async () => {
+    const payment = receiptPayment({
+      TotalAmt: 100,
+      Line: [{ Amount: 100, LinkedTxn: [{ TxnType: 'Invoice', TxnId: 'QB-INV-1' }] }],
+    });
+    getConnection.mockResolvedValue({ realm_id: 'realm-1' });
+    qboFetch.mockImplementation(async (_env, path) => {
+      if (path.startsWith('/payment/')) {
+        return { ok: true, status: 200, json: async () => ({ Payment: payment }) };
+      }
+      if (path.startsWith('/paymentmethod/')) {
+        return { ok: true, status: 200, json: async () => ({ PaymentMethod: { Name: 'Check' } }) };
+      }
+      if (path.startsWith('/invoice/')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            Invoice: { LinkedTxn: [{ TxnType: 'Estimate', TxnId: 'QB-EST-1' }] },
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    });
+    const db = receiptDb();
+    db.select.mockImplementation(async (table) => {
+      if (table === 'invoices') return [];
+      if (table === 'estimates') return [{ id: 'est-1', converted_invoice_id: null }];
+      return [];
+    });
+    db.rpc.mockImplementation(async (fn) => {
+      if (fn === 'apply_qbo_estimate_decision') {
+        return { ok: true, action: 'approved-needs-manual-convert', invoice_id: 'inv-populated' };
+      }
+      return { receipt_id: 'receipt-1', status: 'reconciled' };
+    });
+
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{ qboInvoiceId: 'QB-INV-1', skipped: 'needs-manual-reconciliation' }],
+    });
+    expect(db.rpc).toHaveBeenCalledWith('apply_qbo_estimate_decision', expect.anything());
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('reconciles and announces a new direct-QBO multi-invoice payment once', async () => {
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb();
+    const result = await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    expect(result.results.filter((row) => row.recorded)).toHaveLength(2);
+    expect(db.rpc).toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.objectContaining({
+      p_receipt: expect.objectContaining({
+        qbo_realm_id: 'realm-1',
+        total_cents: 30000,
+        applied_cents: 30000,
+        unapplied_cents: 0,
+        source: 'qbo',
+      }),
+      p_allocations: [
+        expect.objectContaining({ invoice_id: 'inv-1', amount_cents: 10000 }),
+        expect.objectContaining({ invoice_id: 'inv-2', amount_cents: 20000 }),
+      ],
+    }));
+    expect(dispatchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('links an exact UPR request marker and preserves its selected insurance payer', async () => {
+    const clientRequestId = '7ef4b4ea-637e-47bd-a99c-100632aefb55';
+    mockReceiptProvider(receiptPayment({ PrivateNote: `UPR receipt ${clientRequestId}` }));
+    const db = receiptDb({
+      attempt: {
+        id: 'attempt-1',
+        actor_employee_id: 'employee-1',
+        qbo_payment_id: null,
+        request_payload: {
+          contact_id: 'contact-1',
+          payment_date: '2026-07-29',
+          payer_type: 'insurance',
+          qbo_payment_method_id: 'pm-check',
+          deposit_account_id: 'bank-1',
+          reference_number: '7956',
+          allocations: [
+            { invoice_id: 'inv-1', amount_cents: 10000 },
+            { invoice_id: 'inv-2', amount_cents: 20000 },
+          ],
+        },
+      },
+    });
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    const receipt = db.rpc.mock.calls[0][1];
+    expect(receipt.p_receipt).toMatchObject({
+      source: 'upr',
+      actor_employee_id: 'employee-1',
+      attempt_id: 'attempt-1',
+    });
+    expect(receipt.p_allocations.every((row) => row.payer_type === 'insurance')).toBe(true);
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('preserves a linked UPR receipt payer even if its editable QBO note changed', async () => {
+    mockReceiptProvider(receiptPayment({ PrivateNote: 'Edited in QuickBooks' }));
+    const db = receiptDb({
+      existingReceipt: { id: 'receipt-1', source: 'upr' },
+      attempt: {
+        id: 'attempt-1',
+        actor_employee_id: 'employee-1',
+        qbo_payment_id: 'QB-PAY-MULTI',
+        request_payload: { payer_type: 'insurance' },
+      },
+    });
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    const receipt = db.rpc.mock.calls[0][1];
+    expect(receipt.p_receipt).toMatchObject({
+      source: 'upr',
+      actor_employee_id: 'employee-1',
+      attempt_id: 'attempt-1',
+    });
+    expect(receipt.p_allocations.every((row) => row.payer_type === 'insurance')).toBe(true);
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('still announces a direct QBO receipt whose note only resembles an unknown UPR request', async () => {
+    mockReceiptProvider(receiptPayment({
+      PrivateNote: 'UPR receipt 7ef4b4ea-637e-47bd-a99c-100632aefb55',
+    }));
+    const db = receiptDb();
+    await syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI');
+    expect(dispatchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not announce or project an older provider snapshot rejected by the receipt RPC', async () => {
+    mockReceiptProvider(receiptPayment());
+    const db = receiptDb({ existingReceipt: { id: 'receipt-1', source: 'qbo' } });
+    db.rpc.mockResolvedValue({ receipt_id: 'receipt-1', ignored_stale: true });
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI')).resolves.toEqual({
+      ok: true,
+      results: [{ qboPaymentId: 'QB-PAY-MULTI', skipped: 'stale-receipt' }],
+    });
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on unapplied credit instead of recording a partial receipt', async () => {
+    mockReceiptProvider(receiptPayment({ TotalAmt: 350, UnappliedAmt: 50 }));
+    const db = receiptDb();
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI'))
+      .rejects.toThrow(/not fully applied/);
+    expect(db.rpc).not.toHaveBeenCalled();
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('removes stale projections when an existing receipt becomes unsupported', async () => {
+    mockReceiptProvider(receiptPayment({ TotalAmt: 350, UnappliedAmt: 50 }));
+    const db = receiptDb({ existingReceipt: { id: 'receipt-1', source: 'qbo' } });
+    await expect(syncQboPaymentToUpr(receiptEnv, db, 'QB-PAY-MULTI'))
+      .rejects.toThrow(/not fully applied/);
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-MULTI',
+      p_status: 'conflict',
+    }));
+    expect(db.rpc).not.toHaveBeenCalledWith('reconcile_qbo_payment_receipt', expect.anything());
+  });
+
+  it('scopes a terminal removal to the connected realm', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({})),
+      select: vi.fn(async () => []),
+      delete: vi.fn(async () => []),
+    };
+    await removeQboPaymentFromUpr(db, 'QB-PAY-MULTI', {
+      receiptEnabled: true,
+      realmId: 'realm-1',
+      status: 'deleted',
+      eventKey: 'event-1',
+    });
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', {
+      p_qbo_realm_id: 'realm-1',
+      p_qbo_payment_id: 'QB-PAY-MULTI',
+      p_status: 'deleted',
+      p_event_key: 'event-1',
+    });
+    expect(db.select).toHaveBeenCalledWith(
+      'payments',
+      'qbo_payment_id=eq.QB-PAY-MULTI&source=eq.qbo&select=id',
+    );
+  });
+
+  it('removes a legacy QBO projection when the receipt tombstone reports no header', async () => {
+    const db = {
+      rpc: vi.fn(async () => ({ missing: true })),
+      select: vi.fn(async () => [{ id: 'legacy-payment-row' }]),
+      delete: vi.fn(async () => []),
+    };
+
+    await expect(removeQboPaymentFromUpr(db, 'QB-LEGACY', {
+      receiptEnabled: true,
+      realmId: 'realm-1',
+      status: 'deleted',
+      eventKey: 'event-legacy',
+    })).resolves.toEqual({ ok: true, removed: 1 });
+
+    expect(db.rpc).toHaveBeenCalledWith('remove_qbo_payment_receipt', expect.objectContaining({
+      p_qbo_payment_id: 'QB-LEGACY',
+      p_status: 'deleted',
+    }));
+    expect(db.select).toHaveBeenCalledWith(
+      'payments',
+      'qbo_payment_id=eq.QB-LEGACY&source=eq.qbo&select=id',
+    );
+    expect(db.delete).toHaveBeenCalledWith('payments', 'id=eq.legacy-payment-row');
+  });
+
+  it('finishes legacy cleanup when a tombstone replay follows a failed delete', async () => {
+    const db = {
+      rpc: vi.fn()
+        .mockResolvedValueOnce({ missing: true, tombstone: true })
+        .mockResolvedValueOnce({ replayed: true }),
+      select: vi.fn(async () => [{ id: 'legacy-payment-row' }]),
+      delete: vi.fn()
+        .mockRejectedValueOnce(new Error('Supabase DELETE payments: 503 temporarily unavailable'))
+        .mockResolvedValueOnce([]),
+    };
+    const input = {
+      receiptEnabled: true,
+      realmId: 'realm-1',
+      status: 'deleted',
+      eventKey: 'event-legacy-retry',
+    };
+
+    await expect(removeQboPaymentFromUpr(db, 'QB-LEGACY', input))
+      .rejects.toThrow(/503 temporarily unavailable/);
+    await expect(removeQboPaymentFromUpr(db, 'QB-LEGACY', input))
+      .resolves.toEqual({ ok: true, removed: 'receipt', legacyRemoved: 1 });
+
+    expect(db.rpc).toHaveBeenCalledTimes(2);
+    expect(db.delete).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -46,6 +46,22 @@ release gates and must not be inferred from repository state.
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
+A third isolated QBO money-boundary migration is authored and remains unapplied to production:
+
+- `20260731045407_qbo_multi_invoice_payment_receipts.sql` on
+  `codex/qbo-multi-invoice-payments` adds the disabled, service-only receipt/attempt/event
+  foundation for one QBO Payment allocated across several invoices. It has a containment rollback
+  and locally green source/static tests. On current `origin/dev` base `20436bec`, `npm test` passes
+  4,168 tests with zero unexpected skips; build, changed-file lint, bundle strict, and migration
+  hygiene pass; independent Worker-security, migration, grant/secret, project-law, design, and
+  lifecycle reviews pass. The migration and three supporting foreign-key indexes are applied to
+  `qa-staging`; forced-RLS/grant/flag readbacks and the complete transaction-rolled-back SQL behavior
+  suite pass with zero fixture or receipt residue. It has **not** been applied to the shared project;
+  no deploy, QBO Payment, or feature/env activation occurred. The Intuit Development sandbox matrix,
+  authenticated browser QA, disabled code-first deployment, shared-DB apply, and named-admin proof
+  remain release gates.
+  Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
+
 ## Applied and reconciled 2026-07-31
 
 The owner-authorized release applied the exact reviewed committed sources to the shared
@@ -149,6 +165,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
+| **QBO multi-invoice payment receipts** | Source implemented in isolated branch; review/sandbox/apply/release owner-gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
