@@ -2,8 +2,8 @@
 FILE: docs/mobile/s1d-s1g-database-apply-runbook.md
 
 WHAT THIS DOES (plain language):
-  Gives the database owner four separately authorized, checksum-pinned apply and verification
-  runbooks for the authored Mobile Production Readiness S1d, S1e, S1f, and S1g migrations.
+  Retains the checksum-pinned apply and verification records for Mobile Production Readiness
+  S1d, S1e, S1f, and S1g. S1d, S1e, and S1g are live; only S1f remains an apply candidate.
 
 DEPENDS ON:
   Internal: S1d-S1g migrations, rollbacks, catalog checks, evidence, release workflow,
@@ -23,9 +23,9 @@ parents `4583f0a6` and mobile tip `e2b7585f`; its follow-up merge incorporates f
 `origin/dev` `983b8ca4` without rewriting history. This draft-PR source history is not a designated
 database release/apply commit.
 
-This is the operator index for four already authored source changes. It does not combine them.
-Each row requires its own owner approval, fresh drift capture, apply record, verification record,
-and stop/go decision.
+This is the operator index for four separately governed source changes. It does not combine them.
+S1d, S1e, and S1g are completed historical windows and must not be replayed. S1f alone retains its
+own owner approval, fresh drift capture, apply record, verification record, and stop/go decision.
 
 | Window | Boundary | Migration | Required compatibility before apply |
 |---|---|---|---|
@@ -34,26 +34,25 @@ and stop/go decision.
 | S1f | direct `create_notification` emission | `20260726194300_create_notification_service_boundary.sql` | service-role Worker and owner-run caller graph unchanged |
 | S1g | notification recipient/read/Realtime boundary | `20260726260000_notification_read_recipient_boundary.sql` | reviewed PWA/Capacitor bell caller shape unchanged; S1h additive identity, compatible-client rollout/old-client decision, and identity containment separately applied and verified first |
 
-S1d, S1e, S1f, and S1g may share a reviewed release history. They must not share an apply window.
-Do not begin the next window while the current window has an unresolved postcondition, advisor,
-provenance, caller, Realtime, or compatibility result.
+The four sources may share reviewed release history, but they never shared one apply window. Do
+not use this history to rerun live S1d, S1e, or S1g. Do not begin S1f while it has an unresolved
+postcondition, advisor, provenance, caller, or compatibility result.
 
-### Cross-window prerequisite for S1e and S1g
+### Historical cross-window prerequisite for S1e and S1g
 
-Current S1e and S1g source refuses to run unless exactly one live
-`mobile_employee_identity_containment` ledger row exists and the containment migration's
-browser-read-only employee contract still matches. Before either target window, complete these
-separate steps from `docs/mobile/s1h-database-apply-runbook.md`:
+S1e and S1g refuse duplicate `mobile_employee_identity_containment` ledger rows and require the
+containment migration's browser-read-only employee catalog contract. This permitted the manually
+seeded `qa-staging` schema (whose historical ledger is not parity) while production carried one
+mapped containment row. Before those completed windows, the release separately governed:
 
-1. apply and verify the additive employee identity authority in its own owner window;
-2. deploy compatible browser/PWA/native callers and retire old cached/native clients or record the
-   owner's explicit risk decision;
-3. apply and verify identity containment in a later owner window; and
-4. recapture its ledger row, employee ACL/RLS/policy shape, and service-role contract before the
-   S1e or S1g preflight.
+1. the additive employee identity authority was applied and verified in its own owner window;
+2. compatible browser/PWA/native callers and the old-client decision were handled separately;
+3. identity containment was applied and verified in a later owner window; and
+4. the ledger/caller-independent catalog contract was recaptured before each S1e/S1g preflight.
 
-Those prerequisite windows do not authorize S1e, S1g, page-access provenance reconciliation, or
-personal-ownership apply. Each remains a separate decision and database window.
+Those completed prerequisites do not authorize replaying S1e/S1g. The old personal-ownership
+migration is retired and must never apply; any residual Page Access/Web Push work needs a new later
+migration and separate owner window.
 
 ## Common entry gate for every window
 
