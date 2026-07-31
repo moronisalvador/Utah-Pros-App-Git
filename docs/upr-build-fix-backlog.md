@@ -145,10 +145,10 @@ Not engineering work — your call. Each one unblocks something already built an
 
 | # | Decision | What it unblocks | Risk if wrong |
 |---|---|---|---|
-| 2.1 | **Flip `automation_settings.sms_sending_enabled`** | Missed-call textback, which you said is worth real money. Both blockers cleared: claim fence shipped (`42a7501`), STOP handler verified wired + P0 fixed (`f81bef7`), your live STOP/START test passed. | 🟢 **`missed_call_textback_enabled` is already `true` in one of the two org rows** — flipping the global switch arms textback *immediately*. Verify with a real missed call to your own number, never a client. |
+| 2.1 | **Keep automated SMS disabled through the CallRail period; re-evaluate at Twilio activation** | Production `automation_settings.sms_sending_enabled` was explicitly set false 2026-07-31. `missed_call_textback_enabled=true` remains configured but inert. Staff P2P CallRail SMS/MMS does not read this switch and remains untouched. | Turning the master switch on arms automated traffic immediately; require the Twilio transition checklist, consent/DND verification, and a separately authorized self-number smoke before activation. |
 | 2.2 | **ops-health worker URL: `dev` or production** | Correctness of the alerting that's now live. Currently points at `dev`; harmless (one shared Supabase) but probably not intended. Hand-edit of one `integration_config` row. | Low |
 | 2.3 | **Alert channel** | Whether ops-health stays bell-only or also emails/texts. Carried unanswered from the messaging handoff. | Low |
-| 2.4 | **Local Supabase for SQL tests** | QA-002 / the whole executable-DB-test lane (§6.1). Needs your budget/approval. | Blocks a P0 lane |
+| 2.4 | **Governed local Supabase replay for SQL/pgTAP tests** | Hosted qa-staging now executes the 78 JavaScript suites with a zero-failure gate. Local bootstrap is still needed for the six SQL proofs and reproducible migration-from-baseline evidence. | Leaves a bounded coverage/DR gap; it no longer blocks the hosted database lane. |
 | 2.5 | **Encircle rollout** | ENC-001 tail: migration unapplied, flag OFF, credentials unchanged. | 🔵 Owner + external |
 | 2.6 | **Worktree/branch retirement** | 8 Codex worktrees, ~48 stale branches. Only `codex/messaging-transport-build` is dirty (61 files on the SMS chokepoint). Registry rule: never blind-delete; never merge `3841056` or `d3fd17a`. | 🟢 dirty count checked this session |
 
