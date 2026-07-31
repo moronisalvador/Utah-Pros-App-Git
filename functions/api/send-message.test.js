@@ -36,9 +36,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mutable holders the mocked modules read from (vi.mock is hoisted above imports).
-const h = vi.hoisted(() => ({ db: null, twilio: null }));
-vi.mock('../lib/supabase.js', () => ({ supabase: () => h.db }));
+const h = vi.hoisted(() => ({ db: null, twilio: null, supabase: null, timeoutFetch: vi.fn() }));
+vi.mock('../lib/supabase.js', () => ({ supabase: (...args) => h.supabase(...args) }));
 vi.mock('../lib/twilio.js', () => ({ sendMessage: (...args) => h.twilio(...args) }));
+vi.mock('../lib/http.js', () => ({ fetchWithTimeout: h.timeoutFetch }));
 
 import { onRequestPost } from './send-message.js';
 
@@ -239,11 +240,56 @@ function sensitiveEffects(db) {
 
 beforeEach(() => {
   h.twilio = vi.fn(async () => ({ sid: 'SM-test', status: 'queued' }));
+  h.supabase = vi.fn(() => h.db);
+  h.timeoutFetch.mockReset();
+  h.timeoutFetch.mockImplementation((...args) => fetch(...args));
   // requireAuth() probes /auth/v1/user — always succeed in tests.
   vi.stubGlobal('fetch', vi.fn(async () => ({
     ok: true,
     json: async () => ({ id: 'auth-user-1' }),
   })));
+});
+
+describe('send-message response and timeout contracts', () => {
+  it('uses the timeout helper for both its Supabase client and employee auth', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+
+    const response = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'customer update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(response.status).toBe(201);
+    expect(h.supabase).toHaveBeenCalledWith(ENV, h.timeoutFetch);
+    expect(h.timeoutFetch).toHaveBeenCalledWith(
+      'https://db.test/auth/v1/user',
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it('sets no-store on successful and error JSON responses', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const success = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'customer update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+    const invalid = await onRequestPost({
+      request: req({ body: 'customer update', sent_by: 'e-1' }),
+      env: ENV,
+    });
+
+    expect(success.headers.get('Cache-Control')).toBe('no-store');
+    expect(invalid.status).toBe(400);
+    expect(invalid.headers.get('Cache-Control')).toBe('no-store');
+  });
 });
 
 // ─── SECTION: participant authorization before every side effect ────────────
