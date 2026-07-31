@@ -7,10 +7,11 @@ transferred, and PostgREST cache reloaded. Counts now drift as migrations are qu
 derive them for each window. The CI db lane runs against the branch on every PR. **Known tail:**
 the schema-only seed initially had no `auth.users` (21 failed / 204 skipped of 357 at first light).
 The raw 2026-07-31 run at commit `a513af37` reported **163 / 375 assertions passed, 0 failed,
-212 skipped; 46 setup suites failed across 44 files**. The old assertion-failure budget was
-ratcheted 19 → 0. A separate shrink-only setup-suite baseline now records the 46 legacy failures
-the old wrapper hid; any assertion failure or setup-suite increase blocks CI. This is not a fully
-green database suite. The standing fixtures are three QA people — `qa-admin@` / `qa-office@` /
+212 skipped; 46 setup errors across 44 files**. The old assertion-failure budget was ratcheted
+19 → 0. A separate shrink-only setup baseline now tracks both 44 failed files and Vitest JSON's
+90 recursively failed suite nodes; any assertion failure or setup-debt increase blocks CI. This is
+not a fully green database suite. The standing fixtures are three QA people — `qa-admin@` /
+`qa-office@` /
 `qa-tech@upr-qa.test` (admin / office / field_tech), each bound to an active `employees` row, plus
 one active demo-sheet schema and a branch-only CRM test organization. The fixture source's minimal
 CRM phase/stage and five notification catalog rows are seeded. The notification containment was

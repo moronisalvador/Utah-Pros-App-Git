@@ -32,9 +32,9 @@ The owner-authorized production apply used the exact reviewed source at commit `
 
 The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
 `db-lane` job passed. The later raw hosted receipt at `a513af37` is 163 / 375 assertions passed,
-0 failed, 212 skipped, and 46 failed setup suites across 44 files. Assertions are gated at zero;
-the setup-suite debt has a shrink-only baseline of 46. The compatible Worker/client source is on
-`dev` but not yet `main`; it preserves one operation id across ambiguous provider and
+0 failed, 212 skipped, and 46 setup errors across 44 files. Assertions are gated at zero; setup
+debt is shrink-only at 44 failed files / 90 recursively failed suite nodes. The compatible
+Worker/client source is on `dev` but not yet `main`; it preserves one operation id across ambiguous provider and
 post-provider-finalization failures, and
 `/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
@@ -184,8 +184,8 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   `docs/database/staging-branch-runbook.md`). It is the only hosted DB agents may write-test
   against. The fixture-password secret is configured, all three signed-in fixture identities were
   rotated, and the raw hosted receipt at `a513af37` is 163 / 375 assertions passed, 0 failed,
-  212 skipped, and 46 failed setup suites across 44 files. Failed assertions are gated at zero;
-  setup-suite failures carry a shrink-only baseline of 46. Rebase currently fails at historical
+  212 skipped, and 46 setup errors across 44 files. Failed assertions are gated at zero; setup debt
+  is shrink-only at 44 failed files / 90 suite nodes. Rebase currently fails at historical
   migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
   has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
   writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run

@@ -132,31 +132,40 @@ if (!url || !anonKey || !serviceKey || !fixturePassword) {
         fs.readFileSync(path.join(root, 'scripts', 'qa', 'db-lane-baseline.json'), 'utf8'),
       );
       const failedTests = report.numFailedTests || 0;
-      const failedSuites = report.numFailedTestSuites || 0;
+      const failedFiles =
+        (report.testResults || []).filter((testResult) => testResult.status === 'failed').length;
+      const failedSuiteNodes = report.numFailedTestSuites || 0;
       const skippedTests = report.numPendingTests || 0;
       const todoTests = report.numTodoTests || 0;
       process.stdout.write(
         `QA branch DB tests: ${report.numPassedTests}/${report.numTotalTests} passed, `
         + `${failedTests} failed assertions (baseline ${baseline.maxFailedTests}), `
-        + `${failedSuites} failed setup suites (baseline ${baseline.maxFailedSuites}), `
+        + `${failedFiles} failed files (baseline ${baseline.maxFailedFiles}), `
+        + `${failedSuiteNodes} failed suite nodes (baseline ${baseline.maxFailedSuiteNodes}), `
         + `${skippedTests} skipped, ${todoTests} todo.\n`,
       );
       if (
         failedTests > baseline.maxFailedTests
-        || failedSuites > baseline.maxFailedSuites
+        || failedFiles > baseline.maxFailedFiles
+        || failedSuiteNodes > baseline.maxFailedSuiteNodes
       ) {
         process.stderr.write(
           'QA branch DB tests FAILED: '
-          + `${failedTests} failed assertion(s) / ${failedSuites} failed setup suite(s) exceeds `
-          + `the shrink-only baseline (${baseline.maxFailedTests} / `
-          + `${baseline.maxFailedSuites}).\n`,
+          + `${failedTests} failed assertion(s) / ${failedFiles} failed file(s) / `
+          + `${failedSuiteNodes} failed suite node(s) exceeds the shrink-only baseline `
+          + `(${baseline.maxFailedTests} / ${baseline.maxFailedFiles} / `
+          + `${baseline.maxFailedSuiteNodes}).\n`,
         );
         process.exitCode = 1;
       } else {
-        if (failedSuites < baseline.maxFailedSuites) {
+        if (
+          failedFiles < baseline.maxFailedFiles
+          || failedSuiteNodes < baseline.maxFailedSuiteNodes
+        ) {
           process.stdout.write(
-            'Ratchet opportunity: failed setup suites are below baseline — lower '
-            + `maxFailedSuites to ${failedSuites} in scripts/qa/db-lane-baseline.json.\n`,
+            'Ratchet opportunity: setup debt is below baseline — lower maxFailedFiles to '
+            + `${failedFiles} and maxFailedSuiteNodes to ${failedSuiteNodes} in `
+            + 'scripts/qa/db-lane-baseline.json.\n',
           );
         }
         process.exitCode = 0;
