@@ -31,6 +31,7 @@
 --   delete from auth.identities where user_id::text like 'aaaaaaaa-0000-4000-8000-0000000000%';
 --   delete from auth.users where id::text like 'aaaaaaaa-0000-4000-8000-0000000000%';
 --   delete from public.demo_sheet_schemas where id = 'aaaaaaaa-0000-4000-8000-000000000201';
+--   delete from public.crm_orgs where id = 'aaaaaaaa-0000-4000-8000-000000000203';
 --   delete from public.crm_build_phases where phase_key = '0';
 --   delete from public.notification_types where type_key in
 --     ('appointment.assigned', 'appointment.updated', 'appointment.canceled',
@@ -99,6 +100,15 @@ on conflict (id) do update
   set auth_user_id = excluded.auth_user_id, is_active = true;
 
 -- ─── SECTION: minimal reference data ──────────────
+-- The CRM reporting suites use this fixed branch-only org instead of an
+-- unscoped `is_test=true&limit=1` selector. Its ID is deliberately stable so
+-- fixture writes cannot accidentally land on a different test row.
+insert into public.crm_orgs (id, name, is_test)
+values ('aaaaaaaa-0000-4000-8000-000000000203', 'Utah Pros — QA branch fixture', true)
+on conflict (id) do update
+  set name = excluded.name,
+      is_test = true;
+
 -- Tests assert an active Scope Sheet schema exists (scope-sheet-rollback runbook).
 insert into public.demo_sheet_schemas
   (id, version, name, is_active, definition, notes, published_at)
