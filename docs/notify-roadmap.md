@@ -494,4 +494,6 @@ service-only audited tables/RPC do not modify `notification_types`, defaults, lo
 preferences, audience, deduplication, consent, or providers. Isolated `qa-staging` migration and
 concurrency/authorization behavior passed. The production database apply and exact production
 merge `3f456810162dad8c4407d354b36085778d138ae2` are verified; no live override was saved and no
-provider/test notification was sent.
+provider/test notification was sent as part of that presentation-control-plane release. A later,
+separately owner-authorized diagnostic sweep exercised the fixed owner-self transport path; it did
+not create a business occurrence or activate a producer.

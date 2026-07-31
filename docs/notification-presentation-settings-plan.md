@@ -90,7 +90,7 @@ preview/test/real notification or widen native routes beyond the approved field-
 | Claim | Verdict | Evidence | Consequence / next proof |
 |---|---|---|---|
 | A typed notification event catalog exists | HAVE | `notification_types`; seed migrations; `functions/api/notify.js` | Reuse its exact `type_key` identities; do not create caller-defined event keys. |
-| Fifteen current event types are in the active product map | HAVE | current migrations plus the parent task's 2026-07-29 read-only catalog query | Reconcile the landed registry against all 15 before implementation closes. |
+| Fifteen current event types are in the active product map | VERIFIED | current migrations, the landed exact-15 registry guard, and the owner-authorized 2026-07-29 typed sweep | Registry reconciliation is complete. Keep the exact-15 guard and add future types through the catalog, renderer, and diagnostic allowlist together. |
 | Effective recipient/channel preferences have one shared resolver | HAVE | `get_effective_notification_prefs`; `functions/api/notify.js` | Presentation overrides must not change audience or channel eligibility. |
 | Browser notification content is currently assembled by producers and `notify.js` | HAVE | producer call sites and `enrich*Body()` helpers | A normalized event context is required before configurable rendering. |
 | Native delivery originally replaced caller copy with generic copy | SUPERSEDED by owner decision 2026-07-29 | `functions/lib/apns.js`; owner amendment above | Native now accepts only event-approved typed context, with generic missing-context fallback. |

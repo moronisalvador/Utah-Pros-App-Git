@@ -665,7 +665,10 @@ The owner-only delivery tester has two separate proof layers:
    and Resend request identities, and sanitized provider failures.
 2. Live delivery remains one separately owner-authorized send per selected channel. A local test
    double, successful build, or protected endpoint response is not evidence that a bell, browser,
-   iPhone, or inbox presented the notification.
+   iPhone, or inbox presented the notification. During the 2026-07-29 owner-authorized sweep, the
+   owner reported receiving all 15 typed notifications in the tested PWA/native presentation
+   surfaces. That observation qualifies the tested transport/presentation path; it does not prove
+   that every real producer emits at the correct business moment.
 
 The UI's “Test all four channels” action means exactly one bell, Web Push, native APNs, and email
 diagnostic for the owner account. The separate “Test all 15 notification types” action fetches the
@@ -678,6 +681,7 @@ while events run sequentially to bound Worker/provider concurrency. The syntheti
 each catalog row to exist but intentionally does not consume the real-event `enabled` switch; it
 qualifies presentation and transport, not whether a source workflow is activated or emits.
 
-Deploy the compatible Worker/UI first, then apply the exact committed additive claim-ledger
-migration. Until both are present, the endpoint fails closed with `claim_unavailable` before
-contacting any provider.
+The compatible Worker/UI is deployed, and a 2026-07-31 read-only production ledger check verified
+the exact committed additive claim-ledger migration as
+`20260729183731_notification_delivery_diagnostic_claims`. The endpoint still fails closed with
+`claim_unavailable` before contacting any provider if the ledger contract is unavailable.
