@@ -378,8 +378,9 @@ same event-approved variables as PWA, including customer, scheduling, and
 financial details. Those values must be typed server context, never raw
 producer APNs fields or generic payload traversal. Missing values use immutable
 generic event copy. Rendered values and final APNs JSON are bounded before
-provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
-presentation at the provider boundary.
+provider use. Rich presentation is explicitly opt-in at the provider boundary:
+only `NATIVE_RICH_NOTIFICATION_PRESENTATION=true` enables approved details;
+unset, `false`, or any other value keeps generic presentation.
 
 Native token registration is browser-RPC-only: the focused
 `20260728223000_native_apns_token_boundary.sql` source is live under reconciled
