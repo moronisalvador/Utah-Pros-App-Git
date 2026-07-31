@@ -51,8 +51,8 @@ A third isolated QBO money-boundary migration is authored and remains unapplied 
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql` on
   `codex/qbo-multi-invoice-payments` adds the disabled, service-only receipt/attempt/event
   foundation for one QBO Payment allocated across several invoices. It has a containment rollback
-  and locally green source/static tests. On current `origin/dev` base `4bdb815a`, `npm test` passes
-  4,162 tests with zero unexpected skips; build, changed-file lint, bundle strict, and migration
+  and locally green source/static tests. On current `origin/dev` base `e33ef20d`, `npm test` passes
+  4,168 tests with zero unexpected skips; build, changed-file lint, bundle strict, and migration
   hygiene pass; independent Worker-security, migration, grant/secret, project-law, design, and
   lifecycle reviews pass. The migration and three supporting foreign-key indexes are applied to
   `qa-staging`; forced-RLS/grant/flag readbacks and the complete transaction-rolled-back SQL behavior

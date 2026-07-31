@@ -1,7 +1,7 @@
 # QBO Multi-Invoice Payment Receipts
 
 **Status:** Source implemented and locally plus `qa-staging` verified on
-`codex/qbo-multi-invoice-payments`, based on `origin/dev` `4bdb815a`; provider, browser,
+`codex/qbo-multi-invoice-payments`, based on `origin/dev` `e33ef20d`; provider, browser,
 production-apply, and release gates remain pending
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
@@ -25,16 +25,16 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 - The database flag `feature:qbo_receive_payment` is seeded disabled.
 - The money endpoint requires that exact row enabled and not force-disabled plus
   `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
-- Six local commits and a `qa-staging` migration apply occurred. No push, deployment, production
+- Local feature commits and a `qa-staging` migration apply occurred. No push, deployment, production
   database apply, provider Payment mutation, or feature activation occurred from this branch.
 
 ## Local verification evidence
 
 Current feature source was verified on 2026-07-31 after semantic reconciliation with
-`origin/dev` `4bdb815a`:
+`origin/dev` `e33ef20d`:
 
-- `npm test` passed with zero unexpected skips: 1,507 unit tests, 1,871 Worker tests, and 784 QA
-  tests (4,162 total).
+- `npm test` passed with zero unexpected skips: 1,507 unit tests, 1,877 Worker tests, and 784 QA
+  tests (4,168 total).
 - `npm run build` passed with 718 transformed modules. The lazy Receive Payment route built to
   10.71 kB raw / 3.57 kB gzip.
 - `node scripts/bundle-size-report.mjs --strict` passed. `src/index.css` is 598,125 bytes against
