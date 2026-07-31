@@ -20,7 +20,7 @@
  *     incompatible. A normal compatible deploy does not need to discard cache.
  * ════════════════════════════════════════════════
  */
-export const CACHE_COMPATIBILITY_VERSION = 'tech-query-v2';
+export const CACHE_COMPATIBILITY_VERSION = 'tech-query-v3';
 
 function cleanSegment(value, fallback) {
   const cleaned = String(value || '')
