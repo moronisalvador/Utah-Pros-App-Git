@@ -55,7 +55,7 @@ describe('loadEmployeeDirectory', () => {
 });
 
 describe('loadMessageAuthorDirectory', () => {
-  it('deduplicates loaded internal-note message IDs before the bounded RPC', async () => {
+  it('deduplicates loaded authored-message IDs before the bounded RPC', async () => {
     const rows = [{ id: 'employee-z', full_name: 'Former Employee' }];
     const db = { rpc: vi.fn().mockResolvedValue(rows) };
 
@@ -108,7 +108,7 @@ describe('loadMessageAuthorDirectory', () => {
 });
 
 describe('missingMessageAuthorMessageIds', () => {
-  it('requests only loaded unresolved internal notes in stable order', () => {
+  it('requests only loaded unresolved authored messages in stable order', () => {
     expect(missingMessageAuthorMessageIds([
       { id: MESSAGE_Z, type: 'internal_note', sent_by: 'employee-z' },
       { id: MESSAGE_A, type: 'sms_outbound', sent_by: 'employee-y' },
@@ -118,7 +118,7 @@ describe('missingMessageAuthorMessageIds', () => {
       { id: MESSAGE_A, type: 'internal_note', sent_by: null },
     ], [
       { id: 'employee-a', full_name: 'Active Employee' },
-    ])).toEqual([MESSAGE_Z]);
+    ])).toEqual([MESSAGE_A, MESSAGE_Z]);
   });
 });
 
@@ -141,14 +141,27 @@ describe('employeeDirectoryMap', () => {
 });
 
 describe('attachEmployeeDirectory', () => {
-  it('attaches only the non-sensitive sender name expected by message callers', () => {
+  it('prefers a non-sensitive display name for the sender label', () => {
     const message = { id: 'message-a', sent_by: 'employee-a', body: 'hello' };
     const directory = employeeDirectoryMap([
       {
         id: 'employee-a',
         full_name: 'Employee A',
+        display_name: 'E. A.',
         email: 'must-not-be-attached@example.invalid',
       },
+    ]);
+
+    expect(attachEmployeeDirectory(message, directory)).toEqual({
+      ...message,
+      employees: { full_name: 'E. A.' },
+    });
+  });
+
+  it('falls back to full name when a display name is blank or absent', () => {
+    const message = { id: 'message-a', sent_by: 'employee-a' };
+    const directory = employeeDirectoryMap([
+      { id: 'employee-a', full_name: 'Employee A', display_name: '   ' },
     ]);
 
     expect(attachEmployeeDirectory(message, directory)).toEqual({
