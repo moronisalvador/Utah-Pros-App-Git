@@ -327,9 +327,9 @@ re-attestation history, legacy-log redaction, unchanged general opt-in, duplicat
 suppression and durable pending-STOP suppression. See
 `docs/audit/2026-07/evidence/prior-sms-consent-live-apply-2026-07-23.md`.
 
-### Signed UPR Work Authorization evidence (repository only; not applied)
+### Signed UPR Work Authorization evidence (applied)
 
-Migration `20260727005212_upr_work_authorization_sms_consent.sql` proposes
+Migration `20260727005212_upr_work_authorization_sms_consent.sql` adds
 `work_authorization_sms_consents`, keyed one-to-one by `sign_request_id` with restrictive foreign
 keys to the contact and job. Each row snapshots the phone, trusted Cloudflare signer IP, signed
 file path/time, fixed
@@ -345,10 +345,11 @@ transaction. In that earlier migration, `get_service_sms_consent_status(uuid,tex
 signature and then-existing response vocabulary, checks DND/opt-out/pending STOP/global state first,
 and accepts either the existing staff-attested service row or matching signed-authorization
 evidence. The migration never updates `contacts.opt_in_status`. A concrete rollback restores the
-read-only-captured pre-change status body before removing the wrapper/table. None of this is live
-until separately applied and verified.
+read-only-captured pre-change status body before removing the wrapper/table. A read-only production
+ledger check on 2026-07-31 verified it live as
+`20260727041645_upr_work_authorization_sms_consent`.
 
-### Direct-service implied SMS decision (repository only; not applied)
+### Direct-service implied SMS decision (applied)
 
 Migration `20260728000000_sms_consent_opt_out_only.sql` keeps the frozen
 `get_service_sms_consent_status(uuid,text) -> jsonb` signature and adds the distinct
@@ -367,8 +368,8 @@ server-owned appointment or signature record, use a stable source-record/event d
 and durably audit `transactional_service_send_allowed` before provider selection. No automated
 producer is live yet. Generic automation, scheduled free-form, group, broadcast, bulk, campaign,
 and marketing paths accept `GLOBAL_OPT_IN` only. The concrete rollback restores `NO_CONSENT`.
-Until the exact migration is separately reviewed, authorized, applied, and verified, the live
-database does not return `IMPLIED_CONSENT`.
+A read-only production ledger check on 2026-07-31 verified the exact committed source live as
+`20260730121811_sms_consent_opt_out_only`.
 
 ## Known limits
 
@@ -660,9 +661,9 @@ enumeration, broad browser table grants, foreign selectors, raw token visibility
 token mutation. It requires its explicit unsafe session flag plus a separate owner decision;
 forward repair is preferred. See `docs/mobile/s1h-database-apply-runbook.md`.
 
-## Notification delivery diagnostic claims (repository only; not applied)
+## Notification delivery diagnostic claims (applied)
 
-Migration `20260729181049_notification_delivery_diagnostic_claims.sql` proposes one additive
+Migration `20260729181049_notification_delivery_diagnostic_claims.sql` adds one additive
 service-only ledger keyed by `(employee_id, channel, request_id)`. The four channels are fixed to
 bell, Web Push, native APNs, and transactional email. A pending row is inserted before the Worker
 causes any delivery side effect; the bounded channel result is then stored as complete. A retry
@@ -674,5 +675,7 @@ copy, customer/provider payload, or credential. Its two `SECURITY INVOKER` RPCs 
 `search_path`, assert `service_role`, revalidate an active internal admin for the claim, accept only
 the fixed channels/result vocabulary, and are executable only by `service_role`. Claim cleanup is
 bounded to 1,000 rows older than 90 days per new claim. The paired rollback removes both RPCs and
-the additive history after compatible code stops calling them. This source has not been applied to
-`qa-staging` or the shared production project.
+the additive history after compatible code stops calling them. A read-only production ledger check
+on 2026-07-31 verified the exact committed source as
+`20260729183731_notification_delivery_diagnostic_claims`; the compatible Worker/UI was deployed
+before the owner-authorized live sweep.
