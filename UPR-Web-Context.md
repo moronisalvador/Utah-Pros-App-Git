@@ -9,6 +9,30 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+## QBO invoice/conversion recovery hardening (2026-07-31 — qa-staging only)
+
+Two sequenced migrations and their compatible Worker/client changes close the captured-provider-
+result/local-write gap without weakening the human Save-to-QuickBooks gate:
+
+- estimate decisions and conversion are row-locked; a populated target invoice remains a manual
+  boundary, combined QBO invoice/estimate matches are never allocated arbitrarily, and durable
+  `reconcile:*` event rows carry unresolved cases;
+- each invoice save/send/delete command is frozen in a private, forced-RLS
+  `qbo_invoice_commands` row before a QBO write. The command binds invoice, action, actor/system
+  identity, realm, local intent, provider request id/payload/result and terminal response; retries
+  recover both before and after local CAS without a second provider side effect;
+- browser/native callers retain one owner-scoped UUIDv4 operation id in `localStorage` across a
+  tab or Capacitor process restart only while the result is ambiguous. Intuit Accounting writes
+  receive a deterministic `requestid`; and
+- invoice-link/send metadata uses a service-only CAS plus the database lifecycle trigger. Worker
+  code never writes trigger-owned `status`, `amount_paid`, `line_total` or `paid_at`.
+
+The exact split migration sources are applied to `qa-staging` under ledger rows
+`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
+`20260731205118_qbo_invoice_command_ledger`. Catalog/RLS/ACL postconditions and local static/Worker
+tests pass. The hosted behavioral lane, production apply, and compatible Worker/client push remain
+pending gates; these objects are not yet in the shared-production ledger.
+
 ## CRM lead value — manual entry + claim-wide billed total (2026-07-30, owner-directed)
 
 Applied live, ledger **`20260730155213`** (`20260730133000_crm_lead_value_from_claim.sql`), proven on

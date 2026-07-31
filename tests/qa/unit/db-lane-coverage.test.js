@@ -56,7 +56,15 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
 // the migration source in the credential-free lanes; the behavioural trigger
 // proof runs in the db lane against the qa-staging branch.
-const DARK_BASELINE = 81;
+const DARK_BASELINE = 83;
+// 2026-07-31: 82 -> 83, adding qbo_invoice_command_ledger.test.js. Its
+// qa-staging proof covers service-only ACLs, active-command serialization,
+// immutable provider attempt replay/fallback, legal recovery transitions, and
+// pre-/post-CAS resume without a QuickBooks provider call.
+// 2026-07-31: 81 -> 82, adding qbo_estimate_conversion_concurrency.test.js.
+// Its hosted qa-staging proof creates only tagged disposable rows and temporary
+// branch Auth identities, and exercises browser/service authorization plus
+// same-estimate conversion serialization without any QuickBooks provider call.
 // 2026-07-30: 80 -> 81, adding oop_pricing_builder.test.sql. The guarded local
 // proof covers active-internal authorization, canonical money, fractional-input
 // compatibility shadows, optimistic concurrency, and idempotent replay.

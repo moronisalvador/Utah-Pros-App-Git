@@ -21,7 +21,21 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-**None at current `origin/dev`.**
+Two additive QBO money-boundary migrations are staged for production only after their exact
+source is committed, pushed, and the hosted database lane passes:
+
+- `20260731180000_qbo_estimate_conversion_concurrency.sql` — locks estimate conversion and QBO
+  decision application, makes retry-event reclamation service-only, adds the database-owned
+  invoice QBO lifecycle trigger, and adds a service-only invoice-link CAS; and
+- `20260731210000_qbo_invoice_command_ledger.sql` — adds the forced-RLS, service-only
+  `qbo_invoice_commands` ledger plus five service-only RPCs and idempotent already-applied CAS.
+
+Both paired rollbacks are present. The final split source passed migration safety,
+least-privilege/anon, Worker security, and money reviews plus migration hygiene and credential-free
+contracts. It is applied to `qa-staging` only under ledger rows
+`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
+`20260731205118_qbo_invoice_command_ledger`; hosted behavior/CI remains the production-apply gate.
+Neither migration is in the shared-production ledger yet.
 
 ## Applied and reconciled 2026-07-31
 

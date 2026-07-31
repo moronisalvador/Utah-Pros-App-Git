@@ -138,6 +138,30 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
+## QBO command recovery apply candidate
+
+Two sequenced, additive migrations now define the QBO invoice/conversion concurrency boundary:
+
+- `20260731180000_qbo_estimate_conversion_concurrency.sql` preserves deployed signatures while
+  locking same-estimate conversion and QBO decision application, making retry-event reclamation
+  service-only, deriving invoice QBO lifecycle status in a trigger, and exposing a service-only
+  compare-and-swap for `invoices.qbo_invoice_id` plus send metadata.
+- `20260731210000_qbo_invoice_command_ledger.sql` adds `qbo_invoice_commands`, a forced-RLS table
+  with no browser grants and a single service-role policy. One partial unique index serializes
+  nonterminal commands per UPR invoice. Five service-only RPCs freeze command identity, realm,
+  source intent, provider stage/request id/payload, result and terminal response. Browser commands
+  require an immutable Auth user UUID; server-capability commands are explicitly system-attributed
+  with both actor UUIDs null. The same-signature CAS replacement treats an already-applied target
+  as idempotent success without changing the combined-billing rule that QBO invoice ids are
+  intentionally non-unique.
+
+Both migrations have paired, candid high-risk rollbacks. The exact final sources are applied only
+to `qa-staging` under ledger rows
+`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
+`20260731205118_qbo_invoice_command_ledger`. Catalog verification confirmed forced RLS,
+service-role-only table/RPC ACLs, the actor constraint, pinned definer search paths and the enabled
+lifecycle trigger. Production apply is pending the committed-source hosted database lane.
+
 ## Change rules
 
 - Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
