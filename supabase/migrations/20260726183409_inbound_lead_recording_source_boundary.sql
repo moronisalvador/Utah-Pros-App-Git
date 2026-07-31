@@ -363,7 +363,11 @@ CREATE POLICY inbound_lead_recording_sources_service_role_all
   TO service_role
   USING (true)
   WITH CHECK (true);
-REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated;
+-- Managed Supabase default privileges grant service_role ALL on new tables;
+-- revoke that default before restoring only the four operations this worker
+-- path needs.
+REVOKE ALL ON TABLE public.inbound_lead_recording_sources
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE
   ON TABLE public.inbound_lead_recording_sources TO service_role;
 
