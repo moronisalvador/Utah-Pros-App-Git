@@ -1,10 +1,11 @@
 # Staging Database Runbook — the `qa-staging` Supabase branch
 
-**Last verified:** 2026-07-29 · Status: **SEEDED AND LIVE** (ref `uizgwvkvzyldystqrcsk`,
-~$0.01344/hr). Owner ran the §2 Path B schema-only seed 2026-07-29; parity verified exact against
-production (141 public tables / 400 functions / 219 policies on both), grants verified transferred
-(365 functions executable by `authenticated`), PostgREST cache reloaded. The CI db lane runs
-against it on every PR. **Known tail:** `auth.users` is empty on a schema-only seed, so
+**Last verified:** 2026-07-31 · Status: **SEEDED AND LIVE** (ref `uizgwvkvzyldystqrcsk`,
+~$0.01344/hr). Owner ran the §2 Path B schema-only seed 2026-07-29; initial parity was verified
+exact against production at that point (141 public tables / 400 functions / 219 policies), grants
+transferred, and PostgREST cache reloaded. Counts now drift as migrations are qualified/applied, so
+derive them for each window. The CI db lane runs against the branch on every PR. **Known tail:**
+`auth.users` is empty on a schema-only seed, so
 identity/fixture-dependent tests fail-as-anon or self-skip — gated by the shrink-only baseline in
 `scripts/qa/db-lane-baseline.json` (21 failed / 204 skipped of 357 at first light; 132 enforced).
 **Fixture identities are seeded** (2026-07-29, `scripts/qa/seed-branch-fixtures.sql`): three
@@ -68,6 +69,14 @@ Known limitation: a `--schema=public` dump omits objects living in other schemas
 ON `auth.users` such as a handle-new-user hook). If a db test fails on such an object, dump that
 schema's object individually and apply it — do not dump `auth`/`storage` wholesale onto the
 branch (they already exist there).
+
+The same limitation surfaced during the 2026-07-31 transcribe-cron hardening qualification:
+the schema-only seed omitted the `pg_net` and `pg_cron` extension objects. The first migration
+attempt failed transactionally before changing anything. Staging parity was then restored by
+installing the available extensions, loading the committed original transcribe cron baseline, and
+applying the exact reviewed hardening source. Its separate post-apply proof passed. The schema-only
+branch intentionally has no production cron secret row, so the new functions fail closed/no-op
+there and no outbound worker request was used as staging evidence.
 
 **Then wire it up (owner, ~5 more minutes):**
 
