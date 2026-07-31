@@ -46,6 +46,7 @@ function refuse(reason) {
 const url = process.env.UPR_QA_SUPABASE_URL;
 const anonKey = process.env.UPR_QA_SUPABASE_ANON_KEY;
 const serviceKey = process.env.UPR_QA_SUPABASE_SERVICE_KEY;
+const fixturePassword = process.env.UPR_QA_FIXTURE_PASSWORD;
 const projectRef = (() => {
   try {
     return new URL(url ?? '').hostname.split('.')[0];
@@ -54,8 +55,11 @@ const projectRef = (() => {
   }
 })();
 
-if (!url || !anonKey || !serviceKey) {
-  refuse('UPR_QA_SUPABASE_URL, UPR_QA_SUPABASE_ANON_KEY and UPR_QA_SUPABASE_SERVICE_KEY must all be set');
+if (!url || !anonKey || !serviceKey || !fixturePassword) {
+  refuse(
+    'UPR_QA_SUPABASE_URL, UPR_QA_SUPABASE_ANON_KEY, UPR_QA_SUPABASE_SERVICE_KEY '
+    + 'and UPR_QA_FIXTURE_PASSWORD must all be set',
+  );
 } else {
   try {
     assertQaBranchTarget({ mode: 'qa-branch', projectRef, supabaseUrl: url });
@@ -104,6 +108,7 @@ if (!url || !anonKey || !serviceKey) {
           [SERVICE_KEY_ENV]: serviceKey,
           VITE_SUPABASE_URL: url,
           VITE_SUPABASE_ANON_KEY: anonKey,
+          UPR_QA_FIXTURE_PASSWORD: fixturePassword,
           UPR_TEST_LANE: 'db',
           UPR_QA_CONFIRMED_QA_BRANCH: QA_BRANCH_SENTINEL,
         }),
