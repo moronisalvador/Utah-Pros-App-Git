@@ -2465,7 +2465,7 @@ TWILIO_*                        — 7 vars (pending go-live)
 APNS_P8_KEY                     — AuthKey_XXX.p8 contents (PEM); configured in Cloudflare Preview + Production
 APNS_KEY_ID                     — 10-char APNs Auth Key ID
 APNS_TEAM_ID                    — 10-char Apple Developer Team ID
-APNS_TOPIC                      — iOS bundle id of the RECEIVING app: com.utahprosrestoration.upr (production); the side-by-side dev app needs Preview set to com.utahprosrestoration.upr.dev (owner-gated, not made — see docs/mobile/dev-app-variant.md)
+APNS_TOPIC                      — fixed legacy/NULL-row fallback `com.utahprosrestoration.upr` in BOTH Preview and Production; never flip it per app. Live `device_tokens.apns_topic` selects each enrolled installation's receiving bundle, including the side-by-side dev app.
 APNS_ENV                        — exact "sandbox" (development-signed builds) | "production" (TestFlight/App Store); missing/unknown fails closed
 ```
 
@@ -2515,8 +2515,9 @@ record, `docs/schedule-roadmap.md`, 2026-07-03; the mapping stays source-agnosti
   store local date+TIME, no TZ). `status='cancelled'` or a deleted appointment removes the events.
 - **`integration_config`:** `gcal_worker_url` — **already flipped to production**
   (`https://utahpros.app/api/google-calendar-sync`, confirmed live Jul 1 2026) + `gcal_webhook_secret`.
-  URL-allowlist hardening for `notify_google_calendar_sync()` authored 2026-07-30 (pending
-  apply); registry + ops audit: `docs/database/integration-config-worker-urls.md`.
+  URL-allowlist hardening for `notify_google_calendar_sync()` is live as
+  `20260731165215_pg_net_worker_url_allowlists`; registry + ops audit:
+  `docs/database/integration-config-worker-urls.md`.
 - **Requires** the same Google Cloud OAuth client + Cloudflare env vars as Drive
   (`GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`), plus the calendar scope on the OAuth consent screen.
 
@@ -3220,13 +3221,14 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
   Debug/Release configs and the TestFlight lane are untouched
   (`scripts/ios-release-workflow.test.js` still passes). **Shared-DB caveat:** same production
-  Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** owner-gated Cloudflare
-  Preview `APNS_TOPIC` → `com.utahprosrestoration.upr.dev` change required before push reaches the
-  dev app (not made). Full doc: `docs/mobile/dev-app-variant.md`.
+  Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** never flip Cloudflare
+  Preview `APNS_TOPIC`; it stays on the production fallback in both environments. The live
+  per-token topic records the dev bundle during enrollment, but a compatible deployed signed build,
+  re-enrollment and device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation, but enrollment remains exact-default-off pending the two focused native Push migrations, compatible deployment, fresh runtime-binding verification, and signed-device proof. Broad S1h is not an activation prerequisite.
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live, but enrollment remains exact-default-off pending compatible deployment/build-time activation, fresh runtime-binding/re-enrollment verification, and signed-device proof. Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
     completes regardless of its outcome; unfinished server detach stays in the durable owner-bound
@@ -4280,10 +4282,11 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   vars — and a Preview `APNS_TOPIC` change for the UPR Dev app variant silently killed
   them fleet-wide (Apple 400 `DeviceTokenNotForTopic`). Full incident:
   `docs/archive/web-context-changelog-2026-07.md` § 2026-07-30 fleet-wide outage.
-- **Standing constraint:** each deployment carries ONE env-level `APNS_TOPIC`, so the
-  deployment that dispatches pushes must match the bundle id its recipients run.
-  Production-critical notifiers belong on `utahpros.app`; Preview's topic may serve the
-  UPR Dev variant only. The durable per-token topic fix is live from
+- **Standing constraint:** each deployment carries ONE env-level `APNS_TOPIC`, but it is now only
+  the fallback for legacy/NULL-topic rows and stays `com.utahprosrestoration.upr` in BOTH
+  environments. Never flip Preview to the dev bundle. Production-critical notifiers belong on
+  `utahpros.app`; each enrolled token's live `apns_topic` selects its receiving bundle. The durable
+  per-token topic fix is live from
   `20260730170000_device_token_apns_topic.sql` under ledger row `20260731154315`;
   legacy NULL-topic rows still use the production fallback until they re-enroll.
 - **Diagnostics:** owner-only `POST /api/send-push` returns Apple's per-token `reason`
