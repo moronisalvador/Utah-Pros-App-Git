@@ -13,6 +13,12 @@
 -- the problem is that a legitimate worker URL changed, prefer a reviewed
 -- forward migration that updates the allowlist entries instead.
 --
+-- The gcal notifier's ACL tightening is deliberately NOT reversed here: its
+-- only callers are the owner-executed SECURITY DEFINER trigger functions, so
+-- no live caller needs authenticated EXECUTE back. To ALSO reopen it (not
+-- recommended — pre-20260730214500 posture, zero functional benefit):
+--   GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) TO authenticated;
+--
 -- No trigger, caller, schedule, table, row, policy, URL row, secret, header
 -- or setting is changed by either direction.
 -- ═══════════════════════════════════════════════════════════════════════════════
