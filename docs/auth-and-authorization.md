@@ -388,6 +388,34 @@ The compatible Worker/client source ships in the same `dev` release as this docu
 repository state does not prove it is deployed. Cloudflare binding/deployment,
 authenticated-browser and provider proof remain separate owner/external gates.
 
+### Multi-invoice receipt authorization (source only; disabled)
+
+The authored `/api/qbo-receive-payment` route uses the human-only
+`authorizeQboBrowserRequest` path: a valid Bearer session must resolve to an active, non-external
+literal `admin` before the QBO connection, contact/invoice data, payment options, durable attempt,
+worker telemetry, or provider are touched. It never accepts `QBO_WEBHOOK_SECRET`. Route visibility
+through `AdminRoute` is defense-in-depth. The Worker independently reads the exact
+`feature:qbo_receive_payment` row and requires `enabled=true` plus `force_disabled=false`, as well
+as the separate literal `QBO_RECEIVE_PAYMENT_ENABLED=true` switch, before any QBO work. Both are
+rollout containment, not authority.
+
+Receipt, attempt, and event tables have forced RLS and no `anon`/`authenticated` grants. The same
+migration revokes every `anon` privilege on `payments` and drops its four inherited broad
+`allow_anon_*_payments` policies while retaining the existing authenticated policy. A
+`SECURITY INVOKER` receipt-link trigger independently rejects any non-service JWT role that tries
+to set or change `payments.receipt_id`. Their six state-mutation RPCs plus the atomic QBO-event
+claim RPC are worker-only, service-role-only, and independently verify the service JWT claim; a
+browser cannot bypass the Worker through PostgREST.
+Inbound reconciliation remains a server capability: real-time events require the exact Intuit
+signature/realm boundary, and scheduled/HTTP recovery uses the existing scheduler capability or
+active-admin gate.
+
+Required negative proof before activation is: missing/invalid session, wrong role, inactive or
+external employee, either rollout gate disabled/missing/malformed, malformed request,
+cross-customer invoice, and stale balance all fail before the QBO create call; direct browser
+table/RPC access is denied. These are repository tests until the migration is separately qualified
+in `qa-staging`; they are not live authorization evidence.
+
 ## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
 
 The local S1c source slice replaces `/api/callrail-recording`'s any-employee boundary with an
@@ -620,6 +648,17 @@ The browser cannot query or mutate the presentation tables/RPC. The Worker uses 
 and the database writer independently requires the service-role claim plus the supplied actor's
 active/internal/admin row before its atomic write. Preview is a pure synthetic render and performs
 no configuration write or provider call.
+
+## Payment table authorization
+
+The authored QBO receipt migration removes the inherited anonymous payment policies and the broad
+`allow_authenticated_payments FOR ALL` policy before adding `payments.receipt_id`. Replacement
+policies are operation-specific: active, non-external internal employees may read payment history;
+manual ungrouped payment INSERT/UPDATE/DELETE is limited to active admin employees, matching the
+effective `canEditBilling` boundary; and browser inserts must set `recorded_by` to the caller's own employee row.
+Provider-originated, Stripe, and grouped receipt rows are not browser-mutable. Receipt linkage is
+independently guarded by a service-role-only trigger, while the new receipt RPCs remain callable
+only by `service_role`.
 
 ## Owner notification delivery diagnostics
 
