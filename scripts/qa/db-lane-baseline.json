@@ -1,0 +1,6 @@
+{
+  "note": "Shrink-only hosted qa-staging debt baseline. The 2026-07-31 raw Vitest receipt at a513af37 exposed 46 failed setup suites across 44 files even though no individual assertion failed; most are legacy anon-era fixtures that cannot see or write the hardened branch data. maxFailedTests is permanently zero. Convert suites to service-only fixture setup plus signed-in behavioral calls, and lower maxFailedSuites whenever the count drops. Never raise either number.",
+  "recorded": "2026-07-31",
+  "maxFailedTests": 0,
+  "maxFailedSuites": 46
+}

@@ -9,13 +9,14 @@
  *   CI discovers every JavaScript database suite against the governed qa-staging
  *   branch. SQL/pgTAP proofs require the local Supabase runner, so this guard
  *   names that smaller local-only set instead of falsely calling the whole lane
- *   dark. It also prevents a known-failure budget from returning after the
- *   hosted lane reached zero failed assertions on 2026-07-31.
+ *   dark. It also holds failed assertions at zero and makes the legacy setup-suite
+ *   debt shrink-only after raw Vitest output exposed it on 2026-07-31.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
  *   Internal:  vitest.config.js, .github/workflows/ci.yml,
- *              scripts/qa/run-qa-branch-db-tests.mjs, supabase/tests/**
+ *              scripts/qa/run-qa-branch-db-tests.mjs,
+ *              scripts/qa/db-lane-baseline.json, supabase/tests/**
  *   Data:      reads  → database lane configuration and test file list
  *              writes → none
  *
@@ -51,11 +52,14 @@ describe('db-lane coverage contracts', () => {
     expect(workflow).toContain('npm run test:db:branch');
   });
 
-  it('allows zero known hosted failures', () => {
+  it('allows zero failed assertions and only shrink-only setup-suite debt', () => {
     const runner = read('scripts/qa/run-qa-branch-db-tests.mjs');
-    expect(runner).toContain('if (failedTests > 0)');
-    expect(runner).toContain('the hosted lane allows');
-    expect(runner).not.toContain('db-lane-baseline.json');
+    const baseline = JSON.parse(read('scripts/qa/db-lane-baseline.json'));
+    expect(baseline.maxFailedTests).toBe(0);
+    expect(baseline.maxFailedSuites).toBe(46);
+    expect(runner).toContain('failedTests > baseline.maxFailedTests');
+    expect(runner).toContain('failedSuites > baseline.maxFailedSuites');
+    expect(runner).toContain('Ratchet opportunity: failed setup suites are below baseline');
   });
 
   it('keeps the local-only SQL proof inventory exact', () => {
