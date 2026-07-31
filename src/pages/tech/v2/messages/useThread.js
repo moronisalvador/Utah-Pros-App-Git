@@ -23,9 +23,10 @@
  *              getAuthHeader), @/lib/techQuery (techKeys), ./msgsSelectors (pure
  *              cache/overlay math), @/components/conversations/messageUtils (parseMediaUrls)
  *   Data:      reads  → messages (thread pages)
- *              writes → conversations (unread_count=0 on open, via db.update — F-red
- *                       safe). Outbound SMS/notes go ONLY through POST /api/send-message
- *                       (the worker is the sole writer of any message row).
+ *              writes → conversations.unread_count through the actor-validated
+ *                       set_my_conversation_unread_state RPC. Outbound SMS/notes go
+ *                       ONLY through POST /api/send-message (the worker is the sole
+ *                       writer of any message row).
  *
  * NOTES / GOTCHAS:
  *   - OPTIMISTIC OVERLAY MODEL (challenge-mandated): render = React Query server pages
@@ -57,8 +58,14 @@ import {
   isRetryableMediaReference,
   parseMediaUrls,
 } from '@/components/conversations/messageUtils';
+import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { impact } from '@/lib/nativeHaptics';
 import { toast } from '@/lib/toast';
+import {
+  isConversationAccessDenied,
+  isConversationSendAccessDenied,
+  purgeConversationAccess,
+} from './accessRevocation';
 import {
   flattenThreadPages, nextThreadCursor, mergeOverlay, reconcileOverlay,
   appendMessageToPages, mergeNewestPage, patchMessageInPages, markPendingByMatch, dropByClientId,
@@ -96,7 +103,14 @@ function clearConvoUnread(queryClient, convId) {
   });
 }
 
-export function useThread(convId, { active = true, onConsentRequired } = {}) {
+export function useThread(
+  convId,
+  {
+    active = true,
+    onConsentRequired,
+    onAccessRevoked,
+  } = {},
+) {
   const { db, employee } = useAuth();
   const { data: employeeDirectory = [] } = useLookup('employees');
   const queryClient = useQueryClient();
@@ -107,6 +121,14 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
   const retryStore = useRef({});                // clientId → { text, media_urls, isNote }
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+
+  const revokeAccess = useCallback(() => {
+    if (!convId) return;
+    retryStore.current = {};
+    setOverlay([]);
+    purgeConversationAccess(queryClient, convId);
+    onAccessRevoked?.(convId);
+  }, [convId, onAccessRevoked, queryClient, setOverlay]);
 
   // ─── SECTION: Data fetching (infinite, keyset by created_at) ──────────────
   const query = useInfiniteQuery({
@@ -125,6 +147,13 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
     staleTime: 15_000,
     refetchOnWindowFocus: false,
   });
+  const accessDenied = isConversationAccessDenied(query.error);
+
+  useEffect(() => {
+    if (!accessDenied) return undefined;
+    const revokeTimer = window.setTimeout(revokeAccess, 0);
+    return () => window.clearTimeout(revokeTimer);
+  }, [accessDenied, revokeAccess]);
 
   const pages = query.data?.pages;
   const serverAsc = useMemo(() => flattenThreadPages(pages || []), [pages]);
@@ -133,7 +162,11 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
     [serverAsc, employeeDirectory],
   );
   const { data: historicalMessageAuthors = [] } = useQuery({
-    queryKey: ['message-author-directory', unresolvedMessageAuthorIds],
+    queryKey: [
+      'message-author-directory',
+      employee?.id || 'signed-out',
+      unresolvedMessageAuthorIds,
+    ],
     queryFn: () => loadMessageAuthorDirectory(
       db,
       unresolvedMessageAuthorIds,
@@ -150,10 +183,14 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
     [employeeDirectory, historicalMessageAuthors],
   );
   const messages = useMemo(
-    () => mergeOverlay(serverAsc, overlay).map(
-      message => attachEmployeeDirectory(message, directoryById),
+    () => (
+      accessDenied
+        ? []
+        : mergeOverlay(serverAsc, overlay).map(
+          message => attachEmployeeDirectory(message, directoryById),
+        )
     ),
-    [serverAsc, overlay, directoryById],
+    [accessDenied, serverAsc, overlay, directoryById],
   );
 
   // Patch the thread cache; return the SAME pages ref from `fn` to skip a needless notify.
@@ -169,9 +206,16 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
   const markRead = useCallback(async () => {
     if (!convId) return;
     clearConvoUnread(queryClient, convId);   // instant badge/row clear
-    try { await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 }); }
-    catch (e) { console.error('Mark read error:', e); }
-  }, [convId, db, queryClient]);
+    try {
+      await setMyConversationUnreadState(db, [convId], false);
+    } catch (error) {
+      if (isConversationAccessDenied(error)) {
+        revokeAccess();
+        return;
+      }
+      console.error('Mark read error:', error);
+    }
+  }, [convId, db, queryClient, revokeAccess]);
 
   // Mark read when the thread opens (and when the pane re-activates with it open, so a
   // thread opened while the pane was backgrounded still clears on return).
@@ -191,9 +235,13 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
       setPages((pagesToMerge) => mergeNewestPage(pagesToMerge, rows || []));
       markRead();
     } catch (error) {
+      if (isConversationAccessDenied(error)) {
+        revokeAccess();
+        return;
+      }
       console.error('Resume thread refresh error:', error);
     }
-  }, [convId, db, markRead, setPages]);
+  }, [convId, db, markRead, revokeAccess, setPages]);
 
   useResumeRefetch({
     onResume: reloadNewest,
@@ -241,6 +289,10 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
       if (!res.ok) {
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON error body */ }
+        if (isConversationSendAccessDenied(res.status, data.code)) {
+          revokeAccess();
+          return;
+        }
         const reason = sendFailureReason(data, res.status);
         if (mounted.current) {
           setOverlay((o) => o.map((m) => (m._clientId === clientId
@@ -275,6 +327,10 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
       }
       delete retryStore.current[clientId];
     } catch (err) {
+      if (isConversationAccessDenied(err)) {
+        revokeAccess();
+        return;
+      }
       console.error('Send error:', err);
       const reason = 'Network error — message not sent';
       if (mounted.current) {
@@ -287,7 +343,7 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
     } finally {
       if (mounted.current) setSending(false);
     }
-  }, [convId, employee, onConsentRequired, setPages]);
+  }, [convId, employee, onConsentRequired, revokeAccess, setPages]);
 
   // Public: send a new message (text and/or media, or an internal note).
   const send = useCallback(({ text, media_urls = [], isNote = false }) => {
@@ -338,9 +394,10 @@ export function useThread(convId, { active = true, onConsentRequired } = {}) {
 
   return {
     messages,
-    isColdStart: query.isPending,      // no cached page yet → skeleton, never a spinner over content
+    isColdStart: query.isPending && !accessDenied,
     isFetching: query.isFetching,
-    error: query.error,
+    error: accessDenied ? null : query.error,
+    accessDenied,
     hasMore: !!query.hasNextPage,
     loadingEarlier: query.isFetchingNextPage,
     loadEarlier: query.fetchNextPage,
