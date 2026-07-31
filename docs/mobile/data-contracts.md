@@ -297,7 +297,8 @@ Required guarantees:
 OOP pricing:
 
 The deployed compatibility surface is `get_oop_quote`, `get_claim_jobs`, `upsert_oop_quote`,
-`delete_oop_quote` plus direct job prefill. The authored, unapplied builder migration adds
+`delete_oop_quote` plus direct job prefill. The live builder migration
+(`20260731175328_oop_pricing_builder`) adds
 `get_oop_pricing_config`, `get_oop_quote_v2` and `upsert_oop_quote_v2`; its web-only admin surface
 uses `get_oop_pricing_admin_state`, `save_oop_pricing_draft` and
 `publish_oop_pricing_draft`.
@@ -384,7 +385,8 @@ presentation at the provider boundary.
 Native token registration is browser-RPC-only: the focused
 `20260728223000_native_apns_token_boundary.sql` source is live under reconciled
 ledger row `20260729021021`, and direct browser table privileges are revoked.
-Pending `20260730170000_device_token_apns_topic.sql` adds a nullable per-install
+`20260730170000_device_token_apns_topic.sql` is live under ledger row
+`20260731154315_device_token_apns_topic` and adds a nullable per-install
 bundle topic, keeps the deployed two-argument registration call resolving via
 a trailing default, removes the remaining inert authenticated SELECT policy
 from the raw-token table, and returns only redacted registration metadata.

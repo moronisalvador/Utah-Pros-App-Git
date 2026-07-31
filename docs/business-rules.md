@@ -70,9 +70,9 @@ against both and change both in one commit.
 - The browser may preview OOP totals, but the versioned quote RPC recalculates the persisted total,
   evaluated lines, project-minimum adjustment and margin from validated inputs. It never accepts a
   browser-supplied final total as authoritative.
-- During the code-first compatibility window, the unchanged legacy quote-save signature remains
-  callable. Once the authored migration is applied, it bounds the legacy inputs and recomputes the
-  v1 total and margin server-side instead of trusting the browser snapshots.
+- The unchanged legacy quote-save signature remains callable. The live builder migration bounds
+  those legacy inputs and recomputes the v1 total and margin server-side instead of trusting the
+  browser snapshots.
   Any authorized legacy/direct update clears the current private snapshot so a later v2 read cannot
   combine new legacy values with stale configured-pricing details.
 - Line minimums apply only to positive line amounts. Project minimums apply only to a positive

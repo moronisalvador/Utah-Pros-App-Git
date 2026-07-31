@@ -61,8 +61,10 @@ The repository OOP builder keeps rollout and authority separate:
   (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
   server kill switch. Neither state grants database access.
 
-The supporting migration is repository source only until a separately authorized apply and direct
-role verification prove the live boundary.
+The supporting migration is live under reconciled ledger row
+`20260731175328_oop_pricing_builder`. Direct production verification confirmed the four private
+tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
+boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
 
 ## Worker authorization
 
@@ -579,7 +581,8 @@ The narrower native-token activation boundary is separate from that deferred
 four-migration S1h sequence. `20260728223000_native_apns_token_boundary.sql` is
 live under reconciled ledger row `20260729021021`; direct browser table
 privileges are revoked and native registration/deletion use selector-free
-self-scoped RPCs. Pending `20260730170000_device_token_apns_topic.sql` removes
+self-scoped RPCs. `20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
+`20260731154315_device_token_apns_topic`; it removes
 the remaining inert authenticated SELECT policy from `device_tokens`, adds the
 per-install APNs topic, and preserves the old two-argument registration call
 through one trailing defaulted parameter. No checked-in browser caller reads
