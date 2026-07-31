@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
--- ROLLBACK: 20260731040338_conversation_participant_policy_enforcement
+-- ROLLBACK: 20260731040339_conversation_participant_policy_enforcement
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
