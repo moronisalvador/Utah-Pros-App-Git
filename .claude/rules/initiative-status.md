@@ -81,6 +81,13 @@ Both formerly-pending migrations applied 2026-07-30 under explicit owner authori
   refusals, and the function stays `service_role`-only. Opt-out-only is live for staff 1:1 only.
   Detail + rollback posture: `.claude/rules/sms-experience-wave-ownership.md` §13.
 
+The owner-only notification diagnostic ledger is also live:
+`20260729181049_notification_delivery_diagnostic_claims.sql` → production ledger
+`20260729183731`. During the separately authorized typed sweep, the owner reported receiving all
+15 event types in the tested PWA/native presentation surfaces. This closes the synthetic
+transport/presentation proof for that installed state, not the timing or activation of every real
+producer.
+
 ## CRM lead value (2026-07-30, owner-directed standalone) — APPLIED
 
 `20260730133000_crm_lead_value_from_claim.sql` → live ledger **`20260730155213`**. Proven on the
@@ -143,14 +150,13 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 | Initiative | State | Archived manifest |
 |---|---|---|
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
-| SMS experience | Complete (both migrations applied 2026-07-30) | manifest still in `.claude/rules/` |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
 | Omni-inbox I/O/U | Unbuilt (O/U absorbed by sms-experience) | `docs/archive/rules/omni-inbox-wave-ownership.md` |
 | Schedule Desktop A/B/C | Unstarted | — |
 | UX alignment W1–W5 | Stalled since 2026-07-18; owner may restart from scratch | `docs/archive/rules/ux-alignment-wave-ownership.md` |
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
-| App-store readiness F1/A/B/D | Planned | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
+| App-store readiness F1/A/B/D | Source phases, signed archive/IPA, internal TestFlight, and production Push matrix complete; second-account proof + App Store submission tail open | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
 | Agent QA access P2+ | P1 done; P2a gated on local runtime | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
 
 ## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
