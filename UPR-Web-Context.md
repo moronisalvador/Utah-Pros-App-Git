@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 30, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: July 31, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -93,7 +93,9 @@ No feature code, schema, or provider behaviour changed. What changed:
 
 Deliberately NOT done (deferred with reasons): splitting `src/index.css` (13,003 lines — its own
 initiative once current leases close), any destructive schema cleanup (needs the seeded staging
-branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (separate owner window).
+branch first), applying `20260728000000_sms_consent_opt_out_only.sql` (deferred then; **since
+applied 2026-07-30**, live ledger `20260730121811` — see
+`.claude/rules/sms-experience-wave-ownership.md` §13).
 
 ## Deployment & Release Workflow
 
@@ -905,7 +907,7 @@ oop_quote_pricing_snapshots — Private configured-quote revision, inputs, confi
                           All four tables are forced-RLS with no direct browser-role grants.
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table. **apns_topic (Jul 30 2026 — AUTHORED, NOT APPLIED):** nullable text column recording the installed app's bundle id per token (see "Per-token APNs topic" section) — NULL on every existing row until the migration applies and clients re-enroll.
-employee_onboarding_state — **AUTHORED, NOT APPLIED (Jul 29 2026)** — per-employee versioned first-run
+employee_onboarding_state — **LIVE (applied Jul 30 2026, ledger `20260730115220`)** — per-employee versioned first-run
                           onboarding flag (employee_id + surface PK, version_seen, updated_at). Deny-all
                           RLS (enabled+forced, zero browser-role grants); reached only via the two
                           selector-free definer RPCs (see "Tech first-run onboarding" RPC section).
@@ -1158,7 +1160,7 @@ Shared lib: `functions/lib/twilio-errors.js` — `classifyTwilioError(code)` →
 contactFlag, uiClass}` for 21610/30006/30007/30034 (+ safe DEFAULT). Import-only for the wave (A applies
 suppression/contact flags; C maps `uiClass` to CSS). Frozen-contract specs: `.claude/rules/sms-experience-wave-ownership.md` §9.
 
-### Tech first-run onboarding (Jul 29 2026 — authored, **NOT applied**)
+### Tech first-run onboarding (Jul 29 2026 — **applied live Jul 30 2026**)
 ```
 get_my_onboarding_version_seen(p_surface TEXT) → integer — SECURITY DEFINER, search_path '', selector-free
                                   (auth.uid() → active internal employee, same role list as
@@ -1170,9 +1172,11 @@ ack_my_onboarding_seen(p_surface TEXT, p_version INT) → integer — same postu
                                   a finished tour; p_version validated 1..10000.
 ```
 Migration `supabase/migrations/20260729220000_tech_onboarding_state.sql` (+ paired rollback, + CI
-contract test `tests/qa/unit/tech-onboarding-state-migration.test.js`) — **authored only; applying to
-the shared Supabase is a separate owner-authorized window.** Until it applies the RPC 404s and the
-frontend gate fails closed (tour never shows), so the code deploys safely first.
+contract test `tests/qa/unit/tech-onboarding-state-migration.test.js`) — **APPLIED 2026-07-30 under
+explicit owner authorization, live ledger `20260730115220`.** Postconditions plus an independent
+check passed (RLS enabled+forced, no browser-role table grant, `anon` EXECUTE false on both definer
+RPCs); the first-run tour is live and verified rendering all three screens
+(`.claude/rules/initiative-status.md`).
 
 Frontend: `src/components/TechLayout.jsx` mounts the lazy `src/components/tech/onboarding/
 TechOnboarding.jsx` (owner spec 2026-07-29: ALWAYS 3 full-screen steps, forward-only, no dismiss —
@@ -4269,9 +4273,22 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   `tests/qa/unit/pg-net-worker-url-allowlists.test.js`; apply-window check:
   `supabase/tests/pg_net_worker_url_allowlists_post_apply.sql`. The full key registry +
   the read-only "everything points at production" ops query:
-  **`docs/database/integration-config-worker-urls.md`**. Known remaining gap (deferred):
-  the two `transcribe_call_worker_url` pg_cron command strings inline their `net.http_post`
-  with no allowlist.
+  **`docs/database/integration-config-worker-urls.md`**. The gap it deferred — the two
+  `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
+  no allowlist — is closed by the follow-up below.
+- **Cron-command allowlist follow-up (2026-07-31, authored — NOT applied):**
+  `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
+  transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
+  `upr_calls_reclassify_safety_net`) into new zero-grant SECURITY DEFINER functions
+  `wake_transcribe_call_backfill()` / `wake_transcribe_call_reclassify()` carrying the
+  exact two-URL allowlist + fail-closed blank-secret gate (the wake_ops_health_worker
+  pattern). Job names, schedules (`20 */6 * * *` / `40 */6 * * *`), payloads
+  (`{"backfill":true,"days":3}` / `{"reclassify":true}`) and the 60s timeout are
+  unchanged; pg_cron executes as the postgres job owner, so no role holds EXECUTE. CI
+  contract test: `tests/qa/unit/transcribe-call-cron-allowlist.test.js`; apply-window
+  check: `supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`; rollback
+  restores the exact 20260722 inlined commands (and reopens the SSRF surface — its
+  header says so).
 
 ## Admin notification presentation Settings (2026-07-29)
 
