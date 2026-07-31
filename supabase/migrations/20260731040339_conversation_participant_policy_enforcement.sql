@@ -23,8 +23,8 @@
 --
 -- ROLLBACK:
 --   Run
---   supabase/rollbacks/20260731040338_conversation_participant_policy_enforcement.rollback.sql.
---   It restores the exact broad policy predicates and authenticated INSERT grants.
+--   supabase/rollbacks/20260731040339_conversation_participant_policy_enforcement.rollback.sql.
+--   It restores the exact broad policy predicates and authenticated table grants.
 -- ════════════════════════════════════════════════
 
 DO $conversation_policy_preflight$
