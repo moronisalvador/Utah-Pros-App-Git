@@ -28,7 +28,7 @@ BEGIN
     AND policy.tablename = 'conversations'
     AND policy.policyname = 'allow_authenticated_conversations'
     AND policy.permissive = 'PERMISSIVE'
-    AND policy.cmd = 'SELECT'
+    AND policy.cmd = 'ALL'
     AND policy.roles = ARRAY['authenticated']::name[];
 
   SELECT
@@ -40,7 +40,7 @@ BEGIN
     AND policy.tablename = 'conversation_participants'
     AND policy.policyname = 'allow_authenticated_conversation_participants'
     AND policy.permissive = 'PERMISSIVE'
-    AND policy.cmd = 'SELECT'
+    AND policy.cmd = 'ALL'
     AND policy.roles = ARRAY['authenticated']::name[];
 
   SELECT regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g')
@@ -56,10 +56,10 @@ BEGIN
 
   IF replace(v_conversation_qual, 'public.', '')
        IS DISTINCT FROM 'messaging_can_access_conversation(id)'
-     OR v_conversation_check IS DISTINCT FROM ''
      OR replace(v_participant_qual, 'public.', '')
        IS DISTINCT FROM 'messaging_can_access_conversation(conversation_id)'
-     OR v_participant_check IS DISTINCT FROM ''
+     OR v_conversation_check IS DISTINCT FROM 'false'
+     OR v_participant_check IS DISTINCT FROM 'false'
      OR replace(v_message_qual, 'public.', '')
        IS DISTINCT FROM '(messaging_can_access_conversations()ANDmessaging_can_access_conversation(conversation_id))'
      OR has_table_privilege(
@@ -127,20 +127,14 @@ BEGIN
 END;
 $conversation_policy_rollback_preflight$;
 
-DROP POLICY allow_authenticated_conversations
-  ON public.conversations;
-CREATE POLICY allow_authenticated_conversations
+ALTER POLICY allow_authenticated_conversations
   ON public.conversations
-  FOR ALL
   TO authenticated
   USING (true)
   WITH CHECK (true);
 
-DROP POLICY allow_authenticated_conversation_participants
-  ON public.conversation_participants;
-CREATE POLICY allow_authenticated_conversation_participants
+ALTER POLICY allow_authenticated_conversation_participants
   ON public.conversation_participants
-  FOR ALL
   TO authenticated
   USING (true)
   WITH CHECK (true);
@@ -151,4 +145,4 @@ ALTER POLICY messages_authenticated_select
   USING (public.messaging_can_access_conversations());
 
 GRANT ALL ON TABLE public.conversations, public.conversation_participants
-  TO authenticated;
+  TO authenticated, service_role;

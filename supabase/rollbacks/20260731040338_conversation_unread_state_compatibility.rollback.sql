@@ -3,8 +3,9 @@
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Removes the narrow read/unread RPC and restores the foundation version of
---   self-leave that requires current access on every attempt.
+--   Removes the narrow read/unread and access-snapshot RPCs and restores the
+--   foundation version of self-leave that requires current access on every
+--   attempt.
 --
 -- REQUIRED ORDER:
 --   If 20260731040339 enforcement was applied, run its rollback first.
@@ -13,6 +14,7 @@
 -- ════════════════════════════════════════════════
 
 DROP FUNCTION IF EXISTS public.set_my_conversation_unread_state(uuid[], boolean);
+DROP FUNCTION IF EXISTS public.get_my_conversation_access_snapshot(uuid[]);
 
 CREATE OR REPLACE FUNCTION public.leave_conversation(
   p_conversation_id uuid
@@ -72,4 +74,4 @@ ALTER FUNCTION public.leave_conversation(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.leave_conversation(uuid)
   FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.leave_conversation(uuid)
-  TO authenticated;
+  TO authenticated, service_role;
