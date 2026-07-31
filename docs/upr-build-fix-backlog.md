@@ -176,7 +176,7 @@ apply windows must not overlap. Do not run them in parallel sessions.
 
 | # | Work | Registry ID | Status | Size |
 |---|---|---|---|---|
-| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **[recon] Diagnosis done — it is VISIBILITY, not notification fan-out.** 0 of 57 `message.inbound` bell rows ever reached a technician; all 57 went to 4 admins. What techs actually see: `page:tech_msgs_v2` is live to everyone, and two unscoped read paths (`get_tech_conversations`, definer + granted to `authenticated` + **no caller predicate**; and the `conversations` ALL/true policy) hand them all 7 threads. `messages` only *looks* scoped — `messaging_can_access_conversations()` is a page-access gate with no `conversation_id` parameter. **Design [owner]-approved — see §4A.** | **M** |
+| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **Repository release candidate implemented 2026-07-31; staged foundation only, release gates remain.** Staff visibility, participant/default controls, self-leave, Worker send/notification/contact scoping, unread compatibility, sender labels and mobile readability are implemented. `20260731040337` is applied only to `qa-staging`; `40338` and `40339` are unapplied everywhere. See §4A for the compatibility-sensitive rollout. | **M** |
 | 4.2 | **A2P + on-device verification** | `MSG-002` | 🔵 Provider approval, live smoke, owner device. | external |
 | 4.3 | **Text campaigns 4b** | `CRM-001` | Blocked on 4.2, or explicitly supersede it. | M, blocked |
 | 4.4 | **Inbound email Phase I** | `OMNI-001` | Foundation exists; `email-worker/` and `inbound-email.js` absent. Needs a Cloudflare route + secret first. | M, external gate |
@@ -185,7 +185,7 @@ apply windows must not overlap. Do not run them in parallel sessions.
 
 ---
 
-### 4A. Participant scoping — approved design [owner, 2026-07-26]
+### 4A. Participant scoping — approved design [owner, 2026-07-26], release candidate 2026-07-31
 
 **Three layers. The third is what stops it rotting.**
 
@@ -197,8 +197,9 @@ apply windows must not overlap. Do not run them in parallel sessions.
    (follow-ups, warranty, re-opens); losing thread access the moment a job closes is worse than mild
    over-inclusion. Computed inside the predicate at read time — **no materialized table, no nightly
    derivation pass.**
-3. **Manual overrides only.** A small `conversation_members` table holding *nothing but* explicit
-   adds and removes. Manual always wins.
+3. **Manual overrides only.** `conversation_member_overrides` holds explicit staff adds/removes and
+   `conversation_default_members` holds the technicians admins want included by default. Manual
+   per-chat choice wins over derived/default membership.
 
 **Why live-computed matters:** the handoff flagged "admin removes a tech, tomorrow's derivation pass
 re-adds them" as the likeliest bug. With no pass, and overrides as the only stored rows, that bug
@@ -209,11 +210,11 @@ immediately, with no sync step.
 claims.contact_id) → conversation_participants.contact_id`. It **must** join through
 `conversation_participants.contact_id` — `conversations.job_id` is NULL on all 7 rows.
 
-**Apply at three read points, never in the UI:** `get_tech_conversations` (body-only replace — **and
-fix `v_unread` + the `status_counts` CTE, or the badge keeps leaking a global unread count**), the
-`conversations` policies (replace ALL/true with operation-specific), and `messages_authenticated_select`
-(page gate **AND** per-conversation predicate). Success tell: `src/pages/Conversations.jsx` and
-`src/pages/tech/v2/messages/**` need **no scoping edits**.
+**Enforce at every boundary:** `get_tech_conversations`, actor-derived unread mutation,
+`conversations`/`messages` SELECT policies, send/internal-note Workers, contact
+search/find-or-create, inbound recipient resolution, and the desktop/native clients. The UI changes
+are additive: admin participant/default controls, technician self-leave, cache/draft purging on
+revocation, sender labels, and a readable 18px mobile message token.
 
 **Notifications [owner]:** audience aligns to the same predicate — techs are notified only for threads
 they belong to; admins/office/PM/supervisor keep receiving everything. Deep links already land in the
@@ -227,6 +228,17 @@ latent trap the moment anyone sets `assigned_to`.)
 **Rule amendments to disclose:** `get_tech_conversations` is F-M-frozen
 (`tech-messages-v2-wave-ownership.md` §2); `conversation_participants` is Foundation-owned
 (`omni-inbox-wave-ownership.md` §1).
+
+**Release order:** apply `20260731040337` + `20260731040338` before any compatible Worker/UI
+deployment; validate dev, then promote the same reviewed web source and a supported native build;
+run the isolated SQL and negative device checks; apply `20260731040339` only after older native
+direct-unread callers are no longer supported. Every hosted apply/deploy/promotion is a separate
+owner-authorized gate.
+
+**Deferred lifecycle context:** when future rooms/dry logs can prove the final appointment marked
+the mitigation job dry and equipment picked up, derived mitigation technicians should fall out
+automatically unless privileged or manually re-added. Until then, removal stays manual or
+technician-initiated.
 
 ---
 
