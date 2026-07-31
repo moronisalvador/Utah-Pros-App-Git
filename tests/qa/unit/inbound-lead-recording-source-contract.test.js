@@ -77,7 +77,8 @@ describe('S1e recording-source migration CI contract', () => {
 
   it('keeps source reads and ingestion service-only', () => {
     expect(migration).toContain(
-      'REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated',
+      'REVOKE ALL ON TABLE public.inbound_lead_recording_sources\n'
+        + '  FROM PUBLIC, anon, authenticated, service_role',
     );
     expect(migration).toContain(
       'CREATE POLICY inbound_lead_recording_sources_service_role_all',
