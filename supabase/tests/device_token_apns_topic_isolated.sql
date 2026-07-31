@@ -8,6 +8,7 @@ BEGIN;
 
 INSERT INTO public.employees (
   id,
+  full_name,
   auth_user_id,
   is_active,
   is_external,
@@ -15,6 +16,7 @@ INSERT INTO public.employees (
 )
 VALUES (
   '11111111-1111-4111-8111-111111111111',
+  'APNs Topic Compatibility Test',
   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   true,
   false,
