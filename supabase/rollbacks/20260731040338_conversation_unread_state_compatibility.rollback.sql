@@ -7,6 +7,7 @@
 --   self-leave that requires current access on every attempt.
 --
 -- REQUIRED ORDER:
+--   If 20260731040339 enforcement was applied, run its rollback first.
 --   Restore deployed callers that do not require set_my_conversation_unread_state
 --   before running this rollback. No table policy or grant is changed here.
 -- ════════════════════════════════════════════════

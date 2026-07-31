@@ -19,14 +19,14 @@
 --   Adds two small staff-membership tables and new RPCs. Existing table columns
 --   and RPC signatures stay unchanged. The compatible inbox/author bodies are
 --   replaced without changing signatures or return shapes. Browser policy/ACL
---   enforcement is staged separately in 20260731040339 after the Worker/UI deploy.
+--   enforcement is staged separately in 20260731040338 after the Worker/UI deploy.
 --
 -- ════════════════════════════════════════════════
 -- ROLLBACK:
 --   Run supabase/rollbacks/20260731040337_conversation_participant_scoping.rollback.sql.
 --   It restores the prior inbox function and internal-note-only author lookup,
---   then drops the new functions and tables. If later migrations were applied,
---   roll back 20260731040339 enforcement first, then 20260731040338 compatibility.
+--   then drops the new functions and tables. Run the 20260731040338 enforcement
+--   rollback first if that later migration has been applied.
 --   Removing the two new tables discards any administrator choices recorded
 --   after this migration is applied.
 -- ════════════════════════════════════════════════
