@@ -73,6 +73,7 @@ import MessageBubble from '@/components/conversations/MessageBubble';
 import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
 import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
 import {
+  conversationAccessLeaseIsFresh,
   hasConversationAccess,
   reconcileAccessibleConversations,
 } from '@/components/conversations/conversationAccessState';
@@ -218,6 +219,7 @@ export default function Conversations({ replyAssist } = {}) {
 
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [activeAccessAuthorized, setActiveAccessAuthorized] = useState(false);
   const [messages, setMessages] = useState([]);
   const [linkedJob, setLinkedJob] = useState(null);
 
@@ -273,6 +275,7 @@ export default function Conversations({ replyAssist } = {}) {
   const composeRef = useRef(null);
   const fileInputRef = useRef(null);
   const activeIdRef = useRef(null);
+  const conversationAccessLeasesRef = useRef(new Map());
   const atBottomRef = useRef(true);
   const attachCounter = useRef(0);
   const contactSearchRequestRef = useRef(0);
@@ -322,6 +325,7 @@ export default function Conversations({ replyAssist } = {}) {
     { announce = true } = {},
   ) => {
     if (!conversationId) return;
+    conversationAccessLeasesRef.current.delete(conversationId);
     clearDraft(conversationId);
     queryClient.removeQueries({
       predicate: (query) => (
@@ -339,6 +343,7 @@ export default function Conversations({ replyAssist } = {}) {
       retryStore.current = {};
       clearAttachments();
       setActiveId(null);
+      setActiveAccessAuthorized(false);
       setMessages([]);
       setLinkedJob(null);
       setHasMoreMessages(false);
@@ -377,6 +382,10 @@ export default function Conversations({ replyAssist } = {}) {
         'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
       );
       const data = Array.isArray(rows) ? rows : [];
+      const verifiedAt = Date.now();
+      data.forEach((conversation) => {
+        if (conversation?.id) conversationAccessLeasesRef.current.set(conversation.id, verifiedAt);
+      });
       setLoadError(null);
       setConversations(prev => reconcileAccessibleConversations(prev, data, silent));
       const openConversationId = activeIdRef.current;
@@ -385,6 +394,8 @@ export default function Conversations({ replyAssist } = {}) {
         && !hasConversationAccess(data, openConversationId)
       ) {
         revokeConversationAccess(openConversationId);
+      } else if (openConversationId) {
+        setActiveAccessAuthorized(true);
       }
       return data;
     } catch (error) {
@@ -505,20 +516,28 @@ export default function Conversations({ replyAssist } = {}) {
   }, [loadConversations, markActiveRead]);
 
   // Participant changes do not mutate the conversation row, so realtime alone
-  // cannot close an already-open thread. Recheck the actor-owned list once a
-  // minute; only a successful response may remove content (offline keeps it).
+  // cannot close an already-open thread. Recheck silently while its short access
+  // lease is current; after expiry, offline/resume uncertainty purges content/drafts.
   useEffect(() => {
     if (!activeId) return undefined;
     const accessTimer = window.setInterval(
-      () => loadConversations({ silent: true }),
-      60_000,
+      () => {
+        if (document.hidden) return;
+        const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
+        if (!conversationAccessLeaseIsFresh(verifiedAt)) {
+          revokeConversationAccess(activeId);
+          return;
+        }
+        loadConversations({ silent: true });
+      },
+      5_000,
     );
     return () => window.clearInterval(accessTimer);
-  }, [activeId, loadConversations]);
+  }, [activeId, loadConversations, revokeConversationAccess]);
 
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
-    if (!activeId) {
+    if (!activeId || !activeAccessAuthorized) {
       setMessages([]);
       setLinkedJob(null);
       setHasMoreMessages(false);
@@ -561,12 +580,12 @@ export default function Conversations({ replyAssist } = {}) {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, db, revokeConversationAccess]);
+  }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
   // keeps the open thread marked read when an inbound arrives.
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || !activeAccessAuthorized) return;
     const convId = activeId;
     const unsubscribe = subscribeToMessages(convId, (newMsg, eventType) => {
       // A realtime frame already in flight can fire after a thread switch but before
@@ -595,7 +614,7 @@ export default function Conversations({ replyAssist } = {}) {
       }
     });
     return unsubscribe;
-  }, [activeId, markActiveRead]);
+  }, [activeAccessAuthorized, activeId, markActiveRead]);
 
   // ─── SECTION: Scroll management ──────────────
 
@@ -801,6 +820,13 @@ export default function Conversations({ replyAssist } = {}) {
   }, [loadServiceConsentStatus]);
 
   const refreshAfterResume = useCallback(async () => {
+    const openBeforeRefresh = activeIdRef.current;
+    const verifiedAt = conversationAccessLeasesRef.current.get(openBeforeRefresh) || 0;
+    if (openBeforeRefresh && !conversationAccessLeaseIsFresh(verifiedAt)) {
+      revokeConversationAccess(openBeforeRefresh);
+      loadServiceConsentStatus();
+      return;
+    }
     const refreshed = await loadConversations({ silent: true });
     const openConversationId = activeIdRef.current;
     if (
@@ -811,7 +837,7 @@ export default function Conversations({ replyAssist } = {}) {
       await reloadActiveMessages();
     }
     loadServiceConsentStatus();
-  }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus]);
+  }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus, revokeConversationAccess]);
 
   useResumeRefetch({
     onResume: refreshAfterResume,
@@ -910,6 +936,13 @@ export default function Conversations({ replyAssist } = {}) {
     isPrependingRef.current = false;
     setAtBottom(true);
     setNewInThread(0);
+    const verifiedAt = conversationAccessLeasesRef.current.get(id) || 0;
+    const hasFreshAccessLease = conversationAccessLeaseIsFresh(verifiedAt);
+    // The silent actor-scoped recheck below can resolve before React commits the
+    // activeId state. Keep the authorization target synchronous so that success
+    // renews this exact thread rather than leaving an expired deep link covered.
+    activeIdRef.current = id;
+    setActiveAccessAuthorized(hasFreshAccessLease);
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
     setConsentPrompt(null);
     clearComposeState();
@@ -920,6 +953,7 @@ export default function Conversations({ replyAssist } = {}) {
     setCompose(draft);
     if (composeRef.current) composeRef.current.innerText = draft;
     syncDeepLinkParam(id);
+    if (!hasFreshAccessLease) loadConversations({ silent: true });
   };
   const goBackToList = () => {
     setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false);
