@@ -19,6 +19,12 @@ NOTES / GOTCHAS:
 
 # Handoff — production promotion, then the security-batch follow-ups
 
+> **COMPLETED AND SUPERSEDED — do not execute this promotion handoff.** Its
+> `sms_sending_enabled=true` statement is historical 2026-07-27 state, not current truth.
+> Production is explicitly false as of 2026-07-31; staff P2P CallRail SMS/MMS is separate and
+> untouched. Use `.claude/rules/initiative-status.md` and `docs/upr-build-fix-backlog.md` for the
+> current release and activation gates.
+
 Paste everything from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---

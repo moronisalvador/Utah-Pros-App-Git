@@ -26,7 +26,9 @@ NOTES / GOTCHAS:
 > premise and `DARK_BASELINE` instructions were retired 2026-07-31 after hosted `qa-staging`
 > reached zero failed assertions. Re-read `.claude/rules/initiative-status.md` and the staging
 > runbook before considering any remaining migration named below; each live apply still requires
-> a fresh exact-source review and separate owner authorization.
+> a fresh exact-source review and separate owner authorization. Its
+> `sms_sending_enabled=true` statement is also historical: production is explicitly false as of
+> 2026-07-31, while staff P2P CallRail SMS/MMS remains separate and untouched.
 
 Paste everything from `You are continuing UPR Platform work` onward into a fresh session.
 
