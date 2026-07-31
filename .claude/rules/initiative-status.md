@@ -28,12 +28,13 @@ The owner-authorized production apply used the exact reviewed source at commit `
 - `20260731210000_qbo_invoice_command_ledger.sql` → production ledger
   `20260731205942_qbo_invoice_command_ledger`.
 
-The paired rollbacks remain available. GitHub CI's schema `verify` and governed `db-lane` jobs are
-green. The compatible Worker/client source in this `dev` release preserves one operation id across
-ambiguous provider and post-provider-finalization failures, and `/api/qbo-invoice` requires an
-active, non-external admin Bearer session rather than the shared QBO server secret. Cloudflare
-deployment, authenticated-browser and Intuit provider/webhook evidence remain owner/external
-release gates and must not be inferred from repository state.
+The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
+`db-lane` job passed under its current debt budget (`maxFailedTests=19`), not as a zero-failure
+behavioral suite. The compatible Worker/client source is on `dev` but not yet `main`; it preserves
+one operation id across ambiguous provider and post-provider-finalization failures, and
+`/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
+server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
+remain owner/external release gates and must not be inferred from repository state.
 
 ## Deliberately deferred database sources — not current apply candidates
 
@@ -43,6 +44,9 @@ release gates and must not be inferred from repository state.
 - `20260727022920_mobile_personal_ownership_boundary.sql` remains source-hardened and unapplied.
   Focused preference/token boundary work changed its expected input state, so its preflight should
   refuse until the source and evidence are reconciled and re-qualified.
+- `20260731223000_notification_unsafe_producer_containment.sql` is a data-only, reversible
+  containment for the three appointment and two timesheet notification types whose producers still
+  have broader write authority. It is unapplied; CallRail/provider behavior is outside its scope.
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
@@ -141,8 +145,10 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   it).
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
   2026-07-29, parity-verified, CI db lane LIVE** (details: `docs/database/staging-branch-runbook.md`).
-  The only hosted DB agents may iterate against. Open tail: test-fixture seed to retire the
-  shrink-only failure baseline (`scripts/qa/db-lane-baseline.json`).
+  The only hosted DB agents may iterate against. Three signed-in fixture identities already exist.
+  Open tail: convert the remaining anon-era tests to those identities, seed only their minimal
+  non-production reference rows, and ratchet the shrink-only failure baseline
+  (`scripts/qa/db-lane-baseline.json`) toward zero.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)
@@ -156,8 +162,8 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 | Schedule Desktop A/B/C | Unstarted | — |
 | UX alignment W1–W5 | Stalled since 2026-07-18; owner may restart from scratch | `docs/archive/rules/ux-alignment-wave-ownership.md` |
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
-| App-store readiness F1/A/B/D | Source phases, signed archive/IPA, internal TestFlight, and production Push matrix complete; second-account proof + App Store submission tail open | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
-| Agent QA access P2+ | P1 done; P2a gated on local runtime | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
+| App-store readiness F1/A/B/D | Source phases and historical TestFlight/Push matrix complete; current per-token-source second-account proof open; submission deferred behind the field-documentation plan | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
+| Agent QA access P2+ | Hosted branch/fixtures live; anon-era conversions, failure/skip ratchets and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
 
 ## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
 
