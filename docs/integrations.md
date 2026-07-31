@@ -460,10 +460,13 @@ the canonical conversation ID. Bell navigation stays in the office inbox at
 `/tech/conversations?c=<id>`. Provider adapters and webhook payloads do not choose UI routes.
 
 The additive foundation migration and its index follow-up are applied to the shared Supabase
-project. On 2026-07-23 the owner approved a Preview/dev-only activation for the CallRail sender
-ending in `4121`: Preview has the server-side provider bindings, `MESSAGING_SEND_MODE=callrail`,
-and separate sent/received text webhooks targeting `/api/callrail-text-webhook`. Production remains
-`MESSAGING_SEND_MODE=disabled` and has no CallRail messaging provider bindings.
+project. On 2026-07-23 the owner approved a Preview/dev activation for the CallRail sender ending
+in `4121`, with separate sent/received text webhooks targeting `/api/callrail-text-webhook`.
+A read-only Cloudflare dashboard check on 2026-07-31 found both Preview and Production configured
+with `MESSAGING_SCHEMA_MODE=foundation`, `MESSAGING_SEND_MODE=callrail`, and the CallRail
+server-side bindings present. No Twilio credential variable names were present in either
+environment. This configuration observation does not by itself prove current external webhook
+routing or authorize a provider canary.
 
 The first controlled dev send to the owner's phone exposed two contract defects without requiring
 a retry: CallRail delivered the message and returned HTTP 200 with a conversation identity, while
@@ -522,8 +525,9 @@ This surface is an operator aid, not a deployment control plane. It cannot write
 `MESSAGING_SEND_MODE`, `MESSAGING_SCHEMA_MODE`, `CALLRAIL_SIGNING_KEY`, provider webhook settings,
 or Cloudflare bindings, and it cannot send a test message. Preview and Production bindings remain
 owner-managed and independently verified; the shared Supabase project is never used to select a
-staging-only provider. Production remains `MESSAGING_SEND_MODE=disabled` until the separately
-approved activation window and provider proof. The same boundary applies to future Twilio RCS:
+staging-only provider. As of the 2026-07-31 read-only dashboard check, both environments use
+`callrail`; any future mode change, provider proof, or Twilio activation remains a separately
+approved operation. The same boundary applies to future Twilio RCS:
 the panel may report readiness, but RCS stays channel-locked with no automatic SMS/MMS fallback.
 
 ### Provider-event operations boundary
