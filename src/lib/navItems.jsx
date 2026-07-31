@@ -32,7 +32,8 @@
  *     is unchanged).
  *   - isItemVisible() mirrors the legacy Sidebar gating exactly: adminOnly →
  *     role check; moroniOnly → email check; `always` skips canAccess (Help);
- *     otherwise canAccess(key); then the optional feature-flag check.
+ *     allowedRoles is a hard product allowlist; otherwise canAccess(key); then
+ *     the optional feature-flag check.
  *   - Renames in PRIMARY_ITEMS (Home/Inbox/My Money/Time) are LABELS ONLY — the
  *     paths and nav_keys stay the same so routing and permissions are untouched.
  * ════════════════════════════════════════════════
@@ -44,6 +45,7 @@ import {
   IconAdmin, IconSettings,
 } from '@/components/Icons';
 import { canEditBilling } from '@/lib/claimUtils';
+import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 
 // ─── SECTION: Nav-only icon components (moved out of Sidebar.jsx, unchanged) ───
 export function IconPlus(p){return(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);}
@@ -100,7 +102,7 @@ export const NAV_ITEMS = [
   { key: 'crm',                label: 'CRM',                path: '/crm/overview',       icon: IconCrm,          featureFlag: 'page:crm' },
 
   { section: 'Tools' },
-  { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing' },
+  { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator,   featureFlag: 'tool:oop_pricing', allowedRoles: OOP_PRICING_ROLES },
 
   { section: 'System' },
   // Settings Overhaul Phase F: the System section is now a SINGLE Settings entry
@@ -134,7 +136,7 @@ export const OVERFLOW_ITEMS = [
   { key: 'production',         label: 'Production',         path: '/production',         icon: IconProduction },
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
-  { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing' },
+  { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing', allowedRoles: OOP_PRICING_ROLES },
   { key: 'leads',              label: 'Leads',              path: '/leads',              icon: IconJobs,       featureFlag: 'page:leads' },
   { key: 'marketing',          label: 'Marketing',          path: '/marketing',          icon: IconMarketing,  featureFlag: 'page:marketing' },
   { key: 'melds',              label: 'Property Meld',      path: '/melds',              icon: IconClaim,      moroniOnly: true },
@@ -172,9 +174,12 @@ export const SETTINGS_GROUPS = [
   { group: 'Workspace', description: 'Company data and documents', items: [
     { key: 'lists',        label: 'Lists & Values',     path: '/settings/lists',        description: 'Insurance carriers, referral sources, and other option-lists.', icon: IconListValues, access: 'settings' },
     { key: 'templates',    label: 'Document Templates', path: '/settings/templates',    description: 'Work auth, direction to pay, and completion docs.',  icon: IconFileText,  access: 'settings' },
-    { key: 'commissions',  label: 'Commissions',        path: '/settings/commissions',  description: 'Each salesperson’s commission rate.',                icon: IconPercent,   access: 'settings' },
-    { key: 'payments',     label: 'Payments',           path: '/settings/payments',     description: 'Billing, Stripe, and payout settings.',              icon: IconCard,      billing: true },
     { key: 'scope_sheets', label: 'Scope Sheets',       path: '/settings/scope-sheets', description: 'Build and publish the field Scope Sheet.',            icon: IconClipboard, access: 'demo_sheet_builder' },
+  ]},
+  { group: 'Pricing & billing', description: 'Rates, billing, and payouts', items: [
+    { key: 'oop_pricing_settings', label: 'OOP Pricing', path: '/settings/oop-pricing', description: 'Build, review, and publish calculator pricing.', icon: IconCalculator, adminOnly: true, webOnly: true },
+    { key: 'payments',     label: 'Payments',           path: '/settings/payments',     description: 'Billing, Stripe, and payout settings.',              icon: IconCard,      billing: true },
+    { key: 'commissions',  label: 'Commissions',        path: '/settings/commissions',  description: 'Each salesperson’s commission rate.',                icon: IconPercent,   access: 'settings' },
   ]},
   { group: 'Team', description: 'People, roles, and access', items: [
     { key: 'team',                  label: 'Team',                 path: '/settings/team',                  description: 'Staff directory, roles, and login access.', icon: IconUsers,    adminOnly: true },
@@ -237,6 +242,7 @@ export function isItemVisible(item, { canAccess, isFeatureEnabled, employee, isM
   // never REACH (e.g. crm_partner is redirected off any non-/crm, non-/help
   // path by Layout's choke point, so an always-on link would dead-end).
   if (item.hideForRoles?.includes(employee.role)) return false;
+  if (item.allowedRoles && !item.allowedRoles.includes(employee.role)) return false;
   // Settings hub — reachable when ANY child settings page is visible (GC3/GC8).
   if (item.settingsHub) {
     if (!anySettingsChildVisible({ canAccess, employee, isMoroni })) return false;
@@ -246,6 +252,8 @@ export function isItemVisible(item, { canAccess, isFeatureEnabled, employee, isM
     if (!isMoroni) return false;
   } else if (item.adminOnly) {
     if (employee.role !== 'admin') return false;
+  } else if (item.allowedRoles) {
+    // The hard product allowlist already passed above; do not let stale nav rows narrow it.
   } else if (!canAccess(item.key)) {
     return false;
   }

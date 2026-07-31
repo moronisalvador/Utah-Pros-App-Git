@@ -49,7 +49,10 @@ describe('device token apns topic migration', () => {
       'VALIDATE CONSTRAINT device_tokens_apns_topic_check',
     );
     expect(migration).not.toMatch(/UPDATE\s+public\.device_tokens/i);
-    expect(migration).not.toMatch(/\bDROP\s+(TABLE|COLUMN|POLICY)\b/i);
+    expect(migration).not.toMatch(/\bDROP\s+(TABLE|COLUMN)\b/i);
+    expect(migration).toContain(
+      'DROP POLICY IF EXISTS "Own tokens or admin read" ON public.device_tokens;',
+    );
   });
 
   it('keeps the deployed two-argument caller resolving after the replace', () => {
@@ -103,6 +106,10 @@ describe('device token apns topic migration', () => {
     expect(migration).toContain(
       'GRANT EXECUTE ON FUNCTION public.upsert_my_native_device_token(text, text, text)\n  TO authenticated, service_role;',
     );
+    expect(migration).toContain(
+      'REVOKE ALL PRIVILEGES ON TABLE public.device_tokens\n  FROM PUBLIC, anon, authenticated;',
+    );
+    expect(migration).toContain("tablename = 'device_tokens'");
     // REVOKE must precede GRANT (the managed project re-grants PUBLIC on
     // every new function at ddl_command_end).
     expect(migration.indexOf('REVOKE EXECUTE ON FUNCTION'))
@@ -118,6 +125,10 @@ describe('device token apns topic migration', () => {
     expect(rollback).not.toContain('COALESCE(EXCLUDED.apns_topic');
     expect(rollback).not.toMatch(/'apns_topic',/);
     expect(rollback).not.toMatch(/\bDROP\s+(TABLE|COLUMN|POLICY|CONSTRAINT)\b/i);
+    expect(rollback).not.toMatch(/\bCREATE\s+POLICY\b/i);
+    expect(rollback).not.toMatch(
+      /GRANT\s+.*ON TABLE public\.device_tokens.*authenticated/i,
+    );
     expect(grantStatements(rollback).join('\n'))
       .not.toMatch(/\bTO\s+(?:PUBLIC|anon)\b/i);
     expect(rollback.indexOf('REVOKE EXECUTE ON FUNCTION'))

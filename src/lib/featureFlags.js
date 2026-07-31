@@ -60,6 +60,12 @@ const categoryFor = (key) => {
 // (Optional `enabled: false` dark-launches it OFF — that HIDES it until toggled on.)
 const EXPLICIT_FLAGS = [
   {
+    key: 'tool:oop_pricing',
+    label: 'OOP Pricing',
+    description: 'Controls the OOP calculator for eligible roles. Missing rows and new registrations stay hidden until an owner explicitly enables the rollout.',
+    enabled: false,
+  },
+  {
     key: 'feature:ai_xactimate',
     label: 'AI Xactimate Import',
     description: 'Upload an Xactimate PDF; AI reads it and pre-fills the invoice draft with the insurance-billable total (RCV).',

@@ -1,0 +1,132 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: oop-pricing.css
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Styles the configurable calculator and its Settings builder without loading those rules on unrelated pages.
+ *
+ * DEPENDS ON:
+ *   Packages:  none
+ *   Internal:  shared UPR design tokens from src/index.css
+ *   Data:      reads  → none
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - Both lazy calculator routes and the web-only builder import this file; keep mobile rules at max-width 768px.
+ *   - This stylesheet is allowed by the design-system lazy-route exception:
+ *     all importers are route-lazy and index.css is at its enforced size ceiling.
+ * ════════════════════════════════════════════════
+ */
+/* ── OOP Pricing Calculator — print rules ─────────────────────────────────── */
+/* Hide app shell + input column + internal margin panel when printing.
+   Keep only the customer-facing breakdown visible. */
+.oop-print-only {
+  display: none;
+}
+.oop-page {
+  --oop-control-height: 40px;
+}
+[data-theme="dark"] .oop-page {
+  /* 11px supporting copy needs at least 4.5:1 against dark cards. */
+  --text-tertiary: var(--text-secondary);
+}
+[data-theme="dark"] .oop-page .ui-status-pill[data-tone="neutral"] {
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+.oop-pricing-builder { padding: var(--space-5) var(--space-6) 80px; }
+.oop-pricing-builder-actions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.ui-seg.oop-job-type-seg {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+}
+.oop-job-type-seg .ui-seg-btn {
+  min-width: 0;
+  padding-inline: var(--space-2);
+}
+.oop-job-type-seg .ui-seg-indicator {
+  left: 3px;
+  width: calc((100% - 8px) / 2);
+}
+.oop-job-type-seg[data-job-type="water"] .ui-seg-indicator {
+  transform: translateX(0);
+}
+.oop-job-type-seg[data-job-type="mold"] .ui-seg-indicator {
+  transform: translateX(calc(100% + 2px));
+}
+.oop-page--tech .oop-tech-action {
+  height: auto;
+  min-height: var(--tech-min-tap);
+  touch-action: manipulation;
+}
+.oop-linked-job--tech a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tech-min-tap);
+}
+.oop-tech-link-press {
+  touch-action: manipulation;
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.oop-tech-link-press:active { transform: scale(0.97); }
+.oop-tech-loading {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-3) max(var(--space-6), env(safe-area-inset-bottom, 0px));
+}
+@media (prefers-reduced-motion: reduce) {
+  .oop-tech-link-press { transition: none; }
+  .oop-tech-link-press:active { transform: none; }
+}
+.oop-tech-error .btn {
+  min-height: var(--tech-min-tap);
+}
+@media print {
+  .sidebar, .layout-topbar, .bottom-bar, .mobile-topbar, .sidebar-backdrop, .topnav, .overflow-drawer, .overflow-backdrop { display: none !important; }
+  .oop-no-print { display: none !important; }
+  .oop-print-only { display: block !important; }
+  .oop-layout { grid-template-columns: 1fr !important; }
+  .oop-breakdown { position: static !important; page-break-inside: avoid; break-inside: avoid; }
+  .oop-page { padding: 0 !important; max-width: none !important; }
+  body, html { background: Canvas !important; color-scheme: light; }
+}
+
+/* Preserve the original tablet/compact-desktop calculator stack contract. */
+@media (max-width: 900px) {
+  .oop-layout { grid-template-columns: 1fr !important; }
+  .oop-breakdown { position: static !important; }
+}
+
+/* Mobile-only sizing and touch refinements. */
+@media (max-width: 768px) {
+  .oop-page { --oop-control-height: 44px; }
+  .oop-page:not(.oop-page--tech) { padding: var(--space-3) !important; }
+  .oop-page > .ui-page-header { flex-direction: column; align-items: stretch; }
+  .oop-page > .ui-page-header .ui-page-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    flex-shrink: 1;
+  }
+  .oop-page > .ui-page-header .ui-page-header-actions .btn {
+    flex: 1 1 calc(50% - var(--space-2));
+    min-width: 132px;
+    min-height: 44px;
+  }
+  .oop-page:not(.oop-page--tech) .oop-form .btn,
+  .oop-page:not(.oop-page--tech) .oop-job-type-seg .ui-seg-btn,
+  .oop-page:not(.oop-page--tech) .oop-linked-job a {
+    min-height: 44px;
+  }
+  .oop-pricing-builder { padding: var(--space-3) var(--space-3) 80px; }
+  .oop-pricing-builder .input,
+  .oop-pricing-builder .btn { min-height: 44px; }
+  .oop-pricing-toggle {
+    min-height: 44px;
+    padding-block: var(--space-1);
+    cursor: pointer;
+  }
+  .oop-pricing-toggle input { width: 22px; height: 22px; }
+  .oop-pricing-builder-actions { width: 100%; }
+}

@@ -355,7 +355,13 @@ src/
     TimeTracking.jsx              — Employee time tracking (feature-flagged: page:time_tracking). Tabs: Status Board (admin/PM/supervisor only, default for those roles) | Timesheet | By Job | Payroll. Status Board renders src/components/StatusBoard.jsx and polls get_tech_status_board() every 30s.
     Marketing.jsx                 — Marketing tools (feature-flagged: page:marketing)
     EncircleImport.jsx            — Selective Encircle claim import with division selection (feature-flagged: page:encircle_import, route: /import/encircle)
-    OOPPricing.jsx                — Out-of-Pocket Pricing Calculator (Apr 20 2026). Route /tools/oop-pricing. Feature-flagged tool:oop_pricing (dev-only → Moroni). 2-column desktop / stacked mobile layout: LEFT inputs (job type pill, customer, labor, 5 equipment rows count×days, materials+fees, mold add-ons when job_type=mold, notes) / RIGHT sticky breakdown (customer-facing line items + big QUOTE TOTAL) + internal margin panel (hidden via .oop-no-print). Margin color tiers: green ≥20%, amber 10–20%, red <10% (with "Recommend decline or reprice" banner). Supports ?jobId=X prefill (reads jobs table → sets jobType from division + insured_name + address + shows linked chip) and ?quoteId=X rehydrate (loads via get_oop_quote). Browser print omits input column + sidebar + internal margin via @media print rules in index.css. Pricing math + form hydration extracted to src/lib/oopPricing.js (shared with TechOOPPricing.jsx).
+    OOPPricing.jsx                — Frozen legacy calculator implementation retained for compatibility reference during the code-first migration; it is no longer the routed desktop calculator.
+    OOPPricingConfigured.jsx      — Current /tools/oop-pricing route wrapper for eligible roles:
+                                    active internal admin, office, supervisor, estimator (sales rep),
+                                    and project_manager. Renders the shared ConfiguredOopPricingCalculator
+                                    from a published versioned price list; the preceding OOPPricing.jsx
+                                    is retained only as the frozen legacy compatibility implementation.
+    settings/OopPricingBuilder.jsx — Admin-only /settings/oop-pricing builder in the dedicated Settings > Pricing & billing group. Draft save and two-click publish; add/reorder/archive/restore line items, rates, internal-cost rules, defaults and project/line minimums.
     Admin.jsx                     — Employee management + roles/permissions matrix + page access overrides
     Settings.jsx / Admin.jsx      — DELETED (Settings Overhaul Phase F, Jul 4 2026). Dissolved into
                                     src/pages/settings/* routed sub-pages (see the "Settings Overhaul
@@ -417,10 +423,15 @@ src/
     TechJobDetail.jsx             — Field tech job detail (purpose-built mobile, replaces desktop JobPage at /tech/jobs/:jobId). Division-gradient hero (emoji, mono job number, insured name, tappable address, phase pill, loss meta), 3-button action bar, "Part of CLM-XXXX · View claim →" breadcrumb, context-aware Now-Next tile filtered to this job's appointments, full Appointments list grouped Upcoming / Past with status pills + crew + task counts, Photos & Notes single-group with See all → /tech/jobs/:id/photos, Add Photo / Add Note (no picker — single job), collapsed Job details reference block (phase, status, division, carrier, policy#, claim#, deductible admin-only, insured, adjuster), admin kebab (Merge job via MergeModal type='job' + DELETE-to-confirm soft delete → returns to parent claim), pull-to-refresh, entry animation, pushStatusBarSurface('dark') on mount with restoreStatusBarBase() on unmount. Field-polish (Jul 29 2026): hero Back is origin-aware via lib/backNav — pops to wherever the tech came from (dashboard/schedule/claim/messages); "Back to claim" label + claim-page navigation only as the no-history fallback (deep link / cold start), '/tech' when the job has no claim. Same change in v2 hub HubHeader.jsx; TechJobAlbum/TechJobDocuments "Back to job" buttons pop instead of pushing a duplicate job entry (fallback jobHref()).
     TechJobAlbum.jsx              — Field tech job photo album at /tech/jobs/:jobId/photos. Same structure as TechClaimAlbum but single-group (this IS one job), no job picker. Subtitle = job# · insured.
     TechAppointment.jsx           — Appointment detail: slide-in animation, collapsing hero, photo lightbox. Message button now opens native sms:{phone} (TODO: in-app SMS when available).
-    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing when tool:oop_pricing flag on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
+    TechMore.jsx                  — Field tech "More" page: list-based home for secondary tools. Sections: Work (Tasks with count badge, OOP Pricing only for the eligible OOP roles when tool:oop_pricing is on, Collections, Time Tracking) + Resources (Help & Guides → /tech/help, Checklists, Demosheet). Regular field technicians never see OOP Pricing. Unbuilt items render as dimmed "Soon" rows; built items are <Link>s with chevron.
     TechHelp.jsx                  — Field tech "Help & Guides" page (route /tech/help). Plain-language, big-tap how-to for the phone app: the timer (On My Way → Start Work → Pause → Finish), snap-first photos, the task checklist, moisture readings, schedule, claims, starting a new job (the + → New Job field flow, incl. new-vs-existing claim), plus a "Stuck?" → Send Feedback footer. Static content only (no DB). Reached from the standalone ? button in the TechDash greeting header (left of the ⋮ menu) and the More → Help & Guides row. Card content now lives in techHelpContent.jsx (shared with the contextual TechHelpSheet).
     techHelpContent.jsx           — Shared field-tech help content: the TOPICS array ({key,Icon,title,lines,accent}) + the TopicCard renderer + topic icons. Imported by both TechHelp.jsx (full page) and TechHelpSheet.jsx (contextual sheet) so the wording never drifts. Static; file-level eslint-disable for react-refresh/only-export-components (intentional data+component module).
-    TechOOPPricing.jsx            — Mobile-first OOP Pricing Calculator at /tech/tools/oop-pricing (Apr 20 2026). Same math as desktop OOPPricing.jsx (shared via src/lib/oopPricing.js). Sticky top header (back + title + quote# + linked job chip + Save/Update CTA), PullToRefresh wraps content below header, tappable TotalCard summarises $quote + margin pill (tap to expand customer-facing breakdown + internal cost panel), big stepper controls (+/-, 44px tap targets) on equipment rows for gloved hands, 16px font on inputs (prevents iOS Safari auto-zoom), bottom padding accounts for env(safe-area-inset-bottom) + tech-nav-height. Supports ?jobId=X prefill and ?quoteId=X rehydrate. Toasts via upr:toast event; two-click confirm for reset/delete; no alert/confirm.
+    TechOOPPricing.jsx            — Frozen legacy field-tech calculator retained for compatibility reference; it is no longer the routed web/native calculator.
+    TechOOPPricingConfigured.jsx  — Current /tech/tools/oop-pricing route wrapper in both web and
+                                    native registries, only for eligible OOP roles (not regular field
+                                    technicians). Uses the same configured runtime as desktop, with the
+                                    tech visual kit, 48px tap targets, live total, bottom breakdown,
+                                    pull-to-refresh and silent resume refresh.
     TechDemoSheet.jsx             — Field-tech Demo (scope) Sheet at /tech/tools/demo-sheet (May 8 2026 — port of standalone Netlify demo-sheet-v21.jsx). Captures per-room scope: dimensions, baseboard/trim LF, flooring SF, drywall, flood cuts, insulation, cabinets/countertops, doors, fixtures, appliances, drying equipment, contents move hours, notes. Repalettes original orange theme onto UPR blue/neutral tokens, drops dark mode. Tech dropdown loads from get_active_techs RPC (was hardcoded). Reuses src/components/AddressAutocomplete (Google Places via lib/googleMaps loadPlaces). Encircle 🔗 search modal hits /api/encircle-search; selecting a claim auto-pulls structures+rooms via /api/encircle-rooms (rooms become preset chips). Autosave: every 2s while editing, save_demo_sheet RPC writes to forms.form_data with form_type='demo_sheet'; URL gets ?id=<formId> on first save so refresh restores. Drafts banner lists recent unfinished sheets via get_demo_sheet_drafts. Submit fans out to /api/send-demo-sheet (Resend HTML email) + /api/encircle-upload (general note posted to the linked claim) + /api/demo-sheet-pdf (renders the sheet to a PDF and attaches it to the job's Files via job_documents, category 'demo_sheet' — also surfaces on the customer page Files section) in parallel; ResultScreen shows per-channel success/fail (email, Encircle, PDF); final save_demo_sheet flips status to 'submitted' and stores encircle_note_id. Toasts via upr:toast event; no alert/confirm. Entry point: 'Demo Sheet' button under the Tools section on TechAppointment, prefills jobNumber/address/insuredName from the appointment's job context via query params.
   components/
     TechLayout.jsx                — Field tech app shell: blur nav, active pill indicator, task badge dot. 5-tab order: Dash | Claims | Schedule | Messages | More (Apr 16 2026). Task count red-dot now lives on the More tab icon. Nav tab taps fire impact('light') via lib/nativeHaptics (Jul 29 2026 field-polish — matches the bell/IconButton press haptic; native-only, reduced-motion-suppressed) and carry the standard :active scale(0.97) press on the motion tokens with a prefers-reduced-motion collapse (source contract: tests/qa/unit/tech-nav-haptics.test.js). **Lifecycle (Jul 30 2026):** the More-tab badge counts today's tasks from `get_assigned_tasks` on mount and every 60s **via `useResumeRefetch` — hidden-guarded**, so it no longer polls a backgrounded phone (it also refetches on the hidden→visible edge, so the badge is current the moment a tech looks at it); toast-expiry restoration moved onto the same hook. This shell now registers **no** `visibilitychange` listener and owns **no** `setInterval` of its own (page-lifecycle.md §2/§4; source contract: tests/qa/unit/tech-shell-poll-guard.test.js). The badge fetch is `fetchTodayTaskCount(db, employeeId)`, module-scope and pure — it returns the count, and both callers swallow the throw, because a background poll must never toast.
@@ -856,16 +867,20 @@ estimate_line_items     — Line items per estimate (Jun 25 2026). Clone of invo
 vendor_invoices         — Vendor invoice tracking (also used by Netlify vendor app)
 vendors                 — Vendor records
 oop_quotes              — OOP Pricing Calculator quotes (Apr 20 2026). Auto-generated
-                          quote_number TEXT UNIQUE (format OOP-YYMM-XXX).
+                          quote_number TEXT UNIQUE (format OOP-YYMM-XXX, Denver month,
+                          next suffix derived under an advisory transaction lock).
                           job_id UUID nullable FK jobs (ON DELETE SET NULL).
                           job_type TEXT CHECK ('water','mold').
                           Inputs: tech_hours, bill_rate, (count,days) × 5 equipment types
                           (air_mover, lgr, xlgr, air_scrubber, neg_air — neg_air mold only),
                           materials_actual_cost, antimicrobial_sqft, disposal_trips,
                           containment_linear_ft + prv_invoice_cost (mold only).
-                          Snapshots: quote_total, net_margin_pct (audit trail; UI recomputes
-                          on open). Denormalized insured_name + address for standalone
-                          quotes without a linked job.
+                          Legacy snapshots: quote_total and net_margin_pct. The authored,
+                          not-yet-applied builder migration leaves this table's columns, policies
+                          and grants unchanged. Configured quotes keep revision, normalized inputs,
+                          full config, evaluated lines, engine version and minimum adjustment in
+                          private oop_quote_pricing_snapshots rows keyed by quote_id. Denormalized
+                          insured_name + address support standalone quotes without a linked job.
 ```
 
 ### Selections & Subs
@@ -881,6 +896,13 @@ employees               — 15 rows as of Jul 1 2026 (8 auth-linked, 7 unlinked)
                           with hiring — see the Employees section below or query live for current roster.
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
+oop_pricing_revisions   — **AUTHORED, NOT APPLIED (Jul 30 2026)** — one editable draft plus
+                          immutable published/superseded calculator price lists.
+oop_pricing_audit       — Idempotent admin draft-save/publish audit rows.
+oop_quote_save_requests — Stable request ledger for replay-safe configured quote saves.
+oop_quote_pricing_snapshots — Private configured-quote revision, inputs, config, evaluated lines,
+                          engine version and project-minimum adjustment keyed by quote_id.
+                          All four tables are forced-RLS with no direct browser-role grants.
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
 device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table. **apns_topic (Jul 30 2026 — AUTHORED, NOT APPLIED):** nullable text column recording the installed app's bundle id per token (see "Per-token APNs topic" section) — NULL on every existing row until the migration applies and clients re-enroll.
 employee_onboarding_state — **AUTHORED, NOT APPLIED (Jul 29 2026)** — per-employee versioned first-run
@@ -1179,7 +1201,10 @@ upsert_my_native_device_token(p_token TEXT, p_apns_environment TEXT, p_apns_topi
                                   employee, search_path '', REVOKE PUBLIC/anon before GRANT
                                   authenticated+service_role). New: validates p_apns_topic as a bundle
                                   id, stores it, returns it; ON CONFLICT keeps a recorded topic via
-                                  COALESCE so an older client's NULL re-upsert can't erase it.
+                                  COALESCE so an older client's NULL re-upsert can't erase it. Also
+                                  removes the obsolete authenticated SELECT policy from the raw-token
+                                  table; browser table grants were already revoked and no checked-in
+                                  client reads device_tokens directly.
 ```
 Migration `supabase/migrations/20260730170000_device_token_apns_topic.sql` (+ paired rollback that
 restores the prior body under the SAME 3-param signature, + CI contract test
@@ -1289,23 +1314,42 @@ global_search(p_term TEXT, p_limit INT DEFAULT 6)
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
-All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Access is gated by
-`tool:oop_pricing` (initially owner preview only). DevTools → Feature Flags now
-shows its rollout state explicitly: **owner preview**, **available to everyone**,
-**hidden for everyone**, or **force disabled**. “Make available to everyone” writes
+ Under the authored but unapplied builder migration, callable OOP RPCs are SECURITY DEFINER;
+ browser execution is granted only on the named
+ authenticated surface, while internal helpers remain revoked. Calculator access is exactly active
+internal `admin`, `office`, `supervisor`, `estimator` (sales rep), and `project_manager`; each may
+access all OOP quotes company-wide. `field_tech`, `crm_partner`/external, inactive, unsupported,
+and unauthenticated actors are denied. Access is also gated by `tool:oop_pricing` (initially owner
+preview only). DevTools → Feature Flags now shows its rollout state explicitly: **owner preview**,
+**available to eligible roles**, **hidden for eligible roles**, or **force disabled**. “Make
+available to eligible roles” writes
 only `enabled: true` through the existing owner-gated `upsert_feature_flag` RPC and
 preserves `dev_only_user_id`, so switching global access off restores the existing
-owner preview. `force_disabled` is the absolute AuthContext/FeatureRoute kill switch
-and wins even if `enabled` is true or the viewer owns the preview. This repository
-surface does not change the live flag; current live state still requires a readback.
+owner preview. A missing flag or `force_disabled` is the absolute AuthContext/FeatureRoute and
+server-side kill switch, winning even if `enabled` is true or the viewer owns the preview. The Jul
+30 dev readback showed owner preview; this work did not click the control or otherwise change the
+live flag value.
+
+Repository source now adds a fully configurable, versioned pricing builder at
+**Settings > Pricing & billing > OOP Pricing** (admin-only, web-only). Administrators can set
+standard/internal rates, quantity and charge minimums, project minimums, defaults, formulas,
+visibility and water/mold applicability; add/reorder/archive/restore items; save a draft; and
+two-click publish it. Desktop and tech routes render one shared pricing engine while retaining
+their main-app and field-tech visual kits. Saved v2 quotes keep their revision, normalized inputs,
+config snapshot and evaluated lines in a private forced-RLS companion row; the database recalculates
+the persisted total and margin.
+`20260730150000_oop_pricing_builder.sql` and its paired rollback are authored but **not applied** in
+ this work. The shared database remains an owner-gated release step; source changes alone do not
+ alter its schema or publish the builder.
 ```
-generate_oop_quote_number()     — Returns next OOP-YYMM-XXX number (counts existing
-                                   rows with current prefix + 1, zero-padded to 3 digits).
+generate_oop_quote_number()     — Returns the next OOP-YYMM-XXX number from the maximum existing
+                                   suffix for the Denver month, serialized by an advisory lock.
 upsert_oop_quote(p_id UUID,     — Insert (p_id NULL → auto-generates quote_number) or
-  p_job_id, p_job_type,           update. 25 params covering all input fields + snapshot
-  p_insured_name, p_address,      totals (p_quote_total, p_net_margin_pct). Returns full
-  p_tech_hours, p_bill_rate,      oop_quotes row. COALESCE-wraps numerics so NULL inputs
-  p_air_mover_count/days, ...     default to 0.
+  p_job_id, p_job_type,           update through the unchanged legacy signature. The authored
+  p_insured_name, p_address,      migration validates bounded inputs and recomputes the stored
+  p_tech_hours, p_bill_rate,      total and margin server-side instead of trusting browser totals.
+  p_air_mover_count/days, ...     Returns the full oop_quotes row; NULL numeric inputs default
+                                   to 0.
   p_lgr_count/days, ...
   p_xlgr_count/days, ...
   p_air_scrubber_count/days, ...
@@ -1318,12 +1362,26 @@ upsert_oop_quote(p_id UUID,     — Insert (p_id NULL → auto-generates quote_n
   p_quote_total, p_net_margin_pct,
   p_notes, p_created_by)
 get_oop_quotes(p_limit, p_job_id) — Paginated list. When p_job_id set, scoped to that job.
-                                     Summary columns only (id, quote_number, job_id,
+                                     Eligible roles can list all company OOP quotes. Summary columns only (id, quote_number, job_id,
                                      job_type, insured_name, address, quote_total,
                                      net_margin_pct, created_at, created_by).
 get_oop_quote(p_id)             — Returns single full oop_quotes row for the calculator
                                    to hydrate on load.
+get_oop_quote_v2(p_id)          — Eligible-role JSON read that merges the legacy oop_quotes row
+                                   with its uncleared private pricing snapshot when one exists.
 delete_oop_quote(p_id)          — Hard delete; returns BOOLEAN (FOUND).
+get_oop_pricing_config(p_revision_id) — Eligible-role read of the current published or an exact
+                                        published/superseded revision; never exposes the draft.
+get_oop_pricing_admin_state() — Admin-only published + draft envelope for Settings.
+save_oop_pricing_draft(expected_lock, config, request_id) — Admin-only validation, optimistic lock,
+                                                            idempotent audit and draft update.
+publish_oop_pricing_draft(expected_lock, request_id) — Admin-only two-state publish transaction;
+                                                       supersedes current and creates next draft.
+upsert_oop_quote_v2(id, job, type, customer, address, notes, revision, inputs,
+  expected_updated_at, request_id) — Eligible-role, idempotent, optimistic-concurrency save.
+                                     Chooses/pins a published revision, rejects unknown/unbounded
+                                     inputs, evaluates ordered visible/internal lines and minimums
+                                     server-side, and stores the full snapshot in the private companion table.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -1533,7 +1591,7 @@ trusting this number). Original Phase-1A seed plus everything added since:
 | `page:tech_equipment` | tech | Tech: Equipment Placements | off, dev-only |
 | `tool:bulk_sms` | tool | Bulk Messaging | off |
 | `tool:search_export` | tool | Search & Export | off |
-| `tool:oop_pricing` | tool | OOP Pricing Calculator (dev-only → Moroni, Apr 20 2026) | off, dev-only |
+| `tool:oop_pricing` | tool | OOP Pricing Calculator | owner preview at Jul 30 readback; DevTools global means all eligible roles, never all staff; missing/force-disabled denies |
 | `feature:pwa` | feature | PWA | on |
 | `feature:twilio_live` | feature | Twilio Live SMS | off |
 | `feature:billing` | feature | Billing & Invoicing | on |
@@ -4192,7 +4250,8 @@ workflow configuration, like the Supabase pair. Guard: same test file,
 - **Standing constraint:** each deployment carries ONE env-level `APNS_TOPIC`, so the
   deployment that dispatches pushes must match the bundle id its recipients run.
   Production-critical notifiers belong on `utahpros.app`; Preview's topic may serve the
-  UPR Dev variant only. Durable fix (per-token topic column) is an open follow-up.
+  UPR Dev variant only. The durable per-token topic fix is authored in
+  `20260730170000_device_token_apns_topic.sql` and pending the governed apply below.
 - **Diagnostics:** owner-only `POST /api/send-push` returns Apple's per-token `reason`
   verbatim — the only place it is visible; `worker_runs.meta.native` stores counters only.
   Counter fingerprint `attempted>0, sent=0, retryable=0, pruned=0` = non-retryable 4xx
@@ -4204,8 +4263,9 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   `supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql` gives the last two
   unguarded config-driven pg_net callers — `notify_google_calendar_sync()` and
   `notify_emit()` — the same exact two-URL allowlist + fail-closed secret gate the four
-  wake functions already have (body-only replaces, signatures/ACLs unchanged, md5 drift
-  guards, paired rollback). CI contract test:
+  wake functions already have (body replacements, signatures unchanged, md5 drift guards,
+  paired rollback). Both become service-role-only: `notify_google_calendar_sync()` has no
+  browser caller and is reached only by owner-executed database triggers. CI contract test:
   `tests/qa/unit/pg-net-worker-url-allowlists.test.js`; apply-window check:
   `supabase/tests/pg_net_worker_url_allowlists_post_apply.sql`. The full key registry +
   the read-only "everything points at production" ops query:

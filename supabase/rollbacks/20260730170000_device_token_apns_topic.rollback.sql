@@ -14,6 +14,8 @@
 --     (dropping a live column is the removal database-standard.md §3 forbids;
 --     clearing values would be a separate bounded data repair);
 --   - the tightened grant posture (authenticated + service_role only).
+--   - the raw-token secrecy boundary: no browser SELECT policy or direct table
+--     privilege is restored.
 -- The delivery worker's rollback is its own code revert; while this rollback
 -- is live, new/updated rows record NULL and the env APNS_TOPIC fallback
 -- governs delivery for them.

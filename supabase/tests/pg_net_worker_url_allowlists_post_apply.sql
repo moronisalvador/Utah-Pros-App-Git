@@ -12,8 +12,7 @@
 --   2. owner postgres, SECURITY DEFINER, search_path pinned to public;
 --   3. the live body is byte-exact to the reviewed allowlisted body (md5);
 --   4. the body names both allowlisted UPR URLs and the fail-closed secret gate;
---   5. anon EXECUTE false; authenticated true only for the gcal notifier
---      (its pre-existing posture); service_role true.
+--   5. anon/authenticated EXECUTE false; service_role true.
 -- ════════════════════════════════════════════════
 
 DO $post_apply$
@@ -30,10 +29,10 @@ BEGIN
         (
           'public.notify_google_calendar_sync(uuid,text,jsonb)',
           'notify_google_calendar_sync',
-          '9c12900f57b2516170dc374b5a63cc23',
+          '07ee1574e28447ddae2c868a841eb2d8',
           'https://utahpros.app/api/google-calendar-sync',
           'https://dev.utahpros.app/api/google-calendar-sync',
-          true
+          false
         ),
         (
           'public.notify_emit(text,jsonb)',

@@ -46,10 +46,18 @@ import {
   featureFlagUpsertArgs,
   oopPricingRolloutState,
 } from '@/lib/oopPricingRollout';
+import { FEATURE_FLAG_REGISTRY } from '@/lib/featureFlags';
 
 const { default: DevTools } = await import('./DevTools.jsx');
 
 describe('DevTools ops-health deep link', () => {
+  it('auto-registers OOP pricing fail closed until the owner explicitly enables it', () => {
+    expect(FEATURE_FLAG_REGISTRY.find((flag) => flag.key === 'tool:oop_pricing')).toMatchObject({
+      enabled: false,
+      category: 'tool',
+    });
+  });
+
   it('distinguishes the OOP owner preview from global availability', () => {
     const ownerId = 'owner-1';
 

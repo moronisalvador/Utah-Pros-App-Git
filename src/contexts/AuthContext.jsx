@@ -223,6 +223,7 @@ export function resolveFeatureFlagAccess(
   const flag = featureFlags[key];
   if (flag?.force_disabled) return false;
   if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
+  if (key === 'tool:oop_pricing' && !flag) return false;
   if (!flag) return true;
   if (flag.enabled) return true;
   if (employee && flag.dev_only_user_id === employee.id) return true;
@@ -1907,8 +1908,9 @@ export function AuthProvider({ children }) {
   }, [employee, permissions, featureFlags, employeePageAccess]);
 
   // ── Feature flag check helper ──
-  // Force disabled is absolute. Otherwise: no row = unrestricted, enabled =
-  // global access, and dev_only_user_id = preview access for that employee.
+  // Force disabled is absolute. Otherwise: enabled = global access and
+  // dev_only_user_id = preview access for that employee. Missing rows are
+  // generally unrestricted; OOP Pricing deliberately fails closed.
   const isFeatureEnabled = useCallback(
     (key) => resolveFeatureFlagAccess(
       key,

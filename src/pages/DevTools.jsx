@@ -355,8 +355,8 @@ function FlagsTab() {
                     <button
                       onClick={() => toggle(flag)}
                       disabled={!!saving}
-                      aria-label={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for everyone` : `${flag.enabled ? 'Disable' : 'Enable'} ${flag.label} for everyone`}
-                      title={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for everyone` : undefined}
+                      aria-label={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for eligible roles` : `${flag.enabled ? 'Disable' : 'Enable'} ${flag.label} for everyone`}
+                      title={isOopPricing ? `${flag.enabled ? 'Disable' : 'Enable'} OOP Pricing for eligible roles` : undefined}
                       style={{
                         position: 'relative', flexShrink: 0,
                         width: 40, height: 22, borderRadius: 11,
@@ -413,10 +413,10 @@ function FlagsTab() {
                       )}
                       {isOopPricing && (
                         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 'var(--space-1)' }}>
-                          {oopState === 'global' && 'Access: available to everyone. The owner preview remains saved for a later global turn-off.'}
-                          {oopState === 'preview' && 'Access: owner preview only. Use “Make available to everyone” to open both OOP calculator routes for all staff.'}
+                          {oopState === 'global' && 'Access: available to Admin, Office, Supervisors, Sales Reps, and Project Managers. Regular technicians remain blocked.'}
+                          {oopState === 'preview' && 'Access: owner preview only. Use “Make available to eligible roles” to open both OOP calculator routes for the approved roles.'}
                           {oopState === 'hidden' && 'Access: hidden for everyone.'}
-                          {oopState === 'force_disabled' && 'Access: blocked for everyone by Force Off. Clear Force Off before enabling global access.'}
+                          {oopState === 'force_disabled' && 'Access: blocked for everyone by Force Off. Clear Force Off before enabling eligible-role access.'}
                         </div>
                       )}
                     </div>
@@ -428,9 +428,9 @@ function FlagsTab() {
                           className="btn btn-primary btn-sm"
                           onClick={() => setGlobalEnabled(flag, true)}
                           disabled={!!saving || oopState === 'global' || oopState === 'force_disabled'}
-                          title={oopState === 'force_disabled' ? 'Clear Force Off before enabling OOP Pricing for everyone' : 'Enable OOP Pricing for everyone'}
+                          title={oopState === 'force_disabled' ? 'Clear Force Off before enabling OOP Pricing for eligible roles' : 'Enable OOP Pricing for eligible roles'}
                         >
-                          {oopState === 'global' ? 'Available to everyone' : 'Make available to everyone'}
+                          {oopState === 'global' ? 'Available to eligible roles' : 'Make available to eligible roles'}
                         </button>
                       )}
                       {/* Dev-only toggle */}

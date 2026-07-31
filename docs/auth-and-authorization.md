@@ -43,6 +43,27 @@ Client gates improve navigation and UX. They do not protect Workers, RPCs or dir
 Feature flags must not become an authorization source unless that design is explicitly documented
 and enforced again on the server/database.
 
+### OOP pricing access boundary
+
+The repository OOP builder keeps rollout and authority separate:
+
+- `/settings/oop-pricing` is web-only and `AdminRoute`-protected; its draft-save and publish RPCs
+  independently resolve `auth.uid()` to an active, non-external employee with literal role
+  `admin`;
+- desktop and native/tech operational calculator routes remain behind `tool:oop_pricing`. Their
+  config read and quote read/save RPCs independently require an active internal employee whose
+  role is exactly `admin`, `office`, `supervisor`, `estimator` (sales rep), or `project_manager`;
+  those eligible roles may access all OOP quotes company-wide. `field_tech`, `crm_partner`/
+  external, inactive, unsupported, and unauthenticated actors are denied;
+- the four new pricing/snapshot tables are forced-RLS with no direct browser grants, so config and
+  internal-rate snapshots are exposed only through the role-gated RPC shapes; and
+- DevTools may switch the calculator flag from owner preview to availability for all eligible roles
+  (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
+  server kill switch. Neither state grants database access.
+
+The supporting migration is repository source only until a separately authorized apply and direct
+role verification prove the live boundary.
+
 ## Worker authorization
 
 Use `functions/lib/auth.js`:
@@ -553,6 +574,16 @@ unproved. Therefore S1h is not database-behavior-verified or `ready_for_apply`. 
 `docs/mobile/s1h-database-apply-runbook.md`; every apply, compatible deployment, synthetic identity
 test, rollback, provider action, signing step, and device qualification remains a separate
 owner-authorized gate.
+
+The narrower native-token activation boundary is separate from that deferred
+four-migration S1h sequence. `20260728223000_native_apns_token_boundary.sql` is
+live under reconciled ledger row `20260729021021`; direct browser table
+privileges are revoked and native registration/deletion use selector-free
+self-scoped RPCs. Pending `20260730170000_device_token_apns_topic.sql` removes
+the remaining inert authenticated SELECT policy from `device_tokens`, adds the
+per-install APNs topic, and preserves the old two-argument registration call
+through one trailing defaulted parameter. No checked-in browser caller reads
+the raw token table directly.
 
 ## Notification presentation administration
 

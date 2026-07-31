@@ -13,13 +13,15 @@
 --   now skips the call when the shared secret is missing, because the worker
 --   on the other end rejects a blank secret anyway.
 --
--- FUNCTION-BODY-ONLY / additive:
---   Yes — two CREATE OR REPLACE function-body replaces. No table
+-- FUNCTION-BODY + ACL hardening / additive:
+--   Two CREATE OR REPLACE function-body replaces. No table
 --   DROP/RENAME/ALTER COLUMN, no data change, no new object, no policy
---   change. Both signatures, return types, owners and effective grants are
---   unchanged (the REVOKE/GRANT below only re-declares the existing posture,
+--   change. Both signatures, return types, and owners are unchanged. The
+--   Google-Calendar notifier loses authenticated EXECUTE because its only
+--   callers are owner-executed database trigger functions; both functions
+--   are service-role-only after this change. The explicit REVOKE/GRANT is
 --   required because this managed project re-grants EXECUTE TO PUBLIC on
---   every function DDL — database-standard.md §1).
+--   every function DDL — database-standard.md §1.
 --
 -- BEHAVIOR DELTA (the only one):
 --   A worker URL outside the two-entry allowlist, or a missing/blank
@@ -38,11 +40,6 @@
 --   Registry + ops audit: docs/database/integration-config-worker-urls.md.
 --
 -- ── DEFERRED ──
---   notify_google_calendar_sync keeps its live `authenticated` EXECUTE grant
---   (from 20260708_dbf_p3). Repo-wide grep finds no browser caller — only the
---   SECURITY DEFINER trigger functions call it — so tightening it to
---   service-role-only is a candidate ACL-only change, but that is a separate
---   reviewed grant change, not smuggled into this body-only migration.
 --   The two transcribe-call pg_cron command strings
 --   (20260722_crm_calls_classification_cron.sql) inline the same
 --   config-driven net.http_post with no allowlist; hardening a cron command
@@ -53,17 +50,19 @@
 -- ROLLBACK:
 --   supabase/rollbacks/20260730214500_pg_net_worker_url_allowlists.rollback.sql
 --   restores the exact prior bodies (20260630_client_appointment_notifications
---   and 20260728224000_native_push_delivery_guardrails) and re-declares the
---   same ACLs, with its own drift preflight/postcondition. Rolling back
---   reopens the config-driven arbitrary-URL surface this migration closes —
---   prefer a forward fix of the allowlist entries if a URL must change.
+--   and 20260728224000_native_push_delivery_guardrails) while retaining the
+--   tightened service-role-only ACLs, with its own drift
+--   preflight/postcondition. Rolling back reopens the config-driven
+--   arbitrary-URL surface this migration closes — prefer a forward fix of
+--   the allowlist entries if a URL must change.
 -- ════════════════════════════════════════════════
 
 -- Drift guard: refuse to apply over anything but the reviewed live bodies.
 -- notify_emit's expected md5 is independently confirmed by the
--- 20260728224000 rollback preflight (same value). notify_google_calendar_sync's
--- is computed from the 20260630 migration source; if the live body ever
--- diverged from that file, this apply stops here — inspect before proceeding.
+-- 20260728224000 rollback preflight (same value).
+-- notify_google_calendar_sync is anchored to the exact current production
+-- body recaptured in db/baseline/schema.sql; if live diverges from that
+-- reviewed body, this apply stops here — inspect before proceeding.
 DO $allowlist_preflight$
 DECLARE
   v_expected record;
@@ -77,7 +76,7 @@ BEGIN
         (
           'public.notify_google_calendar_sync(uuid,text,jsonb)',
           'notify_google_calendar_sync',
-          '9c97af19a10e688964bc830f9d11c160',
+          'd1dcb8230af897aec350df9364d1bf84',
           true
         ),
         (
@@ -138,8 +137,8 @@ END;
 $allowlist_preflight$;
 
 -- ─── 1. Google-Calendar sync notifier ───
--- Identical to the 20260630 body except the config gate: the NULL/blank URL
--- check becomes the exact two-URL allowlist + secret-presence check used by
+-- Identical to the recaptured current live body except the config gate: the
+-- NULL/blank URL check becomes the exact two-URL allowlist + secret-presence check used by
 -- the outbox / ops-health / CallRail-recovery / QBO-payments wake functions.
 CREATE OR REPLACE FUNCTION public.notify_google_calendar_sync(p_source_id UUID, p_op TEXT, p_cancel JSONB DEFAULT NULL)
 RETURNS VOID
@@ -153,6 +152,7 @@ DECLARE
   v_body       JSONB;
 BEGIN
   IF p_source_id IS NULL THEN RETURN; END IF;
+  -- Inert until at least one employee has connected Google Calendar (the writer).
   IF NOT EXISTS (
     SELECT 1 FROM user_google_accounts
     WHERE refresh_token IS NOT NULL AND scopes ILIKE '%calendar%'
@@ -186,11 +186,13 @@ END;
 $$;
 
 -- Managed-Supabase function trap (database-standard.md §1): every function
--- DDL re-grants EXECUTE TO PUBLIC at ddl_command_end, so the prior posture
--- must be explicitly re-declared. This is the SAME effective ACL as before
--- (20260708_dbf_p3): PUBLIC/anon denied, authenticated + service_role kept.
-REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb) TO authenticated, service_role;
+-- DDL re-grants EXECUTE TO PUBLIC at ddl_command_end. This notifier has no
+-- direct browser caller; its only callers are owner-executed trigger
+-- functions, so direct execution is service-role-only.
+REVOKE EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.notify_google_calendar_sync(uuid, text, jsonb)
+  TO service_role;
 
 -- ─── 2. Notification emitter ───
 -- Identical to the 20260728224000 body except the config gate, same as above.
@@ -271,8 +273,8 @@ BEGIN
       VALUES
         (
           'public.notify_google_calendar_sync(uuid,text,jsonb)',
-          '9c12900f57b2516170dc374b5a63cc23',
-          true
+          '07ee1574e28447ddae2c868a841eb2d8',
+          false
         ),
         (
           'public.notify_emit(text,jsonb)',

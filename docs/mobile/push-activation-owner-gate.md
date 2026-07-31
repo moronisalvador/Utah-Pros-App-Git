@@ -239,8 +239,10 @@ variable sets, permanently). Authored 2026-07-30 — migration
 `20260730170000_device_token_apns_topic.sql` + worker + client — pending the
 separate owner-authorized apply, then deploy (schema first: the worker selects
 the new column and the client passes the new parameter), then a dev-app
-launch to re-enroll its token with its topic. Production's variable set is
-untouched throughout.
+launch to re-enroll its token with its topic. The same migration removes the
+obsolete authenticated SELECT policy from the raw-token table; browser table
+privileges are already revoked, and checked-in clients use only selector-free
+registration/deletion RPCs. Production's variable set is untouched throughout.
 
 ## Live activation evidence
 

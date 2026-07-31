@@ -403,6 +403,15 @@ afterEach(() => {
 describe('feature flag access resolution', () => {
   const employeeA = employee('employee-a', 'estimator');
 
+  it('fails closed when the OOP pricing rollout row is missing', () => {
+    expect(resolveFeatureFlagAccess(
+      'tool:oop_pricing',
+      {},
+      employeeA,
+      {},
+    )).toBe(false);
+  });
+
   it('lets force-disabled override global enable and owner preview', () => {
     const flags = {
       'feature:test': featureFlag({

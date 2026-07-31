@@ -5,7 +5,7 @@
  *
  * WHAT THIS DOES (plain language):
  *   Refuses to start database tests unless the caller names the exact approved local database.
- *   After the checks pass, it runs the exact guarded identity, S1e, S1g, and S1h pgTAP proofs
+ *   After the checks pass, it runs the exact guarded identity, S1e, S1g, S1h, and OOP pricing pgTAP proofs
  *   against that local stack and then runs only the separately configured local database Vitest lane.
  *
  * DEPENDS ON:
@@ -56,6 +56,7 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
       'supabase/tests/inbound_lead_recording_source.test.sql',
       'supabase/tests/notification_read_recipient_boundary.test.sql',
       'supabase/tests/mobile_personal_ownership_boundary.test.sql',
+      'supabase/tests/oop_pricing_builder.test.sql',
     ];
 
     for (const sqlProofFile of sqlProofFiles) {
