@@ -563,6 +563,16 @@ Production, deployment, provider traffic,
 `20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
 now narrows legacy direct writes in 40339 and integrates Worker recipient/member checks.
 
+Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
+revocation helper missing from its explicit page allowlist; after that correction,
+`npm run build:ios:dev` completed the native Vite build and Capacitor sync, and an unsigned
+`xcodebuild` for the generic iOS Simulator completed with `BUILD SUCCEEDED`. The installed iPhone
+17 Pro Simulator app rendered readable messages, staff sender labels, the title-expanded chat
+information, and the native **Chat participants** sheet. The sheet's expected load error is
+positive sequencing evidence: the simulator app targets production and 40337 is intentionally
+not applied there. No RPC mutation, provider send, hosted apply, or deployment occurred.
+Physical-device/TestFlight proof remains separate.
+
 Release order is compatibility-sensitive because dev and main share production Supabase:
 
 1. separately authorize/apply 40337 + 40338 and verify catalog postconditions;

@@ -54,7 +54,8 @@ verifiable in the next native build — group them accordingly.
       that also makes it a frozen consumed contract (tech-messages-v2 imports it), so
       additive changes only. Candidate uses the shared 18px mobile type token and quiet
       sender labels above every staff message and every customer message in a multi-recipient
-      chat. Physical iOS/Capacitor readability proof remains. (Owner request 2026-07-30.)
+      chat. Unsigned iPhone 17 Pro Simulator proof passed 2026-07-31; physical-device proof
+      remains. (Owner request 2026-07-30.)
 
 **Theme: conversation participants (feature-sized — finishing parked work)**
 
@@ -66,7 +67,9 @@ verifiable in the next native build — group them accordingly.
       eligible technicians can remove themselves; privileged office roles cannot be removed.
       Tap the conversation title in the tech thread to expand its info, then open
       **Chat participants**. Source includes paired rollbacks, credential-free contracts, and
-      isolated behavioral SQL; the latter still needs a disposable database run.
+      isolated behavioral SQL; the latter passed on a disposable local baseline clone
+      2026-07-31. Capacitor sync, Xcode Simulator compile, title entry, and the native sheet
+      rendered successfully; physical-device and hosted rollout gates remain.
       (Owner request 2026-07-30.)
 
       Future dry-log lifecycle (context only, explicitly deferred): after the final appointment
