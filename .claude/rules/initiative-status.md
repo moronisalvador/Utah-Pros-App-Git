@@ -30,9 +30,9 @@ The owner-authorized production apply used the exact reviewed source at commit `
 
 The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
 `db-lane` job passed. The later raw hosted receipt at `a513af37` is 163 / 375 assertions passed,
-0 failed, 212 skipped, and 46 failed setup suites across 44 files. Assertions are gated at zero;
-the setup-suite debt has a shrink-only baseline of 46. The compatible Worker/client source is on
-`dev` but not yet `main`; it preserves one operation id across ambiguous provider and
+0 failed, 212 skipped, and 46 setup errors across 44 files. Assertions are gated at zero; setup
+debt is shrink-only at 44 failed files / 90 recursively failed suite nodes. The compatible
+Worker/client source is on `dev` but not yet `main`; it preserves one operation id across ambiguous provider and
 post-provider-finalization failures, and
 `/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
@@ -183,10 +183,10 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   2026-07-29, parity-verified, CI db lane LIVE** (details: `docs/database/staging-branch-runbook.md`).
   The only hosted DB agents may iterate against. The fixture-password secret is configured, all
   three signed-in fixture identities were rotated, and the raw hosted receipt at `a513af37` is
-  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 failed setup suites across 44 files.
-  Failed assertions are gated at zero; setup-suite failures carry a shrink-only baseline of 46.
-  Open tail: convert failed setups and skips with only minimal non-production reference rows, then
-  run the six SQL/pgTAP proofs through the still-missing governed local runtime.
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
+  assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 suite nodes.
+  Open tail: convert failed setups and skips with only minimal non-production reference rows,
+  then run the six SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)

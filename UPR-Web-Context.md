@@ -137,9 +137,9 @@ No feature code, schema, or provider behaviour changed. What changed:
   migrations are qualified; standing QA identities are seeded, and the CI database lane is active.
   The fixture-password GitHub secret is configured and all three standing identities were
   rotated without committing a usable password. The raw hosted receipt at `a513af37` is
-  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 failed setup suites across 44 files.
-  Failed assertions are gated at zero; the previously hidden setup-suite failures now have a
-  shrink-only baseline of 46. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
+  assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 recursively
+  failed suite nodes. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
   `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
   schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
