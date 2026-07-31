@@ -79,7 +79,12 @@ describe('S1e recording-source migration CI contract', () => {
     expect(migration).toContain(
       'REVOKE ALL ON TABLE public.inbound_lead_recording_sources FROM PUBLIC, anon, authenticated',
     );
+    expect(migration).toContain(
+      'CREATE POLICY inbound_lead_recording_sources_service_role_all',
+    );
+    expect(migration).toContain('TO service_role\n  USING (true)\n  WITH CHECK (true)');
     expect(migration).toContain('ON TABLE public.inbound_lead_recording_sources TO service_role');
+    expect(migration.match(/INTENTIONALLY worker-\/trigger-only/g)).toHaveLength(2);
     const revoke = migration.indexOf('REVOKE EXECUTE ON FUNCTION public.upsert_lead_from_callrail(');
     const grant = migration.indexOf('GRANT EXECUTE ON FUNCTION public.upsert_lead_from_callrail(');
     expect(revoke).toBeGreaterThan(-1);
@@ -132,7 +137,7 @@ describe('S1e recording-source migration CI contract', () => {
         "migration.name = 'mobile_employee_identity_containment'",
       );
       expect(sql).toContain('employees_self_identity_read');
-      expect(sql).toContain('(auth_user_id = auth.uid())');
+      expect(sql).toContain("'auth_user_id = auth.uid()'");
       expect(sql).not.toContain(
         "migration.name = 'mobile_employee_identity_authority'",
       );
@@ -145,9 +150,7 @@ describe('S1e recording-source migration CI contract', () => {
       expect(sql).toContain("grantee_role.rolname = 'anon'");
       expect(sql).toContain("grantee_role.rolname = 'authenticated'");
       expect(sql).toContain("acl.privilege_type = 'SELECT'");
-      expect(sql).toContain(
-        "ARRAY['auth_user_id', 'id', 'is_active', 'role']::text[]",
-      );
+      expect(sql).toContain("'is_external'");
       expect(sql).toContain('ARRAY[]::text[]');
     }
     for (const sql of [migration, rollback, preflight, postApply]) {

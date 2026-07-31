@@ -134,9 +134,11 @@ No feature code, schema, or provider behaviour changed. What changed:
 - **Staging database:** `qa-staging` is seeded and live at the isolated ref recorded in
   `docs/database/staging-branch-runbook.md`. Its public schema matches production (141 tables /
   400 functions / 219 policies), standing QA identities are seeded, and the CI database lane is
-  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge is a cosmetic creation artifact: the
-  original ledger replay failed at entry 4/419 because legacy schema predates migrations, then the
-  owner restored the production schema onto the branch. The repository still has no
+  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even
+  though the manually restored schema is usable: a 2026-07-31 rebase again attempted historical
+  `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
+  `jobs.phase`. The schema-only restore did not baseline the migration ledger, so agents must not
+  use rebase for parity or mark old entries applied ad hoc. The repository still has no
   `supabase/config.toml`, and migration history alone cannot reconstruct a local stack; use the
   hosted branch only under the branch runner/authorization rules.
 - **WIP inventory with recommended verdicts:** `docs/wip-inventory-2026-07.md`.
