@@ -402,11 +402,11 @@ HTTP `/api/notify` retains two distinct identities:
 
 There is no checked-in mobile/desktop/browser HTTP Bearer caller. Trusted Workers continue to
 import `dispatchEvent` in-process, and the secret-authenticated database trigger path is unchanged.
-This HTTP-only slice is not complete notification containment: `notify_emit(text,jsonb)` is a
-`SECURITY DEFINER` RPC still executable by `authenticated` in the dated generated/live inventory,
-so an authenticated browser can cause the database to present the valid secret and arbitrary
-payload to the Worker. Its ACL/body containment requires a separate reviewed migration and live
-apply. S1c neither authors nor applies that migration.
+The database-RPC residual that existed when S1c was authored is now closed: live
+`20260727233704_notify_emit_service_boundary` removed authenticated execution and made the trusted
+event type authoritative, and live `20260731165215_pg_net_worker_url_allowlists` added the
+two-origin URL allowlist plus blank-secret no-op. S1c did not author those later boundaries, but an
+authenticated browser can no longer execute `notify_emit(text,jsonb)`.
 The authenticated-executable `create_notification` definer is another direct bell-emission path
 outside the HTTP Worker. S1f now has an attribute-only, locally tested apply candidate that revokes
 browser execution and retains `service_role`; it is not live until its separate owner apply.
@@ -434,6 +434,9 @@ response, no-op gates, signature, result, security mode, and search path.
 A 2026-07-28 read-only recapture confirmed owner `postgres`, body hash
 `27d638e9e2681bf74f17fa255c7eaf04`, `search_path=public`, and EXECUTE only for owner plus
 `service_role`; `authenticated` can no longer execute the function.
+The 2026-07-31 allowlist hardening subsequently replaced the body again; current live fingerprint
+`c72e0f7fd40a4abec42cce1cd912a45b` retains the same service-role-only ACL and adds the
+two-origin URL gate plus blank-secret no-op.
 `create_notification`, direct recording-source access, wider mobile RPC/direct-policy boundaries,
 and private media remain separate. Exact migration, rollback, catalog-only role/caller checks and
 evidence are recorded in
