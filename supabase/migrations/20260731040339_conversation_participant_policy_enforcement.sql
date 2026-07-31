@@ -1,5 +1,5 @@
 -- ════════════════════════════════════════════════
--- MIGRATION: 20260731040338_conversation_participant_policy_enforcement
+-- MIGRATION: 20260731040339_conversation_participant_policy_enforcement
 -- Phase: Messaging participant controls — post-deploy enforcement
 -- ════════════════════════════════════════════════
 --
