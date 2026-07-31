@@ -36,6 +36,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const DB_TESTS = join(ROOT, 'supabase', 'tests');
 const read = (relative) => readFileSync(join(ROOT, relative), 'utf8').replace(/\r\n/g, '\n');
 const LOCAL_ONLY_SQL = [
+  'conversation_participant_scoping.test.sql',
   'inbound_lead_recording_source.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
