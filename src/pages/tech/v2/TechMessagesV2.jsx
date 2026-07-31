@@ -38,19 +38,19 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import TechMsgsPane from './messages/TechMsgsPane.jsx';
 import ConvoList from './messages/ConvoList.jsx';
 import ThreadView from './messages/ThreadView.jsx';
 import NewConversationView from './messages/NewConversationView.jsx';
 import { useTechConversations } from './messages/useTechConversations.js';
 import { useConvoMutations } from './messages/useConvoMutations.js';
-import { mergeConvoIntoList, hasConversation } from './messages/msgsSelectors.js';
+import { mergeConvoIntoList } from './messages/msgsSelectors.js';
+import { purgeConversationAccess } from './messages/accessRevocation.js';
+import { techKeys } from '@/lib/techQuery';
 
 export default function TechMessagesV2({ active = true }) {
-  const { db } = useAuth();
-  const { t } = useTranslation('msgs');
+  const { db, employee } = useAuth();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -74,37 +74,81 @@ export default function TechMessagesV2({ active = true }) {
 
   // ─── SECTION: Active conversation resolution (+ deep-link miss) ──────────────
   const [deepLinked, setDeepLinked] = useState(null);
-  // The id whose single-row fetch genuinely failed (deleted / bad id). Keyed to the id
-  // (not a boolean) so a stale failure from a previous ?c= never mislabels a new thread,
-  // and no synchronous reset-in-effect is needed.
-  const [failedId, setFailedId] = useState(null);
-  const activeConv = useMemo(
-    () => conversations.find((c) => c.id === activeId) || (deepLinked?.id === activeId ? deepLinked : null),
-    [conversations, activeId, deepLinked],
-  );
-  const deepLinkFailed = !!activeId && !activeConv && failedId === activeId;
 
-  // ?c= points at a conversation not in the current page → fetch it (single-row RPC
-  // mode) and fold it into every cached convos view so it also shows in the list.
+  const revokeConversationAccess = useCallback((conversationId) => {
+    if (!conversationId) return;
+    purgeConversationAccess(queryClient, conversationId);
+    setDeepLinked((current) => (
+      current?.id === conversationId ? null : current
+    ));
+    const next = new URLSearchParams(searchParams);
+    if (next.get('c') === conversationId) {
+      next.delete('c');
+      setSearchParams(next, { replace: true });
+    }
+  }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
+
+  // One actor-owned access probe handles both deep links and same-account removal.
+  // It silently rechecks on focus/reconnect and every minute; an offline error keeps
+  // the rendered thread, while a successful empty result purges it immediately.
+  const activeConversationQuery = useQuery({
+    queryKey: techKeys.conversationAccess(employee?.id, activeId),
+    enabled: Boolean(db && employee?.id && activeId && !newConversationOpen),
+    queryFn: async () => {
+      const result = await db.rpc('get_tech_conversations', {
+        p_conversation_id: activeId,
+      });
+      return result?.conversations?.[0] || null;
+    },
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+
+  const activeConv = useMemo(
+    () => (
+      conversations.find((conversation) => conversation.id === activeId)
+      || (
+        activeConversationQuery.isSuccess
+        && activeConversationQuery.data?.id === activeId
+          ? activeConversationQuery.data
+          : null
+      )
+      || (deepLinked?.id === activeId ? deepLinked : null)
+    ),
+    [
+      activeConversationQuery.data,
+      activeConversationQuery.isSuccess,
+      conversations,
+      activeId,
+      deepLinked,
+    ],
+  );
+
   useEffect(() => {
-    if (!db || !activeId) return undefined;
-    if (hasConversation(conversations, activeId) || deepLinked?.id === activeId) return undefined;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await db.rpc('get_tech_conversations', { p_conversation_id: activeId });
-        const conv = res?.conversations?.[0];
-        if (cancelled) return;
-        if (!conv) { setFailedId(activeId); return; }
-        setDeepLinked(conv);
-        queryClient.setQueriesData({ queryKey: ['tech', 'convos'] }, (data) => {
-          if (!data || !Array.isArray(data.conversations)) return data;
-          return { ...data, conversations: mergeConvoIntoList(data.conversations, conv) };
-        });
-      } catch (err) { console.error('Deep-link conversation error:', err); if (!cancelled) setFailedId(activeId); }
-    })();
-    return () => { cancelled = true; };
-  }, [db, activeId, conversations, deepLinked, queryClient]);
+    if (!activeId || !activeConversationQuery.isSuccess) return;
+    const conversation = activeConversationQuery.data;
+    if (!conversation) {
+      const revokeTimer = window.setTimeout(
+        () => revokeConversationAccess(activeId),
+        0,
+      );
+      return () => window.clearTimeout(revokeTimer);
+    }
+    queryClient.setQueriesData({ queryKey: ['tech', 'convos'] }, (data) => {
+      if (!data || !Array.isArray(data.conversations)) return data;
+      return {
+        ...data,
+        conversations: mergeConvoIntoList(data.conversations, conversation),
+      };
+    });
+  }, [
+    activeConversationQuery.data,
+    activeConversationQuery.isSuccess,
+    activeId,
+    queryClient,
+    revokeConversationAccess,
+  ]);
 
   // ─── SECTION: URL-driven open / close ──────────────
   const openThread = useCallback((id) => {
@@ -135,11 +179,12 @@ export default function TechMessagesV2({ active = true }) {
     next.delete('new');
     next.set('c', conversation.id);
     setSearchParams(next, { replace: true });
-  }, [queryClient, searchParams, setSearchParams]);
+  }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
 
-  // The thread layer covers the list whenever a ?c= is present (real thread OR the
-  // not-found panel) so Back always returns to the list, never a dead end.
-  const threadOpen = newConversationOpen || (!!activeId && (!!activeConv || deepLinkFailed));
+  // A successful access probe is required before a deep link can render a thread.
+  // A failed network probe preserves an already-open authorized thread for retry,
+  // while a successful empty response purges it through revokeConversationAccess.
+  const threadOpen = newConversationOpen || Boolean(activeId && activeConv);
 
   return (
     <TechMsgsPane
@@ -175,26 +220,11 @@ export default function TechMessagesV2({ active = true }) {
             conv={activeConv}
             active={active && threadOpen}
             onBack={closeThread}
+            onAccessRevoked={revokeConversationAccess}
             onEnableDnd={enableDnd}
             scrollRef={threadScrollRef}
           />
-        ) : (
-          <div className="tv2-msgs-thread">
-            <header className="tv2-msgs-thread__bar">
-              <button type="button" className="tv2-msgs-thread__back" aria-label={t('thread.back')} onClick={closeThread}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" width={24} height={24}><polyline points="15 18 9 12 15 6" /></svg>
-              </button>
-              <div className="tv2-msgs-thread__title">{t('list.title')}</div>
-              <div className="tv2-msgs-thread__bar-spacer" aria-hidden="true" />
-            </header>
-            <div className="tv2-msgs-thread__body">
-              <div className="tv2-msgs-thread__error">
-                <div className="tv2-msgs-thread__empty">{t('states.notFound')}</div>
-                <button type="button" className="tv2-msgs-retry-btn" onClick={closeThread}>{t('states.backToList')}</button>
-              </div>
-            </div>
-          </div>
-        )
+        ) : null
       ) : null}
     />
   );

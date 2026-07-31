@@ -34,9 +34,9 @@
  *     filter, `convos()` = the default unfiltered list the badge reads) and
  *     `thread` (one conversation's messages, per conversationId), plus the
  *     `message` mutation → [convos, thread]. PRIVACY: makeTechQueryClient's
- *     `dehydrate.shouldDehydrateQuery` EXCLUDES the `thread` kind, so raw SMS
- *     bodies are never persisted to IndexedDB (the inbox list is). After F-M the
- *     registry is frozen again.
+ *     `dehydrate.shouldDehydrateQuery` EXCLUDES messaging content. The participant
+ *     controls/mobile-readiness slice adds `conversation-access` as an actor-owned,
+ *     non-persisted authorization probe so a removal cannot leave a readable thread.
  *   - Every key starts with the 'tech' root so invalidateTech can target a whole
  *     kind by its two-element prefix (['tech', kind]) regardless of the id suffix.
  *   - gcTime is 24h to match the persister's default maxAge — shorter gc would
@@ -47,9 +47,9 @@ import { QueryClient, defaultShouldDehydrateQuery } from '@tanstack/react-query'
 
 const ROOT = 'tech';
 
-// The nine cache kinds. Frozen — `hub` (7th) was the Phase H1 amendment; `convos`
-// + `thread` (8th/9th) were the Phase F-M (tech-messages-v2) amendment. Adding a
-// tenth is an F-owner change, never a wave edit.
+// The ten cache kinds. Frozen — `hub` (7th) was the Phase H1 amendment; `convos`
+// + `thread` (8th/9th) were the Phase F-M amendment; `conversation-access` is the
+// participant-control/mobile-readiness authorization-probe amendment.
 export const TECH_QUERY_KINDS = Object.freeze({
   DASH: 'dash',                 // get_tech_dashboard(employeeId)
   SCHED_MONTH: 'sched-month',   // get_appointments_range for one month window
@@ -60,6 +60,7 @@ export const TECH_QUERY_KINDS = Object.freeze({
   HUB: 'hub',                   // Job Hub v2 frame + its sub-resources (per jobId)
   CONVOS: 'convos',             // messaging inbox list (get_tech_conversations); per filter
   THREAD: 'thread',             // one conversation's messages (per conversationId)
+  CONVERSATION_ACCESS: 'conversation-access', // current membership probe; never persisted
 });
 
 /**
@@ -80,6 +81,12 @@ export const techKeys = Object.freeze({
   // All share the ['tech','convos'] prefix, so one invalidate refreshes every view.
   convos: (filterKey = null) => [ROOT, TECH_QUERY_KINDS.CONVOS, filterKey],
   thread: (convId) => [ROOT, TECH_QUERY_KINDS.THREAD, convId], // one conversation's messages
+  conversationAccess: (employeeId, convId) => [
+    ROOT,
+    TECH_QUERY_KINDS.CONVERSATION_ACCESS,
+    employeeId,
+    convId,
+  ],
 });
 
 const K = TECH_QUERY_KINDS;
@@ -149,12 +156,27 @@ export function makeTechQueryClient() {
       },
       // Persister dehydrate filter (Phase F-M). PersistQueryClientProvider passes no
       // dehydrateOptions, so dehydrate() falls back to THIS client default — which is
-      // why the thread-privacy filter can live here (techQuery.js) instead of editing
-      // main.jsx / techQueryPersister.js. Raw SMS thread bodies must NEVER touch disk;
-      // the inbox list (and all other kinds) persist as normal for instant cold paint.
+      // why the messaging-privacy filter can live here (techQuery.js) instead of
+      // editing main.jsx / techQueryPersister.js. Raw SMS bodies, inbox previews,
+      // access probes, member directories, and author lookups must NEVER touch disk.
       dehydrate: {
-        shouldDehydrateQuery: (query) =>
-          query.queryKey?.[1] !== TECH_QUERY_KINDS.THREAD && defaultShouldDehydrateQuery(query),
+        shouldDehydrateQuery: (query) => {
+          const root = query.queryKey?.[0];
+          const kind = query.queryKey?.[1];
+          const messagingPrivate = (
+            root === 'conversation-members'
+            || root === 'message-author-directory'
+            || (
+              root === ROOT
+              && [
+                TECH_QUERY_KINDS.CONVOS,
+                TECH_QUERY_KINDS.THREAD,
+                TECH_QUERY_KINDS.CONVERSATION_ACCESS,
+              ].includes(kind)
+            )
+          );
+          return !messagingPrivate && defaultShouldDehydrateQuery(query);
+        },
       },
     },
   });
