@@ -12,10 +12,9 @@
  *   or catch up the last N days of calls in one run.
  *
  * ENDPOINT:
- *   POST /api/transcribe-call   (authenticated — Supabase Bearer OR the shared
- *        cron secret, checkCronSecret in ../lib/auth.js — same pattern as
- *        process-scheduled.js/run-automations.js, so a pg_cron + pg_net
- *        scheduled sweep can call this without a human session)
+ *   POST /api/transcribe-call   (authenticated — EITHER the shared cron secret
+ *        for the scheduled safety nets OR an active internal admin / explicit
+ *        crm_call_log capability for an interactive request)
  *        body: { lead_id }                   — transcribe one call, OR
  *              { backfill: true, days?: 30 }   — transcribe every recent call that
  *                                                has a recording but no transcript, OR
@@ -34,8 +33,10 @@
  *
  * DEPENDS ON:
  *   Packages:      none (platform fetch)
- *   Internal:      ../lib/supabase.js, ../lib/cors.js, ../lib/auth.js
- *                  (getActorEmployee, checkCronSecret), ../lib/callrail-api.js
+ *   Internal:      ../lib/supabase.js, ../lib/cors.js, ./callrail-recording.js
+ *                  (authorizeCallrailRecording), ../lib/http.js,
+ *                  ../lib/worker-runs.js, ../lib/auth.js (checkCronSecret),
+ *                  ../lib/callrail-api.js
  *                  (resolveCallRecording),
  *                  ../lib/deepgram.js (formatDeepgramTranscript, turnsToFlatText),
  *                  ../lib/callCleanup.js (the clean-up + summarize pass),
@@ -176,7 +177,10 @@
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { supabase } from '../lib/supabase.js';
-import { getActorEmployee, checkCronSecret } from '../lib/auth.js';
+import { authorizeCallrailRecording } from './callrail-recording.js';
+import { checkCronSecret } from '../lib/auth.js';
+import { fetchWithTimeout } from '../lib/http.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 import { resolveCallRecording } from '../lib/callrail-api.js';
 import { isAllowedRecordingUrl } from '../lib/callrail.js';
 import { formatDeepgramTranscript, buildTranscriptAnalysis, turnsToFlatText } from '../lib/deepgram.js';
@@ -273,7 +277,7 @@ async function nameSpeakers(env, analysis) {
   const prompt = buildSpeakerPrompt(turns);
   if (!env.ANTHROPIC_API_KEY || !prompt) return { analysis, callerName: null };
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetchWithTimeout(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: NAMING_MODEL, max_tokens: 400, system: NAMING_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
@@ -298,7 +302,7 @@ async function resegmentSpeakers(env, analysis, transcriptText) {
   const prompt = buildResegmentPrompt(transcriptText);
   if (!env.ANTHROPIC_API_KEY || !prompt) return { analysis, callerName: null };
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetchWithTimeout(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: NAMING_MODEL, max_tokens: 4096, system: RESEGMENT_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
@@ -327,7 +331,7 @@ async function classifyZeroTurnCall(env, rawText, summary) {
   const prompt = buildZeroTurnPrompt(rawText, summary);
   if (!env.ANTHROPIC_API_KEY || !prompt) return null;
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetchWithTimeout(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({ model: CLEANUP_MODEL, max_tokens: 200, system: ZERO_TURN_SYSTEM, messages: [{ role: 'user', content: prompt }] }),
@@ -368,7 +372,7 @@ async function cleanAndSummarize(env, analysis, rawText) {
   }
   if (!env.ANTHROPIC_API_KEY) return analysis;
   try {
-    const res = await fetch(ANTHROPIC_URL, {
+    const res = await fetchWithTimeout(ANTHROPIC_URL, {
       method: 'POST',
       headers: { 'x-api-key': env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       // 8192 (not 4096): a long call (60+ turns) needs every cleaned turn echoed
@@ -405,7 +409,7 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
   let dgRes;
   if (rec.kind === 'url') {
     // Preferred: let Deepgram fetch the signed URL itself (no Worker buffering).
-    dgRes = await fetch(DEEPGRAM_URL, {
+    dgRes = await fetchWithTimeout(DEEPGRAM_URL, {
       method: 'POST',
       headers: { Authorization: `Token ${deepgramKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: rec.url }),
@@ -413,7 +417,7 @@ export async function transcribeLead(db, env, lead, callrailKey, deepgramKey) {
   } else if (rec.kind === 'stream') {
     // CallRail streamed audio directly — POST the bytes.
     const audio = await rec.response.arrayBuffer();
-    dgRes = await fetch(DEEPGRAM_URL, {
+    dgRes = await fetchWithTimeout(DEEPGRAM_URL, {
       method: 'POST',
       headers: { Authorization: `Token ${deepgramKey}`, 'Content-Type': rec.contentType || 'audio/mpeg' },
       body: audio,
@@ -688,14 +692,37 @@ export async function reclassifyLead(db, env, lead) {
 
 // ─── SECTION: Handler ──────────────
 
+export async function authorizeTranscribeCall(request, env, db) {
+  // A supplied scheduler credential is an explicit identity choice. Refuse a
+  // wrong value instead of falling through to Bearer auth, so mixed-credential
+  // requests cannot silently change identity.
+  if (request.headers.has('x-webhook-secret')) {
+    return (await checkCronSecret(request, db))
+      ? { ok: true, via: 'scheduler' }
+      : { ok: false, status: 401 };
+  }
+  return authorizeCallrailRecording(request, env, db);
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env);
   const startedAt = new Date().toISOString();
 
-  const employee = await getActorEmployee(request, env, db);
-  const authorized = employee || (await checkCronSecret(request, db));
-  if (!authorized) return jsonResponse({ error: 'Unauthorized' }, 401, request, env);
+  // This must complete before parsing the body or reading any lead, source,
+  // credential, or worker-run record. Scheduled calls use the existing exact
+  // shared-secret boundary; interactive calls reuse the Call Log's active
+  // internal admin OR crm_call_log capability predicate.
+  const auth = await authorizeTranscribeCall(request, env, db);
+  if (!auth.ok) {
+    const status = auth.status === 401 ? 401 : auth.status === 403 ? 403 : 500;
+    const error = status === 401
+      ? 'Unauthorized'
+      : status === 403
+        ? 'Forbidden'
+        : 'Authorization check failed';
+    return jsonResponse({ error }, status, request, env);
+  }
 
   const body = await request.json().catch(() => ({}));
 
@@ -745,13 +772,12 @@ export async function onRequestPost(context) {
         errors.push({ id: lead.id, error: String(e.message || e).slice(0, 200) });
       }
     }
-    await db.insert('worker_runs', {
-      worker_name: 'transcribe-call-reclassify',
+    await recordWorkerRun(db, {
+      workerName: 'transcribe-call-reclassify',
       status: errors.length && !processed ? 'error' : 'completed',
-      records_processed: processed,
-      error_message: errors.length ? JSON.stringify(errors).slice(0, 500) : null,
-      started_at: startedAt,
-      completed_at: new Date().toISOString(),
+      recordsProcessed: processed,
+      errorMessage: errors.length ? JSON.stringify(errors).slice(0, 500) : null,
+      startedAt,
     });
     return jsonResponse(
       { ok: true, processed, total: leads.length, errored: errors.length, errors: errors.slice(0, 10) },
@@ -846,13 +872,12 @@ export async function onRequestPost(context) {
     }
   }
 
-  await db.insert('worker_runs', {
-    worker_name: 'transcribe-call',
+  await recordWorkerRun(db, {
+    workerName: 'transcribe-call',
     status: errors.length && !processed ? 'error' : 'completed',
-    records_processed: processed,
-    error_message: errors.length ? JSON.stringify(errors).slice(0, 500) : null,
-    started_at: startedAt,
-    completed_at: new Date().toISOString(),
+    recordsProcessed: processed,
+    errorMessage: errors.length ? JSON.stringify(errors).slice(0, 500) : null,
+    startedAt,
   });
 
   return jsonResponse(
