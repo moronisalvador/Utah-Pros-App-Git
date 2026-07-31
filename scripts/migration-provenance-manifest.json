@@ -326,6 +326,30 @@
       "name": "crm_lead_value_from_claim",
       "path": "supabase/migrations/20260730133000_crm_lead_value_from_claim.sql",
       "reviewedOriginCommit": "8bf6be6b3e5120bb5ec6b81c2801aef9c63ce1b7"
+    },
+    {
+      "version": "20260731154315",
+      "name": "device_token_apns_topic",
+      "path": "supabase/migrations/20260730170000_device_token_apns_topic.sql",
+      "reviewedOriginCommit": "f2ea2ef151e9442d819815f9fe5f3a231bd343d4"
+    },
+    {
+      "version": "20260731165215",
+      "name": "pg_net_worker_url_allowlists",
+      "path": "supabase/migrations/20260730214500_pg_net_worker_url_allowlists.sql",
+      "reviewedOriginCommit": "f2ea2ef151e9442d819815f9fe5f3a231bd343d4"
+    },
+    {
+      "version": "20260731174734",
+      "name": "transcribe_call_cron_allowlist",
+      "path": "supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql",
+      "reviewedOriginCommit": "caa117f8cdbb25750d57903b889b6c3e24394a09"
+    },
+    {
+      "version": "20260731175328",
+      "name": "oop_pricing_builder",
+      "path": "supabase/migrations/20260730150000_oop_pricing_builder.sql",
+      "reviewedOriginCommit": "6eb3bc3a16e2177adc272a3597fcaa14cee3b662"
     }
   ],
   "selectedFunctions": [

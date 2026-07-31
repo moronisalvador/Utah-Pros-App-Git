@@ -21,48 +21,25 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-- **`20260730150000_oop_pricing_builder.sql`** (authored 2026-07-30) — adds private, forced-RLS
-  pricing revision/audit/save-request/snapshot tables plus admin-gated configuration and
-  role-gated calculator RPCs. It does not change `oop_quotes` columns or table grants; it replaces
-  the broad authenticated policies with the same exact role-and-rollout predicate used by the RPCs.
-  Calculator access is exactly active internal `admin`, `office`, `supervisor`, `estimator` (sales
-  rep), and `project_manager`; those roles may access all OOP quotes company-wide. `field_tech`,
-  `crm_partner`/external, inactive, unsupported, and unauthenticated actors are denied. Its paired
-  rollback is owner-GUC-gated and retains the private data inert. Applying any of these migrations
-  to the shared project remains a separate owner-authorized release window; repository or frontend
-  work does not make this schema live.
-- **`20260730170000_device_token_apns_topic.sql`** (authored 2026-07-30, this session) — per-token
-  APNs topic: additive `device_tokens.apns_topic` + a DEFAULT-preserving replace of
-  `upsert_my_native_device_token` (2-param → single 3-param function; deployed caller keeps
-  resolving). It also removes the lingering authenticated SELECT policy from the raw-token table;
-  browser table privileges were already revoked, and checked-in clients use only the selector-free
-  RPCs. Paired rollback + CI contract test + behavioral db-lane test
-  (`supabase/tests/device_token_apns_topic_isolated.sql` — apply-window proof, NOT CI coverage)
-  committed alongside. **Sequencing: apply BEFORE the
-  companion worker/client code deploys** — `apns.js` selects the new column and the client passes the
-  new param, so code-first deployment breaks push lookup (`token_lookup_failed`) and native
-  enrollment (PGRST202). Kills the wrong-topic failure mode behind the 2026-07-30 push outage; the
-  Preview `APNS_TOPIC` flip planned for the dev app is superseded and must not be made
-  (`docs/mobile/push-activation-owner-gate.md`).
-- **`20260730214500_pg_net_worker_url_allowlists.sql`** (authored 2026-07-30) — body replacements
-  of `notify_emit` + `notify_google_calendar_sync` adding the two-URL allowlist the wake functions
-  already carry, plus a blank-secret no-op. Both definers become service-role-only; repository
-  caller tracing found the calendar notifier is reached only by owner-executed database triggers,
-  never by a browser. Paired rollback + CI contract test committed.
-  Reviewer advisory satisfied by live evidence 2026-07-30: `gcal_worker_url` and `notify_worker_url`
-  both read exactly `https://utahpros.app/api/...` live, so the new gate will not no-op them.
-- **`20260731100000_transcribe_call_cron_allowlist.sql`** (authored 2026-07-31) — closes the
-  20260730214500 DEFERRED item, the last config-driven pg_net caller with no allowlist: the two
-  transcribe-call pg_cron commands move into zero-grant SECURITY DEFINER wake functions carrying
-  the exact two-URL allowlist + blank-secret no-op; job names, schedules and payloads unchanged.
-  Paired rollback (restores the 20260722 inlined commands, then drops the functions) + CI contract
-  test (`tests/qa/unit/transcribe-call-cron-allowlist.test.js`) + apply-window check
-  (`supabase/tests/transcribe_call_cron_allowlist_post_apply.sql`) committed. No code-deploy
-  sequencing; before applying, confirm live `transcribe_call_worker_url` still reads
-  `https://utahpros.app/api/transcribe-call` (registry ops check) — off-allowlist values fail
-  closed and would silently stop the safety nets.
-  No sequencing dependency; apply in any window. Ops registry:
-  `docs/database/integration-config-worker-urls.md`.
+**None.** All four formerly-pending migrations applied 2026-07-31 under explicit owner
+authorization, each verified by its own in-transaction preflight/postconditions plus an
+independent live check:
+
+- `20260730170000_device_token_apns_topic.sql` → live ledger `20260731154315`. Column +
+  validated constraint live; 3-param `upsert_my_native_device_token` resolves the deployed
+  2-param call (`pronargdefaults=1`); `anon` EXECUTE false; raw-token table has ZERO policies
+  and no browser grants. **The dev→main promotion gate this carried is CLEARED**; dev-origin
+  native pushes recover as the deployed worker now finds the column.
+- `20260730214500_pg_net_worker_url_allowlists.sql` → live ledger `20260731165215`. Live body
+  md5s match the reviewed file exactly (07ee1574… / c72e0f7f…); both notifiers
+  service-role-only; pre-apply registry check confirmed both URL rows on utahpros.app.
+- `20260731100000_transcribe_call_cron_allowlist.sql` → live ledger `20260731174734`. Both
+  cron jobs repointed onto the zero-grant wake functions (schedules/payloads unchanged);
+  pre-apply check confirmed `transcribe_call_worker_url` on utahpros.app.
+- `20260730150000_oop_pricing_builder.sql` → live ledger `20260731175328`. 4 private
+  forced-RLS tables, 2 seeded revisions, `oop_quotes` now carries exactly the 4
+  role-and-rollout policies; `tool:oop_pricing` flag is live-verified disabled with the
+  owner dev-user override, so access stays owner-rolled-out via DevTools.
 
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
