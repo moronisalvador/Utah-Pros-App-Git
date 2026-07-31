@@ -470,27 +470,26 @@ email couples `appointment.assigned` email to Session B's dedupe seam — accept
 owner). ⑦ Push delivery, email coverage (5 NULL emails), and APNs remain owner-gated external
 actions — all built degrade-graceful so nothing in-wave waits on them.
 
-## 2026-07-26 mobile-readiness supersession
+## 2026-07-31 mobile-readiness supersession
 
 The completed Notification Center wave remains historical implementation provenance, not current
-authorization proof. Mobile S1h now authors active-internal/session ownership for
-`get_effective_notification_prefs`, the three Session C personal RPCs, and the Web Push
-upsert/delete pair without changing their deployed identities or successful shapes.
+authorization proof. The broad S1h personal-ownership source
+`20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY**. Its exact
+read-only preflight refused on both `qa-staging` and production after later notification-preference
+and native-token hardening changed the live lineage. Do not refresh its hashes or weaken its
+preflight to make it pass.
 
 The historical anonymous shared-database `notify_c_my_prefs.test.js` is retired. Its
-round-trip/lock/redaction intent is represented in a guarded, synthetic, rollback-only identity
-matrix. The revised ordered S1h source and its negative contracts cover the employee
-self-promotion and cross-owner Web Push/native-token takeover exploit cases. The exact checked-in
-forward, catalog, isolated, and rollback chain has not executed in a retained governed Supabase
-target. No notification type/default/preference row was changed during the S1h source session.
+round-trip/lock/redaction intent remains historical negative evidence only; it does not make the
+stale source applyable. Employee identity authority and containment are already live. Any remaining
+Page Access/Web Push ownership work requires a new, later-numbered migration limited to those
+surfaces while preserving every live notification-preference and native-token signature and
+response shape.
 
-S1h is source-hardened but not database-behavior-verified or `ready_for_apply`, so its ordered
-migrations must not be applied. It depends on the separately reviewed live permission-write gate,
-the additive employee identity authority, compatible deployed clients, schema-last identity
-containment, and page-access provenance reconciliation. Session D notification
-defaults/employee overrides remain S1i; that separate work requires a fresh scoped ownership and
-authorization decision after the ordered S1h database chain is qualified. This addendum does not
-reopen or silently rewrite the historical wave.
+Session D notification defaults/employee overrides remain the separate S1i scope. That work
+requires a fresh scoped ownership and authorization decision against the current catalog; it does
+not wait for or authorize retired S1h. This addendum does not reopen or silently rewrite the
+historical wave.
 
 ## 2026-07-29 notification presentation control-plane addendum
 

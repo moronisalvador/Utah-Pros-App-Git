@@ -240,20 +240,17 @@ sub-header in UPR-Web-Context.md; reconcile the Session D checkboxes honestly; d
 rows; push -u; PR into dev as a handoff, mark ready, stop — no babysitting.
 ```
 
-## 2026-07-26 mobile-readiness dispatch addendum
+## 2026-07-31 mobile-readiness dispatch addendum
 
-Do not dispatch the historical Session C prompt as current authorization guidance. S1h now owns
-the personal preference/Web Push RPC authorization repair. Its revised ordered source replaces the
-anonymous shared-project integration test with guarded rollback-only identity matrices and covers
-the employee-authority self-promotion and cross-owner Web Push/native-token takeover cases found by
-independent review. Credential-free source review and static negative tests pass, but the exact
-checked-in forward, catalog, isolated, and rollback chain has not run in a retained governed
-Supabase target. S1h is source-hardened but not database-behavior-verified or
-`ready_for_apply`; **do not apply it**.
+Do not dispatch the historical Session C prompt as current authorization guidance. The broad S1h
+source `20260727022920_mobile_personal_ownership_boundary.sql` is **RETIRED / DO NOT APPLY** after
+its exact read-only preflight refused on both `qa-staging` and production against the later live
+notification-preference/native-token lineage. Its guarded matrices remain provenance and negative
+evidence only. Never refresh its hashes or weaken its preflight to revive it.
 
 Any later Notification Center database session is S1i only: admin defaults, employee overrides,
 and their exact RPC/table ACL boundary. It remains unstarted and requires a fresh scoped ownership
-and authorization decision after the ordered S1h database chain is qualified. It must then
-recapture current catalog/callers read-only, preserve the resolver's successful precedence
-contract, and remain separate from every S1d-S1h apply, provider, deployment, signing, and device
-gate.
+and authorization decision against the current catalog. Residual Page Access/Web Push ownership is
+a different future slice that requires a new later-numbered migration preserving all live
+notification-preference and native-token contracts. Neither slice waits for or authorizes retired
+S1h; both remain separate from S1f, providers, deployment, signing, and device gates.
