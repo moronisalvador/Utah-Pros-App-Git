@@ -125,11 +125,26 @@ export async function getValidAccessToken(env) {
 }
 
 // ── QuickBooks API ───────────────────────────────────────────────────────────────
+const ACCOUNTING_REQUEST_ID_RE = /^[A-Za-z0-9._-]{1,50}$/;
+
+// Intuit's Accounting API deduplicates write/modify/delete requests by the
+// `requestid` URI parameter (not the Payments API's Request-Id header). Keep the
+// validation here so a malformed or oversized key fails before provider access.
+export function withAccountingRequestId(path, requestId) {
+  if (requestId == null || requestId === '') return path;
+  const key = String(requestId);
+  if (!ACCOUNTING_REQUEST_ID_RE.test(key)) {
+    throw new Error('QBO accounting request id must be 1-50 safe characters');
+  }
+  return `${path}${path.includes('?') ? '&' : '?'}requestid=${encodeURIComponent(key)}`;
+}
+
 export async function qboFetch(env, path, options = {}) {
   const { accessToken, realmId, environment } = await getValidAccessToken(env);
-  const url = `${apiBase(environment)}/v3/company/${realmId}${path}`;
+  const { requestId, ...fetchOptions } = options;
+  const url = `${apiBase(environment)}/v3/company/${realmId}${withAccountingRequestId(path, requestId)}`;
   return fetchWithTimeout(url, {
-    ...options,
+    ...fetchOptions,
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept':        'application/json',
@@ -450,9 +465,9 @@ export async function findClassId(env, name) {
   return d?.QueryResponse?.Class?.[0]?.Id || null;
 }
 
-export async function createInvoice(env, payload) {
+export async function createInvoice(env, payload, { requestId } = {}) {
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify(payload),
+    method: 'POST', requestId, body: JSON.stringify(payload),
   });
   const tid = res.headers.get('intuit_tid') || null;
   const data = await res.json().catch(() => ({}));
@@ -466,16 +481,45 @@ export async function createInvoice(env, payload) {
 }
 
 // Delete a QBO invoice (used for test cleanup). Looks up SyncToken first.
-export async function deleteInvoice(env, qboInvoiceId) {
+export async function deleteInvoice(env, qboInvoiceId, { requestId, missingIsSuccess = false } = {}) {
   const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
-  const qd = await q.json().catch(() => ({}));
-  const syncToken = qd?.QueryResponse?.Invoice?.[0]?.SyncToken;
-  if (syncToken == null) throw new Error('Invoice not found in QBO for delete');
+  const qTid = q.headers.get('intuit_tid') || null;
+  if (!q.ok) {
+    const e = new Error(`QBO invoice query before delete failed (${q.status}) — cannot decide whether it is missing`);
+    e.status = q.status;
+    e.intuitTid = qTid;
+    throw e;
+  }
+  let qd;
+  try {
+    qd = await q.json();
+  } catch {
+    const e = new Error('QBO invoice query before delete returned an unreadable body — cannot decide whether it is missing');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const queryResponse = qd?.QueryResponse;
+  if (!queryResponse || typeof queryResponse !== 'object' || Array.isArray(queryResponse)) {
+    const e = new Error('QBO invoice query before delete returned an unrecognized body — cannot decide whether it is missing');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const invoices = queryResponse.Invoice;
+  if (!Object.hasOwn(queryResponse, 'Invoice') || (Array.isArray(invoices) && invoices.length === 0)) {
+    if (missingIsSuccess) return { deleted: false, missing: true };
+    throw new Error('Invoice not found in QBO for delete');
+  }
+  if (!Array.isArray(invoices) || invoices.length !== 1 || invoices[0]?.SyncToken == null) {
+    const e = new Error('QBO invoice query before delete returned an unrecognized invoice result');
+    e.intuitTid = qTid;
+    throw e;
+  }
+  const syncToken = invoices[0].SyncToken;
   const res = await qboFetch(env, `/invoice?operation=delete&minorversion=${MINOR_VERSION}`, {
-    method: 'POST', body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
+    method: 'POST', requestId, body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: syncToken }),
   });
   if (!res.ok) throw new Error(`QBO delete invoice ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return true;
+  return { deleted: true, missing: false };
 }
 
 // Sparse-update an existing QBO invoice (used by auto-push when the UPR invoice is
@@ -483,13 +527,14 @@ export async function deleteInvoice(env, qboInvoiceId) {
 // sparse update — `fields` typically { Line: [...], PrivateNote }. Sparse semantics
 // preserve everything we don't send (CustomerRef, etc.); a provided Line array
 // replaces the line set, which is how the amount changes.
-export async function updateInvoice(env, qboInvoiceId, fields) {
+export async function updateInvoice(env, qboInvoiceId, fields, { requestId } = {}) {
   const q = await qboFetch(env, `/query?query=${encodeURIComponent(`SELECT Id, SyncToken FROM Invoice WHERE Id = '${qboInvoiceId}'`)}&minorversion=${MINOR_VERSION}`, { method: 'GET' });
   const qd = await q.json().catch(() => ({}));
   const existing = qd?.QueryResponse?.Invoice?.[0];
   if (existing?.SyncToken == null) throw new Error('Invoice not found in QBO for update');
   const res = await qboFetch(env, `/invoice?minorversion=${MINOR_VERSION}`, {
     method: 'POST',
+    requestId,
     body: JSON.stringify({ Id: String(qboInvoiceId), SyncToken: existing.SyncToken, sparse: true, ...fields }),
   });
   const tid = res.headers.get('intuit_tid') || null;
@@ -508,11 +553,12 @@ export async function updateInvoice(env, qboInvoiceId, fields) {
 // QBO uses the customer's billing email (BillEmail / PrimaryEmailAddr) on the invoice.
 // QBO's send endpoint wants an empty octet-stream body; the response echoes the invoice
 // with EmailStatus = 'EmailSent'.
-export async function sendInvoice(env, qboInvoiceId, sendTo) {
+export async function sendInvoice(env, qboInvoiceId, sendTo, { requestId } = {}) {
   const path = `/invoice/${qboInvoiceId}/send?minorversion=${MINOR_VERSION}`
     + (sendTo ? `&sendTo=${encodeURIComponent(sendTo)}` : '');
   const res = await qboFetch(env, path, {
     method: 'POST',
+    requestId,
     headers: { 'Content-Type': 'application/octet-stream' },
   });
   const tid = res.headers.get('intuit_tid') || null;
