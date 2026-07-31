@@ -182,7 +182,9 @@ Closing that gap with a ref-parsing PreToolUse hook is tracked in
 - **Auth:** Supabase Auth via `@supabase/supabase-js` realtime client
 - **Workers:** Cloudflare Pages Functions (`functions/api/`)
 - **Email:** Resend (`https://api.resend.com/emails`) via shared `functions/lib/email.js` helper. Omni-inbox (Jul 4 2026) adds `functions/lib/email-threading.js` (reply-token address build/parse, XSS-safe inbound HTML sanitizer, In-Reply-To/References headers) and `functions/lib/conversation-email.js` (`sendConversationEmail` — reason-aware suppression gate before Resend, reply-only/channel-locked). Bounce/complaint feedback → `functions/api/resend-webhook.js`.
-- **SMS:** Twilio (pending go-live — ID verification blocked)
+- **SMS/MMS:** CallRail is active for staff P2P. Twilio is a future, owner-gated transition; its
+  repository parity code is inert, and the app's managed database/Cloudflare credential paths are
+  currently unconfigured.
 - **Storage:** Supabase Storage (`job-files` bucket, `message-attachments` bucket)
 
 **Supabase project ID:** glsmljpabrwonfiltiqm (us-east-2)
@@ -3436,15 +3438,18 @@ an email for every "Meld" (work order). This feature reads those emails and surf
 (Jul 1 2026 audit pruned 2 already-resolved items — TECH-UI-TASK.md cleanup and the photo/note
 appointment_id-OR-job_id fix are both done — and flagged 3 as unverified rather than asserted true.)
 
-1. **Twilio go-live** — blocked on ID verification. *Env var count unverified: only 4 distinct
-   `TWILIO_*` vars found in code as of this audit, not the 7 previously claimed — recheck before relying
-   on that number.*
+1. **Future Twilio transition (parked)** — CallRail is the active production SMS/MMS provider and
+   must remain unchanged during ordinary releases. Twilio is planned weeks out; provider mode,
+   credentials, webhook, number routing, A2P/compliance evidence and controlled traffic are a
+   separate owner window. Repository parity work is inert and is not authorization to switch.
 2. **Auth linking** — some employees have no `auth_user_id` (headcount changes — see Employees section
    for current roster rather than trusting a hardcoded count here); add emails via Admin → Send Invite.
 3. **Search + export** — `tool:search_export` feature flag ready, page not built (confirmed still true).
 4. **Bulk messaging** — `tool:bulk_sms` flag ready, not built (confirmed still true).
-5. **Mobile React Native app** — separate repo `moronisalvador/UPR-Mobile`. *Unverified — external repo,
-   can't confirm current state from here.*
+5. **Native app direction — superseded:** the active native client is the Capacitor 8 iOS project
+   in this repository (`ios/`), not the historic separate React Native repository. Current release
+   gates live in `docs/app-store-readiness-roadmap.md` and
+   `docs/mobile/app-store-submission-strategy.md`.
 6. **`toggle_appointment_task`** — frontend call sites (`TechAppointment.jsx`, `TechEditAppointment.jsx`,
    `TechTasks.jsx`) look correctly wired to `(p_task_id, p_employee_id)`; RPC exists live but its
    definition wasn't found in a `supabase/migrations/` file, so its exact server-side signature is
@@ -4147,10 +4152,30 @@ Bidirectional and both channels — a genuine end-to-end activation, not a confi
 + redeploy). Rollback is `MESSAGING_SEND_MODE=disabled` + redeploy — sends short-circuit before any
 provider call, with no database or code change.
 
-**Guardrails held:** `automation_settings.sms_sending_enabled` remains `false` in both org rows (it
-does **not** gate staff P2P sends — `send-message.js` never reads it; it arms *automated* sends, and
-`missed_call_textback_enabled` is already `true` in one row). Consent counts were unchanged by the
-activation — nothing was bulk-recorded.
+**Guardrail correction (read-only, 2026-07-31):** the production org now has
+`automation_settings.sms_sending_enabled=true` and `missed_call_textback_enabled=true`; the test org
+remains false, and the other named automation toggles remain false. This switch does **not** gate
+staff P2P CallRail sends—`send-message.js` never reads it. It arms the separate automated SMS path,
+which is still Twilio-only and does not consult `MESSAGING_SEND_MODE`. Redacted configuration checks
+found no Twilio auth token, account SID, messaging-service SID or phone number in the managed
+database path, and the 2026-07-31 Cloudflare check found no Twilio credential variable names, so
+that path cannot currently make a provider call successfully. Since 2026-07-27 there are zero
+Twilio provider message rows; aggregate consent telemetry shows 78 no-consent refusals and one send
+failure. Before any Twilio credential is added, either turn the production automation SMS switch
+off or deploy a reviewed explicit-provider gate. Neither action is part of ordinary CallRail
+promotion. Consent counts were unchanged by the CallRail activation—nothing was bulk-recorded.
+
+**Twilio transition inventory (do not collapse these surfaces):** (1) staff P2P uses the explicit
+`MESSAGING_SEND_MODE` adapter and is CallRail today; (2) automated/scheduled/sequence SMS is
+Twilio-only behind `sms_sending_enabled` and currently lacks an explicit provider-mode gate;
+(3) Twilio inbound/status endpoints must remain fail-closed but must not be mode-gated, because a
+future cutover still needs to process late signed provider events; and (4) `upr-mcp` exposes direct
+Twilio write tools with separate MCP credentials and no app consent/conversation chokepoint. Before
+Twilio credentials are added, close or explicitly quarantine the MCP write surface, add the
+automation provider gate, fail local credential validation before fetch, and give e-sign SMS a
+stable `client_request_id`. A positive full-handler CallRail direct-send test and post-signature-only
+webhook telemetry are safe pre-cutover repository work. None of these prerequisites authorizes a
+provider switch or changes current CallRail routing.
 
 ### ⚠️ Consent coverage is the live constraint — and inbound does NOT grant consent
 
@@ -4441,3 +4466,24 @@ surfaces. This closes the synthetic transport/presentation proof for that instal
 not prove that every real producer emits at the correct business moment. Source and fake-provider
 tests alone still do not prove live presentation, and every future live send remains separately
 owner-authorized.
+
+**Producer/activation reconciliation (read-only, 2026-07-31):** source contains a producer for all
+15 catalog keys, and the shared production `notification_types` catalog currently has all 15
+`enabled=true`. Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history,
+not current state. Real production evidence exists for assigned appointments and inbound texts;
+the owner sweep is not real-business evidence for the other types. Two authorization dependencies
+remain explicit: `appointments` still exposes anon all-row writes and `appointment_crew` permits
+all-row writes to any authenticated session, so the three `appointment.*` trigger paths inherit a
+broader producer boundary than their recipient logic; the timesheet change RPCs still rely on
+spoofable client-supplied actor identifiers. Do not cite `enabled=true` as security approval—repair
+those producer boundaries before treating the affected types as fully qualified. The
+`clock.abandoned` scan also writes its once-only `system_events` marker before `notify_emit`; while
+the type is enabled today, disabling it during a scan would consume the occurrence without an alert.
+Changing that ordering is a reviewed migration/rollback task, not a dashboard toggle.
+Repository-only containment source
+`20260731223000_notification_unsafe_producer_containment.sql` disables the three appointment and
+two timesheet types without touching their producer tables or any messaging provider; its paired
+rollback restores the same five keys. The migration refuses unless all five keys exist and are
+enabled immediately before apply, so rollback is an exact restoration rather than a blind toggle.
+It is **UNAPPLIED** until a separate shared-database window is authorized. Re-enable only after
+caller-derived appointment/timesheet authorization and negative tests pass.

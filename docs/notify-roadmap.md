@@ -326,6 +326,14 @@ dedupe seam only), hook tests. No schema, no UI, no CSS.
 `estimate.accepted`, `timesheet.change_requested|change_reviewed`, `clock.abandoned` = **disabled**
 (no B hook — later phases / follow-ups).
 
+> **Superseded current-state note (2026-07-31):** the paragraph above records Session B's handoff,
+> not today's catalog. A read-only shared-project query found all 15 catalog types enabled, including
+> appointment, estimate, timesheet and clock events. The source has producers for all 15, but the
+> synthetic owner sweep bypasses the business-event switch and does not qualify producer timing or
+> authorization. `UPR-Web-Context.md` → “Producer/activation reconciliation” is the current
+> boundary: appointment and timesheet producers retain authorization dependencies, and the
+> abandoned-clock marker ordering needs a reviewed migration if disable/re-enable semantics matter.
+
 ## Session C — My-prefs UI (desktop + tech)
 
 > **Branch:** harness-assigned, cut from `origin/dev`. **Prerequisite:** F2 merged. Model:

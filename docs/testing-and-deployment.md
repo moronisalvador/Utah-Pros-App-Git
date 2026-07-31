@@ -458,11 +458,16 @@ matches the configured company/number pair, incomplete pagination fails closed, 
 bounded per-page timeouts, missing health evidence is not displayed as a clear backlog, and shared
 database health is not presented as deployment-specific webhook proof.
 
-Deploying the setup UI does not authorize activation. Production stays
-`MESSAGING_SEND_MODE=disabled`; Preview/Production Cloudflare bindings, the CallRail text webhook,
-tracking-number routing, signing key, and any real/test message remain separate owner/external
-gates. Future RCS setup remains planned only and must prove explicit channel locking with automatic
-RCS-to-SMS/MMS fallback disabled.
+The pre-activation sequence above is historical. A read-only Cloudflare inspection on 2026-07-31
+confirmed both Preview and Production at `MESSAGING_SCHEMA_MODE=foundation` and
+`MESSAGING_SEND_MODE=callrail`; production CallRail staff SMS/MMS activation and bidirectional
+evidence are recorded in `UPR-Web-Context.md`. No Twilio credential variable names were present.
+CallRail is therefore the preservation baseline: do not change provider mode, bindings, webhook or
+number routing during a normal `dev → main` promotion. Any future Twilio activation remains a
+separate owner/provider window after CallRail-compatible code is already deployed; there is no
+adapter or cross-channel fallback. Emergency rollback remains `MESSAGING_SEND_MODE=disabled` plus
+redeploy. Future RCS setup remains planned only and must prove explicit channel locking with
+automatic RCS-to-SMS/MMS fallback disabled.
 
 ### Private outbound MMS verification
 
