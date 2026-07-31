@@ -67,6 +67,30 @@ contains `.crm-lead-value{appearance:none;…}` as a top-level rule.
 **Reading the diff is not enough here** — an unclosed brace at end-of-file looks like an ordinary
 addition in every hunk. Trust the brace-balance guard, not the eye.
 
+## QBO estimate acceptance now syncs back to UPR (2026-07-31)
+
+**Incident:** a customer (Alex Orozco, EST-001018) accepted a QuickBooks estimate and UPR never
+found out — the owner had to convert it manually. Root cause: `qbo-webhook.js` processed **Payment
+entities only** and the hourly poller was payments-only too; QBO estimate answers had no path into
+UPR (a second stale case, EST-001008, sat accepted-in-QBO/`submitted`-in-UPR for 10 days).
+
+**Fix (workers only — no schema, no UI):** new **`functions/lib/qbo-estimate-sync.js`**
+(`syncQboEstimateToUpr`) wired into both `qbo-webhook.js` (now routes `Estimate` entities through
+the same signature/claim/realm guards) and `qbo-payments-sync.js` (hourly sweep of
+Accepted/Rejected/Converted estimates, failure-isolated from payments). Accepted → estimate
+`approved` (+`approved_at`/`approved_amount` from QBO) + the same `convert_estimate_to_invoice`
+RPC the staff button runs → draft UPR invoice; the status flip fires the pre-existing
+`trg_estimate_accepted_notify` trigger → `estimate.accepted` admin push. Rejected → `denied`.
+QBO-side conversions adopt via `adoptInvoiceFromQboEstimate` (now exported). Guards: only
+pre-decision statuses auto-advance; UPR decisions are never overwritten; conversion echoes no-op;
+`needs_confirm` (target invoice already has lines) approves without appending. **The human
+Save-to-QBO gate is untouched** — nothing auto-calls `/api/qbo-invoice`. Detail:
+`BILLING-CONTEXT.md` §"Estimate answers flowing back from QBO".
+
+**Owner gates:** add the **Estimate** entity to the Intuit Developer webhook subscription
+(real-time; the hourly sweep covers the gap meanwhile), and promote `dev → main` (the Intuit
+webhook URL + pg_cron both point at `utahpros.app`, so production only picks this up on promotion).
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:

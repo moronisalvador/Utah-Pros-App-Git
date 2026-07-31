@@ -273,13 +273,38 @@ the established authenticated request helpers.
   Binding equality, deployed hashes and representative live identities remain release gates.
 
 ### Payments flowing back from QBO (and Stripe)
-- **`qbo-webhook.js`** — Intuit-signed webhook (Payment entity). Idempotent via the `claim_qbo_event`
-  RPC; always returns 200 (per-event errors logged to `qbo_events`).
-- **`qbo-payments-sync.js`** — hourly safety-net poll (7-day lookback) for anything the webhook missed.
+- **`qbo-webhook.js`** — Intuit-signed webhook (Payment + Estimate entities). Idempotent via the
+  `claim_qbo_event` RPC; always returns 200 (per-event errors logged to `qbo_events`).
+- **`qbo-payments-sync.js`** — hourly safety-net poll (7-day lookback) for anything the webhook missed
+  (payments AND estimate answers; the estimate sweep is failure-isolated from payment reconciliation).
 - Both call **`functions/lib/qbo-payment-sync.js`** → `syncQboPaymentToUpr` (fetch QBO payment, dedup
   on `qbo_payment_id`, insert into `payments` with `source='qbo'`, and **adopt** QBO-auto-created
   invoices when a customer pays an estimate deposit online — via `convert_estimate_to_invoice`) /
   `removeQboPaymentFromUpr`. The `amount_paid` trigger does the rest.
+
+### Estimate answers flowing back from QBO (2026-07-31)
+- Both paths also call **`functions/lib/qbo-estimate-sync.js`** → `syncQboEstimateToUpr`: a customer
+  **accepting** an estimate online marks the UPR estimate `approved` (stamping
+  `approved_at`/`approved_amount` from QBO's `AcceptedDate`/`TotalAmt`) and runs the same
+  `convert_estimate_to_invoice` RPC the staff button uses → a draft UPR invoice, ready for human
+  review. The status flip fires the pre-existing `trg_estimate_accepted_notify` DB trigger → the
+  `estimate.accepted` admin notification. A customer **declining** marks it `denied`
+  ("Declined by customer in QuickBooks"). A QBO-side **conversion** is adopted via
+  `adoptInvoiceFromQboEstimate` (same helper the deposit path uses).
+- Guards: only pre-decision estimates (`draft`/`submitted`/`under_review`/`revised`) are
+  auto-advanced — a UPR decision (approved/denied/paid) is never overwritten (incl. by a QBO-side
+  conversion); UPR's own conversion echoes back from QBO as `Converted` with `converted_invoice_id`
+  already set → no-op; if the target invoice already has line items the sync approves WITHOUT
+  appending (double-billing guard, `needs_confirm`) and leaves conversion to a human.
+- *Disclosed residual (security review 2026-07-31):* the webhook and the hourly sweep could in
+  principle process the same estimate concurrently — the shared `convert_estimate_to_invoice` RPC
+  does no row locking, so a truly simultaneous pair could double-append lines. Judged low
+  probability at current volume (sweep is serial; webhook events are claim-deduped); revisit with a
+  `SELECT ... FOR UPDATE`/claim if ever observed in `worker_runs`/`qbo_events`.
+- **The human Save-to-QuickBooks gate is untouched** — nothing here calls `/api/qbo-invoice`; the
+  converted UPR invoice waits for a human to push/send it.
+- **Intuit dashboard gate:** the webhook subscription must include the **Estimate** entity (it was
+  Payment-only). Until the owner adds it, the hourly sweep still mirrors answers within the hour.
 
 ### Logging
 Workers log to **`worker_runs`** (`worker_name`, status, counts, error — attachments as
@@ -299,10 +324,12 @@ carry the same `is_external=false` predicate; that database residual is tracked 
 
 ### Payment two-way sync activation (2026-07-24)
 The QBO→UPR payment path is built; the hourly safety-net poller is now wired via pg_cron
-(`20260724180100_qbo_payments_sync_cron.sql`, owner-authorized apply pending) →
-`/api/qbo-payments-sync` using `integration_config.qbo_webhook_secret`. Real-time webhook still needs
-`QBO_WEBHOOK_VERIFIER_TOKEN` in Cloudflare + the Intuit **Payment** subscription to
-`https://utahpros.app/api/qbo-webhook`. Dedup on `qbo_payment_id` keeps both paths from double-counting.
+(`20260724180100_qbo_payments_sync_cron.sql`, applied — runs hourly at :17) →
+`/api/qbo-payments-sync` using `integration_config.qbo_webhook_secret`. The real-time webhook is
+live (`QBO_WEBHOOK_VERIFIER_TOKEN` set; Payment events verified processing in `qbo_events`); the
+Intuit subscription to `https://utahpros.app/api/qbo-webhook` needs the **Estimate** entity added
+alongside **Payment** for real-time estimate answers. Dedup on `qbo_payment_id` keeps both paths
+from double-counting.
 
 ---
 
