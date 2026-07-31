@@ -882,7 +882,7 @@ employees               — 15 rows as of Jul 1 2026 (8 auth-linked, 7 unlinked)
 nav_permissions         — 66 rows — Role-based nav access
 feature_flags           — 20 rows as of Jul 1 2026 — Feature flag controls (has force_disabled BOOLEAN column — kills page for everyone including admins). Apr 17 additions (all dev-only for Moroni): page:tech_rooms, page:tech_moisture, page:tech_equipment, page:water_loss_report, offline:queue. Time-Tracking PR-2 (Jun 26 2026) added clock_enforce_explicit_clockout (category time_tracking, default OFF) — read BACKEND-side by clock_omw_precheck + clock_appointment_action; when ON, going On-My-Way while clocked in on another job is hard-blocked (OPEN_ENTRY_EXISTS) instead of auto-superseding. NOTE: the client reads its raw `enabled` (not isFeatureEnabled, which fails-open to true).
 employee_page_access    — Per-employee page overrides (employee_id, nav_key, can_view, updated_by, updated_at)
-device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table.
+device_tokens           — Native push tokens (employee_id, token UNIQUE, platform 'ios'|'android'|'web', created_at, updated_at) — used by send-push worker. **RLS (App Store readiness A, Jul 17 2026):** SELECT policy "Own tokens or admin read" scoped to `employee_id = caller` OR caller role IN ('admin','project_manager') — was `USING(true)` (every employee could read every token). Writes/reads are RLS-exempt in practice: registration via SECURITY DEFINER `upsert_device_token`, send-push reads via service-role — no authenticated frontend caller reads this table. **apns_topic (Jul 30 2026 — AUTHORED, NOT APPLIED):** nullable text column recording the installed app's bundle id per token (see "Per-token APNs topic" section) — NULL on every existing row until the migration applies and clients re-enroll.
 employee_onboarding_state — **AUTHORED, NOT APPLIED (Jul 29 2026)** — per-employee versioned first-run
                           onboarding flag (employee_id + surface PK, version_seen, updated_at). Deny-all
                           RLS (enabled+forced, zero browser-role grants); reached only via the two
@@ -1167,6 +1167,36 @@ Strings: `tech.json → onboarding.*` (en/pt/es). **What's New mechanism (owner-
 the content layer is the `TOUR_STEPS` descriptor list in TechOnboarding.jsx — a future version bumps
 `TECH_ONBOARDING_VERSION` in `src/lib/techOnboarding.js` and swaps that list; the shell (gating,
 state machine, focus trap, exit) is reused as-is.
+
+### Per-token APNs topic (Jul 30 2026 — authored, **NOT applied**)
+```
+upsert_my_native_device_token(p_token TEXT, p_apns_environment TEXT, p_apns_topic TEXT DEFAULT NULL)
+                                  → jsonb — replaces the live 2-param definition in one transaction
+                                  (DROP + CREATE, never a second overload: two candidates for the same
+                                  named-argument call is PostgREST PGRST203 and breaks the deployed
+                                  caller; the DEFAULT keeps the shipped {p_token, p_apns_environment}
+                                  call resolving). Same definer posture (auth.uid() → active internal
+                                  employee, search_path '', REVOKE PUBLIC/anon before GRANT
+                                  authenticated+service_role). New: validates p_apns_topic as a bundle
+                                  id, stores it, returns it; ON CONFLICT keeps a recorded topic via
+                                  COALESCE so an older client's NULL re-upsert can't erase it.
+```
+Migration `supabase/migrations/20260730170000_device_token_apns_topic.sql` (+ paired rollback that
+restores the prior body under the SAME 3-param signature, + CI contract test
+`tests/qa/unit/device-token-apns-topic.test.js`, + behavioral db-lane test
+`supabase/tests/device_token_apns_topic_isolated.sql` proving the 2-arg call still succeeds and the
+COALESCE topic-preservation — db lane runs at the apply window against an isolated DB, it is NOT CI
+coverage). **Why:** one env-wide `APNS_TOPIC` per Cloudflare
+deployment cannot serve two bundle ids — the 2026-07-30 fleet outage was Preview's topic set for the
+side-by-side UPR Dev app (`com.utahprosrestoration.upr.dev`) while dev.utahpros.app hosted the
+production outbox (every push 400 DeviceTokenNotForTopic). Now `functions/lib/apns.js` selects
+`apns_topic` with each token row and addresses each device with its own topic, falling back to env
+`APNS_TOPIC` for legacy/NULL rows (APNS_TOPIC stays mandatory); `src/lib/pushNotifications.js` passes
+the installed bundle id (ground truth via `getInstalledAppBundleId()` in `src/lib/nativeAppInfo.js`,
+null-safe) on every enrollment re-upsert. **Sequencing: schema FIRST** — the worker selects the new
+column and the native client passes the new param, so the migration must apply before this code
+deploys to dev (auto-deploy on commit) and before any native rebuild; deployed-first code would read
+`token_lookup_failed` (worker) / PGRST202 (client). Apply + commit are separate owner-authorized gates.
 
 ### Workers & Dev
 ```

@@ -1,6 +1,6 @@
 # Native push activation and release gate
 
-**Last verified:** 2026-07-29
+**Last verified:** 2026-07-30
 
 Native push is wired end to end and the focused database boundary is live. Apple
 and Cloudflare sender configuration exists, the compatible `dev` bundle is
@@ -215,7 +215,7 @@ failure rather than an explicit configuration error.
 | `APNS_P8_KEY` | encrypted secret; full `.p8`, newlines preserved |
 | `APNS_KEY_ID` | `JX22945D4T` |
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
-| `APNS_TOPIC` | `com.utahprosrestoration.upr` |
+| `APNS_TOPIC` | `com.utahprosrestoration.upr` — same in BOTH sets, and stays there: once the authored per-token topic change is live it is only the fallback for legacy `device_tokens` rows with no recorded `apns_topic`. Never flip it per app (2026-07-30 outage). |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
 | `NATIVE_RICH_NOTIFICATION_PRESENTATION` | unset = typed rich copy enabled (fail-open by design); exact string `false` reverts native copy to the generic fallback WITHOUT disabling push delivery — this is the copy-level rollback seam |
 | `VITE_NATIVE_PUSH_ENABLED` | exact string `false` until the focused native-token migration is live-verified |
@@ -224,14 +224,23 @@ failure rather than an explicit configuration error.
 TestFlight is a production-signed distribution build and must use APNs
 production. Only development-signed device builds use the sandbox.
 
-**Side-by-side dev app (2026-07-29):** the `Dev` build configuration
-(`docs/mobile/dev-app-variant.md`) installs as bundle id
-`com.utahprosrestoration.upr.dev`. For push to reach it, Cloudflare **Preview**
-`APNS_TOPIC` must change to `com.utahprosrestoration.upr.dev` (Preview
-`APNS_ENV` stays `sandbox`) plus a Preview redeploy. That is an owner-gated
-dashboard change and has NOT been made; until then the dev app enrolls a
-sandbox token but deliveries are addressed to the production topic and will not
-arrive. Production's variable set is untouched by this.
+**Side-by-side dev app (2026-07-29; superseded plan struck 2026-07-30):** the
+`Dev` build configuration (`docs/mobile/dev-app-variant.md`) installs as bundle
+id `com.utahprosrestoration.upr.dev`. ~~For push to reach it, Cloudflare
+**Preview** `APNS_TOPIC` must change to `com.utahprosrestoration.upr.dev`.~~
+**Do NOT flip `APNS_TOPIC` — that exact flip caused the 2026-07-30
+production-fleet outage** (the dev-hosted message outbox sent every
+production-token push with the dev topic; Apple rejected all of them
+`400 DeviceTokenNotForTopic`). The durable replacement is per-token topics:
+`device_tokens.apns_topic` records each registration's own bundle id at
+enrollment and `apns.js` addresses each token with it, `APNS_TOPIC` serving
+only as the legacy-row fallback (`com.utahprosrestoration.upr` in BOTH
+variable sets, permanently). Authored 2026-07-30 — migration
+`20260730170000_device_token_apns_topic.sql` + worker + client — pending the
+separate owner-authorized apply, then deploy (schema first: the worker selects
+the new column and the client passes the new parameter), then a dev-app
+launch to re-enroll its token with its topic. Production's variable set is
+untouched throughout.
 
 ## Live activation evidence
 

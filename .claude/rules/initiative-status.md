@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-29 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-07-30 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -21,7 +21,19 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-**None.** Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
+- **`20260730170000_device_token_apns_topic.sql`** (authored 2026-07-30, this session) — per-token
+  APNs topic: additive `device_tokens.apns_topic` + a DEFAULT-preserving replace of
+  `upsert_my_native_device_token` (2-param → single 3-param function; deployed caller keeps
+  resolving). Paired rollback + CI contract test + behavioral db-lane test
+  (`supabase/tests/device_token_apns_topic_isolated.sql` — apply-window proof, NOT CI coverage)
+  committed alongside. **Sequencing: apply BEFORE the
+  companion worker/client code deploys** — `apns.js` selects the new column and the client passes the
+  new param, so code-first deployment breaks push lookup (`token_lookup_failed`) and native
+  enrollment (PGRST202). Kills the wrong-topic failure mode behind the 2026-07-30 push outage; the
+  Preview `APNS_TOPIC` flip planned for the dev app is superseded and must not be made
+  (`docs/mobile/push-activation-owner-gate.md`).
+
+Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
 - `20260729220000_tech_onboarding_state.sql` → live ledger `20260730115220`. Postconditions and an
   independent check passed (RLS enabled+forced, no browser-role table grant, `anon` EXECUTE false on

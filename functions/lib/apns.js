@@ -19,6 +19,11 @@
  * NOTES / GOTCHAS:
  *   - APNS_ENV is mandatory and must be sandbox or production. There is no
  *     default because a wrong guess makes one environment delete another's token.
+ *   - Each registration row may carry its own apns_topic (the installed app's
+ *     bundle id, e.g. the side-by-side "UPR Dev" app). A row's topic wins;
+ *     rows without one fall back to the env APNS_TOPIC, so APNS_TOPIC stays
+ *     mandatory. One env-wide topic caused the 2026-07-30 fleet outage
+ *     (DeviceTokenNotForTopic) once two bundle ids shared a deployment.
  *   - Results never include raw APNs tokens.
  *   - A stable source-event occurrence is claimed durably before provider use.
  *     The same identity is also sent as apns-collapse-id so Apple merges a
@@ -228,7 +233,7 @@ export async function sendNativePushToEmployee({
       `employee_id=eq.${employeeId}`
         + `&platform=eq.ios`
         + `&apns_environment=eq.${config.environment}`
-        + '&select=id,token,updated_at'
+        + '&select=id,token,updated_at,apns_topic'
         + '&order=updated_at.desc'
         + `&limit=${APNS_MAX_TOKENS_PER_EMPLOYEE}`,
     );
@@ -298,6 +303,12 @@ export async function sendNativePushToEmployee({
   }
 
   const results = await Promise.all(tokens.slice(0, APNS_CONCURRENCY).map(async (row) => {
+    // Apple validates the topic against the app the token was minted for, so
+    // a registration that recorded its own bundle id is addressed with it;
+    // legacy rows (no recorded topic) keep the deployment-wide APNS_TOPIC.
+    const rowTopic = typeof row.apns_topic === 'string' && row.apns_topic.trim()
+      ? row.apns_topic.trim()
+      : config.topic;
     // Token row ids are registration lifecycle details: logout/cap pruning can
     // delete them. Hash the token into a non-reversible stable fingerprint so a
     // delete + re-register cannot erase the 90-day source-event replay fence.
@@ -330,7 +341,7 @@ export async function sendNativePushToEmployee({
             method: 'POST',
             headers: {
               authorization: `bearer ${jwt}`,
-              'apns-topic': config.topic,
+              'apns-topic': rowTopic,
               'apns-push-type': 'alert',
               'apns-priority': '10',
               'apns-expiration': '0',
