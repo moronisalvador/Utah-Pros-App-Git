@@ -6,9 +6,9 @@
  * WHAT THIS DOES (plain language):
  *   Draws a single message inside a conversation — the coloured chat bubble, any
  *   photo/file attachments on it, and the little line underneath showing the time
- *   and whether the text was sent, delivered, read, or failed. If a message failed
- *   to send it shows why and offers a one-tap "Retry". It only draws things; the
- *   parent screen decides what a retry actually does.
+ *   and whether the text was sent, delivered, read, or failed. A quiet name above
+ *   the bubble identifies every staff sender and each customer in a group chat.
+ *   If a message failed to send it shows why and offers a one-tap "Retry".
  *
  * WHERE IT LIVES:
  *   Route:        n/a (rendered by Conversations.jsx for every message in a thread)
@@ -30,7 +30,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
-  isAmbiguousSend,
+  isAmbiguousSend, messageSenderName,
 } from './messageUtils';
 
 function formatMsgTime(iso) {
@@ -160,7 +160,13 @@ function StatusAffordance({ msg, onRetry }) {
 
 // ─── SECTION: Render ──────────────
 
-export default function MessageBubble({ msg, onRetry, onMediaLayout }) {
+export default function MessageBubble({
+  msg,
+  participants = [],
+  isMultiConversation = false,
+  onRetry,
+  onMediaLayout,
+}) {
   const { db } = useAuth();
   const isInbound = msg.type === 'sms_inbound' || msg.type === 'email_inbound';
   const isNote = msg.type === 'internal_note';
@@ -171,9 +177,11 @@ export default function MessageBubble({ msg, onRetry, onMediaLayout }) {
     + (msg._pending ? ' is-pending' : '') + (failed ? ' is-failed' : '');
 
   const tokens = msg.body ? linkifyTokens(msg.body) : [];
+  const senderName = messageSenderName(msg, participants, isMultiConversation);
 
   return (
     <div className={cls} data-msg-id={msg.id}>
+      {senderName && <div className="message-sender-name">{senderName}</div>}
       <div className="message-bubble">
         {isNote && <span className="msg-note-label">📝 {msg.employees?.full_name || 'Note'}</span>}
         {media.length > 0 && (
