@@ -1,0 +1,33 @@
+<!--
+════════════════════════════════════════════════
+FILE: oop-pricing.html
+════════════════════════════════════════════════
+
+WHAT THIS DOES (plain language):
+  Provides the empty local page used to show the real OOP calculator with
+  sample-only data. It is never included in the customer-facing application.
+
+DEPENDS ON:
+  Packages:  n/a
+  Internal:  tests/qa/fixtures/oop-pricing.jsx
+  Data:      reads  → synthetic fixture state only
+             writes → none
+
+NOTES / GOTCHAS:
+  - The local QA runner opens this file and blocks all browser traffic except
+    read-only requests to its own loopback server.
+════════════════════════════════════════════════
+-->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>OOP Pricing QA</title>
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/tests/qa/fixtures/oop-pricing.jsx"></script>
+  </body>
+</html>
