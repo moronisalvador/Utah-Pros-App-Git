@@ -22,6 +22,12 @@ NOTES / GOTCHAS:
 
 # Handoff — the apply window, then the remaining follow-ups
 
+> **SUPERSEDED — historical handoff only; do not execute it as current state.** Its database-lane
+> premise and `DARK_BASELINE` instructions were retired 2026-07-31 after hosted `qa-staging`
+> reached zero failed assertions. Re-read `.claude/rules/initiative-status.md` and the staging
+> runbook before considering any remaining migration named below; each live apply still requires
+> a fresh exact-source review and separate owner authorization.
+
 Paste everything from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---

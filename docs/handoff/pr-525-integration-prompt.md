@@ -23,6 +23,11 @@ NOTES / GOTCHAS:
 
 # Handoff — integrate PR #525 onto today's baseline
 
+> **COMPLETED AND SUPERSEDED — do not execute this integration prompt.** PR #525 is already in
+> `dev`; its historical `DARK_BASELINE` conflict instructions no longer apply. Hosted
+> `qa-staging` runs the JavaScript database lane with a zero-failure gate; current QA truth lives
+> in `docs/database/staging-branch-runbook.md`.
+
 Paste everything from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---
