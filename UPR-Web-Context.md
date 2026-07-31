@@ -4228,6 +4228,13 @@ estimated, approved, invoiced, and collected. Those values are available on bell
 templates. Payment surfaces include a distinct trusted `invoice_number` variable;
 the separate `payment_reference` remains a charge/payment reference and is not relabeled as an
 invoice. Native Title and Message expose the same picker for that event.
+**payment.received enriched (2026-07-31, owner request):** `notifyPaymentReceived` now resolves
+`customer_name` (contacts) and `job_number` (jobs) best-effort at notify time — all three producers
+(QBO sync, card charge, Stripe webhook) pass `contact_id` — and the plain bell/email body reads
+"$X from <client> · Job #N · Invoice <no> · via <source> (<reference>)". Both variables joined the
+`payment.received` template allowlist and the default rich template; context always carries
+render-safe fallbacks (`Customer` / `—`) because `renderTemplate` refuses blank variables. A lookup
+failure degrades the copy, never the notification, never the payment path.
 The page calls `/api/notification-presentation`; the browser never accesses the new storage/RPC.
 Its Settings-kit styles are route-scoped in `NotificationPresentation.css`, keeping the global
 `src/index.css` source below its blocking budget without changing the page design.

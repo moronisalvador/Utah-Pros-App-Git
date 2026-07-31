@@ -487,7 +487,11 @@ describe('sendNativePushToEmployee', () => {
           source: 'Credit card',
           reference: 'Charge #ch_demo',
         },
-        presentation_context: { invoice_number: 'INV-1042' },
+        presentation_context: {
+          invoice_number: 'INV-1042',
+          customer_name: 'Jordan Lee',
+          job_number: 'JOB-1042',
+        },
       },
       eventKey: 'payment.received:rich',
       fetchImpl,
@@ -497,7 +501,7 @@ describe('sendNativePushToEmployee', () => {
     const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
     expect(payload.aps.alert).toEqual({
       title: 'Payment received',
-      body: '$1,250.00 recorded via Credit card · Charge #ch_demo',
+      body: '$1,250.00 from Jordan Lee · Job JOB-1042 · via Credit card',
     });
     expect(payload.data.url).toBe('/');
   });

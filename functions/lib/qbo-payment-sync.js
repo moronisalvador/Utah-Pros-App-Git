@@ -51,6 +51,7 @@ export async function notifyPaymentReceived({
   amount,
   invoiceId,
   jobId,
+  contactId,
   source,
   reference,
   invoiceNumber,
@@ -60,19 +61,56 @@ export async function notifyPaymentReceived({
   try {
     const amt = Number(amount);
     const money = Number.isFinite(amt) ? `$${amt.toFixed(2)}` : 'A payment';
+
+    // Who paid, for what job — the copy was unreadable without them (owner
+    // report 2026-07-31: two emails, same "QBO Payment #5887", no client, no
+    // job). Both lookups are best-effort: a miss degrades the copy, never the
+    // notification, and never the payment path.
+    let customerName = null;
+    let jobNumber = null;
+    if (contactId) {
+      try {
+        customerName = (await db.select(
+          'contacts', `id=eq.${contactId}&select=name`,
+        ))?.[0]?.name || null;
+      } catch { customerName = null; }
+    }
+    if (jobId) {
+      try {
+        jobNumber = (await db.select(
+          'jobs', `id=eq.${jobId}&select=job_number`,
+        ))?.[0]?.job_number || null;
+      } catch { jobNumber = null; }
+    }
+
+    const parts = [
+      `${money}${customerName ? ` from ${customerName}` : ''}`,
+      jobNumber ? `Job #${jobNumber}` : null,
+      invoiceNumber ? `Invoice ${invoiceNumber}` : null,
+      source ? `via ${source}` : null,
+    ].filter(Boolean);
+    const bodyText = `${parts.join(' · ')}${reference ? ` (${reference})` : ''}.`;
+
     await dispatchImpl({
       db, env,
       typeKey: 'payment.received',
       body: {
         notification_event_id: paymentEventId || null,
         title: 'Payment received',
-        body: `${money} recorded${source ? ` via ${source}` : ''}${reference ? ` · ${reference}` : ''}.`,
+        body: bodyText,
         link: invoiceId ? `/invoices/${invoiceId}` : '/collections',
         entity_type: 'invoice',
         entity_id: invoiceId || null,
         job_id: jobId || null,
         payload: { amount: Number.isFinite(amt) ? amt : null, source: source || null, reference: reference || null },
-        presentation_context: { invoice_number: invoiceNumber || null },
+        presentation_context: {
+          invoice_number: invoiceNumber || null,
+          // The template renderer refuses to render when any referenced
+          // variable is blank (renderTemplate → null → generic fallback), so
+          // these always carry a non-empty string.
+          customer_name: customerName || 'Customer',
+          job_number: jobNumber || '—',
+        },
         data: { route: invoiceId ? `/invoices/${invoiceId}` : '/collections' },
       },
     });
@@ -268,6 +306,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     // above) never re-fires — idempotent by construction.
     await notifyPaymentReceived({
       db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
+      contactId: inv.contact_id || null,
       source: 'QuickBooks', reference: `QBO Payment #${qboPaymentId}`,
       invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
       paymentEventId: `qbo:${qboPaymentId}:${inv.id}`,

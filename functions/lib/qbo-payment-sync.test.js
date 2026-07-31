@@ -59,7 +59,40 @@ describe('notifyPaymentReceived (payment.received emit hook)', () => {
     expect(evt.body.body).toContain('$1234.50');
     expect(evt.body.body).toContain('Stripe');
     expect(evt.body.payload.amount).toBe(1234.5);
-    expect(evt.body.presentation_context).toEqual({ invoice_number: 'INV-1001' });
+    // db has no select here, so the enrichment lookups fail closed: context
+    // still carries render-safe fallbacks (renderTemplate refuses blanks) and
+    // the plain body simply omits the unknown segments.
+    expect(evt.body.presentation_context).toEqual({
+      invoice_number: 'INV-1001',
+      customer_name: 'Customer',
+      job_number: '—',
+    });
+    expect(evt.body.body).not.toContain('from');
+    expect(evt.body.body).not.toContain('Job #');
+  });
+
+  it('names the customer and job when the lookups resolve', async () => {
+    const select = vi.fn(async (table) => {
+      if (table === 'contacts') return [{ name: 'Kate Dalton' }];
+      if (table === 'jobs') return [{ job_number: '1042' }];
+      return [];
+    });
+    await notifyPaymentReceived({
+      db: { select }, env: ENV, amount: 4103.62,
+      invoiceId: 'inv-2', jobId: 'job-2', contactId: 'contact-2',
+      source: 'QuickBooks', reference: 'QBO Payment #5887', invoiceNumber: 'INV-209',
+    });
+    const evt = dispatchEvent.mock.calls[0][0];
+    expect(evt.body.body).toBe(
+      '$4103.62 from Kate Dalton · Job #1042 · Invoice INV-209 · via QuickBooks (QBO Payment #5887).',
+    );
+    expect(evt.body.presentation_context).toEqual({
+      invoice_number: 'INV-209',
+      customer_name: 'Kate Dalton',
+      job_number: '1042',
+    });
+    expect(select).toHaveBeenCalledWith('contacts', 'id=eq.contact-2&select=name');
+    expect(select).toHaveBeenCalledWith('jobs', 'id=eq.job-2&select=job_number');
   });
 
   it('falls back to /collections when there is no invoice id', async () => {
@@ -119,7 +152,11 @@ describe('syncQboPaymentToUpr — recorded-only, idempotent notify', () => {
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
     expect(dispatchEvent.mock.calls[0][0].typeKey).toBe('payment.received');
     expect(dispatchEvent.mock.calls[0][0].body.presentation_context)
-      .toEqual({ invoice_number: 'QB-1001' });
+      .toEqual({
+        invoice_number: 'QB-1001',
+        customer_name: 'Customer',
+        job_number: '—',
+      });
   });
 
   it('does NOT re-fire for an already-synced (re-delivered) payment', async () => {
