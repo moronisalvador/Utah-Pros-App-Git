@@ -149,7 +149,8 @@ async function fetchPaymentMethodName(env, refValue) {
 // and ADOPTS the QBO invoice id onto the resulting UPR invoice — so the estimate shows
 // converted in UPR and the payment lands on the right invoice. Returns the UPR invoice
 // { id, job_id, contact_id } or null when it isn't an estimate conversion we can mirror.
-async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
+// Exported: qbo-estimate-sync.js reuses it when an estimate is converted inside QBO.
+export async function adoptInvoiceFromQboEstimate(env, db, qboInvoiceId) {
   let qboInv;
   try {
     const r = await qboFetch(env, `/invoice/${qboInvoiceId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
