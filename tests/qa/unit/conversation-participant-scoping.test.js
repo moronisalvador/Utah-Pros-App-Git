@@ -59,7 +59,10 @@ const read = (file) => readFileSync(file, 'utf8');
 const norm = (sql) => sql.replace(/\s+/g, ' ').toLowerCase();
 const stripComments = (sql) => sql.replace(/--[^\n]*/g, '');
 const functionBody = (sql, name) => {
-  const start = sql.indexOf(`create or replace function public.${name}`);
+  const start = Math.max(
+    sql.indexOf(`create or replace function public.${name}`),
+    sql.indexOf(`create function public.${name}`),
+  );
   expect(start, `missing ${name}`).toBeGreaterThanOrEqual(0);
   const end = sql.indexOf('$function$;', start);
   expect(end, `unterminated ${name}`).toBeGreaterThan(start);
@@ -82,6 +85,7 @@ describe('conversation participant scoping — migration source contract', () =>
   );
   const techInbox = functionBody(sql, 'get_tech_conversations');
   const messageAuthors = functionBody(sql, 'get_message_author_directory');
+  const accessSnapshot = functionBody(sql, 'get_my_conversation_access_snapshot');
 
   it('ships a paired rollback and required migration header', () => {
     expect(existsSync(MIGRATION)).toBe(true);
@@ -114,19 +118,19 @@ describe('conversation participant scoping — migration source contract', () =>
       'grant execute on function public.set_my_conversation_unread_state(uuid[], boolean) to authenticated',
     );
     expect(enforcementSql).toContain(
-      'drop policy allow_authenticated_conversations on public.conversations',
+      'alter policy allow_authenticated_conversations on public.conversations to authenticated',
     );
     expect(enforcementSql).toContain(
-      'create policy allow_authenticated_conversations on public.conversations for select',
+      'using (public.messaging_can_access_conversation(id)) with check (false)',
     );
     expect(enforcementSql).toContain(
-      'revoke all on table public.conversations, public.conversation_participants from authenticated',
+      'revoke all on table public.conversations, public.conversation_participants from public, anon, authenticated',
     );
     expect(enforcementSql).toContain(
       'grant select on table public.conversations, public.conversation_participants to authenticated',
     );
     expect(enforcementSql).toContain("policy.cmd = 'all'");
-    expect(enforcementSql).toContain("policy.cmd = 'select'");
+    expect(enforcementSql).not.toContain('drop policy');
     expect(enforcementSql).toContain("policy.roles = array['authenticated']::name[]");
     expect(enforcementSql).toContain(
       "has_table_privilege( 'authenticated', 'public.conversations', 'insert' )",
@@ -176,16 +180,16 @@ describe('conversation participant scoping — migration source contract', () =>
 
   it('scopes conversations, external participants, and individual messages through one predicate', () => {
     expect(sql).toContain(
-      'create policy allow_authenticated_conversations on public.conversations for select',
+      'alter policy allow_authenticated_conversations on public.conversations to authenticated using (public.messaging_can_access_conversation(id)) with check (false)',
     );
     expect(sql).toContain('using (public.messaging_can_access_conversation(id))');
     expect(sql).toContain(
-      'create policy allow_authenticated_conversation_participants on public.conversation_participants for select',
+      'alter policy allow_authenticated_conversation_participants on public.conversation_participants to authenticated using (public.messaging_can_access_conversation(conversation_id)) with check (false)',
     );
     expect(sql).toContain('using (public.messaging_can_access_conversation(conversation_id))');
     expect(sql).toContain('alter policy messages_authenticated_select');
     expect(sql).toContain('public.messaging_can_access_conversations() and public.messaging_can_access_conversation(conversation_id)');
-    expect(sql).toContain('revoke all on table public.conversations, public.conversation_participants from authenticated');
+    expect(sql).toContain('revoke all on table public.conversations, public.conversation_participants from public, anon, authenticated');
     expect(sql).toContain('grant select on table public.conversations, public.conversation_participants to authenticated');
     expect(sql).not.toContain('grant update (unread_count)');
   });
@@ -238,6 +242,20 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(techInbox).toContain('from public.conversations c where public.messaging_can_access_conversation(c.id)');
   });
 
+  it('returns a bounded actor-derived access snapshot without revealing nonexistent ids', () => {
+    expect(accessSnapshot).toContain('auth.uid()');
+    expect(accessSnapshot).toContain('employee.is_active');
+    expect(accessSnapshot).toContain('not employee.is_external');
+    expect(accessSnapshot).toContain('messaging_employee_has_conversations_capability(v_actor_id)');
+    expect(accessSnapshot).toContain('cardinality(p_conversation_ids) > 200');
+    expect(accessSnapshot).toContain('requested.conversation_id is null');
+    expect(accessSnapshot).toContain('from unnest(p_conversation_ids) requested(conversation_id)');
+    expect(accessSnapshot).toContain('join public.conversations conversation');
+    expect(accessSnapshot).toContain('messaging_employee_can_access_conversation( v_actor_id, conversation.id )');
+    expect(accessSnapshot).toContain('select distinct conversation.id');
+    expect(accessSnapshot).not.toContain("auth.role() = 'service_role'");
+  });
+
   it('resolves authors for every authored message through the same per-conversation gate', () => {
     expect(messageAuthors).toContain("auth.role() = 'service_role'");
     expect(messageAuthors).toContain('public.messaging_can_access_conversations()');
@@ -254,11 +272,12 @@ describe('conversation participant scoping — migration source contract', () =>
       ['messaging_employee_has_conversations_capability(uuid)', 'service_role'],
       ['messaging_employee_can_access_conversation(uuid, uuid)', 'service_role'],
       ['messaging_can_access_conversation(uuid)', 'authenticated, service_role'],
-      ['get_conversation_members(uuid)', 'authenticated'],
-      ['set_conversation_member_override(uuid, uuid, boolean)', 'authenticated'],
-      ['set_default_conversation_member(uuid, boolean)', 'authenticated'],
-      ['leave_conversation(uuid)', 'authenticated'],
-      ['set_my_conversation_unread_state(uuid[], boolean)', 'authenticated'],
+      ['get_conversation_members(uuid)', 'authenticated, service_role'],
+      ['set_conversation_member_override(uuid, uuid, boolean)', 'authenticated, service_role'],
+      ['set_default_conversation_member(uuid, boolean)', 'authenticated, service_role'],
+      ['leave_conversation(uuid)', 'authenticated, service_role'],
+      ['get_my_conversation_access_snapshot(uuid[])', 'authenticated, service_role'],
+      ['set_my_conversation_unread_state(uuid[], boolean)', 'authenticated, service_role'],
       ['find_or_create_scoped_conversation(uuid, uuid)', 'service_role'],
       ['search_scoped_conversation_contacts(uuid, text, integer)', 'service_role'],
       ['get_conversation_notification_recipients(uuid)', 'service_role'],
@@ -306,11 +325,12 @@ describe('conversation participant scoping — rollback source contract', () => 
   });
 
   it('restores the prior broad authenticated policies and message read contract', () => {
-    expect(sql).toContain('create policy allow_authenticated_conversations on public.conversations for all to authenticated using (true) with check (true)');
-    expect(sql).toContain('create policy allow_authenticated_conversation_participants on public.conversation_participants for all to authenticated using (true) with check (true)');
+    expect(sql).toContain('alter policy allow_authenticated_conversations on public.conversations to authenticated using (true) with check (true)');
+    expect(sql).toContain('alter policy allow_authenticated_conversation_participants on public.conversation_participants to authenticated using (true) with check (true)');
     expect(sql).toContain('alter policy messages_authenticated_select on public.messages to authenticated using (public.messaging_can_access_conversations())');
     expect(sql).toContain('grant all on table public.conversations, public.conversation_participants to authenticated');
     expect(sql).toContain('drop function if exists public.set_my_conversation_unread_state(uuid[], boolean)');
+    expect(sql).toContain('drop function if exists public.get_my_conversation_access_snapshot(uuid[])');
   });
 
   it('restores the unscoped prior inbox function and its browser grants', () => {

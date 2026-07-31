@@ -6,7 +6,7 @@
 -- WHAT THIS DOES (plain language):
 --   Activates the participant-aware database read boundary after the compatible
 --   tables/RPC foundation and its Worker/UI callers are deployed. Existing policy
---   objects are narrowed in place and direct browser conversation creation is
+--   objects are narrowed in place without dropping them, and direct browser creation is
 --   removed; creation now goes through /api/message-conversations atomically.
 --
 -- DEPLOYMENT ORDER:
@@ -17,7 +17,7 @@
 --
 -- CONTRACT:
 --   No table/column/function signature changes. Existing policy objects are
---   replaced only after an exact baseline preflight. Authenticated browsers keep
+--   altered only after an exact baseline preflight. Authenticated browsers keep
 --   SELECT access through participant-aware RLS and lose every direct table write;
 --   read/unread mutations use the actor-derived compatibility RPC instead.
 --
@@ -154,21 +154,17 @@ BEGIN
 END;
 $conversation_policy_preflight$;
 
-DROP POLICY allow_authenticated_conversations
-  ON public.conversations;
-CREATE POLICY allow_authenticated_conversations
+ALTER POLICY allow_authenticated_conversations
   ON public.conversations
-  FOR SELECT
   TO authenticated
-  USING (public.messaging_can_access_conversation(id));
+  USING (public.messaging_can_access_conversation(id))
+  WITH CHECK (false);
 
-DROP POLICY allow_authenticated_conversation_participants
-  ON public.conversation_participants;
-CREATE POLICY allow_authenticated_conversation_participants
+ALTER POLICY allow_authenticated_conversation_participants
   ON public.conversation_participants
-  FOR SELECT
   TO authenticated
-  USING (public.messaging_can_access_conversation(conversation_id));
+  USING (public.messaging_can_access_conversation(conversation_id))
+  WITH CHECK (false);
 
 ALTER POLICY messages_authenticated_select
   ON public.messages
@@ -179,6 +175,91 @@ ALTER POLICY messages_authenticated_select
   );
 
 REVOKE ALL ON TABLE public.conversations, public.conversation_participants
-  FROM authenticated;
+  FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON TABLE public.conversations, public.conversation_participants
   TO authenticated;
+GRANT ALL ON TABLE public.conversations, public.conversation_participants
+  TO service_role;
+
+DO $conversation_policy_postcondition$
+DECLARE
+  v_table text;
+  v_privilege text;
+BEGIN
+  IF NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'conversations'
+         AND policy.policyname = 'allow_authenticated_conversations'
+         AND policy.permissive = 'PERMISSIVE'
+         AND policy.cmd = 'ALL'
+         AND policy.roles = ARRAY['authenticated']::name[]
+         AND replace(
+           regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+           'public.',
+           ''
+         ) = 'messaging_can_access_conversation(id)'
+         AND regexp_replace(
+           COALESCE(policy.with_check, ''),
+           '\s+',
+           '',
+           'g'
+         ) = 'false'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'conversation_participants'
+         AND policy.policyname = 'allow_authenticated_conversation_participants'
+         AND policy.permissive = 'PERMISSIVE'
+         AND policy.cmd = 'ALL'
+         AND policy.roles = ARRAY['authenticated']::name[]
+         AND replace(
+           regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+           'public.',
+           ''
+         ) = 'messaging_can_access_conversation(conversation_id)'
+         AND regexp_replace(
+           COALESCE(policy.with_check, ''),
+           '\s+',
+           '',
+           'g'
+         ) = 'false'
+     ) THEN
+    RAISE EXCEPTION 'conversation policy enforcement: policy postcondition failed';
+  END IF;
+
+  FOREACH v_table IN ARRAY ARRAY[
+    'public.conversations',
+    'public.conversation_participants'
+  ]
+  LOOP
+    IF NOT has_table_privilege('authenticated', v_table, 'SELECT')
+       OR NOT has_table_privilege('service_role', v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'conversation policy enforcement: required SELECT is missing on %',
+        v_table;
+    END IF;
+
+    FOREACH v_privilege IN ARRAY ARRAY[
+      'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ]
+    LOOP
+      IF has_table_privilege('authenticated', v_table, v_privilege)
+         OR has_table_privilege('anon', v_table, v_privilege)
+         OR NOT has_table_privilege('service_role', v_table, v_privilege) THEN
+        RAISE EXCEPTION
+          'conversation policy enforcement: % ACL postcondition failed on %',
+          v_privilege,
+          v_table;
+      END IF;
+    END LOOP;
+
+    IF has_table_privilege('anon', v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'conversation policy enforcement: anon SELECT remains on %',
+        v_table;
+    END IF;
+  END LOOP;
+END;
+$conversation_policy_postcondition$;

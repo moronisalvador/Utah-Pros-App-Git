@@ -1,3 +1,23 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: conversationUnread.test.js
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Checks that marking conversations read or unread sends one clean list of
+ *   conversation IDs. It also keeps failure cases visible so a lost connection
+ *   cannot look like the change was saved.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./conversationUnread.js
+ *   Data:      reads  → none (in-memory test doubles only)
+ *              writes → none (in-memory test doubles only)
+ *
+ * NOTES / GOTCHAS:
+ *   - This test uses a fake database client and never calls a live database.
+ * ════════════════════════════════════════════════
+ */
 import { describe, expect, it, vi } from 'vitest';
 import { setMyConversationUnreadState } from './conversationUnread.js';
 

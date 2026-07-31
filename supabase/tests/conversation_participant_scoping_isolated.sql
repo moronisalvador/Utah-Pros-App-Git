@@ -59,6 +59,9 @@ BEGIN
      OR to_regprocedure('public.get_message_author_directory(uuid[])') IS NULL
      OR to_regprocedure(
        'public.set_my_conversation_unread_state(uuid[],boolean)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.get_my_conversation_access_snapshot(uuid[])'
      ) IS NULL THEN
     RAISE EXCEPTION 'conversation participant scoping RPC dependency is absent';
   END IF;
@@ -271,6 +274,10 @@ BEGIN
       RAISE EXCEPTION 'authenticated SELECT is missing for %', v_table;
     END IF;
 
+    IF NOT has_table_privilege('service_role', v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'service_role SELECT is missing for %', v_table;
+    END IF;
+
     FOREACH v_privilege IN ARRAY ARRAY[
       'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
     ]
@@ -278,7 +285,16 @@ BEGIN
       IF has_table_privilege('authenticated', v_table, v_privilege) THEN
         RAISE EXCEPTION 'authenticated % unexpectedly remains on %', v_privilege, v_table;
       END IF;
+
+      IF has_table_privilege('anon', v_table, v_privilege)
+         OR NOT has_table_privilege('service_role', v_table, v_privilege) THEN
+        RAISE EXCEPTION '% ACL postcondition failed for %', v_privilege, v_table;
+      END IF;
     END LOOP;
+
+    IF has_table_privilege('anon', v_table, 'SELECT') THEN
+      RAISE EXCEPTION 'anon SELECT unexpectedly remains on %', v_table;
+    END IF;
   END LOOP;
 
   IF NOT EXISTS (
@@ -287,8 +303,19 @@ BEGIN
        WHERE policy.schemaname = 'public'
          AND policy.tablename = 'conversations'
          AND policy.policyname = 'allow_authenticated_conversations'
-         AND policy.cmd = 'SELECT'
+         AND policy.cmd = 'ALL'
          AND policy.roles = ARRAY['authenticated']::name[]
+         AND replace(
+           regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+           'public.',
+           ''
+         ) = 'messaging_can_access_conversation(id)'
+         AND regexp_replace(
+           COALESCE(policy.with_check, ''),
+           '\s+',
+           '',
+           'g'
+         ) = 'false'
      )
      OR NOT EXISTS (
        SELECT 1
@@ -296,10 +323,21 @@ BEGIN
        WHERE policy.schemaname = 'public'
          AND policy.tablename = 'conversation_participants'
          AND policy.policyname = 'allow_authenticated_conversation_participants'
-         AND policy.cmd = 'SELECT'
+         AND policy.cmd = 'ALL'
          AND policy.roles = ARRAY['authenticated']::name[]
+         AND replace(
+           regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+           'public.',
+           ''
+         ) = 'messaging_can_access_conversation(conversation_id)'
+         AND regexp_replace(
+           COALESCE(policy.with_check, ''),
+           '\s+',
+           '',
+           'g'
+         ) = 'false'
      ) THEN
-    RAISE EXCEPTION 'participant enforcement policies are not SELECT-only';
+    RAISE EXCEPTION 'participant enforcement policies are not effectively SELECT-only';
   END IF;
 END;
 $acl_postcondition$;
@@ -422,6 +460,7 @@ DECLARE
   v_private_message uuid := current_setting('upr.cps.private_message')::uuid;
   v_visible_message uuid := current_setting('upr.cps.visible_message')::uuid;
   v_unread integer;
+  v_snapshot uuid[];
 BEGIN
   -- Exact no-argument legacy call still has the established composite shape.
   v_inbox := public.get_tech_conversations();
@@ -455,6 +494,35 @@ BEGIN
      ) THEN
     RAISE EXCEPTION 'message author directory hid an authorized conversation author';
   END IF;
+
+  SELECT array_agg(snapshot.conversation_id ORDER BY snapshot.conversation_id)
+    INTO v_snapshot
+  FROM public.get_my_conversation_access_snapshot(
+    ARRAY[v_visible, v_private, v_visible, gen_random_uuid()]
+  ) snapshot;
+
+  IF v_snapshot IS DISTINCT FROM ARRAY[v_visible] THEN
+    RAISE EXCEPTION 'access snapshot must return only distinct accessible existing conversation ids: %', v_snapshot;
+  END IF;
+
+  PERFORM pg_temp.expect_sqlstate(
+    'access snapshot rejects a null array',
+    'SELECT * FROM public.get_my_conversation_access_snapshot(NULL)'
+    , '22023'
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'access snapshot rejects a null array element',
+    format(
+      'SELECT * FROM public.get_my_conversation_access_snapshot(ARRAY[%L::uuid, NULL::uuid])',
+      v_visible
+    ),
+    '22023'
+  );
+  PERFORM pg_temp.expect_sqlstate(
+    'access snapshot rejects more than 200 ids',
+    'SELECT * FROM public.get_my_conversation_access_snapshot(array_fill(gen_random_uuid(), ARRAY[201]))'
+    , '22023'
+  );
 
   PERFORM pg_temp.expect_sqlstate(
     'authenticated cannot call scoped create directly',
@@ -651,6 +719,16 @@ SELECT pg_temp.expect_sqlstate(
   )
 );
 
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_no_cap')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'no-capability employee cannot request an access snapshot',
+  format(
+    'SELECT * FROM public.get_my_conversation_access_snapshot(ARRAY[%L::uuid])',
+    current_setting('upr.cps.conversation_visible')
+  )
+);
+
 RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_external')::uuid);
@@ -659,6 +737,14 @@ SELECT pg_temp.expect_sqlstate(
   'external employee cannot mutate unread state',
   format(
     'SELECT public.set_my_conversation_unread_state(ARRAY[%L::uuid], false)',
+    current_setting('upr.cps.conversation_visible')
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'external employee cannot request an access snapshot',
+  format(
+    'SELECT * FROM public.get_my_conversation_access_snapshot(ARRAY[%L::uuid])',
     current_setting('upr.cps.conversation_visible')
   )
 );
