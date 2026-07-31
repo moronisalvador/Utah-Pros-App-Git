@@ -64,8 +64,25 @@ describe('conversation participant UI contract', () => {
     expect(css).toContain('@media (max-width: 768px)');
     expect(css).toMatch(/min-height:\s*48px/);
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');
+    expect(css).toContain('.tech-layout .conversation-members__leave');
     expect(globalCss).toContain('padding-bottom: env(safe-area-inset-bottom, 0px)');
     expect(globalCss).toContain('animation: uiSheetUp');
+  });
+
+  it('keeps participant tactile feedback on pointer activation, never keyboard click', () => {
+    expect(editor).toContain('className="ui-seg conversation-members__tabs"');
+    expect(editor).toContain('ui-seg-indicator conversation-members__tab-indicator');
+    expect(editor).toContain('const handleAutomatic = (member) => {');
+    expect(editor).toContain('const handleAdd = (member) => {');
+    expect(editor).toContain('const handleDefaultOn = (member) => {');
+    expect(editor.match(/onPointerUp=\{selection\}/g)?.length).toBeGreaterThanOrEqual(7);
+    expect(editor).not.toContain('selection();');
+    expect(leaveButton).toContain('onPointerUp={selection}');
+    expect(leaveButton).not.toContain('selection();');
+    expect(techThread).toContain("onPointerUp={() => impact('light')}");
+    expect(desktopInbox).toContain("onPointerUp={() => impact('light')}");
+    expect(techThread).not.toContain('selection();');
+    expect(desktopInbox).not.toContain('selection();');
   });
 
   it('uses shared sender labels and readable phone-sized message text', () => {

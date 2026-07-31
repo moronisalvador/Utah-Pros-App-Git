@@ -30,7 +30,9 @@ describe('native-first conversation thread contract', () => {
 
   it('keeps phone text readable and participant controls native-safe', () => {
     expect(css).toMatch(/@media \(max-width: 768px\)[\s\S]*?\.message-bubble \{[\s\S]*?font-size: var\(--text-xl\)/);
-    expect(css).toContain('.conversation-members :is(.btn, .ui-modal-close) { min-height: 48px; }');
+    expect(css).toContain(
+      '.conversation-members :is(.btn, .ui-seg-btn, .ui-modal-close) { min-height: 48px; }',
+    );
     expect(thread).toContain("import '@/components/conversations/conversationExperience.css'");
     expect(globalCss).toContain('padding-bottom: env(safe-area-inset-bottom, 0px)');
     expect(css).toContain('@media (prefers-reduced-motion: reduce)');

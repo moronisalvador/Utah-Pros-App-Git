@@ -42,7 +42,7 @@ import { useTranslation } from 'react-i18next';
 import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { observeKeyboardInset } from '@/lib/nativeKeyboardLayout';
-import { selection } from '@/lib/nativeHaptics';
+import { impact } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import MessageBubble from '@/components/conversations/MessageBubble';
 import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
@@ -386,10 +386,8 @@ export default function ThreadView({
             <button
               type="button"
               className="tv2-msgs-info__dnd conversation-members__launch"
-              onClick={() => {
-                selection();
-                setMemberEditorOpen(true);
-              }}
+              onPointerUp={() => impact('light')}
+              onClick={() => setMemberEditorOpen(true)}
             >
               <IconPeople width={16} height={16} />
               Chat participants

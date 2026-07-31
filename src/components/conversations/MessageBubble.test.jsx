@@ -1,3 +1,23 @@
+/**
+ * ════════════════════════════════════════════════
+ * FILE: MessageBubble.test.jsx
+ * ════════════════════════════════════════════════
+ *
+ * WHAT THIS DOES (plain language):
+ *   Checks how conversation messages are labeled and whether uncertain delivery
+ *   results can be sent again safely. It also checks when customer names appear
+ *   in conversations shared by more than one customer.
+ *
+ * DEPENDS ON:
+ *   Packages:  vitest
+ *   Internal:  ./messageUtils.js
+ *   Data:      reads  → none (in-memory test values only)
+ *              writes → none (in-memory test values only)
+ *
+ * NOTES / GOTCHAS:
+ *   - This test never connects to a live database or messaging provider.
+ * ════════════════════════════════════════════════
+ */
 import { describe, expect, it } from 'vitest';
 import { isAmbiguousSend, messageSenderName } from './messageUtils.js';
 
