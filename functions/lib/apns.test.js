@@ -468,7 +468,7 @@ describe('sendNativePushToEmployee', () => {
     expect(serializedPayload).not.toContain('secret-provider-id');
   });
 
-  it('renders approved rich native details only from typed event context', async () => {
+  it('renders approved rich native details only when explicitly enabled', async () => {
     const db = dbWithTokens([{
       id: 'token-rich',
       token: 'private-token',
@@ -478,7 +478,7 @@ describe('sendNativePushToEmployee', () => {
 
     await sendNativePushToEmployee({
       db,
-      env: CONFIG,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'true' },
       employeeId: 'employee-1',
       typeKey: 'payment.received',
       notificationBody: {
@@ -557,7 +557,10 @@ describe('sendNativePushToEmployee', () => {
     expect(new TextEncoder().encode(serialized).byteLength).toBeLessThanOrEqual(4_096);
   });
 
-  it('restores generic native copy immediately when the server rollback setting is false', async () => {
+  it.each([
+    ['unset by default', {}],
+    ['explicitly false', { NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' }],
+  ])('uses generic privacy-safe copy when rich presentation is %s', async (_label, richSetting) => {
     const db = dbWithTokens([{
       id: 'token-generic',
       token: 'private-token',
@@ -567,7 +570,7 @@ describe('sendNativePushToEmployee', () => {
 
     await sendNativePushToEmployee({
       db,
-      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' },
+      env: { ...CONFIG, ...richSetting },
       employeeId: 'employee-1',
       typeKey: 'payment.received',
       notificationBody: {
@@ -576,7 +579,11 @@ describe('sendNativePushToEmployee', () => {
           source: 'Credit card',
           reference: 'Charge #ch_demo',
         },
-        presentation_context: { invoice_number: 'INV-1042' },
+        presentation_context: {
+          invoice_number: 'INV-1042',
+          customer_name: 'Jordan Lee',
+          message_preview: 'Customer payment details for the lock screen',
+        },
       },
       eventKey: 'payment.received:generic',
       fetchImpl,
@@ -590,6 +597,13 @@ describe('sendNativePushToEmployee', () => {
     });
     expect(fetchImpl.mock.calls[0][1].body).not.toContain('1,250');
     expect(fetchImpl.mock.calls[0][1].body).not.toContain('INV-1042');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('Jordan Lee');
+    expect(fetchImpl.mock.calls[0][1].body).not.toContain('Customer payment details');
+    expect(db.select).toHaveBeenCalledTimes(1);
+    expect(payload.data).toEqual({
+      url: '/',
+      recipient: await stableApnsId('native-recipient:employee-1'),
+    });
   });
 
   it.each([

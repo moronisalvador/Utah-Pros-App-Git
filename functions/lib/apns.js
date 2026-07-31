@@ -266,9 +266,9 @@ export async function sendNativePushToEmployee({
   const host = config.environment === 'production'
     ? 'https://api.push.apple.com'
     : 'https://api.sandbox.push.apple.com';
-  // Emergency rollback seam: setting this exact server variable to "false"
-  // immediately restores generic native copy without disabling push delivery.
-  const richPresentationEnabled = env.NATIVE_RICH_NOTIFICATION_PRESENTATION !== 'false';
+  // Lock-screen content is privacy-sensitive. Rich copy is therefore opt-in:
+  // only the exact server value "true" may include typed presentation details.
+  const richPresentationEnabled = env.NATIVE_RICH_NOTIFICATION_PRESENTATION === 'true';
   const genericFallback = buildGenericNativeNotificationPresentation(
     typeKey,
     notificationBody,
