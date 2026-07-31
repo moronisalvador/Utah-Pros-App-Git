@@ -138,7 +138,7 @@ The paired owner-gated operational rollback is
 applied; the rollback remains a separate owner-authorized emergency action and retains private data
 inert instead of dropping it.
 
-## QBO command recovery apply candidate
+## QBO command recovery production contract
 
 Two sequenced, additive migrations now define the QBO invoice/conversion concurrency boundary:
 
@@ -155,12 +155,15 @@ Two sequenced, additive migrations now define the QBO invoice/conversion concurr
   as idempotent success without changing the combined-billing rule that QBO invoice ids are
   intentionally non-unique.
 
-Both migrations have paired, candid high-risk rollbacks. The exact final sources are applied only
-to `qa-staging` under ledger rows
-`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
-`20260731205118_qbo_invoice_command_ledger`. Catalog verification confirmed forced RLS,
+Both migrations have paired, candid high-risk rollbacks. The owner-authorized production apply used
+the exact reviewed source commit `3f61e7fa`; its ledger rows are
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger`. Catalog verification confirmed forced RLS,
 service-role-only table/RPC ACLs, the actor constraint, pinned definer search paths and the enabled
-lifecycle trigger. Production apply is pending the committed-source hosted database lane.
+lifecycle trigger; GitHub CI's schema `verify` and governed `db-lane` jobs are green. Compatible
+Worker/client consumers ship in the same `dev` release as this documentation, but database and
+repository state do not prove deployed Cloudflare, authenticated-browser, or provider/webhook
+behavior.
 
 ## Change rules
 
@@ -544,19 +547,21 @@ ledger row exists and its browser-read-only employee contract still matches. Rec
 catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
 S1e or S1g; each remains its own owner-approved window.
 
-## Pending mobile identity and personal ownership sequence (S1h, 2026-07-27)
+## Pending final mobile personal-ownership boundary (S1h, 2026-07-27)
 
-S1h now consists of four reviewed source migrations, all absent from the shared live ledger:
+S1h consists of four reviewed source migrations. The first three dependencies are live and mapped
+in `scripts/migration-provenance-manifest.json`; only the final personal-ownership boundary is
+absent from the shared live ledger:
 
-- `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
+- Live `20260726180000_mobile_employee_identity_authority.sql` creates three additive,
   selector-safe employee read RPCs and changes no existing table, policy, grant, row, or function.
-- `20260726182000_mobile_employee_identity_containment.sql` is a later schema-last boundary. It
+- Live `20260726182000_mobile_employee_identity_containment.sql` is a later schema-last boundary. It
   removes browser employee writes, narrows direct identity reads, and gates existing roster and
   commission RPCs only after compatible clients are deployed.
-- `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
+- Live `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` re-emits the
   already-live permission writer with its reviewed body fingerprint; behavior and grants do not
   change.
-- `20260727022920_mobile_personal_ownership_boundary.sql` replaces nine existing personal RPC
+- Pending `20260727022920_mobile_personal_ownership_boundary.sql` replaces nine existing personal RPC
   bodies, adds one private owner-only helper, forces RLS on `employee_page_access`,
   `notification_prefs`, `push_subscriptions`, and `device_tokens`, and removes every browser policy
   and table privilege from those four tables. Their columns, constraints, indexes, triggers,
@@ -621,7 +626,7 @@ not an apply candidate. Its employee self-promotion and raw-token takeover paths
 the new containment and browser-RPC-only design. Credential-free static and exploit-negative tests
 pass, but the exact checked-in forward/preflight/post-apply/isolated/rollback chain has not run in a
 retained governed local database. Generated schema/RPC reports must continue describing deployed
-state. The broad S1h sequence remains unapplied; the two focused native migrations are live under
+state. The final broad S1h boundary remains unapplied; the two focused native migrations are live under
 reconciled ledger rows `20260729021021` and `20260729021050`.
 
 ## Notification presentation settings (2026-07-29)

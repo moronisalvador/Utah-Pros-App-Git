@@ -45,6 +45,15 @@ against both and change both in one commit.
 - A job can have multiple invoices; supplements do not silently rewrite a completed/paid invoice.
 - Imported provider payments carry stable external identity and source so they do not re-push.
 - Retries of money movement use a stable idempotency key and durable attempt/reconciliation state.
+- QBO invoice retries use one stable UUIDv4 operation id while the outcome is ambiguous. The
+  service-only durable command ledger is created before the provider write and recovery checks it
+  before another provider call, including interruptions on either side of local CAS writeback.
+- Estimate conversion/QBO decisions are row-locked. A populated target invoice remains a manual
+  review boundary; a combined QBO invoice/estimate match is intentionally non-unique and must be
+  reconciled, never allocated arbitrarily.
+- The human Save-to-QuickBooks action remains the only user-authorized QBO provider write; durable
+  recovery is not an automatic-post mechanism. Browser actions require active internal admin
+  authorization, and the shared QBO server secret is rejected by the invoice endpoint.
 - Financial dates use the Denver business day, not UTC string slicing.
 - Current employee roles contain `project_manager`, not `manager`. The historical
   `admin`/`manager` billing predicate is therefore admin-effective; adding `project_manager`

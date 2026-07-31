@@ -348,10 +348,12 @@ separately gated RLS migration finding, not closed by the Worker slice.
 
 The local R0 slice routes `/api/qbo-invoice`, `/api/qbo-estimate`, `/api/qbo-payment`, and
 `/api/qbo-query` through `functions/lib/qbo-auth.js` before connection, domain-table, telemetry or
-provider access. The preserved exact `x-webhook-secret` remains a server capability. Browser
-Bearer access requires a valid session resolving to an active, non-external employee with
-`role='admin'`. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract;
-known employees outside that boundary return 403; auth/configuration failures fail closed.
+provider access. Browser Bearer access requires a valid session resolving to an active,
+non-external employee with `role='admin'`. The human-only invoice endpoint rejects the preserved
+`x-webhook-secret`; background-safe estimate/payment/query paths retain that exact server
+capability. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract; known
+employees outside that boundary return 403; auth/configuration failures fail closed. These
+admin-mobile QBO screens are web/PWA-only and are excluded from the field-only Capacitor bundle.
 
 S1b extends the same active, non-external `admin` browser boundary to
 `/api/qbo-sync-customer` and the HTTP GET/POST forms of `/api/qbo-payments-sync`, while preserving
@@ -370,6 +372,21 @@ policy does not exclude external admins; other notification, recording, RPC, dir
 Storage boundaries remain open. The shared QBO capability's deployed binding equality and
 lifecycle were not inspected, and the S1a caller set remains unproven. `project_manager` inclusion
 and capability retention/rotation are owner decisions.
+
+## QBO invoice command recovery authorization (database applied 2026-07-31)
+
+The owner-authorized apply of exact source commit `3f61e7fa` is recorded in production as
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger`. The `qbo_invoice_commands` table and its command/CAS
+RPCs are forced-RLS and service-role-only; a browser has no ledger grant. Every invoice
+save/send/delete action requires an active, non-external `admin` Bearer session. The shared QBO
+server secret is explicitly rejected on this human-only endpoint and cannot stand in for a person.
+The command binds the authenticated actor before an Intuit write, so retry recovery cannot silently
+become a different authority path.
+
+The compatible Worker/client source ships in the same `dev` release as this documentation, but
+repository state does not prove it is deployed. Cloudflare binding/deployment,
+authenticated-browser and provider proof remain separate owner/external gates.
 
 ## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
 

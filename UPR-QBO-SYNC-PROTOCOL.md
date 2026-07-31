@@ -1,6 +1,6 @@
 # UPR ⇄ QuickBooks Sync / Review Protocol
 
-**Last updated:** June 26, 2026
+**Last updated:** July 31, 2026
 **Purpose:** Hard-won rules for importing/reconciling QuickBooks Online (QBO) invoices,
 payments, and estimates into the UPR database **without creating duplicates or breaking
 totals/balances.** Follow this for any QBO→UPR backfill, A/R review, or estimate sync.
@@ -73,14 +73,31 @@ totals/balances.** Follow this for any QBO→UPR backfill, A/R review, or estima
     duplicate claim, **move the rooms** (`UPDATE rooms SET claim_id = <keep>`) so they aren't
     stranded, then delete the empty claim. (A "duplicate" claim can still hold real room/reading data.)
 
-## 5. QBO API (UPR_MCP) quirks
-16. `qbo_update_invoice` / `qbo_create_invoice` line format is
+## 5. Invoice command recovery and conversion concurrency (2026-07-31)
+16. The QBO recovery database contract is live from exact source commit `3f61e7fa`, under
+    production ledger rows `20260731205928_qbo_estimate_conversion_concurrency` and
+    `20260731205942_qbo_invoice_command_ledger`. Do not reapply, substitute, or hand-recreate it.
+17. A browser QBO invoice operation keeps one stable UUIDv4 idempotency key while its
+    outcome is ambiguous. The service-only, forced-RLS `qbo_invoice_commands` ledger freezes the
+    command and provider request identity before the call; retry recovery must inspect the durable
+    command before making another provider request, and must handle both before-CAS and after-CAS
+    interruption states.
+18. Estimate conversion and QBO decision application are row-locked. A target invoice with line
+    items remains a human-review boundary. A combined QBO billing match is intentionally not unique,
+    so never assign it arbitrarily; retain/reconcile the unresolved case instead.
+19. Human **Save → QBO** remains the sole user-authorized QBO write. Every invoice
+    save/send/delete request requires an active, non-external admin Bearer session; the shared QBO
+    server secret is rejected on this endpoint. The lifecycle trigger/CAS own QBO invoice state;
+    never write trigger-owned money/status columns.
+
+## 6. QBO API (UPR_MCP) quirks
+20. `qbo_update_invoice` / `qbo_create_invoice` line format is
     `{item_id, amount, description?, qty?, unit_price?, class_id?}` — **not** native QBO line objects.
-17. **Discount in QBO = a negative-amount sales line** using item **"Insurance Adjustments"
+21. **Discount in QBO = a negative-amount sales line** using item **"Insurance Adjustments"
     (`item_id 1010000231`)**, not a `DiscountLineDetail` object (the wrapper rejects those).
-18. The API **cannot edit an invoice that has a payment applied** → route that change to the
+22. The API **cannot edit an invoice that has a payment applied** → route that change to the
     bookkeeper.
-19. Avoid non-ASCII characters (e.g. `→`) in `memo`/text params — they can break the wrapper's
+23. Avoid non-ASCII characters (e.g. `→`) in `memo`/text params — they can break the wrapper's
     JSON parse.
 
 ---

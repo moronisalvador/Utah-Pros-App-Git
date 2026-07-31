@@ -19,23 +19,32 @@ The 2026-07-27 `dev → main` promotion hold is **RELEASED** (owner-authorized).
 quiet `dev` and re-check `git rev-list --left-right --count origin/main...origin/dev` immediately
 before promoting.
 
-## Authored but NOT applied to the shared database
+## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
-Two additive QBO money-boundary migrations are staged for production only after their exact
-source is committed, pushed, and the hosted database lane passes:
+The owner-authorized production apply used the exact reviewed source at commit `3f61e7fa`:
 
-- `20260731180000_qbo_estimate_conversion_concurrency.sql` — locks estimate conversion and QBO
-  decision application, makes retry-event reclamation service-only, adds the database-owned
-  invoice QBO lifecycle trigger, and adds a service-only invoice-link CAS; and
-- `20260731210000_qbo_invoice_command_ledger.sql` — adds the forced-RLS, service-only
-  `qbo_invoice_commands` ledger plus five service-only RPCs and idempotent already-applied CAS.
+- `20260731180000_qbo_estimate_conversion_concurrency.sql` → production ledger
+  `20260731205928_qbo_estimate_conversion_concurrency`;
+- `20260731210000_qbo_invoice_command_ledger.sql` → production ledger
+  `20260731205942_qbo_invoice_command_ledger`.
 
-Both paired rollbacks are present. The final split source passed migration safety,
-least-privilege/anon, Worker security, and money reviews plus migration hygiene and credential-free
-contracts. It is applied to `qa-staging` only under ledger rows
-`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
-`20260731205118_qbo_invoice_command_ledger`; hosted behavior/CI remains the production-apply gate.
-Neither migration is in the shared-production ledger yet.
+The paired rollbacks remain available. GitHub CI's schema `verify` and governed `db-lane` jobs are
+green. The compatible Worker/client source in this `dev` release preserves one operation id across
+ambiguous provider and post-provider-finalization failures, and `/api/qbo-invoice` requires an
+active, non-external admin Bearer session rather than the shared QBO server secret. Cloudflare
+deployment, authenticated-browser and Intuit provider/webhook evidence remain owner/external
+release gates and must not be inferred from repository state.
+
+## Deliberately deferred database sources — not current apply candidates
+
+- `20260726183409_inbound_lead_recording_source_boundary.sql` remains reviewed source only. It
+  requires its compatible Worker deployment plus a fresh ledger/catalog recapture and serialized
+  owner-authorized apply window.
+- `20260727022920_mobile_personal_ownership_boundary.sql` remains source-hardened and unapplied.
+  Focused preference/token boundary work changed its expected input state, so its preflight should
+  refuse until the source and evidence are reconciled and re-qualified.
+- Undated `tech_feedback.sql` is grandfathered live history superseded by
+  `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
 ## Applied and reconciled 2026-07-31
 

@@ -9,7 +9,7 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
-## QBO invoice/conversion recovery hardening (2026-07-31 — qa-staging only)
+## QBO invoice/conversion recovery hardening (2026-07-31 — database applied; dev source shipped)
 
 Two sequenced migrations and their compatible Worker/client changes close the captured-provider-
 result/local-write gap without weakening the human Save-to-QuickBooks gate:
@@ -18,20 +18,22 @@ result/local-write gap without weakening the human Save-to-QuickBooks gate:
   boundary, combined QBO invoice/estimate matches are never allocated arbitrarily, and durable
   `reconcile:*` event rows carry unresolved cases;
 - each invoice save/send/delete command is frozen in a private, forced-RLS
-  `qbo_invoice_commands` row before a QBO write. The command binds invoice, action, actor/system
-  identity, realm, local intent, provider request id/payload/result and terminal response; retries
+  `qbo_invoice_commands` row before a QBO write. The command binds invoice, action, authenticated
+  human actor, realm, local intent, provider request id/payload/result and terminal response; retries
   recover both before and after local CAS without a second provider side effect;
-- browser/native callers retain one owner-scoped UUIDv4 operation id in `localStorage` across a
-  tab or Capacitor process restart only while the result is ambiguous. Intuit Accounting writes
+- authenticated browser callers retain one owner-scoped UUIDv4 operation id in `localStorage`
+  across a tab restart only while the result is ambiguous. Intuit Accounting writes
   receive a deterministic `requestid`; and
 - invoice-link/send metadata uses a service-only CAS plus the database lifecycle trigger. Worker
   code never writes trigger-owned `status`, `amount_paid`, `line_total` or `paid_at`.
 
-The exact split migration sources are applied to `qa-staging` under ledger rows
-`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
-`20260731205118_qbo_invoice_command_ledger`. Catalog/RLS/ACL postconditions and local static/Worker
-tests pass. The hosted behavioral lane, production apply, and compatible Worker/client push remain
-pending gates; these objects are not yet in the shared-production ledger.
+The owner-authorized production apply used exact source commit `3f61e7fa`, recorded as
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger`. GitHub CI's schema `verify` and governed `db-lane` jobs
+are green. Catalog/RLS/ACL postconditions and local static/Worker tests pass. Compatible
+Worker/client code ships in the same `dev` release as this documentation; repository state is not
+evidence of a Cloudflare deployment, authenticated-browser execution, or Intuit webhook/provider
+behavior. Those remain owner/external release gates.
 
 ## CRM lead value — manual entry + claim-wide billed total (2026-07-30, owner-directed)
 
@@ -2293,9 +2295,11 @@ new RPCs; everything call-only per the manifest.
   Invoiced/Collected 2-up via `MoneyStatCard`), read-only line items with subtotal/tax/total,
   read-only payment history (payer · method · date · ref · QBO ✓), `qbo_sync_error` banner.
   `inv.locked` hides both money actions; `feature:billing` off shows the desktop's flag message.
-- **Send:** shown ONLY when `qbo_invoice_id` exists (mobile never pushes an invoice to QBO —
-  the human Save→QBO gate stays on desktop). `POST /api/qbo-invoice { invoice_id, action:'send' }`
-  with Bearer; two-click confirm (arms → "Confirm send", disarms on blur); toast feedback.
+- **Send:** shown ONLY when `qbo_invoice_id` exists (this detail screen never pushes an unsynced
+  invoice; QBO save/link remains a separate explicit human action). `POST /api/qbo-invoice
+  { invoice_id, action:'send' }` with Bearer; two-click confirm (arms → "Confirm send", disarms on
+  blur); toast feedback. This admin-mobile surface is web/PWA-only and is excluded from the
+  field-only Capacitor bundle.
 - **Record payment (finding F-1, test-first):**
   `src/components/admin-mobile/invoice/recordPayment.js` — `createPaymentRecorder()` inserts
   ONLY `{invoice_id, job_id, contact_id, amount, payment_date, payer_type, payer_name,
@@ -2336,7 +2340,8 @@ estimate view + the send and convert actions. **Zero schema/RPCs** (QBO workers 
 - **Send:** two-click confirm → pushes to QBO first if unsynced (`POST /api/qbo-estimate
   { estimate_id }`), then `POST /api/qbo-estimate { action:'send' }` (worker defaults `send_to`
   to the contact email; the payload includes `send_to` only when a non-empty email is passed).
-- **Convert:** `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
+- **Convert (web/PWA admin-mobile only; excluded from the native bundle):**
+  `convert_estimate_to_invoice(p_estimate_id, p_force)` → on `needs_confirm` the
   Convert button arms a two-click "append" (surfaces `existing_line_count`); on success →
   `POST /api/qbo-invoice { invoice_id }` to link in QBO, then navigates to the admin-mobile
   invoice detail via `adminInvoiceHref`.
@@ -2481,7 +2486,7 @@ QBO_CLIENT_ID                   — QuickBooks Online OAuth client id (Intuit De
 QBO_CLIENT_SECRET               — QuickBooks Online OAuth client secret
 QBO_ENVIRONMENT                 — "sandbox" | "production" (default production)
 QBO_REDIRECT_URI                — https://dev.utahpros.app/api/quickbooks-callback (must match Intuit app exactly)
-QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved QBO server paths, including invoice/estimate customer self-calls and payment scheduling; the legacy contact trigger is inert
+QBO_WEBHOOK_SECRET              — Shared QBO server capability; accepted on preserved background-safe QBO paths such as estimate customer self-calls and payment scheduling; explicitly rejected by the human-only qbo-invoice endpoint; the legacy contact trigger is inert
 APP_BASE_URL                    — Optional; base for the OAuth return redirect (default: origin of QBO_REDIRECT_URI)
 DEMO_SHEET_FROM_EMAIL           — Optional override (default restoration@utah-pros.com)
 DEMO_SHEET_TO_EMAILS            — Optional CSV override (default moroni.s@utah-pros.com,restoration@utah-pros.com)
@@ -2575,15 +2580,16 @@ caller.
 - `quickbooks-callback.js` — GET. Intuit redirect target; verifies state, exchanges code→tokens, stores connection + company name, and redirects to `/settings/integrations?qbo=connected|error|badstate`.
 - `qbo-sync-customer.js` — POST. Auth via the exact `x-webhook-secret` server capability or an active internal-admin Supabase Bearer. Body `{ contact_id }`, `{ backfill:true, limit }`, or `{ backfill:true, dry_run:true }` (preview — reports would-create vs would-link, writes nothing). Dedup before create: matches an existing QBO customer by **email**, then by **normalized exact DisplayName** (links to it instead of duplicating); QBO 6240 duplicate-name handled by appending the phone's last 4. Backfill capped at 100/call. Logs to `worker_runs` as `qbo-sync-customer`.
 
-**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so a billable contact becomes a QBO customer at invoice/estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
+**Lib:** `functions/lib/quickbooks.js` — OAuth exchange/refresh, `qboFetch`, `getValidAccessToken` (refreshes within 5 min of expiry), `mapContactToCustomer` (normalizes name whitespace), `queryCustomer`, `findExistingCustomer` (email → display-name dedup), `createCustomer`, `ensureQboCustomer` (on-demand: POSTs to `qbo-sync-customer` so an estimate's billable contact can become a QBO customer at estimate time — see BILLING-CONTEXT.md "on-demand creation"). Captures Intuit's `intuit_tid` from API responses (logged on every call; stored in `contacts.qbo_sync_error` on failures for support troubleshooting).
 
 **On-demand customer creation (Phase A/B, shipped; full detail in BILLING-CONTEXT.md):**
-`qbo-invoice.js` / `qbo-estimate.js` call `ensureQboCustomer(request, env, contactId)` when a
-billable contact has no `qbo_customer_id` yet, then re-read and throw the usual "sync the client
-first" error only if it is still missing. Migration
+`qbo-estimate.js` calls `ensureQboCustomer(request, env, contactId)` when a billable contact has no
+`qbo_customer_id` yet, then re-reads and throws the usual "sync the client first" error only if it
+is still missing. The human-only `qbo-invoice.js` path requires the contact to be linked already;
+it never substitutes the shared server capability for the signed-in actor. Migration
 `20260701_crm_qbo_phase_b_gate_contact_trigger.sql` replaced the still-attached contact-insert
-trigger body with `RETURN NEW`, so it is deliberately inert; on-demand invoice/estimate sync and
-explicit Settings preview/backfill are the active checked-in customer-sync callers.
+trigger body with `RETURN NEW`, so it is deliberately inert; on-demand estimate sync and explicit
+Settings preview/backfill are the active checked-in customer-sync callers.
 
 ### Settings Overhaul P9 + Encircle — managed credentials
 
@@ -2612,7 +2618,7 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 - **dev branch → https://dev.utahpros.app** (Cloudflare **Preview** env) — staging; used for sandbox testing.
 - **main branch → https://utahpros.app** (Cloudflare **Production** env) — what everyone uses; production QuickBooks runs here.
 - `integration_config.qbo_worker_url` is legacy configuration for the now-inert contact trigger; it
-  is not an active caller. On-demand invoice/estimate sync uses the deployment's own origin. QBO
+  is not an active caller. On-demand estimate sync uses the deployment's own origin. QBO
   bindings must still live in the matching Cloudflare environment (Preview for dev, Production for
   main).
 - Public EULA/Privacy pages (required by the Intuit production profile) are served at `https://utahpros.app/terms` and `/privacy` (`src/pages/Legal.jsx`). Connecting your own company needs production keys but **no marketplace review**.
@@ -2627,8 +2633,8 @@ Migration `20260707_p9_credential_management.sql` moved Stripe/Twilio/Resend sec
 
 **Scope:** Customers + invoices, one-way (UPR→QBO). Customer dedup matches on email + exact
 (normalized, case-insensitive) name; fuzzy/spelling variants are not caught. Contacts become QBO
-Customers through invoice/estimate on-demand sync or explicit Settings preview/backfill, regardless
-of when name/role was populated.
+Customers through estimate on-demand sync or explicit Settings preview/backfill, regardless of
+when name/role was populated. Invoice push requires the contact's QBO customer link to exist first.
 
 ---
 
@@ -2644,7 +2650,7 @@ Bearer; tokens stay server-side.
 
 **Invoice-number hardening (`migrations/20260707_harden_invoice_number_generation.sql`, 2026-07-07):** the Q2 reconciliation inserted invoices with EXPLICIT numbers (INV-000049–087) that never advanced `invoice_number_seq`, so the app began re-issuing used numbers (a July draft collided at INV-000062 — same class as the 6/30 claim-number bug). Now: **`UNIQUE(invoices.invoice_number)`** + `generate_invoice_number()` rewritten to `max(numeric suffix)+1` from real rows under `pg_advisory_xact_lock` (sequence kept as a synced secondary guard). `qbo_doc_number` is intentionally NOT unique (split/deductible invoices reuse it). Data-integrity health check: `scripts/invoice-integrity-check.sql`. *(Also 2026-07-07: reconciliation line-item backfill + line-amount corrections — see `BILLING-AR-CONSUMER-CHAIN.md` §6b/§6c and `scripts/backfill-recon-invoice-lines.sql` / `fix-recon-invoice-line-amounts.sql`.)*
 
-**Push worker:** `functions/api/qbo-invoice.js` — POST `{ invoice_id }` creates the QBO invoice (one line: division→Item+Class via `divisionToQbo`, amount = `adjusted_total`/`total`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote); idempotent on `qbo_invoice_id`. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success stamps `invoices.qbo_emailed_at` + `qbo_email_status` (+ `sent_to_email`). Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a native UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
+**Push worker:** `functions/api/qbo-invoice.js` — active, non-external admin Bearer only; the shared QBO server secret is rejected before connection, ledger or provider access. POST `{ invoice_id }` creates or updates the QBO invoice (division→Item+Class via `divisionToQbo`, customer = contact `qbo_customer_id`, claim/job ref in PrivateNote). One owner-scoped UUIDv4 operation id plus the private command ledger makes retry recovery safe across ambiguous provider and local-finalization failures. `{ invoice_id, action:'delete' }` removes it from QBO. `{ invoice_id, action:'send', send_to? }` asks QBO to **email the invoice to the customer** (QBO `/invoice/{id}/send` via `sendInvoice()`; recipient defaults to the invoice contact's email, override with `send_to`); on success the service-only CAS stamps invoice link/send metadata. Surfaced as the "Send invoice to customer" button (two-click confirm) in `InvoiceEditor.jsx`. Logs `worker_runs` as `qbo-invoice`. **UI note:** the editor presents this as a first-party UPR invoice — the primary **Save** button persists line edits and pushes to QBO (create first time, update after) in one step; QuickBooks is not surfaced in the UI labels (status: Draft → Saved → Sent → Partial → Paid).
 
 **On-demand draft RPC (`migrations/20260618_invoice_create_rpc.sql`):** `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL) RETURNS invoices` — idempotent (returns existing invoice for the job if any), else inserts a `'draft'` `'standard'` invoice with `generate_invoice_number()`. Granted to `authenticated`. Used by the Billing UI's "Create invoice" button (works without the dormant auto-draft trigger).
 

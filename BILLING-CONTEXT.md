@@ -229,24 +229,26 @@ the established authenticated request helpers.
 - **`qbo-sync-customer.js`** — contact → QBO Customer (per-contact via `{contact_id}`, or `{backfill}`).
   Dedups by email then display name; auto-disambiguates duplicate-name (code 6240) with the phone's
   last 4. Writes `contacts.qbo_customer_id`.
-  - **On-demand creation (Phase A, shipped):** `qbo-invoice.js`/`qbo-estimate.js` now call
+  - **On-demand creation (Phase A, shipped):** `qbo-estimate.js` calls
     `ensureQboCustomer(request, env, contactId)` (in `functions/lib/quickbooks.js`) when a billable
-    contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret) so a QBO
-    customer is created **when the contact is actually invoiced/estimated**, then re-reads the id and
-    throws the usual "sync the client first" error only if it's still missing. Was a no-op until
-    Phase B; now the only automatic transaction-time path that creates a QBO customer. Settings
-    preview/backfill remains an explicit manual path.
+    contact has no `qbo_customer_id` yet — it POSTs to this worker (shared webhook secret), then
+    re-reads the id and throws the usual "sync the client first" error only if it is still missing.
+    The human-only `qbo-invoice.js` path does not use the server capability: an invoice contact must
+    already have `qbo_customer_id` (a stale provider reference may still be re-linked after a
+    definitive QBO rejection). Settings preview/backfill remains an explicit manual path.
   - **Phase B (SHIPPED — `20260701_crm_qbo_phase_b_gate_contact_trigger.sql`):** `trg_qbo_customer_sync`
     is now a **no-op** — `notify_qbo_customer_sync()` was replaced with a `RETURN NEW` body (the
     trigger is kept attached, not dropped, so restoring the prior body re-enables auto-sync; the
     original body is preserved in the migration's comment). Contacts are **no longer** auto-synced to
-    QBO on insert — a customer is created only when actually invoiced/estimated (Phase A self-heal).
+    QBO on insert — estimate push can self-heal a missing link, while invoice push requires an
+    existing QBO customer link.
     Applied to the shared DB **after** Phase A reached production `main` (verified live: a qualifying
     `homeowner`+named contact insert no longer syncs — `qbo_customer_id` stays null, no
     `qbo_sync_error`). The `qbo-sync-customer` worker + its `{backfill}` mode remain for explicit/
     manual syncs.
-    - **The "name added after insert" hole is now moot:** the trigger never fires at all, and the
-      invoice/estimate self-heal syncs at transaction time regardless of when the name was set.
+    - **The "name added after insert" hole is now covered for estimates:** the trigger never fires at
+      all, and estimate self-heal syncs at transaction time regardless of when the name was set.
+      Invoice push requires the explicit customer-sync path first.
 - **`qbo-estimate.js`** — estimate push/send/delete (mirrors `qbo-invoice`; uses `estimate_number` +
   `intended_division`).
 
@@ -254,9 +256,10 @@ the established authenticated request helpers.
 
 - Browser calls to invoice, estimate, payment, query, customer sync, payment sync and OAuth connect
   require a valid Supabase session resolving to an active, non-external `admin`.
-- The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing server paths:
-  invoice/estimate/payment/query, customer sync and HTTP payment sync. The payment poller's direct
-  `scheduled()` entry remains separate. OAuth connect never accepts that capability.
+- The exact `QBO_WEBHOOK_SECRET` capability remains secret-first only on the existing background-safe
+  server paths: estimate/payment/query, customer sync and HTTP payment sync. The human-only invoice
+  endpoint explicitly rejects it. The payment poller's direct `scheduled()` entry remains separate.
+  OAuth connect never accepts that capability.
 - QBO card charge and attachment mutation retain their existing Bearer-only
   `requireRole(['admin','manager'])` contract and explicitly reject external employees before
   business data, telemetry or provider calls. `manager` is not a current role; adding
@@ -271,6 +274,30 @@ the established authenticated request helpers.
 - This is Worker containment only. Direct `qbo_attachments` metadata SELECT remains role-scoped
   without an explicit `is_external=false` predicate and requires a separate reviewed migration.
   Binding equality, deployed hashes and representative live identities remain release gates.
+
+### Durable invoice command recovery (database applied 2026-07-31)
+
+The owner-authorized database apply used reviewed source commit `3f61e7fa`: production ledger rows
+`20260731205928_qbo_estimate_conversion_concurrency` and
+`20260731205942_qbo_invoice_command_ledger` record the estimate/conversion concurrency and invoice
+command-ledger migrations. `qbo_invoice_commands` is forced-RLS and service-only: browser callers
+never read or write its durable command state. A browser operation holds a stable UUIDv4
+idempotency key while its result is ambiguous; the Worker freezes the command and deterministic
+Intuit request id before the provider call, then recovers safely whether a retry arrives before or
+after the local compare-and-swap writeback. This is not a second QBO side effect.
+
+Estimate conversion/QBO decision application is row-locked. A populated target invoice stays a
+manual boundary, and a combined QBO invoice/estimate match is intentionally non-unique: no helper
+may allocate it to a UPR invoice arbitrarily. Service-only recovery records unresolved cases for
+reconciliation. The invoice-link/send metadata CAS and lifecycle trigger own their respective
+state; Workers do not write trigger-owned billing columns.
+
+The human **Save → QBO** action remains the only user-authorized provider write; recovery never
+auto-posts a draft. Every invoice save/send/delete request requires an active, non-external admin
+Bearer session; the shared QBO server secret is explicitly rejected on this human-only endpoint.
+GitHub CI's schema `verify` and governed `db-lane` jobs are green, and the compatible Worker/client
+source ships in the same `dev` release as this documentation. Do not claim Cloudflare deployment,
+authenticated-browser, or Intuit provider proof until those separate gates have evidence.
 
 ### Payments flowing back from QBO (and Stripe)
 - **`qbo-webhook.js`** — Intuit-signed webhook (Payment + Estimate entities). Idempotent via the
