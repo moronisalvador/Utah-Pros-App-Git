@@ -21,6 +21,18 @@ cross-session reconciliation; do not mark it ready, merge it, or otherwise promo
 owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
 promotion.
 
+## Conversation participant scoping — QA foundation only
+
+- Compatible foundation `20260731040337_conversation_participant_scoping.sql` is applied **only**
+  to isolated `qa-staging` as ledger `20260731143710` from reviewed commit `0d5b7fab` (source
+  SHA-256 `f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`). Catalog
+  verification passed: both new membership tables use forced RLS, browser roles cannot read them,
+  their rows remain empty, the intended RPC signatures/grants are present, and the legacy browser
+  INSERT compatibility window remains open. Nothing was applied to the shared production project.
+- Follow-up `20260731040338_conversation_participant_policy_enforcement.sql` is committed but
+  unapplied everywhere. It is blocked until its legacy conversation UPDATE/DELETE authority is
+  narrowed and the full Worker notification-recipient integration receives independent review.
+
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
 The owner-authorized production apply used the exact reviewed source at commit `3f61e7fa`:
