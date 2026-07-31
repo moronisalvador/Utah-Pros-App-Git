@@ -6,9 +6,8 @@
  * WHAT THIS DOES (plain language):
  *   Pulls a payment that happened in QuickBooks (e.g. a customer paid an invoice
  *   online by card or bank transfer) into UPR, so the matching UPR invoice shows
- *   the payment and an updated balance. It figures out which UPR invoice the QBO
- *   payment was applied to, and records it — but skips any payment that UPR itself
- *   created (so a payment is never counted twice).
+ *   the payment and an updated balance. It matches every linked UPR invoice and
+ *   keeps one durable receipt with the invoice-level rows used by existing totals.
  *
  * WHERE IT LIVES:
  *   Used by:  functions/api/qbo-webhook.js (real-time) and
@@ -16,26 +15,26 @@
  *
  * DEPENDS ON:
  *   Packages:  none
- *   Internal:  functions/lib/quickbooks.js (qboFetch)
- *   Data:      reads  → invoices, payments (Supabase); QBO Payment + PaymentMethod (Intuit)
- *              writes → payments (insert). The update_invoice_paid trigger then
- *                       rolls the new payment up into invoices.amount_paid / status.
+ *   Internal:  functions/lib/quickbooks.js, functions/lib/qbo-receipt.js
+ *   Data:      reads  → invoices, payments, payment_receipts,
+ *                       payment_receipt_attempts; QBO Payment + PaymentMethod
+ *              writes → receipt service RPCs and payment.received notifications
  *
  * NOTES / GOTCHAS:
- *   - DEDUP IS CRITICAL: when UPR pushes a payment to QBO, QBO emits a webhook for that
- *     same payment. We skip any QBO payment whose qbo_payment_id already exists on a UPR
- *     payment row, so only payments made *directly in QBO* (online pay-now) get imported.
+ *   - DEDUP IS CRITICAL: a UPR-created receipt is recognized by its private request
+ *     marker and durable attempt, so its webhook cannot create a second payment.
  *   - We never write invoices.amount_paid directly — inserting into `payments` fires the
  *     existing DB trigger that recomputes the invoice.
  *   - A QBO Payment can apply to several invoices (Line[].LinkedTxn); we record the
  *     per-line applied amount against each matching UPR invoice.
- *   - payment_method is constrained in UPR; we map QBO's method name to credit_card / ach,
- *     else 'other'.
+ *   - Receipt mode intentionally supports fully-applied USD invoice payments only.
+ *     Unapplied credit and non-invoice links fail closed for operational review.
  * ════════════════════════════════════════════════
  */
 
-import { qboFetch } from './quickbooks.js';
+import { getConnection, qboFetch } from './quickbooks.js';
 import { dispatchEvent } from '../api/notify.js';
+import { normalizeQboPaymentMethod } from './qbo-receipt.js';
 
 const MINOR_VERSION = '70';
 
@@ -119,15 +118,6 @@ export async function notifyPaymentReceived({
 
 // ─── SECTION: Helpers ──────────────
 
-// Map a QBO PaymentMethod name to UPR's allowed payment_method enum
-// (check, ach, credit_card, wire, cash, insurance_direct, other).
-function mapMethod(name) {
-  const n = (name || '').toLowerCase();
-  if (n.includes('ach') || n.includes('bank') || n.includes('echeck') || n.includes('e-check')) return 'ach';
-  if (n.includes('card') || n.includes('credit') || n.includes('visa') || n.includes('master') || n.includes('amex') || n.includes('discover')) return 'credit_card';
-  return 'other';
-}
-
 async function fetchPaymentMethodName(env, refValue) {
   if (!refValue) return null;
   try {
@@ -138,6 +128,39 @@ async function fetchPaymentMethodName(env, refValue) {
   } catch {
     return null;
   }
+}
+
+function exactCents(value) {
+  const amount = Number(value);
+  const amountCents = Math.round(amount * 100);
+  return Number.isFinite(amount) && Math.abs(amount * 100 - amountCents) < 1e-7
+    ? amountCents
+    : null;
+}
+
+function receiptSyncError(message, retryable = false) {
+  const error = new Error(message);
+  error.name = 'QboReceiptSyncError';
+  error.retryable = retryable;
+  return error;
+}
+
+function uprReceiptRequestId(payment) {
+  const match = /^UPR receipt ([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
+    .exec(String(payment?.PrivateNote || '').trim());
+  return match?.[1]?.toLowerCase() || null;
+}
+
+function matchesAttemptRequest(attempt, allocations, payment) {
+  const payload = attempt?.request_payload;
+  const requested = payload?.allocations;
+  if (!Array.isArray(requested) || requested.length !== allocations.length) return false;
+  const actual = new Map(allocations.map((row) => [String(row.invoice_id), row.amount_cents]));
+  return requested.every((row) => actual.get(String(row.invoice_id)) === Number(row.amount_cents))
+    && String(payload.payment_date || '') === String(payment.TxnDate || '')
+    && String(payload.qbo_payment_method_id || '') === String(payment.PaymentMethodRef?.value || '')
+    && String(payload.deposit_account_id || '') === String(payment.DepositToAccountRef?.value || '')
+    && String(payload.reference_number || '') === String(payment.PaymentRefNum || '');
 }
 
 // Estimate auto-conversion mirror (UPR side of QBO's deposit→invoice behavior).
@@ -279,7 +302,9 @@ export class QboRequestError extends Error {
 
 // Mirror a single QBO Payment into UPR. Idempotent: re-running is a no-op once recorded.
 // Returns { ok, results: [{ qboInvoiceId, recorded?|skipped }] }.
-export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
+export async function syncQboPaymentToUpr(env, db, qboPaymentId, {
+  receiptEnabled = env.QBO_RECEIVE_PAYMENT_ENABLED === 'true',
+} = {}) {
   const res = await qboFetch(env, `/payment/${qboPaymentId}?minorversion=${MINOR_VERSION}`, { method: 'GET' });
   if (!res.ok) {
     // 404 is kept for defensiveness but Intuit does not use it for entity reads.
@@ -293,11 +318,182 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
   if (!pmt) return { ok: true, results: [{ skipped: 'no-payment' }] };
 
   const methodName = await fetchPaymentMethodName(env, pmt.PaymentMethodRef?.value);
-  const method = mapMethod(methodName);
+  const method = normalizeQboPaymentMethod(methodName);
   const txnDate = pmt.TxnDate || null;
+  const reference = pmt.PaymentRefNum || `QBO Payment #${qboPaymentId}`;
 
   const lines = Array.isArray(pmt.Line) ? pmt.Line : [];
   const results = [];
+
+  // New receipt-aware reconciliation is deliberately flag gated: the migration
+  // can land first, while the deployed legacy importer remains the safe fallback.
+  if (receiptEnabled) {
+    const realmId = String((await getConnection(env))?.realm_id || '');
+    if (!realmId) throw new Error('QBO receipt reconciliation requires a connected realm');
+    const existingReceipt = (await db.select(
+      'payment_receipts',
+      `qbo_realm_id=eq.${encodeURIComponent(realmId)}&qbo_payment_id=eq.${encodeURIComponent(qboPaymentId)}&select=id,source&limit=1`,
+    ))?.[0] || null;
+    const providerVersion = pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current';
+    const removeExistingReceiptAsConflict = async () => {
+      if (existingReceipt) {
+        try {
+          await db.rpc('remove_qbo_payment_receipt', {
+            p_qbo_realm_id: realmId,
+            p_qbo_payment_id: String(qboPaymentId),
+            p_status: 'conflict',
+            p_event_key: `conflict:${realmId}:${qboPaymentId}:${providerVersion}`,
+          });
+        } catch (error) {
+          error.retryable = true;
+          throw error;
+        }
+      }
+    };
+    const rejectCurrentReceipt = async (message, retryable = false) => {
+      await removeExistingReceiptAsConflict();
+      throw receiptSyncError(message, retryable);
+    };
+    const deferCurrentReceiptForReconciliation = async (qboInvoiceId, reason) => {
+      // A combined mapping or blocked estimate conversion needs a human decision.
+      // Remove any prior projection first, then return the same structured result
+      // as legacy mode so the webhook/CDC reconciliation ledger can own recovery.
+      await removeExistingReceiptAsConflict();
+      return { ok: true, results: [{ qboInvoiceId, skipped: reason }] };
+    };
+    const totalCents = exactCents(pmt.TotalAmt);
+    const unappliedCents = exactCents(pmt.UnappliedAmt || 0);
+    if (!totalCents || unappliedCents == null) {
+      await rejectCurrentReceipt('QBO receipt contains an invalid or fractional-cent total');
+    }
+    if ((pmt.CurrencyRef?.value || 'USD') !== 'USD') {
+      await rejectCurrentReceipt('QBO receipt reconciliation supports USD payments only');
+    }
+    if (!pmt.CustomerRef?.value || !txnDate) {
+      await rejectCurrentReceipt('QBO receipt is missing its customer or transaction date');
+    }
+    const allocations = [];
+    for (const line of lines) {
+      const lineCents = exactCents(line.Amount);
+      if (!lineCents) continue;
+      const linked = (line.LinkedTxn || []).filter((txn) => txn.TxnType === 'Invoice');
+      if (linked.length !== 1) {
+        await rejectCurrentReceipt('QBO receipt has a positive line that is not linked to exactly one invoice');
+      }
+      const qboInvoiceId = String(linked[0].TxnId);
+      const matchingInvoices = (await db.select(
+        'invoices',
+        `qbo_invoice_id=eq.${qboInvoiceId}&select=id,job_id,contact_id,invoice_number,qbo_doc_number&limit=2`,
+      )) || [];
+      // Combined billing intentionally permits one QBO invoice id on multiple UPR
+      // invoices. Never guess which internal invoice owns this allocation.
+      if (matchingInvoices.length > 1) {
+        return deferCurrentReceiptForReconciliation(
+          qboInvoiceId,
+          'combined-invoice-manual-reconciliation',
+        );
+      }
+      let inv = matchingInvoices[0];
+      if (!inv) inv = await adoptInvoiceFromQboEstimate(env, db, qboInvoiceId, false, true);
+      if (inv?.blocked) {
+        return deferCurrentReceiptForReconciliation(qboInvoiceId, inv.blocked);
+      }
+      if (!inv) await rejectCurrentReceipt(`QBO invoice ${qboInvoiceId} has no UPR invoice mapping`, true);
+      allocations.push({
+        invoice_id: inv.id,
+        qbo_invoice_id: qboInvoiceId,
+        amount_cents: lineCents,
+        payer_type: 'homeowner',
+        contact_id: inv.contact_id,
+        job_id: inv.job_id,
+        invoice_number: inv.qbo_doc_number || inv.invoice_number || null,
+      });
+    }
+    const appliedCents = allocations.reduce((sum, row) => sum + row.amount_cents, 0);
+    if (!allocations.length || unappliedCents !== 0 || appliedCents !== totalCents) {
+      await rejectCurrentReceipt('QBO receipt is not fully applied to supported UPR invoice lines');
+    }
+    const clientRequestId = uprReceiptRequestId(pmt);
+    let matchedAttempt = null;
+    if (clientRequestId) {
+      const attempt = (await db.select(
+        'payment_receipt_attempts',
+        `qbo_realm_id=eq.${encodeURIComponent(realmId)}&client_request_id=eq.${encodeURIComponent(clientRequestId)}&select=id,actor_employee_id,request_payload,qbo_payment_id&limit=1`,
+      ))?.[0] || null;
+      if (attempt
+          && (!attempt.qbo_payment_id || String(attempt.qbo_payment_id) === String(qboPaymentId))
+          && String(attempt.request_payload?.contact_id || '') === String(allocations[0]?.contact_id || '')
+          && matchesAttemptRequest(attempt, allocations, pmt)) {
+        matchedAttempt = attempt;
+      }
+    }
+    // Once a receipt is linked to a UPR attempt, that durable relationship is
+    // stronger than the editable QBO PrivateNote. Preserve the human payer and
+    // actor even if someone later changes the note or allocations in QBO.
+    let linkedAttempt = null;
+    if (!matchedAttempt && existingReceipt?.source === 'upr') {
+      linkedAttempt = (await db.select(
+        'payment_receipt_attempts',
+        `receipt_id=eq.${encodeURIComponent(existingReceipt.id)}&select=id,actor_employee_id,request_payload,qbo_payment_id&order=created_at.asc&limit=1`,
+      ))?.[0] || null;
+      if (linkedAttempt?.qbo_payment_id
+          && String(linkedAttempt.qbo_payment_id) !== String(qboPaymentId)) {
+        linkedAttempt = null;
+      }
+    }
+    const trustedAttempt = matchedAttempt || linkedAttempt;
+    const source = existingReceipt?.source === 'upr' || trustedAttempt ? 'upr' : 'qbo';
+    const payerType = trustedAttempt?.request_payload?.payer_type || 'homeowner';
+    const reconcileResult = await db.rpc('reconcile_qbo_payment_receipt', {
+      p_receipt: {
+        qbo_realm_id: realmId, qbo_payment_id: String(qboPaymentId), qbo_customer_id: pmt.CustomerRef?.value ? String(pmt.CustomerRef.value) : null,
+        txn_date: txnDate, payment_method: method, qbo_payment_method_id: pmt.PaymentMethodRef?.value ? String(pmt.PaymentMethodRef.value) : null,
+        qbo_payment_method_name: methodName, reference_number: reference,
+        deposit_account_id: pmt.DepositToAccountRef?.value ? String(pmt.DepositToAccountRef.value) : null,
+        deposit_account_name: pmt.DepositToAccountRef?.name || null,
+        total_cents: totalCents, applied_cents: appliedCents, unapplied_cents: unappliedCents,
+        source, actor_employee_id: trustedAttempt?.actor_employee_id || null, attempt_id: trustedAttempt?.id || null,
+        qbo_sync_token: pmt.SyncToken || null, qbo_updated_at: pmt.MetaData?.LastUpdatedTime || null, normalized_snapshot: pmt,
+      },
+      p_allocations: allocations.map((row) => ({
+        invoice_id: row.invoice_id,
+        qbo_invoice_id: row.qbo_invoice_id,
+        amount_cents: row.amount_cents,
+        payer_type: payerType,
+      })),
+      p_event_type: 'reconciled',
+      p_event_key: `payment:${realmId}:${qboPaymentId}:${pmt.MetaData?.LastUpdatedTime || pmt.SyncToken || 'current'}`,
+    });
+    const normalizedResult = Array.isArray(reconcileResult) ? reconcileResult[0] : reconcileResult;
+    if (normalizedResult?.ignored_terminal) {
+      return { ok: true, results: [{ qboPaymentId, skipped: 'terminal-receipt' }] };
+    }
+    if (normalizedResult?.ignored_stale) {
+      return { ok: true, results: [{ qboPaymentId, skipped: 'stale-receipt' }] };
+    }
+    for (const allocation of allocations) {
+      if (!existingReceipt && !trustedAttempt && source === 'qbo') {
+        await notifyPaymentReceived({
+          db,
+          env,
+          amount: allocation.amount_cents / 100,
+          invoiceId: allocation.invoice_id,
+          jobId: allocation.job_id,
+          source: 'QuickBooks',
+          reference,
+          invoiceNumber: allocation.invoice_number,
+          paymentEventId: `qbo:${realmId}:${qboPaymentId}:${allocation.invoice_id}`,
+        });
+      }
+      results.push({
+        qboInvoiceId: allocation.qbo_invoice_id,
+        invoice_id: allocation.invoice_id,
+        amount: allocation.amount_cents / 100,
+        ...(existingReceipt ? { reconciled: true } : { recorded: true }),
+      });
+    }
+    return { ok: true, results };
+  }
 
   for (const line of lines) {
     const linked = (line.LinkedTxn || []).find(l => l.TxnType === 'Invoice');
@@ -365,7 +561,7 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
     await notifyPaymentReceived({
       db, env, amount: applied, invoiceId: inv.id, jobId: inv.job_id,
       contactId: inv.contact_id || null,
-      source: 'QuickBooks', reference: `QBO Payment #${qboPaymentId}`,
+      source: 'QuickBooks', reference,
       invoiceNumber: inv.qbo_doc_number || inv.invoice_number || null,
       paymentEventId: `qbo:${qboPaymentId}:${inv.id}`,
     });
@@ -375,11 +571,34 @@ export async function syncQboPaymentToUpr(env, db, qboPaymentId) {
   return { ok: true, results };
 }
 
-// Remove UPR payments that were imported from a now-deleted/voided QBO payment. The
-// invoice trigger reopens the invoice automatically. Only touches source='qbo' rows so
-// it never deletes a UPR-originated payment.
-export async function removeQboPaymentFromUpr(db, qboPaymentId) {
+// A terminal QBO event removes every active projection for a durable receipt while
+// retaining its header/events as audit evidence. The legacy fallback remains limited
+// to source='qbo' rows because it has no receipt-level audit record.
+export async function removeQboPaymentFromUpr(db, qboPaymentId, {
+  receiptEnabled = false,
+  status = 'voided',
+  eventKey = null,
+  realmId = null,
+} = {}) {
+  // The receipt RPC removes all active allocation projections together and retains
+  // the accounting audit record. The idempotent legacy cleanup always follows:
+  // if a prior attempt wrote the tombstone but failed while deleting a pre-receipt
+  // projection, an RPC replay must still finish that cleanup.
+  let removedReceipt = false;
+  if (receiptEnabled && db?.rpc) {
+    if (!realmId) throw new Error('QBO receipt removal requires a realm id');
+    const removeResult = await db.rpc('remove_qbo_payment_receipt', {
+      p_qbo_realm_id: String(realmId),
+      p_qbo_payment_id: String(qboPaymentId),
+      p_status: status,
+      p_event_key: eventKey || `remove:${realmId}:${qboPaymentId}`,
+    });
+    const normalizedResult = Array.isArray(removeResult) ? removeResult[0] : removeResult;
+    removedReceipt = !normalizedResult?.missing;
+  }
   const rows = (await db.select('payments', `qbo_payment_id=eq.${qboPaymentId}&source=eq.qbo&select=id`)) || [];
   for (const r of rows) await db.delete('payments', `id=eq.${r.id}`);
-  return { ok: true, removed: rows.length };
+  return removedReceipt
+    ? { ok: true, removed: 'receipt', legacyRemoved: rows.length }
+    : { ok: true, removed: rows.length };
 }
