@@ -18,6 +18,7 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → estimates, estimate_line_items, jobs, claims, contacts
  *              writes → estimate_line_items (add/edit/reorder/remove); estimates + QBO
@@ -39,6 +40,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
 import SearchSelect from '@/components/collections/SearchSelect';
@@ -100,7 +102,7 @@ function EstimateSkeleton() {
 export default function EstimateEditor() {
   const { estimateId } = useParams();
   const navigate = useNavigate();
-  const { db, isFeatureEnabled, employee } = useAuth();
+  const { db, isFeatureEnabled, employee, user } = useAuth();
   const canEdit = canEditBilling(employee?.role);
   const slide = usePageTransition();
 
@@ -297,8 +299,7 @@ export default function EstimateEditor() {
       setConfirmConvert(false);
       try {
         const auth = await getAuthHeader();
-        const pr = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invId }) });
-        if (!pr.ok) { const d = await pr.json().catch(() => ({})); throw new Error(d.error || pr.statusText); }
+        await callQboInvoiceWorker({ ownerId: user?.id, invoiceId: invId, authHeaders: auth });
         toast('Estimate converted to invoice & linked in QuickBooks');
       } catch (e) {
         toast('Converted to invoice — finish the QuickBooks push from the invoice: ' + e.message, 'error');

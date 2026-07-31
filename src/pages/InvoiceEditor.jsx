@@ -18,6 +18,7 @@
  *   Packages:  react, react-router-dom
  *   Internal:  @/components/collections/{collKit, collTokens, SearchSelect},
  *              @/components/AutoGrowTextarea, @/lib/realtime (getAuthHeader),
+ *              @/lib/qboInvoiceWorker (callQboInvoiceWorker),
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
  *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
@@ -40,6 +41,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
+import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
 import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
@@ -138,7 +140,7 @@ function InvoiceSkeleton() {
 export default function InvoiceEditor() {
   const { invoiceId } = useParams();
   const navigate = useNavigate();
-  const { db, isFeatureEnabled, employee } = useAuth();
+  const { db, isFeatureEnabled, employee, user } = useAuth();
   const slide = usePageTransition();
 
   const dbRef = useRef(db);
@@ -350,10 +352,7 @@ export default function InvoiceEditor() {
   // ─── SECTION: QBO actions ──────────────
   const callWorker = async (body) => {
     const auth = await getAuthHeader();
-    const res = await fetch('/api/qbo-invoice', { method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' }, body: JSON.stringify({ invoice_id: invoiceId, ...body }) });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
-    return data;
+    return callQboInvoiceWorker({ ownerId: user?.id, invoiceId, authHeaders: auth, body });
   };
   const flushAndPush = async () => {
     for (const l of lines) {
