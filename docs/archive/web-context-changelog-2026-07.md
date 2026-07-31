@@ -5659,3 +5659,59 @@ Lesson recorded: three of these were invisible to diff review. Committed conflic
 markers, an unbalanced brace at end-of-file, and a missing provenance mapping all
 read as ordinary additions in a hunk. Each is now caught by a mechanical guard
 rather than an eye.
+
+## 2026-07-30 — Fleet-wide native message-push outage: dev-hosted outbox + Preview APNS_TOPIC
+
+**Symptom (owner report, evening):** no employee received native notifications, and the
+owner saw no iOS permission prompt. **Reality after investigation:** exactly one dispatch
+path was dead — inbound-message notifications — and the prompt absence was expected
+behavior (iOS asks once per install; the owner's install already held a grant).
+
+**Timeline (MT).** Last successful native message push 07-29 19:17 (a SANDBOX send to the
+owner's development build — the only enrolled device at the time). Owner installed
+TestFlight 1.0.0 at ~19:43, registering the fleet's first production token. Dev redeployed
+overnight (00:56 / 01:15 iOS commits). First failing run 07-30 07:41 — the owner's own
+"Test log out apple compliance" text — and every run after showed
+`attempted:N, sent:0, retryable:0, pruned:0`. Techs enrolled fresh production tokens at
+08:02/08:14 into the already-broken window.
+
+**Root cause.** The message-notification outbox worker was woken (pg_cron →
+`wake_message_notification_outbox_worker()`) at
+`integration_config.message_notification_outbox_worker_url`, which pointed at
+**`https://dev.utahpros.app`** — the only worker URL on the dev deployment, i.e. the only
+notifier running with Cloudflare **Preview** env vars. The 07-29 "UPR Dev" side-by-side
+app work set Preview `APNS_TOPIC` for the dev bundle id
+(`com.utahprosrestoration.upr.dev`); the overnight redeploy activated it, and Apple then
+rejected every production-fleet push from that host — HTTP 400, the
+`DeviceTokenNotForTopic` signature (valid key ⇒ no 403; valid tokens ⇒ no prune).
+`docs/mobile/dev-app-variant.md` had warned "Preview-triggered pushes will not reach the
+production-topic app." Everything dispatching from production (New Lead, appointments,
+owner test sends) kept working throughout, which is what made the outage look
+contradictory.
+
+**Why it was invisible:** `worker_runs.meta.native` persists counters only — Apple's
+`reason` strings live solely in the per-request results that no table stores. The
+counter signature `attempted>0, sent=0, retryable=0, pruned=0` IS the fingerprint of a
+non-retryable 4xx; `pruned` increments only on 410/`BadDeviceToken`, so a 400 with no
+prune is a topic-class rejection.
+
+**Diagnosis path that worked:** live `worker_runs`/`device_tokens` forensics → all three
+local archives verified correctly signed (`aps-environment=production`, correct app id,
+`VITE_APNS_ENV=production` in the bundle) → owner-authorized `POST /api/send-push` on
+BOTH origins (production: `sent:2` Apple 200; dev: `400`, non-retryable) → `cron.job` +
+wake-function source → `integration_config` URL row.
+
+**Fix (owner-authorized, ~19:50 MT):** one-row UPDATE repointing
+`message_notification_outbox_worker_url` to
+`https://utahpros.app/api/process-message-notification-outbox` (already allowlisted in
+the wake function; no deploy needed). **Verified end-to-end 19:55 MT:** the next real
+inbound text produced `sent:4 / attempted:4` and the on-device banner. Missed
+notifications from the outage window are not replayable (outbox rows were consumed).
+
+**Follow-ups filed:** (1) Xcode Cloud `ci_post_clone.sh` does not validate
+`VITE_NATIVE_PUSH_ENABLED`/`VITE_APNS_ENV` — a flag-less build ships push silently
+disabled; (2) per-token APNs topic routing (store the bundle id per device token) so one
+deployment can serve both the production app and the UPR Dev variant — until then, one
+env-level `APNS_TOPIC` per deployment is a standing constraint. Enrollment census at
+close: native = Moroni, Matheus, Juani; web push = Ben, Nano; no push channel = Bighetti,
+Marcelo E., and one active employee with no display_name set.

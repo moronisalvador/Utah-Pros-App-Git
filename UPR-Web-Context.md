@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 29, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: July 30, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -1259,8 +1259,15 @@ global_search(p_term TEXT, p_limit INT DEFAULT 6)
 ```
 
 ### OOP Pricing Calculator (Apr 20 2026)
-All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Dev-only behind
-`tool:oop_pricing` feature flag (initially Moroni Salvador).
+All SECURITY DEFINER, GRANT EXECUTE TO authenticated. Access is gated by
+`tool:oop_pricing` (initially owner preview only). DevTools → Feature Flags now
+shows its rollout state explicitly: **owner preview**, **available to everyone**,
+**hidden for everyone**, or **force disabled**. “Make available to everyone” writes
+only `enabled: true` through the existing owner-gated `upsert_feature_flag` RPC and
+preserves `dev_only_user_id`, so switching global access off restores the existing
+owner preview. `force_disabled` is the absolute AuthContext/FeatureRoute kill switch
+and wins even if `enabled` is true or the viewer owns the preview. This repository
+surface does not change the live flag; current live state still requires a readback.
 ```
 generate_oop_quote_number()     — Returns next OOP-YYMM-XXX number (counts existing
                                    rows with current prefix + 1, zero-padded to 3 digits).
@@ -4125,6 +4132,27 @@ Apple-managed CI is deliberately revisited. The two Supabase variables remain
 owner-controlled Xcode Cloud workflow configuration, and a real cloud build is
 still required to prove the complete path. Guard:
 `scripts/ios-release-workflow.test.js` → "Xcode Cloud post-clone hook".
+
+### Message-notification outbox host + APNs topic constraint (2026-07-30)
+
+- `integration_config.message_notification_outbox_worker_url` now points at
+  **`https://utahpros.app/api/process-message-notification-outbox`** (owner-authorized
+  live-config change, 2026-07-30). It previously pointed at `dev.utahpros.app`, which made
+  inbound-message native pushes the only dispatch running on Cloudflare **Preview** env
+  vars — and a Preview `APNS_TOPIC` change for the UPR Dev app variant silently killed
+  them fleet-wide (Apple 400 `DeviceTokenNotForTopic`). Full incident:
+  `docs/archive/web-context-changelog-2026-07.md` § 2026-07-30 fleet-wide outage.
+- **Standing constraint:** each deployment carries ONE env-level `APNS_TOPIC`, so the
+  deployment that dispatches pushes must match the bundle id its recipients run.
+  Production-critical notifiers belong on `utahpros.app`; Preview's topic may serve the
+  UPR Dev variant only. Durable fix (per-token topic column) is an open follow-up.
+- **Diagnostics:** owner-only `POST /api/send-push` returns Apple's per-token `reason`
+  verbatim — the only place it is visible; `worker_runs.meta.native` stores counters only.
+  Counter fingerprint `attempted>0, sent=0, retryable=0, pruned=0` = non-retryable 4xx
+  (`pruned` moves only on 410/`BadDeviceToken`). The DevTools Notifications tester wraps
+  `/api/notification-test`, which flattens failures to `delivery_failed`.
+- Verified end-to-end 2026-07-30 19:55 MT: real inbound text → `sent:4 / attempted:4` →
+  banner on device.
 
 ## Admin notification presentation Settings (2026-07-29)
 
