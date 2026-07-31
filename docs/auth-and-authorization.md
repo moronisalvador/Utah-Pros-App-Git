@@ -200,6 +200,19 @@ anonymous users, nonemployees, inactive employees, external employees, force-dis
 denied overrides/roles. A future tenant or assignment scope must tighten both Worker and RLS
 together.
 
+The compatible participant foundation is now present only on isolated `qa-staging` (ledger
+`20260731143710`), not production. It defines one staff decision shared by the staged inbox,
+message-author lookup, admin membership controls, technician self-leave, and service-only
+recipient/search/create helpers: privileged internal roles always pass; `crm_partner` does not;
+then explicit per-chat choice wins over default field technician and historical appointment crew.
+The admin/self mutation RPCs derive the actor from `auth.uid()` and the membership tables deny
+direct browser reads/writes.
+
+This staging schema does not make the product participant-scoped in production. The later policy
+enforcement remains blocked until authenticated conversation UPDATE/DELETE authority is narrowed
+and the trusted Worker notification path is integrated and independently reviewed. Compatible
+Worker/UI deployment and a separate owner-authorized production apply remain mandatory.
+
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed
 protection. Tests cover missing authentication, denied roles, inactive/external employees, forged

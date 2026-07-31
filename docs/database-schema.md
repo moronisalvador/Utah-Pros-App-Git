@@ -360,6 +360,28 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
+## Conversation participant scoping (foundation on qa-staging only)
+
+Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
+`qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
+adds forced-RLS, service-table-only `conversation_member_overrides` and
+`conversation_default_members`, plus guarded RPCs for effective membership, administrator
+management, technician self-leave, scoped contact/conversation creation, notification recipients,
+message authors, and the existing inbox signature.
+
+The effective rule is privileged internal role first, then explicit per-chat decision, default
+field technician, and historical appointment crew membership for the conversation contact.
+Post-apply catalog verification found one ledger row, both new tables empty, browser table access
+denied, service-role policies present, intended function signatures/ACLs present, and the old
+authenticated INSERT compatibility window still open. Supabase advisors reported only intentional
+authenticated `SECURITY DEFINER` warnings for caller-gated RPCs plus informational indexes for the
+two nullable actor foreign keys.
+
+The enforcement migration `20260731040338_conversation_participant_policy_enforcement.sql` remains
+unapplied. It must not ship until legacy conversation UPDATE/DELETE privileges are narrowed, the
+trusted notification path consumes the canonical recipient helper, compatible Worker/UI code is
+deployed and verified, and a separate owner apply window is authorized.
+
 ## Pending mobile messaging and CallRail reconciliation hardening
 
 `20260724173000_harden_find_or_create_conversation.sql` changes no table shape. It preserves
