@@ -7,12 +7,10 @@
  *   Reads the tranche (b) anon-closure migration as TEXT and checks it still says
  *   what it is supposed to say. No database required.
  *
- *   Same reason as tranche (a): the live proof cannot run in CI. The behavioural
- *   tests live in supabase/tests/, which is the `db` lane, and that lane refuses
- *   to run without an isolated local database that does not exist yet (backlog
- *   6.1). So a source-level contract test is the only regression guard this change
- *   actually gets in CI, and a weakened migration would otherwise slip through
- *   unnoticed.
+ *   Same reason as tranche (a): keep an always-visible, credential-free source
+ *   contract even though the JavaScript behavioral proof now runs in hosted CI
+ *   against qa-staging. This catches a weakened migration before a database call;
+ *   the hosted proof establishes effect.
  *
  *   The specific thing being guarded: this migration must close `anon` WITHOUT
  *   touching `authenticated`. Getting that wrong in either direction is bad —

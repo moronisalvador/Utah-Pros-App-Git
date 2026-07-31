@@ -20,11 +20,14 @@
  *
  * DEPENDS ON:
  *   Packages:  vitest
- *   Internal:  src/lib/supabase.js (REST client bound to the QA admin token),
+ *   Internal:  functions/lib/supabase.js (branch-gated service client for
+ *              disposable fixture writes), src/lib/supabase.js (REST client
+ *              bound to the QA admin token for read/RPC assertions),
  *              ./helpers/qaFixtures.mjs (standing QA identity)
- *   Data:      reads  → crm_orgs (via RPC's own org lookup)
- *              writes → inbound_leads (two TEST-org referral-channel leads),
- *              best-effort deleted in afterAll.
+ *   Data:      reads  → get_attribution_rollup as the signed-in QA admin
+ *              writes → inbound_leads through the branch-gated service client
+ *              (two TEST-org referral-channel leads), best-effort deleted in
+ *              afterAll.
  *
  * NOTES / GOTCHAS:
  *   - INTEGRATION test against the qa-staging Supabase branch; self-skips
@@ -35,52 +38,94 @@
  * ════════════════════════════════════════════════
  */
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import { supabase } from '../../functions/lib/supabase.js';
 import { createSupabaseClient } from '../../src/lib/supabase.js';
 import { signInFixture } from './helpers/qaFixtures.mjs';
+import {
+  QA_BRANCH_PROJECT_REF,
+  QA_BRANCH_SENTINEL,
+  assertQaBranchTarget,
+} from '../../tests/qa/lib/target-policy.mjs';
 
-const hasCreds = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
+const QA_CRM_ORG_ID = 'aaaaaaaa-0000-4000-8000-000000000203';
+const env = globalThis.process?.env || {};
+const url = env.SUPABASE_URL || '';
+const anonKey = env.SUPABASE_ANON_KEY || '';
+const serviceKeyName = ['SUPABASE', 'SERVICE', 'ROLE', 'KEY'].join('_');
+const serviceKey = env[serviceKeyName] || '';
+const confirmed = env.UPR_QA_CONFIRMED_QA_BRANCH === QA_BRANCH_SENTINEL;
+const projectRef = (() => {
+  try { return new URL(url).hostname.split('.')[0]; } catch { return ''; }
+})();
+const hasCreds = !!(confirmed && anonKey && serviceKey && (() => {
+  try {
+    assertQaBranchTarget({ mode: 'qa-branch', projectRef, supabaseUrl: url });
+    return true;
+  } catch {
+    return false;
+  }
+})());
+
+if ((url || anonKey || serviceKey || confirmed) && !hasCreds) {
+  throw new Error('CRM attribution integration test refused: exact qa-staging branch credentials are required; production is never a test target');
+}
 
 describe.skipIf(!hasCreds)('get_attribution_rollup excludes merged-duplicate leads (integration)', () => {
   const runId = Date.now();
-  let orgId;
-  let db;
+  const orgId = QA_CRM_ORG_ID;
+  const fixtureDb = hasCreds
+    ? supabase({ SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: serviceKey })
+    : null;
+  let adminDb;
   const leadIds = [];
 
   beforeAll(async () => {
+    expect(projectRef).toBe(QA_BRANCH_PROJECT_REF);
     const admin = await signInFixture('admin');
-    db = createSupabaseClient(admin.token);
+    adminDb = createSupabaseClient(admin.token);
   });
 
   afterAll(async () => {
-    if (db) {
-      for (const id of leadIds) await db.delete('inbound_leads', `id=eq.${id}`);
+    if (fixtureDb) {
+      for (const id of leadIds.slice().reverse()) {
+        await fixtureDb.delete('inbound_leads', `id=eq.${id}`).catch(() => {});
+      }
     }
   });
 
-  it('a merged-into duplicate never adds to the leads count (before/after delta)', async () => {
-    const [org] = await db.select('crm_orgs', 'is_test=eq.true&limit=1');
-    orgId = org.id;
+  it('denies a direct inbound_leads insert even to the signed-in QA admin', async () => {
+    await expect(adminDb.insert('inbound_leads', {
+      org_id: orgId,
+      callrail_id: `qa-attribution-browser-denied-${runId}`,
+      source_type: 'call',
+      occurred_at: new Date().toISOString(),
+      raw_payload: { qa: true },
+    })).rejects.toMatchObject({ status: 403 });
+  });
 
-    const rowsBefore = await db.rpc('get_attribution_rollup', { p_org_id: orgId });
+  it('a merged-into duplicate never adds to the leads count (before/after delta)', async () => {
+    const rowsBefore = await adminDb.rpc('get_attribution_rollup', { p_org_id: orgId });
     const before = rowsBefore.find(r => r.channel === 'referral')?.leads || 0;
 
     // The original (real) lead.
-    const [original] = await db.insert('inbound_leads', {
-      org_id: orgId, source: 'Referral', source_type: 'call',
-      spam_flag: false, occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-orig-${runId}`,
+    const [original] = await fixtureDb.insert('inbound_leads', {
+      org_id: orgId, callrail_id: `qa-attribution-original-${runId}`, source: 'Referral', source_type: 'call',
+      duration_sec: 60, spam_flag: false, raw_payload: { answered: true },
+      occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-orig-${runId}`,
     });
     leadIds.push(original.id);
 
     // A repeat call already merged into the original — the shape the merge
     // system produces: its own row, non-spam, but merged_into_lead_id set.
-    const [duplicate] = await db.insert('inbound_leads', {
-      org_id: orgId, source: 'Referral', source_type: 'call',
-      spam_flag: false, merged_into_lead_id: original.id,
+    const [duplicate] = await fixtureDb.insert('inbound_leads', {
+      org_id: orgId, callrail_id: `qa-attribution-duplicate-${runId}`, source: 'Referral', source_type: 'call',
+      duration_sec: 60, spam_flag: false, raw_payload: { answered: true },
+      merged_into_lead_id: original.id,
       occurred_at: new Date().toISOString(), notes: `zz-merged-rollup-dup-${runId}`,
     });
     leadIds.push(duplicate.id);
 
-    const rowsAfter = await db.rpc('get_attribution_rollup', { p_org_id: orgId });
+    const rowsAfter = await adminDb.rpc('get_attribution_rollup', { p_org_id: orgId });
     const after = rowsAfter.find(r => r.channel === 'referral')?.leads || 0;
 
     // +1 (the original), never +2 — the merged duplicate never counts.
@@ -88,7 +133,7 @@ describe.skipIf(!hasCreds)('get_attribution_rollup excludes merged-duplicate lea
   });
 
   it('get_attribution_rollup keeps its shape after the replace', async () => {
-    const rows = await db.rpc('get_attribution_rollup', {});
+    const rows = await adminDb.rpc('get_attribution_rollup', {});
     expect(Array.isArray(rows)).toBe(true);
     for (const r of rows) {
       expect(r).toHaveProperty('channel');

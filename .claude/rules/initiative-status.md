@@ -31,9 +31,11 @@ The owner-authorized production apply used the exact reviewed source at commit `
   `20260731205942_qbo_invoice_command_ledger`.
 
 The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
-`db-lane` job passed under its current debt budget (`maxFailedTests=19`), not as a zero-failure
-behavioral suite. The compatible Worker/client source is on `dev` but not yet `main`; it preserves
-one operation id across ambiguous provider and post-provider-finalization failures, and
+`db-lane` job passed. The later raw hosted receipt at `a513af37` is 163 / 375 assertions passed,
+0 failed, 212 skipped, and 46 setup errors across 44 files. Assertions are gated at zero; setup
+debt is shrink-only at 44 failed files / 90 recursively failed suite nodes. The compatible
+Worker/client source is on `dev` but not yet `main`; it preserves one operation id across ambiguous provider and
+post-provider-finalization failures, and
 `/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
@@ -66,6 +68,19 @@ rollout gates still disabled:
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
+
+The reversible notification producer containment also applied from exact reviewed source:
+
+- `20260731223000_notification_unsafe_producer_containment.sql` → production ledger
+  `20260731225855_notification_unsafe_producer_containment`. All three `appointment.*` and both
+  `timesheet.change_*` target catalog rows are disabled. The rollback was rehearsed on
+  `qa-staging`, then the forward source was reapplied so QA also ends contained. No CallRail,
+  provider, consent, message, appointment, or timesheet row/configuration changed. Re-enable only
+  after caller-derived producer authorization and negative tests pass.
+- The production org's separate automated-SMS master switch is now
+  `automation_settings.sms_sending_enabled=false`; the test org remains false.
+  `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
+  that master switch. Staff P2P CallRail SMS/MMS does not read this switch and was untouched.
 
 The owner-authorized release applied the exact reviewed committed sources to the shared
 project (verbatim file content, per-file drift-guard preflights). Production ledger names
@@ -172,6 +187,10 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   at historical migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded
   schema already has dependent objects. Do not call it migration-ledger parity or repair that gap
   with ad-hoc ledger writes. It remains the only hosted DB agents may write-test against.
+  The fixture-password secret is configured and all three signed-in fixture identities were
+  rotated; the raw hosted receipt at `a513af37` is 163 / 375 assertions passed, 0 failed, 212
+  skipped, 46 setup errors across 44 files. Failed assertions are gated at zero; setup debt is
+  shrink-only at 44 failed files / 90 suite nodes.
   Open tail: convert the remaining anon-era tests to those identities, seed only their minimal
   non-production reference rows, and ratchet the shrink-only failure baseline
   (`scripts/qa/db-lane-baseline.json`) toward zero.
@@ -190,7 +209,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 | UX alignment W1–W5 | Stalled since 2026-07-18; owner may restart from scratch | `docs/archive/rules/ux-alignment-wave-ownership.md` |
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
 | App-store readiness F1/A/B/D | Source phases and historical TestFlight/Push matrix complete; current per-token-source second-account proof open; submission deferred behind the field-documentation plan | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
-| Agent QA access P2+ | Hosted branch/fixtures live; anon-era conversions, failure/skip ratchets and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
+| Agent QA access P2+ | Hosted branch/rotated fixtures live; zero assertion failures, but setup-suite/skip conversions and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
 
 ## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
 

@@ -132,10 +132,16 @@ No feature code, schema, or provider behaviour changed. What changed:
   `.claude/rules/initiative-status.md`; six UI/worker standards gained `paths:` frontmatter so
   they load only for matching work. Always-loaded instruction set: ~37k → ~10.5k words.
 - **Staging database:** `qa-staging` is seeded and live at the isolated ref recorded in
-  `docs/database/staging-branch-runbook.md`. Its public schema matches production (141 tables /
-  400 functions / 219 policies), standing QA identities are seeded, and the CI database lane is
-  active. The Supabase dashboard's `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even
-  though the manually restored schema is usable: a 2026-07-31 rebase again attempted historical
+  `docs/database/staging-branch-runbook.md`. Its public schema matched production at the
+  2026-07-29 seed point (141 tables / 400 functions / 219 policies) and now deliberately drifts as
+  migrations are qualified; standing QA identities are seeded, and the CI database lane is active.
+  The fixture-password GitHub secret is configured and all three standing identities were
+  rotated without committing a usable password. The raw hosted receipt at `a513af37` is
+  163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
+  assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 recursively
+  failed suite nodes. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
+  `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
+  schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
   `jobs.phase`. The schema-only restore did not baseline the migration ledger, so agents must not
   use rebase for parity or mark old entries applied ad hoc. The repository still has no
@@ -4159,9 +4165,10 @@ Bidirectional and both channels — a genuine end-to-end activation, not a confi
 + redeploy). Rollback is `MESSAGING_SEND_MODE=disabled` + redeploy — sends short-circuit before any
 provider call, with no database or code change.
 
-**Guardrail correction (read-only, 2026-07-31):** the production org now has
-`automation_settings.sms_sending_enabled=true` and `missed_call_textback_enabled=true`; the test org
-remains false, and the other named automation toggles remain false. This switch does **not** gate
+**Guardrail correction (verified live, 2026-07-31):** the production org now has
+`automation_settings.sms_sending_enabled=false`; the test org remains false, and the other named
+automation toggles remain false. `missed_call_textback_enabled=true` remains configured for the
+production org but is inert behind the master switch. This switch does **not** gate
 staff P2P CallRail sends—`send-message.js` never reads it. It arms the separate automated SMS path,
 which is still Twilio-only and does not consult `MESSAGING_SEND_MODE`. Redacted configuration checks
 found no Twilio auth token, account SID, messaging-service SID or phone number in the managed
@@ -4474,10 +4481,11 @@ not prove that every real producer emits at the correct business moment. Source 
 tests alone still do not prove live presentation, and every future live send remains separately
 owner-authorized.
 
-**Producer/activation reconciliation (read-only, 2026-07-31):** source contains a producer for all
-15 catalog keys, and the shared production `notification_types` catalog currently has all 15
-`enabled=true`. Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history,
-not current state. Real production evidence exists for assigned appointments and inbound texts;
+**Producer/activation reconciliation (verified live, 2026-07-31):** source contains a producer for
+all 15 catalog keys. Ten shared-production catalog rows remain enabled; the three `appointment.*`
+and two `timesheet.change_*` keys are deliberately disabled by the containment described below.
+Treat the older `docs/notify-roadmap.md` disabled-type matrix as release history, not current state.
+Real production evidence exists for assigned appointments and inbound texts;
 the owner sweep is not real-business evidence for the other types. Two authorization dependencies
 remain explicit: `appointments` still exposes anon all-row writes and `appointment_crew` permits
 all-row writes to any authenticated session, so the three `appointment.*` trigger paths inherit a
@@ -4493,5 +4501,7 @@ two timesheet types without touching their producer tables or any messaging prov
 rollback restores the same five keys. The migration refuses unless all five keys exist and are
 enabled immediately before apply, so rollback is an exact restoration rather than a blind toggle.
 It is live on `qa-staging` as `20260731225046` and production as `20260731225855`; readback confirms
-all five exact keys remain disabled. Re-enable only after caller-derived appointment/timesheet
+all five exact keys remain disabled. The rollback was rehearsed on `qa-staging` and the forward
+source then reapplied, so QA also ends contained. CallRail configuration and the working staff P2P
+send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
