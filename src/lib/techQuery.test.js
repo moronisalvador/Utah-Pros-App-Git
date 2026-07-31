@@ -40,11 +40,28 @@ describe('techQuery — frozen key registry', () => {
     expect(techKeys.convos()).toEqual(['tech', 'convos', null]);
     expect(techKeys.convos('unread')).toEqual(['tech', 'convos', 'unread']);
     expect(techKeys.thread('c1')).toEqual(['tech', 'thread', 'c1']);
+    expect(techKeys.conversationAccess('e1', 'c1')).toEqual([
+      'tech',
+      'conversation-access',
+      'e1',
+      'c1',
+    ]);
   });
 
-  it('exposes exactly the nine documented kinds', () => {
+  it('exposes exactly the ten documented kinds', () => {
     expect(Object.values(TECH_QUERY_KINDS).sort()).toEqual(
-      ['active-clock', 'convos', 'dash', 'docs', 'hub', 'rooms', 'sched-month', 'tasks', 'thread'],
+      [
+        'active-clock',
+        'conversation-access',
+        'convos',
+        'dash',
+        'docs',
+        'hub',
+        'rooms',
+        'sched-month',
+        'tasks',
+        'thread',
+      ],
     );
   });
 
@@ -120,15 +137,18 @@ describe('persister dehydrate filter (Phase F-M privacy)', () => {
     makeTechQueryClient().getDefaultOptions().dehydrate.shouldDehydrateQuery;
   const q = (queryKey, status = 'success') => ({ queryKey, state: { status } });
 
-  it('NEVER persists the thread kind (raw SMS bodies stay off disk)', () => {
+  it('NEVER persists messaging content or authorization directories', () => {
     const filter = shouldDehydrate();
     expect(filter(q(techKeys.thread('c1')))).toBe(false);
+    expect(filter(q(techKeys.convos()))).toBe(false);
+    expect(filter(q(techKeys.convos('unread')))).toBe(false);
+    expect(filter(q(techKeys.conversationAccess('e1', 'c1')))).toBe(false);
+    expect(filter(q(['conversation-members', 'e1', 'c1']))).toBe(false);
+    expect(filter(q(['message-author-directory', 'account-1']))).toBe(false);
   });
 
-  it('DOES persist the inbox list + other kinds (instant cold paint)', () => {
+  it('DOES persist non-messaging tech data for instant cold paint', () => {
     const filter = shouldDehydrate();
-    expect(filter(q(techKeys.convos()))).toBe(true);
-    expect(filter(q(techKeys.convos('unread')))).toBe(true);
     expect(filter(q(techKeys.dash('e1')))).toBe(true);
   });
 
