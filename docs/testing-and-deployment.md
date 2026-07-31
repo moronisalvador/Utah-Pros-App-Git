@@ -190,6 +190,17 @@ The serving contract now is:
 Prevention does not replace recovery. The boot guard in `index.html` is still required: it repairs a
 device already holding a poisoned copy from 2026-07-27, which prevention cannot reach.
 
+### Conversation participant compatibility apply unit (2026-07-31)
+
+`20260731040337_conversation_participant_scoping.sql` and
+`20260731040338_conversation_unread_state_compatibility.sql` are one indivisible compatibility
+apply unit. In one separately authorized low-traffic window, apply 40337 and then immediately
+apply 40338; do not deploy or expose a compatible web/native app between them. If 40338 fails,
+immediately run the paired 40337 rollback before closing the window, so the shared catalog is
+never intentionally left in 40337's intermediate grant posture. Proceed to compatible deployment
+only after both migrations and their catalog checks succeed. The separately authorized 40339
+enforcement migration remains post-adoption only.
+
 ## Mobile PWA/Capacitor readiness workflow
 
 `docs/mobile-production-readiness-roadmap.md` is the plan of record for the 37 findings observed at
@@ -656,7 +667,13 @@ CLI container; that tail follows the public schema, policies, and object ACLs ex
 Production, deployment, provider traffic,
 `20260731040338_conversation_unread_state_compatibility.sql`, and
 `20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
-now narrows legacy direct writes in 40339 and integrates Worker recipient/member checks.
+now narrows legacy direct writes in place in 40339, preserves service-role ACLs, and integrates
+Worker recipient/member checks. After the no-drop policy revision, a fresh disposable clone again
+accepted 40337–40339, the guarded behavior suite passed and rolled back every fixture, and the
+40339 rollback/reapply cycle completed cleanly. The final 40338 batch-access-snapshot revision was
+then proven on another disposable local Docker clone: the prior 40339/40338 were rolled back,
+current 40338 and 40339 applied, the guarded isolated SQL suite passed through its final rollback,
+and current 40339 again rolled back and reapplied cleanly. No hosted database changed.
 
 Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
 revocation helper missing from its explicit page allowlist; after that correction,
@@ -667,6 +684,27 @@ information, and the native **Chat participants** sheet. The sheet's expected lo
 positive sequencing evidence: the simulator app targets production and 40337 is intentionally
 not applied there. No RPC mutation, provider send, hosted apply, or deployment occurred.
 Physical-device/TestFlight proof remains separate.
+
+Credential-free negative tests use fake time and deferred actor-scoped responses to prove four
+revocation cases: successful inbox omission clears all removed desktop drafts/leases; tech
+per-ID expiry enumerates that conversation's sensitive caches and clears its draft; a success arriving
+after 30 seconds cannot renew either the tech inbox or active-thread lease; and hidden→visible
+purges expired private rows synchronously before an offline revalidation promise starts. These are
+local contract proofs, not installed-device or production evidence. A separate deferred
+out-of-order test resolves a newer desktop proof first and confirms that the older response is
+superseded; silent-reconcile coverage pins stable ordering, omission/addition behavior, and exact
+object identity for unchanged rows.
+Tech omission coverage also proves actor-derived snapshot batches are capped at 200; filtered
+hooks check only exact prior-page omissions; and the always-mounted default hook rechecks sensitive
+IDs outside the capped top 50. Fake-timer tests model an unread-to-read omission across repeated
+15-second polls beyond the original 30-second lease: allowed snapshots preserve its thread and
+draft, while a later denial purges both immediately. QueryObserver tests prove timer expiry and an
+authoritative empty proof publish an in-place tombstone without detaching the observer, a
+background error retains data only inside the current-owner lease and can recover on refetch, and
+delayed account-A responses/timers cannot repopulate or purge same-ID account-B caches. Page-state
+contracts additionally pin desktop and tech expired-proof markers ahead of successful empty
+states, and executable loader coverage proves tech refresh preserves prior exact-key order and
+unchanged row identity while removing omissions and appending new rows.
 
 Release order is compatibility-sensitive because dev and main share production Supabase:
 
