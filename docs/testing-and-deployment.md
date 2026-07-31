@@ -412,12 +412,13 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (source authored 2026-07-30)
+## QBO multi-invoice payment receipts release sequence (disabled schema live 2026-07-31)
 
-This slice is isolated on `codex/qbo-multi-invoice-payments`; it is not committed/deployed, migration
-`20260731045407_qbo_multi_invoice_payment_receipts.sql` is not applied, and no QuickBooks Payment
-was created during repository verification. The database flag `feature:qbo_receive_payment` and
-Cloudflare Worker switch `QBO_RECEIVE_PAYMENT_ENABLED` both default off.
+This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
+`20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
+`20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
+The database flag `feature:qbo_receive_payment` remains disabled/not force-disabled, and the Worker
+still requires literal `QBO_RECEIVE_PAYMENT_ENABLED=true`, so the feature remains inert.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
@@ -442,10 +443,13 @@ Release is deliberately code-first and serialized:
    webhook, a two-session webhook-first/outbound-finalize race with monotonic attempt state and no
    deadlock, two distinct Payments racing on one invoice without a rollup-trigger deadlock, missed
    webhook recovered by CDC, and a backdated transaction.
-4. Only after sandbox evidence, review/promote the exact revision. In a separate owner window apply
-   the migration to the shared project, recapture catalog/ACL/provenance evidence, configure the
-   Worker switch in each intended Cloudflare environment, redeploy, and verify both gates are still
-   off before activation.
+4. The owner separately authorized the inert shared-database apply before sandbox activation.
+   Post-apply readback found managed Supabase defaults had retained direct `service_role` writes on
+   the three new tables. Follow-up `20260731231000_qbo_receipt_service_grant_containment.sql` is
+   live on staging as `20260731230543` and production as `20260731230907`: receipt and attempt
+   tables are service-role SELECT-only, the event table has no direct service grant, browser grants
+   are zero, and all writes remain RPC-only. The full staging behavior suite and real direct-role
+   denial proof passed after containment and rolled back with zero residue.
 5. Separately enable the Worker switch, then the database flag, and run one named-admin production
    proof. Retain the client/Intuit request ID, one QBO Payment ID, every linked invoice/allocation,
    fresh QBO balances, one UPR receipt, projections, event convergence, and Worker run without
@@ -621,39 +625,26 @@ for a disposable post-migration clone. It refuses to run unless both the psql op
 `upr.isolated_test_database=on` guard are present; its synthetic fixtures exercise marker/source
 capture, recursive scrub, direct RLS, RPC allow/deny variants and authenticated DML denial.
 
-### S1h database proof boundary
+The exact S1e source is now live on `qa-staging` as
+`20260731224513_inbound_lead_recording_source_boundary` and on the shared project as
+`20260731225511_inbound_lead_recording_source_boundary`. Both catalog postconditions passed.
+Production readback found zero residual scalar HTTP recording URLs, zero retained recording keys in
+lead payloads, no browser source-table grant, and service-role SELECT. No provider request or
+production write-test ran. The security advisor continues to report the intentional authenticated
+`get_inbound_leads` definer RPC; its body now enforces the active-internal CRM capability gate.
 
-S1h has four distinct evidence layers across its ordered identity-authority, containment,
-page-access-provenance, and personal-ownership migrations:
+### Retired S1h database proof boundary
 
-1. credential-free Vitest pins function identities, caller shapes, target hashes, browser/service
-   ACL intent, selector-free AuthContext behavior, generated-catalog scripts, local-runner refusal,
-   and the guarded unsafe rollback;
-2. catalog-only preflight/post-apply SQL reads no business value and refuses unreviewed function,
-   table, ACL, policy, employee-Auth, caller, or migration-ledger drift;
-3. the guarded identity and personal ownership SQL matrices require both the psql opt-in and
-   `upr.isolated_test_database=on`, cover active A/B, inactive, external, unmapped, admin,
-   project-manager and service cases, explicitly deny employee self-binding/promotion and
-   cross-owner Web/native token takeover, and always roll back; and
-4. real GoTrue/PostgREST/RLS behavior requires separately approved synthetic identities during
-   each owner-authorized apply window.
+`20260727022920_mobile_personal_ownership_boundary.sql` is retained only as historical source and
+must not be applied. Its exact catalog preflight was executed read-only on both `qa-staging` and
+production and refused as designed: the focused native-token, preference, and per-token APNs topic
+lineage changed the function and migration dependencies it was written to replace. Replaying it
+would overwrite newer live contracts and expose legacy raw-token-returning RPCs.
 
-The revised source closes the two findings from the rejected artifact in code and static tests:
-containment removes browser authority-row writes, and all four personal tables become
-browser-RPC-only with same-owner token refresh. That source result is not database behavior proof.
-
-The unsafe shared-project `notify_c_my_prefs.test.js` was retired: it used the anonymous client,
-mutated notification defaults/preferences, and cannot prove authenticated ownership. Its
-preference precedence/lock/redaction coverage is now inside the rollback-only S1h matrix. The
-local runner invokes S1g and S1h as separate exact SQL files after the same local-origin/ref/sentinel
-guard; it never uses `--linked` or a hosted database.
-
-A temporary, non-retained PostgreSQL-compatible experiment modeled the S1h lifecycle, but it did
-not execute the exact checked-in isolated, preflight, or post-apply files and retained neither its
-harness nor a complete log. It is exploratory feedback, not reproducible verification. Exact
-governed local SQL execution and live Auth/PostgREST verification remain open. Shared-database
-apply, deployment, providers, signing, and device qualification remain separate owner/external
-gates.
+Any remaining Page Access/Web Push ownership work must use a new later migration limited to the
+residual page-access/subscription tables and RPCs. It must preserve the live
+`notification_prefs`, native-token and APNs-topic contracts. The old guarded isolated/rollback
+matrices remain useful historical evidence, not an apply runbook.
 
 The focused native Push qualification additionally proves that every direct
 production dispatcher supplies a durable occurrence identity; missing identity
