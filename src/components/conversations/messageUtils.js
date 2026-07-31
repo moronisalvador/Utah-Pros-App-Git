@@ -24,6 +24,7 @@
  *   computeSmsSegments(text) — GSM-7 vs UCS-2 char + segment counter.
  *   linkifyTokens(text)      — tokenises a string into text/link parts (no raw HTML).
  *   parseMediaUrls(raw)      — normalises the jsonb media_urls column into a string[].
+ *   messageSenderName(...)   — minimal staff/customer label shown above a bubble.
  *   isLikelyImageUrl(url)    — extension-based guess for <img> vs file-link render.
  *   uiClassForMessage(msg)   — 'blocked'|'carrier'|'unreachable'|'config'|'error'.
  *   failureReason(msg)       — human-readable reason for a failed message.
@@ -288,6 +289,21 @@ export function getServiceConsentUiState({ status = {}, contact = null } = {}) {
     suppressionKey,
     suppressionCopy,
   });
+}
+
+export function messageSenderName(msg, participants = [], isMultiConversation = false) {
+  const isInbound = msg?.type === 'sms_inbound' || msg?.type === 'email_inbound';
+  if (msg?.type === 'internal_note') return null;
+  if (!isInbound) {
+    return msg?.employees?.display_name
+      || msg?.employees?.full_name
+      || (msg?.sent_by ? 'Team member' : 'Utah Pros');
+  }
+  if (!isMultiConversation) return null;
+  const participant = participants.find(
+    (candidate) => candidate.contact_id === msg?.sender_contact_id,
+  );
+  return participant?.contacts?.name || 'Customer';
 }
 
 // ─── SECTION: Helpers — per-conversation draft persistence ──────────────
