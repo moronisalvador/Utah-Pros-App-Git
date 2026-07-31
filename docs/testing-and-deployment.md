@@ -552,9 +552,13 @@ ledger row, and retained legacy INSERT compatibility. Security/performance advis
 error-level participant finding; authenticated-definer warnings are intentional caller-gated RPCs,
 while two nullable actor foreign keys retain informational index advisories.
 
-This was catalog verification, not the guarded SQL behavior suite: that suite requires a disposable
-database sentinel and all three participant migrations, so it was deliberately not run on hosted
-staging. Production, deployment, provider traffic,
+The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
+design and was deliberately not run there. On 2026-07-31 it passed against a disposable local
+Colima/Supabase clone loaded from `db/baseline/schema.sql`, with the isolation GUC and explicit
+test variable set, all three participant migrations applied, and the final fixture transaction
+rolled back. The baseline dump's managed-role default-privilege tail is not portable to the local
+CLI container; that tail follows the public schema, policies, and object ACLs exercised here.
+Production, deployment, provider traffic,
 `20260731040338_conversation_unread_state_compatibility.sql`, and
 `20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
 now narrows legacy direct writes in 40339 and integrates Worker recipient/member checks.
@@ -564,7 +568,7 @@ Release order is compatibility-sensitive because dev and main share production S
 1. separately authorize/apply 40337 + 40338 and verify catalog postconditions;
 2. deploy the compatible Worker/UI candidate to dev, validate, then promote the same reviewed
    source to web production and a supported native release;
-3. run the isolated behavioral SQL and negative authorization/device checks;
+3. retain the green isolated behavioral SQL evidence and run negative authorization/device checks;
 4. separately authorize/apply 40339 only after older native direct-unread callers are no longer
    supported.
 

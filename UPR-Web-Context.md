@@ -825,17 +825,22 @@ author directory retain their deployed signatures, and service-only helpers supp
 creation/search/notification recipients. Post-apply catalog checks proved forced RLS, no
 anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
 and exactly one foundation ledger row. The guarded SQL behavior suite requires a disposable
-database with all three migrations and has not yet been run.
+database with all three migrations. It passed on 2026-07-31 against a disposable local
+Colima/Supabase clone loaded from `db/baseline/schema.sql`; 40337–40339 applied cleanly and every
+fixture rolled back. The baseline dump's managed-role default-privilege tail is not portable to
+the CLI container, but it occurs after the public schema, policies, and object ACLs used by this
+test and is unrelated to the participant assertions.
 
 `20260731040338_conversation_unread_state_compatibility.sql` and
 `20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied everywhere.
 Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
-notification recipients, send-time membership checks, cache/draft purging after removal, admin
+notification recipients, send-time membership checks, a short successful-access lease that
+purges warm thread/draft data when offline authorization cannot be renewed, admin
 per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
 The safe shared-database sequence is 40337 + 40338 before compatible code, compatible web/native
 adoption next, and 40339 enforcement only afterward in a separately reviewed window. Older
 Capacitor/web callers that directly update unread state remain compatible until 40339; that final
-grant/policy narrowing must not precede supported native adoption and the disposable SQL suite.
+grant/policy narrowing must not precede supported native adoption.
 Nothing has been applied to production or deployed from this candidate.
 
 ### Documents & Esign

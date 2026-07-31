@@ -35,8 +35,10 @@ before promoting.
   uses scoped contact search/creation, purges removed-thread caches/drafts, and revokes direct
   browser writes in 40339. **Required order:** apply 40337 + 40338 to the shared database in a
   separately authorized window before deploying compatible code; deploy/promote compatible web
-  and supported native code; then run the disposable behavioral database suite and apply 40339
-  only in its own reviewed window after older native callers no longer depend on direct writes.
+  and supported native code; then apply 40339 only in its own reviewed window after older native
+  callers no longer depend on direct writes. The guarded behavior suite passed locally on
+  2026-07-31 against a disposable Colima/Supabase baseline clone with 40337–40339 applied; all
+  fixtures rolled back. The supported native build and simulator/device evidence remain gates.
   No shared-database apply, push, deploy, or enforcement is authorized by this status entry.
 - **`20260730150000_oop_pricing_builder.sql`** (authored 2026-07-30) — adds private, forced-RLS
   pricing revision/audit/save-request/snapshot tables plus admin-gated configuration and
