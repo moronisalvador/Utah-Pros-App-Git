@@ -149,7 +149,7 @@ describe('sendNativePushToEmployee', () => {
     expect(db.select).toHaveBeenCalledWith(
       'device_tokens',
       'employee_id=eq.employee-1&platform=eq.ios'
-        + '&apns_environment=eq.sandbox&select=id,token,updated_at'
+        + '&apns_environment=eq.sandbox&select=id,token,updated_at,apns_topic'
         + '&order=updated_at.desc&limit=5',
     );
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -193,6 +193,51 @@ describe('sendNativePushToEmployee', () => {
       }],
     });
     expect(JSON.stringify(result)).not.toContain('private-token');
+  });
+
+  it('addresses each registration with its own recorded topic, falling back for legacy rows', async () => {
+    const db = dbWithTokens([
+      {
+        id: 'token-dev-app',
+        token: 'dev-app-token',
+        updated_at: '2026-07-30T12:00:00.000Z',
+        apns_topic: 'com.example.upr.dev',
+      },
+      {
+        id: 'token-legacy',
+        token: 'legacy-token',
+        updated_at: '2026-07-29T12:00:00.000Z',
+        apns_topic: null,
+      },
+      {
+        id: 'token-blank-topic',
+        token: 'blank-topic-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+        apns_topic: '   ',
+      },
+    ]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: 'employee-1',
+      typeKey: 'appointment.updated',
+      notificationBody: { appointment_id: '1' },
+      eventKey: 'appointment.updated:topic-mix',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(result.sent).toBe(3);
+    const topicByToken = Object.fromEntries(fetchImpl.mock.calls.map(
+      ([url, options]) => [url.split('/3/device/')[1], options.headers['apns-topic']],
+    ));
+    expect(topicByToken).toEqual({
+      'dev-app-token': 'com.example.upr.dev',
+      'legacy-token': 'com.example.upr',
+      'blank-topic-token': 'com.example.upr',
+    });
   });
 
   it.each([

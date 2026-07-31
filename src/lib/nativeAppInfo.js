@@ -4,8 +4,9 @@
  * ════════════════════════════════════════════════
  *
  * WHAT THIS DOES (plain language):
- *   Reads the version and build number embedded in the installed iOS app.
- *   Browser/PWA builds stay passive and never load the native App plugin.
+ *   Reads the version, build number, and app identity (the "bundle id")
+ *   embedded in the installed iOS app. Browser/PWA builds stay passive and
+ *   never load the native App plugin.
  *
  * DEPENDS ON:
  *   Packages:  @capacitor/core, @capacitor/app (native-only dynamic import)
@@ -39,5 +40,26 @@ export async function getInstalledAppInfo({
     return { state: 'ready', version, build };
   } catch {
     return { state: 'unavailable' };
+  }
+}
+
+/**
+ * The installed app's bundle identifier — ground truth for the APNs topic a
+ * push registration belongs to (the production and side-by-side "UPR Dev"
+ * apps differ only here). Build-time env is deliberately not a fallback: a
+ * configured value can drift from the binary; the OS-reported id cannot.
+ */
+export async function getInstalledAppBundleId({
+  native = Capacitor.isNativePlatform(),
+  loadAppPlugin = () => import('@capacitor/app'),
+} = {}) {
+  if (!native) return null;
+
+  try {
+    const { App } = await loadAppPlugin();
+    const info = await App.getInfo();
+    return nonEmpty(info?.id);
+  } catch {
+    return null;
   }
 }
