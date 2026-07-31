@@ -71,13 +71,22 @@ function makeDb({
   serviceConsentsById = {},
   priorOutbound = [],
   employeeName = 'Rep',
+  conversationAccess = true,
+  navCanView = true,
 } = {}) {
   const inserts = [];
   const attempts = [];
+  const selects = [];
+  const updates = [];
+  const rpcCalls = [];
   return {
     inserts,
     attempts,
+    selects,
+    updates,
+    rpcCalls,
     select: async (table, query = '') => {
+      selects.push({ table, query });
       if (table === 'conversations') return conversation ? [conversation] : [];
       if (table === 'conversation_participants') return participants || [{ contact_id: 'c-1', phone: '+15551112222', is_active: true }];
       if (table === 'contacts') {
@@ -98,7 +107,7 @@ function makeDb({
         }];
       }
       if (table === 'feature_flags' || table === 'employee_page_access') return [];
-      if (table === 'nav_permissions') return [{ can_view: true }];
+      if (table === 'nav_permissions') return [{ can_view: navCanView }];
       if (table === 'message_send_attempts') {
         const parentId = (/parent_attempt_id=eq\.([^&]+)/.exec(query) || [])[1];
         if (parentId) {
@@ -146,6 +155,7 @@ function makeDb({
       return [row];
     },
     update: async (table, filter, payload) => {
+      updates.push({ table, filter, payload });
       if (table === 'message_send_attempts') {
         const id = (/id=eq\.([^&]+)/.exec(filter) || [])[1];
         const attempt = attempts.find((item) => item.id === id);
@@ -154,6 +164,10 @@ function makeDb({
       return null;
     },
     rpc: async (name, args) => {
+      rpcCalls.push({ name, args });
+      if (name === 'messaging_employee_can_access_conversation') {
+        return conversationAccess;
+      }
       if (name === 'get_service_sms_consent_status') {
         const resolvedContact = contactsById
           ? contactsById[args.p_contact_id]
@@ -204,6 +218,24 @@ function outboundRows(db) {
 function consentBlocks(db) {
   return db.inserts.filter((i) => i.table === 'sms_consent_log');
 }
+function sensitiveEffects(db) {
+  const sensitiveTables = new Set([
+    'conversations',
+    'conversation_participants',
+    'contacts',
+    'messages',
+    'message_send_attempts',
+    'sms_consent_log',
+  ]);
+  return {
+    selects: db.selects.filter((call) => sensitiveTables.has(call.table)),
+    inserts: db.inserts.filter((call) => sensitiveTables.has(call.table)),
+    updates: db.updates.filter((call) => sensitiveTables.has(call.table)),
+    providerCalls: h.twilio.mock.calls,
+    storageDownloads: db.downloadStorage.mock.calls,
+    storageSigns: db.signStorage.mock.calls,
+  };
+}
 
 beforeEach(() => {
   h.twilio = vi.fn(async () => ({ sid: 'SM-test', status: 'queued' }));
@@ -212,6 +244,121 @@ beforeEach(() => {
     ok: true,
     json: async () => ({ id: 'auth-user-1' }),
   })));
+});
+
+// ─── SECTION: participant authorization before every side effect ────────────
+describe('send-message participant authorization', () => {
+  it.each([
+    ['removed member', false],
+    ['never member', false],
+  ])('denies a %s before SMS or internal-note work', async (_label, conversationAccess) => {
+    for (const isInternalNote of [false, true]) {
+      h.db = makeDb({
+        conversation: DIRECT,
+        contact: OPTED_IN,
+        conversationAccess,
+      });
+
+      const response = await onRequestPost({
+        request: req({
+          conversation_id: DIRECT.id,
+          body: isInternalNote ? 'private note' : 'customer update',
+          sent_by: 'e-1',
+          is_internal_note: isInternalNote,
+        }),
+        env: ENV,
+      });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        code: 'CONVERSATION_NOT_AUTHORIZED',
+      });
+      expect(h.db.rpcCalls).toContainEqual({
+        name: 'messaging_employee_can_access_conversation',
+        args: {
+          p_employee_id: 'e-1',
+          p_conversation_id: DIRECT.id,
+        },
+      });
+      expect(sensitiveEffects(h.db)).toEqual({
+        selects: [],
+        inserts: [],
+        updates: [],
+        providerCalls: [],
+        storageDownloads: [],
+        storageSigns: [],
+      });
+    }
+  });
+
+  it.each([false, true])(
+    'denies capability-revoked staff before membership or downstream work (note=%s)',
+    async (isInternalNote) => {
+      h.db = makeDb({
+        conversation: DIRECT,
+        contact: OPTED_IN,
+        conversationAccess: true,
+        navCanView: false,
+      });
+
+      const response = await onRequestPost({
+        request: req({
+          conversation_id: DIRECT.id,
+          body: isInternalNote ? 'private note' : 'customer update',
+          sent_by: 'e-1',
+          is_internal_note: isInternalNote,
+        }),
+        env: ENV,
+      });
+
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        code: 'MESSAGING_NOT_AUTHORIZED',
+      });
+      expect(h.db.rpcCalls).toEqual([]);
+      expect(sensitiveEffects(h.db)).toEqual({
+        selects: [],
+        inserts: [],
+        updates: [],
+        providerCalls: [],
+        storageDownloads: [],
+        storageSigns: [],
+      });
+    },
+  );
+
+  it('fails closed when current membership cannot be verified', async () => {
+    h.db = makeDb({ conversation: DIRECT, contact: OPTED_IN });
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => {
+      if (name === 'messaging_employee_can_access_conversation') {
+        throw new Error('membership lookup unavailable');
+      }
+      return originalRpc(name, args);
+    });
+
+    const response = await onRequestPost({
+      request: req({
+        conversation_id: DIRECT.id,
+        body: 'customer update',
+        sent_by: 'e-1',
+      }),
+      env: ENV,
+    });
+
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      code: 'CONVERSATION_AUTHORIZATION_FAILED',
+    });
+    expect(sensitiveEffects(h.db)).toEqual({
+      selects: [],
+      inserts: [],
+      updates: [],
+      providerCalls: [],
+      storageDownloads: [],
+      storageSigns: [],
+    });
+  });
 });
 
 // ─── SECTION: compliance chain (Wave -1, unchanged by Phase B) ──────────────
@@ -237,7 +384,8 @@ describe('send-message compliance chain', () => {
       conversation: DIRECT,
       contact: { ...OPTED_IN, opt_in_status: false },
     });
-    h.db.rpc = vi.fn(async (name) => {
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => {
       if (name === 'get_service_sms_consent_status') {
         return {
           allowed: false,
@@ -245,7 +393,7 @@ describe('send-message compliance chain', () => {
           source: 'pending_stop',
         };
       }
-      return null;
+      return originalRpc(name, args);
     });
 
     const res = await onRequestPost({
@@ -428,11 +576,12 @@ describe('send-message compliance chain', () => {
         'c-2': { id: 'c-2', dnd: false, opt_in_status: false, phone: '+15551110002' },
       },
     });
-    h.db.rpc = vi.fn(async (name) => {
+    const originalRpc = h.db.rpc;
+    h.db.rpc = vi.fn(async (name, args) => {
       if (name === 'get_service_sms_consent_status') {
         return { allowed: true, code: 'IMPLIED_CONSENT' };
       }
-      return null;
+      return originalRpc(name, args);
     });
 
     const res = await onRequestPost({
@@ -446,7 +595,14 @@ describe('send-message compliance chain', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).code).toBe('DIRECT_PURPOSE_UNSUPPORTED');
-    expect(h.db.rpc).not.toHaveBeenCalled();
+    expect(h.db.rpc).toHaveBeenCalledTimes(1);
+    expect(h.db.rpc).toHaveBeenCalledWith(
+      'messaging_employee_can_access_conversation',
+      {
+        p_employee_id: 'e-1',
+        p_conversation_id: DIRECT.id,
+      },
+    );
     expect(h.twilio).not.toHaveBeenCalled();
   });
 

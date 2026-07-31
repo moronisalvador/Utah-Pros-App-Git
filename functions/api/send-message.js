@@ -37,6 +37,9 @@
  *   - WORKER IS THE SOLE WRITER of any `sms_*` message row (omni §7.1). The client
  *     inserts only `internal_note`. Never fall back to another channel (omni §7.3):
  *     a recipient with no valid SMS destination is refused, not retargeted.
+ *   - The authenticated employee must also be a current member of the requested
+ *     conversation. That service-only membership check runs before any customer,
+ *     message, consent, storage, attempt, or provider work.
  *   - Phase B replaced the Wave -1 group/broadcast refuse-guard with the real
  *     per-participant consent loop below. SMS-only: omni-O's `channel`/email branch is
  *     deliberately deferred to a future omni email reconciliation (roadmap §8a).
@@ -435,9 +438,33 @@ export async function onRequestPost(context) {
     const rawBody = (body || '').trim();
     const actorEmployeeId = auth.employee.id;
 
+    let canAccessConversation = false;
+    try {
+      canAccessConversation = await db.rpc(
+        'messaging_employee_can_access_conversation',
+        {
+          p_employee_id: actorEmployeeId,
+          p_conversation_id: conversation_id,
+        },
+      );
+    } catch (error) {
+      console.error('Conversation membership lookup failed:', error);
+      return jsonResponse({
+        error: 'Conversation authorization could not be verified',
+        code: 'CONVERSATION_AUTHORIZATION_FAILED',
+      }, 500, request, env);
+    }
+
+    if (canAccessConversation !== true) {
+      return jsonResponse({
+        error: 'Conversation access is not granted',
+        code: 'CONVERSATION_NOT_AUTHORIZED',
+      }, 403, request, env);
+    }
+
     // Resolve the canonical conversation before either a note write or any
-    // participant/provider work. Conversations are company-wide only for staff
-    // who passed the server conversations capability above.
+    // participant/provider work. Page capability and current conversation
+    // membership were both verified above.
     const [conversation] = await db.select('conversations', `id=eq.${conversation_id}`);
     if (!conversation) {
       return jsonResponse({ error: 'Conversation not found' }, 404, request, env);
