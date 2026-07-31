@@ -7,13 +7,10 @@
  *   Reads the anon-closure migration as TEXT and checks it still says what it is
  *   supposed to say. No database required.
  *
- *   This exists because the live proof cannot run in CI. The real behavioral
- *   tests live in supabase/tests/, and that whole folder is in the `db` lane,
- *   which refuses to run without an isolated local database — one that does not
- *   exist yet. So today 75 files in supabase/tests/ never execute in CI. Until
- *   that is fixed, a source-level contract test is the only regression guard
- *   this change actually gets, and a weakened migration would otherwise slip
- *   through completely unnoticed.
+ *   This remains an always-visible source guard even though the JavaScript
+ *   behavioral proof now runs in hosted CI against qa-staging. It catches a
+ *   weakened migration before any database call and keeps the contract visible
+ *   in credential-free test lanes; the hosted proof establishes effect.
  *
  * DEPENDS ON:
  *   Packages:  vitest, node:fs, node:path
@@ -26,8 +23,8 @@
  *   - This proves INTENT, not EFFECT. It cannot tell you the revoke actually
  *     applied — only that the source still asks for it. Live verification is the
  *     apply-window step plus supabase/tests/anon_closure_tranche_a.test.js.
- *   - Placed in tests/qa/unit/ because that is the only CI-visible lane
- *     (`npm test` → unit + worker + qa) that can hold a repository-contract test.
+ *   - Placed in tests/qa/unit/ so the source contract remains credential-free
+ *     and independent of hosted database availability.
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
