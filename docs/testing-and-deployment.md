@@ -638,6 +638,22 @@ Cloudflare binding changes, deployment promotion, and traffic remain independent
 
 ### Mobile messaging release acceptance
 
+The participant foundation migration was applied only to `qa-staging` on 2026-07-31 as ledger
+`20260731143710`, from commit `0d5b7fab` and source SHA-256
+`f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`. Read-only postconditions
+proved forced RLS and service-only policies on both empty membership tables, no browser table
+reads, intended RPC signatures/ACLs and body markers, one foundation ledger row, no enforcement
+ledger row, and retained legacy INSERT compatibility. Security/performance advisors introduced no
+error-level participant finding; authenticated-definer warnings are intentional caller-gated RPCs,
+while two nullable actor foreign keys retain informational index advisories.
+
+This was catalog verification, not the guarded SQL behavior suite: that suite requires a disposable
+database sentinel and both participant migrations, so it was deliberately not run on hosted
+staging. Production, deployment, provider traffic, and
+`20260731040338_conversation_participant_policy_enforcement.sql` remain untouched. Enforcement is
+blocked until legacy UPDATE/DELETE authority is narrowed and the full Worker notification-recipient
+integration passes independent review.
+
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
 admin/office attestation, technician denial, internal-note availability, explicit post-attestation
