@@ -553,11 +553,20 @@ error-level participant finding; authenticated-definer warnings are intentional 
 while two nullable actor foreign keys retain informational index advisories.
 
 This was catalog verification, not the guarded SQL behavior suite: that suite requires a disposable
-database sentinel and both participant migrations, so it was deliberately not run on hosted
-staging. Production, deployment, provider traffic, and
-`20260731040338_conversation_participant_policy_enforcement.sql` remain untouched. Enforcement is
-blocked until legacy UPDATE/DELETE authority is narrowed and the full Worker notification-recipient
-integration passes independent review.
+database sentinel and all three participant migrations, so it was deliberately not run on hosted
+staging. Production, deployment, provider traffic,
+`20260731040338_conversation_unread_state_compatibility.sql`, and
+`20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
+now narrows legacy direct writes in 40339 and integrates Worker recipient/member checks.
+
+Release order is compatibility-sensitive because dev and main share production Supabase:
+
+1. separately authorize/apply 40337 + 40338 and verify catalog postconditions;
+2. deploy the compatible Worker/UI candidate to dev, validate, then promote the same reviewed
+   source to web production and a supported native release;
+3. run the isolated behavioral SQL and negative authorization/device checks;
+4. separately authorize/apply 40339 only after older native direct-unread callers are no longer
+   supported.
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
