@@ -1,6 +1,6 @@
 # UPR Billing, QuickBooks & Xactimate AI — Engineering Context
 
-**Last updated:** July 30, 2026
+**Last updated:** July 31, 2026
 **Scope:** Everything behind the invoice builder, the two-way QuickBooks Online (QBO) sync,
 payments, Stripe pay links, and the Xactimate AI import. Read this before building on the billing
 stack so you extend it cleanly instead of re-deriving (or accidentally redesigning) it.
@@ -86,7 +86,7 @@ editor (`EstimateEditor.jsx`) mirrors the invoice builder.
 `recorded_by`, and authored `receipt_id`. Inserting/deleting a payment triggers recomputation of
 `invoices.amount_paid`/`status`.
 
-### Grouped QBO receipt schema (authored, not applied)
+### Grouped QBO receipt schema (live; rollout disabled)
 
 - `payment_receipts` — one grouped header per `(qbo_realm_id, qbo_payment_id)`, including totals,
   method/reference/deposit account, source/actor, provider version, status, and normalized snapshot.
@@ -95,10 +95,15 @@ editor (`EstimateEditor.jsx`) mirrors the invoice builder.
 - `payment_receipt_events` — append-only lifecycle/audit evidence, including terminal tombstones.
 - `payments.receipt_id` — 1–100 active per-invoice allocation projections for a grouped receipt.
 
-The new tables are forced-RLS/service-only; browser mutation goes through an admin Worker and six
-service-only receipt-state RPCs. A seventh worker-only RPC atomically claims QBO events with their
-retry identity. This source merged to `dev` as `c41839b1`; it is not a description of the shared
-production catalog.
+The foundation is live under production ledger `20260731225654_qbo_multi_invoice_payment_receipts`.
+The tables are forced-RLS with no `anon` or `authenticated` access; browser mutation goes through
+an admin Worker and six service-only receipt-state RPCs, while a seventh worker-only RPC atomically
+claims QBO events with retry identity. Production grant containment under
+`20260731230907_qbo_receipt_service_grant_containment` limits direct `service_role` access to
+`SELECT` on `payment_receipts` and `payment_receipt_attempts`, with no direct privilege on
+`payment_receipt_events`; all writes remain through those seven gated `SECURITY DEFINER` RPCs.
+Both receive-payment rollout gates remain disabled. No provider or payment action has been taken
+under this foundation.
 
 ### Key RPCs
 - `create_invoice_for_job(p_job_id, p_created_by DEFAULT NULL)` → invoice row. **Idempotent** —
@@ -529,5 +534,5 @@ payments-sync}.js`, `analyze-xactimate.js`, `stripe-pay-link.js`;
 `src/pages/{InvoiceEditor,Collections,ReceivePayment}.jsx`; `src/components/NewInvoiceModal.jsx`,
 `src/components/collections/{collKit.jsx,collTokens.js,SearchSelect.jsx,ActionMenu.jsx,
 ReceivePaymentForm.jsx,paymentAllocation.js}`, `src/components/{DatePicker,AutoGrowTextarea}.jsx`;
-`src/App.jsx`; RPCs `create_invoice_for_job`, `get_ar_invoices`, `convert_estimate_to_invoice`, and
-the six `*_qbo_payment_receipt` functions.*
+`src/App.jsx`; RPCs `create_invoice_for_job`, `get_ar_invoices`, `convert_estimate_to_invoice`, the
+six `*_qbo_payment_receipt` functions, and the worker-only QBO-event claim function.*
