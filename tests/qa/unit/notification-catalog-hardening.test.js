@@ -21,7 +21,8 @@
  *
  * NOTES / GOTCHAS:
  *   - Proves INTENT, not EFFECT (close-out-standard.md step 2b). The behavioral
- *     proof runs at the apply window; the db lane does not run in CI.
+ *     JavaScript lane runs against hosted qa-staging; live apply evidence remains
+ *     a separate owner-authorized step.
  *   - The service_role assertion is the important one. Revoking service_role by
  *     mistake would silently stop every notification, because
  *     functions/api/notify.js:370 reads this table with the service-role client.

@@ -125,33 +125,38 @@ if (!url || !anonKey || !serviceKey || !fixturePassword) {
     if (result.error || !report?.numTotalTests) {
       process.exitCode = result.status || 1;
     } else {
-      // Schema-only branch reality: identity/fixture-dependent tests fail or
-      // self-skip until a reviewed fixture seed exists (auth.users is empty).
-      // Gate on the shrink-only baseline: any NEW failure beyond it is a real
-      // regression and fails the lane. Never raise the baseline.
+      // The standing identities and branch-only reference rows are seeded. Failed
+      // assertions have no budget. Legacy anon-era setup suites still carry a
+      // shrink-only baseline until their fixture setup and signed-in calls are converted.
       const baseline = JSON.parse(
         fs.readFileSync(path.join(root, 'scripts', 'qa', 'db-lane-baseline.json'), 'utf8'),
       );
       const failedTests = report.numFailedTests || 0;
-      const skipped =
-        (report.numPendingTests || 0) + (report.numPendingTestSuites || 0) + (report.numTodoTests || 0);
+      const failedSuites = report.numFailedTestSuites || 0;
+      const skippedTests = report.numPendingTests || 0;
+      const todoTests = report.numTodoTests || 0;
       process.stdout.write(
         `QA branch DB tests: ${report.numPassedTests}/${report.numTotalTests} passed, `
-        + `${failedTests} failed (baseline ${baseline.maxFailedTests}), ${skipped} skipped `
-        + '(fixture-gap tail — see scripts/qa/db-lane-baseline.json).\n',
+        + `${failedTests} failed assertions (baseline ${baseline.maxFailedTests}), `
+        + `${failedSuites} failed setup suites (baseline ${baseline.maxFailedSuites}), `
+        + `${skippedTests} skipped, ${todoTests} todo.\n`,
       );
-      if (failedTests > baseline.maxFailedTests) {
+      if (
+        failedTests > baseline.maxFailedTests
+        || failedSuites > baseline.maxFailedSuites
+      ) {
         process.stderr.write(
-          `QA branch DB tests FAILED: ${failedTests} failed tests exceeds the shrink-only `
-          + `baseline (${baseline.maxFailedTests}) — a NEW database regression beyond the known `
-          + 'fixture gaps.\n',
+          'QA branch DB tests FAILED: '
+          + `${failedTests} failed assertion(s) / ${failedSuites} failed setup suite(s) exceeds `
+          + `the shrink-only baseline (${baseline.maxFailedTests} / `
+          + `${baseline.maxFailedSuites}).\n`,
         );
         process.exitCode = 1;
       } else {
-        if (failedTests < baseline.maxFailedTests) {
+        if (failedSuites < baseline.maxFailedSuites) {
           process.stdout.write(
-            'Ratchet opportunity: failures are below baseline — lower maxFailedTests to '
-            + `${failedTests} in scripts/qa/db-lane-baseline.json in this PR.\n`,
+            'Ratchet opportunity: failed setup suites are below baseline — lower '
+            + `maxFailedSuites to ${failedSuites} in scripts/qa/db-lane-baseline.json.\n`,
           );
         }
         process.exitCode = 0;

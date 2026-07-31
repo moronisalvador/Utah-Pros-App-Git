@@ -1,8 +1,9 @@
 # QBO Multi-Invoice Payment Receipts
 
-**Status:** Source deployed on `dev`; `qa-staging` and shared-database migrations verified with
-both rollout gates disabled. Provider sandbox, authenticated browser/named-admin proof, feature
-activation, and `dev → main` promotion remain pending.
+**Status:** Source is on `dev`, with exact prior deployment proof at `52a07d9e`; every newer
+reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
+migrations are verified with both rollout gates disabled. Provider sandbox, authenticated
+browser/named-admin proof, feature activation, and `dev → main` promotion remain pending.
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
@@ -30,8 +31,10 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 - The database flag `feature:qbo_receive_payment` is seeded disabled.
 - The money endpoint requires that exact row enabled and not force-disabled plus
   `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
-- Code is pushed and deployed on dev; no provider Payment mutation, Intuit sandbox run, feature
-  activation, authenticated browser proof, `main` merge, or production web deployment occurred.
+- Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
+  heads require independent deployment/smoke verification. No provider Payment mutation, Intuit
+  sandbox run, feature activation, authenticated browser proof, `main` merge, or production web
+  deployment occurred.
 
 ## Local verification evidence
 

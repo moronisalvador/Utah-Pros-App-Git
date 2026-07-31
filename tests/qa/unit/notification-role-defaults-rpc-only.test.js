@@ -24,9 +24,9 @@
  * NOTES / GOTCHAS:
  *   - Proves INTENT, not EFFECT. The behavioural proof is deliberately manual and
  *     cheap: open Settings → Notification Defaults as an admin after the apply and
- *     confirm the matrix loads and a toggle saves. No db-lane file was added,
- *     because that lane does not run in CI and each addition raises the
- *     dark-guard debt tracked by db-lane-coverage.test.js.
+ *     confirm the matrix loads and a toggle saves. Hosted qa-staging now runs the
+ *     JavaScript database lane in CI; this credential-free source contract remains
+ *     useful, but it is not a substitute for a focused behavioral test.
  *   - Statement assertions strip `--` comments, or the header prose about revoking
  *     matches the very patterns being forbidden.
  * ════════════════════════════════════════════════

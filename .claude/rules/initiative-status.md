@@ -31,9 +31,11 @@ The owner-authorized production apply used the exact reviewed source at commit `
   `20260731205942_qbo_invoice_command_ledger`.
 
 The paired rollbacks remain available. GitHub CI's schema `verify` job passed; the governed
-`db-lane` job passed under its current debt budget (`maxFailedTests=19`), not as a zero-failure
-behavioral suite. The compatible Worker/client source is on `dev` but not yet `main`; it preserves
-one operation id across ambiguous provider and post-provider-finalization failures, and
+`db-lane` job passed. The later raw hosted receipt at `a513af37` is 163 / 375 assertions passed,
+0 failed, 212 skipped, and 46 failed setup suites across 44 files. Assertions are gated at zero;
+the setup-suite debt has a shrink-only baseline of 46. The compatible Worker/client source is on
+`dev` but not yet `main`; it preserves one operation id across ambiguous provider and
+post-provider-finalization failures, and
 `/api/qbo-invoice` requires an active, non-external admin Bearer session rather than the shared QBO
 server secret. Cloudflare deployment, authenticated-browser and Intuit provider/webhook evidence
 remain owner/external release gates and must not be inferred from repository state.
@@ -177,21 +179,24 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   `.claude/rules/sms-experience-wave-ownership.md` §13 (kept in place — a CI contract test reads
   it).
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
-  2026-07-29; schema-usable and CI db lane LIVE, but its historical migration ledger is not
-  replay-compatible** (details: `docs/database/staging-branch-runbook.md`). Rebase currently fails
-  at historical migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded
-  schema already has dependent objects. Do not call it migration-ledger parity or repair that gap
-  with ad-hoc ledger writes. It remains the only hosted DB agents may write-test against.
-  Open tail: convert the remaining anon-era tests to those identities, seed only their minimal
-  non-production reference rows, and ratchet the shrink-only failure baseline
-  (`scripts/qa/db-lane-baseline.json`) toward zero.
+  2026-07-29; schema-usable and CI db lane LIVE, with initial catalog parity but a historical
+  migration ledger that is not replay-compatible** (details:
+  `docs/database/staging-branch-runbook.md`). It is the only hosted DB agents may write-test
+  against. The fixture-password secret is configured, all three signed-in fixture identities were
+  rotated, and the raw hosted receipt at `a513af37` is 163 / 375 assertions passed, 0 failed,
+  212 skipped, and 46 failed setup suites across 44 files. Failed assertions are gated at zero;
+  setup-suite failures carry a shrink-only baseline of 46. Rebase currently fails at historical
+  migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
+  has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
+  writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
+  the six SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Disabled source deployed on `dev`; QA + shared schema/ACL applies verified; sandbox, environment-gate, named-admin/provider proof, feature activation, and `main` promotion remain gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | Disabled source is on `dev`; exact prior deployment proof belongs to `52a07d9e`, while each newer reconciled head needs its own smoke; QA + shared schema/ACL applies verified; sandbox, environment-gate, named-admin/provider proof, feature activation, and `main` promotion remain gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |
@@ -200,7 +205,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 | UX alignment W1–W5 | Stalled since 2026-07-18; owner may restart from scratch | `docs/archive/rules/ux-alignment-wave-ownership.md` |
 | DB foundation P2–P8 | Partially done (P3 tranches shipped) | `docs/archive/rules/db-foundation-wave-ownership.md` |
 | App-store readiness F1/A/B/D | Source phases and historical TestFlight/Push matrix complete; current per-token-source second-account proof open; submission deferred behind the field-documentation plan | `docs/archive/rules/app-store-readiness-wave-ownership.md` |
-| Agent QA access P2+ | Hosted branch/fixtures live; anon-era conversions, failure/skip ratchets and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
+| Agent QA access P2+ | Hosted branch/rotated fixtures live; zero assertion failures, but setup-suite/skip conversions and P2a local runtime remain | `docs/archive/rules/upr-agent-qa-access-ownership.md` |
 
 ## Phase-scoped conversations — OPEN QUESTION, no owner decision yet (raised 2026-07-30)
 

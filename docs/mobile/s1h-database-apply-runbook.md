@@ -115,7 +115,7 @@ review. A matching hash is not apply authorization.
 | Personal ownership isolated behavior | `48cc6fd35961ade710e031169ad2becf544de4f96105445b890b6d449eb8d1aa` |
 | Personal ownership unsafe rollback | `860fcf0d74c8bdce5b63cad68537189a8045a113bba0398ffa601f7f2c3b4ba9` |
 
-## Entry gate
+## Historical entry gate — do not execute
 
 Stop unless every item is recorded:
 
@@ -145,7 +145,7 @@ Stop unless every item is recorded:
 
 Any mismatch is a stop. Do not treat a migration-history row alone as catalog proof.
 
-## Isolated qualification
+## Historical isolated qualification — do not execute
 
 On a disposable local clone only, set the independent server sentinel
 `upr.isolated_test_database=on` and run the governed local database runner. The wrapper also sets
@@ -168,10 +168,11 @@ The combined identity and S1h matrix must prove:
 If exact SQL execution is unavailable, the boundary remains unverified and cannot advance to an
 apply decision.
 
-## Apply
+## Historical apply sequence — do not execute
 
-After a separate owner authorization, submit only the exact reviewed S1h source through the
-Supabase MCP `apply_migration` operation. Do not run a directory sweep, `supabase db push`,
+The superseded plan would have submitted only the exact reviewed S1h source through the Supabase
+MCP `apply_migration` operation after separate owner authorization. This is audit history, not a
+current procedure. Do not run it, a directory sweep, `supabase db push`,
 `--linked` test command, implicit deployment migration, or any other pending migration in the
 same window.
 
@@ -185,7 +186,7 @@ The apply system assigns the live ledger version. Immediately record:
 Do not invent a live version from the source filename. Do not edit provenance before a successful
 apply.
 
-## Immediate verification
+## Historical immediate verification — do not execute
 
 Before any provider, deployment, signing, device, or customer traffic:
 
@@ -203,7 +204,7 @@ Before any provider, deployment, signing, device, or customer traffic:
 
 Only complete applied proof can change S1h from source-only to live-verified.
 
-## Rollback
+## Historical rollback — do not execute
 
 Prefer a forward repair. The rollback deliberately restores anonymous employee-page enumeration,
 broad browser table privileges, foreign personal selectors, inactive/external registration, raw
