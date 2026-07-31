@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-31T02:30:06Z",
+  "capturedAt": "2026-07-31T19:18:19Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "873100621a454d1c97cf6e3aa00b17b613702e22",
+  "captureBaseCommit": "38e7a54b31c44ee00b4d1ea1349e6dc1471efa62",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -219,6 +219,22 @@
     {
       "name": "crm_lead_value_from_claim",
       "version": "20260730155213"
+    },
+    {
+      "name": "device_token_apns_topic",
+      "version": "20260731154315"
+    },
+    {
+      "name": "pg_net_worker_url_allowlists",
+      "version": "20260731165215"
+    },
+    {
+      "name": "transcribe_call_cron_allowlist",
+      "version": "20260731174734"
+    },
+    {
+      "name": "oop_pricing_builder",
+      "version": "20260731175328"
     }
   ],
   "functions": [

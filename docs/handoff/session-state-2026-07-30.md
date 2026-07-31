@@ -31,9 +31,10 @@ state, open gates, and decisions made in conversation.
    raise no banner while B is active — has never been observed.
 2. **`session_id` claim shape** — decode one real access token locally to confirm
    what the ended-session revival guard keys on.
-3. **Cloudflare Preview `APNS_TOPIC`** must change to
-   `com.utahprosrestoration.upr.dev` before push reaches the UPR Dev app.
-   Owner-only dashboard change.
+3. **UPR Dev per-token push proof.** Never change Cloudflare Preview `APNS_TOPIC`;
+   both environments retain `com.utahprosrestoration.upr` as the legacy fallback.
+   The per-token topic schema is live, but the compatible signed build still needs
+   deployment, re-enrollment and device proof.
 4. **A2P live sends, provider webhooks, feature-flag flips** — always owner-gated.
 
 ## Decisions made in conversation (not derivable from code)

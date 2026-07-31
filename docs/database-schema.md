@@ -106,11 +106,12 @@ as a standing regression prohibition, not a convention to copy. Apply evidence:
 Object names evolve; verify them against the current catalog rather than copying this table into
 code.
 
-## OOP pricing builder source (repository-ready, not applied)
+## OOP pricing builder live contract
 
 `supabase/migrations/20260730150000_oop_pricing_builder.sql` is the reviewed source contract for
-versioned calculator pricing. It has not been applied to the shared Supabase project in this work,
-so these objects are repository intent rather than a live-schema claim:
+versioned calculator pricing. It is live under reconciled production ledger row
+`20260731175328_oop_pricing_builder`; staging qualification and separate live catalog checks
+verified these objects and boundaries:
 
 - `oop_pricing_revisions` stores one editable draft plus immutable published/superseded revisions;
 - `oop_pricing_audit` records idempotent admin save/publish actions and their actor/payload hash;
@@ -133,8 +134,34 @@ so these objects are repository intent rather than a live-schema claim:
   and recomputes its persisted v1 total/margin while preserving the deployed signature and row shape.
 
 The paired owner-gated operational rollback is
-`supabase/rollbacks/20260730150000_oop_pricing_builder.rollback.sql`. Applying either file requires
-a separately authorized database window; this work applied neither file.
+`supabase/rollbacks/20260730150000_oop_pricing_builder.rollback.sql`. The forward migration is
+applied; the rollback remains a separate owner-authorized emergency action and retains private data
+inert instead of dropping it.
+
+## QBO command recovery apply candidate
+
+Two sequenced, additive migrations now define the QBO invoice/conversion concurrency boundary:
+
+- `20260731180000_qbo_estimate_conversion_concurrency.sql` preserves deployed signatures while
+  locking same-estimate conversion and QBO decision application, making retry-event reclamation
+  service-only, deriving invoice QBO lifecycle status in a trigger, and exposing a service-only
+  compare-and-swap for `invoices.qbo_invoice_id` plus send metadata.
+- `20260731210000_qbo_invoice_command_ledger.sql` adds `qbo_invoice_commands`, a forced-RLS table
+  with no browser grants and a single service-role policy. One partial unique index serializes
+  nonterminal commands per UPR invoice. Five service-only RPCs freeze command identity, realm,
+  source intent, provider stage/request id/payload, result and terminal response. Browser commands
+  require an immutable Auth user UUID; server-capability commands are explicitly system-attributed
+  with both actor UUIDs null. The same-signature CAS replacement treats an already-applied target
+  as idempotent success without changing the combined-billing rule that QBO invoice ids are
+  intentionally non-unique.
+
+Both migrations have paired, candid high-risk rollbacks. The exact final sources are applied only
+to `qa-staging` under ledger rows
+`20260731205105_qbo_estimate_conversion_concurrency_split_final` and
+`20260731205118_qbo_invoice_command_ledger`. Catalog verification confirmed forced RLS,
+service-role-only table/RPC ACLs, the actor constraint, pinned definer search paths and the enabled
+lifecycle trigger. Production apply is pending the committed-source hosted database lane.
+
 ## Change rules
 
 - Create a reviewed migration first; do not hand-edit live schema as the lasting change record.
@@ -582,9 +609,9 @@ ownership, and are the only native-token RPCs granted to `authenticated`; direct
 table access and legacy selector RPCs are revoked from browser roles. This
 focused source is live under reconciled ledger row
 `20260729021021 | native_apns_token_boundary`; 2026-07-30 readback confirmed
-forced RLS and no direct `anon`/`authenticated` table privileges. The obsolete
-authenticated SELECT policy object remains inert behind that revoked ACL and
-is removed by the pending per-token-topic migration below.
+forced RLS and no direct `anon`/`authenticated` table privileges. The formerly
+inert authenticated SELECT policy was removed by the live per-token-topic
+migration below.
 
 The ordered focused companion
 `20260728224000_native_push_delivery_guardrails.sql` preserves the deployed
@@ -610,7 +637,8 @@ the four exact prior RPC bodies/ACLs, because that compatibility rollback
 deliberately re-opens the selector defect. This focused boundary means the deferred broad
 S1h preflight will intentionally refuse until it is reconciled and re-qualified.
 
-Pending `20260730170000_device_token_apns_topic.sql` adds nullable
+`20260730170000_device_token_apns_topic.sql` is live under reconciled ledger row
+`20260731154315_device_token_apns_topic`. It adds nullable
 `device_tokens.apns_topic` and atomically replaces the two-parameter enrollment
 RPC with a single three-parameter definition whose trailing topic defaults to
 NULL, preserving the shipped two-argument call. It removes the lingering
