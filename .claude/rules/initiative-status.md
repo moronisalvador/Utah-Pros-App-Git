@@ -64,6 +64,11 @@ ledger with its rollout flags still disabled:
   environment gate, create a QBO Payment, or activate the feature. The Intuit Development sandbox
   matrix, authenticated browser QA, disabled code-first deployment, Cloudflare gate verification,
   and named-admin proof remain release gates.
+  Follow-up source `20260731231000_qbo_receipt_service_grant_containment.sql` is committed on `dev`
+  as `52a07d9e` but remains unapplied: it removes the managed project's inherited direct
+  `service_role` writes from the three private receipt tables while keeping the reviewed
+  service-only RPC mutation path. Keep the feature disabled and apply that exact reviewed
+  containment in its own owner-authorized window before activation.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
