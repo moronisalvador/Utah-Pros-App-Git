@@ -1,7 +1,7 @@
 # QBO Multi-Invoice Payment Receipts
 
 **Status:** Source implemented and locally plus `qa-staging` verified on
-`codex/qbo-multi-invoice-payments`, based on `origin/dev` `e33ef20d`; provider, browser,
+`codex/qbo-multi-invoice-payments`, based on `origin/dev` `20436bec`; provider, browser,
 production-apply, and release gates remain pending
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
@@ -31,7 +31,7 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 ## Local verification evidence
 
 Current feature source was verified on 2026-07-31 after semantic reconciliation with
-`origin/dev` `e33ef20d`:
+`origin/dev` `20436bec`:
 
 - `npm test` passed with zero unexpected skips: 1,507 unit tests, 1,877 Worker tests, and 784 QA
   tests (4,168 total).
