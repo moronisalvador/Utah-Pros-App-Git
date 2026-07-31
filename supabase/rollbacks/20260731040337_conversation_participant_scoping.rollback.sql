@@ -12,6 +12,11 @@
 --   technician choice made after the migration was applied. Export those choices
 --   before running this rollback if they may be needed again.
 --
+-- REQUIRED ORDER:
+--   If present, run the 20260731040339 enforcement rollback first and the
+--   20260731040338 unread-compatibility rollback second. Restore compatible
+--   deployed callers before removing this foundation.
+--
 -- FIDELITY:
 --   The inbox function and broad authenticated policies below are copied from
 --   the migration sources that were live immediately before participant scoping.
