@@ -32,6 +32,13 @@ before promoting.
   enrollment (PGRST202). Kills the wrong-topic failure mode behind the 2026-07-30 push outage; the
   Preview `APNS_TOPIC` flip planned for the dev app is superseded and must not be made
   (`docs/mobile/push-activation-owner-gate.md`).
+- **`20260730214500_pg_net_worker_url_allowlists.sql`** (authored 2026-07-30) — function-body-only
+  replaces of `notify_emit` + `notify_google_calendar_sync` adding the two-URL allowlist the wake
+  functions already carry, plus a blank-secret no-op. Paired rollback + CI contract test committed.
+  Reviewer advisory satisfied by live evidence 2026-07-30: `gcal_worker_url` and `notify_worker_url`
+  both read exactly `https://utahpros.app/api/...` live, so the new gate will not no-op them.
+  No sequencing dependency; apply in any window. Ops registry:
+  `docs/database/integration-config-worker-urls.md`.
 
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
