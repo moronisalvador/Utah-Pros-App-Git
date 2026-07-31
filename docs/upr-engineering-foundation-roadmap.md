@@ -317,9 +317,10 @@ The one raw body difference is comment-only and remains a warning. Evidence:
 The 2026-07-23 P0 addendum records the safe environment, identity, provider, telemetry, GitHub,
 accessibility, and Encircle boundaries. It supersedes—not merges—the `3841056` plan because that plan
 would keep mutation-heavy integration tests on the shared production database. P1 is complete.
-On 2026-07-31 the hosted lane reported 163 / 375 assertions passed, 0 failed, and 212 skipped at
-commit `19b3e64a`; zero failed assertions is now the hard gate, while the skips and six local-only
-SQL/pgTAP proofs remain explicit coverage debt.
+On 2026-07-31 the raw hosted lane at `a513af37` reported 163 / 375 assertions passed, 0 failed,
+212 skipped, and 46 setup-suite failures across 44 files. Failed assertions are hard-gated at zero;
+the previously hidden setup failures now have a shrink-only baseline of 46. Those suites, the
+skips, and six local-only SQL/pgTAP proofs remain explicit coverage debt.
 P2a execution still requires exact local-runtime/config ownership. The hosted branch already
 exists; its billing, retention, destructive reset, and eventual retirement remain owner-controlled.
 

@@ -6,20 +6,22 @@ exact against production at that point (141 public tables / 400 functions / 219 
 transferred, and PostgREST cache reloaded. Counts now drift as migrations are qualified/applied, so
 derive them for each window. The CI db lane runs against the branch on every PR. **Known tail:**
 the schema-only seed initially had no `auth.users` (21 failed / 204 skipped of 357 at first light).
-The 2026-07-31 run at commit `19b3e64a` reported **163 / 375 passed, 0 failed, 212 skipped**. The
-known-failure baseline was therefore retired: every failed hosted assertion now blocks CI. The
-remaining skips are still coverage debt, not a fully exercised database suite. The standing
-fixtures are three QA people — `qa-admin@` / `qa-office@` / `qa-tech@upr-qa.test` (admin / office /
-field_tech), each bound to an active `employees` row, plus one active demo-sheet schema and a
-branch-only CRM test organization. The fixture source's minimal CRM phase/stage and five
-notification catalog rows are seeded. The notification containment was applied, rolled back, and
-reapplied on the branch; those five rows end disabled. Verified end-to-end: password grant → JWT →
-`get_my_employee_profile()` resolves the fixture employee. Tests authenticate via
+The raw 2026-07-31 run at commit `a513af37` reported **163 / 375 assertions passed, 0 failed,
+212 skipped; 46 setup suites failed across 44 files**. The old assertion-failure budget was
+ratcheted 19 → 0. A separate shrink-only setup-suite baseline now records the 46 legacy failures
+the old wrapper hid; any assertion failure or setup-suite increase blocks CI. This is not a fully
+green database suite. The standing fixtures are three QA people — `qa-admin@` / `qa-office@` /
+`qa-tech@upr-qa.test` (admin / office / field_tech), each bound to an active `employees` row, plus
+one active demo-sheet schema and a branch-only CRM test organization. The fixture source's minimal
+CRM phase/stage and five notification catalog rows are seeded. The notification containment was
+applied, rolled back, and reapplied on the branch; those five rows end disabled. Verified
+end-to-end: password grant → JWT → `get_my_employee_profile()` resolves the fixture employee.
+Tests authenticate via
 `supabase/tests/helpers/qaFixtures.mjs` (`signInFixture('admin').rpc(...)`) — reference
 conversion: `settings_f_demo_schema_delete.test.js` (3/3 green against the branch). Path to
-zero-skip coverage: convert the remaining anon-era suites with that pattern and add only their
-minimal branch reference rows to the seed script. The branch's seeded schema is real and usable,
-but the dashboard `MIGRATIONS_FAILED` badge is **not merely cosmetic**: its
+zero-debt coverage: convert failed setup suites and skipped anon-era tests with that pattern, then
+add only their minimal branch reference rows to the seed script. The branch's seeded schema is
+real and usable, but the dashboard `MIGRATIONS_FAILED` badge is **not merely cosmetic**: its
 migration ledger was never baselined after the manual schema restore, so automated rebase still
 replays old history and fails (§1). Do not use rebase as the parity mechanism until that ledger
 gap is deliberately repaired.
