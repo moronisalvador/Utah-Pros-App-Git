@@ -48,6 +48,10 @@ import { useConvoMutations } from './messages/useConvoMutations.js';
 import { mergeConvoIntoList } from './messages/msgsSelectors.js';
 import { purgeConversationAccess } from './messages/accessRevocation.js';
 import { techKeys } from '@/lib/techQuery';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import {
+  conversationAccessLeaseIsFresh,
+} from '@/components/conversations/conversationAccessState';
 
 export default function TechMessagesV2({ active = true }) {
   const { db, employee } = useAuth();
@@ -81,12 +85,12 @@ export default function TechMessagesV2({ active = true }) {
     setDeepLinked((current) => (
       current?.id === conversationId ? null : current
     ));
-    const next = new URLSearchParams(searchParams);
-    if (next.get('c') === conversationId) {
-      next.delete('c');
-      setSearchParams(next, { replace: true });
-    }
-  }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (next.get('c') === conversationId) next.delete('c');
+      return next;
+    }, { replace: true });
+  }, [queryClient, setSearchParams]);
 
   // One actor-owned access probe handles both deep links and same-account removal.
   // It silently rechecks on focus/reconnect and every minute; an offline error keeps
@@ -101,8 +105,41 @@ export default function TechMessagesV2({ active = true }) {
       return result?.conversations?.[0] || null;
     },
     staleTime: 15_000,
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
+  });
+
+  // Query success is the only renewal path. `dataUpdatedAt` advances only after a
+  // successful actor-scoped RPC response, so cached rows cannot renew this lease.
+  const accessLeaseIsFresh = useCallback((updatedAt = activeConversationQuery.dataUpdatedAt) => (
+    conversationAccessLeaseIsFresh(updatedAt)
+  ), [activeConversationQuery.dataUpdatedAt]);
+  const hasActiveAccessLease = Boolean(
+    activeId
+    && activeConversationQuery.isSuccess
+    && activeConversationQuery.data?.id === activeId
+    && accessLeaseIsFresh()
+  );
+
+  const revalidateActiveAccess = useCallback(async () => {
+    if (!activeId || newConversationOpen) return;
+    if (!accessLeaseIsFresh()) {
+      // Do not leave text or a local draft visible while offline after the lease.
+      revokeConversationAccess(activeId);
+      return;
+    }
+    const result = await activeConversationQuery.refetch();
+    if (!result.isSuccess && !accessLeaseIsFresh(result.dataUpdatedAt)) {
+      revokeConversationAccess(activeId);
+    }
+  }, [accessLeaseIsFresh, activeConversationQuery, activeId, newConversationOpen, revokeConversationAccess]);
+
+  useResumeRefetch({
+    onResume: revalidateActiveAccess,
+    pollMs: 5_000,
+    hiddenEdgeOnly: true,
+    enabled: Boolean(activeId && !newConversationOpen),
   });
 
   const activeConv = useMemo(
@@ -182,9 +219,9 @@ export default function TechMessagesV2({ active = true }) {
   }, [queryClient, searchParams, setDeepLinked, setSearchParams]);
 
   // A successful access probe is required before a deep link can render a thread.
-  // A failed network probe preserves an already-open authorized thread for retry,
-  // while a successful empty response purges it through revokeConversationAccess.
-  const threadOpen = newConversationOpen || Boolean(activeId && activeConv);
+  // During the short lease a failed network probe keeps the existing view stable;
+  // after it expires, revalidateActiveAccess purges it and its draft before render.
+  const threadOpen = newConversationOpen || Boolean(activeId && activeConv && hasActiveAccessLease);
 
   return (
     <TechMsgsPane
