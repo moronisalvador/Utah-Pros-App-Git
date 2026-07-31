@@ -583,11 +583,12 @@ policies. Two-session PostgREST/Realtime sockets plus PWA/Capacitor bell behavio
 close-out gate; S1d/S1e/S1f, private media, providers, deployment, signing, and device work remain
 separate.
 
-**S1g apply-order prerequisite:** its entry gate still requires the separately verified
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
 `20260726180000_mobile_employee_identity_authority.sql` and
-`20260726182000_mobile_employee_identity_containment.sql` sequence, compatible browser/PWA/native
-clients, and retirement of old clients or an explicit owner risk decision. The completed S1e
-postcondition is recorded above; it is not an authorization to combine S1g with any later window.
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate containment ledger
+row and that the browser-read-only employee catalog contract matched. S1e and S1g are now live;
+neither is an authorization to combine or replay them in a later window.
 
 ## Mobile S1h identity and personal ownership source (retired; do not apply)
 
