@@ -4133,6 +4133,21 @@ owner-controlled Xcode Cloud workflow configuration, and a real cloud build is
 still required to prove the complete path. Guard:
 `scripts/ios-release-workflow.test.js` → "Xcode Cloud post-clone hook".
 
+**Push-enrollment gate added (2026-07-30):** the hook now also hard-fails unless
+`VITE_NATIVE_PUSH_ENABLED` is exactly `true` and `VITE_APNS_ENV` is exactly
+`sandbox` or `production` — the same fail-closed values
+`src/lib/pushNotifications.js` (`isNativePushEnrollmentEnabled`) requires at
+build time. Without them an Xcode Cloud build succeeded but shipped with push
+enrollment silently disabled (no permission prompt, no token registration);
+only `.github/workflows/ios-release.yml` enforced these, and Xcode Cloud
+bypasses `scripts/qa/verify-ios-release-artifact.mjs`. The refusal message
+names where to set them (App Store Connect → Xcode Cloud → workflow →
+Environment variables). Unlike the GitHub workflow, which pins `production`
+for TestFlight, the hook accepts `sandbox` because Xcode Cloud may build
+dev/sandbox configurations. Both variables are owner-controlled Xcode Cloud
+workflow configuration, like the Supabase pair. Guard: same test file,
+"fails closed unless the push enrollment gates are baked into the bundle".
+
 ### Message-notification outbox host + APNs topic constraint (2026-07-30)
 
 - `integration_config.message_notification_outbox_worker_url` now points at
