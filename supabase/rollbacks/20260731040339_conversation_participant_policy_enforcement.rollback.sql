@@ -4,7 +4,7 @@
 --
 -- WHAT THIS DOES (plain language):
 --   Restores the company-wide authenticated conversation policies and direct
---   browser INSERT grants that existed before participant enforcement.
+--   browser table grants that existed before participant enforcement.
 --
 -- SECURITY WARNING:
 --   This intentionally reopens the earlier broad internal visibility model.
@@ -28,7 +28,7 @@ BEGIN
     AND policy.tablename = 'conversations'
     AND policy.policyname = 'allow_authenticated_conversations'
     AND policy.permissive = 'PERMISSIVE'
-    AND policy.cmd = 'ALL'
+    AND policy.cmd = 'SELECT'
     AND policy.roles = ARRAY['authenticated']::name[];
 
   SELECT
@@ -40,7 +40,7 @@ BEGIN
     AND policy.tablename = 'conversation_participants'
     AND policy.policyname = 'allow_authenticated_conversation_participants'
     AND policy.permissive = 'PERMISSIVE'
-    AND policy.cmd = 'ALL'
+    AND policy.cmd = 'SELECT'
     AND policy.roles = ARRAY['authenticated']::name[];
 
   SELECT regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g')
@@ -56,12 +56,10 @@ BEGIN
 
   IF replace(v_conversation_qual, 'public.', '')
        IS DISTINCT FROM 'messaging_can_access_conversation(id)'
-     OR replace(v_conversation_check, 'public.', '')
-       IS DISTINCT FROM 'messaging_can_access_conversation(id)'
+     OR v_conversation_check IS DISTINCT FROM ''
      OR replace(v_participant_qual, 'public.', '')
        IS DISTINCT FROM 'messaging_can_access_conversation(conversation_id)'
-     OR replace(v_participant_check, 'public.', '')
-       IS DISTINCT FROM 'messaging_can_access_conversation(conversation_id)'
+     OR v_participant_check IS DISTINCT FROM ''
      OR replace(v_message_qual, 'public.', '')
        IS DISTINCT FROM '(messaging_can_access_conversations()ANDmessaging_can_access_conversation(conversation_id))'
      OR has_table_privilege(
@@ -73,20 +71,76 @@ BEGIN
        'authenticated',
        'public.conversation_participants',
        'INSERT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversations',
+       'TRIGGER'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.conversation_participants',
+       'TRIGGER'
      ) THEN
     RAISE EXCEPTION 'conversation policy rollback: participant-aware policy/ACL baseline drifted';
   END IF;
 END;
 $conversation_policy_rollback_preflight$;
 
-ALTER POLICY allow_authenticated_conversations
+DROP POLICY allow_authenticated_conversations
+  ON public.conversations;
+CREATE POLICY allow_authenticated_conversations
   ON public.conversations
+  FOR ALL
   TO authenticated
   USING (true)
   WITH CHECK (true);
 
-ALTER POLICY allow_authenticated_conversation_participants
+DROP POLICY allow_authenticated_conversation_participants
+  ON public.conversation_participants;
+CREATE POLICY allow_authenticated_conversation_participants
   ON public.conversation_participants
+  FOR ALL
   TO authenticated
   USING (true)
   WITH CHECK (true);
@@ -96,5 +150,5 @@ ALTER POLICY messages_authenticated_select
   TO authenticated
   USING (public.messaging_can_access_conversations());
 
-GRANT INSERT ON TABLE public.conversations, public.conversation_participants
+GRANT ALL ON TABLE public.conversations, public.conversation_participants
   TO authenticated;
