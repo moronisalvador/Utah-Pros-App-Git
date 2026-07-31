@@ -1,5 +1,0 @@
-{
-  "note": "Shrink-only failure baseline for the db lane against the qa-staging branch. Gate is failed-test count only. 2026-07-29 first light: 21 failed of 357 (fixture gaps: auth.users empty). Same day: fixture identities seeded (scripts/qa/seed-branch-fixtures.sql) and the reference suite converted to authenticate (settings_f_demo_schema_delete + helpers/qaFixtures.mjs) \u2014 ratcheted 21 -> 19. Convert remaining anon-era suites with the same pattern and keep ratcheting; at zero, delete this file. Never raise these numbers \u2014 a rise means a real regression.",
-  "recorded": "2026-07-29",
-  "maxFailedTests": 19
-}
