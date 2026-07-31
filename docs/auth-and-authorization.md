@@ -437,10 +437,11 @@ stored `callrail_id` to match the call ID embedded in its stored allowlisted Cal
 then reads the credential. UPR has no employee-to-CRM-organization assignment model, and
 `get_inbound_leads` itself is company-wide. S1c therefore documents `crm_call_log` as company-wide
 recording authority; it does not claim tenant/assignment scoping that the data model cannot express.
-The non-admin Worker capability does not mirror the desktop rollout/kill flags, and the direct
-authenticated `get_inbound_leads`/`inbound_leads` paths still expose or can mutate the stored
-recording URL outside this proxy. Those are separate operational/database residuals; S1c is not
-end-to-end recording confidentiality.
+The non-admin Worker capability does not mirror the desktop rollout/kill flags. The later live S1e
+database boundary removed authenticated lead DML and moved the provider URL to a forced-RLS,
+service-only source table; browser/RPC callers now receive only an opaque recording marker. The
+remaining residual is company-wide active-internal lead metadata/read scope, not raw recording-URL
+exposure or mutation.
 
 HTTP `/api/notify` retains two distinct identities:
 
