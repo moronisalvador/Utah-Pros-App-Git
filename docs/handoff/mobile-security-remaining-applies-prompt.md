@@ -23,6 +23,13 @@ NOTES / GOTCHAS:
 
 # Handoff — the last four mobile-security migrations
 
+> **COMPLETED AND SUPERSEDED — DO NOT PASTE OR EXECUTE (2026-07-31).** This handoff records the
+> 2026-07-27 state only. Identity containment, S1d, S1e, and S1g are live and must not be replayed.
+> S1h is retired and must never be applied; residual Page Access/Web Push ownership requires a new
+> later-numbered migration. S1f is the only remaining S1d–S1g apply candidate and retains its own
+> owner-authorized window. Use `.claude/rules/initiative-status.md` and
+> `docs/mobile/s1d-s1g-database-apply-runbook.md` for current state.
+
 Paste from `You are continuing UPR Platform work` onward into a fresh session.
 
 ---
