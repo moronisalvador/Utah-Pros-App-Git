@@ -946,7 +946,7 @@ conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
-**Conversation participant controls — RELEASE CANDIDATE; QA FOUNDATION ONLY (2026-07-31):**
+**Conversation participant controls — RELEASE CANDIDATE; QA COMPATIBILITY ONLY (2026-07-31):**
 `20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
 `qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. The
 canonical staff decision is privileged role → explicit per-chat choice → default field technician
@@ -962,8 +962,14 @@ fixture rolled back. The baseline dump's managed-role default-privilege tail is 
 the CLI container, but it occurs after the public schema, policies, and object ACLs used by this
 test and is unrelated to the participant assertions.
 
-`20260731040338_conversation_unread_state_compatibility.sql` and
-`20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied everywhere.
+`20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
+`qa-staging`, as ledger `20260731181046`, from reconciled candidate `487ec641` (source SHA-256
+`727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`). Catalog checks proved
+its actor-derived access-snapshot and unread-state RPCs have pinned search paths, deny `anon`, and
+retain only the intended `authenticated, service_role` execution. An authorized empty-input,
+nonexistent-conversation denial, and unmapped-actor denial proof ran inside a rolled-back
+transaction with no retained row change. `20260731040339_conversation_participant_policy_enforcement.sql`
+remains unapplied everywhere.
 Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
 notification recipients, send-time membership checks, a short successful-access lease that
 purges warm inbox previews plus thread/draft data when offline authorization cannot be renewed, admin
@@ -990,7 +996,7 @@ refreshes preserve the existing exact-key order and unchanged row identity, appe
 remove rows no longer returned for that view.
 Hidden→visible synchronously removes expired desktop and tech inbox
 rows/previews before network revalidation starts, including the no-active-thread list state.
-The still-unapplied 40338 completes the standard `authenticated, service_role` RPC grants without
+The QA-applied 40338 completes the standard `authenticated, service_role` RPC grants without
 rewriting the exact 40337 source already staged on QA. The separately gated 40339 no longer drops
 and recreates policies: it alters the existing `ALL` policies in place to participant-scoped
 `USING` predicates with `WITH CHECK (false)`, revokes direct browser writes, and explicitly

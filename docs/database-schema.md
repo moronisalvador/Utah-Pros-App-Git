@@ -391,7 +391,7 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
-## Conversation participant controls (release candidate; foundation on qa-staging only)
+## Conversation participant controls (release candidate; compatibility on qa-staging only)
 
 Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
 `qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
@@ -409,8 +409,10 @@ authenticated `SECURITY DEFINER` warnings for caller-gated RPCs plus information
 two nullable actor foreign keys.
 
 The additive compatibility migration
-`20260731040338_conversation_unread_state_compatibility.sql` and enforcement migration
-`20260731040339_conversation_participant_policy_enforcement.sql` remain unapplied. The candidate
+`20260731040338_conversation_unread_state_compatibility.sql` is also recorded only on
+`qa-staging`, as ledger `20260731181046`; its two actor-derived RPCs, ACLs, pinned search paths,
+and authorized/denied no-write behavior passed post-apply checks. Enforcement migration
+`20260731040339_conversation_participant_policy_enforcement.sql` remains unapplied everywhere. The candidate
 uses the new unread RPC, canonical notification-recipient helper, scoped Worker creation/search,
 and send-time membership check; 40339 revokes every authenticated direct write on conversations
 and conversation participants and replaces the broad policies with SELECT-only membership

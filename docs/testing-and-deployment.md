@@ -658,22 +658,33 @@ ledger row, and retained legacy INSERT compatibility. Security/performance advis
 error-level participant finding; authenticated-definer warnings are intentional caller-gated RPCs,
 while two nullable actor foreign keys retain informational index advisories.
 
+The exact reconciled `20260731040338_conversation_unread_state_compatibility.sql` source
+(candidate `487ec641`, SHA-256
+`727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`) was then applied only to
+`qa-staging` as ledger `20260731181046`. Post-apply catalog checks proved both new RPCs are
+caller-derived definers with `search_path=pg_catalog, public`, execute for
+`authenticated, service_role`, deny `anon`, and leave both membership tables forced-RLS and
+browser-inaccessible. A transaction-only QA proof returned an empty authorized snapshot and
+zero-row empty unread update, denied a nonexistent conversation and an unmapped actor, then rolled
+back. It read no conversation content and retained no fixture or business-row change.
+
 The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
 design and was deliberately not run there. On 2026-07-31 it passed against a disposable local
 Colima/Supabase clone loaded from `db/baseline/schema.sql`, with the isolation GUC and explicit
 test variable set, all three participant migrations applied, and the final fixture transaction
 rolled back. The baseline dump's managed-role default-privilege tail is not portable to the local
 CLI container; that tail follows the public schema, policies, and object ACLs exercised here.
-Production, deployment, provider traffic,
-`20260731040338_conversation_unread_state_compatibility.sql`, and
+Production, deployment, provider traffic, and
 `20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
 now narrows legacy direct writes in place in 40339, preserves service-role ACLs, and integrates
 Worker recipient/member checks. After the no-drop policy revision, a fresh disposable clone again
 accepted 40337–40339, the guarded behavior suite passed and rolled back every fixture, and the
-40339 rollback/reapply cycle completed cleanly. The final 40338 batch-access-snapshot revision was
+40339 rollback/reapply cycle completed cleanly. Before the later QA apply recorded above, the final
+40338 batch-access-snapshot revision was
 then proven on another disposable local Docker clone: the prior 40339/40338 were rolled back,
 current 40338 and 40339 applied, the guarded isolated SQL suite passed through its final rollback,
-and current 40339 again rolled back and reapplied cleanly. No hosted database changed.
+and current 40339 again rolled back and reapplied cleanly. That local proof changed no hosted
+database.
 
 Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
 revocation helper missing from its explicit page allowlist; after that correction,
