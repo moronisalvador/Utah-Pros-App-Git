@@ -12313,6 +12313,9 @@ a.am-row:active, .am-row--button:active { background: var(--bg-tertiary); }
 
 /* ── Thread info panel (inline expandable — phone / DND / linked job) ── */
 .tv2-msgs-info {
+  position: sticky;
+  top: 52px;
+  z-index: 5;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
