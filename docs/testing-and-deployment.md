@@ -218,8 +218,9 @@ The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
 authenticated denial, service-role retention, and sole owner-run database caller without invoking
-`create_notification` or reading notification rows. S1e and S1f still require separate explicit
-apply selections rather than a chronological all-pending command; S1d must not be replayed.
+`create_notification` or reading notification rows. Only S1f still requires a separate explicit
+apply selection rather than a chronological all-pending command; live S1d, S1e, and S1g must not
+be replayed.
 
 The S1g notification read/recipient boundary is live as
 `20260728192024_notification_read_recipient_boundary`; its corrected qualification is recorded in
@@ -239,14 +240,13 @@ PostgREST/Realtime plus PWA/Capacitor bell behavior remain release evidence gate
 anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
 integration coverage belongs to the separate identity/device/preferences slice.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
 The checksum-pinned operator sequence for all four separately authorized target windows is
 `docs/mobile/s1d-s1g-database-apply-runbook.md`. It forbids `supabase db push` and other
