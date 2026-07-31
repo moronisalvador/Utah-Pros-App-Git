@@ -52,7 +52,11 @@ import {
   loadMessageAuthorDirectory,
   missingMessageAuthorMessageIds,
 } from '@/lib/employeeDirectory';
-import { techKeys } from '@/lib/techQuery';
+import {
+  captureTechQueryAccountGeneration,
+  techKeys,
+  techQueryAccountGenerationIsCurrent,
+} from '@/lib/techQuery';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
 import {
   isRetryableMediaReference,
@@ -115,6 +119,7 @@ export function useThread(
   const { data: employeeDirectory = [] } = useLookup('employees');
   const queryClient = useQueryClient();
   const enabled = !!db && !!convId;
+  const accountGeneration = captureTechQueryAccountGeneration();
 
   const [overlay, setOverlay] = useState([]);   // optimistic bubbles for THIS conv
   const [sending, setSending] = useState(false);
@@ -124,11 +129,12 @@ export function useThread(
 
   const revokeAccess = useCallback(() => {
     if (!convId) return;
+    if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     retryStore.current = {};
     setOverlay([]);
     purgeConversationAccess(queryClient, convId);
     onAccessRevoked?.(convId);
-  }, [convId, onAccessRevoked, queryClient, setOverlay]);
+  }, [accountGeneration, convId, onAccessRevoked, queryClient, setOverlay]);
 
   // ─── SECTION: Data fetching (infinite, keyset by created_at) ──────────────
   const query = useInfiniteQuery({
@@ -136,11 +142,15 @@ export function useThread(
     enabled,
     initialPageParam: null,
     queryFn: async ({ pageParam }) => {
+      const requestGeneration = accountGeneration;
       const cursor = pageParam ? `&created_at=lt.${encodeURIComponent(pageParam)}` : '';
       const rows = await db.select(
         'messages',
         `conversation_id=eq.${convId}${cursor}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`,
       );
+      if (!techQueryAccountGenerationIsCurrent(requestGeneration)) {
+        throw new Error('Conversation thread request belongs to an ended account');
+      }
       return rows || [];
     },
     getNextPageParam: (lastPage) => nextThreadCursor(lastPage, PAGE),
@@ -205,6 +215,7 @@ export function useThread(
   // ─── SECTION: Mark-read (on open + inbound-while-open desync guard) ──────────────
   const markRead = useCallback(async () => {
     if (!convId) return;
+    if (!techQueryAccountGenerationIsCurrent(accountGeneration)) return;
     clearConvoUnread(queryClient, convId);   // instant badge/row clear
     try {
       await setMyConversationUnreadState(db, [convId], false);
@@ -215,7 +226,7 @@ export function useThread(
       }
       console.error('Mark read error:', error);
     }
-  }, [convId, db, queryClient, revokeAccess]);
+  }, [accountGeneration, convId, db, queryClient, revokeAccess]);
 
   // Mark read when the thread opens (and when the pane re-activates with it open, so a
   // thread opened while the pane was backgrounded still clears on return).
@@ -231,7 +242,11 @@ export function useThread(
         'messages',
         `conversation_id=eq.${requestedConvId}&order=created_at.desc&limit=${PAGE}&select=${MSG_COLS}`,
       );
-      if (!mounted.current || requestedConvId !== convId) return;
+      if (
+        !mounted.current
+        || requestedConvId !== convId
+        || !techQueryAccountGenerationIsCurrent(accountGeneration)
+      ) return;
       setPages((pagesToMerge) => mergeNewestPage(pagesToMerge, rows || []));
       markRead();
     } catch (error) {
@@ -241,7 +256,7 @@ export function useThread(
       }
       console.error('Resume thread refresh error:', error);
     }
-  }, [convId, db, markRead, revokeAccess, setPages]);
+  }, [accountGeneration, convId, db, markRead, revokeAccess, setPages]);
 
   useResumeRefetch({
     onResume: reloadNewest,

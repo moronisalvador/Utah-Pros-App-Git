@@ -73,9 +73,14 @@ import MessageBubble from '@/components/conversations/MessageBubble';
 import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
 import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
 import {
+  createConversationAccessRequestGuard,
   conversationAccessLeaseIsFresh,
   hasConversationAccess,
   reconcileAccessibleConversations,
+  revalidateConversationAccessAfterResume,
+  revokeConversationsOmittedFromProof,
+  runConversationAccessProbe,
+  scheduleConversationAccessExpiry,
 } from '@/components/conversations/conversationAccessState';
 import {
   captureVisibleMessageAnchor,
@@ -232,6 +237,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [isNote, setIsNote] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [accessProofUnverified, setAccessProofUnverified] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
   const [messageLoadError, setMessageLoadError] = useState(null);
   const [sending, setSending] = useState(false);
@@ -275,7 +281,12 @@ export default function Conversations({ replyAssist } = {}) {
   const composeRef = useRef(null);
   const fileInputRef = useRef(null);
   const activeIdRef = useRef(null);
+  const conversationsRef = useRef([]);
   const conversationAccessLeasesRef = useRef(new Map());
+  const conversationInboxAccessVerifiedAtRef = useRef(0);
+  const conversationAccessRequestGuardRef = useRef(
+    createConversationAccessRequestGuard(),
+  );
   const atBottomRef = useRef(true);
   const attachCounter = useRef(0);
   const contactSearchRequestRef = useRef(0);
@@ -307,8 +318,12 @@ export default function Conversations({ replyAssist } = {}) {
 
   const attachmentsRef = useRef([]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   useEffect(() => { atBottomRef.current = atBottom; }, [atBottom]);
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => () => {
+    conversationAccessRequestGuardRef.current.invalidate();
+  }, [db, employee?.id]);
 
   // Revoke any object-URL previews and empty the tray (prevents a blob-URL leak).
   const clearAttachments = useCallback(() => {
@@ -334,6 +349,9 @@ export default function Conversations({ replyAssist } = {}) {
       ),
     });
     queryClient.removeQueries({ queryKey: ['message-author-directory'] });
+    conversationsRef.current = conversationsRef.current.filter(
+      (conversation) => conversation.id !== conversationId,
+    );
     setConversations((current) => current.filter(
       (conversation) => conversation.id !== conversationId,
     ));
@@ -374,20 +392,79 @@ export default function Conversations({ replyAssist } = {}) {
     if (announce) emitToast('You no longer have access to this chat', 'info');
   }, [clearAttachments, queryClient, setSearchParams]);
 
+  const restoreAuthorizedDraft = useCallback((conversationId) => {
+    if (!conversationId || activeIdRef.current !== conversationId) return;
+    const draft = getDraft(conversationId);
+    setCompose(draft);
+    if (composeRef.current) composeRef.current.innerText = draft;
+  }, []);
+
+  const purgeExpiredConversationAccess = useCallback(() => {
+    const inboxProofExpired = !conversationAccessLeaseIsFresh(
+      conversationInboxAccessVerifiedAtRef.current,
+    );
+    if (inboxProofExpired) {
+      conversationInboxAccessVerifiedAtRef.current = 0;
+      setAccessProofUnverified(true);
+    }
+    const cachedIds = [
+      ...conversationsRef.current.map((conversation) => conversation?.id),
+      ...conversationAccessLeasesRef.current.keys(),
+    ];
+    [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
+      const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
+      if (!conversationAccessLeaseIsFresh(verifiedAt)) {
+        revokeConversationAccess(conversationId, { announce: false });
+      }
+    });
+    return inboxProofExpired;
+  }, [revokeConversationAccess]);
+
   // ─── SECTION: Data fetching ──────────────
 
   const loadConversations = useCallback(async ({ silent = false } = {}) => {
+    let requestIsCurrent = true;
     try {
-      const rows = await db.select('conversations',
-        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
-      );
+      const proof = await runConversationAccessProbe({
+        request: () => db.select('conversations',
+          'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
+        ),
+        requestGuard: conversationAccessRequestGuardRef.current,
+        onExpired: purgeExpiredConversationAccess,
+      });
+      if (proof.superseded) {
+        requestIsCurrent = false;
+        return null;
+      }
+      if (!proof.accepted) {
+        setLoadError('Could not confirm conversation access. Check your connection and try again.');
+        return null;
+      }
+      const rows = proof.value;
       const data = Array.isArray(rows) ? rows : [];
-      const verifiedAt = Date.now();
+      const openBeforeRefresh = activeIdRef.current;
+      revokeConversationsOmittedFromProof({
+        cachedConversations: conversationsRef.current,
+        authorizedConversations: data,
+        leasedConversationIds: conversationAccessLeasesRef.current.keys(),
+        onRevoke: (conversationId) => {
+          revokeConversationAccess(conversationId, {
+            announce: conversationId === openBeforeRefresh,
+          });
+        },
+      });
+      const verifiedAt = proof.requestStartedAt;
+      conversationInboxAccessVerifiedAtRef.current = verifiedAt;
       data.forEach((conversation) => {
         if (conversation?.id) conversationAccessLeasesRef.current.set(conversation.id, verifiedAt);
       });
       setLoadError(null);
-      setConversations(prev => reconcileAccessibleConversations(prev, data, silent));
+      setAccessProofUnverified(false);
+      setConversations((previous) => {
+        const next = reconcileAccessibleConversations(previous, data, silent);
+        conversationsRef.current = next;
+        return next;
+      });
       const openConversationId = activeIdRef.current;
       if (
         openConversationId
@@ -396,18 +473,37 @@ export default function Conversations({ replyAssist } = {}) {
         revokeConversationAccess(openConversationId);
       } else if (openConversationId) {
         setActiveAccessAuthorized(true);
+        restoreAuthorizedDraft(openConversationId);
       }
       return data;
     } catch (error) {
+      purgeExpiredConversationAccess();
       console.error('Load conversations error:', error);
       setLoadError('Could not load conversations. Check your connection and try again.');
       return null;
     } finally {
-      setLoading(false);
+      if (requestIsCurrent) setLoading(false);
     }
-  }, [db, revokeConversationAccess]);
+  }, [
+    db,
+    purgeExpiredConversationAccess,
+    restoreAuthorizedDraft,
+    revokeConversationAccess,
+  ]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Inbox labels and previews are private too. Track the list proof independently
+  // from row leases so an accepted empty list also becomes "unverified" at expiry
+  // instead of rendering a false-success empty state while resume I/O is pending.
+  useEffect(() => {
+    const verifiedAt = conversationInboxAccessVerifiedAtRef.current;
+    if (!verifiedAt || accessProofUnverified) return undefined;
+    return scheduleConversationAccessExpiry({
+      verifiedAt,
+      onExpire: purgeExpiredConversationAccess,
+    });
+  }, [accessProofUnverified, conversations, purgeExpiredConversationAccess]);
 
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
@@ -516,21 +612,22 @@ export default function Conversations({ replyAssist } = {}) {
   }, [loadConversations, markActiveRead]);
 
   // Participant changes do not mutate the conversation row, so realtime alone
-  // cannot close an already-open thread. Recheck silently while its short access
-  // lease is current; after expiry, offline/resume uncertainty purges content/drafts.
+  // cannot renew either the inbox-preview lease or an open thread. Recheck the
+  // visible inbox before expiry; an active thread uses the tighter cadence.
   useEffect(() => {
-    if (!activeId) return undefined;
     const accessTimer = window.setInterval(
       () => {
         if (document.hidden) return;
-        const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
-        if (!conversationAccessLeaseIsFresh(verifiedAt)) {
-          revokeConversationAccess(activeId);
-          return;
+        if (activeId) {
+          const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
+          if (!conversationAccessLeaseIsFresh(verifiedAt)) {
+            revokeConversationAccess(activeId);
+            return;
+          }
         }
         loadConversations({ silent: true });
       },
-      5_000,
+      activeId ? 5_000 : 15_000,
     );
     return () => window.clearInterval(accessTimer);
   }, [activeId, loadConversations, revokeConversationAccess]);
@@ -819,25 +916,30 @@ export default function Conversations({ replyAssist } = {}) {
     loadServiceConsentStatus();
   }, [loadServiceConsentStatus]);
 
-  const refreshAfterResume = useCallback(async () => {
-    const openBeforeRefresh = activeIdRef.current;
-    const verifiedAt = conversationAccessLeasesRef.current.get(openBeforeRefresh) || 0;
-    if (openBeforeRefresh && !conversationAccessLeaseIsFresh(verifiedAt)) {
-      revokeConversationAccess(openBeforeRefresh);
-      loadServiceConsentStatus();
-      return;
-    }
-    const refreshed = await loadConversations({ silent: true });
-    const openConversationId = activeIdRef.current;
-    if (
-      refreshed
-      && openConversationId
-      && hasConversationAccess(refreshed, openConversationId)
-    ) {
-      await reloadActiveMessages();
-    }
-    loadServiceConsentStatus();
-  }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus, revokeConversationAccess]);
+  const refreshAfterResume = useCallback(() => (
+    revalidateConversationAccessAfterResume({
+      // This runs synchronously on hidden→visible, including when there is no
+      // selected thread, so expired titles/previews/drafts disappear before I/O.
+      purgeExpired: purgeExpiredConversationAccess,
+      revalidate: async () => {
+        const refreshed = await loadConversations({ silent: true });
+        const openConversationId = activeIdRef.current;
+        if (
+          refreshed
+          && openConversationId
+          && hasConversationAccess(refreshed, openConversationId)
+        ) {
+          await reloadActiveMessages();
+        }
+        loadServiceConsentStatus();
+      },
+    })
+  ), [
+    loadConversations,
+    reloadActiveMessages,
+    loadServiceConsentStatus,
+    purgeExpiredConversationAccess,
+  ]);
 
   useResumeRefetch({
     onResume: refreshAfterResume,
@@ -946,12 +1048,17 @@ export default function Conversations({ replyAssist } = {}) {
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
     setConsentPrompt(null);
     clearComposeState();
+    setMessages([]);
+    setLinkedJob(null);
+    setHasMoreMessages(false);
+    setMessageLoadError(null);
+    setCompose('');
+    if (composeRef.current) composeRef.current.innerText = '';
     setContextMenu(null); setShowComposeActions(false);
     setListLimit(LIST_PAGE);
-    // Restore any saved draft for this thread into the composer.
-    const draft = getDraft(id);
-    setCompose(draft);
-    if (composeRef.current) composeRef.current.innerText = draft;
+    // A cached draft is private content. It may return only with a current
+    // actor-scoped proof, never merely because the selected row still exists.
+    if (hasFreshAccessLease) restoreAuthorizedDraft(id);
     syncDeepLinkParam(id);
     if (!hasFreshAccessLease) loadConversations({ silent: true });
   };
@@ -1468,6 +1575,16 @@ export default function Conversations({ replyAssist } = {}) {
         <div className="conv-list-items">
           {loading ? (
             <div className="loading-page"><div className="spinner" /></div>
+          ) : accessProofUnverified && loadError ? (
+            <ErrorState
+              message={loadError}
+              onRetry={() => {
+                impact('light');
+                loadConversations({ silent: true });
+              }}
+            />
+          ) : accessProofUnverified ? (
+            <TabLoading label="Verifying conversation access…" />
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
@@ -1536,6 +1653,8 @@ export default function Conversations({ replyAssist } = {}) {
       <div className="conv-thread-panel">
         {!activeId ? (
           <div className="conv-empty-thread"><div className="empty-state-icon">💬</div><div className="empty-state-title">Select a conversation</div><div className="empty-state-text">Choose from the list to view messages</div></div>
+        ) : !activeAccessAuthorized || !activeConv ? (
+          <TabLoading label="Verifying conversation access…" />
         ) : (
           <>
             <div className="conv-thread-header">
@@ -1785,7 +1904,7 @@ export default function Conversations({ replyAssist } = {}) {
       {/* ═══ RIGHT: Detail ═══ */}
       {showInfo && <div className="conv-info-backdrop" onClick={() => setShowInfo(false)} />}
       <div className={`conv-detail-panel${showInfo ? ' open' : ''}`}>
-        {activeConv ? (
+        {activeAccessAuthorized && activeConv ? (
           <>
             <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
@@ -1865,6 +1984,7 @@ export default function Conversations({ replyAssist } = {}) {
                 <button
                   className="btn btn-secondary conversation-members__launch"
                   style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                  onPointerUp={() => impact('light')}
                   onClick={() => setMemberEditorOpen(true)}
                 >
                   Manage chat participants
@@ -1884,10 +2004,10 @@ export default function Conversations({ replyAssist } = {}) {
       </div>
 
       <ConversationMemberEditor
-        open={memberEditorOpen}
+        open={memberEditorOpen && activeAccessAuthorized}
         onClose={() => setMemberEditorOpen(false)}
         conversationId={activeId}
-        conversationTitle={cleanName(activeConv?.title)}
+        conversationTitle={activeAccessAuthorized ? cleanName(activeConv?.title) : ''}
       />
 
       {/* Context menu */}

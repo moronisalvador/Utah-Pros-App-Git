@@ -186,6 +186,22 @@ export function makeTechQueryClient() {
 // shared across the whole tech tree (and the persister that wraps it).
 export const techQueryClient = makeTechQueryClient();
 
+let techQueryAccountGeneration = 0;
+const techQueryAccountGenerationListeners = new Set();
+
+export function captureTechQueryAccountGeneration() {
+  return techQueryAccountGeneration;
+}
+
+export function techQueryAccountGenerationIsCurrent(generation) {
+  return generation === techQueryAccountGeneration;
+}
+
+export function registerTechQueryAccountGenerationListener(listener) {
+  techQueryAccountGenerationListeners.add(listener);
+  return () => techQueryAccountGenerationListeners.delete(listener);
+}
+
 /**
  * Drop all in-memory tech queries during an account transition.
  *
@@ -194,5 +210,15 @@ export const techQueryClient = makeTechQueryClient();
  * prevents already-hydrated rows from surviving in memory.
  */
 export function clearTechQueryMemory() {
+  // Invalidate every in-flight callback before clearing. An A-account promise
+  // that resolves after B starts must not write into or purge B's same-key cache.
+  techQueryAccountGeneration += 1;
+  techQueryAccountGenerationListeners.forEach((listener) => {
+    try {
+      listener(techQueryAccountGeneration);
+    } catch {
+      // Account cleanup must continue even if an optional cache listener fails.
+    }
+  });
   techQueryClient.clear();
 }
