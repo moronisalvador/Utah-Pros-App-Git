@@ -22,6 +22,25 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ReceivePaymentForm from './ReceivePaymentForm';
 
+const CONTROL_LABELS = [
+  'Customer',
+  'Payment date',
+  'Paid by',
+  'Method',
+  'Check / reference',
+  'Deposit to',
+];
+
+function expectUniformPaymentControls(output) {
+  CONTROL_LABELS.forEach((label) => {
+    const control = output.match(new RegExp(`<(?:button|input)[^>]*aria-label="${label}"[^>]*>`))?.[0];
+    expect(control, `${label} control`).toBeTruthy();
+    expect(control).toContain('height:44px');
+    expect(control).toContain('min-height:44px');
+    expect(control).toContain('box-sizing:border-box');
+  });
+}
+
 describe('ReceivePaymentForm', () => {
   it('renders canonical QBO options, invoice balances, and the review gate', () => {
     const output = renderToStaticMarkup(<ReceivePaymentForm
@@ -37,16 +56,25 @@ describe('ReceivePaymentForm', () => {
       submitting={false}
     />);
     expect(output).toContain('Stuart Hernandez');
-    expect(output).toContain('Check');
-    expect(output).toContain('Operating 2227');
+    expect(output).toContain('Choose method');
+    expect(output).toContain('Choose account');
     expect(output).toContain('INV-1001');
     expect(output).toContain('$6,440.07');
     expect(output).toContain('Review payment');
     expect(output).not.toContain('Confirm $');
+    expect(output).not.toContain('<select');
+    expect(output).not.toContain('type="date"');
+    expect(output).toContain('aria-label="Customer"');
+    expect(output).toContain('aria-label="Payment date"');
+    expect(output).toContain('aria-label="Paid by"');
+    expect(output).toContain('aria-label="Method"');
+    expect(output).toContain('aria-label="Check / reference"');
+    expect(output).toContain('aria-label="Deposit to"');
+    expectUniformPaymentControls(output);
     expect(output).toMatch(/class="coll-ghost"[^>]*disabled=""/);
   });
 
-  it('renders native disabled controls while a payment is submitting', () => {
+  it('disables the payment actions while a payment is submitting', () => {
     const output = renderToStaticMarkup(<ReceivePaymentForm
       data={{
         contact: { id: 'contact-1', name: 'Stuart Hernandez' },

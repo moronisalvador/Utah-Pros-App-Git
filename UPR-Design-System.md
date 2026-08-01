@@ -350,11 +350,21 @@ a control must be fully usable and visually animated with haptics off.
 ```jsx
 <input className="input" />
 <textarea className="input textarea" />
-<select className="input" />
 <label className="label">Label text</label>
 ```
 - Height: 40px for inputs.
 - On mobile inputs must have `font-size: 16px` (already enforced via CSS for `.input` class, but watch for inline overrides).
+- Do not add browser-native `<select>` or `<input type="date">` controls to pages/components. Their
+  opened menus and calendars are owned by the browser and cannot match UPR. Use `SearchSelect` on
+  Collections Kit surfaces, `LookupSelect` outside Collections (or the surface's documented
+  domain picker), `DatePicker` for shared dates, and `CrmDatePicker` inside CRM. Existing native
+  controls are frozen lint debt: the changed-files ratchet allows their current count to shrink,
+  never grow.
+- When different primitives share one form row, define one surface-level trigger style and pass it
+  through each component's `triggerStyle` API plus direct input styles. Preserve the shared
+  `DatePicker` 48px technician-primary default; Collections/touch-capable office forms may use the
+  documented 44px floor. A render test must enumerate every control in the mixed row so a component
+  default cannot silently make one field taller than its neighbors.
 
 ### Status Badges (with dot indicator)
 ```jsx
@@ -1140,7 +1150,10 @@ Found during the July 1 2026 audit. These are real behavioral/visual gaps, not j
 - **Division color mismatch.** Collections Kit's `DIV_COLOR` map (`collTokens.js`) disagrees with the app-wide `DIVISION_COLORS` (`DivisionIcons.jsx`) — e.g. "water" renders `#0e9384` in Collections/Time Tracking but `#2563eb` everywhere else. Same division, two different colors depending which screen you're on.
 - **`Leads.jsx` / `Marketing.jsx`** render a bare, unclassed `<table>` — not `.admin-table`, not the Collections Kit grid pattern. No responsive/mobile-card fallback exists for a raw `<table>`, so these likely render poorly on phone widths.
 - **`InvoiceEditor.jsx`'s Payment modal and Xactimate-import modal** are hand-rolled `position:fixed` overlays that skip the app-wide mobile bottom-sheet behavior every other modal gets (Mobile-Specific Rule #3 above).
-- **Two searchable-dropdown implementations** coexist: `LookupSelect` (`@/components/AddContactModal`, listed in Component Imports above) and `SearchSelect` (`src/components/collections/SearchSelect.jsx`, Collections Kit). No stated rule for which to use where beyond "Collections Kit pages use SearchSelect."
+- **Two searchable-dropdown implementations** coexist by design: use `SearchSelect`
+  (`src/components/collections/SearchSelect.jsx`) on Collections Kit surfaces and `LookupSelect`
+  (`@/components/AddContactModal`) outside Collections unless that domain documents a more specific
+  picker. Do not fall back to a native `<select>` just because the options are short.
 - **Two destructive-confirm idioms** coexist: the standard two-click confirm (above) and a heavier type-"DELETE"-to-confirm modal (`CustomerPage.jsx` `ClaimsTab`). No documented rule for when the heavier one is warranted.
 - **`CustomerPage.jsx`'s header** doesn't match the Tabbed Detail Page pattern's documented header shape (division icon + job number + client + address) — it's customer-shaped instead (avatar + client name + role/DND badges + job/claim count), with an undocumented `.customer-action-btn` row (Call/Text/Email/New Job/New Invoice) in place of the documented phase-badge/action-button area. This is correct for what a customer header should look like — the doc's example was just job-specific and never got a customer variant.
 - **`empty-state-title`** is used (Leads/Marketing/Conversations) as a simpler two-line empty state without an icon — real CSS, but not listed under Empty State above alongside `.empty-state-icon`/`.empty-state-text`/`.empty-state-sub`.
@@ -1238,6 +1251,7 @@ import PullToRefresh from '@/components/PullToRefresh';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { IconSearch, IconOpenPage } from '@/components/Icons';
 import { LookupSelect } from '@/components/AddContactModal';  // searchable dropdown — use outside Collections Kit pages
+import DatePicker from '@/components/DatePicker';              // shared branded date picker (CRM uses CrmDatePicker)
 import JobDetailPanel from '@/components/JobDetailPanel';
 
 // Collections Kit pages only (Collections, Time Tracking, Invoice/Estimate editors) — see § Collections Kit

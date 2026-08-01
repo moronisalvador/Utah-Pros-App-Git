@@ -4,6 +4,62 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+function staticJsxAttributeValue(attribute) {
+  if (!attribute?.value) return null
+  if (attribute.value.type === 'Literal') return attribute.value.value
+  if (attribute.value.type === 'JSXExpressionContainer'
+      && attribute.value.expression?.type === 'Literal') {
+    return attribute.value.expression.value
+  }
+  return null
+}
+
+export const uprUiPlugin = {
+  rules: {
+    'no-native-select': {
+      meta: {
+        type: 'suggestion',
+        schema: [],
+        messages: {
+          replace: 'Use the UPR dropdown for this surface: SearchSelect in Collections, LookupSelect outside Collections, or the documented domain control.',
+        },
+      },
+      create(context) {
+        return {
+          JSXOpeningElement(node) {
+            if (node.name.type === 'JSXIdentifier' && node.name.name === 'select') {
+              context.report({ node, messageId: 'replace' })
+            }
+          },
+        }
+      },
+    },
+    'no-native-date-input': {
+      meta: {
+        type: 'suggestion',
+        schema: [],
+        messages: {
+          replace: 'Use DatePicker (or CrmDatePicker on CRM surfaces) instead of the browser-native date control.',
+        },
+      },
+      create(context) {
+        return {
+          JSXOpeningElement(node) {
+            if (node.name.type !== 'JSXIdentifier' || node.name.name !== 'input') return
+            const typeAttribute = node.attributes.find((attribute) =>
+              attribute.type === 'JSXAttribute'
+              && attribute.name.type === 'JSXIdentifier'
+              && attribute.name.name === 'type')
+            if (staticJsxAttributeValue(typeAttribute) === 'date') {
+              context.report({ node, messageId: 'replace' })
+            }
+          },
+        }
+      },
+    },
+  },
+}
+
 export default defineConfig([
   // .claude/workflows are Claude Code workflow DSL scripts (top-level return/await,
   // injected globals like agent()/phase()) — not parseable as standard modules.
@@ -73,8 +129,12 @@ export default defineConfig([
   },
   {
     // Components/pages must use `const { db } = useAuth()` — never the bootstrap singleton (Rule 3).
-    // WARN so the existing baseline never blocks; touched files clean it. src/lib + functions are exempt.
+    // Native browser selects and date inputs also bypass UPR's visual system. WARN keeps legacy
+    // debt behind the changed-files baseline while blocking new instances. src/lib + functions are exempt.
     files: ['src/pages/**/*.{js,jsx}', 'src/components/**/*.{js,jsx}'],
+    plugins: {
+      upr: uprUiPlugin,
+    },
     rules: {
       'no-restricted-imports': ['warn', {
         paths: [{
@@ -83,6 +143,8 @@ export default defineConfig([
           message: 'Use const { db } = useAuth() — the @/lib/supabase db is an unauthenticated bootstrap singleton.',
         }],
       }],
+      'upr/no-native-select': 'warn',
+      'upr/no-native-date-input': 'warn',
     },
   },
 ])

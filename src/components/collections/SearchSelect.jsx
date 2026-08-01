@@ -21,6 +21,8 @@
  * NOTES / GOTCHAS:
  *   - Controlled: pass `value` (selected id) + `onChange(item|null)`; `options` is
  *     [{id, name}]. onChange(null) clears the selection.
+ *   - `clearable={false}` preserves required fixed-choice fields. `triggerStyle`
+ *     may adjust sizing for the host form without creating a second dropdown.
  *   - The menu is PORTALED to <body> with position:fixed, anchored to the trigger via
  *     getBoundingClientRect (recomputed on scroll/resize). This is what makes it render
  *     correctly: an in-flow absolute menu was clipped by the line-items table's
@@ -36,7 +38,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { C } from './collTokens';
 
-export default function SearchSelect({ value, onChange, options = [], placeholder = 'Select…', disabled = false, ariaLabel }) {
+export default function SearchSelect({
+  value,
+  onChange,
+  options = [],
+  placeholder = 'Select…',
+  disabled = false,
+  clearable = true,
+  ariaLabel,
+  triggerStyle,
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
   const [hi, setHi] = useState(-1);
@@ -109,12 +120,14 @@ export default function SearchSelect({ value, onChange, options = [], placeholde
     <span ref={wrapRef} style={{ position: 'relative', display: 'block', minWidth: 0 }}>
       <button
         type="button" disabled={disabled} aria-label={ariaLabel}
+        aria-haspopup="dialog" aria-expanded={open}
         onClick={toggle}
         style={{
           width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6,
           padding: '6px 8px', fontSize: 13, borderRadius: 7, cursor: disabled ? 'default' : 'pointer',
           border: `1px solid ${open ? C.faint : C.inputBorder}`, background: disabled ? C.track : '#fff',
           color: selected ? C.ink : C.faint, fontFamily: 'inherit', minWidth: 0,
+          ...triggerStyle,
         }}
       >
         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -141,7 +154,7 @@ export default function SearchSelect({ value, onChange, options = [], placeholde
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto', overscrollBehavior: 'contain' }}>
-            {selected && (
+            {clearable && selected && (
               <button type="button" onClick={() => pick(null)} style={{ ...opt(false), color: C.muted }}>Clear selection</button>
             )}
             {filtered.length === 0 && <div style={{ padding: '10px 12px', fontSize: 12.5, color: C.faint }}>No matches</div>}

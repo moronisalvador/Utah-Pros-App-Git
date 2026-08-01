@@ -13,7 +13,24 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { Linter } from 'eslint';
 import { compareSummaries, summarizeResults } from './check-eslint-ratchet.mjs';
+import { uprUiPlugin } from '../eslint.config.js';
+
+function lintUi(source) {
+  const linter = new Linter();
+  return linter.verify(source, {
+    plugins: { upr: uprUiPlugin },
+    languageOptions: {
+      ecmaVersion: 'latest',
+      parserOptions: { ecmaFeatures: { jsx: true }, sourceType: 'module' },
+    },
+    rules: {
+      'upr/no-native-select': 'warn',
+      'upr/no-native-date-input': 'warn',
+    },
+  });
+}
 
 test('summarizes findings by file, severity, and rule', () => {
   const result = summarizeResults([
@@ -83,4 +100,26 @@ test('stays silent about baseline files that were not linted in this run', () =>
 
   assert.deepEqual(result.failures, []);
   assert.deepEqual(result.opportunities, []);
+
+test('flags browser-native selects but leaves UPR components alone', () => {
+  const messages = lintUi(`
+    const Native = () => <select><option>One</option></select>;
+    const Upr = () => <SearchSelect options={[]} />;
+  `);
+
+  assert.deepEqual(messages.map((message) => message.ruleId), ['upr/no-native-select']);
+});
+
+test('flags static browser-native date inputs in literal and expression forms', () => {
+  const messages = lintUi(`
+    const Literal = () => <input type="date" />;
+    const Expression = () => <input type={'date'} />;
+    const Text = () => <input type="text" />;
+    const Upr = () => <DatePicker />;
+  `);
+
+  assert.deepEqual(messages.map((message) => message.ruleId), [
+    'upr/no-native-date-input',
+    'upr/no-native-date-input',
+  ]);
 });
