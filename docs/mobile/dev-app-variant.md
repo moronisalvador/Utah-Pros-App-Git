@@ -105,9 +105,11 @@ App Review or distributes externally.
 
 The separate `.github/workflows/capgo-dev.yml` is manual-only, GitHub-environment
 gated, and locked to `.upr.dev` plus `upr-dev-canary`. Its validate operation is
-read-only; publish uses v2 encryption and compatibility floors; rollback selects
-an explicit prior bundle; disable stops future channel delivery. Exact setup and
-device drills live in `docs/mobile/capgo-dev-runbook.md`.
+read-only; publish checks channel compatibility and stages a v2-encrypted bundle
+without channel assignment or device delivery; disable stops future channel
+delivery. Rollback stays manual and blocked until a provenance-bound bundle
+allowlist exists. Exact setup and device drills live in
+`docs/mobile/capgo-dev-runbook.md`.
 
 Every push to `dev` runs only a credential-free Linux test preflight. Signing, archiving,
 and the optional internal upload are `workflow_dispatch` only; there is deliberately no

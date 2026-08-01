@@ -2,8 +2,8 @@
 FILE: docs/mobile/capgo-dev-runbook.md
 
 WHAT THIS DOES (plain language):
-  Defines how Utah Pros safely prepares, publishes, observes, stops, and rolls
-  back live web updates for the separately installed UPR Dev iOS app.
+  Defines how Utah Pros safely prepares, stages, assigns, observes, and stops
+  live web updates for the separately installed UPR Dev iOS app.
 
 DEPENDS ON:
   Internal: capacitor.config.json, scripts/configure-ios-capgo-dev.mjs,
@@ -12,7 +12,8 @@ DEPENDS ON:
             .github/workflows/ios-dev-testflight.yml
   External: Capgo, GitHub Actions, Apple App Store Connect/TestFlight
   Data:     reads → build and release evidence only
-            writes → UPR Dev Capgo app/channel only when explicitly dispatched
+            writes → unassigned UPR Dev bundles or the UPR Dev channel only
+                     when explicitly dispatched
 
 NOTES / GOTCHAS:
   - UPR Dev is isolated by app identifier, but it still uses the shared
@@ -60,8 +61,16 @@ As of 2026-08-01:
   (`com.utahprosrestoration.upr.dev`, Apple app id `6797102091`). This runbook
   does not change the official UPR listing or signing.
 - GitHub contains a `capgo-dev` environment restricted to the `dev` branch.
-- The Capgo console requires the owner’s private sign-in/2FA before the app,
-  channel, key, and plan availability can be verified or created.
+- Capgo app `UPR Dev` exists with id `com.utahprosrestoration.upr.dev`.
+  Channel `upr-dev-canary` (id `44318`) is its default download channel with
+  iOS on, Android/Electron off, development/distribution and
+  simulator/physical-device builds allowed, self-assignment on, downgrade below
+  native blocked, patch-only automatic updates, and progressive rollout off.
+- GitHub `capgo-dev` contains exactly the encrypted environment secrets
+  `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
+  `CAPGO_DEV_PUBLIC_KEY_V2`; secret presence was verified without reading values.
+- The app-scoped Capgo API key is limited to `UPR Dev` with the
+  `app_developer` role and expires 2027-08-01.
 - No Capgo upload, subscription purchase, production activation, or installed
   device delivery has been performed by this setup.
 
@@ -83,13 +92,16 @@ Use the Capgo console at `https://console.capgo.app/`:
 4. Create `upr-dev-canary` and make it the isolated app’s default channel.
    Configure iOS on, Android off, development and production build types on,
    emulator and physical device on, self-assignment on, downgrade below the
-   native version off, patch-only auto-update, and rollout initially paused or
-   zero-exposure until the first signed UPR Dev binary is installed.
+   native version off, patch-only auto-update, and progressive rollout off.
+   Zero exposure comes from having no assigned bundle until the separate
+   assignment gate.
 5. Create a dedicated API key with the narrowest write scope Capgo offers for
    this app. Do not reuse an account-owner, production, or personal CLI token.
-6. Create a Capgo v2 encryption keypair. The public key may be stored as the
-   GitHub environment variable `CAPGO_DEV_PUBLIC_KEY_V2`. Store the private key
-   only as the masked environment secret `CAPGO_DEV_PRIVATE_KEY_V2`.
+6. Create a Capgo v2 encryption keypair. Store both
+   `CAPGO_DEV_PUBLIC_KEY_V2` and `CAPGO_DEV_PRIVATE_KEY_V2` only as encrypted
+   GitHub environment secrets. The public half is embedded in the signed app
+   through a short-lived GitHub artifact; the private half never enters an app
+   build or artifact.
 7. Store the dedicated API key only as the masked environment secret
    `CAPGO_DEV_API_KEY`.
 
@@ -110,11 +122,14 @@ workflow inputs, artifacts, logs, or a local `.env` file.
    API origin, source SHA, signing, entitlements, and privacy manifest.
 4. After owner approval, upload only that verified UPR Dev archive to its
    internal TestFlight group and install it on a designated device.
-5. Run **Capgo UPR Dev** with operation `publish` and confirmation
-   `UPR DEV CAPGO PUBLISH`. The workflow encrypts the bundle, sets an immutable
-   version tied to native version/run/SHA, and fails on incompatible native
-   packages.
-6. Keep rollout exposure at one designated UPR Dev device. Verify cold launch,
+5. After a fresh exact owner approval, run **Capgo UPR Dev** with operation
+   `publish` and confirmation `UPR DEV CAPGO PUBLISH`. The workflow first checks
+   compatibility against `upr-dev-canary`, then encrypts and uploads an
+   immutable version tied to native version/run/SHA **without assigning it to a
+   channel**. It cannot deliver that bundle.
+6. After a separate exact bundle-assignment/device-delivery approval, assign
+   only the reviewed staged version to `upr-dev-canary` and keep exposure at one
+   designated UPR Dev device. Verify cold launch,
    signed-out launch, authenticated bootstrap, current route, background/resume,
    network interruption, account switch, and next cold launch. Confirm the
    bundle is accepted only after auth startup and the lazy route finish.
@@ -127,22 +142,25 @@ feature is a new native release, not an OTA. Apple’s
 [App Review Guideline 2.5.2](https://developer.apple.com/app-store/review/guidelines/#software-requirements)
 still applies to TestFlight and App Store apps.
 
-## Stop, rollback, and recovery
+## Stop and recovery
 
 **Stop future delivery:** dispatch operation `disable` with
 `UPR DEV CAPGO DISABLE`. It turns off every platform/build/device selector on
 the dev channel. It does not instantly remove a bundle already active on a
 device.
 
-**Roll back the channel:** identify a previously verified UPR Dev bundle version
-from Capgo/GitHub evidence, dispatch operation `rollback`, set that exact version,
-and enter `UPR DEV CAPGO ROLLBACK`. The channel refuses downgrades below the
-installed native version.
+**Rollback remains manual and blocked:** the workflow deliberately has no
+`rollback` operation. A syntactically valid bundle name is not provenance. Do
+not reassign the channel until a release receipt/allowlist proves the exact
+previous UPR Dev bundle, its source SHA, native compatibility, encryption key,
+and successful device evidence. That future reassignment is a fresh owner and
+device-delivery gate. Emergency containment uses `disable`.
 
 **Automatic local recovery:** a newly applied bundle gets 30 seconds to reach
 the health gate. Missing acknowledgement leaves the bundle failed so the native
 updater can return to the builtin/last healthy bundle. The app never acknowledges
-while auth is loading, failed, expired, OTA-disabled, or non-native.
+while auth is loading, failed, expired, OTA-disabled, non-native, or any React
+route error boundary has caught a render failure during the launch.
 
 After containment, verify on the designated device:
 
