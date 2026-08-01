@@ -50,6 +50,7 @@ function makeDb(opts = {}) {
   } = opts;
   const rpcCalls = [];
   const deletes = [];
+  const deliveryClaims = new Set();
   return {
     rpcCalls, deletes,
     async select(table, query = '') {
@@ -121,6 +122,14 @@ function makeDb(opts = {}) {
         if (conversationRecipientsError) throw new Error('recipient lookup failed');
         return (conversationRecipients[params.p_conversation_id] || [])
           .map((employee_id) => ({ employee_id }));
+      }
+      if (fn === 'claim_notification_delivery') {
+        if (deliveryClaims.has(params.p_delivery_key)) return false;
+        deliveryClaims.add(params.p_delivery_key);
+        return true;
+      }
+      if (fn === 'release_notification_delivery_claim') {
+        return deliveryClaims.delete(params.p_delivery_key);
       }
       return null;
     },
@@ -310,6 +319,29 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.skipped).toBe(true);
     expect(out.reason).toBe('type_disabled');
     expect(db.rpcCalls.filter(c => c.fn === 'create_notification')).toHaveLength(0);
+  });
+
+  it('rejects a guarded producer without a database-backed occurrence UUID', async () => {
+    const type = {
+      type_key: 'appointment.updated',
+      label: 'Appointment updated',
+      enabled: true,
+    };
+    const db = makeDb({ types: { 'appointment.updated': type } });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.updated',
+      body: { appointment_id: 'ap-1', notification_event_id: 'caller-value' },
+    });
+
+    expect(out).toMatchObject({
+      skipped: true,
+      reason: 'missing_notification_event_id',
+      recipients: 0,
+    });
+    expect(db.rpcCalls).toEqual([]);
   });
 
   it('re-resolves inbound membership on retry instead of reusing a stale audience', async () => {
@@ -992,7 +1024,16 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
       apptsById: { 'ap-1': { title: 'Water Mitigation', date: '2026-07-04', time_start: '09:00:00', time_end: '11:00:00' } },
       prefsByEmp: { 'emp-9': prefRows('appointment.assigned', { bell: true }) },
     });
-    const out = await dispatchEvent({ db, env: ENV, typeKey: 'appointment.assigned', body: { appointment_id: 'ap-1', employee_id: 'emp-9' } });
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_id: 'ap-1',
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+    });
     expect(out.recipients).toBe(1);
     const bell = db.rpcCalls.find(c => c.fn === 'create_notification');
     expect(bell.params.p_title).toBe('New appointment · Water Mitigation');
@@ -1024,13 +1065,91 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
       db,
       env: ENV,
       typeKey: 'appointment.assigned',
-      body: { appointment_id: 'ap-1', employee_id: 'emp-9' },
+      body: {
+        appointment_id: 'ap-1',
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
       sendWebPushImpl,
     });
 
     expect(payloads).toHaveLength(1);
     expect(payloads[0].url).toBe('/tech/appointment/ap-1');
     expect(payloads[0].url).not.toBe('/schedule/appointment/ap-1');
+  });
+
+  it('claims guarded bell, PWA, and email delivery once per occurrence', async () => {
+    const sendWebPushImpl = vi.fn(async () => ({ ok: true, status: 201 }));
+    const sendNativePushImpl = vi.fn(async () => ({
+      sent: 0,
+      attempted: 0,
+      pruned: 0,
+      skipped: true,
+      reason: 'apns_not_configured',
+    }));
+    const sendEmailImpl = vi.fn(async () => ({ ok: true }));
+    const db = makeDb({
+      types: {
+        'appointment.assigned': {
+          type_key: 'appointment.assigned',
+          label: 'Appointment assigned',
+          enabled: true,
+        },
+      },
+      employees: [{ id: 'emp-9' }],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
+      apptsById: {
+        'ap-1': {
+          title: 'Water Mitigation',
+          date: '2026-07-04',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.assigned', {
+          bell: true,
+          push: true,
+          email: true,
+        }),
+      },
+      subsByEmp: {
+        'emp-9': [{
+          id: 's1',
+          endpoint: 'https://push/1',
+          p256dh: 'p',
+          auth: 'a',
+        }],
+      },
+      emailByEmp: { 'emp-9': 'tech@example.test' },
+    });
+    const input = {
+      db,
+      env: ENV,
+      typeKey: 'appointment.assigned',
+      body: {
+        appointment_id: 'ap-1',
+        employee_id: 'emp-9',
+        notification_event_id: '11111111-1111-4111-8111-111111111111',
+      },
+      sendWebPushImpl,
+      sendNativePushImpl,
+      sendEmailImpl,
+    };
+
+    await dispatchEvent(input);
+    const replay = await dispatchEvent(input);
+
+    expect(
+      db.rpcCalls.filter((call) => call.fn === 'create_notification'),
+    ).toHaveLength(1);
+    expect(sendWebPushImpl).toHaveBeenCalledOnce();
+    expect(sendEmailImpl).toHaveBeenCalledOnce();
+    expect(replay.results[0]).toMatchObject({
+      bell: false,
+      email: 'duplicate',
+      push: { attempted: 0 },
+    });
   });
 });
 

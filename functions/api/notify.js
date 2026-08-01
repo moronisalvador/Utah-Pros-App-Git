@@ -54,7 +54,10 @@ import { supabase } from '../lib/supabase.js';
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireRole } from '../lib/auth.js';
 import { sendWebPush, loadVapidConfig } from '../lib/webPush.js';
-import { sendNativePushToEmployeeAcrossEnvironments } from '../lib/apns.js';
+import {
+  sendNativePushToEmployeeAcrossEnvironments,
+  stableApnsId,
+} from '../lib/apns.js';
 import { sendEmail } from '../lib/email.js';
 import { fetchWithTimeout } from '../lib/http.js';
 import {
@@ -86,6 +89,11 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.assigned',
   'appointment.updated',
   'appointment.canceled',
+]);
+export const GUARDED_PRODUCER_TYPES = new Set([
+  ...APPOINTMENT_AUDIENCE_TYPES,
+  'timesheet.change_requested',
+  'timesheet.change_reviewed',
 ]);
 
 function inboundConversationId(body = {}) {
@@ -243,6 +251,50 @@ export function nativeNotificationEventKey(type, body, recipientId) {
   ]);
 }
 
+async function claimNotificationDelivery(
+  db,
+  { notificationEventId, recipientId, typeKey, channel, target },
+) {
+  if (!GUARDED_PRODUCER_TYPES.has(typeKey)) return { claimed: true };
+
+  try {
+    const targetFingerprint = await stableApnsId(
+      JSON.stringify([channel, String(target || '')]),
+    );
+    const deliveryKey = await stableApnsId(JSON.stringify([
+      notificationEventId,
+      recipientId,
+      typeKey,
+      channel,
+      targetFingerprint,
+    ]));
+    const claimed = await db.rpc('claim_notification_delivery', {
+      p_delivery_key: deliveryKey,
+      p_notification_event_id: notificationEventId,
+      p_employee_id: recipientId,
+      p_type_key: typeKey,
+      p_channel: channel,
+      p_target_fingerprint: targetFingerprint,
+    }) === true;
+    return { claimed, deliveryKey };
+  } catch {
+    return { claimed: false };
+  }
+}
+
+async function releaseNotificationDeliveryClaim(db, deliveryKey) {
+  if (!deliveryKey) return false;
+  try {
+    return await db.rpc('release_notification_delivery_claim', {
+      p_delivery_key: deliveryKey,
+    }) === true;
+  } catch {
+    // An uncertain release remains claimed. This favors no duplicate delivery
+    // over an automatic replay when the database outcome is ambiguous.
+    return false;
+  }
+}
+
 export async function dispatchToRecipient({
   db,
   env,
@@ -268,21 +320,33 @@ export async function dispatchToRecipient({
 
   // Channel 1 — in-app bell (per-recipient row).
   if (on('bell') && !nativeRetryOnly) {
-    try {
-      await db.rpc('create_notification', {
-        p_type: type.type_key,
-        p_title: bellPresentation.title,
-        p_body: bellPresentation.body || null,
-        p_link: bellPresentation.url || null,
-        p_entity_type: body.entity_type || null,
-        p_entity_id: body.entity_id || null,
-        p_job_id: body.job_id || null,
-        p_payload: body.payload || {},
-        p_recipient_id: recipientId,
-        p_type_key: type.type_key,
-      });
-      result.bell = true;
-    } catch { /* bell is best-effort — never fails the dispatch */ }
+    const claim = await claimNotificationDelivery(db, {
+      notificationEventId: body.notification_event_id,
+      recipientId,
+      typeKey: type.type_key,
+      channel: 'bell',
+      target: recipientId,
+    });
+    if (claim.claimed) {
+      try {
+        await db.rpc('create_notification', {
+          p_type: type.type_key,
+          p_title: bellPresentation.title,
+          p_body: bellPresentation.body || null,
+          p_link: bellPresentation.url || null,
+          p_entity_type: body.entity_type || null,
+          p_entity_id: body.entity_id || null,
+          p_job_id: body.job_id || null,
+          p_payload: body.payload || {},
+          p_recipient_id: recipientId,
+          p_type_key: type.type_key,
+        });
+        result.bell = true;
+      } catch {
+        // The database outcome is ambiguous, so keep the claim and do not
+        // automatically replay a potentially-created bell row.
+      }
+    }
   }
 
   // Channel 2 — Web Push to each of the recipient's subscribed devices.
@@ -343,14 +407,29 @@ export async function dispatchToRecipient({
       });
       const send = sendWebPushImpl || sendWebPush;
       for (const s of subs || []) {
+        const claim = await claimNotificationDelivery(db, {
+          notificationEventId: body.notification_event_id,
+          recipientId,
+          typeKey: type.type_key,
+          channel: 'pwa_push',
+          target: s.endpoint,
+        });
+        if (!claim.claimed) continue;
+
         result.push.attempted++;
         try {
           const res = await send({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, pushBody, env, { fetchImpl, vapid });
-          if (res.skipped) { result.push.vapidMissing = true; continue; }
+          if (res.skipped) {
+            result.push.vapidMissing = true;
+            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+            continue;
+          }
           if (res.ok) { result.push.sent++; continue; }
           if (res.status === 404 || res.status === 410) {
             try { await db.delete('push_subscriptions', `id=eq.${s.id}`); result.push.pruned++; } catch { /* prune best-effort */ }
+            continue;
           }
+          await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
         } catch { /* one bad subscription never breaks the fan-out */ }
       }
     }
@@ -366,17 +445,34 @@ export async function dispatchToRecipient({
     if (!email) {
       result.email = 'skipped_null';
     } else {
-      try {
-        const mailer = sendEmailImpl || sendEmail;
-        const r = await mailer(env, {
-          to: email,
-          from: NOTIFY_FROM,
-          subject: body.title || type.label,
-          text: body.body || body.title || type.label,
-          html: body.html,
-        });
-        result.email = r?.ok ? 'sent' : 'failed';
-      } catch { result.email = 'failed'; }
+      const claim = await claimNotificationDelivery(db, {
+        notificationEventId: body.notification_event_id,
+        recipientId,
+        typeKey: type.type_key,
+        channel: 'email',
+        target: email.trim().toLowerCase(),
+      });
+      if (claim.claimed) {
+        try {
+          const mailer = sendEmailImpl || sendEmail;
+          const r = await mailer(env, {
+            to: email,
+            from: NOTIFY_FROM,
+            subject: body.title || type.label,
+            text: body.body || body.title || type.label,
+            html: body.html,
+          });
+          result.email = r?.ok ? 'sent' : 'failed';
+          if (!r?.ok) {
+            await releaseNotificationDeliveryClaim(db, claim.deliveryKey);
+          }
+        } catch {
+          // Keep the claim when provider acceptance is ambiguous.
+          result.email = 'failed';
+        }
+      } else {
+        result.email = 'duplicate';
+      }
     }
   }
 
@@ -655,6 +751,21 @@ export async function dispatchEvent({
   } catch { type = null; }
   if (!type) return { skipped: true, reason: 'unknown_type', type_key: typeKey, recipients: 0, results: [] };
   if (!type.enabled) return { skipped: true, reason: 'type_disabled', type_key: typeKey, recipients: 0, results: [] };
+  if (
+    GUARDED_PRODUCER_TYPES.has(typeKey)
+    && (
+      typeof body.notification_event_id !== 'string'
+      || !UUID_RE.test(body.notification_event_id)
+    )
+  ) {
+    return {
+      skipped: true,
+      reason: 'missing_notification_event_id',
+      type_key: typeKey,
+      recipients: 0,
+      results: [],
+    };
+  }
 
   // Enrich bare trigger payloads with a human-readable title/body/link so the
   // bell, push, and email all read cleanly (not just the catalog label).
