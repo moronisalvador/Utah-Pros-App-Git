@@ -685,8 +685,7 @@ tr:hover td { background: var(--bg-secondary); }
   .conv-toast { animation: none; }
 }
 
-/* MOTION-02: global Reduce Motion floor — near-zero duration preserves end states while honoring
-   Reduce Motion. Programmatic scrolling must still consult lib/reducedMotion.js. */
+/* MOTION-02: global Reduce Motion floor */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -698,7 +697,6 @@ tr:hover td { background: var(--bg-secondary); }
     scroll-behavior: auto !important;
   }
 
-  /* Busy indicators remain slow-moving so “working” never appears hung. */
   .spinner,
   .loading-page .spinner,
   .tv2-skel,
@@ -715,7 +713,6 @@ tr:hover td { background: var(--bg-secondary); }
 @keyframes convSlideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
 
 /* ─── OMNI-INBOX RESERVED — Phase U (unified inbox UI) ─── */
-/* Consent UI explains/collects evidence; server/database remain authoritative. */
 .conv-consent-banner { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-top: 1px solid var(--warning-border); background: var(--warning-bg); color: var(--text-secondary); font-size: var(--text-xs); }
 .conv-consent-banner > div { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
 .conv-consent-banner strong { color: var(--text-primary); }
