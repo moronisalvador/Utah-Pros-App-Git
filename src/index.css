@@ -12864,6 +12864,22 @@ html:not(.ui-vt)::view-transition-new(*) { animation: none !important; }
 .ui-page-header-sub { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
 .ui-page-header-actions { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
 
+/* ─── DatePicker trigger — shared press/focus feedback ───
+   Geometry stays caller-owned through triggerStyle; interaction feel stays
+   shared so Collections, office, PWA, and technician callers cannot drift. */
+.upr-date-picker-trigger {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color var(--motion-duration-fast) var(--motion-ease-standard),
+              box-shadow var(--motion-duration-fast) var(--motion-ease-standard),
+              scale var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }
+@media (prefers-reduced-motion: reduce) {
+  .upr-date-picker-trigger { transition: none; }
+  .upr-date-picker-trigger:active:not(:disabled) { scale: 1; }
+}
+
 /* ─── SearchInput — icon + input + optional clear ─── */
 .ui-search { position: relative; display: inline-flex; align-items: center; width: 100%; }
 .ui-search-icon { position: absolute; left: 10px; display: flex; color: var(--text-tertiary); pointer-events: none; }

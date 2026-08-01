@@ -18,12 +18,32 @@ const ROOT = join(import.meta.dirname, '../../..');
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 
 const picker = read('src/components/DatePicker.jsx');
+const css = read('src/index.css');
 const renderer = read('src/components/demo-sheet/DemoSheetRenderer.jsx');
 
 describe('PICK-05 — DatePicker tap targets', () => {
   it('gives the trigger the 48px primary floor', () => {
     expect(picker).toMatch(/minHeight: 48/);
     expect(picker).not.toMatch(/minHeight: 36/);
+  });
+
+  it('lets a host form override trigger sizing without weakening the shared default', () => {
+    expect(picker).toContain('triggerStyle,');
+    expect(picker).toMatch(/minHeight: 48[\s\S]*\.\.\.triggerStyle[\s\S]*\(open \?/);
+  });
+
+  it('makes the trigger a labelled keyboard button', () => {
+    expect(picker).toMatch(/<button[\s\S]*?type="button"[\s\S]*?aria-label=\{ariaLabel\}/);
+    expect(picker).toContain('aria-haspopup="dialog"');
+    expect(picker).toContain('aria-expanded={open}');
+    expect(picker).toContain('role="dialog" aria-label={`${ariaLabel} calendar`}');
+  });
+
+  it('gives the trigger tokenized press feedback with a reduced-motion fallback', () => {
+    expect(picker).toContain('className="upr-date-picker-trigger"');
+    expect(css).toMatch(/\.upr-date-picker-trigger \{[\s\S]*?touch-action: manipulation;[\s\S]*?-webkit-tap-highlight-color: transparent;[\s\S]*?transition:[\s\S]*?var\(--motion-duration-fast\)[\s\S]*?var\(--motion-ease-standard\)/);
+    expect(css).toContain('.upr-date-picker-trigger:active:not(:disabled) { scale: 0.97; }');
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.upr-date-picker-trigger \{ transition: none; \}[\s\S]*?\.upr-date-picker-trigger:active:not\(:disabled\) \{ scale: 1; \}/);
   });
 
   it('gives each day a 44px hit area', () => {

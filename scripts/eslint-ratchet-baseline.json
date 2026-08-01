@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-07-29",
-  "scope": "Existing dev findings at the first production promotion after the blocking ratchet was enabled. Shrink only; never raise.",
+  "capturedAt": "2026-07-31",
+  "scope": "Existing dev findings at the first production promotion after the blocking ratchet was enabled. Legacy native-control findings were captured once on 2026-07-31 and must shrink, never grow.",
   "findings": {
     "functions/api/submit-esign.js": {
       "warning:no-use-before-define": 1
@@ -9,8 +9,68 @@
       "error:react-hooks/set-state-in-effect": 2,
       "warning:no-use-before-define": 4
     },
+    "src/components/AddContactModal.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/AddRelatedJobModal.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/components/ClaimBilling.jsx": {
+      "warning:upr/no-native-date-input": 1,
+      "warning:upr/no-native-select": 2
+    },
+    "src/components/CreateAppointmentModal.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/components/CreateJobModal.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/EditAppointmentModal.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/components/EditContactModal.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/EventModal.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/components/JobDetailPanel.jsx": {
+      "warning:upr/no-native-select": 4
+    },
+    "src/components/ScheduleWizard.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/components/StatusBoard.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/admin-mobile/invoice/PaymentSheet.jsx": {
+      "warning:upr/no-native-date-input": 1
+    },
+    "src/components/admin-mobile/leads/LeadRow.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/admin/NotificationDefaultsTab.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/claim/SharedClaimUI.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/conversations/SmsConsentAttestationModal.jsx": {
+      "warning:upr/no-native-date-input": 1,
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/crm/ImportExportPanel.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/components/crm/MergeTool.jsx": {
+      "warning:upr/no-native-select": 2
+    },
     "src/components/demo-sheet/DemoSheetRenderer.jsx": {
-      "error:react-refresh/only-export-components": 23
+      "error:react-refresh/only-export-components": 23,
+      "warning:upr/no-native-select": 1
+    },
+    "src/components/settings/LookupTable.jsx": {
+      "warning:upr/no-native-select": 1
     },
     "src/components/tech/AddRoomSheet.jsx": {
       "warning:no-restricted-syntax": 1
@@ -27,7 +87,8 @@
     },
     "src/components/tech/ReadingEntrySheet.jsx": {
       "warning:no-restricted-syntax": 1,
-      "warning:no-use-before-define": 1
+      "warning:no-use-before-define": 1,
+      "warning:upr/no-native-select": 1
     },
     "src/contexts/AuthContext.jsx": {
       "warning:no-use-before-define": 11
@@ -38,22 +99,120 @@
     "src/pages/Conversations.jsx": {
       "warning:no-use-before-define": 6
     },
+    "src/pages/ClaimsList.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/CustomerPage.jsx": {
+      "warning:upr/no-native-select": 2
+    },
     "src/pages/DevTools.jsx": {
       "error:no-unused-vars": 16,
-      "warning:no-use-before-define": 25
+      "warning:no-use-before-define": 25,
+      "warning:upr/no-native-date-input": 2,
+      "warning:upr/no-native-select": 7
+    },
+    "src/pages/HomebuildingAnalysis.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/InvoiceEditor.jsx": {
+      "warning:upr/no-native-select": 2
     },
     "src/pages/JobPage.jsx": {
       "error:no-empty": 2,
       "error:no-unused-vars": 8,
       "warning:no-restricted-syntax": 8,
       "warning:no-use-before-define": 13,
-      "warning:react-hooks/exhaustive-deps": 4
+      "warning:react-hooks/exhaustive-deps": 4,
+      "warning:upr/no-native-date-input": 1,
+      "warning:upr/no-native-select": 3
+    },
+    "src/pages/Jobs.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/JobsClosed.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/NewBuildSimulator.jsx": {
+      "warning:upr/no-native-select": 5
+    },
+    "src/pages/Production.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/Schedule.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/ScheduleTemplates.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/pages/TimeTracking.jsx": {
+      "warning:upr/no-native-date-input": 5,
+      "warning:upr/no-native-select": 5
     },
     "src/pages/tech/TechNewCustomer.jsx": {
       "warning:no-restricted-syntax": 1
     },
     "src/pages/tech/TechNewJob.jsx": {
       "warning:no-restricted-syntax": 1
+    },
+    "src/pages/crm/CrmAutomations.jsx": {
+      "warning:upr/no-native-select": 4
+    },
+    "src/pages/crm/CrmCallLog.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/crm/CrmCampaigns.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/crm/CrmForms.jsx": {
+      "warning:upr/no-native-select": 5
+    },
+    "src/pages/crm/CrmLeads.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/crm/CrmSequences.jsx": {
+      "warning:upr/no-native-select": 3
+    },
+    "src/pages/crm/CrmTasks.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/crm/attributionParts.jsx": {
+      "warning:upr/no-native-date-input": 2
+    },
+    "src/pages/settings/Commissions.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/settings/FeedbackInbox.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/settings/NotificationPresentation.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/settings/OopPricingBuilder.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/settings/PageAccess.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/settings/Payments.jsx": {
+      "warning:upr/no-native-select": 6
+    },
+    "src/pages/settings/ScopeSheets.jsx": {
+      "warning:upr/no-native-select": 6
+    },
+    "src/pages/settings/Team.jsx": {
+      "warning:upr/no-native-select": 1
+    },
+    "src/pages/tech/TechDemoSheet.jsx": {
+      "warning:upr/no-native-date-input": 1
+    },
+    "src/pages/tech/TechEditAppointment.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/tech/TechNewAppointment.jsx": {
+      "warning:upr/no-native-select": 2
+    },
+    "src/pages/tech/TechNewEvent.jsx": {
+      "warning:upr/no-native-select": 2
     },
     "src/pages/tech/v2/messages/ThreadView.jsx": {
       "warning:no-use-before-define": 2

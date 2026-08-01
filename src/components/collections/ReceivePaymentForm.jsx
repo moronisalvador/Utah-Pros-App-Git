@@ -25,18 +25,34 @@
 import { useMemo, useState } from 'react';
 import { CollCard, PrimaryButton, GhostButton } from './collKit';
 import { C } from './collTokens';
+import SearchSelect from './SearchSelect';
+import DatePicker from '@/components/DatePicker';
 import { allocationTotal, cents, money, nextRequestIdentity, shouldDisarmReviewOnBlur, validateReceipt } from './paymentAllocation';
 import { err } from '@/lib/toast';
 import { todayInCompanyTimeZone } from '@/lib/companyDate';
 
-const PAYERS = [['homeowner', 'Homeowner'], ['insurance', 'Insurance'], ['other', 'Other']];
+const PAYER_OPTIONS = [
+  { id: 'homeowner', name: 'Homeowner' },
+  { id: 'insurance', name: 'Insurance' },
+  { id: 'other', name: 'Other' },
+];
 const BODY_STYLE = { color: C.body };
 const MUTED_STYLE = { color: C.muted, fontSize: 'var(--text-sm)' };
 const INK_STYLE = { color: C.ink };
 const CARD_STYLE = { display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' };
 const GRID_STYLE = { display: 'grid', gridTemplateColumns: 'var(--coll-receive-payment-columns,repeat(3,minmax(0,1fr)))', gap: 'var(--space-4)' };
 const LABEL_STYLE = { ...BODY_STYLE, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 700 };
-const FIELD_STYLE = { minHeight: 44, border: `1px solid ${C.cardBorder}`, borderRadius: 'var(--radius-md)', background: C.cardBg, color: C.ink, padding: '10px var(--space-3)' };
+// One explicit contract for this mixed-control row. Component defaults differ
+// by surface (shared DatePicker 48px; Collections inputs 44px), so every one of
+// these six controls receives the same box geometry instead of inheriting.
+const CONTROL_TRIGGER_STYLE = {
+  height: 44,
+  minHeight: 44,
+  boxSizing: 'border-box',
+  borderRadius: 'var(--radius-md)',
+  padding: '10px var(--space-3)',
+};
+const FIELD_STYLE = { ...CONTROL_TRIGGER_STYLE, border: `1px solid ${C.cardBorder}`, background: C.cardBg, color: C.ink };
 const SECTION_STYLE = { ...INK_STYLE, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' };
 const ALLOCATION_FRAME_STYLE = { border: `1px solid ${C.cardBorder}`, borderRadius: 'var(--radius-md)', overflow: 'hidden' };
 const ALLOCATION_STYLE = {
@@ -70,7 +86,16 @@ export default function ReceivePaymentForm({ data, prefillInvoice, onSubmit, onS
   const [allocationInputs, setAllocationInputs] = useState(() => (prefillInvoice ? { [prefillInvoice]: '' } : {}));
   const [armed, setArmed] = useState(false);
   const [identity, setIdentity] = useState(null);
-  const method = data.payment_methods?.find((item) => item.id === methodId);
+  const contactOptions = (data.contacts || (data.contact ? [data.contact] : []))
+    .map((item) => ({ id: String(item.id), name: item.name || item.display_name || String(item.id) }));
+  const methodOptions = (data.payment_methods || [])
+    .map((item) => ({ id: String(item.id), name: item.name || item.type || String(item.id) }));
+  const depositAccountOptions = (data.deposit_accounts || [])
+    .map((item) => ({
+      id: String(item.id),
+      name: `${item.name || item.id}${item.account_type ? ` · ${item.account_type}` : ''}`,
+    }));
+  const method = data.payment_methods?.find((item) => String(item.id) === methodId);
   const allocations = useMemo(() => Object.entries(allocationInputs)
     .map(([invoice_id, value]) => ({ invoice_id, amount_cents: cents(value) }))
     .filter((item) => Number(item.amount_cents) > 0), [allocationInputs]);
@@ -103,12 +128,12 @@ export default function ReceivePaymentForm({ data, prefillInvoice, onSubmit, onS
     if (armed && shouldDisarmReviewOnBlur(event.currentTarget, event.relatedTarget)) setArmed(false);
   }}>
     <div className="coll-receive-payment-grid" style={GRID_STYLE}>
-      <label style={LABEL_STYLE}>Customer<select className="coll-receive-payment-field" style={FIELD_STYLE} value={contactId} onChange={(e) => { const id = e.target.value; setDirty(() => setContactId(id)); if (!data.contact && id) onSelectContact?.(id); }} disabled={!!data.contact}><option value="">Choose customer</option>{(data.contacts || (data.contact ? [data.contact] : [])).map((item) => <option key={item.id} value={item.id}>{item.name || item.display_name || item.id}</option>)}</select></label>
-      <label style={LABEL_STYLE}>Payment date<input className="coll-receive-payment-field" style={FIELD_STYLE} type="date" value={paymentDate} onChange={(e) => setDirty(() => setPaymentDate(e.target.value))} /></label>
-      <label style={LABEL_STYLE}>Paid by<select className="coll-receive-payment-field" style={FIELD_STYLE} value={payerType} onChange={(e) => setDirty(() => setPayerType(e.target.value))}>{PAYERS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-      <label style={LABEL_STYLE}>Method<select className="coll-receive-payment-field" style={FIELD_STYLE} value={methodId} onChange={(e) => setDirty(() => setMethodId(e.target.value))}><option value="">Choose method</option>{(data.payment_methods || []).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label style={LABEL_STYLE}>Check / reference{String(method?.type || method?.name).toLowerCase() === 'check' ? ' *' : ''}<input className="coll-receive-payment-field" style={FIELD_STYLE} value={referenceNumber} onChange={(e) => setDirty(() => setReferenceNumber(e.target.value))} placeholder="Check #, ACH reference…" /></label>
-      <label style={LABEL_STYLE}>Deposit to<select className="coll-receive-payment-field" style={FIELD_STYLE} value={depositAccountId} onChange={(e) => setDirty(() => setDepositAccountId(e.target.value))}><option value="">Choose account</option>{(data.deposit_accounts || []).map((item) => <option key={item.id} value={item.id}>{item.name}{item.account_type ? ` · ${item.account_type}` : ''}</option>)}</select></label>
+      <div style={LABEL_STYLE}>Customer<SearchSelect ariaLabel="Customer" value={contactId} options={contactOptions} placeholder="Choose customer" disabled={!!data.contact} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => { const id = item?.id || ''; setDirty(() => setContactId(id)); if (!data.contact && id) onSelectContact?.(id); }} /></div>
+      <div style={LABEL_STYLE}>Payment date<DatePicker ariaLabel="Payment date" value={paymentDate} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(value) => setDirty(() => setPaymentDate(value))} /></div>
+      <div style={LABEL_STYLE}>Paid by<SearchSelect ariaLabel="Paid by" value={payerType} options={PAYER_OPTIONS} clearable={false} triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setPayerType(item?.id || 'homeowner'))} /></div>
+      <div style={LABEL_STYLE}>Method<SearchSelect ariaLabel="Method" value={methodId} options={methodOptions} placeholder="Choose method" triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setMethodId(item?.id || ''))} /></div>
+      <label style={LABEL_STYLE}>Check / reference{String(method?.type || method?.name).toLowerCase() === 'check' ? ' *' : ''}<input aria-label="Check / reference" className="coll-receive-payment-field" style={FIELD_STYLE} value={referenceNumber} onChange={(e) => setDirty(() => setReferenceNumber(e.target.value))} placeholder="Check #, ACH reference…" /></label>
+      <div style={LABEL_STYLE}>Deposit to<SearchSelect ariaLabel="Deposit to" value={depositAccountId} options={depositAccountOptions} placeholder="Choose account" triggerStyle={CONTROL_TRIGGER_STYLE} onChange={(item) => setDirty(() => setDepositAccountId(item?.id || ''))} /></div>
     </div>
     <div style={SECTION_STYLE}><div><b>Allocate payment</b><span style={MUTED_STYLE}> Apply only to the invoices shown below.</span></div>
       {(data.invoices || []).length === 0 ? <p className="coll-receive-payment-empty" style={MUTED_STYLE}>This customer has no open QBO-linked invoices.</p> : <div className="coll-receive-payment-allocations" style={ALLOCATION_FRAME_STYLE}>{data.invoices.map((invoice) => {

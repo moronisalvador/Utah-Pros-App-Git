@@ -77,7 +77,19 @@ function displayDate(str) {
 
 // ═══════════════════════════════════════════════════════════════
 
-export default function DatePicker({ value, onChange, min, max, placeholder = 'Select date', style, className, autoFocus }) {
+export default function DatePicker({
+  value,
+  onChange,
+  min,
+  max,
+  placeholder = 'Select date',
+  style,
+  triggerStyle,
+  className,
+  autoFocus,
+  ariaLabel = 'Choose date',
+  disabled = false,
+}) {
   const [open, setOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
     const d = parseDate(value);
@@ -184,17 +196,28 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
   return (
     <div ref={wrapRef} style={{ position: 'relative', ...style }} className={className}>
       {/* Trigger input */}
-      <div
+      <button
+        type="button"
+        className="upr-date-picker-trigger"
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
         onClick={() => setOpen(!open)}
         style={{
           display: 'flex', alignItems: 'center', gap: 8,
           padding: '7px 10px', border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-md)', background: 'var(--bg-primary)',
-          cursor: 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)',
+          cursor: disabled ? 'default' : 'pointer', fontSize: 13, fontFamily: 'var(--font-sans)',
           color: value ? 'var(--text-primary)' : 'var(--text-tertiary)',
+          width: '100%', textAlign: 'left', boxSizing: 'border-box',
           // PICK-05: 36 -> 48, the tech-mobile-ux.md primary floor. This is the
           // control a technician taps first, with gloves on.
-          minHeight: 48, transition: 'border-color 120ms ease',
+          minHeight: 48,
+          opacity: disabled ? 0.55 : 1,
+          // Host surfaces may opt into their documented control size while the
+          // shared default remains the 48px technician-primary floor.
+          ...triggerStyle,
           ...(open ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px rgba(37,99,235,0.1)' } : {}),
         }}
       >
@@ -207,11 +230,11 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
           <line x1="3" y1="10" x2="21" y2="10" />
         </svg>
         <span>{value ? displayDate(value) : placeholder}</span>
-      </div>
+      </button>
 
       {/* Calendar dropdown */}
       {open && (
-        <div ref={calRef} style={{
+        <div ref={calRef} role="dialog" aria-label={`${ariaLabel} calendar`} style={{
           position: 'absolute', left: 0, zIndex: 50,
           ...(flipUp ? { bottom: '100%', marginBottom: 4 } : { top: '100%', marginTop: 4 }),
           // PICK-05: widened from 280 so seven day cells can each carry a 44px
@@ -323,12 +346,12 @@ export default function DatePicker({ value, onChange, min, max, placeholder = 'S
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '6px 12px', borderTop: '1px solid var(--border-light)',
           }}>
-            <button onClick={goToday}
+            <button type="button" onClick={goToday}
               style={{ ...S.footBtn, color: 'var(--accent)', fontWeight: 600 }}>
               Today
             </button>
             {value && (
-              <button onClick={() => { onChange(''); setOpen(false); }}
+              <button type="button" onClick={() => { onChange(''); setOpen(false); }}
                 style={{ ...S.footBtn, color: 'var(--text-tertiary)' }}>
                 Clear
               </button>
