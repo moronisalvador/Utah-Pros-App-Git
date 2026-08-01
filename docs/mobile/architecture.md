@@ -258,7 +258,7 @@ Native-specific calls stay behind wrappers:
 | Keyboard/status/splash/appearance | `nativeKeyboard.js`, native appearance helpers/plugins |
 | Biometric sign-in verification | `nativeLoginVerification.js` plus `nativeBiometric.js`; invoked only before a native password sign-in |
 | Native URL/push navigation | `nativeAppLinks.js`, `nativeNavigationCoordinator.js`, and `NativeNavigationBridge` |
-| OTA | Official app exact-default-off in `nativeUpdater.js`; isolated UPR Dev canary uses `NativeUpdateHealthGate.jsx`, generated dev-only config, encrypted manual publish, signed-artifact verification, stop and rollback |
+| OTA | Official app exact-default-off in `nativeUpdater.js`; isolated UPR Dev canary uses crash-latched `NativeUpdateHealthGate.jsx`, generated dev-only config, encrypted unassigned staging, signed-artifact verification, and emergency stop; assignment and rollback stay separately gated |
 | Push registration | `pushNotifications.js`; exact-default-off enrollment plus mounted event listeners |
 | Background privacy | native `AppDelegate.swift` opaque app-switcher shield |
 

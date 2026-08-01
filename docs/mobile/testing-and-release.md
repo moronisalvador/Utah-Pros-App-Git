@@ -72,7 +72,9 @@ read-only audit command.
 `npm run build:ios:dev` preserves the existing UPR Dev default-off updater.
 `npm run build:ios:dev:capgo` is the explicit OTA-enabled development form and
 requires `CAPGO_DEV_PUBLIC_KEY_V2`; it patches only the gitignored generated
-iOS config. Neither command changes the checked-in production Capacitor config.
+iOS config. The key must be a canonical PKCS#1 RSA-4096 public PEM; the signed
+artifact verifier records its SHA-256 fingerprint without recording key
+material. Neither command changes the checked-in production Capacitor config.
 
 Release-source checks also include:
 
@@ -281,14 +283,16 @@ release path.
 The separate manual `.github/workflows/capgo-dev.yml` accepts only `dev`,
 `com.utahprosrestoration.upr.dev`, and `upr-dev-canary`, behind the
 branch-restricted `capgo-dev` environment and an operation-specific exact
-confirmation. Before publish, its validate operation must prove the exact SHA,
-native module graph, absent native service-worker/manifest files, v2 key
-presence, and locked dependencies without changing Capgo. Publish then requires
-v2 encryption, installed-native minimum version, and compatibility success.
-Rollback names one prior verified bundle; disable turns off future channel
-delivery but is not represented as an instant device recall. The signed
-TestFlight/device health, interruption, failed-acknowledgement, rollback,
-official-UPR non-regression, and Capgo statistics matrix remains mandatory.
+confirmation. Its credential-free validate operation proves the exact SHA,
+native module graph, absent native service-worker/manifest files, and locked
+dependencies without requiring Capgo credentials or changing Capgo. Publish
+first checks the configured channel's patch compatibility, then v2-encrypts and
+stages an unassigned bundle. It cannot assign a channel or deliver to a device.
+Disable turns off future channel delivery but is not an instant device recall.
+Rollback remains manual and blocked until a provenance-bound allowlist exists.
+The signed TestFlight/device health, interruption, failed-acknowledgement,
+rollback, official-UPR non-regression, and Capgo statistics matrix remains
+mandatory.
 See `docs/mobile/capgo-dev-runbook.md`.
 
 ## Database compatibility gate
