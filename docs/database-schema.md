@@ -419,14 +419,18 @@ and authorized/denied no-write behavior passed post-apply checks. Authored, unap
 requires the exact policy/ACL allowlist across `conversations`,
 `conversation_participants`, and `messages`, rejects extra policies or grants, narrows the
 existing policies in place to participant-scoped reads with fail-closed writes, revokes every
-authenticated direct write, and preserves service-role access.
+authenticated direct write, and preserves service-role access. It also adds the service-only
+`messaging_get_authorized_message_media(employee_id,message_id)` RPC, which returns canonical
+media metadata only after the strict employee/conversation predicate succeeds; its rollback
+revokes all execution.
 
 Production release order is `40337 → 40338 → 31213000`, then verified compatible web and
 supported-native adoption, then `31213100` only after older direct-unread writers are unsupported.
 QA already contains immutable `40337/40338`, so its next database step is `31213000`. Historical
-disposable proof for the superseded `40339` source is not proof of `31213000/31213100`; the
-corrected participant behavior proof now passes on a disposable local clone, while the full
-governed runner remains required. Reverse recovery is
+disposable proof for the superseded `40339` source is not proof of `31213000/31213100`. An earlier
+corrected participant source passed on a disposable local clone; the exact current
+authorized-media source has CI-visible contract coverage but still requires the full governed
+runner. Reverse recovery is
 `31213100 → 31213000 → 40338 → 40337`, and every step seals browser tables/RPCs rather than
 restoring the historical broad posture.
 
@@ -454,9 +458,11 @@ reconciled rather than claimed or submitted again, preventing a crash/retry from
 second provider invocation. It also creates a FORCE-RLS actor-derived creation-provenance ledger
 that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient
 phone. Only a row matching that immutable snapshot may be claimed or reserved. Legacy
-`claim_scheduled_message(uuid)` remains present and service-callable during compatibility only as
-a fail-closed stub. A stale Worker therefore pauses before provider submission instead of claiming
-an unreserved row.
+`claim_scheduled_message(uuid)` remains present and callable to its historical
+authenticated/service roles as a `false` no-op. A stale caller therefore pauses normally before
+provider submission instead of claiming an unreserved row. The same transaction changes every
+historical `scheduled_messages` policy predicate to `false` and revokes browser table ACLs, so the
+random `claim_token` is protected at both RLS and grant layers.
 
 The browser path becomes actor-derived RPC-only. `create_scheduled_message` resolves the active,
 internal actor from `auth.uid()`, requires the Conversations capability and current access to the
@@ -481,17 +487,16 @@ After reservation, Twilio credential resolution uses a fresh fail-closed managed
 a timeout neither consumes a cache entry nor falls back to the Cloudflare environment credential,
 and no provider request occurs.
 
-Compatibility closes raw browser queue writes in its own transaction. Enforcement leaves the
-three broad legacy policies as inert catalog records, retains the provenance boundary, and
-verifies that only `service_role` retains the ordinary table lifecycle privileges on
-`scheduled_messages`.
+Compatibility closes raw browser queue writes and changes the three historical queue policies to
+explicit deny predicates in its own transaction. Enforcement reasserts that fail-closed
+policy/ACL posture, retains the provenance boundary, and verifies that only `service_role` retains
+ordinary table lifecycle privileges on `scheduled_messages`.
 Browser callers retain only the actor-derived create, owner queue, and owner cancel RPCs. The
-legacy claim signature remains fail closed and its service execution is revoked, while the
-token-fenced v2 lifecycle is the sole service execution path. The paired isolated database test
-passed `1/1` on a disposable local clone on 2026-07-31 and proved actor derivation,
-idempotent create, exactly one reservation/materialized message, stale/legacy claim refusal after
-reservation, final role grants, and the complete reverse chain; its transaction rolled back.
-Source tests additionally guard the grant/policy sequence.
+legacy claim signature remains a callable `false` no-op for compatibility, while the token-fenced
+v2 lifecycle is the sole service path that can claim a row. An earlier source revision's paired
+isolated database test passed `1/1` on a disposable local clone on 2026-07-31 with its transaction
+rolled back. The exact current source adds explicit-deny policy and no-op assertions and still
+requires the governed runner; CI-visible source tests guard the grant/policy sequence.
 
 Both migrations carry rollbacks, but neither is a normal reversal. The full recovery-only reverse
 chain is `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`. Every step preserves

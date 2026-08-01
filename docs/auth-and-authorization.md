@@ -294,13 +294,18 @@ The browser has no authorization path for changing messaging/schema modes, webho
 material, Cloudflare bindings, provider-console configuration, or sending a test message. A visible
 admin route or readiness indicator does not replace the separate owner-approved activation gate.
 
-`POST /api/message-media-upload` uses the same server-side conversations capability before any
-service-role Storage access. Upload also binds a valid conversation, verifies the final image
-bytes, and creates a random private object path. There is intentionally no browser delete route:
-cleanup needs a durable draft-to-message claim before it can safely distinguish an orphan from
-sent/failed/ambiguous history. `POST /api/message-media-url` signs only the media reference
-already bound to an authorized canonical message row and never accepts a caller-supplied bucket or
-path.
+`POST /api/message-media-upload` uses the same server-side Conversations capability plus the
+service-only employee/conversation membership predicate before reading image bytes or performing
+any service-role Storage write. Upload also binds a valid conversation, verifies the final image
+bytes, and creates a random private object path. `POST /api/message-media-url` calls the
+service-only `messaging_get_authorized_message_media(employee_id,message_id)` boundary, which
+returns canonical conversation/media metadata only when the strict employee/conversation
+predicate succeeds; the Worker never performs a pre-authorization service-role message read.
+Both routes use bounded Worker transport for Auth, PostgREST, RPC, and Storage. There is
+intentionally no browser delete route: cleanup needs a durable draft-to-message claim before it
+can safely distinguish an orphan from sent/failed/ambiguous history. Missing and nonmember objects
+are indistinguishable, authorization lookup failures fail closed, and neither route accepts a
+caller-supplied bucket or path.
 
 The CallRail recovery worker claims provider events only through
 `claim_callrail_provider_event`. The RPC is `SECURITY INVOKER` with an empty search path, rejects
@@ -330,15 +335,15 @@ legacy `pending` rows is nonzero. It never quarantines, fails, or otherwise edit
 It then creates a FORCE-RLS actor-derived provenance ledger whose immutable snapshot includes the
 creator, conversation, canonical body/send time, recipient contact, and recipient phone; only a
 row whose stored values still match that snapshot may be claimed or reserved. It closes raw
-browser queue writes in the same transaction and preserves
-the legacy claim signature only as a service-callable fail-closed stub, so a stale Worker cannot
-submit without a durable reservation. After compatible web/Worker callers are deployed and
-verified, enforcement follows compatibility in the same serialized release window. The three
-legacy queue policies remain as inert catalog records while table ACLs make them unreachable;
-this avoids destructive policy DDL while retaining the provenance boundary. Browser roles then
-have no raw queue read/write route and retain only the narrow authenticated RPCs above. The frozen legacy
-`claim_scheduled_message(uuid)` signature remains fail closed and loses service execution; it
-cannot claim or initiate a send.
+browser queue writes in the same transaction, changes the three historical queue policies to
+explicit `false` predicates, and preserves the legacy claim signature plus its historical
+authenticated/service grants as a callable `false` no-op. A stale caller therefore stops normally
+without reading or claiming a row. After compatible web/Worker callers are deployed and verified,
+enforcement follows compatibility in the same serialized release window. The policy objects
+remain as fail-closed catalog records while table ACLs also make them unreachable; this avoids
+destructive policy DDL while retaining the provenance boundary. Browser roles have no raw queue
+read/write route and retain only the narrow authenticated RPCs above. The frozen legacy
+`claim_scheduled_message(uuid)` signature cannot claim or initiate a send.
 
 All lifecycle operations after browser creation are `SECURITY INVOKER`, service-role-only RPCs
 with an explicit `current_user = 'service_role'` fence: token-fenced claim, token-matched
@@ -435,8 +440,9 @@ consent when it is absent. The legacy `sms_consent_log` remains redacted and doe
 raw signer IP.
 
 `GET/POST /api/message-conversations` requires the same server-side Conversations capability as
-the messaging send surface before any service-role read or write. Contact search is length- and
-grammar-bounded, returns only `id`, `name`, `phone`, and `company`, and caps results at 25.
+the messaging send surface before any service-role read or write. Its Auth and service-database
+requests use the bounded Worker transport. Contact search is length- and grammar-bounded, returns
+only `id`, `name`, `phone`, and `company`, and caps results at 25.
 `find_or_create_conversation(uuid)` is `SECURITY INVOKER`, asserts `service_role` inside the
 function, and denies direct execution to `PUBLIC`, `anon`, and `authenticated`.
 
@@ -578,6 +584,8 @@ HTTP `/api/notify` retains two distinct identities:
 
 There is no checked-in mobile/desktop/browser HTTP Bearer caller. Trusted Workers continue to
 import `dispatchEvent` in-process, and the secret-authenticated database trigger path is unchanged.
+The Bearer Auth lookup and production Web Push dispatch both use the bounded Worker transport;
+tests keep the transport injectable without changing the authorization or provider contracts.
 The database-RPC residual that existed when S1c was authored is now closed: live
 `20260727233704_notify_emit_service_boundary` removed authenticated execution and made the trusted
 event type authoritative, and live `20260731165215_pg_net_worker_url_allowlists` added the

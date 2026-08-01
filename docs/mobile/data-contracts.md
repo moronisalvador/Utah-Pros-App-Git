@@ -279,7 +279,9 @@ Required send semantics:
   context, not authority; a future completion-driven removal must record a trusted explicit
   override rather than infer access from browser-writable job state;
 - consent, DND, STOP/START/HELP, approved sender, quiet hours/retry, attachment access, and audit
-  rules are enforced in the company-send path;
+  rules are enforced in the company-send path; private attachment signing resolves canonical
+  message media only through the service-only membership-authorized RPC, never through a
+  pre-authorization service-role row read;
 - a stable send/idempotency key distinguishes accepted, delivered/provider-pending, failed, and
   duplicate;
 - optimistic UI reconciles with the canonical provider/message row;
@@ -305,9 +307,9 @@ deployment, provider path, or device path has been verified.
   cancelled once a delivery reservation exists. Compatibility requires exact participant
   enforcement, locks the queue, and aborts with SQLSTATE `55000` without mutation when any pending
   row exists. It creates FORCE-RLS provenance for creator, conversation, canonical body/send time,
-  recipient contact, and recipient phone, and closes raw browser queue writes. Enforcement leaves
-  dormant broad policies inert behind revoked ACLs, retains that provenance boundary, and revokes
-  legacy execution.
+  recipient contact, and recipient phone, closes raw browser queue writes, changes the historical
+  policies to explicit deny predicates, and leaves the frozen legacy claim callable only as a
+  `false` no-op. Enforcement reasserts those policy/ACL boundaries and retains provenance.
 - Service processing uses a fresh random fencing token for claim, release, failure, reservation, and
   reconciliation. It rechecks the creator's capability/access and the immutable recipient snapshot
   against the exact-one current active customer recipient at dequeue and again atomically at
