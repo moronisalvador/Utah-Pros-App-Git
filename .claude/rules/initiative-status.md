@@ -52,8 +52,10 @@ promotion.
   `55000` if even one legacy pending row remains; it never quarantines or edits those rows.
   Actor-derived creation stores immutable creator, conversation, body/send time, recipient contact,
   and recipient phone provenance. Token-fenced service RPCs recheck the snapshot/current recipient
-  plus creator access and link exactly one provider attempt only after kill-switch, consent, DND,
-  and quiet-hours gates. Compatibility changes the three legacy scheduled policies to explicit
+  plus creator access. The final reservation transaction share-locks the live automated-SMS switch,
+  invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and leaves no
+  provider-attempt link for a disabled switch, DND, explicit opt-out, pending STOP, or any other
+  non-global result. Compatibility changes the three legacy scheduled policies to explicit
   deny predicates and closes browser table ACLs; enforcement reasserts both layers. The frozen
   legacy claim remains callable to historical roles only as a side-effect-free `false` no-op.
   Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
@@ -72,8 +74,9 @@ promotion.
   `31220100`. Hardened callers deploy immediately before the serialized enforcement/scheduled
   window and intentionally fail closed until the RPCs exist. Reverse recovery is
   `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
-  browser denial. Focused source/Worker tests, migration hygiene, and the two changed behavioral
-  database proofs pass; the governed full database runner, healthy QA apply, pending-row decision,
+  browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
+  proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
+  governed full database runner, healthy QA apply, pending-row decision,
   and signed-device proof remain explicit release gates. No commit, push, deploy, hosted apply,
   provider call, production-row mutation, or device claim is authorized by this entry.
 

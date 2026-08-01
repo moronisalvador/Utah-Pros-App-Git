@@ -313,9 +313,13 @@ deployment, provider path, or device path has been verified.
 - Service processing uses a fresh random fencing token for claim, release, failure, reservation, and
   reconciliation. It rechecks the creator's capability/access and the immutable recipient snapshot
   against the exact-one current active customer recipient at dequeue and again atomically at
-  reservation.
-- After the worker's consent/DND checks and the central automated-send gates, reservation links one
-  irreversible `message_send_attempt`; scheduled delivery permits one Twilio invocation. Accepted
+  reservation. The reservation transaction also share-locks the current automated-SMS kill switch
+  and calls the canonical phone-locked consent authority; only `GLOBAL_OPT_IN` may create an
+  attempt. A disabled switch, DND, explicit opt-out, pending STOP, or other consent result leaves
+  no provider-attempt residue.
+- After those database checks plus the worker's consent/DND and central automated-send gates,
+  reservation links one irreversible `message_send_attempt`; scheduled delivery permits one
+  Twilio invocation. Accepted
   attempts materialize the canonical message. Fresh linked in-flight work is preserved; an unknown
   outcome is failed for owner review and is never automatically resent.
 - Auth, database/RPC, credential, and provider transport is bounded. A reserved scheduled send

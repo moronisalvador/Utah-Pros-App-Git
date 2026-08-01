@@ -418,8 +418,10 @@ fresh-in-flight preservation and exactly-once materialization. It must run only 
 local clone with the isolation sentinel; it is not CI or hosted proof. Earlier 2026-07-31 source
 revisions passed the participant and scheduled proofs with final transactions rolled back. The
 current source adds the authorized-media RPC, explicit-deny queue policies, legacy-claim no-op,
-and their behavioral assertions; the full governed runner remains open because this worktree has
-no local Supabase project configuration. Focused
+and an atomic final reservation gate. The latter share-locks the current automated-SMS switch,
+invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and proves
+that kill-switch, DND, and no-consent races leave zero provider-attempt residue. The full governed
+runner remains open because this worktree has no local Supabase project configuration. Focused
 tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
 cached/environment fallback. No migration apply, deployment, provider traffic, or live
 scheduled-message claim follows from repository tests.
@@ -767,7 +769,9 @@ Release order is compatibility-sensitive because dev and main share production S
    owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
    one legacy production pending row, so production is currently stopped at this gate.
 7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
-   fencing, grants, fail-closed policy posture, and legacy-claim no-op behavior.
+   fencing, grants, fail-closed policy posture, legacy-claim no-op behavior, and that the final
+   reservation refuses a disabled SMS switch or any consent result other than
+   `GLOBAL_OPT_IN` without linking an attempt.
 8. Preserve the exact reviewed source through dev, web production, and the supported native
    release; complete negative authorization and physical-device checks.
 
