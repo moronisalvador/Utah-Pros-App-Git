@@ -2,10 +2,10 @@
   "_generated": "npm run generate:changelog — do not hand-edit",
   "since": "2026-07-01",
   "totals": {
-    "changes": 460,
+    "changes": 463,
     "weeks": 5,
     "areas": 13,
-    "testing": 19
+    "testing": 23
   },
   "weeks": [
     {
@@ -66,6 +66,14 @@
           "kind": "New",
           "area": "Billing",
           "text": "Receive and reconcile grouped payments",
+          "live": false
+        },
+        {
+          "sha": "360744d",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add the commit-msg reminder, contract tests and docs",
           "live": false
         },
         {
@@ -157,6 +165,14 @@
           "live": false
         },
         {
+          "sha": "863757d",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Derive a weekly activity record from git history",
+          "live": false
+        },
+        {
           "sha": "895a43d",
           "day": "2026-07-31",
           "kind": "New",
@@ -178,6 +194,14 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Inject fixture credential securely",
+          "live": false
+        },
+        {
+          "sha": "a4d0737",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add the What's New page at /whats-new",
           "live": false
         },
         {
@@ -218,6 +242,14 @@
           "kind": "Fixed",
           "area": "Billing",
           "text": "Preserve reconciliation outcomes",
+          "live": false
+        },
+        {
+          "sha": "f35413c",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Seed 39 plain-English highlights for July 2026",
           "live": false
         },
         {
@@ -1493,7 +1525,7 @@
           "live": true
         }
       ],
-      "count": 185,
+      "count": 189,
       "areas": [
         "Billing",
         "CRM",
@@ -1508,7 +1540,7 @@
         "Settings & Access",
         "Translations"
       ],
-      "testing": 19
+      "testing": 23
     },
     {
       "start": "2026-07-20",
@@ -3752,17 +3784,9 @@
           "area": "Field App",
           "text": "Phase F migration — attachments/source/resolved_at columns + RPC cutover",
           "live": true
-        },
-        {
-          "sha": "ec57268",
-          "day": "2026-07-01",
-          "kind": "New",
-          "area": "CRM",
-          "text": "Real touch drag-and-drop for the Leads pipeline board",
-          "live": true
         }
       ],
-      "count": 111,
+      "count": 110,
       "areas": [
         "Billing",
         "CRM",
