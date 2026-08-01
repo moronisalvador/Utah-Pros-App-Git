@@ -437,10 +437,11 @@ stored `callrail_id` to match the call ID embedded in its stored allowlisted Cal
 then reads the credential. UPR has no employee-to-CRM-organization assignment model, and
 `get_inbound_leads` itself is company-wide. S1c therefore documents `crm_call_log` as company-wide
 recording authority; it does not claim tenant/assignment scoping that the data model cannot express.
-The non-admin Worker capability does not mirror the desktop rollout/kill flags, and the direct
-authenticated `get_inbound_leads`/`inbound_leads` paths still expose or can mutate the stored
-recording URL outside this proxy. Those are separate operational/database residuals; S1c is not
-end-to-end recording confidentiality.
+The non-admin Worker capability does not mirror the desktop rollout/kill flags. The later live S1e
+database boundary removed authenticated lead DML and moved the provider URL to a forced-RLS,
+service-only source table; browser/RPC callers now receive only an opaque recording marker. The
+remaining residual is company-wide active-internal lead metadata/read scope, not raw recording-URL
+exposure or mutation.
 
 HTTP `/api/notify` retains two distinct identities:
 
@@ -582,11 +583,12 @@ policies. Two-session PostgREST/Realtime sockets plus PWA/Capacitor bell behavio
 close-out gate; S1d/S1e/S1f, private media, providers, deployment, signing, and device work remain
 separate.
 
-**S1g apply-order prerequisite:** its entry gate still requires the separately verified
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
 `20260726180000_mobile_employee_identity_authority.sql` and
-`20260726182000_mobile_employee_identity_containment.sql` sequence, compatible browser/PWA/native
-clients, and retirement of old clients or an explicit owner risk decision. The completed S1e
-postcondition is recorded above; it is not an authorization to combine S1g with any later window.
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate containment ledger
+row and that the browser-read-only employee catalog contract matched. S1e and S1g are now live;
+neither is an authorization to combine or replay them in a later window.
 
 ## Mobile S1h identity and personal ownership source (retired; do not apply)
 

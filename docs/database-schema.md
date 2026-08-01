@@ -593,15 +593,13 @@ admin-or-`crm_call_log` capability decision. Rollback restores raw URLs, the exa
 grants/policy, and removes the companion table; it deliberately reopens scalar URL exposure.
 Privacy-safe removal of recording keys from historical `raw_payload` is not reversible.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remained its own owner-approved window. S1e's live pre/postconditions and
-readbacks passed; do not replay it.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets remained separate owner-approved windows and are now live; do not
+replay them. A future dependent migration must recapture the same catalog/ledger state.
 
 ## Retired mobile personal-ownership boundary (S1h, 2026-07-31)
 

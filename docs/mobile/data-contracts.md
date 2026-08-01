@@ -118,25 +118,29 @@ row to the provider call ID in its stored allowlisted URL before credential/prov
 active-internal-admin only and accepts four server-derived appointment/estimate event shapes.
 Caller-selected recipients, copy, HTML, payload/data, entity/job fields and links are rejected.
 
-Two bypasses existed outside that HTTP source slice. The notification RPC path is now contained:
+Two bypasses existed outside that HTTP source slice, and both database paths are now contained.
+The notification RPC path:
 live `20260727233704_notify_emit_service_boundary` removed authenticated execution, retained only
 `service_role`, and made the trusted top-level event type authoritative; live
 `20260731165215_pg_net_worker_url_allowlists` then added the two-origin URL allowlist and
-blank-secret no-op. `get_inbound_leads` plus broad `inbound_leads` policies can still expose stored
-recording URLs without the proxy, so `MOB-SEC-014` remains open for that separate residual. The
-existing QBO human-actor telemetry gap and external-admin
+blank-secret no-op. Live S1e moved raw recording URLs into a forced-RLS service-only source table,
+removed authenticated lead DML, and leaves browser/RPC callers only an opaque availability marker.
+The remaining CRM residual is company-wide active-internal lead metadata/read scope, not direct raw
+recording-source access. The existing QBO human-actor telemetry gap and external-admin
 `qbo_attachments` metadata SELECT policy remain separate QBO residuals.
 
-S1g adds a fourth reviewed but unapplied database slice for the shared PWA/Capacitor bell. It keeps
-the four deployed list/count/mark signatures and result shapes while resolving the authenticated
-employee from `auth.uid()`, denying inactive/external/unmapped and foreign-recipient calls, and
-making direct `notifications` SELECT/Realtime visibility active-internal own-or-broadcast. A
-private forced-RLS receipt table gives broadcasts per-employee read state; targeted rows keep their
-base `read_at`, and existing globally-read broadcasts stay read for everyone. Null/default list
-and count parameters remain broadcast-only. The client-side Realtime filter remains a fallback,
-not authorization. Signed service-role calls retain the exact deployed base-row list/count and
-mark behavior. Live `USING (true)` and shared broadcast state remain open until the distinct S1g
-apply and two-session Realtime proof complete.
+S1g is live in production under ledger row `20260728192024` for the shared PWA/Capacitor bell. It
+keeps the four deployed list/count/mark signatures and result shapes while resolving the
+authenticated employee from `auth.uid()`, denying inactive/external/unmapped and foreign-recipient
+calls, and making direct `notifications` SELECT/Realtime visibility active-internal
+own-or-broadcast. A private forced-RLS receipt table gives broadcasts per-employee read state;
+targeted rows keep their base `read_at`, and existing globally-read broadcasts stay read for
+everyone. Null/default list and count parameters remain broadcast-only. The client-side Realtime
+filter remains a fallback, not authorization. Signed service-role calls retain the exact deployed
+base-row list/count and mark behavior. The former `USING (true)`/shared broadcast state is not the
+browser read contract; retained Realtime socket, resume/reconnect, token-refresh, and
+account-switch qualification remain operational evidence requirements rather than an unapplied
+schema claim.
 
 ## Workflow contract map
 
@@ -145,7 +149,7 @@ apply and two-session Realtime proof complete.
 | Contract | Current caller expectation |
 |---|---|
 | Supabase Auth session | persisted/refreshable user session |
-| `get_my_employee_profile()` | selector-free, least-column active employee corresponding to `auth.uid()`; source contract is additive/unapplied |
+| `get_my_employee_profile()` | live selector-free, least-column active employee corresponding to `auth.uid()` |
 | navigation permissions and employee overrides | arrays/maps used for UI visibility |
 | feature-flag RPC | rows keyed by feature/page/tool key |
 
@@ -414,15 +418,15 @@ Direct execution remains `service_role` only; the owner-executed database chain 
 in-body session-role check. Direct `create_notification` has a separate S1f attribute-only apply candidate that retains
 only `service_role`; until applied, the live authenticated bell-emission residual remains.
 
-S1g freezes the bell read contract without changing client source: active internal callers may
-request broadcast-only with null/default parameters or broadcast-plus-own with their own employee
-ID; a foreign employee/notification selector is forbidden. Broadcast mark-one/mark-all writes an
-idempotent private receipt for that caller and never changes the broadcast base row. Direct
-PostgREST and Realtime use the equivalent own-or-broadcast RLS predicate. The source contract is
-not a release claim until catalog, role, socket, resume/reconnect, token-refresh, and
-account-switch behavior pass after an owner-authorized apply. The guarded behavior matrix is wired
-to the local-only database runner and passed a synthetic in-memory PostgreSQL harness; neither
-result is a live Realtime qualification.
+S1g is live under production ledger row `20260728192024` without changing client source: active
+internal callers may request broadcast-only with null/default parameters or broadcast-plus-own with
+their own employee ID; a foreign employee/notification selector is forbidden. Broadcast
+mark-one/mark-all writes an idempotent private receipt for that caller and never changes the
+broadcast base row. Direct PostgREST and Realtime use the equivalent own-or-broadcast RLS
+predicate. The guarded behavior matrix remains useful source evidence, but the synthetic
+in-memory PostgreSQL harness is not live Realtime qualification; catalog, role, socket,
+resume/reconnect, token-refresh, and account-switch behavior remain release verification
+requirements for future changes.
 
 ## Error semantics
 
@@ -514,29 +518,34 @@ Before changing a mobile contract:
 
 ## Recording-source contract
 
-`inbound_leads.recording_url` is an availability field, not a provider-source contract. After S1e
-apply it is null or `upr-recording://available`; clients may test presence only. The raw URL belongs
-to service-only `inbound_lead_recording_sources`. Browsers request playback using only `lead_id`
-through `/api/callrail-recording`; the Worker reconstructs identity, authorization, lead/provider
-binding, URL allowlist and provider access. `get_inbound_leads(integer)` preserves JSON
-shape/order/limit but requires admin or `crm_call_log` capability. Stored `raw_payload` recursively
-omits keys named `recording` or `recording_url`.
+S1e (`20260726183409_inbound_lead_recording_source_boundary`) is live and verified: QA ledger row
+`20260731224513_inbound_lead_recording_source_boundary`; production ledger row
+`20260731225511_inbound_lead_recording_source_boundary`. `inbound_leads.recording_url` is an
+availability field, not a provider-source contract: it is null or `upr-recording://available`, and
+clients may test presence only. The raw URL belongs to service-only
+`inbound_lead_recording_sources`. Browsers request playback using only `lead_id` through
+`/api/callrail-recording`; the Worker reconstructs identity, authorization, lead/provider binding,
+URL allowlist and provider access. `get_inbound_leads(integer)` preserves JSON shape/order/limit but
+requires admin or `crm_call_log` capability. Stored `raw_payload` recursively omits keys named
+`recording` or `recording_url`.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**S1e/S1g historical apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Recapture that catalog/ledger state before any follow-on migration that relies
+on the same boundary; it neither combines nor reopens the already-live S1e/S1g windows.
 
-## S1h personal identity, preferences, and devices (authored, not applied)
+## S1h personal identity, preferences, and devices (retired — do not apply)
 
-S1h is now source-hardened, but it remains unapplied, not exact database-behavior-verified, and not
-`ready_for_apply`. It preserves these browser-visible identities and successful authorized shapes:
+`20260727022920_mobile_personal_ownership_boundary.sql` is retired and must **not** be applied.
+Its exact QA and production preflights refused because newer notification-preference and
+native-token lineage has changed the catalog/function contracts it would replace. The source is
+historical architecture only, not an exact database-behavior claim or an apply candidate. It
+described these browser-visible identities and successful authorized shapes:
 
-| Surface | Authenticated contract in authored S1h |
+| Surface | Authenticated contract in retired S1h source (not live through this migration) |
 |---|---|
 | `get_employee_page_access(uuid)` | own active-internal employee; active-internal admin may inspect foreign employee |
 | `get_effective_notification_prefs(uuid)` | own active-internal employee only |
@@ -548,28 +557,30 @@ S1h is now source-hardened, but it remains unapplied, not exact database-behavio
 | `upsert_device_token(uuid,text,text)` | supplied employee must match the session; same-owner refresh only; a foreign token conflict raises `42501` |
 | `delete_device_token(text)` | own token only; foreign ownership raises `42501` |
 
-All nine retain trusted service-role compatibility. A private owner-only helper centralizes the
-active/internal/session mapping. Active internal admin foreign page inspection is the only
-personal-RPC exception. All four personal/device tables become forced-RLS, policy-free, and
-browser-RPC-only; raw native tokens are no longer browser-readable. Service-role dispatch/prune
-retains direct table access through BYPASSRLS.
+The retired source retained trusted service-role compatibility and used a private owner-only helper
+to centralize active/internal/session mapping. Active internal admin foreign page inspection was its
+only personal-RPC exception. Its proposed forced-RLS, policy-free, browser-RPC-only table posture
+and raw-native-token read removal were never applied by S1h; do not infer them from this section.
 
-The preference resolver keeps catalog → role → employee override → personal precedence and the
-role lock. The self-service list alone filters disabled types. Web Push metadata still never
-returns endpoint/key secrets.
+The retired source's preference resolver kept catalog → role → employee override → personal
+precedence and the role lock. Its self-service list alone filtered disabled types, and its Web Push
+metadata never returned endpoint/key secrets.
 
-The P0 browser-writable employee-authority dependency is separated into an additive compatibility
-contract (`20260726180000_mobile_employee_identity_authority.sql`) and a later schema-last
-containment (`20260726182000_mobile_employee_identity_containment.sql`). Compatible web/PWA/native
-callers must deploy and old cached/native bundles must be retired or explicitly accepted between
-those windows. The provenance reconciliation
+The P0 browser-writable employee-authority dependency remains separated into an additive
+compatibility contract (`20260726180000_mobile_employee_identity_authority.sql`) and a later
+schema-last containment (`20260726182000_mobile_employee_identity_containment.sql`). Compatible
+web/PWA/native callers must deploy and old cached/native bundles must be retired or explicitly
+accepted between those windows. The provenance reconciliation
 `20260727020000_upsert_employee_page_access_provenance_reconciliation.sql` and the live
-`permission_write_gates` dependency also precede S1h.
+`permission_write_gates` dependency were part of the retired S1h design context; they do not make
+its obsolete replacement safe.
 
 A temporary non-retained PGlite experiment modeled the lifecycle and passed a rollback-only
 behavior matrix. It did **not** execute the exact checked-in migration, preflight, post-apply, or
-isolated files, and neither its harness nor a complete log was retained. The governed exact
-forward/post-apply/isolated/rollback sequence therefore remains an entry gate. Each identity,
-containment, provenance, and S1h apply is a separate owner-authorized shared-database window.
-S1d/S1e/S1f/S1g, notification administration, QBO telemetry/RLS, private media, public signing,
-deployment, providers, Apple signing, and device qualification remain separate.
+isolated files, and neither its harness nor a complete log was retained. That missing evidence is
+now secondary to the superseding live lineage: do not rerun or repair S1h. Remaining Page Access and
+Web Push ownership work requires a new, later, narrow migration that preserves the live
+notification-preference and native-token contracts. S1f remains a separate unapplied attribute-only
+candidate; S1d/S1e/S1g are live and must not be folded into that future migration. Notification
+administration, QBO telemetry/RLS, private media, public signing, deployment, providers, Apple
+signing, and device qualification remain separate.

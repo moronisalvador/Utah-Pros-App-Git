@@ -1,8 +1,11 @@
 # QBO Multi-Invoice Payment Receipts
 
-**Status:** Source implemented and locally plus `qa-staging` verified on
-`codex/qbo-multi-invoice-payments`, based on `origin/dev` `20436bec`; provider, browser,
-production-apply, and release gates remain pending
+**Status:** Source is on `dev`, with exact prior deployment proof at `52a07d9e`; every newer
+reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
+migrations are verified. The shared database flag is enabled/not force-disabled, Cloudflare
+Preview has `QBO_RECEIVE_PAYMENT_ENABLED=true`, and Cloudflare Production has no such key. The
+admin workflow is therefore exposed on `dev` while the production Worker fails closed. Provider
+sandbox, authenticated browser/named-admin proof, and `dev → main` promotion remain pending.
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
@@ -18,20 +21,34 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
 
 - The owner authorized the sequenced release path on 2026-07-31; every external step still stops
   on a failed prerequisite or provider/database mismatch.
-- The source branch is isolated from the dirty shared `dev` checkout.
-- The committed migration is applied only to `qa-staging`; it is not applied to the shared
-  production Supabase project.
+- The `52a07d9e` grant-containment revision is included in current `dev`; draft promotion PR #565
+  remains open and must not be merged yet.
+- The receipt foundation is applied on `qa-staging` as `20260731223150` and on the shared project
+  as `20260731225654`.
+- Managed Supabase defaults initially left direct `service_role` writes on the three new tables.
+  Staging/live readback caught that drift, and committed correction
+  `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging as `20260731230543`
+  and production as `20260731230907`.
 - No QuickBooks sandbox or production Payment is created by repository tests.
-- The database flag `feature:qbo_receive_payment` is seeded disabled.
+- The database flag `feature:qbo_receive_payment` was seeded disabled. Fresh production readback at
+  `2026-07-31 23:43:23Z` shows it enabled/not force-disabled through an active internal admin
+  employee update; this supersedes the initial disabled readback.
 - The money endpoint requires that exact row enabled and not force-disabled plus
-  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
-- Local feature commits and a `qa-staging` migration apply occurred. No push, deployment, production
-  database apply, provider Payment mutation, or feature activation occurred from this branch.
+  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed. Cloudflare
+  readback at `2026-08-01 00:14:45Z` shows the Worker key `true` in Preview and absent in
+  Production.
+- Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
+  heads require independent deployment/smoke verification. This reconciliation did not flip either
+  QBO gate, mutate a provider Payment, or call the Intuit sandbox. Authenticated browser proof,
+  `main` merge, and production web deployment remain absent.
 
 ## Local verification evidence
 
-Current feature source was verified on 2026-07-31 after semantic reconciliation with
-`origin/dev` `20436bec`:
+The original feature source was verified on 2026-07-31 after semantic reconciliation with
+`origin/dev` `20436bec`; the `52a07d9e` containment revision then passed GitHub `verify` and
+`db-lane` checks plus Cloudflare Pages deployment and remains included in current `dev`. The
+numeric results below belong to those exact historical runs; current promotion-head status is
+tracked separately by draft PR #565 checks:
 
 - `npm test` passed with zero unexpected skips: 1,507 unit tests, 1,877 Worker tests, and 784 QA
   tests (4,168 total).
@@ -48,20 +65,29 @@ Current feature source was verified on 2026-07-31 after semantic reconciliation 
   closed combined-invoice receipt ambiguity, blocked Estimate adoption, broad payment-table browser
   access, mutation refetch blanking, and cold-load failure rendering before release.
 
-The committed migration is recorded on `qa-staging` as
+The receipt foundation is recorded on `qa-staging` as
 `20260731223150_qbo_multi_invoice_payment_receipts`; the three staging-discovered supporting
 foreign-key indexes are recorded there as
 `20260731223813_qbo_multi_invoice_payment_receipt_fk_indexes`. Authoritative readback confirmed
-the database feature flag remains disabled, all three receipt tables have forced RLS, browser
-roles cannot execute the receipt RPCs, and all receipt RPCs remain service-role-only. The full
+the database feature flag was disabled at that earlier qualification point, all three receipt
+tables have forced RLS, browser roles cannot execute the receipt RPCs, and all receipt RPCs remain
+service-role-only. The full
 transactional SQL behavior suite passed with two synthetic same-contact/QBO-linked invoices and
 then rolled back; readback confirmed zero fixture, receipt, attempt, or event residue. Supabase
-security/performance advisors reported no new receipt-surface security warning; the supporting
-indexes close all six new foreign-key paths.
+security/performance advisors reported no receipt-surface security warning; the supporting indexes
+close all six new foreign-key paths. After the production apply, live grant readback found the
+managed-default service-role write drift described above. The corrective migration was reviewed,
+CI-tested, applied on staging, and followed by the full transactional receipt suite plus direct-role
+denial proof: receipts/attempts are SELECT-only, events have no direct grant, all writes remain RPC
+only, and zero fixture/receipt residue remained. Production now matches that exact privilege shape,
+contains zero receipt/attempt/event/linked-payment rows. The later database-flag change and exact
+Preview/Production Worker environment split are recorded above.
 
-These checks still do **not** prove a deployed or provider-connected system. No authenticated
-rendered-browser session, Intuit Development sandbox call, provider webhook, deployment,
-production migration apply, or production proof occurred.
+These checks still do **not** prove a provider-connected or user-qualified system. No authenticated
+rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof,
+named-admin production proof, or `main` promotion occurred. A post-flag-change readback found zero
+`qbo-receive-payment` Worker runs and zero new QBO events; that proves no recorded provider-path
+exercise, not end-to-end correctness.
 
 ## Frozen v1 product contract
 

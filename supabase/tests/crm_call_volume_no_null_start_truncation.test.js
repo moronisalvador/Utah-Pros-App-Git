@@ -37,6 +37,7 @@
  */
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { supabase } from '../../functions/lib/supabase.js';
+import { companyDateOf } from '../../src/lib/companyDate.js';
 import { createSupabaseClient } from '../../src/lib/supabase.js';
 import { signInFixture } from './helpers/qaFixtures.mjs';
 import {
@@ -103,14 +104,16 @@ describe.skipIf(!hasCreds)('get_call_volume — null p_start derives a real floo
     // p_start omitted entirely — the exact call shape the Overview page makes
     // under "All time" (p_start: null). A guessed-distant-floor bug would
     // return ~1000 rows starting decades ago and never reach "now" at all.
-    const rows = await adminDb.rpc('get_call_volume', { p_end: now.toISOString().slice(0, 10), p_org_id: orgId });
+    // The RPC buckets calls in America/Denver. A UTC date flips six or seven
+    // hours early and excludes this just-inserted call after 18:00 local time.
+    const todayStr = companyDateOf(now);
+    const rows = await adminDb.rpc('get_call_volume', { p_end: todayStr, p_org_id: orgId });
 
     expect(Array.isArray(rows)).toBe(true);
     // The response must be small (bounded by real data), not PostgREST's
     // 1000-row cap — proves the floor is real, not a distant guess.
     expect(rows.length).toBeLessThan(1000);
 
-    const todayStr = now.toISOString().slice(0, 10);
     const lastRow = rows[rows.length - 1];
     expect(lastRow.period).toBe(todayStr);
     expect(lastRow.total).toBeGreaterThanOrEqual(1);

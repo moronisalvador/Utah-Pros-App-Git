@@ -13,7 +13,9 @@ DEPENDS ON:
             writes → documentation only
 
 NOTES / GOTCHAS:
-  - Staging and production currently share Supabase.
+  - The dev and production app deployments share the production Supabase project.
+  - `qa-staging` is a separate hosted database branch for write-testing; its schema is usable, but
+    its historical migration ledger/rebase is not parity.
   - A green build can exist with missing runtime variables; deployment smoke evidence still matters.
 -->
 
@@ -142,8 +144,11 @@ allowed origins and provider sandboxes.
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
 - `dev` deploys staging. Production is released through the reviewed `dev → main` path.
-- Both currently share Supabase, so schema changes use the production apply-window and sequencing
-  rules even when application code is staged.
+- The `dev` and production app deployments share the production Supabase project, so schema changes
+  use the production apply-window and sequencing rules even when application code is staged.
+  The separate `qa-staging` database branch is the only hosted write-test target; its seeded schema
+  is usable, but its historical migration ledger is not replay-compatible and must not be repaired
+  with ad-hoc ledger writes.
 - Do not apply a migration from an unmerged feature commit merely because its SQL is ready. Every
   production migration must map to reviewed source reachable from the designated release branch,
   unless an owner-authorized emergency exception records the commit, reason and reconciliation.
@@ -245,8 +250,9 @@ The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
 authenticated denial, service-role retention, and sole owner-run database caller without invoking
-`create_notification` or reading notification rows. S1e and S1f still require separate explicit
-apply selections rather than a chronological all-pending command; S1d must not be replayed.
+`create_notification` or reading notification rows. Only S1f still requires a separate explicit
+apply selection rather than a chronological all-pending command; live S1d, S1e, and S1g must not
+be replayed.
 
 The S1g notification read/recipient boundary is live as
 `20260728192024_notification_read_recipient_boundary`; its corrected qualification is recorded in
@@ -266,14 +272,13 @@ PostgREST/Realtime plus PWA/Capacitor bell behavior remain release evidence gate
 anonymous/shared `notify_foundation.test.js` was retired; replacement preference-resolver
 integration coverage belongs to the separate identity/device/preferences slice.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
 The checksum-pinned operator sequence for all four separately authorized target windows is
 `docs/mobile/s1d-s1g-database-apply-runbook.md`. It forbids `supabase db push` and other
@@ -444,13 +449,18 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (disabled schema live 2026-07-31)
+## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
 
 This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
 `20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
 `20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
-The database flag `feature:qbo_receive_payment` remains disabled/not force-disabled, and the Worker
-still requires literal `QBO_RECEIVE_PAYMENT_ENABLED=true`, so the feature remains inert.
+The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
+internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
+`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
+The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
+tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
+events all remain at zero. This reconciliation did not change either gate or exercise the provider
+path; the concurrent QBO validation owner retains that activation boundary.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,

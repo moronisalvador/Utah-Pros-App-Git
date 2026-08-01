@@ -103,7 +103,7 @@ describe('OOP pricing builder UI contract', () => {
     expect(calculator).toContain("minHeight: tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height, 40px)'");
     expect(calculator).toContain("tech ? 'var(--tech-min-tap)' : 'var(--oop-control-height)'");
     expect(css).toMatch(/\.oop-page--tech \.oop-tech-action\s*\{[\s\S]*min-height:\s*var\(--tech-min-tap\)/);
-    expect(css).toMatch(/@media \(max-width: 900px\)\s*\{[\s\S]*\.oop-layout\s*\{\s*grid-template-columns:\s*1fr !important/);
+    expect(css).toMatch(/@media \(max-width: 768px\)\s*\{[\s\S]*\.oop-layout\s*\{\s*grid-template-columns:\s*1fr !important/);
     expect(css).toContain('background: Canvas !important; color-scheme: light;');
     expect(css).toMatch(/\.oop-job-type-seg\s*\{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
     expect(css).toMatch(/\.oop-job-type-seg\[data-job-type="mold"\] \.ui-seg-indicator\s*\{[\s\S]*translateX/);

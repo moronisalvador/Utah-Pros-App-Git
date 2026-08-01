@@ -313,18 +313,18 @@ PWA and Capacitor share `NotificationBell` and `subscribeToNotifications`; no cl
 is required for S1g. The deployed list/count/mark call shapes remain exact, and the existing
 JavaScript recipient comparison stays as defense in depth.
 
-The unapplied S1g migration moves the primary boundary into Supabase. Direct table SELECT and
-Postgres Changes authorize only an active, non-external employee's own targeted rows plus
-broadcasts. Because Realtime evaluates table RLS before delivering a Postgres Changes payload, a
-foreign targeted title/body/link/payload must no longer reach the callback after apply.
-`notifications` remains in `supabase_realtime`; the private receipt table is not published. The
-policy's employee lookup depends on authenticated employee SELECT/RLS visibility, which the S1g
-preflight pins explicitly.
+Live S1g ledger `20260728192024_notification_read_recipient_boundary` places the primary boundary
+in Supabase. Direct table SELECT and Postgres Changes authorize only an active, non-external
+employee's own targeted rows plus broadcasts. Because Realtime evaluates table RLS before
+delivering a Postgres Changes payload, a foreign targeted title/body/link/payload is outside the
+browser delivery contract. `notifications` remains in `supabase_realtime`; the private receipt
+table is not published. The policy's employee lookup depends on authenticated employee SELECT/RLS
+visibility, which the S1g preflight pinned explicitly.
 
 Broadcast read state becomes per employee through private receipts while the RPC still returns the
 same `notifications` composite and projected `read_at`. Existing shared non-null `read_at` values
-remain globally read for compatibility. This source checkpoint does not prove a live socket:
-apply qualification requires two authenticated synthetic sessions showing own and broadcast
+remain globally read for compatibility. The applied catalog proof does not prove a live socket:
+close-out still requires two authenticated synthetic sessions showing own and broadcast
 INSERT delivery, foreign INSERT non-delivery, mark isolation, reconnect/token-refresh behavior,
 and unchanged PWA/Capacitor call results. It is a separate gate from notification emission,
 providers, native push, OTA, signing, and devices.
@@ -333,14 +333,13 @@ The guarded SQL behavior matrix passed in an in-memory PostgreSQL-compatible har
 into the local-only Supabase DB runner. That does not substitute for the two-session PostgREST and
 Realtime socket qualification above.
 
-**S1e/S1g apply-order prerequisite:** before either target’s own entry gate, separately apply and
-verify `20260726180000_mobile_employee_identity_authority.sql`, deploy compatible
-browser/PWA/native clients and retire old clients or record the owner’s explicit risk decision,
-then separately apply and verify `20260726182000_mobile_employee_identity_containment.sql`. Current
-S1e and S1g preflights fail closed unless exactly one live `mobile_employee_identity_containment`
-ledger row exists and its browser-read-only employee contract still matches. Recapture that
-catalog/ledger state before the target preflight. This prerequisite neither authorizes nor combines
-S1e or S1g; each remains its own owner-approved window.
+**Historical S1e/S1g apply-order prerequisite:** each target required the separately governed
+`20260726180000_mobile_employee_identity_authority.sql` and
+`20260726182000_mobile_employee_identity_containment.sql` sequence plus the compatible-client/
+old-client decision. Their successful preflights proved there was no duplicate
+`mobile_employee_identity_containment` ledger row and that the browser-read-only employee catalog
+contract matched. Both targets are now live; do not replay them. A future dependent migration must
+recapture the same catalog/ledger state in its own owner-approved window.
 
 ## Mobile push R0 authorization checkpoint (2026-07-25)
 

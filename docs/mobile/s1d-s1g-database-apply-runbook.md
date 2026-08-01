@@ -2,12 +2,13 @@
 FILE: docs/mobile/s1d-s1g-database-apply-runbook.md
 
 WHAT THIS DOES (plain language):
-  Gives the database owner four separately authorized, checksum-pinned apply and verification
-  runbooks for the authored Mobile Production Readiness S1d, S1e, S1f, and S1g migrations.
+  Retains the checksum-pinned apply and verification records for Mobile Production Readiness
+  S1d, S1e, S1f, and S1g. S1d, S1e, and S1g are live; only S1f remains an apply candidate.
 
 DEPENDS ON:
   Internal: S1d-S1g migrations, rollbacks, catalog checks, evidence, release workflow,
-            S1h additive identity and schema-last containment prerequisites
+            employee identity authority (`20260726180000`) and schema-last identity containment
+            (`20260726182000`) prerequisites
   External: reviewed release commit, shared Supabase owner window, approved synthetic identities
 
 NOTES / GOTCHAS:
@@ -23,37 +24,36 @@ parents `4583f0a6` and mobile tip `e2b7585f`; its follow-up merge incorporates f
 `origin/dev` `983b8ca4` without rewriting history. This draft-PR source history is not a designated
 database release/apply commit.
 
-This is the operator index for four already authored source changes. It does not combine them.
-Each row requires its own owner approval, fresh drift capture, apply record, verification record,
-and stop/go decision.
+This is the operator index for four separately governed source changes. It does not combine them.
+S1d, S1e, and S1g are completed historical windows and must not be replayed. S1f alone retains its
+own owner approval, fresh drift capture, apply record, verification record, and stop/go decision.
 
 | Window | Boundary | Migration | Required compatibility before apply |
 |---|---|---|---|
 | S1d | `notify_emit(text,jsonb)` capability/body | `20260726110000_notify_emit_service_boundary.sql` | owner-run trigger/cron and service-role caller graph unchanged |
-| S1e | inbound-lead recording source/RLS | `20260726183409_inbound_lead_recording_source_boundary.sql` | compatible S1c proxy deployed; S1h additive identity, compatible-client rollout/old-client decision, and identity containment separately applied and verified first |
+| S1e | inbound-lead recording source/RLS | `20260726183409_inbound_lead_recording_source_boundary.sql` | compatible S1c proxy deployed; employee identity authority (`20260726180000`), compatible-client/old-client decision, and identity containment (`20260726182000`) governed separately first |
 | S1f | direct `create_notification` emission | `20260726194300_create_notification_service_boundary.sql` | service-role Worker and owner-run caller graph unchanged |
-| S1g | notification recipient/read/Realtime boundary | `20260726260000_notification_read_recipient_boundary.sql` | reviewed PWA/Capacitor bell caller shape unchanged; S1h additive identity, compatible-client rollout/old-client decision, and identity containment separately applied and verified first |
+| S1g | notification recipient/read/Realtime boundary | `20260726260000_notification_read_recipient_boundary.sql` | reviewed PWA/Capacitor bell caller shape unchanged; employee identity authority (`20260726180000`), compatible-client/old-client decision, and identity containment (`20260726182000`) governed separately first |
 
-S1d, S1e, S1f, and S1g may share a reviewed release history. They must not share an apply window.
-Do not begin the next window while the current window has an unresolved postcondition, advisor,
-provenance, caller, Realtime, or compatibility result.
+The four sources may share reviewed release history, but they never shared one apply window. Do
+not use this history to rerun live S1d, S1e, or S1g. Do not begin S1f while it has an unresolved
+postcondition, advisor, provenance, caller, or compatibility result.
 
-### Cross-window prerequisite for S1e and S1g
+### Historical cross-window prerequisite for S1e and S1g
 
-Current S1e and S1g source refuses to run unless exactly one live
-`mobile_employee_identity_containment` ledger row exists and the containment migration's
-browser-read-only employee contract still matches. Before either target window, complete these
-separate steps from `docs/mobile/s1h-database-apply-runbook.md`:
+S1e and S1g refuse duplicate `mobile_employee_identity_containment` ledger rows and require the
+containment migration's browser-read-only employee catalog contract. This permitted the manually
+seeded `qa-staging` schema (whose historical ledger is not parity) while production carried one
+mapped containment row. Before those completed windows, the release separately governed:
 
-1. apply and verify the additive employee identity authority in its own owner window;
-2. deploy compatible browser/PWA/native callers and retire old cached/native clients or record the
-   owner's explicit risk decision;
-3. apply and verify identity containment in a later owner window; and
-4. recapture its ledger row, employee ACL/RLS/policy shape, and service-role contract before the
-   S1e or S1g preflight.
+1. the additive employee identity authority was applied and verified in its own owner window;
+2. compatible browser/PWA/native callers and the old-client decision were handled separately;
+3. identity containment was applied and verified in a later owner window; and
+4. the ledger/caller-independent catalog contract was recaptured before each S1e/S1g preflight.
 
-Those prerequisite windows do not authorize S1e, S1g, page-access provenance reconciliation, or
-personal-ownership apply. Each remains a separate decision and database window.
+Those completed prerequisites do not authorize replaying S1e/S1g. The old personal-ownership
+migration is retired and must never apply; any residual Page Access/Web Push work needs a new later
+migration and separate owner window.
 
 ## Common entry gate for every window
 
@@ -102,7 +102,7 @@ single-migration mechanism, using the repository filename as the migration ident
 | S1g isolated behavior | `12f221d0dd8d6f50b1b4cf70ccb0153f7468716fb2ee8d1acee40aa9abbcaada` |
 | S1g rollback | `df746aff7551faf1a2ad0b9e4242511584e18c9a718efff547b3672027d99a24` |
 
-## S1d — `notify_emit` service boundary
+## S1d — `notify_emit` service boundary (historical applied record; do not execute)
 
 Artifacts:
 
@@ -112,24 +112,22 @@ Artifacts:
 - rollback: `supabase/rollbacks/20260726110000_notify_emit_service_boundary.rollback.sql`
 - evidence: `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`
 
-Apply sequence:
+Historical completion record:
 
-1. Recapture the one exact function overload, body/definition, ACL, six direct owner-run caller
-   functions, three triggers, cron job, migration ledger, and absence of browser/Pages callers.
-2. Run the value-free S1d preflight. Stop on any difference.
-3. Apply only the S1d migration.
-4. Run the S1d post-apply catalog proof.
-5. Prove `PUBLIC`, `anon`, and `authenticated` cannot execute; prove `service_role` and the
-   unchanged owner-run caller chain retain the required capability. A real notification or
-   network request requires its own explicit side-effect approval and synthetic event.
-6. Refresh database advisors and migration provenance, record the live ledger identity and exact
-   release/deployment state, then close the window.
+- The release recaptured the exact overload/body/ACL, six owner-run caller functions, three
+  triggers, cron job, ledger, and absence of browser/Pages callers.
+- The value-free preflight passed, the exact source applied as
+  `20260727233704_notify_emit_service_boundary`, and the post-apply catalog proof passed.
+- `PUBLIC`, `anon`, and `authenticated` execution is denied; `service_role` and the unchanged
+  owner-run caller chain retain the capability. Advisors/provenance were refreshed without a real
+  notification or network request.
+- **Do not execute the old apply sequence or reapply this migration.**
 
 Prefer a forward repair. The rollback restores authenticated browser execution and the unsafe JSON
 merge order. Use it only after explicit owner acceptance of those regressions, after constraining
 the notification path, and only if its embedded forward-state guard passes.
 
-## S1e — recording-source/RLS boundary
+## S1e — recording-source/RLS boundary (historical applied record; do not execute)
 
 Artifacts:
 
@@ -140,21 +138,18 @@ Artifacts:
 - evidence:
   `docs/audit/2026-07/evidence/mobile-readiness-s1e-recording-source-rls-2026-07-26.md`
 
-Apply sequence:
+Historical completion record:
 
-1. Verify the separately applied identity-containment prerequisite and its fresh catalog proof,
-   then deploy and smoke the compatible S1c CallRail recording proxy. Confirm its immutable
-   deployment identity and required binding presence without reading secret values or recordings.
-2. Recapture the exact `get_inbound_leads`, inbound-lead table/policies/ACLs, recording writers,
-   proxy/transcription consumers, triggers, columns, payload key aggregates, and migration ledger.
-3. Run the value-free S1e preflight. Stop on any difference.
-4. Apply only the S1e migration. Its source move and privacy scrub are part of one transaction.
-5. Run the S1e post-apply catalog proof and database advisors/provenance.
-6. With approved synthetic rows only, prove active internal allowed reads, inactive/external/
-   unmapped/direct-browser denial, opaque marker compatibility, service source access, and proxy
-   delivery. Never select or log a recording URL value during catalog verification.
-7. Record the compatible Worker version, migration ledger identity, role results, and source-table
-   aggregates, then close the window.
+- The release recaptured the identity/catalog prerequisite, `get_inbound_leads`, table/ACL/policy,
+  writer/consumer, trigger, payload-key aggregate, and migration-ledger state without reading
+  secret or recording values.
+- The value-free preflight passed, and the exact source move/privacy scrub applied on QA as
+  `20260731224513_inbound_lead_recording_source_boundary` and production as
+  `20260731225511_inbound_lead_recording_source_boundary`.
+- Post-apply catalog/advisor/provenance and role proofs passed: browsers cannot read the source
+  table or write leads, service reads remain, the opaque marker is compatible, and no residual raw
+  URL/payload key remained. Compatible Worker/runtime proof remains a separate operational tail.
+- **Do not execute the old apply sequence or reapply this migration.**
 
 The rollback copies source URLs back to the browser-visible table, restores broad authenticated
 access, and cannot reconstruct privacy-safe raw-payload keys removed by the forward migration.
@@ -189,7 +184,7 @@ The rollback intentionally restores arbitrary bell emission by authenticated bro
 Prefer a forward repair. Use the rollback only with explicit security-regression acceptance and
 only when its exact function/ACL guard passes.
 
-## S1g — notification recipient/read/Realtime boundary
+## S1g — notification recipient/read/Realtime boundary (historical applied record; do not execute)
 
 **Applied:** 2026-07-28 as
 `20260728192024_notification_read_recipient_boundary`, from exact migration SHA-256
@@ -208,23 +203,16 @@ Artifacts:
 - evidence:
   `docs/audit/2026-07/evidence/mobile-readiness-s1g-notification-reads-2026-07-26.md`
 
-Apply sequence:
+Historical completion and open operational record:
 
-1. Verify the separately applied identity-containment prerequisite and its fresh catalog proof,
-   then recapture all four exact RPC overloads/definitions/ACLs, notification
-   columns/policies/ACL/publication state, employee identity dependencies, caller inventory, and
-   migration ledger.
-2. Run the value-free S1g preflight. Stop on any difference.
-3. Apply only the S1g migration.
-4. Run the S1g post-apply catalog proof, advisors, and provenance.
-5. With two approved active-internal synthetic employees plus inactive, external, and unmapped
-   identities, prove own/broadcast list/count/mark behavior, foreign selector/ID denial, independent
-   broadcast receipts, targeted isolation, legacy-read compatibility, direct receipt denial, and
-   exact service-role compatibility.
-6. Through real Supabase Auth/PostgREST and two Realtime sockets, prove own/broadcast delivery,
-   foreign non-delivery, reconnect/dedup, token refresh, logout, and account switch.
-7. Exercise the PWA and Capacitor bell against those fixtures, record exact deployed clients and
-   socket results, then close the window.
+- The release recaptured the identity prerequisite, four RPCs, notification/receipt
+  policies/ACL/publication, callers, and ledger; the value-free preflight passed.
+- The exact source applied as `20260728192024_notification_read_recipient_boundary`; catalog,
+  advisor, provenance, positive-read, foreign-selector, and unmapped-caller proof passed.
+- **Do not execute the old apply sequence or reapply this migration.**
+- Remaining close-out is operational only: two real Auth/PostgREST/Realtime sessions must prove
+  own/broadcast delivery, foreign non-delivery, reconnect/dedup, token refresh, logout, and account
+  switch, followed by representative PWA and Capacitor bell proof.
 
 The rollback destroys post-S1g receipt history and disables authenticated PWA/native bell RPCs and
 Realtime table reads. It preserves identity containment, recipient-scoped policies, inert sentinel

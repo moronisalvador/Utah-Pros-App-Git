@@ -50,21 +50,27 @@ remain owner/external release gates and must not be inferred from repository sta
 - Undated `tech_feedback.sql` is grandfathered live history superseded by
   `20260702_feedback_media.sql`; it is not pending and must not be reapplied.
 
-A third QBO money boundary is committed on `dev`, deployed there, and database-applied with both
-rollout gates still disabled:
+A third QBO money-boundary migration is committed on `dev` and now present in the shared production
+ledger. Its database rollout flag changed after the initial disabled apply proof:
 
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql`, merged to `dev` as `c41839b1` from
   `codex/qbo-multi-invoice-payments`, adds the disabled, service-only receipt/attempt/event
-  foundation for one QBO Payment allocated across several invoices. It is live in the shared ledger
-  as `20260731225654_qbo_multi_invoice_payment_receipts`; the managed-default service-role grant
-  drift found by live post-apply readback is closed by committed migration
-  `20260731231000_qbo_receipt_service_grant_containment.sql`, live as
-  `20260731230907_qbo_receipt_service_grant_containment`. `payment_receipts` and
-  `payment_receipt_attempts` are service-role SELECT-only; `payment_receipt_events` has no direct
-  service-role table privilege; all writes remain behind the seven service-only RPCs. Staging
-  repeated the full transaction-rolled-back behavior suite after containment with zero residue.
-  Current `dev` SHA `52a07d9e` has green verify/db-lane/Cloudflare checks. No QBO Payment, sandbox
-  call, authenticated browser proof, feature activation, or `main` promotion occurred.
+  foundation for one QBO Payment allocated across several invoices. The foundation is live in the
+  shared ledger as `20260731225654_qbo_multi_invoice_payment_receipts`. Managed-default
+  `service_role` grant drift found by the post-apply readback is closed by containment revision
+  `52a07d9e`, live as `20260731230907_qbo_receipt_service_grant_containment`.
+  `payment_receipts` and `payment_receipt_attempts` are service-role SELECT-only;
+  `payment_receipt_events` has no direct service-role table privilege; all writes remain behind
+  seven service-only RPCs. Staging repeated the full transaction-rolled-back behavior suite after
+  containment with zero residue. A fresh production readback at `2026-07-31 23:43:23Z` shows
+  `feature:qbo_receive_payment` enabled and not force-disabled, updated through an active internal
+  admin employee identity; this supersedes the earlier disabled readback. Cloudflare Pages readback
+  at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
+  **Production**. The two gates therefore expose the admin workflow on `dev`, while the production
+  Worker fails closed. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
+  `qbo-receive-payment` Worker run or QBO event since the database-flag change. This reconciliation
+  did not flip either QBO gate, exercise the provider path, create a QBO Payment, or call the
+  sandbox. Authenticated end-to-end proof and `main` promotion remain absent.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
@@ -91,13 +97,11 @@ use their apply timestamps:
   `20260731165215_pg_net_worker_url_allowlists`;
 - `20260731100000_transcribe_call_cron_allowlist.sql` →
   `20260731174734_transcribe_call_cron_allowlist`; and
-- `20260730150000_oop_pricing_builder.sql` → `20260731175328_oop_pricing_builder`.
+- `20260730150000_oop_pricing_builder.sql` → `20260731175328_oop_pricing_builder`;
 - `20260726183409_inbound_lead_recording_source_boundary.sql` →
   `20260731225511_inbound_lead_recording_source_boundary`;
 - `20260731045407_qbo_multi_invoice_payment_receipts.sql` →
-  `20260731225654_qbo_multi_invoice_payment_receipts`;
-- `20260731223000_notification_unsafe_producer_containment.sql` →
-  `20260731225855_notification_unsafe_producer_containment`; and
+  `20260731225654_qbo_multi_invoice_payment_receipts`; and
 - `20260731231000_qbo_receipt_service_grant_containment.sql` →
   `20260731230907_qbo_receipt_service_grant_containment`.
 
@@ -182,25 +186,24 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   `.claude/rules/sms-consent-model.md` §13 (a CI contract test reads it; §§12–13 were extracted
   verbatim 2026-07-31 when the completed sms-experience manifest was archived).
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
-  2026-07-29; schema-usable and CI db lane LIVE, but its historical migration ledger is not
-  replay-compatible** (details: `docs/database/staging-branch-runbook.md`). Rebase currently fails
-  at historical migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded
-  schema already has dependent objects. Do not call it migration-ledger parity or repair that gap
-  with ad-hoc ledger writes. It remains the only hosted DB agents may write-test against.
-  The fixture-password secret is configured and all three signed-in fixture identities were
-  rotated; the raw hosted receipt at `a513af37` is 163 / 375 assertions passed, 0 failed, 212
-  skipped, 46 setup errors across 44 files. Failed assertions are gated at zero; setup debt is
-  shrink-only at 44 failed files / 90 suite nodes.
-  Open tail: convert the remaining anon-era tests to those identities, seed only their minimal
-  non-production reference rows, and ratchet the shrink-only failure baseline
-  (`scripts/qa/db-lane-baseline.json`) toward zero.
+  2026-07-29; schema-usable and CI db lane LIVE, with initial catalog parity but a historical
+  migration ledger that is not replay-compatible** (details:
+  `docs/database/staging-branch-runbook.md`). It is the only hosted DB agents may write-test
+  against. The fixture-password secret is configured, all three signed-in fixture identities were
+  rotated, and the raw hosted receipt at `a513af37` is 163 / 375 assertions passed, 0 failed,
+  212 skipped, and 46 setup errors across 44 files. Failed assertions are gated at zero; setup debt
+  is shrink-only at 44 failed files / 90 suite nodes. Rebase currently fails at historical
+  migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
+  has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
+  writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
+  the six SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Disabled source deployed on `dev`; QA + shared schema/ACL applies verified; sandbox, feature activation, named-admin/provider proof and `main` promotion remain gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | Source is on `dev`; exact prior deployment proof belongs to `52a07d9e`, while each newer reconciled head needs its own smoke; QA + shared schema/ACL applies verified; the database flag and Preview Worker gate are open, the Production Worker gate is absent/fail-closed, and sandbox/named-admin/provider proof is still missing, so `main` promotion remains gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |

@@ -252,22 +252,22 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
   a claim of complete upstream-response redaction.
 - A database-originated notification has one trusted top-level `type_key`; an object payload may
   not override it. Direct execution of `notify_emit` is a server capability, while its verified
-  owner-run trigger/RPC/cron callers remain database-internal. The S1d migration authors this
-  service-only ACL and trusted-key merge but is not live until a separate authorized apply, so the
-  current authenticated-executable deployment remains an explicit residual.
+  owner-run trigger/RPC/cron callers remain database-internal. Live S1d ledger
+  `20260727233704_notify_emit_service_boundary` makes the trusted type authoritative and limits
+  execution to the owner plus `service_role`; authenticated browser execution is closed.
 - Direct `create_notification` bell emission and direct recording-source reads are independent
   authorization boundaries; neither is implicitly approved or closed by the `notify_emit` patch.
   S1f's unapplied bell migration makes direct emission service-only without changing recipient or
   broadcast semantics; only applied role proof can close that residual.
 - Notification list, unread-count, mark-one, and mark-all operations are a separate read-state
-  boundary. S1g's unapplied migration reconstructs one active, non-external employee from
-  `auth.uid()`, rejects a foreign supplied employee/notification ID, and scopes direct
-  `notifications` reads (including Realtime payloads) to broadcasts plus that employee's targeted
-  rows.
+  boundary. Live S1g ledger `20260728192024_notification_read_recipient_boundary` reconstructs one
+  active, non-external employee from `auth.uid()`, rejects a foreign supplied
+  employee/notification ID, and scopes direct `notifications` reads (including Realtime payloads)
+  to broadcasts plus that employee's targeted rows.
 - A targeted notification continues to use its row-level `notifications.read_at`. A broadcast uses
   a private `(notification_id, employee_id)` receipt so one employee cannot mark it read for
   everyone. A legacy broadcast whose shared `read_at` is already non-null remains read for
-  everyone; migration must not resurface historical notifications.
+  everyone; the live migration does not resurface historical notifications.
 
 ## Capability links and public documents
 
