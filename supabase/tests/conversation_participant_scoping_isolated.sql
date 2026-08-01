@@ -69,6 +69,9 @@ BEGIN
      ) IS NULL
      OR to_regprocedure(
        'public.get_my_conversation_access_snapshot(uuid[])'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.messaging_get_authorized_message_media(uuid,uuid)'
      ) IS NULL THEN
     RAISE EXCEPTION 'conversation participant scoping RPC dependency is absent';
   END IF;
@@ -267,7 +270,16 @@ VALUES
     current_setting('upr.cps.employee_admin')::uuid
   );
 
-INSERT INTO public.messages (id, conversation_id, type, body, status, sent_by, direction)
+INSERT INTO public.messages (
+  id,
+  conversation_id,
+  type,
+  body,
+  status,
+  sent_by,
+  direction,
+  media_urls
+)
 VALUES
   (
     current_setting('upr.cps.private_message')::uuid,
@@ -276,7 +288,10 @@ VALUES
     '[CPS isolated] inaccessible author',
     'sent',
     current_setting('upr.cps.employee_admin')::uuid,
-    'outbound'
+    'outbound',
+    jsonb_build_array(
+      'upr-storage://message-attachments/outbound/private/photo.jpg'
+    )
   ),
   (
     current_setting('upr.cps.visible_message')::uuid,
@@ -285,7 +300,10 @@ VALUES
     '[CPS isolated] accessible author',
     'sent',
     current_setting('upr.cps.employee_admin')::uuid,
-    'outbound'
+    'outbound',
+    jsonb_build_array(
+      'upr-storage://message-attachments/outbound/visible/photo.jpg'
+    )
   );
 
 DO $acl_postcondition$
@@ -584,6 +602,32 @@ BEGIN
        current_setting('upr.cps.employee_external')::uuid
      ) THEN
     RAISE EXCEPTION 'inactive or external default rows crossed an authorization boundary';
+  END IF;
+
+  IF (
+       SELECT count(*)
+       FROM public.messaging_get_authorized_message_media(
+         current_setting('upr.cps.employee_default')::uuid,
+         current_setting('upr.cps.visible_message')::uuid
+       )
+     ) <> 1
+     OR (
+       SELECT media.media_urls ->> 0
+       FROM public.messaging_get_authorized_message_media(
+         current_setting('upr.cps.employee_admin')::uuid,
+         current_setting('upr.cps.private_message')::uuid
+       ) media
+     ) IS DISTINCT FROM
+       'upr-storage://message-attachments/outbound/private/photo.jpg'
+     OR EXISTS (
+       SELECT 1
+       FROM public.messaging_get_authorized_message_media(
+         current_setting('upr.cps.employee_appointment')::uuid,
+         current_setting('upr.cps.visible_message')::uuid
+       )
+     ) THEN
+    RAISE EXCEPTION
+      'authorized media lookup returned metadata outside strict membership';
   END IF;
 
   SELECT array_agg(recipient.employee_id ORDER BY recipient.employee_id)
@@ -964,6 +1008,15 @@ $admin_member_control_denials_and_restore$;
 RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_inactive')::uuid);
+
+SELECT pg_temp.expect_sqlstate(
+  'browser cannot call the service-only authorized media lookup',
+  format(
+    'SELECT * FROM public.messaging_get_authorized_message_media(%L::uuid, %L::uuid)',
+    current_setting('upr.cps.employee_admin'),
+    current_setting('upr.cps.visible_message')
+  )
+);
 
 SELECT pg_temp.expect_sqlstate(
   'inactive employee cannot mutate unread state',

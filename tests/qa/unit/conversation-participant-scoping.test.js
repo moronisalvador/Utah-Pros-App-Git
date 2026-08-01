@@ -107,6 +107,10 @@ describe('conversation participant scoping — migration source contract', () =>
   const techInbox = functionBody(sql, 'get_tech_conversations');
   const messageAuthors = functionBody(sql, 'get_message_author_directory');
   const accessSnapshot = functionBody(sql, 'get_my_conversation_access_snapshot');
+  const authorizedMessageMedia = functionBody(
+    sql,
+    'messaging_get_authorized_message_media',
+  );
 
   it('ships a paired rollback and required migration header', () => {
     expect(existsSync(MIGRATION)).toBe(true);
@@ -165,6 +169,20 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(enforcementSql).toContain(
       'grant select on table public.conversations, public.conversation_participants, public.messages to authenticated',
     );
+    expect(authorizedMessageMedia).toContain('security definer');
+    expect(authorizedMessageMedia).toContain("auth.role() <> 'service_role'");
+    expect(authorizedMessageMedia).toContain(
+      'messaging_employee_can_access_conversation',
+    );
+    expect(enforcementSql).toContain(
+      'revoke all on function public.messaging_get_authorized_message_media(uuid, uuid) from public, anon, authenticated, service_role',
+    );
+    expect(enforcementSql).toContain(
+      'grant execute on function public.messaging_get_authorized_message_media(uuid, uuid) to service_role',
+    );
+    expect(norm(stripComments(read(ENFORCEMENT_ROLLBACK)))).toContain(
+      'public.messaging_get_authorized_message_media(uuid, uuid) from public, anon, authenticated, service_role',
+    );
     expect(enforcementSql).toContain("policy.cmd = 'all'");
     expect(enforcementSql).not.toContain('drop policy');
     expect(enforcementSql).toContain("policy.roles = array['authenticated']::name[]");
@@ -205,6 +223,12 @@ describe('conversation participant scoping — migration source contract', () =>
       'CREATE POLICY cps_isolated_unexpected_authenticated_read',
     );
     expect(isolatedRaw).toContain('SAVEPOINT cps_before_unexpected_policy_apply');
+    expect(isolatedRaw).toContain(
+      'authorized media lookup returned metadata outside strict membership',
+    );
+    expect(isolatedRaw).toContain(
+      'browser cannot call the service-only authorized media lookup',
+    );
     expect(isolatedRaw).toContain(
       '\\ir ../rollbacks/20260731213100_conversation_participant_policy_enforcement.rollback.sql',
     );
@@ -451,6 +475,43 @@ describe('conversation participant scoping — rollback source contract', () => 
     expect(sql).toContain("status = 'pending'");
     expect(sql).toContain('delivery_attempt_id is not null');
     expect(sql).toContain('scheduled delivery recovery posture is not sealed');
+  });
+
+  it('accepts the frozen legacy claim only as a harmless invoker no-op', () => {
+    for (const rollback of [
+      ENFORCEMENT_ROLLBACK,
+      ASSIGNMENT_CONTAINMENT_ROLLBACK,
+      ROLLBACK,
+    ]) {
+      const rollbackSql = norm(stripComments(read(rollback)));
+      expect(rollbackSql).toContain(
+        "procedure.oid = to_regprocedure( 'public.claim_scheduled_message(uuid)' )",
+      );
+      expect(rollbackSql).toContain('and not procedure.prosecdef');
+      expect(rollbackSql).toContain(
+        "procedure.prolang = ( select language.oid from pg_catalog.pg_language language where language.lanname = 'plpgsql' )",
+      );
+      expect(rollbackSql).toContain(
+        "procedure.proowner = 'postgres'::regrole",
+      );
+      expect(rollbackSql).toContain("procedure.provolatile = 'v'");
+      expect(rollbackSql).toContain("procedure.proparallel = 'u'");
+      expect(rollbackSql).toContain(
+        "procedure.proconfig = array['search_path=pg_catalog, public']::text[]",
+      );
+      expect(rollbackSql).toContain(
+        "lower( regexp_replace( btrim(v_legacy_claim_source), '[[:space:]]+', ' ', 'g' ) ) <> 'begin return false; end;'",
+      );
+      expect(rollbackSql).toContain(
+        "not has_function_privilege( 'authenticated', 'public.claim_scheduled_message(uuid)', 'execute' )",
+      );
+      expect(rollbackSql).toContain(
+        "has_function_privilege( 'anon', 'public.claim_scheduled_message(uuid)', 'execute' )",
+      );
+      expect(rollbackSql).toContain(
+        "not has_function_privilege( 'service_role', 'public.claim_scheduled_message(uuid)', 'execute' )",
+      );
+    }
   });
 
   it('keeps assignment recovery privileged-only and excludes forged sources', () => {
