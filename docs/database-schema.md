@@ -464,6 +464,15 @@ provider submission instead of claiming an unreserved row. The same transaction 
 historical `scheduled_messages` policy predicate to `false` and revokes browser table ACLs, so the
 random `claim_token` is protected at both RLS and grant layers.
 
+The final reservation transaction is also the last compliance authority before an attempt exists.
+It resolves and share-locks the same earliest non-test-org
+`automation_settings.sms_sending_enabled` row used by `sendGatedSms()`, then invokes the
+service-role-only, phone-advisory-locked `get_service_sms_consent_status(contact_id, phone)`.
+Scheduled free-form delivery accepts only `allowed=true, code=GLOBAL_OPT_IN`; `sms_disabled`,
+DND, explicit opt-out, pending STOP, phone drift, service-only consent, implied consent, or an
+unreadable status returns without inserting `message_send_attempts` or linking
+`delivery_attempt_id`.
+
 The browser path becomes actor-derived RPC-only. `create_scheduled_message` resolves the active,
 internal actor from `auth.uid()`, requires the Conversations capability and current access to the
 target conversation, stores that resolved employee as `created_by`, and accepts only exactly one
@@ -479,7 +488,9 @@ reconciliation. Each has an in-function `current_user = 'service_role'` fence an
 execution. Reservation repeats the creator capability and conversation-access checks, exact
 one-recipient check, immutable recipient contact/phone snapshot against the current participant,
 and canonical-body check inside the transaction immediately before it creates and links the one
-send attempt. The Worker repeats
+send attempt. That same transaction share-locks the current SMS kill-switch row and accepts only
+the canonical consent RPC's exact `GLOBAL_OPT_IN` result; every denial returns without an attempt.
+The Worker repeats
 the creator and recipient checks at dequeue as defense in depth; removal, deactivation, capability
 loss, or a recipient change therefore fails closed both before and at the final reservation
 boundary. Every Auth/PostgREST/RPC/provider call on this path uses the bounded worker transport.

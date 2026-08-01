@@ -1407,8 +1407,12 @@ same transaction, and adds
 service-role-only `claim_scheduled_message_v2`, release/fail, reservation, and reconciliation RPCs
 fenced by a random claim token. Reservation rechecks creator capability/access and the immutable
 recipient snapshot against the exact-one current recipient, links one irreversible
-`message_send_attempt`, and permits one provider attempt
-only after the worker and central automated-send consent/DND/kill-switch/quiet-hours gates. Reconciliation
+`message_send_attempt`. Immediately before that link, the same reservation transaction
+share-locks the current real-org `sms_sending_enabled` row and invokes the canonical phone-locked
+`get_service_sms_consent_status`; scheduled traffic accepts only `GLOBAL_OPT_IN`.
+`sms_disabled`, DND, explicit opt-out, pending STOP, or any other non-global consent result
+returns without provider-attempt residue. The Worker and central automated-send
+consent/DND/kill-switch/quiet-hours gates remain defense in depth. Reconciliation
 materializes accepted delivery, preserves fresh in-flight work, and sends an unknown outcome to owner
 review without automatic resubmission. Enforcement follows compatibility in the same serialized release
 window, reasserts fail-closed policies and revoked browser ACLs, and retains the provenance

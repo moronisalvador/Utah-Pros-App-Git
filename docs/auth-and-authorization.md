@@ -352,7 +352,11 @@ releasing or finishing a newer claim. A nullable `delivery_attempt_id`, uniquely
 `message_send_attempts` row, prevents a linked scheduled row from being reclaimed for another
 provider submission; it must be reconciled instead. Reservation revalidates the stored creator's
 capability and conversation access, the immutable recipient contact/phone snapshot against both
-the scheduled row and current participant, and the canonical body in the same transaction. The
+the scheduled row and current participant, and the canonical body in the same transaction. Before
+it inserts that attempt, the same service-role transaction share-locks the current automated-SMS
+kill-switch row and invokes the canonical phone-locked consent RPC. Only `GLOBAL_OPT_IN` may
+cross this scheduled free-form boundary; disabled SMS, DND, explicit opt-out, pending STOP,
+service/implied consent, or any unreadable result returns no attempt. The
 Worker also repeats creator access and exact-recipient checks at
 dequeue, so capability revocation, membership removal, deactivation, or recipient drift fails
 closed before provider dispatch.
