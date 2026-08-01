@@ -4057,7 +4057,9 @@ so it renders with no employee session. Not registered in `NativeRoutes()` (iOS/
 **Data access**: calls `db.rpc('get_crm_build_progress')` using the **unauthenticated `db` singleton
 imported directly from `@/lib/supabase`** — not `useAuth()`'s `db` — since the page must work with no
 session under CLAUDE.md Rule 3’s public/bootstrap carve-out. This is a `/status`-specific public
-call; the former `Login.jsx` employee picker and `devLogin` path have been removed and are not a
+call, documented beside a narrow `no-restricted-imports` suppression so the exception cannot be
+mistaken for an authenticated-component precedent; the former `Login.jsx` employee picker and
+`devLogin` path have been removed and are not a
 current precedent. No new migration was needed:
 `get_crm_build_progress()` was already `GRANT EXECUTE`'d to `anon` (and `authenticated`, `PUBLIC`) in
 `supabase/migrations/20260701_crm_phase0_scaffold.sql` — verified live via
