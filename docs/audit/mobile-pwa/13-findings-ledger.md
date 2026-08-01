@@ -376,26 +376,33 @@ excluded from the supported product promise before release.
   dedicated PNG/maskable/Apple asset suite; verify install, upgrade identity, crop/safe zone, dark
   launcher, and repeat launch on supported iOS/Android. Depends on brand/product approval.
 
-## MOB-OTA-019 — OTA readiness is acknowledged too early and channel compatibility is unproven
+## MOB-OTA-019 — OTA health/channel source remediated; signed-device compatibility remains unproven
 
 - **Category / Severity / Confidence / Effort / Blocks production:** Native OTA/update safety / P1 /
-  Confirmed / M / **Yes** before OTA is enabled.
-- **Production-readiness impact:** A Capgo bundle can be accepted before the application, auth, and
-  primary routes are usable; beta/production/binary compatibility and rollback are not proven.
+  Source-remediated, external proof pending / M / **Yes** before production OTA is enabled.
+- **Production-readiness impact:** The official UPR path remains default-off. The isolated UPR Dev
+  canary now has a late auth/route health gate, generated app/channel isolation, encryption,
+  native-version/compatibility controls, signed-artifact verification, and rollback/disable source;
+  Capgo plan/object/key state and signed-device interruption/rollback evidence are still absent.
 - **User or business impact:** A bad bundle can strand field devices or drift from native plugins and
   the shared database.
-- **Evidence:** `notifyAppReady()` runs at module load before `createRoot` and again on App mount;
-  client default channel is production with `resetWhenUpdate:false`; workflow selects channels
-  independently and is paused/manual.
+- **Evidence:** `NativeUpdateHealthGate.jsx` is inside native-route Suspense and refuses loading,
+  auth error, or expired-session state before calling guarded `markBundleReady`; checked-in
+  production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
+  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, minimum native
+  version, explicit rollback/disable, and sanitized evidence; the iOS artifact verifier re-reads the
+  embedded config. GitHub `capgo-dev` is branch-restricted; Capgo login/setup and device proof remain.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
   `.github/workflows/capgo-deploy.yml:3-14,37-58`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Acknowledge only after a defined
-  health checkpoint; bind source/binary/plugin/database/channel IDs; verify beta isolation,
-  interrupted update, bad bundle rollback, offline boot, and downgrade on signed devices. Depends on
-  release telemetry (`MOB-OBS-024`) and a working native pipeline.
+- **Recommended remediation / verification / dependencies:** Complete private Capgo login and
+  no-charge plan verification, create/verify only `.upr.dev`/`upr-dev-canary`, enter scoped GitHub
+  values directly, produce a signed UPR Dev archive, then verify one-device canary isolation,
+  interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
+  official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
+  release telemetry (`MOB-OBS-024`) and the signed native pipeline.
 
 ## MOB-NATIVE-020 — Checked-in iOS release automation cannot produce the intended archive
 
