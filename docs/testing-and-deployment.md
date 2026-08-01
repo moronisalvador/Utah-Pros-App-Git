@@ -713,8 +713,8 @@ Cloudflare binding changes, deployment promotion, and traffic remain independent
 
 ### Mobile messaging release acceptance
 
-The participant foundation migration was applied only to `qa-staging` on 2026-07-31 as ledger
-`20260731143710`, from commit `0d5b7fab` and source SHA-256
+The participant foundation migration was applied to `qa-staging` on 2026-07-31 as ledger
+`20260731143710`, then to production on 2026-08-01 as ledger `20260801145727`, from source SHA-256
 `f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`. Read-only postconditions
 proved forced RLS and service-only policies on both empty membership tables, no browser table
 reads, intended RPC signatures/ACLs and body markers, one foundation ledger row, no enforcement
@@ -723,9 +723,9 @@ error-level participant finding; authenticated-definer warnings are intentional 
 while two nullable actor foreign keys retain informational index advisories.
 
 The exact reconciled `20260731040338_conversation_unread_state_compatibility.sql` source
-(candidate `487ec641`, SHA-256
-`727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`) was then applied only to
-`qa-staging` as ledger `20260731181046`. Post-apply catalog checks proved both new RPCs are
+(SHA-256 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`) was then applied to
+`qa-staging` as ledger `20260731181046` and production as ledger `20260801145753`. Post-apply
+catalog checks proved both new RPCs are
 caller-derived definers with `search_path=pg_catalog, public`, execute for
 `authenticated, service_role`, deny `anon`, and leave both membership tables forced-RLS and
 browser-inaccessible. A transaction-only QA proof returned an empty authorized snapshot and
@@ -734,13 +734,15 @@ back. It read no conversation content and retained no fixture or business-row ch
 
 The exact committed `20260731213000_conversation_assignment_authority_containment.sql` source
 (SHA-256
-`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied only to
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied to
 `qa-staging` on 2026-08-01 as ledger
-`20260801144448_conversation_assignment_authority_containment`. Its migration preflight and
+`20260801144448_conversation_assignment_authority_containment`, then to production as ledger
+`20260801145825_conversation_assignment_authority_containment` after production first applied
+`40337` and `40338` as ledgers `20260801145727` and `20260801145753`. Each migration preflight and
 postcondition completed transactionally. Independent readback matched all four reviewed function
 body hashes, postgres ownership, invoker/definer and volatility settings, pinned search paths,
-and exact browser/service ACLs; no body references appointment/job/claim/crew authority. The
-scheduled pending aggregate remained zero. Production was not touched.
+and exact browser/service ACLs; no body references appointment/job/claim/crew authority. QA's
+scheduled pending aggregate remained zero; production retained the known aggregate of one.
 
 The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
 design and was deliberately not run there. Earlier on 2026-07-31, superseded `40337–40339`
@@ -749,8 +751,8 @@ That evidence remains useful history but is not proof of the corrected
 `31213000 + 31213100 + 31220000 + 31220100` train. Source-contract tests now cover the corrected
 authority, authorized-media lookup, ACL, pending-count, provenance, reservation, and full rollback
 chain. Earlier revisions of both behavioral proofs passed on a disposable local clone with fixtures
-rolled back, but the exact current source has not run through the full governed runner. Production,
-deployment, and provider traffic remain untouched.
+rolled back, but the exact current source has not run through the full governed runner. Provider
+traffic and deployment remained untouched during the database apply.
 
 Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
 revocation helper missing from its explicit page allowlist; after that correction,
@@ -758,8 +760,9 @@ revocation helper missing from its explicit page allowlist; after that correctio
 `xcodebuild` for the generic iOS Simulator completed with `BUILD SUCCEEDED`. The installed iPhone
 17 Pro Simulator app rendered readable messages, staff sender labels, the title-expanded chat
 information, and the native **Chat participants** sheet. The sheet's expected load error is
-positive sequencing evidence: the simulator app targets production and 40337 is intentionally
-not applied there. No RPC mutation, provider send, hosted apply, or deployment occurred.
+positive sequencing evidence from the pre-apply state: the simulator app targeted production
+before 40337 was applied there. No RPC mutation, provider send, hosted apply, or deployment
+occurred during that simulator proof.
 Physical-device/TestFlight proof remains separate.
 
 Credential-free negative tests use fake time and deferred actor-scoped responses to prove four
@@ -785,8 +788,8 @@ unchanged row identity while removing omissions and appending new rows.
 
 Release order is compatibility-sensitive because dev and main share production Supabase:
 
-1. Production: authorize/apply `40337 → 40338 → 31213000`; QA completed `31213000` on
-   2026-08-01.
+1. **Completed 2026-08-01:** production applied `40337 → 40338 → 31213000`; QA completed
+   `31213000`.
 2. Verify that trusted conversation authority contains no appointment/job/claim source.
 3. Deploy and validate compatible web plus a supported native release; retire older direct-unread
    writers.

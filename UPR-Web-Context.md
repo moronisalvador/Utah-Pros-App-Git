@@ -913,10 +913,11 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
 conversation_participants — External customer/contact recipients; Omni-inbox adds nullable `email`.
                           This table is not internal staff membership.
 conversation_member_overrides — Per-conversation internal staff include/exclude decisions.
-                          Applied only to `qa-staging` on 2026-07-31; forced RLS, RPC-only.
+                          Applied to `qa-staging` on 2026-07-31 and production on 2026-08-01;
+                          forced RLS, RPC-only.
 conversation_default_members — Field technicians included by default in every conversation unless
-                          a per-conversation override excludes them. Applied only to `qa-staging`
-                          on 2026-07-31; forced RLS, RPC-only.
+                          a per-conversation override excludes them. Applied to `qa-staging` on
+                          2026-07-31 and production on 2026-08-01; forced RLS, RPC-only.
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
@@ -961,14 +962,14 @@ conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
-**Conversation participant controls — RELEASE CANDIDATE; QA AUTHORITY CORRECTION LIVE (2026-08-01):**
-`20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
-`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. Its
-original appointment-derived decision is superseded on QA by
+**Conversation participant controls — RELEASE CANDIDATE; COMPATIBILITY LIVE ON QA + PRODUCTION
+(2026-08-01):** `20260731040337_conversation_participant_scoping.sql` is applied to Supabase branch
+`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710` and production as
+`20260801145727`. Its original appointment-derived decision is superseded on both targets by
 `20260731213000_conversation_assignment_authority_containment.sql`, applied from exact committed
 source (SHA-256
 `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) as ledger
-`20260801144448`. Appointment, job, claim, and
+`20260801144448` on QA and `20260801145825` on production. Appointment, job, claim, and
 crew records are browser-writable scheduling context and are never conversation authorization.
 The correction replaces the four independent access/member/contact bodies with the trusted rule:
 privileged role → explicit per-chat choice → default technician → deny, after exact
@@ -984,8 +985,9 @@ revisions subsequently passed on a disposable local Supabase clone with both fix
 rolled back. The exact current source adds authorized-media, explicit-deny-policy, legacy-no-op,
 and matching behavioral assertions; the full governed database runner remains a release gate.
 
-`20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
-`qa-staging`, as ledger `20260731181046`, from reconciled candidate `487ec641` (source SHA-256
+`20260731040338_conversation_unread_state_compatibility.sql` is applied to `qa-staging` as ledger
+`20260731181046` and production as `20260801145753`, from reconciled candidate `487ec641`
+(source SHA-256
 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`). Catalog checks proved
 its actor-derived access-snapshot and unread-state RPCs have pinned search paths, deny `anon`, and
 retain only the intended `authenticated, service_role` execution. An authorized empty-input,
@@ -1035,13 +1037,13 @@ preserves service-role table access.
 `npm run build:ios:dev` and the unsigned Xcode iOS Simulator build passed on 2026-07-31. The
 compiled app then launched on an iPhone 17 Pro Simulator and visually proved the sender labels,
 readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
-showed the expected load error because that app points at production, where 40337 is deliberately
-unapplied; no production data was changed.
-QA post-apply verification for `31213000` matched all four reviewed body hashes, owners, pinned
-search paths, volatility settings, and ACLs; every body excludes appointment/job/claim/crew
-authority and the aggregate pending scheduled count remains zero. Production must still apply
-`40337 → 40338 → 31213000` in one exposure-free authorized window. Next deploy compatible web and
-supported native callers. Only after older direct-unread writers are unsupported may `31213100` apply in a
+showed the expected load error because that app points at production and, at the time of that
+pre-apply proof, 40337 was deliberately absent there; no production data was changed by that test.
+QA and production post-apply verification for `31213000` matched all four reviewed body hashes,
+owners, pinned search paths, volatility settings, and ACLs; every body excludes
+appointment/job/claim/crew authority. QA retained zero pending scheduled rows and production
+retained its known aggregate of one. Next deploy compatible web and supported native callers.
+Only after older direct-unread writers are unsupported may `31213100` apply in a
 separately reviewed window. Hardened scheduled callers deploy immediately before the serialized
 scheduled window. Auth/database/provider calls are bounded, and a reserved scheduled send cannot
 fall back to a cached/environment Twilio credential after managed credential lookup timeout.
@@ -1055,7 +1057,8 @@ The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_
 reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
 through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
 target the exact branch ref and keep later QA applies serialized.
-Nothing has been applied to production or deployed from this candidate.
+The compatibility train is applied to production; no application deployment has yet occurred from
+this candidate.
 
 ### Documents & Esign
 ```

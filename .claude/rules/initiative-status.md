@@ -21,20 +21,21 @@ cross-session reconciliation; do not mark it ready, merge it, or otherwise promo
 owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
 promotion.
 
-## Conversation participant scoping — QA authority correction live; enforcement authored
+## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 
 - `20260731040337_conversation_participant_scoping.sql` and
-  `20260731040338_conversation_unread_state_compatibility.sql` are applied **only** to isolated
-  `qa-staging` as ledgers `20260731143710` and `20260731181046`. Their immutable source hashes and
-  catalog checks remain recorded evidence. The exact committed
+  `20260731040338_conversation_unread_state_compatibility.sql` are applied to isolated
+  `qa-staging` as ledgers `20260731143710` and `20260731181046`, and to production as ledgers
+  `20260801145727` and `20260801145753`. Their immutable source hashes and catalog checks remain
+  recorded evidence. The exact committed
   `20260731213000_conversation_assignment_authority_containment.sql` source (SHA-256
   `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) is also applied
-  **only** to `qa-staging` as ledger `20260801144448`. Post-apply checks matched all four reviewed
-  function hashes/owners/search paths/volatility settings and ACLs, found no
-  appointment/job/claim/crew authority source, and retained zero pending scheduled rows.
-  Production has none of these participant migrations.
+  to `qa-staging` as ledger `20260801144448` and production as ledger `20260801145825`.
+  Post-apply checks on both targets matched all four reviewed function hashes/owners/search
+  paths/volatility settings and ACLs and found no appointment/job/claim/crew authority source.
+  QA retained zero pending scheduled rows; production retained its known aggregate of one.
 - Appointment, job, claim, and crew rows are browser-writable and are **not conversation
-  authorization**. The QA-applied correction replaces the four independent
+  authorization**. The QA/production-applied correction replaces the four independent
   membership/contact paths with privileged role → explicit per-chat override → default technician
   → deny, after exact employee-identity and QA/production lineage preflights.
   `20260731213100_conversation_participant_policy_enforcement.sql` is also authored and unapplied.
@@ -81,10 +82,10 @@ promotion.
   `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
   browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
   proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
-  governed full database runner, compatible-caller deployment, remaining QA applies,
+  governed full database runner, compatible-caller deployment, remaining enforcement applies,
   pending-row decision, and signed-device proof remain explicit release gates. The source is
-  committed and `31213000` is QA-applied; no push, deployment, production apply/provider call,
-  production-row mutation, or device claim follows from this entry.
+  committed and the compatibility train is live on QA and production; no push, deployment,
+  provider call, production-row mutation, or device claim follows from this entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
