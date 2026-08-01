@@ -28,7 +28,8 @@
 --
 -- EVIDENCE (live catalog, 2026-07-26):
 --   - automation_settings: policy `automation_settings_all` = ALL / {anon,
---     authenticated} / USING true / WITH CHECK true. anon holds all 7 table
+--     authenticated} / USING true / WITH CHECK true. On PostgreSQL 17, anon
+--     holds all eight table privileges, including MAINTAIN.
 --     privileges. Same shape on email_suppressions.
 --   - Caller inventory: NO src/ code touches either table directly.
 --     automation_settings is reached only via get_automation_settings /
@@ -61,6 +62,317 @@
 --   (recreates both always-true policies verbatim, re-grants the browser roles,
 --    and restores the previous set_automation_setting body without the gate).
 -- ════════════════════════════════════════════════
+
+-- ATOMICITY:
+--   The Supabase migration executor owns the transaction that includes both this
+--   SQL and its schema_migrations ledger row. Do not add transaction-control
+--   statements here.
+
+DO $db1_tranche_a_preflight$
+DECLARE
+  v_table_name text;
+  v_policy_name text;
+  v_function_oid oid;
+BEGIN
+  IF (
+       SELECT count(*)
+       FROM supabase_migrations.schema_migrations migration
+       WHERE migration.name = 'mobile_employee_identity_authority'
+     ) IS DISTINCT FROM 1
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+       WHERE relation.oid = to_regclass('public.employees')
+         AND relation.relkind = 'r'
+         AND owner_role.rolname = 'postgres'
+         AND relation.relrowsecurity
+         AND NOT relation.relforcerowsecurity
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_roles role_record
+       WHERE role_record.rolname = 'service_role'
+         AND role_record.rolbypassrls
+     )
+     OR (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+     ) IS DISTINCT FROM
+       ARRAY[
+         'allow_anon_read_employees',
+         'allow_authenticated_employees'
+       ]::name[]
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_anon_read_employees'
+         AND policy.polcmd = 'r'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'anon')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND policy.polwithcheck IS NULL
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_authenticated_employees'
+         AND policy.polcmd = 'r'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND policy.polwithcheck IS NULL
+     )
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'anon'
+     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'authenticated'
+     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'service_role'
+     ) IS DISTINCT FROM
+       ARRAY[
+         'DELETE',
+         'INSERT',
+         'MAINTAIN',
+         'REFERENCES',
+         'SELECT',
+         'TRIGGER',
+         'TRUNCATE',
+         'UPDATE'
+       ]::text[]
+     OR NOT has_table_privilege('anon', 'public.employees', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'public.employees', 'SELECT')
+     OR has_table_privilege(
+          'anon',
+          'public.employees',
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+     OR has_table_privilege(
+          'authenticated',
+          'public.employees',
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND (
+           acl.grantor <> relation.relowner
+           OR acl.grantee = 0
+           OR (
+             acl.grantee <> relation.relowner
+             AND COALESCE(grantee_role.rolname, '') NOT IN (
+               'anon',
+               'authenticated',
+               'service_role'
+             )
+           )
+           OR (
+             acl.is_grantable
+             AND acl.grantee <> relation.relowner
+           )
+         )
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       WHERE attribute.attrelid = to_regclass('public.employees')
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+         AND attribute.attacl IS NOT NULL
+         AND cardinality(attribute.attacl) > 0
+     ) THEN
+    RAISE EXCEPTION
+      'DB-1 tranche A preflight: mobile employee identity authority is absent or drifted';
+  END IF;
+
+  FOR v_table_name, v_policy_name IN
+    SELECT *
+    FROM (
+      VALUES
+        ('automation_settings', 'automation_settings_all'),
+        ('email_suppressions', 'email_suppressions_all')
+    ) expected(table_name, policy_name)
+  LOOP
+    IF NOT EXISTS (
+         SELECT 1
+         FROM pg_class relation
+         JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND relation.relkind = 'r'
+           AND owner_role.rolname = 'postgres'
+           AND relation.relrowsecurity
+       )
+       OR (
+         SELECT array_agg(policy.polname ORDER BY policy.polname)
+         FROM pg_policy policy
+         WHERE policy.polrelid =
+               to_regclass(format('public.%I', v_table_name))
+       ) IS DISTINCT FROM ARRAY[v_policy_name]::name[]
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_policy policy
+         WHERE policy.polrelid =
+               to_regclass(format('public.%I', v_table_name))
+           AND policy.polname = v_policy_name
+           AND policy.polcmd = '*'
+           AND policy.polpermissive
+           AND (
+             SELECT array_agg(role_oid ORDER BY role_oid)
+             FROM unnest(policy.polroles) role_oid
+           ) = (
+             SELECT array_agg(role_record.oid ORDER BY role_record.oid)
+             FROM pg_roles role_record
+             WHERE role_record.rolname IN ('anon', 'authenticated')
+           )
+           AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+           AND pg_get_expr(policy.polwithcheck, policy.polrelid, true) = 'true'
+       )
+       OR (
+         SELECT COALESCE(
+           array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+           ARRAY[]::text[]
+         )
+         FROM pg_class relation
+         CROSS JOIN LATERAL
+           aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+         JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND grantee_role.rolname = 'anon'
+       ) IS DISTINCT FROM
+         ARRAY[
+           'DELETE',
+           'INSERT',
+           'MAINTAIN',
+           'REFERENCES',
+           'SELECT',
+           'TRIGGER',
+           'TRUNCATE',
+           'UPDATE'
+         ]::text[]
+       OR (
+         SELECT COALESCE(
+           array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+           ARRAY[]::text[]
+         )
+         FROM pg_class relation
+         CROSS JOIN LATERAL
+           aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+         JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND grantee_role.rolname = 'authenticated'
+       ) IS DISTINCT FROM
+         ARRAY[
+           'DELETE',
+           'INSERT',
+           'MAINTAIN',
+           'REFERENCES',
+           'SELECT',
+           'TRIGGER',
+           'TRUNCATE',
+           'UPDATE'
+         ]::text[] THEN
+      RAISE EXCEPTION
+        'DB-1 tranche A preflight: %.% input policy/ACL drift',
+        'public',
+        v_table_name;
+    END IF;
+  END LOOP;
+
+  SELECT procedure.oid
+    INTO v_function_oid
+  FROM pg_proc procedure
+  JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+  JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+  JOIN pg_language language_record ON language_record.oid = procedure.prolang
+  WHERE namespace.nspname = 'public'
+    AND procedure.proname = 'set_automation_setting'
+    AND pg_get_function_identity_arguments(procedure.oid) =
+          'p_key text, p_value boolean, p_org_id uuid'
+    AND pg_get_function_result(procedure.oid) = 'automation_settings'
+    AND owner_role.rolname = 'postgres'
+    AND language_record.lanname = 'plpgsql'
+    AND procedure.prosecdef
+    AND procedure.provolatile = 'v'
+    AND procedure.proconfig = ARRAY['search_path=public']::text[]
+    AND procedure.prosrc NOT LIKE '%NOT_AUTHORIZED:%'
+    AND procedure.prosrc NOT LIKE '%automation_setting_changed%';
+
+  IF v_function_oid IS NULL
+     OR (
+       SELECT array_agg(
+                CASE
+                  WHEN acl.grantee = 0 THEN 'PUBLIC'
+                  ELSE grantee_role.rolname
+                END
+                ORDER BY
+                  CASE
+                    WHEN acl.grantee = 0 THEN 'PUBLIC'
+                    ELSE grantee_role.rolname
+                  END
+              )
+       FROM pg_proc procedure
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE procedure.oid = v_function_oid
+         AND acl.privilege_type = 'EXECUTE'
+     ) IS DISTINCT FROM
+       ARRAY['authenticated', 'postgres', 'service_role']::text[]
+     OR EXISTS (
+       SELECT 1
+       FROM pg_proc procedure
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) acl
+       WHERE procedure.oid = v_function_oid
+         AND acl.privilege_type = 'EXECUTE'
+         AND acl.is_grantable
+     ) THEN
+    RAISE EXCEPTION
+      'DB-1 tranche A preflight: set_automation_setting metadata/body/ACL drift';
+  END IF;
+END;
+$db1_tranche_a_preflight$;
 
 -- ─── 1. automation_settings — RPC-only ───
 
@@ -126,7 +438,7 @@ BEGIN
 
   -- Authorization: validated INSIDE the definer, per database-standard.md §1.
   IF p_key = 'sms_sending_enabled' THEN
-    IF NOT EXISTS (
+    IF auth.role() <> 'service_role' AND NOT EXISTS (
       SELECT 1 FROM employees
       WHERE auth_user_id = auth.uid()
         AND role = 'admin'
@@ -137,7 +449,7 @@ BEGIN
         USING errcode = '42501';
     END IF;
   ELSE
-    IF NOT EXISTS (
+    IF auth.role() <> 'service_role' AND NOT EXISTS (
       SELECT 1 FROM employees
       WHERE auth_user_id = auth.uid()
         AND role IN ('admin', 'office')
@@ -199,3 +511,317 @@ $function$;
 -- revoke must be explicit and must precede the grant.
 REVOKE EXECUTE ON FUNCTION public.set_automation_setting(text, boolean, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.set_automation_setting(text, boolean, uuid) TO authenticated, service_role;
+
+DO $db1_tranche_a_postcondition$
+DECLARE
+  v_table_name text;
+  v_function_oid oid;
+BEGIN
+  IF (
+       SELECT count(*)
+       FROM supabase_migrations.schema_migrations migration
+       WHERE migration.name = 'mobile_employee_identity_authority'
+     ) IS DISTINCT FROM 1
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+       WHERE relation.oid = to_regclass('public.employees')
+         AND relation.relkind = 'r'
+         AND owner_role.rolname = 'postgres'
+         AND relation.relrowsecurity
+         AND NOT relation.relforcerowsecurity
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_roles role_record
+       WHERE role_record.rolname = 'service_role'
+         AND role_record.rolbypassrls
+     )
+     OR (
+       SELECT array_agg(policy.polname ORDER BY policy.polname)
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+     ) IS DISTINCT FROM
+       ARRAY[
+         'allow_anon_read_employees',
+         'allow_authenticated_employees'
+       ]::name[]
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_anon_read_employees'
+         AND policy.polcmd = 'r'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'anon')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND policy.polwithcheck IS NULL
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_authenticated_employees'
+         AND policy.polcmd = 'r'
+         AND policy.polpermissive
+         AND policy.polroles =
+               ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND pg_get_expr(policy.polqual, policy.polrelid, true) = 'true'
+         AND policy.polwithcheck IS NULL
+     )
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'anon'
+     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'authenticated'
+     ) IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR (
+       SELECT COALESCE(
+         array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+         ARRAY[]::text[]
+       )
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND grantee_role.rolname = 'service_role'
+     ) IS DISTINCT FROM
+       ARRAY[
+         'DELETE',
+         'INSERT',
+         'MAINTAIN',
+         'REFERENCES',
+         'SELECT',
+         'TRIGGER',
+         'TRUNCATE',
+         'UPDATE'
+       ]::text[]
+     OR NOT has_table_privilege('anon', 'public.employees', 'SELECT')
+     OR NOT has_table_privilege('authenticated', 'public.employees', 'SELECT')
+     OR has_table_privilege(
+          'anon',
+          'public.employees',
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+     OR has_table_privilege(
+          'authenticated',
+          'public.employees',
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+        )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE relation.oid = to_regclass('public.employees')
+         AND (
+           acl.grantor <> relation.relowner
+           OR acl.grantee = 0
+           OR (
+             acl.grantee <> relation.relowner
+             AND COALESCE(grantee_role.rolname, '') NOT IN (
+               'anon',
+               'authenticated',
+               'service_role'
+             )
+           )
+           OR (
+             acl.is_grantable
+             AND acl.grantee <> relation.relowner
+           )
+         )
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM pg_attribute attribute
+       WHERE attribute.attrelid = to_regclass('public.employees')
+         AND attribute.attnum > 0
+         AND NOT attribute.attisdropped
+         AND attribute.attacl IS NOT NULL
+         AND cardinality(attribute.attacl) > 0
+     ) THEN
+    RAISE EXCEPTION
+      'DB-1 tranche A postcondition: mobile employee identity authority changed';
+  END IF;
+
+  FOREACH v_table_name IN ARRAY
+    ARRAY['automation_settings', 'email_suppressions']::text[]
+  LOOP
+    IF NOT EXISTS (
+         SELECT 1
+         FROM pg_class relation
+         JOIN pg_roles owner_role ON owner_role.oid = relation.relowner
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND relation.relkind = 'r'
+           AND owner_role.rolname = 'postgres'
+           AND relation.relrowsecurity
+       )
+       OR EXISTS (
+         SELECT 1
+         FROM pg_policy policy
+         WHERE policy.polrelid =
+               to_regclass(format('public.%I', v_table_name))
+       )
+       OR has_table_privilege(
+            'anon',
+            format('public.%I', v_table_name),
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+          )
+       OR has_table_privilege(
+            'authenticated',
+            format('public.%I', v_table_name),
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+          )
+       OR (
+         SELECT COALESCE(
+           array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type),
+           ARRAY[]::text[]
+         )
+         FROM pg_class relation
+         CROSS JOIN LATERAL
+           aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+         JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND grantee_role.rolname = 'service_role'
+       ) IS DISTINCT FROM
+         ARRAY[
+           'DELETE',
+           'INSERT',
+           'MAINTAIN',
+           'REFERENCES',
+           'SELECT',
+           'TRIGGER',
+           'TRUNCATE',
+           'UPDATE'
+         ]::text[]
+       OR EXISTS (
+         SELECT 1
+         FROM pg_class relation
+         CROSS JOIN LATERAL
+           aclexplode(COALESCE(relation.relacl, acldefault('r', relation.relowner))) acl
+         LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+         WHERE relation.oid =
+               to_regclass(format('public.%I', v_table_name))
+           AND (
+             acl.grantor <> relation.relowner
+             OR acl.grantee = 0
+             OR (
+               acl.grantee <> relation.relowner
+               AND COALESCE(grantee_role.rolname, '') NOT IN ('service_role')
+             )
+             OR (
+               acl.is_grantable
+               AND acl.grantee <> relation.relowner
+             )
+           )
+       )
+       OR EXISTS (
+         SELECT 1
+         FROM pg_attribute attribute
+         WHERE attribute.attrelid =
+               to_regclass(format('public.%I', v_table_name))
+           AND attribute.attnum > 0
+           AND NOT attribute.attisdropped
+           AND attribute.attacl IS NOT NULL
+           AND cardinality(attribute.attacl) > 0
+       ) THEN
+      RAISE EXCEPTION
+        'DB-1 tranche A postcondition: %.% browser/service boundary failed',
+        'public',
+        v_table_name;
+    END IF;
+  END LOOP;
+
+  SELECT procedure.oid
+    INTO v_function_oid
+  FROM pg_proc procedure
+  JOIN pg_namespace namespace ON namespace.oid = procedure.pronamespace
+  JOIN pg_roles owner_role ON owner_role.oid = procedure.proowner
+  JOIN pg_language language_record ON language_record.oid = procedure.prolang
+  WHERE namespace.nspname = 'public'
+    AND procedure.proname = 'set_automation_setting'
+    AND pg_get_function_identity_arguments(procedure.oid) =
+          'p_key text, p_value boolean, p_org_id uuid'
+    AND pg_get_function_result(procedure.oid) = 'automation_settings'
+    AND owner_role.rolname = 'postgres'
+    AND language_record.lanname = 'plpgsql'
+    AND procedure.prosecdef
+    AND procedure.provolatile = 'v'
+    AND procedure.proconfig = ARRAY['search_path=public']::text[]
+    AND procedure.prosrc LIKE
+          '%NOT_AUTHORIZED: sms_sending_enabled is admin only%'
+    AND procedure.prosrc LIKE '%NOT_AUTHORIZED: admin or office only%'
+    AND procedure.prosrc LIKE '%automation_setting_changed%'
+    AND procedure.prosrc LIKE '%auth.role() <> ''service_role''%'
+    AND procedure.prosrc LIKE '%AND NOT is_external%';
+
+  IF v_function_oid IS NULL
+     OR (
+       SELECT array_agg(
+                CASE
+                  WHEN acl.grantee = 0 THEN 'PUBLIC'
+                  ELSE grantee_role.rolname
+                END
+                ORDER BY
+                  CASE
+                    WHEN acl.grantee = 0 THEN 'PUBLIC'
+                    ELSE grantee_role.rolname
+                  END
+              )
+       FROM pg_proc procedure
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) acl
+       LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+       WHERE procedure.oid = v_function_oid
+         AND acl.privilege_type = 'EXECUTE'
+     ) IS DISTINCT FROM
+       ARRAY['authenticated', 'postgres', 'service_role']::text[]
+     OR EXISTS (
+       SELECT 1
+       FROM pg_proc procedure
+       CROSS JOIN LATERAL
+         aclexplode(COALESCE(procedure.proacl, acldefault('f', procedure.proowner))) acl
+       WHERE procedure.oid = v_function_oid
+         AND acl.privilege_type = 'EXECUTE'
+         AND acl.is_grantable
+     )
+     OR has_function_privilege('anon', v_function_oid, 'EXECUTE')
+     OR NOT has_function_privilege(
+          'authenticated',
+          v_function_oid,
+          'EXECUTE'
+        )
+     OR NOT has_function_privilege(
+          'service_role',
+          v_function_oid,
+          'EXECUTE'
+        ) THEN
+    RAISE EXCEPTION
+      'DB-1 tranche A postcondition: set_automation_setting gate/ACL failed';
+  END IF;
+END;
+$db1_tranche_a_postcondition$;

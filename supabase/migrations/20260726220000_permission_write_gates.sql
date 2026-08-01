@@ -84,6 +84,214 @@
 --    two crm_partner can_edit rows).
 -- ════════════════════════════════════════════════
 
+-- PREREQUISITE:
+--   20260726180000_mobile_employee_identity_authority must already be recorded
+--   and must still make employees read-only to browser roles. The predicates
+--   below trust auth_user_id, role, is_active, and is_external; creating them
+--   while an authenticated caller can edit those fields would enable
+--   self-binding, self-promotion, and account reactivation.
+
+-- ATOMICITY:
+--   The Supabase migration executor owns the transaction that includes both this
+--   SQL and its schema_migrations ledger row. Do not add transaction-control
+--   statements here.
+
+DO $permission_write_employee_authority_preflight$
+DECLARE
+  v_policy_names text[];
+  v_anon_privileges text[];
+  v_authenticated_privileges text[];
+  v_service_privileges text[];
+  v_public_privilege_count integer;
+  v_grantable_privilege_count integer;
+  v_unexpected_grantee_count integer;
+  v_unexpected_grantor_count integer;
+BEGIN
+  IF (
+    SELECT count(*)
+    FROM supabase_migrations.schema_migrations migration
+    WHERE migration.name = 'mobile_employee_identity_authority'
+  ) IS DISTINCT FROM 1 THEN
+    RAISE EXCEPTION
+      'permission write gates preflight: exactly one mobile_employee_identity_authority migration must be recorded';
+  END IF;
+
+  IF NOT EXISTS (
+       SELECT 1
+       FROM pg_class relation
+       JOIN pg_namespace namespace
+         ON namespace.oid = relation.relnamespace
+       JOIN pg_roles owner_role
+         ON owner_role.oid = relation.relowner
+       WHERE namespace.nspname = 'public'
+         AND relation.relname = 'employees'
+         AND relation.relkind = 'r'
+         AND owner_role.rolname = 'postgres'
+         AND relation.relrowsecurity
+         AND NOT relation.relforcerowsecurity
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_roles role_record
+       WHERE role_record.rolname = 'service_role'
+         AND role_record.rolbypassrls
+     ) THEN
+    RAISE EXCEPTION
+      'permission write gates preflight: employees owner/RLS state drift';
+  END IF;
+
+  SELECT array_agg(policy.policyname ORDER BY policy.policyname)
+    INTO v_policy_names
+  FROM pg_policies policy
+  WHERE policy.schemaname = 'public'
+    AND policy.tablename = 'employees';
+
+  IF v_policy_names IS DISTINCT FROM
+       ARRAY[
+         'allow_anon_read_employees',
+         'allow_authenticated_employees'
+       ]::text[]
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_authenticated_employees'
+         AND policy.polpermissive
+         AND policy.polroles =
+           ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'authenticated')]
+         AND policy.polcmd = 'r'
+         AND pg_get_expr(
+               policy.polqual,
+               policy.polrelid,
+               true
+             ) = 'true'
+         AND policy.polwithcheck IS NULL
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policy policy
+       WHERE policy.polrelid = to_regclass('public.employees')
+         AND policy.polname = 'allow_anon_read_employees'
+         AND policy.polpermissive
+         AND policy.polroles =
+           ARRAY[(SELECT oid FROM pg_roles WHERE rolname = 'anon')]
+         AND policy.polcmd = 'r'
+         AND pg_get_expr(
+               policy.polqual,
+               policy.polrelid,
+               true
+             ) = 'true'
+         AND policy.polwithcheck IS NULL
+     ) THEN
+    RAISE EXCEPTION
+      'permission write gates preflight: employees policy drift: %',
+      v_policy_names;
+  END IF;
+
+  SELECT
+    COALESCE(
+      array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type)
+        FILTER (WHERE grantee_role.rolname = 'anon'),
+      ARRAY[]::text[]
+    ),
+    COALESCE(
+      array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type)
+        FILTER (WHERE grantee_role.rolname = 'authenticated'),
+      ARRAY[]::text[]
+    ),
+    COALESCE(
+      array_agg(DISTINCT acl.privilege_type ORDER BY acl.privilege_type)
+        FILTER (WHERE grantee_role.rolname = 'service_role'),
+      ARRAY[]::text[]
+    ),
+    count(*) FILTER (WHERE acl.grantee = 0),
+    count(*) FILTER (
+      WHERE acl.is_grantable
+        AND acl.grantee <> relation.relowner
+    ),
+    count(*) FILTER (
+      WHERE acl.grantee <> relation.relowner
+        AND acl.grantee <> 0
+        AND COALESCE(grantee_role.rolname, '') NOT IN (
+          'anon',
+          'authenticated',
+          'service_role'
+        )
+    ),
+    count(*) FILTER (WHERE acl.grantor <> relation.relowner)
+    INTO
+      v_anon_privileges,
+      v_authenticated_privileges,
+      v_service_privileges,
+      v_public_privilege_count,
+      v_grantable_privilege_count,
+      v_unexpected_grantee_count,
+      v_unexpected_grantor_count
+  FROM pg_class relation
+  CROSS JOIN LATERAL
+    aclexplode(
+      COALESCE(
+        relation.relacl,
+        acldefault('r', relation.relowner)
+      )
+    ) acl
+  LEFT JOIN pg_roles grantee_role ON grantee_role.oid = acl.grantee
+  WHERE relation.oid = to_regclass('public.employees');
+
+  IF v_anon_privileges IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR v_authenticated_privileges IS DISTINCT FROM ARRAY['SELECT']::text[]
+     OR v_service_privileges IS DISTINCT FROM
+       ARRAY[
+         'DELETE',
+         'INSERT',
+         'MAINTAIN',
+         'REFERENCES',
+         'SELECT',
+         'TRIGGER',
+         'TRUNCATE',
+         'UPDATE'
+       ]::text[]
+     OR v_public_privilege_count <> 0
+     OR v_grantable_privilege_count <> 0
+     OR v_unexpected_grantee_count <> 0
+     OR v_unexpected_grantor_count <> 0
+     OR has_table_privilege('anon', 'public.employees', 'SELECT')
+       IS DISTINCT FROM true
+     OR has_table_privilege('authenticated', 'public.employees', 'SELECT')
+       IS DISTINCT FROM true
+     OR has_table_privilege('anon', 'public.employees', 'INSERT')
+     OR has_table_privilege('anon', 'public.employees', 'UPDATE')
+     OR has_table_privilege('anon', 'public.employees', 'DELETE')
+     OR has_table_privilege('anon', 'public.employees', 'TRUNCATE')
+     OR has_table_privilege('anon', 'public.employees', 'REFERENCES')
+     OR has_table_privilege('anon', 'public.employees', 'TRIGGER')
+     OR has_table_privilege('anon', 'public.employees', 'MAINTAIN')
+     OR has_table_privilege('authenticated', 'public.employees', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.employees', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.employees', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.employees', 'TRUNCATE')
+     OR has_table_privilege('authenticated', 'public.employees', 'REFERENCES')
+     OR has_table_privilege('authenticated', 'public.employees', 'TRIGGER')
+     OR has_table_privilege('authenticated', 'public.employees', 'MAINTAIN') THEN
+    RAISE EXCEPTION
+      'permission write gates preflight: employees browser privileges are not SELECT-only';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM pg_attribute attribute
+    WHERE attribute.attrelid = to_regclass('public.employees')
+      AND attribute.attnum > 0
+      AND NOT attribute.attisdropped
+      AND attribute.attacl IS NOT NULL
+      AND cardinality(attribute.attacl) > 0
+  ) THEN
+    RAISE EXCEPTION
+      'permission write gates preflight: unexpected employees column privileges';
+  END IF;
+END;
+$permission_write_employee_authority_preflight$;
+
 -- ─── 1. Shared predicate ───
 -- SECURITY DEFINER so it can read `employees` without tripping RLS recursion
 -- when used inside a policy. This is the seed of the shared assert/predicate
