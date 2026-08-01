@@ -547,6 +547,10 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(devArchiveJob).toContain(
       'if [[ "$VITE_APNS_ENV" != "production" ]]',
     );
+    expect(devArchiveJob).toContain('VITE_NATIVE_OTA_ENABLED: "true"');
+    expect(devArchiveJob).toContain(
+      'run: node scripts/configure-ios-capgo-dev.mjs',
+    );
   });
 
   it('archives and reverifies the dev artifact before upload', () => {
@@ -558,6 +562,7 @@ describe('UPR Dev TestFlight isolation contract', () => {
     for (const contractArgument of [
       '--expected-release-variant "$UPR_RELEASE_VARIANT"',
       '--expected-native-api-origin "$VITE_NATIVE_API_ORIGIN"',
+      '--expected-native-ota-enabled "$VITE_NATIVE_OTA_ENABLED"',
       '--expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED"',
       '--expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN"',
       '--expected-apns-environment "$VITE_APNS_ENV"',
@@ -685,6 +690,7 @@ describe('native release artifact safety contract', () => {
   const devReleaseEnvironment = {
     UPR_RELEASE_VARIANT: 'dev',
     VITE_NATIVE_API_ORIGIN: 'https://dev.utahpros.app',
+    VITE_NATIVE_OTA_ENABLED: 'true',
     VITE_NATIVE_PUSH_ENABLED: 'true',
     VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'false',
     VITE_APNS_ENV: 'production',
@@ -697,6 +703,7 @@ describe('native release artifact safety contract', () => {
       variant: 'dev',
       bundleIdentifier: 'com.utahprosrestoration.upr.dev',
       apiOrigin: 'https://dev.utahpros.app',
+      nativeOtaEnabled: true,
       nativePushEnabled: true,
       retireDevToken: false,
       apnsEnvironment: 'production',
@@ -718,6 +725,7 @@ describe('native release artifact safety contract', () => {
       variant: 'dev',
       bundleIdentifier: 'com.utahprosrestoration.upr.dev',
       apiOrigin: 'https://dev.utahpros.app',
+      nativeOtaEnabled: true,
       nativePushEnabled: true,
       retireDevToken: false,
       apnsEnvironment: 'production',
@@ -726,6 +734,7 @@ describe('native release artifact safety contract', () => {
 
     for (const [field, value] of [
       ['apiOrigin', 'https://utahpros.app'],
+      ['nativeOtaEnabled', false],
       ['nativePushEnabled', false],
       ['retireDevToken', true],
       ['apnsEnvironment', 'sandbox'],
@@ -757,6 +766,7 @@ describe('native release artifact safety contract', () => {
       'com.utahprosrestoration.upr.dev',
     );
     expect(manifest.nativePushEnabled).toBe(false);
+    expect(manifest.nativeOtaEnabled).toBe(true);
     expect(manifest.retireDevToken).toBe(true);
     expect(manifest.apnsEnvironment).toBe('production');
   });

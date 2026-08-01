@@ -287,6 +287,7 @@ jobs:
             --expected-build-number "$BUILD_NUMBER" \
             --expected-release-variant "$UPR_RELEASE_VARIANT" \
             --expected-native-api-origin "$VITE_NATIVE_API_ORIGIN" \
+            --expected-native-ota-enabled "$VITE_NATIVE_OTA_ENABLED" \
             --expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED" \
             --expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN" \
             --expected-apns-environment "$VITE_APNS_ENV" \
@@ -376,6 +377,7 @@ jobs:
             --expected-build-number "$BUILD_NUMBER" \
             --expected-release-variant "$UPR_RELEASE_VARIANT" \
             --expected-native-api-origin "$VITE_NATIVE_API_ORIGIN" \
+            --expected-native-ota-enabled "$VITE_NATIVE_OTA_ENABLED" \
             --expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED" \
             --expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN" \
             --expected-apns-environment "$VITE_APNS_ENV" \
