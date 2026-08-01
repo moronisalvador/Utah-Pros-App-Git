@@ -619,7 +619,7 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). GET/POST accepts the scheduler `x-webhook-secret` or the exact internal DevTools owner with the Conversations capability; `scheduled()` remains platform-authenticated. **Scheduled-message delivery hardening (Jul 31 2026, authored source only — not applied/deployed/provider- or device-verified):** hardened callers deploy first and fail closed until the compatibility RPCs exist. Compatibility requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` if the aggregate pending count is nonzero; it never edits those rows. It creates FORCE-RLS provenance that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser `scheduled_messages` writes; disables the legacy claim body; and adds token-fenced service-only claim/release/fail/reserve/reconcile RPCs. A current worker may reserve exactly one durable delivery attempt only after the worker consent checks and the central `sendAutomatedMessage()` gates; it then makes at most one Twilio submission. Fresh linked `prepared`/`submitting`/`ambiguous` work stays in-flight, while accepted work is materialized into the canonical message and unknown outcomes become owner-review failures with no automatic resend. Reservation repeats creator capability/conversation access and validates the immutable recipient snapshot against the current participant at the pre-provider boundary. Enforcement follows compatibility in the same serialized release window, leaves the dormant broad policies inert behind revoked ACLs, retains the provenance boundary, and revokes the fail-closed legacy stub from the service role; no native scheduling caller is introduced by this slice. The existing batch quiet-hours guard (America/Denver) defers the queue; central `sms_disabled`/`quiet_hours` results release an unreserved claim. Writes a `worker_runs` row.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). GET/POST accepts the scheduler `x-webhook-secret` or the exact internal DevTools owner with the Conversations capability; `scheduled()` remains platform-authenticated. **Scheduled-message delivery hardening (Jul 31 2026, authored source only — not applied/deployed/provider- or device-verified):** hardened callers deploy first and fail closed until the compatibility RPCs exist. Compatibility requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` if the aggregate pending count is nonzero; it never edits those rows. It creates FORCE-RLS provenance that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser `scheduled_messages` writes; changes the historical queue policies to explicit deny predicates; preserves the frozen legacy claim as a callable `false` no-op; and adds token-fenced service-only claim/release/fail/reserve/reconcile RPCs. A current worker may reserve exactly one durable delivery attempt only after the worker consent checks and the central `sendAutomatedMessage()` gates; it then makes at most one Twilio submission. Fresh linked `prepared`/`submitting`/`ambiguous` work stays in-flight, while accepted work is materialized into the canonical message and unknown outcomes become owner-review failures with no automatic resend. Reservation repeats creator capability/conversation access and validates the immutable recipient snapshot against the current participant at the pre-provider boundary. Enforcement follows compatibility in the same serialized release window, reasserts fail-closed policies and revoked browser ACLs, and retains the provenance boundary; no native scheduling caller is introduced by this slice. The existing batch quiet-hours guard (America/Denver) defers the queue; central `sms_disabled`/`quiet_hours` results release an unreserved claim. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
@@ -650,7 +650,10 @@ functions/
     messaging-transport.js       — Provider-neutral seam used only by staff `/api/send-message`; registers Twilio and P2P-only CallRail behind explicit server mode, with missing/unknown modes disabled and no fallback. Read-only Cloudflare inspection on 2026-07-31 found both Preview and Production configured for CallRail/foundation; no Twilio credential variable names were present. Scheduled/automated/campaign senders remain explicitly Twilio-only.
     messaging-setup.js           — Pure redacted readiness/status builder shared by the admin setup Worker; resolves only server-owned mode/configuration presence, safe health counts, blocker codes, and planned channel capabilities.
     callrail-text-webhook.js      — Separate signed CallRail SMS Received/Sent receiver: verifies raw-body HMAC/timestamp, validates event shape, and deduplicates by required `resource_id` into the provider-event inbox. The documented secondary numeric `id` is optional because the live signed payload omitted it; a malformed non-null value still fails closed. It does not use the voice/form webhook. Signed events project through shared compliance primitives into canonical contacts/conversations/messages; MMS immediately consumes the signed webhook's short-lived media endpoint only after exact CallRail HTTPS/host/account validation, while retained-event retries refresh current endpoints from the documented conversation API. Verified bytes are copied into private `message-attachments`, and only owned references are retained. The account validator accepts a legacy numeric id and current masked `ACC...` media identity only after CallRail's authenticated account inventory proves the pair. No automated CallRail keyword reply is sent. Two outbound attempts were recovered without resend through `text_reconciled` events. A one-time isolated Preview importer later projected the two missing inbound replies from an exact conversation/time window and was fully deleted without merge. Live 2026-07-23 iPhone MMS evidence isolated the numeric-vs-masked account mismatch before Storage; post-deploy recovery and a fresh round trip remain required.
-    message-media-url.js          — Conversations-capability-gated signer for one private CallRail attachment already bound to a canonical message/index; rejects arbitrary buckets/paths and returns a 10-minute URL.
+    message-conversations.js     — Conversations-capability-gated bounded contact search and service-only direct-thread creation. Both entry points use timed Auth/database transport before returning the four picker fields or invoking the scoped idempotent creator.
+    message-media-upload.js       — Conversations-capability + current per-conversation-membership gated private image upload; checks membership before reading bytes or writing Storage, binds a valid conversation, rejects nonmembers as not found, and bounds Auth/PostgREST/RPC/Storage calls.
+    message-media-url.js          — Conversations-capability + current per-conversation-membership gated signer for one private attachment already bound to a canonical message/index; its service-only RPC returns canonical media metadata only after strict membership succeeds, so there is no pre-authorization service-role message read. Rejects arbitrary buckets/paths, bounds outbound calls, and returns a 10-minute URL.
+    notify.js                     — Secret-first or active-internal-admin notification dispatcher; Bearer Auth and production Web Push use the shared bounded transport while injectable tests preserve provider isolation.
     twilio-inbound.js             — Normalizes signed Twilio SMS/MMS form facts into the provider-neutral event identity and enforces AccountSid/MessageSid/media-count shape before retention.
     twilio-inbound-auth.js        — Public-webhook pre-authentication resolver limited to the exact Twilio token row and AccountSid key (with only their legacy env fallbacks). It never reads outbound sender/messaging-service configuration and makes no write.
     twilio-inbound-processor.js   — Thin retry-aware adapter for the service-only `project_twilio_inbound_event(uuid,boolean)` atomic projection.
@@ -973,9 +976,10 @@ creation/search/notification recipients. Post-apply catalog checks for the origi
 anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
 and exactly one foundation ledger row. Earlier guarded SQL behavior proof for the superseded
 `40337–40339` train passed on a disposable local clone and remains historical evidence only. It
-does not prove the corrected sources. The corrected participant proof and scheduled-delivery
-pgTAP proof subsequently passed on a disposable local Supabase clone, with both fixture
-transactions rolled back; the full governed database runner remains a release gate.
+does not prove the corrected sources. Earlier corrected participant and scheduled-delivery
+revisions subsequently passed on a disposable local Supabase clone with both fixture transactions
+rolled back. The exact current source adds authorized-media, explicit-deny-policy, legacy-no-op,
+and matching behavioral assertions; the full governed database runner remains a release gate.
 
 `20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
 `qa-staging`, as ledger `20260731181046`, from reconciled candidate `487ec641` (source SHA-256
@@ -1043,10 +1047,10 @@ After the aggregate pending count is verified zero, apply
 recovery pause and preserves reservation/provenance evidence.
 Read-only evidence on 2026-07-31 found exactly one legacy production pending scheduled row, so
 production currently stops at the zero-pending gate until a separately authorized owner decision.
-Supabase also reported `qa-staging` `MIGRATIONS_FAILED` and non-persistent, with only
-`40337/40338` ledgered. Read-only catalog access remains healthy and the badge is the known
-cosmetic seed artifact; reconfirm the exact branch target and obtain a clean QA apply before
-promotion.
+The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
+reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
+through rebase or ad-hoc ledger writes. Only `40337/40338` are ledgered for this train; target the
+exact branch ref and obtain a clean direct QA apply before promotion.
 Nothing has been applied to production or deployed from this candidate.
 
 ### Documents & Esign
@@ -1397,8 +1401,9 @@ capability/access and exactly one active customer recipient, and treats the stab
 idempotency key. `get_scheduled_queue(p_limit)` and `cancel_scheduled_message(p_id)` are exact
 DevTools-owner contracts; cancellation only succeeds for an unreserved pending row. Hardened callers
 deploy first and fail closed until the compatibility RPCs exist. Compatibility preserves the legacy
-`claim_scheduled_message(uuid)` signature only as a service-callable fail-closed stub, closes raw
-browser queue writes in the same transaction, and adds
+`claim_scheduled_message(uuid)` signature and historical grants as a callable `false` no-op,
+closes raw browser queue writes and changes all historical policy predicates to `false` in the
+same transaction, and adds
 service-role-only `claim_scheduled_message_v2`, release/fail, reservation, and reconciliation RPCs
 fenced by a random claim token. Reservation rechecks creator capability/access and the immutable
 recipient snapshot against the exact-one current recipient, links one irreversible
@@ -1406,8 +1411,8 @@ recipient snapshot against the exact-one current recipient, links one irreversib
 only after the worker and central automated-send consent/DND/kill-switch/quiet-hours gates. Reconciliation
 materializes accepted delivery, preserves fresh in-flight work, and sends an unknown outcome to owner
 review without automatic resubmission. Enforcement follows compatibility in the same serialized release
-window, leaves the dormant broad policies inert behind revoked ACLs, retains the provenance
-boundary, and revokes the legacy stub from the service role. This slice
+window, reasserts fail-closed policies and revoked browser ACLs, and retains the provenance
+boundary. This slice
 adds no native scheduling caller. The unresolved browser operation ID is scoped to the current
 opaque account owner+epoch, so a still-mounted Capacitor WebView cannot reuse another account's ID;
 cancel refreshes also preserve the visible queue instead of replacing it with a loading state.

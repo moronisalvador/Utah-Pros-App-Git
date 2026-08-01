@@ -272,8 +272,8 @@ dead-subscription pruning and transactional email behavior are unchanged.
 The retained legacy Bearer surface now requires an active internal admin and accepts only four
 object-derived events: appointment assigned/updated/canceled and estimate accepted. It rejects all
 caller message copy, recipient, payload and link fields before dispatch. Shared Auth and Web Push
-still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
-slice. Email retains its timed provider request.
+use the shared bounded Worker transport; the transport remains injectable in tests. Email retains
+its timed provider request.
 
 At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
 `SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the
