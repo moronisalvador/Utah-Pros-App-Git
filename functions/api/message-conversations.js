@@ -66,7 +66,7 @@ export async function onRequestOptions(context) {
 export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env, fetchWithTimeout);
-  const auth = await requireMessagingAccess(request, env, db);
+  const auth = await requireMessagingAccess(request, env, db, fetchWithTimeout);
   if (auth.error) {
     return noStoreResponse({
       error: auth.error,
@@ -123,7 +123,7 @@ export async function onRequestGet(context) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const db = supabase(env, fetchWithTimeout);
-  const auth = await requireMessagingAccess(request, env, db);
+  const auth = await requireMessagingAccess(request, env, db, fetchWithTimeout);
   if (auth.error) {
     return noStoreResponse({
       error: auth.error,

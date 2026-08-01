@@ -28,6 +28,7 @@ import {
   onRequestGet,
   onRequestPost,
 } from './message-conversations.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const CONTACT_ID = '11111111-1111-4111-8111-111111111111';
 const EMPLOYEE_ID = '33333333-3333-4333-8333-333333333333';
@@ -106,13 +107,15 @@ describe('GET /api/message-conversations', () => {
   );
 
   it('searches only the caller-scoped minimal contact directory with a hard result cap', async () => {
+    const req = request({ query: '?q=Test%20Contact' });
     const response = await onRequestGet({
-      request: request({ query: '?q=Test%20Contact' }),
+      request: req,
       env: {},
     });
 
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
     expect(h.db.rpc).toHaveBeenCalledWith('search_scoped_conversation_contacts', {
       p_employee_id: EMPLOYEE_ID,
       p_search: 'Test Contact',
@@ -156,12 +159,14 @@ describe('POST /api/message-conversations', () => {
   );
 
   it('uses the service-only idempotent RPC and does not send anything', async () => {
+    const req = request({ body: { contact_id: CONTACT_ID } });
     const response = await onRequestPost({
-      request: request({ body: { contact_id: CONTACT_ID } }),
+      request: req,
       env: {},
     });
 
     expect(response.status).toBe(200);
+    expect(h.auth).toHaveBeenCalledWith(req, {}, h.db, fetchWithTimeout);
     expect(h.db.rpc).toHaveBeenCalledWith('find_or_create_scoped_conversation', {
       p_contact_id: CONTACT_ID,
       p_employee_id: EMPLOYEE_ID,
