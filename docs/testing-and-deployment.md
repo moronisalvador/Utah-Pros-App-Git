@@ -157,6 +157,15 @@ is externally gated on a reviewed local Supabase config/runtime and deterministi
 fixtures. Hosted QA remains separately gated on a dedicated project, non-production credentials,
 allowed origins and provider sandboxes.
 
+The five-producer authorization candidate adds
+`supabase/tests/notification_producer_authorization.test.sql`. Its included behavior suite refuses
+unless both `UPR_ISOLATED_DB=1` and `upr.isolated_test_database=on` are present, then transactionally
+tests anonymous/inactive/external/cross-account denial, actor binding, crew row-identity
+preservation, exact-retry timesheet idempotency, serialized review, and service-only delivery
+claims. It is registered in the governed local runner but has not run: this repository still lacks
+`supabase/config.toml` and a reviewed sequence that loads `db/baseline/schema.sql` before only the
+post-baseline migrations. Do not redirect it to `qa-staging`, dev/Preview, or shared production.
+
 ## Release flow
 
 - Routine work follows the current branch rules in `CLAUDE.md`; never push directly to `main`.
