@@ -1,6 +1,6 @@
 # Close-Out Standard
 
-**Last verified:** 2026-07-26
+**Last verified:** 2026-07-31
 
 Linked from `CLAUDE.md` and every wave-ownership manifest. **The single canonical checklist every
 session runs before handoff or an authorized publication step.** Manifests reference this file and list only their *deltas* (extra
@@ -39,17 +39,23 @@ bugs that reached techs.
    - `consent-path-auditor` — any send-path change.
    - `worker-security-reviewer` — any changed worker that returns non-public data or causes a side
      effect; SQL/catalog review remains with the database reviewers.
-2b. **A migration ships a CI-VISIBLE test (NEW — 2026-07-26).** Behavioral tests in
-   `supabase/tests/` belong to the **`db` lane, which `npm test` does not run** — it refuses without
-   an isolated database target, and none exists yet (backlog 6.1). On 2026-07-26 that left **75
-   guards dark in CI**, including ones written to be durable, unnoticed for weeks. So a migration
-   PR must ALSO carry a **static contract test in a credential-free lane** (`tests/qa/unit/**`) that
-   reads the migration source and asserts what it claims — policies dropped, roles revoked, gates
-   present, `REVOKE` before `GRANT`, allowlist untouched, rollback file present. Precedent:
-   `tests/qa/unit/anon-closure-tranche-a.test.js`.
-   This proves **intent, not effect** — say so in the handoff or authorized PR, and keep the behavioral test in
-   `supabase/tests/` for the apply window. Never present a db-lane test as CI coverage.
-   `tests/qa/unit/db-lane-coverage.test.js` fails if the dark count grows unacknowledged.
+2b. **A migration ships a CI-VISIBLE test** (2026-07-26; premises corrected 2026-07-31). Behavioral
+   tests in `supabase/tests/` belong to the **`db` lane, which `npm test` still does not run** — the
+   three credential-free lanes (`unit`, `worker`, `qa`) carry no database target by design. The db
+   lane itself is **no longer dark**: it runs in CI against the seeded hosted `qa-staging` branch.
+   So a migration PR must ALSO carry a **static contract test in a credential-free lane**
+   (`tests/qa/unit/**`) that reads the migration source and asserts what it claims — policies
+   dropped, roles revoked, gates present, `REVOKE` before `GRANT`, allowlist untouched, rollback
+   file present. Precedent: `tests/qa/unit/anon-closure-tranche-a.test.js`.
+   That static test proves **intent, not effect** — say so in the handoff or authorized PR, and keep
+   the behavioral proof in `supabase/tests/` for the apply window.
+   **Do not quote a debt number here.** `tests/qa/unit/db-lane-coverage.test.js` owns the contract
+   and `scripts/qa/db-lane-baseline.json` owns the figures: failed assertions are gated at **zero**,
+   setup-suite debt is **shrink-only**, and the local-only SQL/pgTAP inventory must stay exact. Read
+   those two files for the current state; the hardcoded "75 guards dark" that stood here from
+   2026-07-26 to 2026-07-31 is exactly the drift this pointer exists to prevent.
+   Still true, and the reason this rule exists: a proof that only runs in the db lane is **not**
+   coverage in the credential-free lanes — never present one as the other.
 
 3. **Minimize / resume test (NEW — mandatory for any page change).** Background the PWA (or hide the
    browser tab) for 30s+, then resume. **Nothing may happen:** no blank content, no spinner flash, no
