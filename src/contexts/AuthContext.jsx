@@ -65,6 +65,7 @@ import { createTokenBoundClient } from '@/lib/stableDb';
 import {
   canRegisterPush,
   isNativePushEnrollmentEnabled,
+  reconcileRetiredDevNativePushDevice,
   registerPushForEmployee,
 } from '@/lib/pushNotifications';
 import {
@@ -1415,12 +1416,23 @@ export function AuthProvider({ children }) {
         // Native enrollment remains fail-closed until a reviewed native build
         // explicitly enables the independently gated APNs channel.
         // Intentionally not awaited — login shouldn't block on APNs.
-        if (canRegisterPush() && isNativePushEnrollmentEnabled()) {
-          registerPushForEmployee(
-            authenticatedDb,
-            emp.id,
-            { ownerKey: authenticatedOwnerKey },
-          );
+        if (canRegisterPush()) {
+          if (isNativePushEnrollmentEnabled()) {
+            registerPushForEmployee(
+              authenticatedDb,
+              emp.id,
+              { ownerKey: authenticatedOwnerKey },
+            );
+          } else {
+            // Exact-build + installed-bundle guards inside this helper make
+            // this a no-op for official UPR and ordinary disabled builds.
+            // Intentionally not awaited: login remains available while an
+            // emergency UPR Dev replacement retires its remembered token.
+            reconcileRetiredDevNativePushDevice(
+              authenticatedDb,
+              { ownerKey: authenticatedOwnerKey },
+            );
+          }
         }
       } else {
         const cleanupResult = await requireAccountCleanup(
