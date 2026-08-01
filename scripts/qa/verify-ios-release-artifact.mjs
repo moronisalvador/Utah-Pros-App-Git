@@ -50,6 +50,7 @@ const VALUE_ARGUMENTS = new Map([
   ['--expected-build-number', 'expectedBuildNumber'],
   ['--expected-release-variant', 'expectedReleaseVariant'],
   ['--expected-native-api-origin', 'expectedNativeApiOrigin'],
+  ['--expected-native-ota-enabled', 'expectedNativeOtaEnabled'],
   ['--expected-native-push-enabled', 'expectedNativePushEnabled'],
   ['--expected-retire-dev-token', 'expectedRetireDevToken'],
   ['--expected-apns-environment', 'expectedApnsEnvironment'],
@@ -68,6 +69,7 @@ const REQUIRED_ARGUMENTS = [
 const NATIVE_RELEASE_ARGUMENTS = [
   'expectedReleaseVariant',
   'expectedNativeApiOrigin',
+  'expectedNativeOtaEnabled',
   'expectedNativePushEnabled',
   'expectedRetireDevToken',
   'expectedApnsEnvironment',
@@ -108,6 +110,14 @@ export function parseVerifierArguments(argv) {
   ) {
     throw new Error(
       'Native release verifier arguments must be provided as one complete set',
+    );
+  }
+  if (
+    nativeReleaseArgumentCount === NATIVE_RELEASE_ARGUMENTS.length &&
+    !['true', 'false'].includes(parsed.expectedNativeOtaEnabled)
+  ) {
+    throw new Error(
+      'expectedNativeOtaEnabled must be exactly true or false',
     );
   }
   if (
@@ -162,6 +172,10 @@ export function validateNativeReleaseManifest(manifest, expected, label) {
   assertCondition(
     manifest.apiOrigin === expected.apiOrigin,
     `${label} native API origin does not match`,
+  );
+  assertCondition(
+    manifest.nativeOtaEnabled === expected.nativeOtaEnabled,
+    `${label} native OTA mode does not match`,
   );
   assertCondition(
     manifest.nativePushEnabled === expected.nativePushEnabled,
@@ -462,6 +476,7 @@ function validateReleaseApp({
   expectedBuildNumber,
   expectedReleaseVariant,
   expectedNativeApiOrigin,
+  expectedNativeOtaEnabled,
   expectedNativePushEnabled,
   expectedRetireDevToken,
   expectedApnsEnvironment,
@@ -504,6 +519,7 @@ function validateReleaseApp({
         variant: expectedReleaseVariant,
         bundleIdentifier: expectedBundleId,
         apiOrigin: expectedNativeApiOrigin,
+        nativeOtaEnabled: expectedNativeOtaEnabled === 'true',
         nativePushEnabled: expectedNativePushEnabled === 'true',
         retireDevToken: expectedRetireDevToken === 'true',
         apnsEnvironment: expectedApnsEnvironment,
@@ -511,6 +527,57 @@ function validateReleaseApp({
       },
       label,
     );
+
+    const capacitorConfigPath = path.join(appPath, 'capacitor.config.json');
+    requireFile(capacitorConfigPath, `${label} Capacitor configuration`);
+    let nativeCapacitorConfig;
+    try {
+      nativeCapacitorConfig = JSON.parse(
+        readFileSync(capacitorConfigPath, 'utf8'),
+      );
+    } catch {
+      throw new Error(`${label} Capacitor configuration is not valid JSON`);
+    }
+    const updater = nativeCapacitorConfig?.plugins?.CapacitorUpdater;
+    assertCondition(
+      nativeCapacitorConfig.appId === expectedBundleId,
+      `${label} Capacitor app identifier does not match`,
+    );
+    assertCondition(
+      updater?.appId === expectedBundleId,
+      `${label} updater app identifier does not match`,
+    );
+    assertCondition(
+      updater?.autoUpdate === (expectedNativeOtaEnabled === 'true'),
+      `${label} updater auto-update mode does not match`,
+    );
+    assertCondition(
+      updater?.directUpdate === false,
+      `${label} updater direct-update mode must remain disabled`,
+    );
+    if (expectedNativeOtaEnabled === 'true') {
+      assertCondition(
+        expectedReleaseVariant === 'dev',
+        `${label} OTA-enabled release must use the isolated dev variant`,
+      );
+      assertCondition(
+        updater.defaultChannel === 'upr-dev-canary',
+        `${label} updater channel is not the isolated dev canary`,
+      );
+      assertCondition(
+        updater.allowSetDefaultChannel === false
+          && updater.allowModifyAppId === false
+          && updater.allowModifyUrl === false,
+        `${label} updater mutation controls are not locked`,
+      );
+      assertCondition(
+        typeof updater.publicKey === 'string'
+          && updater.publicKey.length > 0
+          && !updater.publicKey.includes('PRIVATE')
+          && !updater.publicKey.includes('BEGIN'),
+        `${label} updater public verification key is missing or unsafe`,
+      );
+    }
   }
 
   const info = readPlistJson(infoPath, `${label} Info.plist`);
@@ -719,6 +786,7 @@ async function verifyReleaseArtifact(rawArguments) {
       expectedBuildNumber: argumentsMap.expectedBuildNumber,
       expectedReleaseVariant: argumentsMap.expectedReleaseVariant,
       expectedNativeApiOrigin: argumentsMap.expectedNativeApiOrigin,
+      expectedNativeOtaEnabled: argumentsMap.expectedNativeOtaEnabled,
       expectedNativePushEnabled: argumentsMap.expectedNativePushEnabled,
       expectedRetireDevToken: argumentsMap.expectedRetireDevToken,
       expectedApnsEnvironment: argumentsMap.expectedApnsEnvironment,

@@ -64,6 +64,12 @@ export function createNativeReleaseManifest(environment) {
     );
   }
   requireExact(environment.VITE_APNS_ENV, 'production', 'VITE_APNS_ENV');
+  const expectedNativeOtaEnabled = variant === 'dev' ? 'true' : 'false';
+  requireExact(
+    environment.VITE_NATIVE_OTA_ENABLED,
+    expectedNativeOtaEnabled,
+    'VITE_NATIVE_OTA_ENABLED',
+  );
 
   const sourceCommit = environment.VITE_RELEASE_SHA;
   if (!/^[0-9a-f]{40}$/.test(sourceCommit || '')) {
@@ -88,6 +94,7 @@ export function createNativeReleaseManifest(environment) {
     variant,
     bundleIdentifier: release.bundleIdentifier,
     apiOrigin: release.apiOrigin,
+    nativeOtaEnabled: environment.VITE_NATIVE_OTA_ENABLED === 'true',
     nativePushEnabled,
     retireDevToken,
     apnsEnvironment: 'production',
