@@ -13,6 +13,71 @@ const TIME_OPTIONS = (() => {
   return opts;
 })();
 
+/* Declared before the component so the changed-file lint ratchet can verify
+   every reference without suppressing the TDZ guard. Values are unchanged. */
+const M = {
+  overlay: {
+    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+    zIndex: 1000, paddingTop: 40, overflow: 'auto',
+  },
+  modal: {
+    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
+    width: '100%', maxWidth: 520, maxHeight: 'calc(100vh - 80px)',
+    display: 'flex', flexDirection: 'column',
+    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
+  },
+  header: {
+    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
+  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
+  closeBtn: {
+    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
+    border: 'none', cursor: 'pointer', padding: 4,
+  },
+  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
+  field: { marginBottom: 12 },
+  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
+    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
+    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
+  },
+  section: { marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)' },
+  sectionTitle: {
+    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
+    color: 'var(--text-tertiary)', marginBottom: 10,
+    display: 'flex', alignItems: 'center', gap: 8,
+  },
+  sectionBadge: {
+    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none', letterSpacing: 0,
+  },
+  crewGrid: { display: 'flex', flexWrap: 'wrap', gap: 6 },
+  crewChip: {
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
+    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
+    background: 'var(--bg-primary)',
+  },
+  footer: {
+    display: 'flex', justifyContent: 'flex-end', gap: 8,
+    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
+  },
+  cancelBtn: {
+    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+  saveBtn: {
+    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
+    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
+    fontFamily: 'var(--font-sans)',
+  },
+};
+
 function getInitials(name) {
   if (!name) return '?';
   const p = name.trim().split(/\s+/);
@@ -343,68 +408,5 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
     </div>
   );
 }
-
-const M = {
-  overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-    zIndex: 1000, paddingTop: 40, overflow: 'auto',
-  },
-  modal: {
-    background: 'var(--bg-primary)', borderRadius: 'var(--radius-xl)',
-    width: '100%', maxWidth: 520, maxHeight: 'calc(100vh - 80px)',
-    display: 'flex', flexDirection: 'column',
-    boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
-  },
-  header: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
-    padding: '16px 20px', borderBottom: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  headerTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' },
-  headerSub: { fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 },
-  closeBtn: {
-    fontSize: 16, color: 'var(--text-tertiary)', background: 'none',
-    border: 'none', cursor: 'pointer', padding: 4,
-  },
-  body: { padding: '16px 20px', overflowY: 'auto', flex: 1 },
-  field: { marginBottom: 12 },
-  label: { fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, display: 'block' },
-  input: {
-    width: '100%', padding: '8px 10px', border: '1px solid var(--border-color)',
-    borderRadius: 'var(--radius-md)', fontSize: 13, fontFamily: 'var(--font-sans)',
-    color: 'var(--text-primary)', outline: 'none', background: 'var(--bg-primary)',
-  },
-  section: { marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-light)' },
-  sectionTitle: {
-    fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em',
-    color: 'var(--text-tertiary)', marginBottom: 10,
-    display: 'flex', alignItems: 'center', gap: 8,
-  },
-  sectionBadge: {
-    fontSize: 11, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
-    background: 'var(--accent-light)', color: 'var(--accent)', textTransform: 'none', letterSpacing: 0,
-  },
-  crewGrid: { display: 'flex', flexWrap: 'wrap', gap: 6 },
-  crewChip: {
-    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)',
-    cursor: 'pointer', fontFamily: 'var(--font-sans)', transition: 'all 100ms ease',
-    background: 'var(--bg-primary)',
-  },
-  footer: {
-    display: 'flex', justifyContent: 'flex-end', gap: 8,
-    padding: '12px 20px', borderTop: '1px solid var(--border-color)', flexShrink: 0,
-  },
-  cancelBtn: {
-    fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 16px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-  saveBtn: {
-    fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)',
-    border: 'none', borderRadius: 'var(--radius-md)', padding: '8px 20px', cursor: 'pointer',
-    fontFamily: 'var(--font-sans)',
-  },
-};
 
 export default EventModal;
