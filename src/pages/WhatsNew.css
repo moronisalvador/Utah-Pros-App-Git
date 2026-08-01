@@ -29,7 +29,13 @@
 /* ─── SECTION: Layout ────────────── */
 
 .wn-page {
-  max-width: 900px;
+  /* A reading column, so it stays narrower than a data-grid page — the prose in
+     the highlight bodies wants ~70 characters a line, not the full monitor.
+     `margin-inline: auto` is what makes that a deliberate column rather than
+     content stranded against the left edge; every constrained office page pairs
+     the two (.ovw-page, .status-page-inner, .jobs-page-narrow, .customers-page). */
+  max-width: 960px;
+  margin-inline: auto;
   padding-bottom: var(--space-8);
 }
 
