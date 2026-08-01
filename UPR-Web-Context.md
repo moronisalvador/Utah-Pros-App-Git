@@ -1042,7 +1042,9 @@ pre-apply proof, 40337 was deliberately absent there; no production data was cha
 QA and production post-apply verification for `31213000` matched all four reviewed body hashes,
 owners, pinned search paths, volatility settings, and ACLs; every body excludes
 appointment/job/claim/crew authority. QA retained zero pending scheduled rows and production
-retained its known aggregate of one. Next deploy compatible web and supported native callers.
+retained its known aggregate of one. Compatible web callers are live on `dev` at merge
+`745de63c` through successful Cloudflare Preview deployment
+`7249c5de-a24d-4ffe-ba86-6a57168aa776`; supported native adoption remains pending.
 Only after older direct-unread writers are unsupported may `31213100` apply in a
 separately reviewed window. Hardened scheduled callers deploy immediately before the serialized
 scheduled window. Auth/database/provider calls are bounded, and a reserved scheduled send cannot
@@ -1057,8 +1059,8 @@ The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_
 reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
 through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
 target the exact branch ref and keep later QA applies serialized.
-The compatibility train is applied to production; no application deployment has yet occurred from
-this candidate.
+The compatibility train is applied to production and compatible application source is live only
+on `dev`/Preview. Production/main remains unchanged.
 
 ### Documents & Esign
 ```
