@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-03",
+  "kind": "Improved",
+  "area": "Billing",
+  "title": "Job costing separates travel from on-site time",
+  "body": "The By Job view now splits travel time from on-site time and shows a combined total. The old Payroll view is now By Employee, which is how people were already using it."
+}

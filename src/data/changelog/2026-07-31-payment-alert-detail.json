@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-31",
+  "kind": "Improved",
+  "area": "Notifications",
+  "title": "Payment alerts name the client and job",
+  "body": "A payment notification now says who paid and which job it was for, instead of only that a payment arrived."
+}

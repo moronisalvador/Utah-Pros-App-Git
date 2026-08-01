@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-28",
+  "kind": "New",
+  "area": "Notifications",
+  "title": "Push notifications on the iPhone app",
+  "body": "The native app delivers push notifications through Apple, alongside the browser notifications that already worked."
+}

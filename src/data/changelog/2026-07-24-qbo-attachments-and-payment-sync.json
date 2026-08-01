@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-24",
+  "kind": "New",
+  "area": "Billing",
+  "title": "Invoices and estimates carry their attachments into QuickBooks",
+  "body": "Files attached to an invoice or estimate now travel with it to QuickBooks, and payments sync back on a schedule instead of waiting for someone to go looking."
+}

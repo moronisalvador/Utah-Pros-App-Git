@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-28",
+  "kind": "Fixed",
+  "area": "Mobile App",
+  "title": "The installed app talks to the right server",
+  "body": "The iPhone app now resolves the correct server when it starts and refuses a wrong one — fixing requests that failed after installing."
+}

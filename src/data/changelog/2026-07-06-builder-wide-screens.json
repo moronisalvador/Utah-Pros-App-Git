@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-06",
+  "kind": "Improved",
+  "area": "Billing",
+  "title": "The invoice and estimate builder uses the whole screen",
+  "body": "On a wide monitor the builder no longer squeezes into a narrow column, so long lists of line items are far easier to read and edit."
+}

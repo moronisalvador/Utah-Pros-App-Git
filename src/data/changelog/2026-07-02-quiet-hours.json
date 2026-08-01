@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-02",
+  "kind": "New",
+  "area": "Messaging",
+  "title": "Texts respect quiet hours",
+  "body": "Automated messages only go out between 8am and 9pm local time."
+}

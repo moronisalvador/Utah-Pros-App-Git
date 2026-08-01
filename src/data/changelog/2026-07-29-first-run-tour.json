@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-29",
+  "kind": "New",
+  "area": "Field App",
+  "title": "A first-run tour for new techs",
+  "body": "A short guided tour the first time a tech opens the app, including asking for notification permission at the point where it actually makes sense."
+}

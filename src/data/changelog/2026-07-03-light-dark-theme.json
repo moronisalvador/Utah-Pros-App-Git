@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-03",
+  "kind": "New",
+  "area": "Field App",
+  "title": "Light and dark themes, per device",
+  "body": "Pick Light, Dark, or follow the phone's own setting. Light is the default and the choice is remembered per device."
+}

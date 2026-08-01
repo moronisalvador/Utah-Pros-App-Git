@@ -1,0 +1,7 @@
+{
+  "date": "2026-07-29",
+  "kind": "New",
+  "area": "Mobile App",
+  "title": "A separate UPR Dev app for testing",
+  "body": "Test builds install side by side with the real app, so trying something new never disturbs the app people are using for actual work."
+}
