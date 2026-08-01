@@ -21,23 +21,11 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateCapgoV2PublicKey } from './lib/capgo-public-key.mjs';
 
 export const CAPGO_DEV_APP_ID = 'com.utahprosrestoration.upr.dev';
 export const CAPGO_DEV_CHANNEL = 'upr-dev-canary';
 export const CAPGO_PRODUCTION_APP_ID = 'com.utahprosrestoration.upr';
-
-function requirePublicKey(publicKey) {
-  const value = publicKey?.trim();
-  if (!value) {
-    throw new Error(
-      'CAPGO_DEV_PUBLIC_KEY_V2 is required before UPR Dev OTA can be enabled',
-    );
-  }
-  if (value.includes('PRIVATE') || value.includes('BEGIN')) {
-    throw new Error('CAPGO_DEV_PUBLIC_KEY_V2 must contain only the Capgo v2 public key');
-  }
-  return value;
-}
 
 export function createCapgoDevConfig(source, { publicKey } = {}) {
   if (source?.appId !== CAPGO_PRODUCTION_APP_ID) {
@@ -70,7 +58,7 @@ export function createCapgoDevConfig(source, { publicKey } = {}) {
         directUpdate: false,
         appReadyTimeout: 30000,
         responseTimeout: 20,
-        publicKey: requirePublicKey(publicKey),
+        publicKey: validateCapgoV2PublicKey(publicKey).publicKey,
         defaultChannel: CAPGO_DEV_CHANNEL,
         allowSetDefaultChannel: false,
         allowModifyAppId: false,

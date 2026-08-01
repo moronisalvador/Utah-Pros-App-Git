@@ -15,6 +15,7 @@
  * ════════════════════════════════════════════════
  */
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -23,6 +24,14 @@ import {
   CAPGO_PRODUCTION_APP_ID,
   createCapgoDevConfig,
 } from './configure-ios-capgo-dev.mjs';
+import { validateCapgoV2PublicKey } from './lib/capgo-public-key.mjs';
+
+const { publicKey: validPublicKey, privateKey: validPrivateKey } =
+  generateKeyPairSync('rsa', {
+    modulusLength: 4096,
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  });
 
 const source = Object.freeze({
   appId: CAPGO_PRODUCTION_APP_ID,
@@ -39,14 +48,17 @@ const source = Object.freeze({
 
 test('creates an isolated, fail-closed UPR Dev updater contract', () => {
   const configured = createCapgoDevConfig(source, {
-    publicKey: 'reviewed-dev-public-key',
+    publicKey: validPublicKey,
   });
 
   assert.equal(configured.appId, CAPGO_DEV_APP_ID);
   assert.equal(configured.appName, 'UPR Dev');
   assert.equal(configured.plugins.CapacitorUpdater.appId, CAPGO_DEV_APP_ID);
   assert.equal(configured.plugins.CapacitorUpdater.defaultChannel, CAPGO_DEV_CHANNEL);
-  assert.equal(configured.plugins.CapacitorUpdater.publicKey, 'reviewed-dev-public-key');
+  assert.equal(
+    configured.plugins.CapacitorUpdater.publicKey,
+    validPublicKey.trim(),
+  );
   assert.equal(configured.plugins.CapacitorUpdater.autoUpdate, true);
   assert.equal(configured.plugins.CapacitorUpdater.directUpdate, false);
   assert.equal(configured.plugins.CapacitorUpdater.allowSetDefaultChannel, false);
@@ -55,23 +67,45 @@ test('creates an isolated, fail-closed UPR Dev updater contract', () => {
   assert.equal(configured.plugins.CapacitorUpdater.persistModifyUrl, false);
 });
 
-test('refuses missing or private key material', () => {
+test('accepts and fingerprints a canonical Capgo v2 RSA-4096 public key', () => {
+  const validated = validateCapgoV2PublicKey(validPublicKey);
+  assert.equal(validated.publicKey, validPublicKey.trim());
+  assert.match(validated.sha256, /^[a-f0-9]{64}$/);
+});
+
+test('refuses missing, private, malformed, or undersized key material', () => {
   assert.throws(
     () => createCapgoDevConfig(source),
     /CAPGO_DEV_PUBLIC_KEY_V2 is required/,
   );
   assert.throws(
     () => createCapgoDevConfig(source, {
-      publicKey: '-----BEGIN PRIVATE KEY-----',
+      publicKey: validPrivateKey,
     }),
-    /must contain only the Capgo v2 public key/,
+    /must be a PKCS#1 RSA-4096 public key/,
+  );
+  assert.throws(
+    () => createCapgoDevConfig(source, { publicKey: 'not a key' }),
+    /must be a PKCS#1 RSA-4096 public key/,
+  );
+
+  const { publicKey: undersizedPublicKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'pkcs1', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs1', format: 'pem' },
+  });
+  assert.throws(
+    () => createCapgoDevConfig(source, {
+      publicKey: undersizedPublicKey,
+    }),
+    /must be a valid PKCS#1 RSA-4096 public key/,
   );
 });
 
 test('refuses to reinterpret an unexpected or dev-generated identity', () => {
   assert.throws(
     () => createCapgoDevConfig({ ...source, appId: CAPGO_DEV_APP_ID }, {
-      publicKey: 'reviewed-dev-public-key',
+      publicKey: validPublicKey,
     }),
     /Expected generated production appId/,
   );
