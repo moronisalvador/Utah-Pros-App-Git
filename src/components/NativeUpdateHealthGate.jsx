@@ -14,7 +14,7 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  contexts/AuthContext, lib/nativeUpdater
+ *   Internal:  contexts/AuthContext, lib/nativeRouteHealth, lib/nativeUpdater
  *   Data:      reads  → none
  *              writes → native updater readiness metadata only
  *
@@ -30,6 +30,7 @@ import {
   isNativeUpdateHealthVerified,
   markBundleReady,
 } from '@/lib/nativeUpdater';
+import { isNativeRouteHealthy } from '@/lib/nativeRouteHealth';
 
 export default function NativeUpdateHealthGate() {
   const { loading, error, sessionExpired } = useAuth();
@@ -37,7 +38,7 @@ export default function NativeUpdateHealthGate() {
 
   useEffect(() => {
     if (attemptedRef.current) return undefined;
-    if (!isNativeUpdateHealthVerified({ loading, error, sessionExpired })) {
+    if (loading !== false || error != null || sessionExpired !== false) {
       return undefined;
     }
 
@@ -47,7 +48,14 @@ export default function NativeUpdateHealthGate() {
     const firstFrame = window.requestAnimationFrame(() => {
       secondFrame = window.requestAnimationFrame(async () => {
         if (cancelled) return;
-        const result = await markBundleReady({ healthVerified: true });
+        const healthVerified = isNativeUpdateHealthVerified({
+          loading,
+          error,
+          sessionExpired,
+          routeHealthy: isNativeRouteHealthy(),
+        });
+        if (!healthVerified) return;
+        const result = await markBundleReady({ healthVerified });
         if (!result.ok && result.reason !== 'ota_disabled' && result.reason !== 'not_native') {
           console.error(
             '[NativeUpdater] Bundle readiness acknowledgement failed:',

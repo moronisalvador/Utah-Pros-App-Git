@@ -38,8 +38,12 @@ export function isNativeUpdateHealthVerified({
   loading,
   error,
   sessionExpired,
+  routeHealthy,
 }) {
-  return loading === false && error == null && sessionExpired === false;
+  return loading === false
+    && error == null
+    && sessionExpired === false
+    && routeHealthy === true;
 }
 
 /**
