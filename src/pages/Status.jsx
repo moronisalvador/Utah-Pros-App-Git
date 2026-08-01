@@ -37,6 +37,10 @@
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useCallback } from 'react';
+// /status is a PUBLIC pre-login page (database-standard.md §2 allowlist — get_crm_build_progress
+// is GRANTED to anon). It has no session, so it must use the unauthenticated bootstrap client;
+// useAuth() is not available here. See the file header above.
+// eslint-disable-next-line no-restricted-imports
 import { db } from '@/lib/supabase';
 import PhaseCard from '@/components/BuildProgressPhaseCard';
 

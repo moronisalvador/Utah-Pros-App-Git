@@ -68,3 +68,19 @@ test('allows findings to shrink and reports the baseline opportunity', () => {
     'src/Page.jsx warning:no-use-before-define: found 1, baseline 2',
   ]);
 });
+
+test('stays silent about baseline files that were not linted in this run', () => {
+  // The ratchet lints only changed files, so most baseline entries are absent
+  // from `actual`. Reporting those as shrunk claimed a cleanup that never
+  // happened and buried the real output — 146 of 147 lines on a 3-file diff.
+  const result = compareSummaries(
+    { 'src/Touched.jsx': {} },
+    {
+      'src/Touched.jsx': {},
+      'src/Untouched.jsx': { 'warning:no-use-before-define': 73 },
+    },
+  );
+
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(result.opportunities, []);
+});

@@ -19,7 +19,8 @@
  *   Packages:  react
  *   Internal:  ./RoomChip, ./MaterialIcon (icon + labels),
  *              @/pages/tech/techConstants (ROOM_TEMPLATES),
- *              @/lib/psychrometric (calcGPP, calcDewPoint)
+ *              @/lib/psychrometric (calcGPP, calcDewPoint),
+ *              @/lib/toast (ok, err)
  *   Data:      reads  → none
  *              writes → none directly — the parent's onSave callback performs
  *                        the insert_reading RPC (writes moisture_readings) only
@@ -32,10 +33,12 @@
  *     a valid number is entered.
  *   - GPP and dew point are derived on the fly from RH + Temp via the
  *     psychrometric helpers; they show "—" until both inputs are valid.
- *   - Toasts via the upr:toast CustomEvent — never alert()/confirm().
+ *   - Toasts go through src/lib/toast (ok/err) — the only sanctioned entry
+ *     point; never a raw upr:toast dispatch, never alert()/confirm().
  * ════════════════════════════════════════════════
  */
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { ok, err } from '@/lib/toast';
 import { useDialogLifecycle } from '@/lib/useDialogLifecycle';
 import useNativeKeyboardInset from '@/lib/useNativeKeyboardInset';
 import RoomChip from './RoomChip';
@@ -128,12 +131,6 @@ export default function ReadingEntrySheet({
   }, [rhNum, tempNum]);
 
   // ─── SECTION: Helpers ──────────────
-  const fireToast = (message, type = 'success') => {
-    window.dispatchEvent(
-      new CustomEvent('upr:toast', { detail: { message, type } })
-    );
-  };
-
   const totalSteps = 4;
 
   const canAdvance = () => {
@@ -171,17 +168,17 @@ export default function ReadingEntrySheet({
       const created = await onCreateRoom?.(name);
       if (created?.id) {
         setRoomId(created.id);
-        fireToast('Room created', 'success');
+        ok('Room created');
         setShowNewRoom(false);
         setNewRoomName('');
         setStep(2);
       } else {
-        fireToast('Room created', 'success');
+        ok('Room created');
         setShowNewRoom(false);
         setNewRoomName('');
       }
-    } catch (err) {
-      fireToast('Failed to create room: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to create room: ' + (e?.message || 'unknown error'));
     } finally {
       setCreatingRoom(false);
     }
@@ -195,15 +192,15 @@ export default function ReadingEntrySheet({
   const handleSave = async () => {
     if (saving) return;
     if (!Number.isFinite(mcNum)) {
-      fireToast('Enter a moisture content (MC %)', 'error');
+      err('Enter a moisture content (MC %)');
       return;
     }
     if (!roomId) {
-      fireToast('Pick a room first', 'error');
+      err('Pick a room first');
       return;
     }
     if (!material) {
-      fireToast('Pick a material', 'error');
+      err('Pick a material');
       return;
     }
     setSaving(true);
@@ -223,10 +220,10 @@ export default function ReadingEntrySheet({
         notes: notes.trim() || null,
       };
       await onSave?.(payload);
-      fireToast('Reading saved', 'success');
+      ok('Reading saved');
       onClose?.();
-    } catch (err) {
-      fireToast('Failed to save reading: ' + (err?.message || 'unknown error'), 'error');
+    } catch (e) {
+      err('Failed to save reading: ' + (e?.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
