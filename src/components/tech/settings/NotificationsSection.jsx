@@ -116,6 +116,9 @@ export default function NotificationsSection() {
   const [nativePending, setNativePending] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [quietTimeEnabled, setQuietTimeEnabled] = useState(false);
+  const [quietTimeLoading, setQuietTimeLoading] = useState(true);
+  const [quietTimeBusy, setQuietTimeBusy] = useState(false);
   const refreshGenerationRef = useRef(0);
   const {
     isArmed,
@@ -173,6 +176,24 @@ export default function NotificationsSection() {
       refreshGenerationRef.current += 1;
     };
   }, [refresh]);
+  useEffect(() => {
+    let cancelled = false;
+    const loadQuietTime = async () => {
+      if (!employee?.id) return;
+      try {
+        const enabled = await db.rpc('get_my_notification_quiet_time', {
+          p_employee_id: employee.id,
+        });
+        if (!cancelled) setQuietTimeEnabled(enabled === true);
+      } catch {
+        if (!cancelled) err(t('notifications.quietTimeLoadError'));
+      } finally {
+        if (!cancelled) setQuietTimeLoading(false);
+      }
+    };
+    void loadQuietTime();
+    return () => { cancelled = true; };
+  }, [db, employee?.id, t]);
   useResumeRefetch({
     enabled: isNativeApp,
     onResume: () => refresh({ silent: true }),
@@ -282,6 +303,22 @@ export default function NotificationsSection() {
     } finally { setBusy(false); }
   };
 
+  const toggleQuietTime = async () => {
+    if (!employee?.id || quietTimeBusy) return;
+    const next = !quietTimeEnabled;
+    setQuietTimeBusy(true);
+    try {
+      await db.rpc('set_my_notification_quiet_time', {
+        p_employee_id: employee.id,
+        p_enabled: next,
+      });
+      setQuietTimeEnabled(next);
+      toast(t(next ? 'notifications.quietTimeOn' : 'notifications.quietTimeOff'), 'success');
+    } catch {
+      err(t('notifications.quietTimeSaveError'));
+    } finally { setQuietTimeBusy(false); }
+  };
+
   // ─── Render ──────────────
   return (
     <>
@@ -375,6 +412,27 @@ export default function NotificationsSection() {
         )}
         </>
       )}
+    </div>
+
+    <div className="tech-settings-card">
+      <div className="tech-settings-card-head">
+        <div className="tech-settings-card-title">{t('notifications.quietTimeTitle')}</div>
+        <div className="tech-settings-card-sub">{t('notifications.quietTimeSub')}</div>
+      </div>
+      <div className="tech-settings-row">
+        <div className="tech-settings-row-main">
+          <div className="tech-settings-row-label">{t('notifications.quietTimeLabel')}</div>
+          <div className="tech-settings-row-value">
+            {quietTimeLoading ? t('common:checking') : quietTimeEnabled
+              ? t('notifications.quietTimeStatusOn') : t('notifications.quietTimeStatusOff')}
+          </div>
+        </div>
+        <button type="button" className="tech-settings-btn tech-settings-btn--primary"
+          onClick={toggleQuietTime} disabled={quietTimeLoading || quietTimeBusy}>
+          {quietTimeBusy ? t('common:working') : quietTimeEnabled
+            ? t('notifications.quietTimeTurnOff') : t('notifications.quietTimeTurnOn')}
+        </button>
+      </div>
     </div>
 
     {/* Per-type × channel preferences (tech-visible types only, ≥48px targets). */}
