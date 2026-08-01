@@ -3329,20 +3329,25 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
 - **Config:** `capacitor.config.json` — `ios.contentInset: "never"` (let CSS handle safe areas)
 - **Build:** `npm run build:ios` — sets `VITE_BUILD_TARGET=native`, runs Vite + `cap sync ios`
-- **Side-by-side dev variant (2026-07-29):** third build configuration `Dev` + shared scheme
-  **UPR Dev** in `App.xcodeproj` — bundle id `com.utahprosrestoration.upr.dev`, display name
-  "UPR Dev" (`CFBundleDisplayName` is now `$(UPR_APP_DISPLAY_NAME)`, set per configuration;
-  Debug/Release still resolve to `UPR`), badged `AppIcon-Dev` asset, automatic signing (team
-  `H6ZUT739T9`), development entitlements (`App.entitlements`, `aps-environment: development`).
-  Installs alongside the TestFlight app for testing dev-branch native work on-device.
+- **Side-by-side dev variant (2026-07-29; distribution lane authored 2026-07-31):**
+  `Dev` + shared scheme **UPR Dev** provide bundle
+  `com.utahprosrestoration.upr.dev`, display name "UPR Dev", badged `AppIcon-Dev`,
+  automatic development signing, and `aps-environment: development` for direct-device work.
+  Separate `DevRelease` + **UPR Dev TestFlight** preserve the same `.dev` identity/branding
+  while using optimized manual Apple Distribution signing,
+  `App.Release.entitlements` (`aps-environment: production`), and the isolated
+  `UPR_DEV_RELEASE_PROFILE_NAME` setting. Both install alongside the official UPR app.
   `npm run build:ios:dev` = `build:ios` with `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true`
   and deliberately no `VITE_NATIVE_API_ORIGIN` (native default is `https://dev.utahpros.app`).
-  Debug/Release configs and the TestFlight lane are untouched
-  (`scripts/ios-release-workflow.test.js` still passes). **Shared-DB caveat:** same production
+  The official Debug/Release identity and manual/main-only `ios-release.yml` path remain
+  unchanged and are guarded alongside the new lane by
+  `scripts/ios-release-workflow.test.js`. **Shared-DB caveat:** same production
   Supabase behind both apps — UI sandbox, not data sandbox. **Push caveat:** never flip Cloudflare
   Preview `APNS_TOPIC`; it stays on the production fallback in both environments. The live
-  per-token topic records the dev bundle during enrollment, but a compatible deployed signed build,
-  re-enrollment and device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
+  per-token topic records the dev bundle during enrollment. Trusted notifications already fan
+  out to both exact Apple environments, so a UPR Dev TestFlight production token does not require
+  a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
+  device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
@@ -3388,6 +3393,22 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   `App.getInfo()`. Apple enrollment, distribution identity/profile, and a local signing-lane
   archive are now verified; GitHub signing/build secrets, a clean-source final artifact, and an
   explicitly authorized release dispatch remain open.
+- **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
+  `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
+  `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
+  embeds and verifies the release variant/origin/Push mode/source SHA before upload, serializes
+  release runs, and requests only the internal **UPR Dev** group. A `dev` push runs
+  credential-free tests only; every signed archive and optional upload requires a fresh manual
+  dispatch. A manual `native_push_enabled:false` build also embeds
+  `retireDevToken:true`; on authenticated boot, the exact build flag plus the OS-reported
+  `.upr.dev` identity gates owner-scoped deletion/unregistration of its remembered token. This is
+  the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
+  references use only `IOS_DEV_*` names so they cannot fall back to the official app's
+  credentials. The `.dev` Apple record/profile/group, `ios-dev-signing` /
+  `ios-dev-testflight` environments, dry archive, upload, install, and signed-device matrix are
+  unverified external gates. Publishing this source to `dev` deploys the guarded web runtime and
+  starts only the credential-free preflight; it does not create a credential, change an Apple or
+  Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for

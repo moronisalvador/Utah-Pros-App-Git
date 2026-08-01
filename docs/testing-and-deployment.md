@@ -102,6 +102,23 @@ archive also fails closed unless `VITE_NATIVE_PUSH_ENABLED` is exact lowercase
 `true` and `VITE_APNS_ENV` is exact lowercase `production`; a development
 archive must use a separately built sandbox bundle.
 
+The separate `.github/workflows/ios-dev-testflight.yml` source path targets only
+`com.utahprosrestoration.upr.dev` from `dev`, uses `https://dev.utahpros.app`, and
+still requires production APNs because it creates a distribution/TestFlight artifact.
+Its push trigger runs credential-free tests only; every signed archive and optional
+upload requires a fresh manual dispatch. It uses separate `ios-dev-signing` /
+`ios-dev-testflight` environments with dev-exclusive `IOS_DEV_*` signing/provider
+secret names, serializes runs across the provider side effect, embeds and reverifies the
+exact dev origin/Push mode/source SHA, and requests only the internal **UPR Dev** group.
+The manual `native_push_enabled:false` option embeds an exact dev-token retirement flag;
+authenticated boot additionally requires the OS-reported `.upr.dev` identity before it
+deletes the remembered token through the owner-scoped RPC and unregisters locally. The documented
+zero-dispatch evidence gate makes this a dev-only emergency replacement without changing
+official UPR or Cloudflare Production. Until its Apple
+record, profile, environments, dry archive, upload, install, and signed-device matrix
+are owner-verified, it is source—not a verified live release path. The official
+`ios-release.yml` remains manual/main-only and unchanged.
+
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
 show that employee A cannot read or change employee B's notification
