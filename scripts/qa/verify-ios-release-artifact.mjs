@@ -29,6 +29,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   statSync,
@@ -47,6 +48,12 @@ const VALUE_ARGUMENTS = new Map([
   ['--expected-team-id', 'expectedTeamId'],
   ['--expected-marketing-version', 'expectedMarketingVersion'],
   ['--expected-build-number', 'expectedBuildNumber'],
+  ['--expected-release-variant', 'expectedReleaseVariant'],
+  ['--expected-native-api-origin', 'expectedNativeApiOrigin'],
+  ['--expected-native-push-enabled', 'expectedNativePushEnabled'],
+  ['--expected-retire-dev-token', 'expectedRetireDevToken'],
+  ['--expected-apns-environment', 'expectedApnsEnvironment'],
+  ['--expected-release-sha', 'expectedReleaseSha'],
 ]);
 
 const REQUIRED_ARGUMENTS = [
@@ -56,6 +63,15 @@ const REQUIRED_ARGUMENTS = [
   'expectedTeamId',
   'expectedMarketingVersion',
   'expectedBuildNumber',
+];
+
+const NATIVE_RELEASE_ARGUMENTS = [
+  'expectedReleaseVariant',
+  'expectedNativeApiOrigin',
+  'expectedNativePushEnabled',
+  'expectedRetireDevToken',
+  'expectedApnsEnvironment',
+  'expectedReleaseSha',
 ];
 
 export function parseVerifierArguments(argv) {
@@ -83,6 +99,34 @@ export function parseVerifierArguments(argv) {
     }
   }
 
+  const nativeReleaseArgumentCount = NATIVE_RELEASE_ARGUMENTS.filter(
+    (key) => parsed[key],
+  ).length;
+  if (
+    nativeReleaseArgumentCount !== 0 &&
+    nativeReleaseArgumentCount !== NATIVE_RELEASE_ARGUMENTS.length
+  ) {
+    throw new Error(
+      'Native release verifier arguments must be provided as one complete set',
+    );
+  }
+  if (
+    nativeReleaseArgumentCount === NATIVE_RELEASE_ARGUMENTS.length &&
+    !['true', 'false'].includes(parsed.expectedNativePushEnabled)
+  ) {
+    throw new Error(
+      'expectedNativePushEnabled must be exactly true or false',
+    );
+  }
+  if (
+    nativeReleaseArgumentCount === NATIVE_RELEASE_ARGUMENTS.length &&
+    !['true', 'false'].includes(parsed.expectedRetireDevToken)
+  ) {
+    throw new Error(
+      'expectedRetireDevToken must be exactly true or false',
+    );
+  }
+
   return parsed;
 }
 
@@ -96,6 +140,46 @@ export function assertSafeArchiveEntries(entries) {
     assertCondition(!path.posix.isAbsolute(normalized), 'IPA contains an absolute path');
     assertCondition(!segments.includes('..'), 'IPA contains a path traversal entry');
   }
+}
+
+export function validateNativeReleaseManifest(manifest, expected, label) {
+  assertCondition(
+    manifest && typeof manifest === 'object' && !Array.isArray(manifest),
+    `${label} native release manifest is not an object`,
+  );
+  assertCondition(
+    manifest.schemaVersion === 1,
+    `${label} native release manifest schema is unsupported`,
+  );
+  assertCondition(
+    manifest.variant === expected.variant,
+    `${label} native release variant does not match`,
+  );
+  assertCondition(
+    manifest.bundleIdentifier === expected.bundleIdentifier,
+    `${label} native release bundle identifier does not match`,
+  );
+  assertCondition(
+    manifest.apiOrigin === expected.apiOrigin,
+    `${label} native API origin does not match`,
+  );
+  assertCondition(
+    manifest.nativePushEnabled === expected.nativePushEnabled,
+    `${label} native Push mode does not match`,
+  );
+  assertCondition(
+    manifest.retireDevToken === expected.retireDevToken,
+    `${label} dev-token retirement mode does not match`,
+  );
+  assertCondition(
+    manifest.apnsEnvironment === expected.apnsEnvironment,
+    `${label} native APNs environment does not match`,
+  );
+  assertCondition(
+    manifest.sourceCommit === expected.sourceCommit,
+    `${label} native source commit does not match`,
+  );
+  return manifest;
 }
 
 function assertCondition(condition, message) {
@@ -376,6 +460,12 @@ function validateReleaseApp({
   expectedTeamId,
   expectedMarketingVersion,
   expectedBuildNumber,
+  expectedReleaseVariant,
+  expectedNativeApiOrigin,
+  expectedNativePushEnabled,
+  expectedRetireDevToken,
+  expectedApnsEnvironment,
+  expectedReleaseSha,
   temporaryDirectory,
   label,
 }) {
@@ -391,6 +481,37 @@ function validateReleaseApp({
   const privacyPath = path.join(appPath, 'PrivacyInfo.xcprivacy');
   requireFile(infoPath, `${label} Info.plist`);
   requireFile(privacyPath, `${label} PrivacyInfo.xcprivacy`);
+
+  let nativeRelease = null;
+  if (expectedReleaseVariant) {
+    const nativeReleasePath = path.join(
+      appPath,
+      'public',
+      'upr-native-release.json',
+    );
+    requireFile(nativeReleasePath, `${label} native release manifest`);
+    let nativeReleaseManifest;
+    try {
+      nativeReleaseManifest = JSON.parse(
+        readFileSync(nativeReleasePath, 'utf8'),
+      );
+    } catch {
+      throw new Error(`${label} native release manifest is not valid JSON`);
+    }
+    nativeRelease = validateNativeReleaseManifest(
+      nativeReleaseManifest,
+      {
+        variant: expectedReleaseVariant,
+        bundleIdentifier: expectedBundleId,
+        apiOrigin: expectedNativeApiOrigin,
+        nativePushEnabled: expectedNativePushEnabled === 'true',
+        retireDevToken: expectedRetireDevToken === 'true',
+        apnsEnvironment: expectedApnsEnvironment,
+        sourceCommit: expectedReleaseSha,
+      },
+      label,
+    );
+  }
 
   const info = readPlistJson(infoPath, `${label} Info.plist`);
   const privacy = validatePrivacyManifest(
@@ -512,6 +633,7 @@ function validateReleaseApp({
     debugSigningAllowed: false,
     nonExemptEncryption: info.ITSAppUsesNonExemptEncryption,
     privacy,
+    nativeRelease,
   };
 }
 
@@ -534,6 +656,11 @@ function compareAppSummaries(archiveSummary, ipaSummary) {
   assertCondition(
     JSON.stringify(archiveSummary.privacy) === JSON.stringify(ipaSummary.privacy),
     'Archive and IPA privacy manifests differ',
+  );
+  assertCondition(
+    JSON.stringify(archiveSummary.nativeRelease) ===
+      JSON.stringify(ipaSummary.nativeRelease),
+    'Archive and IPA native release manifests differ',
   );
 }
 
@@ -590,6 +717,12 @@ async function verifyReleaseArtifact(rawArguments) {
       expectedTeamId: argumentsMap.expectedTeamId,
       expectedMarketingVersion: argumentsMap.expectedMarketingVersion,
       expectedBuildNumber: argumentsMap.expectedBuildNumber,
+      expectedReleaseVariant: argumentsMap.expectedReleaseVariant,
+      expectedNativeApiOrigin: argumentsMap.expectedNativeApiOrigin,
+      expectedNativePushEnabled: argumentsMap.expectedNativePushEnabled,
+      expectedRetireDevToken: argumentsMap.expectedRetireDevToken,
+      expectedApnsEnvironment: argumentsMap.expectedApnsEnvironment,
+      expectedReleaseSha: argumentsMap.expectedReleaseSha,
       temporaryDirectory,
     };
     const ipaSummary = validateReleaseApp({
@@ -620,7 +753,10 @@ async function verifyReleaseArtifact(rawArguments) {
     const report = {
       schemaVersion: 1,
       verifiedAt: new Date().toISOString(),
-      sourceCommit: process.env.GITHUB_SHA || null,
+      sourceCommit:
+        ipaSummary.nativeRelease?.sourceCommit ||
+        process.env.GITHUB_SHA ||
+        null,
       artifact: {
         fileName: path.basename(ipaPath),
         sha256: await sha256File(ipaPath),
@@ -643,6 +779,7 @@ async function verifyReleaseArtifact(rawArguments) {
         manifestBundled: true,
         ...ipaSummary.privacy,
       },
+      nativeRelease: ipaSummary.nativeRelease,
       toolchain: {
         xcode: xcodeVersion,
         node: process.version,
