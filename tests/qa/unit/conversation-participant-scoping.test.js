@@ -12,7 +12,8 @@
  *   Packages:  vitest, node:fs, node:path
  *   Internal:  supabase/migrations/20260731040337_conversation_participant_scoping.sql
  *              supabase/migrations/20260731040338_conversation_unread_state_compatibility.sql
- *              supabase/migrations/20260731040339_conversation_participant_policy_enforcement.sql
+ *              supabase/migrations/20260731213000_conversation_assignment_authority_containment.sql
+ *              supabase/migrations/20260731213100_conversation_participant_policy_enforcement.sql
  *              supabase/rollbacks/20260731040337_conversation_participant_scoping.rollback.sql
  *   Data:      reads  → migration and rollback source text
  *              writes → none
@@ -46,13 +47,21 @@ const COMPATIBILITY_ROLLBACK = path.join(
   ROOT,
   'supabase/rollbacks/20260731040338_conversation_unread_state_compatibility.rollback.sql',
 );
+const ASSIGNMENT_CONTAINMENT = path.join(
+  ROOT,
+  'supabase/migrations/20260731213000_conversation_assignment_authority_containment.sql',
+);
+const ASSIGNMENT_CONTAINMENT_ROLLBACK = path.join(
+  ROOT,
+  'supabase/rollbacks/20260731213000_conversation_assignment_authority_containment.rollback.sql',
+);
 const ENFORCEMENT = path.join(
   ROOT,
-  'supabase/migrations/20260731040339_conversation_participant_policy_enforcement.sql',
+  'supabase/migrations/20260731213100_conversation_participant_policy_enforcement.sql',
 );
 const ENFORCEMENT_ROLLBACK = path.join(
   ROOT,
-  'supabase/rollbacks/20260731040339_conversation_participant_policy_enforcement.rollback.sql',
+  'supabase/rollbacks/20260731213100_conversation_participant_policy_enforcement.rollback.sql',
 );
 
 const read = (file) => readFileSync(file, 'utf8');
@@ -72,13 +81,25 @@ const functionBody = (sql, name) => {
 describe('conversation participant scoping — migration source contract', () => {
   const foundationRaw = read(MIGRATION);
   const compatibilityRaw = read(COMPATIBILITY);
+  const assignmentContainmentRaw = read(ASSIGNMENT_CONTAINMENT);
   const enforcementRaw = read(ENFORCEMENT);
-  const raw = `${foundationRaw}\n${compatibilityRaw}\n${enforcementRaw}`;
+  const raw = `${foundationRaw}\n${compatibilityRaw}\n${assignmentContainmentRaw}\n${enforcementRaw}`;
   const sql = norm(stripComments(raw));
-  const memberAccess = functionBody(sql, 'messaging_employee_can_access_conversation');
+  const assignmentSql = norm(stripComments(assignmentContainmentRaw));
+  const memberAccess = functionBody(
+    assignmentSql,
+    'messaging_employee_can_access_conversation',
+  );
   const capability = functionBody(sql, 'messaging_employee_has_conversations_capability');
-  const scopedCreation = functionBody(sql, 'find_or_create_scoped_conversation');
-  const scopedContactSearch = functionBody(sql, 'search_scoped_conversation_contacts');
+  const scopedCreation = functionBody(
+    assignmentSql,
+    'find_or_create_scoped_conversation',
+  );
+  const scopedContactSearch = functionBody(
+    assignmentSql,
+    'search_scoped_conversation_contacts',
+  );
+  const memberDirectory = functionBody(assignmentSql, 'get_conversation_members');
   const notificationRecipients = functionBody(
     sql,
     'get_conversation_notification_recipients',
@@ -92,6 +113,8 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(existsSync(ROLLBACK)).toBe(true);
     expect(existsSync(COMPATIBILITY)).toBe(true);
     expect(existsSync(COMPATIBILITY_ROLLBACK)).toBe(true);
+    expect(existsSync(ASSIGNMENT_CONTAINMENT)).toBe(true);
+    expect(existsSync(ASSIGNMENT_CONTAINMENT_ROLLBACK)).toBe(true);
     expect(existsSync(ENFORCEMENT)).toBe(true);
     expect(existsSync(ENFORCEMENT_ROLLBACK)).toBe(true);
     expect(raw).toContain('WHAT THIS DOES');
@@ -99,9 +122,10 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(raw).toContain('ROLLBACK:');
   });
 
-  it('stages compatible RPCs before the later browser policy enforcement', () => {
+  it('stages compatible RPCs and trusted assignment correction before policy enforcement', () => {
     const foundationSql = norm(stripComments(foundationRaw));
     const compatibilitySql = norm(stripComments(compatibilityRaw));
+    const correctionSql = norm(stripComments(assignmentContainmentRaw));
     const enforcementSql = norm(stripComments(enforcementRaw));
     expect(foundationSql).toContain(
       'create or replace function public.find_or_create_scoped_conversation',
@@ -117,6 +141,18 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(compatibilitySql).toContain(
       'grant execute on function public.set_my_conversation_unread_state(uuid[], boolean) to authenticated',
     );
+    expect(correctionSql).toContain(
+      "where migration.name = 'conversation_participant_scoping'",
+    );
+    expect(correctionSql).toContain(
+      "where migration.name = 'conversation_unread_state_compatibility'",
+    );
+    expect(correctionSql).toContain(
+      'create or replace function public.messaging_employee_can_access_conversation',
+    );
+    expect(enforcementSql).toContain(
+      "where migration.name = 'conversation_assignment_authority_containment'",
+    );
     expect(enforcementSql).toContain(
       'alter policy allow_authenticated_conversations on public.conversations to authenticated',
     );
@@ -124,17 +160,60 @@ describe('conversation participant scoping — migration source contract', () =>
       'using (public.messaging_can_access_conversation(id)) with check (false)',
     );
     expect(enforcementSql).toContain(
-      'revoke all on table public.conversations, public.conversation_participants from public, anon, authenticated',
+      'revoke all on table public.conversations, public.conversation_participants, public.messages from public, anon, authenticated',
     );
     expect(enforcementSql).toContain(
-      'grant select on table public.conversations, public.conversation_participants to authenticated',
+      'grant select on table public.conversations, public.conversation_participants, public.messages to authenticated',
     );
     expect(enforcementSql).toContain("policy.cmd = 'all'");
     expect(enforcementSql).not.toContain('drop policy');
     expect(enforcementSql).toContain("policy.roles = array['authenticated']::name[]");
     expect(enforcementSql).toContain(
-      "has_table_privilege( 'authenticated', 'public.conversations', 'insert' )",
+      "has_table_privilege('authenticated', v_table, v_privilege)",
     );
+  });
+
+  it('fails closed when any extra permissive policy would broaden a protected conversation table', () => {
+    const enforcementSql = norm(stripComments(enforcementRaw));
+    const isolatedRaw = read(
+      path.join(ROOT, 'supabase/tests/conversation_participant_scoping_isolated.sql'),
+    );
+    const expectedPolicies = [
+      ['conversations', 'allow_authenticated_conversations'],
+      ['conversation_participants', 'allow_authenticated_conversation_participants'],
+      ['messages', 'messages_authenticated_select'],
+    ];
+    const policiesWithInjectedTrueRead = [
+      ...expectedPolicies,
+      ['messages', 'cps_isolated_unexpected_authenticated_read'],
+    ];
+
+    // The isolated suite creates this extra USING (true) policy. Postgres ORs
+    // permissive policies, so the migration must reject the four-policy drift
+    // baseline rather than merely alter its three named policies.
+    expect(policiesWithInjectedTrueRead).toHaveLength(4);
+    expect(enforcementSql).toContain('into v_policy_count from pg_catalog.pg_policies policy');
+    expect(enforcementSql).toContain("policy.tablename in ( 'conversations', 'conversation_participants', 'messages' )");
+    expect(enforcementSql).toContain('if v_policy_count <> 3');
+    expect(enforcementSql).toContain(
+      "raise exception 'conversation policy enforcement: deployed policy/acl baseline drifted'",
+    );
+    expect(enforcementSql).toContain(
+      "raise exception 'conversation policy enforcement: exhaustive policy postcondition failed'",
+    );
+    expect(isolatedRaw).toContain(
+      'CREATE POLICY cps_isolated_unexpected_authenticated_read',
+    );
+    expect(isolatedRaw).toContain('SAVEPOINT cps_before_unexpected_policy_apply');
+    expect(isolatedRaw).toContain(
+      '\\ir ../rollbacks/20260731213100_conversation_participant_policy_enforcement.rollback.sql',
+    );
+    expect(isolatedRaw).toContain(
+      '\\ir ../migrations/20260731213100_conversation_participant_policy_enforcement.sql',
+    );
+    expect(isolatedRaw).toContain('\\set cps_enforcement_apply_failed :ERROR');
+    expect(isolatedRaw).toContain('ROLLBACK TO SAVEPOINT cps_before_expected_enforcement_error');
+    expect(isolatedRaw).toContain('ROLLBACK TO SAVEPOINT cps_before_unexpected_policy_apply');
   });
 
   it('stores manual decisions and defaults in RLS-forced, browser-inaccessible tables', () => {
@@ -152,30 +231,44 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(sql).toContain('grant select, insert, update, delete on table public.conversation_member_overrides, public.conversation_default_members to service_role');
   });
 
-  it('uses the approved historical appointment-to-contact path', () => {
-    expect(memberAccess).toContain('from public.appointment_crew crew');
-    expect(memberAccess).toContain('join public.appointments appointment on appointment.id = crew.appointment_id');
-    expect(memberAccess).toContain('join public.jobs job on job.id = appointment.job_id');
-    expect(memberAccess).toContain('left join public.claims claim on claim.id = job.claim_id');
-    expect(memberAccess).toContain('participant.contact_id = coalesce(job.primary_contact_id, claim.contact_id)');
-    expect(memberAccess).toContain('participant.is_active');
-    expect(memberAccess).toContain('participant.removed_at is null');
-    expect(memberAccess).not.toMatch(/appointment\.(starts_at|ends_at|scheduled_at|date)/);
+  it('never trusts browser-writable appointment, job, or claim records as membership', () => {
+    for (const body of [
+      memberAccess,
+      memberDirectory,
+      scopedCreation,
+      scopedContactSearch,
+    ]) {
+      expect(body).not.toMatch(
+        /\b(?:appointment_crew|appointments|jobs|claims)\b/,
+      );
+    }
+    expect(assignmentSql).toContain(
+      "array['employees_self_identity_read']::text[]",
+    );
+    expect(assignmentSql).toContain(
+      "has_table_privilege('authenticated', 'public.employees', 'update')",
+    );
+    expect(assignmentSql).toContain(
+      "md5(replace(procedure.prosrc, chr(13), ''))",
+    );
+    expect(assignmentSql).toContain(
+      'browser-writable assignment source remains',
+    );
   });
 
-  it('gives role safety and a manual override precedence over default and appointment membership', () => {
+  it('gives role safety and manual override precedence over default membership', () => {
     const privilegedAt = memberAccess.indexOf("employee_row.role in ('admin', 'office', 'project_manager', 'supervisor')");
     const partnerAt = memberAccess.indexOf("employee_row.role = 'crm_partner'");
     const manualAt = memberAccess.indexOf('exists (select 1 from manual_choice)');
     const defaultAt = memberAccess.indexOf('from public.conversation_default_members default_member');
-    const appointmentAt = memberAccess.indexOf('from public.appointment_crew crew');
 
     expect(privilegedAt).toBeGreaterThanOrEqual(0);
     expect(partnerAt).toBeGreaterThan(privilegedAt);
     expect(manualAt).toBeGreaterThan(partnerAt);
     expect(defaultAt).toBeGreaterThan(manualAt);
-    expect(appointmentAt).toBeGreaterThan(defaultAt);
     expect(memberAccess).toContain('then (select included from manual_choice)');
+    expect(memberAccess).toContain('else false');
+    expect(memberDirectory).not.toContain("then 'appointment'");
   });
 
   it('scopes conversations, external participants, and individual messages through one predicate', () => {
@@ -189,8 +282,8 @@ describe('conversation participant scoping — migration source contract', () =>
     expect(sql).toContain('using (public.messaging_can_access_conversation(conversation_id))');
     expect(sql).toContain('alter policy messages_authenticated_select');
     expect(sql).toContain('public.messaging_can_access_conversations() and public.messaging_can_access_conversation(conversation_id)');
-    expect(sql).toContain('revoke all on table public.conversations, public.conversation_participants from public, anon, authenticated');
-    expect(sql).toContain('grant select on table public.conversations, public.conversation_participants to authenticated');
+    expect(sql).toContain('revoke all on table public.conversations, public.conversation_participants, public.messages from public, anon, authenticated');
+    expect(sql).toContain('grant select on table public.conversations, public.conversation_participants, public.messages to authenticated');
     expect(sql).not.toContain('grant update (unread_count)');
   });
 
@@ -314,55 +407,57 @@ describe('conversation participant scoping — migration source contract', () =>
 describe('conversation participant scoping — rollback source contract', () => {
   const raw = [
     read(ENFORCEMENT_ROLLBACK),
+    read(ASSIGNMENT_CONTAINMENT_ROLLBACK),
     read(COMPATIBILITY_ROLLBACK),
     read(ROLLBACK),
   ].join('\n');
   const sql = norm(stripComments(raw));
 
-  it('warns that rollback discards administrator participant choices', () => {
-    expect(norm(raw)).toContain('permanently discards');
-    expect(norm(raw)).toContain('technician choice');
+  it('preserves administrator choices and never restores browser-writable authority', () => {
+    expect(norm(raw)).toContain('participant choices');
+    expect(norm(raw)).toContain('never restored as authorization evidence');
+    expect(norm(raw)).toContain('fails closed');
+    expect(sql).not.toContain('drop table if exists public.conversation_member_overrides');
+    expect(sql).not.toContain('drop table if exists public.conversation_default_members');
+    expect(sql).not.toContain('grant all on table public.conversations, public.conversation_participants to authenticated');
   });
 
-  it('restores the prior broad authenticated policies and message read contract', () => {
-    expect(sql).toContain('alter policy allow_authenticated_conversations on public.conversations to authenticated using (true) with check (true)');
-    expect(sql).toContain('alter policy allow_authenticated_conversation_participants on public.conversation_participants to authenticated using (true) with check (true)');
-    expect(sql).toContain('alter policy messages_authenticated_select on public.messages to authenticated using (public.messaging_can_access_conversations())');
-    expect(sql).toContain('grant all on table public.conversations, public.conversation_participants to authenticated');
+  it('uses a fail-closed table and policy recovery posture', () => {
+    expect(sql).toContain('alter policy allow_authenticated_conversations on public.conversations to authenticated using (false) with check (false)');
+    expect(sql).toContain('alter policy allow_authenticated_conversation_participants on public.conversation_participants to authenticated using (false) with check (false)');
+    expect(sql).toContain('alter policy messages_authenticated_select on public.messages to authenticated using (false)');
+    expect(sql).toContain('from public, anon, authenticated, service_role');
+    expect(sql).toContain('to service_role');
+    expect(sql).toContain('fail-closed acl postcondition failed');
+    expect(sql).not.toContain('using (true) with check (true)');
     expect(sql).toContain('drop function if exists public.set_my_conversation_unread_state(uuid[], boolean)');
     expect(sql).toContain('drop function if exists public.get_my_conversation_access_snapshot(uuid[])');
   });
 
-  it('restores the unscoped prior inbox function and its browser grants', () => {
-    const inbox = functionBody(sql, 'get_tech_conversations');
-    expect(inbox).toContain('from public.conversations c ),');
-    expect(inbox).toContain('from public.conversations;');
-    expect(inbox).not.toContain('messaging_can_access_conversation');
-    expect(sql).toContain('grant execute on function public.get_tech_conversations(int, timestamptz, uuid, text, text, uuid) to authenticated, service_role');
+  it('pauses every browser-facing inbox, author, and participant RPC', () => {
+    expect(sql).toContain('public.get_conversation_members(uuid)');
+    expect(sql).toContain('public.set_conversation_member_override(uuid, uuid, boolean)');
+    expect(sql).toContain('public.set_default_conversation_member(uuid, boolean)');
+    expect(sql).toContain('public.get_message_author_directory(uuid[])');
+    expect(sql).toContain('public.get_tech_conversations( integer, timestamp with time zone, uuid, text, text, uuid )');
+    expect(sql).toContain('from public, anon, authenticated, service_role');
+    expect(sql).toContain('recovery rpc remains executable');
+    expect(sql).not.toContain('grant execute on function public.get_tech_conversations');
   });
 
-  it('restores the exact earlier internal-note-only author lookup', () => {
-    const authors = functionBody(sql, 'get_message_author_directory');
-    expect(authors).toContain("auth.jwt() ->> 'role' = 'service_role'");
-    expect(authors).toContain("message.type = 'internal_note'");
-    expect(authors).not.toContain('messaging_can_access_conversation(message.conversation_id)');
-    expect(sql).toContain('alter function public.get_message_author_directory(uuid[]) owner to postgres');
-    expect(sql).toContain('grant execute on function public.get_message_author_directory(uuid[]) to authenticated, service_role');
+  it('accepts retained scheduled evidence only after delivery is paused', () => {
+    expect(sql).toContain("to_regclass('public.scheduled_message_creation_provenance') is not null");
+    expect(sql).toContain("has_function_privilege('service_role', v_function, 'execute')");
+    expect(sql).toContain("status = 'pending'");
+    expect(sql).toContain('delivery_attempt_id is not null');
+    expect(sql).toContain('scheduled delivery recovery posture is not sealed');
   });
 
-  it('drops functions before the new state tables in dependency-safe order', () => {
-    const helperAt = sql.indexOf('drop function if exists public.messaging_employee_can_access_conversation(uuid, uuid)');
-    const capabilityAt = sql.indexOf('drop function if exists public.messaging_employee_has_conversations_capability(uuid)');
-    const scopedCreationAt = sql.indexOf('drop function if exists public.find_or_create_scoped_conversation(uuid, uuid)');
-    const leaveAt = sql.indexOf('drop function if exists public.leave_conversation(uuid)');
-    const overridesAt = sql.indexOf('drop table if exists public.conversation_member_overrides');
-    const defaultsAt = sql.indexOf('drop table if exists public.conversation_default_members');
-    expect(leaveAt).toBeGreaterThanOrEqual(0);
-    expect(scopedCreationAt).toBeGreaterThanOrEqual(0);
-    expect(helperAt).toBeGreaterThanOrEqual(0);
-    expect(helperAt).toBeGreaterThan(leaveAt);
-    expect(capabilityAt).toBeGreaterThan(helperAt);
-    expect(overridesAt).toBeGreaterThan(capabilityAt);
-    expect(defaultsAt).toBeGreaterThan(capabilityAt);
+  it('keeps assignment recovery privileged-only and excludes forged sources', () => {
+    const access = functionBody(sql, 'messaging_employee_can_access_conversation');
+    expect(access).toContain("'admin', 'office', 'project_manager', 'supervisor'");
+    expect(access).not.toMatch(/\b(?:appointment_crew|appointments|jobs|claims)\b/);
+    expect(norm(raw)).toContain('participant editor/contact-opening surfaces');
+    expect(sql).toContain('internal recovery helper unavailable');
   });
 });

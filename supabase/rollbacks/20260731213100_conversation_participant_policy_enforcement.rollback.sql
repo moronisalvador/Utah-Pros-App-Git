@@ -1,101 +1,37 @@
 -- ═════════════════════════════════════════════════════════════════════════════
--- ROLLBACK: 20260731040337_conversation_participant_scoping
+-- ROLLBACK: 20260731213100_conversation_participant_policy_enforcement
 -- ═════════════════════════════════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Places Conversations in a service-only recovery posture. Browser table
---   access and every participant-facing RPC are paused, while the participant
---   choices, provenance, functions, and tables remain available for a reviewed
---   forward repair.
+--   Pauses every browser read and write on the three conversation tables while
+--   preserving service-role recovery access. It keeps participant choices and
+--   the trusted membership functions intact for a reviewed forward repair.
 --
 -- SECURITY POSTURE:
---   The pre-scoping database exposed every conversation and participant to any
---   authenticated session. Recreating that state would disclose customer PII
---   and reopen raw browser writes, so this rollback intentionally fails closed.
---   It never restores the historical unscoped SECURITY DEFINER inbox.
+--   The historical broad authenticated policies are not safe rollback targets:
+--   restoring them would disclose every conversation and reopen raw browser
+--   writes. This recovery source therefore fails closed instead of recreating
+--   that authorization boundary.
 --
 -- REQUIRED ORDER:
---   Roll back scheduled delivery, then 20260731213100 participant enforcement,
---   then 20260731213000 assignment-authority containment, and then 20260731040338
---   unread compatibility. Deploy a maintenance posture before this final
---   containment step. Recovery is forward-only after this file runs.
+--   Deploy a browser/native maintenance posture before running this rollback.
+--   Do not roll back the participant foundation while this containment remains
+--   active. Reapply the forward enforcement migration after remediation.
 -- ═════════════════════════════════════════════════════════════════════════════
 
-DO $conversation_foundation_rollback_preflight$
+DO $conversation_policy_rollback_preflight$
 DECLARE
+  v_conversation_qual text;
+  v_conversation_check text;
+  v_participant_qual text;
+  v_participant_check text;
+  v_message_qual text;
   v_policy_count integer;
+  v_table text;
+  v_privilege text;
   v_function text;
   v_legacy_claim_source text;
 BEGIN
-  IF to_regclass('public.conversation_member_overrides') IS NULL
-     OR to_regclass('public.conversation_default_members') IS NULL
-     OR to_regprocedure(
-       'public.messaging_employee_has_conversations_capability(uuid)'
-     ) IS NULL
-     OR to_regprocedure(
-       'public.messaging_employee_can_access_conversation(uuid,uuid)'
-     ) IS NULL
-     OR to_regprocedure('public.messaging_can_access_conversation(uuid)') IS NULL
-     OR to_regprocedure(
-       'public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)'
-     ) IS NULL THEN
-    RAISE EXCEPTION
-      'conversation foundation rollback: participant foundation is absent';
-  END IF;
-
-  IF to_regprocedure(
-       'public.get_my_conversation_access_snapshot(uuid[])'
-     ) IS NOT NULL
-     OR to_regprocedure(
-       'public.set_my_conversation_unread_state(uuid[],boolean)'
-     ) IS NOT NULL THEN
-    RAISE EXCEPTION
-      'conversation foundation rollback: unread compatibility must roll back first';
-  END IF;
-
-  SELECT count(*)
-    INTO v_policy_count
-  FROM pg_catalog.pg_policies policy
-  WHERE policy.schemaname = 'public'
-    AND policy.tablename IN (
-      'conversations', 'conversation_participants', 'messages'
-    )
-    AND (
-      (
-        policy.tablename = 'conversations'
-        AND policy.policyname = 'allow_authenticated_conversations'
-        AND policy.cmd = 'ALL'
-      )
-      OR (
-        policy.tablename = 'conversation_participants'
-        AND policy.policyname = 'allow_authenticated_conversation_participants'
-        AND policy.cmd = 'ALL'
-      )
-      OR (
-        policy.tablename = 'messages'
-        AND policy.policyname = 'messages_authenticated_select'
-        AND policy.cmd = 'SELECT'
-      )
-    )
-    AND policy.permissive = 'PERMISSIVE'
-    AND policy.roles = ARRAY['authenticated']::name[];
-
-  IF v_policy_count <> 3
-     OR (
-       SELECT count(*)
-       FROM pg_catalog.pg_policies policy
-       WHERE policy.schemaname = 'public'
-         AND policy.tablename IN (
-           'conversations', 'conversation_participants', 'messages'
-         )
-     ) <> 3 THEN
-    RAISE EXCEPTION
-      'conversation foundation rollback: protected policy allowlist drifted';
-  END IF;
-
-  -- If scheduled compatibility ever existed, its rollback deliberately keeps
-  -- provenance and function signatures. Require the service execution surface
-  -- to be paused and every linked provider reservation reconciled first.
   IF to_regclass('public.scheduled_message_creation_provenance') IS NOT NULL THEN
     FOREACH v_function IN ARRAY ARRAY[
       'public.create_scheduled_message(uuid,uuid,text,timestamp with time zone)',
@@ -110,7 +46,7 @@ BEGIN
          OR has_function_privilege('authenticated', v_function, 'EXECUTE')
          OR has_function_privilege('anon', v_function, 'EXECUTE') THEN
         RAISE EXCEPTION
-          'conversation foundation rollback: scheduled delivery remains executable: %',
+          'conversation policy rollback: scheduled delivery must be paused first: %',
           v_function;
       END IF;
     END LOOP;
@@ -196,11 +132,95 @@ BEGIN
         AND delivery_attempt_id IS NOT NULL
        ) THEN
       RAISE EXCEPTION
-        'conversation foundation rollback: scheduled delivery recovery posture is not sealed';
+        'conversation policy rollback: scheduled delivery recovery posture is not sealed';
     END IF;
   END IF;
+
+  SELECT
+    regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+    regexp_replace(COALESCE(policy.with_check, ''), '\s+', '', 'g')
+    INTO v_conversation_qual, v_conversation_check
+  FROM pg_catalog.pg_policies policy
+  WHERE policy.schemaname = 'public'
+    AND policy.tablename = 'conversations'
+    AND policy.policyname = 'allow_authenticated_conversations'
+    AND policy.permissive = 'PERMISSIVE'
+    AND policy.cmd = 'ALL'
+    AND policy.roles = ARRAY['authenticated']::name[];
+
+  SELECT
+    regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+    regexp_replace(COALESCE(policy.with_check, ''), '\s+', '', 'g')
+    INTO v_participant_qual, v_participant_check
+  FROM pg_catalog.pg_policies policy
+  WHERE policy.schemaname = 'public'
+    AND policy.tablename = 'conversation_participants'
+    AND policy.policyname = 'allow_authenticated_conversation_participants'
+    AND policy.permissive = 'PERMISSIVE'
+    AND policy.cmd = 'ALL'
+    AND policy.roles = ARRAY['authenticated']::name[];
+
+  SELECT regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g')
+    INTO v_message_qual
+  FROM pg_catalog.pg_policies policy
+  WHERE policy.schemaname = 'public'
+    AND policy.tablename = 'messages'
+    AND policy.policyname = 'messages_authenticated_select'
+    AND policy.permissive = 'PERMISSIVE'
+    AND policy.cmd = 'SELECT'
+    AND policy.roles = ARRAY['authenticated']::name[]
+    AND policy.with_check IS NULL;
+
+  SELECT count(*)
+    INTO v_policy_count
+  FROM pg_catalog.pg_policies policy
+  WHERE policy.schemaname = 'public'
+    AND policy.tablename IN (
+      'conversations', 'conversation_participants', 'messages'
+    );
+
+  IF v_policy_count <> 3
+     OR replace(v_conversation_qual, 'public.', '')
+       IS DISTINCT FROM 'messaging_can_access_conversation(id)'
+     OR replace(v_participant_qual, 'public.', '')
+       IS DISTINCT FROM 'messaging_can_access_conversation(conversation_id)'
+     OR v_conversation_check IS DISTINCT FROM 'false'
+     OR v_participant_check IS DISTINCT FROM 'false'
+     OR replace(v_message_qual, 'public.', '')
+       IS DISTINCT FROM '(messaging_can_access_conversations()ANDmessaging_can_access_conversation(conversation_id))'
+     THEN
+    RAISE EXCEPTION
+      'conversation policy rollback: participant-aware policy baseline drifted';
+  END IF;
+
+  FOREACH v_table IN ARRAY ARRAY[
+    'public.conversations',
+    'public.conversation_participants',
+    'public.messages'
+  ]
+  LOOP
+    FOREACH v_privilege IN ARRAY ARRAY[
+      'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'
+    ]
+    LOOP
+      IF has_table_privilege('anon', v_table, v_privilege)
+         OR NOT has_table_privilege('service_role', v_table, v_privilege)
+         OR (
+           (v_privilege = 'SELECT')
+           IS DISTINCT FROM has_table_privilege(
+             'authenticated',
+             v_table,
+             v_privilege
+           )
+         ) THEN
+        RAISE EXCEPTION
+          'conversation policy rollback: participant-aware ACL baseline drifted on %',
+          v_table;
+      END IF;
+    END LOOP;
+  END LOOP;
 END;
-$conversation_foundation_rollback_preflight$;
+$conversation_policy_rollback_preflight$;
 
 ALTER POLICY allow_authenticated_conversations
   ON public.conversations
@@ -230,12 +250,7 @@ GRANT ALL ON TABLE
   public.messages
   TO service_role;
 
--- Pause every browser, admin-editor, inbox, contact-opening, notification, and
--- author-directory surface. Keep only the two internal decision helpers
--- callable by service_role for explicit recovery diagnostics.
 REVOKE ALL ON FUNCTION
-  public.messaging_employee_has_conversations_capability(uuid),
-  public.messaging_employee_can_access_conversation(uuid, uuid),
   public.messaging_can_access_conversation(uuid),
   public.get_conversation_members(uuid),
   public.set_conversation_member_override(uuid, uuid, boolean),
@@ -252,21 +267,39 @@ REVOKE ALL ON FUNCTION
     text,
     text,
     uuid
-  )
+  ),
+  public.get_my_conversation_access_snapshot(uuid[]),
+  public.set_my_conversation_unread_state(uuid[], boolean)
   FROM PUBLIC, anon, authenticated, service_role;
 
+REVOKE ALL ON FUNCTION
+  public.messaging_employee_has_conversations_capability(uuid),
+  public.messaging_employee_can_access_conversation(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION
   public.messaging_employee_has_conversations_capability(uuid),
   public.messaging_employee_can_access_conversation(uuid, uuid)
   TO service_role;
 
-DO $conversation_foundation_rollback_postcondition$
+DO $conversation_policy_rollback_postcondition$
 DECLARE
   v_policy record;
   v_table text;
   v_privilege text;
   v_function text;
 BEGIN
+  IF (
+       SELECT count(*)
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename IN (
+           'conversations', 'conversation_participants', 'messages'
+         )
+     ) <> 3 THEN
+    RAISE EXCEPTION
+      'conversation policy rollback: fail-closed policy allowlist drifted';
+  END IF;
+
   FOR v_policy IN
     SELECT *
     FROM pg_catalog.pg_policies policy
@@ -275,7 +308,12 @@ BEGIN
         'conversations', 'conversation_participants', 'messages'
       )
   LOOP
-    IF v_policy.roles <> ARRAY['authenticated']::name[]
+    IF v_policy.policyname NOT IN (
+         'allow_authenticated_conversations',
+         'allow_authenticated_conversation_participants',
+         'messages_authenticated_select'
+       )
+       OR v_policy.roles <> ARRAY['authenticated']::name[]
        OR regexp_replace(
          COALESCE(v_policy.qual, ''),
          '\s+',
@@ -296,7 +334,7 @@ BEGIN
          AND v_policy.with_check IS NOT NULL
        ) THEN
       RAISE EXCEPTION
-        'conversation foundation rollback: fail-closed policy postcondition failed';
+        'conversation policy rollback: fail-closed policy postcondition failed';
     END IF;
   END LOOP;
 
@@ -314,7 +352,7 @@ BEGIN
          OR has_table_privilege('authenticated', v_table, v_privilege)
          OR NOT has_table_privilege('service_role', v_table, v_privilege) THEN
         RAISE EXCEPTION
-          'conversation foundation rollback: fail-closed ACL postcondition failed on %',
+          'conversation policy rollback: fail-closed ACL postcondition failed on %',
           v_table;
       END IF;
     END LOOP;
@@ -330,14 +368,16 @@ BEGIN
     'public.search_scoped_conversation_contacts(uuid,text,integer)',
     'public.get_conversation_notification_recipients(uuid)',
     'public.get_message_author_directory(uuid[])',
-    'public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)'
+    'public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)',
+    'public.get_my_conversation_access_snapshot(uuid[])',
+    'public.set_my_conversation_unread_state(uuid[],boolean)'
   ]
   LOOP
     IF has_function_privilege('anon', v_function, 'EXECUTE')
        OR has_function_privilege('authenticated', v_function, 'EXECUTE')
        OR has_function_privilege('service_role', v_function, 'EXECUTE') THEN
       RAISE EXCEPTION
-        'conversation foundation rollback: recovery RPC remains executable: %',
+        'conversation policy rollback: recovery RPC remains executable: %',
         v_function;
     END IF;
   END LOOP;
@@ -353,7 +393,7 @@ BEGIN
        'EXECUTE'
      ) THEN
     RAISE EXCEPTION
-      'conversation foundation rollback: internal recovery helper unavailable';
+      'conversation policy rollback: internal recovery helper unavailable';
   END IF;
 END;
-$conversation_foundation_rollback_postcondition$;
+$conversation_policy_rollback_postcondition$;

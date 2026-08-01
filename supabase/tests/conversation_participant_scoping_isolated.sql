@@ -3,15 +3,17 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Creates disposable staff, contacts, jobs, appointments, conversations, and
---   messages to prove that participant scoping has one consistent access decision
---   for the inbox, notification fan-out, author names, and scoped conversation
---   creation. Every fixture is discarded by the final ROLLBACK.
+--   Creates disposable staff, contacts, forgeable job/appointment assignments,
+--   conversations, and messages to prove that participant scoping has one
+--   trusted access decision for the inbox, notification fan-out, author names,
+--   and scoped conversation creation. Every fixture is discarded by the final
+--   ROLLBACK.
 --
 -- DEPENDS ON:
 --   20260731040337_conversation_participant_scoping.sql,
 --   20260731040338_conversation_unread_state_compatibility.sql,
---   20260731040339_conversation_participant_policy_enforcement.sql, and their
+--   20260731213000_conversation_assignment_authority_containment.sql,
+--   20260731213100_conversation_participant_policy_enforcement.sql, and their
 --   existing messaging/employee identity dependencies.
 --
 -- RUN ONLY ON AN ISOLATED DATABASE:
@@ -42,6 +44,11 @@ BEGIN
      OR NOT EXISTS (
     SELECT 1
     FROM supabase_migrations.schema_migrations migration
+    WHERE migration.name = 'conversation_assignment_authority_containment'
+  )
+     OR NOT EXISTS (
+    SELECT 1
+    FROM supabase_migrations.schema_migrations migration
     WHERE migration.name = 'conversation_unread_state_compatibility'
   )
      OR NOT EXISTS (
@@ -49,7 +56,7 @@ BEGIN
     FROM supabase_migrations.schema_migrations migration
     WHERE migration.name = 'conversation_participant_policy_enforcement'
   ) THEN
-    RAISE EXCEPTION 'apply all three conversation participant migrations to the disposable clone first';
+    RAISE EXCEPTION 'apply the four conversation participant migrations to the disposable clone first';
   END IF;
 
   IF to_regprocedure('public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)') IS NULL
@@ -67,6 +74,19 @@ BEGIN
   END IF;
 END;
 $guard$;
+
+-- The governed local lane runs against the latest schema, which may already
+-- include scheduled-message delivery. Pause that later layer inside this outer
+-- transaction so the participant rollback/reapply checks exercise their
+-- documented prerequisite state. The final ROLLBACK restores the clone exactly.
+SELECT
+  to_regprocedure('public.claim_scheduled_message_v2(uuid,uuid)') IS NOT NULL
+    AS cps_pause_scheduled_delivery
+\gset
+\if :cps_pause_scheduled_delivery
+\ir ../rollbacks/20260731220100_scheduled_message_delivery_enforcement.rollback.sql
+\ir ../rollbacks/20260731220000_scheduled_message_delivery_compatibility.rollback.sql
+\endif
 
 CREATE FUNCTION pg_temp.set_identity_actor(p_user_id uuid, p_role text DEFAULT 'authenticated')
 RETURNS void
@@ -130,6 +150,7 @@ BEGIN
   PERFORM set_config('upr.cps.job_visible', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.job_removed', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.job_new', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.cps.claim_forged', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.appointment_visible', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.appointment_removed', gen_random_uuid()::text, true);
   PERFORM set_config('upr.cps.appointment_new', gen_random_uuid()::text, true);
@@ -201,8 +222,8 @@ VALUES
   (current_setting('upr.cps.conversation_visible')::uuid, current_setting('upr.cps.contact_visible')::uuid, '+15550001001', 'primary', true),
   (current_setting('upr.cps.conversation_private')::uuid, current_setting('upr.cps.contact_private')::uuid, '+15550001002', 'primary', true);
 
--- Appointment-derived access is intentionally historical: neither appointment
--- status nor date participates in the production predicate.
+-- These rows deliberately model the browser-writable historical assignment
+-- chain. The corrected authorization predicate must ignore them completely.
 INSERT INTO public.jobs (id, primary_contact_id, insured_name)
 VALUES
   (current_setting('upr.cps.job_visible')::uuid, current_setting('upr.cps.contact_visible')::uuid, '[CPS isolated] Visible job'),
@@ -229,15 +250,22 @@ VALUES
   (current_setting('upr.cps.employee_inactive')::uuid, current_setting('upr.cps.employee_admin')::uuid),
   (current_setting('upr.cps.employee_external')::uuid, current_setting('upr.cps.employee_admin')::uuid);
 
--- Manual false is the highest non-privileged precedence and must defeat both the
--- default row and appointment history for this employee.
+-- Manual false is the highest non-privileged precedence and must defeat the
+-- default row. The appointment row is independently untrusted.
 INSERT INTO public.conversation_member_overrides (conversation_id, employee_id, included, updated_by)
-VALUES (
-  current_setting('upr.cps.conversation_visible')::uuid,
-  current_setting('upr.cps.employee_removed')::uuid,
-  false,
-  current_setting('upr.cps.employee_admin')::uuid
-);
+VALUES
+  (
+    current_setting('upr.cps.conversation_visible')::uuid,
+    current_setting('upr.cps.employee_removed')::uuid,
+    false,
+    current_setting('upr.cps.employee_admin')::uuid
+  ),
+  (
+    current_setting('upr.cps.conversation_private')::uuid,
+    current_setting('upr.cps.employee_default')::uuid,
+    false,
+    current_setting('upr.cps.employee_admin')::uuid
+  );
 
 INSERT INTO public.messages (id, conversation_id, type, body, status, sent_by, direction)
 VALUES
@@ -267,7 +295,8 @@ DECLARE
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
     'public.conversations',
-    'public.conversation_participants'
+    'public.conversation_participants',
+    'public.messages'
   ]
   LOOP
     IF NOT has_table_privilege('authenticated', v_table, 'SELECT') THEN
@@ -339,9 +368,175 @@ BEGIN
      ) THEN
     RAISE EXCEPTION 'participant enforcement policies are not effectively SELECT-only';
   END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_catalog.pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename IN (
+        'conversations', 'conversation_participants', 'messages'
+      )
+  ) <> 3
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'messages'
+         AND policy.policyname = 'messages_authenticated_select'
+         AND policy.cmd = 'SELECT'
+         AND policy.roles = ARRAY['authenticated']::name[]
+         AND policy.with_check IS NULL
+         AND replace(
+           regexp_replace(COALESCE(policy.qual, ''), '\s+', '', 'g'),
+           'public.',
+           ''
+         ) = '(messaging_can_access_conversations()ANDmessaging_can_access_conversation(conversation_id))'
+     ) THEN
+    RAISE EXCEPTION 'participant enforcement policy allowlist is incomplete';
+  END IF;
 END;
 $acl_postcondition$;
 
+-- Exercise the real emergency rollback first. It must pause both raw table
+-- access and SECURITY DEFINER readers instead of restoring the historical broad
+-- browser contract.
+SAVEPOINT cps_before_safe_enforcement_rollback;
+\ir ../rollbacks/20260731213100_conversation_participant_policy_enforcement.rollback.sql
+
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(
+  current_setting('upr.cps.auth_admin')::uuid
+);
+SELECT pg_temp.expect_sqlstate(
+  'participant enforcement rollback blocks raw conversation reads',
+  'SELECT count(*) FROM public.conversations'
+);
+SELECT pg_temp.expect_sqlstate(
+  'participant enforcement rollback blocks raw participant writes',
+  format(
+    'UPDATE public.conversation_participants SET phone = %L WHERE conversation_id = %L::uuid',
+    '+15550009999',
+    current_setting('upr.cps.conversation_visible')
+  )
+);
+SELECT pg_temp.expect_sqlstate(
+  'participant enforcement rollback blocks unscoped inbox execution',
+  'SELECT public.get_tech_conversations()'
+);
+RESET ROLE;
+
+ROLLBACK TO SAVEPOINT cps_before_safe_enforcement_rollback;
+
+-- Exercise the actual enforcement file against policy drift. The outer
+-- savepoint temporarily constructs the exact historical pre-enforcement policy
+-- and ACL baseline without using a production rollback. The inner savepoint
+-- recovers from the intentionally aborted migration.
+SAVEPOINT cps_before_unexpected_policy_apply;
+
+ALTER POLICY allow_authenticated_conversations
+  ON public.conversations
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+ALTER POLICY allow_authenticated_conversation_participants
+  ON public.conversation_participants
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+ALTER POLICY messages_authenticated_select
+  ON public.messages
+  TO authenticated
+  USING (public.messaging_can_access_conversations());
+
+REVOKE ALL ON TABLE
+  public.conversations,
+  public.conversation_participants,
+  public.messages
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT ALL ON TABLE
+  public.conversations,
+  public.conversation_participants
+  TO authenticated, service_role;
+GRANT SELECT ON TABLE public.messages TO authenticated;
+GRANT ALL ON TABLE public.messages TO service_role;
+
+CREATE POLICY cps_isolated_unexpected_authenticated_read
+  ON public.messages
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+DO $unexpected_policy_drift$
+BEGIN
+  IF (
+    SELECT count(*)
+    FROM pg_catalog.pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename IN (
+        'conversations', 'conversation_participants', 'messages'
+      )
+  ) <> 4 THEN
+    RAISE EXCEPTION 'unexpected permissive policy fixture was not installed';
+  END IF;
+END;
+$unexpected_policy_drift$;
+
+SAVEPOINT cps_before_expected_enforcement_error;
+\set ON_ERROR_STOP off
+\ir ../migrations/20260731213100_conversation_participant_policy_enforcement.sql
+\set cps_enforcement_apply_failed :ERROR
+\set cps_enforcement_apply_sqlstate :SQLSTATE
+ROLLBACK TO SAVEPOINT cps_before_expected_enforcement_error;
+\set ON_ERROR_STOP on
+
+-- The migration's first DO raises P0001. Since ON_ERROR_STOP is deliberately
+-- disabled for the include, later statements observe the aborted transaction
+-- and the final client SQLSTATE is 25P02. Either state proves the actual file
+-- failed; the CI-visible source contract pins the exact count/preflight message.
+SELECT CASE
+  WHEN (:cps_enforcement_apply_failed)::boolean
+   AND :'cps_enforcement_apply_sqlstate' IN ('P0001', '25P02')
+    THEN 1
+  ELSE 1 / 0
+END AS actual_enforcement_rejected_unexpected_policy;
+
+ROLLBACK TO SAVEPOINT cps_before_unexpected_policy_apply;
+
+-- Prove the threat model using the real broad assignment-table policies. This
+-- authenticated technician rewrites every link in the historical
+-- crew→appointment→job/claim→contact chain. The corrected participant boundary
+-- must still treat the result as untrusted.
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_appointment')::uuid);
+
+DELETE FROM public.appointment_crew
+WHERE appointment_id = current_setting('upr.cps.appointment_new')::uuid
+  AND employee_id = current_setting('upr.cps.employee_appointment')::uuid;
+
+INSERT INTO public.claims (id, contact_id, status)
+VALUES (
+  current_setting('upr.cps.claim_forged')::uuid,
+  current_setting('upr.cps.contact_new')::uuid,
+  'open'
+);
+
+UPDATE public.jobs
+SET primary_contact_id = NULL,
+    claim_id = current_setting('upr.cps.claim_forged')::uuid
+WHERE id = current_setting('upr.cps.job_new')::uuid;
+
+UPDATE public.appointments
+SET title = '[CPS isolated] Browser-forged assignment'
+WHERE id = current_setting('upr.cps.appointment_new')::uuid;
+
+INSERT INTO public.appointment_crew (appointment_id, employee_id, role)
+VALUES (
+  current_setting('upr.cps.appointment_new')::uuid,
+  current_setting('upr.cps.employee_appointment')::uuid,
+  'tech'
+);
+
+RESET ROLE;
 SET LOCAL ROLE service_role;
 SELECT pg_temp.set_identity_actor(NULL, 'service_role');
 
@@ -351,7 +546,6 @@ DECLARE
   v_private uuid := current_setting('upr.cps.conversation_private')::uuid;
   v_expected uuid[] := ARRAY[
     current_setting('upr.cps.employee_admin')::uuid,
-    current_setting('upr.cps.employee_appointment')::uuid,
     current_setting('upr.cps.employee_default')::uuid
   ];
   v_actual uuid[];
@@ -360,19 +554,21 @@ BEGIN
   IF NOT public.messaging_employee_can_access_conversation(
        current_setting('upr.cps.employee_admin')::uuid, v_private
      )
-     OR NOT public.messaging_employee_can_access_conversation(
+     OR public.messaging_employee_can_access_conversation(
        current_setting('upr.cps.employee_appointment')::uuid, v_visible
      )
      OR NOT public.messaging_employee_can_access_conversation(
        current_setting('upr.cps.employee_default')::uuid, v_visible
      ) THEN
-    RAISE EXCEPTION 'privileged, appointment, or default participant access drifted';
+    RAISE EXCEPTION
+      'privileged/default membership or forged-assignment denial drifted';
   END IF;
 
   IF public.messaging_employee_can_access_conversation(
        current_setting('upr.cps.employee_removed')::uuid, v_visible
      ) THEN
-    RAISE EXCEPTION 'manual removal did not override appointment/default membership';
+    RAISE EXCEPTION
+      'manual removal did not override default membership beside an untrusted appointment row';
   END IF;
 
   IF public.messaging_employee_can_access_conversation(
@@ -404,7 +600,7 @@ BEGIN
   IF NOT EXISTS (
        SELECT 1
        FROM public.search_scoped_conversation_contacts(
-         current_setting('upr.cps.employee_appointment')::uuid,
+         current_setting('upr.cps.employee_default')::uuid,
          'Visible customer',
          25
        ) contact
@@ -432,7 +628,7 @@ BEGIN
 
   v_created := public.find_or_create_scoped_conversation(
     current_setting('upr.cps.contact_new')::uuid,
-    current_setting('upr.cps.employee_appointment')::uuid
+    current_setting('upr.cps.employee_default')::uuid
   );
   IF NULLIF(v_created ->> 'id', '') IS NULL
      OR v_created ->> 'type' IS DISTINCT FROM 'direct'
@@ -442,8 +638,17 @@ BEGIN
        WHERE participant.conversation_id = (v_created ->> 'id')::uuid
          AND participant.contact_id = current_setting('upr.cps.contact_new')::uuid
      ) THEN
-    RAISE EXCEPTION 'assigned employee scoped creation lost its atomic return/participant shape';
+    RAISE EXCEPTION 'default employee scoped creation lost its atomic return/participant shape';
   END IF;
+
+  PERFORM pg_temp.expect_sqlstate(
+    'browser-forged assignment cannot open a new conversation',
+    format(
+      'SELECT public.find_or_create_scoped_conversation(%L::uuid, %L::uuid)',
+      current_setting('upr.cps.contact_new'),
+      current_setting('upr.cps.employee_appointment')
+    )
+  );
 END;
 $service_precedence_and_notification_parity$;
 
@@ -451,7 +656,53 @@ RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_appointment')::uuid);
 
-DO $appointment_tech_inbox_and_author_isolation$
+DO $forged_assignment_browser_denials$
+DECLARE
+  v_visible uuid := current_setting('upr.cps.conversation_visible')::uuid;
+  v_visible_message uuid := current_setting('upr.cps.visible_message')::uuid;
+  v_inbox jsonb;
+BEGIN
+  IF EXISTS (
+       SELECT 1
+       FROM public.conversations conversation
+       WHERE conversation.id = v_visible
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.get_my_conversation_access_snapshot(ARRAY[v_visible])
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.get_message_author_directory(ARRAY[v_visible_message])
+     ) THEN
+    RAISE EXCEPTION
+      'browser-forged assignment crossed conversation, snapshot, or author RLS';
+  END IF;
+
+  v_inbox := public.get_tech_conversations();
+  IF EXISTS (
+       SELECT 1
+       FROM jsonb_array_elements(v_inbox -> 'conversations') conversation
+       WHERE (conversation ->> 'id')::uuid = v_visible
+     ) THEN
+    RAISE EXCEPTION 'browser-forged assignment crossed the scoped inbox';
+  END IF;
+
+  PERFORM pg_temp.expect_sqlstate(
+    'browser-forged assignment cannot mutate unread state',
+    format(
+      'SELECT public.set_my_conversation_unread_state(ARRAY[%L::uuid], true)',
+      v_visible
+    )
+  );
+END;
+$forged_assignment_browser_denials$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.set_identity_actor(current_setting('upr.cps.auth_default')::uuid);
+
+DO $default_tech_inbox_and_author_isolation$
 DECLARE
   v_inbox jsonb;
   v_visible uuid := current_setting('upr.cps.conversation_visible')::uuid;
@@ -477,7 +728,9 @@ BEGIN
        FROM jsonb_array_elements(v_inbox -> 'conversations') conversation
        WHERE (conversation ->> 'id')::uuid = v_private
      ) THEN
-    RAISE EXCEPTION 'get_tech_conversations legacy default call lost scoped composite behavior';
+    RAISE EXCEPTION
+      'get_tech_conversations legacy default call lost scoped composite behavior: %',
+      v_inbox;
   END IF;
 
   IF EXISTS (
@@ -529,7 +782,7 @@ BEGIN
     format(
       'SELECT public.find_or_create_scoped_conversation(%L::uuid, %L::uuid)',
       current_setting('upr.cps.contact_new'),
-      current_setting('upr.cps.employee_appointment')
+      current_setting('upr.cps.employee_default')
     )
   );
   PERFORM pg_temp.expect_sqlstate(
@@ -637,7 +890,7 @@ BEGIN
     RAISE EXCEPTION 'self-leave did not create an effective manual removal';
   END IF;
 END;
-$appointment_tech_inbox_and_author_isolation$;
+$default_tech_inbox_and_author_isolation$;
 
 RESET ROLE;
 SET LOCAL ROLE authenticated;
@@ -702,7 +955,8 @@ BEGIN
       AND (member ->> 'included')::boolean
       AND member ->> 'source' = 'manual_add'
   ) THEN
-    RAISE EXCEPTION 'admin manual add did not restore the self-left member';
+    RAISE EXCEPTION
+      'admin manual add did not grant the previously appointment-only member';
   END IF;
 END;
 $admin_member_control_denials_and_restore$;
