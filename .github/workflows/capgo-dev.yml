@@ -3,15 +3,15 @@
 # ════════════════════════════════════════════════
 #
 # WHAT THIS DOES (plain language):
-#   Builds, verifies, publishes, rolls back, or disables updates for the
+#   Builds, verifies, stages, or disables updates for the
 #   separately identified UPR Dev iOS app. It cannot address the official UPR
 #   app or any production Capgo channel.
 #
 # DEPENDS ON:
 #   Internal: scripts/build-native.mjs, package-lock.json
-#   Data:     reads  → capgo-dev environment secret/variable values
-#             writes → UPR Dev Capgo app/channel only for publish, rollback,
-#                      or disable operations
+#   Data:     reads  → capgo-dev environment secret values
+#             writes → unassigned UPR Dev bundles for publish; UPR Dev channel
+#                      only for the emergency disable operation
 #
 # NOTES / GOTCHAS:
 #   - The environment is additionally restricted to refs/heads/dev in GitHub.
@@ -32,12 +32,7 @@ on:
         options:
           - validate
           - publish
-          - rollback
           - disable
-      rollback_bundle:
-        description: Existing UPR Dev bundle version required only for rollback
-        required: false
-        type: string
       confirmation:
         description: Enter UPR DEV CAPGO followed by the selected operation in uppercase
         required: true
@@ -76,7 +71,6 @@ jobs:
         env:
           OPERATION: ${{ inputs.operation }}
           CONFIRMATION: ${{ inputs.confirmation }}
-          ROLLBACK_BUNDLE: ${{ inputs.rollback_bundle }}
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/dev"
@@ -90,15 +84,6 @@ jobs:
             echo "Confirmation must be exactly: $expected_confirmation" >&2
             exit 1
           fi
-          if [[ "$OPERATION" = "rollback" && ! "$ROLLBACK_BUNDLE" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,127}$ ]]; then
-            echo "rollback_bundle must be an explicit existing UPR Dev version." >&2
-            exit 1
-          fi
-          if [[ "$OPERATION" != "rollback" && -n "$ROLLBACK_BUNDLE" ]]; then
-            echo "rollback_bundle is accepted only for rollback." >&2
-            exit 1
-          fi
-
       - name: Setup Node 22.23.1
         uses: actions/setup-node@v4
         with:
@@ -113,18 +98,16 @@ jobs:
         env:
           CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
           CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
-          CAPGO_DEV_PUBLIC_KEY_V2: ${{ vars.CAPGO_DEV_PUBLIC_KEY_V2 }}
+          CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}
           OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
-          if [[ -z "${CAPGO_DEV_API_KEY:-}" ]]; then
-            echo "Missing required capgo-dev environment value: CAPGO_DEV_API_KEY" >&2
-            exit 1
+          required_names=()
+          if [[ "$OPERATION" = "publish" || "$OPERATION" = "disable" ]]; then
+            required_names+=(CAPGO_DEV_API_KEY)
           fi
-          if [[ "$OPERATION" = "validate" || "$OPERATION" = "publish" ]]; then
-            required_names=(CAPGO_DEV_PRIVATE_KEY_V2 CAPGO_DEV_PUBLIC_KEY_V2)
-          else
-            required_names=()
+          if [[ "$OPERATION" = "publish" ]]; then
+            required_names+=(CAPGO_DEV_PRIVATE_KEY_V2 CAPGO_DEV_PUBLIC_KEY_V2)
           fi
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -132,9 +115,9 @@ jobs:
               exit 1
             fi
           done
-          if [[ -n "${CAPGO_DEV_PUBLIC_KEY_V2:-}" && ("$CAPGO_DEV_PUBLIC_KEY_V2" == *PRIVATE* || "$CAPGO_DEV_PUBLIC_KEY_V2" == *BEGIN*) ]]; then
-            echo "CAPGO_DEV_PUBLIC_KEY_V2 contains private-key material." >&2
-            exit 1
+          if [[ "$OPERATION" = "publish" ]]; then
+            node --input-type=module -e \
+              "import { validateCapgoV2PublicKey } from './scripts/lib/capgo-public-key.mjs'; validateCapgoV2PublicKey(process.env.CAPGO_DEV_PUBLIC_KEY_V2);"
           fi
 
       - name: Build the isolated native web bundle
@@ -167,7 +150,19 @@ jobs:
           echo "native_version=$native_version" >> "$GITHUB_OUTPUT"
           echo "bundle_version=$bundle_version" >> "$GITHUB_OUTPUT"
 
-      - name: Publish encrypted bundle to the UPR Dev canary
+      - name: Verify compatibility with the UPR Dev canary
+        if: ${{ inputs.operation == 'publish' }}
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/capgo bundle compatibility "$CAPGO_DEV_APP_ID" \
+            --apikey "$CAPGO_DEV_API_KEY" \
+            --channel "$CAPGO_DEV_CHANNEL" \
+            --text
+
+      - name: Stage encrypted bundle without channel assignment
         if: ${{ inputs.operation == 'publish' }}
         shell: bash
         env:
@@ -178,34 +173,8 @@ jobs:
           node_modules/.bin/capgo bundle upload "$CAPGO_DEV_APP_ID" \
             --apikey "$CAPGO_DEV_API_KEY" \
             --path dist \
-            --channel "$CAPGO_DEV_CHANNEL" \
             --bundle "${{ steps.bundle.outputs.bundle_version }}" \
-            --key-data-v2 "$CAPGO_DEV_PRIVATE_KEY_V2" \
-            --min-update-version "${{ steps.bundle.outputs.native_version }}" \
-            --fail-on-incompatible
-
-      - name: Roll back the UPR Dev canary
-        if: ${{ inputs.operation == 'rollback' }}
-        shell: bash
-        env:
-          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
-          ROLLBACK_BUNDLE: ${{ inputs.rollback_bundle }}
-        run: |
-          set -euo pipefail
-          node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
-            --apikey "$CAPGO_DEV_API_KEY" \
-            --bundle "$ROLLBACK_BUNDLE" \
-            --state default \
-            --no-downgrade \
-            --ios \
-            --no-android \
-            --self-assign \
-            --disable-auto-update patch \
-            --dev \
-            --prod \
-            --emulator \
-            --device \
-            --rollout-disable
+            --key-data-v2 "$CAPGO_DEV_PRIVATE_KEY_V2"
 
       - name: Disable future UPR Dev update delivery
         if: ${{ inputs.operation == 'disable' }}
@@ -242,7 +211,9 @@ jobs:
               nativeVersion: process.env.NATIVE_VERSION || null,
               sourceCommit: process.env.GITHUB_SHA,
               apiOrigin: process.env.VITE_NATIVE_API_ORIGIN,
-              nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true"
+              nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true",
+              bundleAssignedToChannel: false,
+              deviceDeliveryActivated: false
             }, null, 2) + "\\n", { mode: 0o644 });
           '
 
