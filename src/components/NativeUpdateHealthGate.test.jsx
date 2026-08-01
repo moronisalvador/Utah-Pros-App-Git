@@ -13,7 +13,16 @@
  *   Data:      none
  * ════════════════════════════════════════════════
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: vi.fn(),
+}));
+
+vi.mock('@/lib/nativeUpdater', () => ({
+  markBundleReady: vi.fn(),
+}));
+
 import { isNativeUpdateHealthVerified } from './NativeUpdateHealthGate.jsx';
 
 describe('native update application health checkpoint', () => {
