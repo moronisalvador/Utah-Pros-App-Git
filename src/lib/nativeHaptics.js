@@ -57,8 +57,10 @@ export function notify(type = 'success') {
 export function selection() {
   if (reducedMotion()) return;
   if (isNative()) {
-    Haptics.selectionStart().catch((err) => console.warn('Haptics.selectionStart failed:', err?.message || err));
-    Haptics.selectionEnd().catch((err) => console.warn('Haptics.selectionEnd failed:', err?.message || err));
+    void Haptics.selectionStart()
+      .then(() => Haptics.selectionChanged())
+      .finally(() => Haptics.selectionEnd())
+      .catch((err) => console.warn('Haptics.selection failed:', err?.message || err));
   } else {
     webVibrate(10);
   }
