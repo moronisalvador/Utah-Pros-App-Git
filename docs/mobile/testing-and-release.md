@@ -69,6 +69,11 @@ an ambient shell flag or claim native readiness from a green Vite bundle.
 where generated changes are intended and reviewable, on a supported environment. It is not a
 read-only audit command.
 
+`npm run build:ios:dev` preserves the existing UPR Dev default-off updater.
+`npm run build:ios:dev:capgo` is the explicit OTA-enabled development form and
+requires `CAPGO_DEV_PUBLIC_KEY_V2`; it patches only the gitignored generated
+iOS config. Neither command changes the checked-in production Capacitor config.
+
 Release-source checks also include:
 
 ```text
@@ -261,7 +266,8 @@ development-signed `Dev` for direct device runs and distribution-signed `DevRele
 internal TestFlight. `.github/workflows/ios-dev-testflight.yml` is fail-closed behind
 a fresh manual dispatch for every signed archive/upload, accepts only `dev`, pins the
 `.upr.dev` bundle and Preview API origin, uses production APNs, and reverifies the embedded
-origin/Push/SHA contract before an internal-only upload. A `dev` push runs credential-free
+origin/Push/OTA/SHA contract and embedded dev app/channel/public-key controls
+before an internal-only upload. A `dev` push runs credential-free
 tests only. Dev-exclusive `IOS_DEV_*` signing/provider names prevent fallback to official
 UPR credentials, and runs serialize across the Apple side effect. The external Apple
 record/profile/group, GitHub environments, first dry archive, upload, install, and device
@@ -271,6 +277,19 @@ OS-reported `.upr.dev` identity before deleting its remembered owner-scoped toke
 unregistering locally. The exact containment and zero-dispatch evidence sequence lives in
 `docs/mobile/dev-app-variant.md`; none of that lane changes the official main-only UPR
 release path.
+
+The separate manual `.github/workflows/capgo-dev.yml` accepts only `dev`,
+`com.utahprosrestoration.upr.dev`, and `upr-dev-canary`, behind the
+branch-restricted `capgo-dev` environment and an operation-specific exact
+confirmation. Before publish, its validate operation must prove the exact SHA,
+native module graph, absent native service-worker/manifest files, v2 key
+presence, and locked dependencies without changing Capgo. Publish then requires
+v2 encryption, installed-native minimum version, and compatibility success.
+Rollback names one prior verified bundle; disable turns off future channel
+delivery but is not represented as an instant device recall. The signed
+TestFlight/device health, interruption, failed-acknowledgement, rollback,
+official-UPR non-regression, and Capgo statistics matrix remains mandatory.
+See `docs/mobile/capgo-dev-runbook.md`.
 
 ## Database compatibility gate
 
@@ -394,7 +413,9 @@ The reconciled mobile source now includes:
   replay, and bounded legacy-state maintenance;
 - native biometric fail-closed handling and an opaque app-switcher privacy shield;
 - mounted allowlisted custom/Universal-Link and Push-action navigation;
-- exact-default-off native Push enrollment and OTA with zero boot acknowledgment;
+- exact-default-off native Push enrollment and official UPR OTA, plus an
+  isolated source-integrated UPR Dev canary with late health acknowledgement
+  and provider/signed-device/rollback proof still pending;
 - exact 12-type app privacy declaration, including Other Financial Info for retained OOP
   quote/pricing data, and fail-closed archive/IPA verification source.
 
