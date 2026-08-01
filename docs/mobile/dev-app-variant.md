@@ -2,15 +2,14 @@
 FILE: docs/mobile/dev-app-variant.md
 
 WHAT THIS DOES (plain language):
-  Explains the "UPR Dev" side-by-side iOS app: a second, development-signed copy of the
-  field app that installs next to the production TestFlight app so native changes from the
-  dev branch (haptics, push prompts, onboarding, Face ID) can be tried on a real phone
-  before they are promoted to main.
+  Explains the "UPR Dev" side-by-side iOS app: its development-signed direct-device
+  lane and its separately gated distribution configuration for internal TestFlight.
 
 DEPENDS ON:
-  Internal: ios/App/App.xcodeproj (Dev build configuration + "UPR Dev" scheme),
+  Internal: ios/App/App.xcodeproj (Dev + DevRelease configurations and schemes),
             ios/App/App/App.entitlements, ios/App/App/Info.plist,
             ios/App/App/Assets.xcassets/AppIcon-Dev.appiconset,
+            .github/workflows/ios-dev-testflight.yml,
             package.json (build:ios:dev), src/lib/nativeApiOrigin.js,
             docs/mobile/push-activation-owner-gate.md
   Data:     reads → the SAME shared production Supabase as the production app (see caveat)
@@ -25,34 +24,33 @@ NOTES / GOTCHAS:
 
 # UPR Dev — side-by-side development app variant
 
-**Last verified:** 2026-07-31
+**Last verified:** 2026-08-01
 
-The Xcode project carries a third build configuration, **Dev**, plus a shared scheme
-named **UPR Dev**. It produces a second, independently installed copy of the field app so
-the owner can test native behaviour built from the `dev` branch on the same phone that
-carries the production TestFlight install.
+The Xcode project carries two configurations for the second app identity:
+**Dev** for direct Xcode installation and **DevRelease** for internal TestFlight.
+Both install alongside the official UPR app and both keep the amber-badged UPR Dev identity.
 
-| | Production (TestFlight) | UPR Dev (side-by-side) |
-|---|---|---|
-| Build configuration | `Release` | `Dev` |
-| Bundle id | `com.utahprosrestoration.upr` | `com.utahprosrestoration.upr.dev` |
-| Display name | UPR | UPR Dev |
-| App icon | `AppIcon` | `AppIcon-Dev` (amber "DEV" banner) |
-| Signing | Manual, `Apple Distribution`, `UPR_RELEASE_PROFILE_NAME` | Automatic, team `H6ZUT739T9` |
-| Entitlements | `App.Release.entitlements` (`aps-environment: production`) | `App.entitlements` (`aps-environment: development`) |
-| Web bundle API origin | `https://utahpros.app` (CI-enforced) | `https://dev.utahpros.app` (default in `src/lib/nativeApiOrigin.js`) |
-| Install path | TestFlight via `ios-release.yml` | Xcode run to device |
+| | Official UPR | UPR Dev direct-device | UPR Dev internal TestFlight |
+|---|---|---|---|
+| Build configuration | `Release` | `Dev` | `DevRelease` |
+| Bundle id | `com.utahprosrestoration.upr` | `com.utahprosrestoration.upr.dev` | `com.utahprosrestoration.upr.dev` |
+| Display name / icon | UPR / `AppIcon` | UPR Dev / amber `AppIcon-Dev` | UPR Dev / amber `AppIcon-Dev` |
+| Signing | Manual Apple Distribution | Automatic development | Manual Apple Distribution |
+| Entitlements | production APNs | development APNs | production APNs |
+| Web API origin | `https://utahpros.app` | `https://dev.utahpros.app` | `https://dev.utahpros.app` |
+| Delivery | manual, owner-gated TestFlight | Xcode run to device | guarded `ios-dev-testflight.yml` |
 
-The existing `Debug` configuration is untouched and remains what it was; `Dev` is a copy
-of it with the bundle id, display name, and icon overridden. The `Release` configuration
-and the TestFlight/CI lane (`.github/workflows/ios-release.yml`, `ios/fastlane/`,
-`ios/App/Version.xcconfig`) are unchanged — `scripts/ios-release-workflow.test.js` still
-locks that contract.
+The existing `Debug` and production `Release` configurations remain unchanged. `Dev` is a
+development copy with the bundle id, display name, and icon overridden. `DevRelease` is
+an isolated optimized distribution configuration: it keeps the `.dev` identity and Dev
+branding, uses `App.Release.entitlements`, and accepts only the separate
+`UPR_DEV_RELEASE_PROFILE_NAME` build setting. The official production workflow remains
+manual/main-only; repository tests lock both contracts.
 
 The display name is per-configuration via the `UPR_APP_DISPLAY_NAME` build setting;
 `Info.plist`'s `CFBundleDisplayName` is `$(UPR_APP_DISPLAY_NAME)` and resolves to `UPR`
-for Debug/Release and `UPR Dev` for Dev. No other Info.plist value varies by
-configuration.
+for Debug/Release and `UPR Dev` for Dev/DevRelease. No other Info.plist value
+varies by configuration.
 
 ## Building and installing (owner flow)
 
@@ -88,6 +86,71 @@ binary; see the first caveat below. Automatic signing provisions
 `com.utahprosrestoration.upr.dev` under team `H6ZUT739T9` on first build either way.
 The phone then shows two apps: **UPR** (TestFlight, production) and **UPR Dev**
 (amber-badged icon). Installing/removing one never touches the other.
+
+## Internal TestFlight automation — repository path, externally gated
+
+`.github/workflows/ios-dev-testflight.yml` is the dedicated distribution path for
+`com.utahprosrestoration.upr.dev`. It builds only from `dev`, pins
+`https://dev.utahpros.app`, uses production APNs, embeds a non-secret contract containing
+the variant/origin/Push mode/source SHA, verifies that contract in both the archive and
+exported IPA, and requests only the internal group named **UPR Dev**. It never submits to
+App Review or distributes externally.
+
+Every push to `dev` runs only a credential-free Linux test preflight. Signing, archiving,
+and the optional internal upload are `workflow_dispatch` only; there is deliberately no
+persistent enable variable that could authorize a future provider action. Each release
+therefore needs a fresh owner click. Release runs are serialized and cannot be cancelled
+by a later dev push while Apple may be processing an upload.
+
+Before the first manual run, the owner must separately establish the `.dev` App Store
+Connect record, distribution profile, internal group, and `ios-dev-signing` /
+`ios-dev-testflight` GitHub environments. Those environments use only `IOS_DEV_*`
+signing/provider secret names, so the dev lane cannot fall back to the official app's
+credentials. First run with publication false and prove the archive before separately
+authorizing an upload. Source preparation is not evidence that any external object exists
+or that an upload occurred.
+
+Because TestFlight is distribution-signed, the UPR Dev TestFlight build enrolls a
+**production** APNs token even though it calls Preview. Trusted notification dispatch uses
+`sendNativePushToEmployeeAcrossEnvironments()`, so ordinary notifications/automations fan
+out to both exact token cohorts and the row's own `apns_topic` selects `.upr` versus
+`.upr.dev`. The owner-only Dev Tools self-test remains single-environment; a Preview
+self-test may therefore report `no_tokens` for a TestFlight install and is not the
+acceptance test. No Cloudflare variable needs to change.
+
+### Dev-only stop and replacement procedure
+
+This sequence affects only `com.utahprosrestoration.upr.dev`; do not alter official UPR,
+Cloudflare Production, `APNS_TOPIC`, or the production TestFlight group.
+
+1. Do not dispatch another release. Because push events run tests only, there is no
+   automatic upload switch to disable.
+2. If a manual run has not reached **Upload and assign UPR Dev**, cancel it. If that step
+   started or its outcome is ambiguous, do not retry: wait for App Store Connect processing
+   and identify the exact `.upr.dev` build first.
+3. In App Store Connect, remove only the affected build from the internal **UPR Dev** group
+   so new testers cannot install it. Tell current dev testers not to install/update and to
+   remove the dev app if immediate containment is required. Do not touch official UPR.
+4. Correct the source and manually dispatch a replacement from `dev` with
+   `native_push_enabled:false` and `publish_to_testflight:false`. Its verified embedded
+   contract must report the `.upr.dev` identity, Preview origin, native Push disabled,
+   `retireDevToken:true`, production APNs entitlement, and the selected source SHA.
+5. After dry-archive review, separately dispatch the same corrected commit with
+   `native_push_enabled:false` and `publish_to_testflight:true`; assign only **UPR Dev**.
+   Direct testers to update. On authenticated boot, the replacement requires both its explicit
+   retirement flag and the OS-reported `.upr.dev` bundle id before it persists Push off,
+   deletes the locally remembered token through the owner-scoped RPC, unregisters from APNs,
+   and clears delivered banners. Official UPR cannot enter this path.
+6. Before declaring containment, verify the replacement reports no pending detach, confirm the
+   affected tester's `.upr.dev` token row is absent through an authorized admin/service
+   inspection, and prove a trusted notification produces zero `.upr.dev` dispatch/delivery.
+   A reinstall or storage-cleared app has no safe client-side token selector; remove it and use
+   the authorized server-side evidence check rather than adding a broad delete-by-topic API.
+   Existing installations may continue receiving until replaced/removed, so containment is not
+   complete merely because the replacement was uploaded.
+7. Re-enable native Push only in a later manually authorized `.upr.dev` replacement after
+   enrollment, account-switch, foreground/background/terminated delivery, notification tap,
+   and official-UPR non-regression checks pass.
 
 A development-signed install expires with its provisioning profile (typically 7 days on a
 free profile, up to a year on the paid team's Xcode-managed profile) — re-running from

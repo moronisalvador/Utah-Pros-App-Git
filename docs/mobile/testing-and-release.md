@@ -256,6 +256,22 @@ including the direct `@capacitor/app` dependency used by the mounted native navi
 Clean-checkout release proof must continue to demonstrate that the locks reproduce without
 unexpected native drift.
 
+The side-by-side UPR Dev identity has two deliberately separate native configurations:
+development-signed `Dev` for direct device runs and distribution-signed `DevRelease` for
+internal TestFlight. `.github/workflows/ios-dev-testflight.yml` is fail-closed behind
+a fresh manual dispatch for every signed archive/upload, accepts only `dev`, pins the
+`.upr.dev` bundle and Preview API origin, uses production APNs, and reverifies the embedded
+origin/Push/SHA contract before an internal-only upload. A `dev` push runs credential-free
+tests only. Dev-exclusive `IOS_DEV_*` signing/provider names prevent fallback to official
+UPR credentials, and runs serialize across the Apple side effect. The external Apple
+record/profile/group, GitHub environments, first dry archive, upload, install, and device
+matrix remain independent owner gates. The manual `native_push_enabled:false` replacement
+also embeds the exact dev-token retirement flag; authenticated boot must prove the
+OS-reported `.upr.dev` identity before deleting its remembered owner-scoped token and
+unregistering locally. The exact containment and zero-dispatch evidence sequence lives in
+`docs/mobile/dev-app-variant.md`; none of that lane changes the official main-only UPR
+release path.
+
 ## Database compatibility gate
 
 Before any web/PWA/native/OTA release that changes a data contract:

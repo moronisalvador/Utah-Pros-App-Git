@@ -17,7 +17,7 @@ broader S1h program remains deferred.
 | Plugin | `@capacitor/push-notifications` in `package.json` + `ios/App/CapApp-SPM/Package.swift` | wired |
 | Debug entitlement | `ios/App/App/App.entitlements` → `aps-environment: development` | correct |
 | Release entitlement | `ios/App/App/App.Release.entitlements` → `aps-environment: production` | correct |
-| Per-config wiring | `project.pbxproj` — Debug uses `App.entitlements`, Release uses `App.Release.entitlements` | correct |
+| Per-config wiring | Debug/Dev use `App.entitlements`; Release/DevRelease use `App.Release.entitlements` | correct |
 | Registration | `src/lib/pushNotifications.js` → `registerPushForEmployee()` | fail-closed |
 | User controls | Settings → Notifications; separate Web Push and native APNs Turn on/Turn off paths | wired in source |
 | Tap → route | opaque recipient-bound `resolveNativePushActionTarget()` + `NativeNavigationBridge` | wired |
@@ -336,7 +336,7 @@ After a stop:
 5. re-enable the APNs environment only after the replacement passes
    account-switch, privacy, foreground/background/terminated, and tap checks.
 
-## GitHub release environments (verified 2026-07-29 — names only, never values)
+## GitHub release environments (production verified 2026-07-29; dev source verified 2026-08-01)
 
 `.github/workflows/ios-release.yml` reads from two GitHub environments. As of
 2026-07-29 only `ios-testflight`'s three secrets are documented as confirmed;
@@ -356,6 +356,36 @@ build-time* value must be exact `true` for the TestFlight build. These are
 different stores; do not "fix" one to match the other. First dispatch should
 run with `publish_to_testflight: false` to prove the archive/signing lane
 before any upload is attempted.
+
+The separate UPR Dev distribution source adds two more, currently unverified
+environments. No secret value was created or inspected while authoring it:
+
+| Environment | Required secrets |
+|---|---|
+| `ios-dev-signing` | `IOS_DEV_APPLE_TEAM_ID`, `IOS_DEV_APPLE_CERTIFICATE_BASE64`, `IOS_DEV_APPLE_CERTIFICATE_PASSWORD`, `IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64`, `IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME`, plus repository-or-environment `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` |
+| `ios-dev-testflight` | `IOS_DEV_ASC_ISSUER_ID`, `IOS_DEV_ASC_KEY_ID`, `IOS_DEV_ASC_KEY_CONTENT_BASE64` from a principal scoped to the `.dev` app record |
+
+`.github/workflows/ios-dev-testflight.yml` runs credential-free tests on normal
+`dev` pushes. It has no persistent signing/upload enable switch: every signed
+archive and optional provider upload requires a fresh manual dispatch. The
+workflow bakes `VITE_APNS_ENV=production`; its manual `native_push_enabled`
+input defaults to true and can be false only for the documented `.upr.dev`
+emergency replacement path. A false selection also bakes exact
+`VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN=true`; authenticated boot requires that flag
+plus the OS-reported `.upr.dev` identity before it detaches the locally
+remembered owner-scoped token. Official UPR cannot enter that path. A manual
+run with publication false must prove the
+`.dev` archive first. The normal trusted notification path already fans out to
+both APNs environments and uses each row's `apns_topic`; neither Cloudflare
+`APNS_TOPIC` nor Production configuration changes for this lane.
+
+The dev workflow embeds `upr-native-release.json` in the app and requires the
+archive and IPA copies to match the exact `.upr.dev` identity, Preview origin,
+manual Push/retirement selection, production APNs environment, and source SHA. Its signing
+and provider subprocesses retain the default five-minute owned-process budget;
+a timeout is a failed/possibly ambiguous operation, never authority to re-run a
+provider step. For the exact dev-only stop/replacement sequence, use
+`docs/mobile/dev-app-variant.md` § “Dev-only stop and replacement procedure.”
 
 ## Build 1.0.0 (2) — verified evidence (2026-07-30 morning)
 
