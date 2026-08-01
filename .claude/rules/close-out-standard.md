@@ -81,6 +81,17 @@ bugs that reached techs.
    (note it in the handoff like the minimize test).
 8. **Docs.** Update `UPR-Web-Context.md` (Rule 9). Bump the `Last-verified` stamp on any standard/design
    section the session relied on or changed. Refresh any hand-counted number you touched.
+8b. **What's New entry — only when something became usable.** If this session made something a
+   non-developer can now *do* that they could not before, add one file to `src/data/changelog/`
+   (format: the README beside it) so it appears on `/whats-new`, the page the team reads. Include
+   the commit `sha` — that is what lets the page derive live-versus-in-testing from `origin/main`
+   instead of trusting a typed status that goes stale on the next promotion.
+   **This is deliberately not per-commit and deliberately not blocking.** ~50 `feat`/`fix` commits
+   land per week and most are increments of one shipped thing; an entry per commit would bury the
+   page in near-duplicates. The complete record is already guaranteed by the generated tier
+   (`npm run generate:changelog`, run it if the page's activity list looks stale), so a skipped
+   highlight costs detail, never the record. The `.githooks/commit-msg` reminder is a nudge with
+   the same reasoning — activate it once per clone with `git config core.hooksPath .githooks`.
 9. **Re-measure your slice** of the initiative's baseline metrics table (if the initiative has one) and
    reconcile the roadmap checkboxes **both directions** (nothing marked done-to-look-finished; nothing
    finished left as todo; owner-blocked stays open with the reason disclosed).

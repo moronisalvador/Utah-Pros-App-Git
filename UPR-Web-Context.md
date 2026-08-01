@@ -117,6 +117,54 @@ Save-to-QBO gate is untouched** — nothing auto-calls `/api/qbo-invoice`. Detai
 (real-time; the hourly sweep covers the gap meanwhile), and promote `dev → main` (the Intuit
 webhook URL + pg_cron both point at `utahpros.app`, so production only picks this up on promotion).
 
+## What's New — the team-facing shipped record, `/whats-new` (2026-07-31)
+
+A signed-in page any employee can open (`crm_partner` excluded, same as `/roadmap` and
+`/feedback`) recording everything built, fixed and improved, written for people who use the app
+rather than build it. The backward-looking counterpart to `/roadmap`, which is forward-looking.
+
+**Two tiers, and the split is the whole design.**
+
+- **Highlights** — hand-written, one JSON file per entry in `src/data/changelog/` (format:
+  the README beside them). 38 seeded for July 2026.
+- **Everything else** — generated from git by `npm run generate:changelog` into
+  `src/data/changelog-activity.json`: every `feat`/`fix`/`perf` commit since 2026-07-01, bucketed
+  into America/Denver weeks, `docs`/`test`/`chore` excluded. Currently 460 changes over 5 weeks
+  across 13 areas.
+
+**Why derive the second tier at all:** 1,018 `feat`/`fix`/`perf` commits have landed since
+2026-03-12, ~50 per week, so a page that is 1:1 with commits is unreadable *and* an entry-per-commit
+rule would manufacture ~50 near-duplicates weekly. Deriving the bulk means a session that forgets a
+highlight costs detail, never the record — the page cannot decay into looking abandoned. Precedent
+for why that matters: `src/lib/roadmapData.js` carries a "bump this whenever you update" comment and
+its `ROADMAP_UPDATED` stamp sat four weeks stale.
+
+**Live vs in-testing is derived, never typed.** The generator marks each commit against
+`origin/main` ancestry, so a change still behind the `dev → main` hold cannot be advertised as
+available (19 of 460 today). A highlight naming a `sha` inherits that and self-corrects on the next
+generate after a promotion; the optional `status` field is only for what git cannot see, such as a
+feature still behind a flag.
+
+**No database, no network.** No table, no RPC, no migration, no grant, no fetch — everything is
+bundled. So there is no loading gate, no error state, and nothing to refetch on resume; the
+minimize test passes because the page has no async lifecycle.
+
+**Files:** `src/pages/WhatsNew.jsx` + co-located `WhatsNew.css` (kept out of `src/index.css`, which
+sits ~1.9 KB under its CI-blocking 600,000-byte ceiling — same precedent as
+`NotificationPresentation.css`). Registered in `buildTargetPages.web.jsx` (web only; office pages
+are absent from the native registry), route in `App.jsx`, nav in `Sidebar.jsx` +
+`IconWhatsNew` in `navItems.jsx`, **and a `/whats-new` pair in `public/_redirects`** — without that
+the address returns `404.html` in production, which `tests/qa/unit/spa-route-coverage.test.js`
+catches. Lazy route chunk: 75.6 KB raw / 21.1 KB gzip, entry graph unchanged.
+
+**Upkeep:** `.githooks/commit-msg` (activate per clone with
+`git config core.hooksPath .githooks`) reminds on a `feat`/`fix`/`perf` commit touching
+`src/pages`, `src/components` or `functions/api` that carries no entry. **Non-blocking by design** —
+see `close-out-standard.md` step 8b. It is a git hook rather than a Claude hook because
+`git commit` is the only chokepoint Claude, Codex and a human at a terminal all share.
+Contract test: `tests/qa/unit/whats-new-changelog.test.js` (52 cases — entry validity, generated-data
+shape, and the hook's silence cases, which matter as much as its loud one).
+
 ## Workflow & technical-debt restructure (2026-07-29 — owner-directed)
 
 No feature code, schema, or provider behaviour changed. What changed:
