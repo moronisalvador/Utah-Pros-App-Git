@@ -209,7 +209,7 @@ No feature code, schema, or provider behaviour changed. What changed:
   rotated without committing a usable password. The raw hosted receipt at `a513af37` is
   163 / 375 assertions passed, 0 failed, 212 skipped, and 46 setup errors across 44 files. Failed
   assertions are gated at zero; setup debt is shrink-only at 44 failed files / 90 recursively
-  failed suite nodes. Six SQL/pgTAP proofs remain local-only. The Supabase dashboard's
+  failed suite nodes. SQL/pgTAP behavior proofs remain local-only. The Supabase dashboard's
   `MIGRATIONS_FAILED` badge reflects a real ledger/replay gap even though the manually restored
   schema is usable: a 2026-07-31 rebase again attempted historical
   `20260312194505_001_phase_conversion_and_costing.sql` and failed because `rv_jobs` depends on
@@ -4743,3 +4743,17 @@ all five exact keys remain disabled. The rollback was rehearsed on `qa-staging` 
 source then reapplied, so QA also ends contained. CallRail configuration and the working staff P2P
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
+
+**Repository-only producer repair candidate (2026-08-01):**
+`20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
+the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
+The migration derives browser actors from `auth.uid()`, denies inactive/external users and supplied
+actor mismatches, removes anonymous appointment/crew access, serializes crew/time-entry decisions,
+and keeps unchanged crew assignment row IDs. Each enabled real producer occurrence would receive a
+private durable UUID; the Worker requires that UUID for the five types and claims bell, Web Push,
+and email delivery per recipient/target while the existing APNs claim remains authoritative.
+All five catalog flags are explicitly left disabled. This candidate has passed repository build,
+full credential-free tests, changed-file lint, migration hygiene, and source contracts only. It has
+not been applied to local, QA, or shared production; no notification was sent and no PWA/native
+device path was exercised. The new sentinel-locked local SQL proof cannot run until the missing
+governed baseline/bootstrap is implemented.

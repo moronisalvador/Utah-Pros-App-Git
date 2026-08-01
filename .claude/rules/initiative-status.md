@@ -150,6 +150,16 @@ The reversible notification producer containment also applied from exact reviewe
   `qa-staging`, then the forward source was reapplied so QA also ends contained. No CallRail,
   provider, consent, message, appointment, or timesheet row/configuration changed. Re-enable only
   after caller-derived producer authorization and negative tests pass.
+- Candidate repair `20260801215912_notification_producer_authorization.sql` is repository-only on
+  `codex/notification-producer-authorization`; it has not been applied to `qa-staging` or the
+  shared project. It binds browser actor IDs to `auth.uid()`, closes anonymous appointment access,
+  applies locked crew diffs, serializes/idempotently retries timesheet decisions, adds durable
+  five-producer occurrence IDs, and gives bell/Web Push/email the service-only claim posture
+  already used by APNs. Its recovery rollback is intentionally fail-closed, and both files keep
+  the same five flags disabled. Credential-free build/test/lint/migration hygiene passed; the
+  sentinel-locked SQL behavior proof is authored but cannot run until the governed local
+  Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider, or device action is
+  implied.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
@@ -272,7 +282,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
   has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
   writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
-  the eight SQL/pgTAP proofs through the still-missing governed local runtime.
+  the local SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)
