@@ -96,6 +96,33 @@ describe('notification producer authorization migration', () => {
         'public.require_notification_producer_actor(',
       );
     }
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.can_current_employee_access_appointment(',
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.can_current_employee_manage_appointment_crew(',
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.is_current_appointment_manager()',
+    );
+    expect(migration).toContain('appointment.is_private IS FALSE');
+    expect(migration).toContain(
+      "employee.role::text IN ('admin', 'project_manager')",
+    );
+    expect(migration).toContain(
+      'crew.employee_id = employee.id',
+    );
+    expect(migration).toContain('ALTER POLICY all_select_appointments');
+    expect(migration).toContain(
+      'public.can_current_employee_manage_appointment_crew(appointment_id)',
+    );
+    expect(migration).toContain(
+      "'NOT_AUTHORIZED: only active internal admins or project managers may change appointment privacy'",
+    );
+    expect(migration).toContain(
+      'OLD.is_private IS DISTINCT FROM NEW.is_private',
+    );
+    expect(migration).not.toContain('DROP POLICY');
   });
 
   it('serializes crew and timesheet decisions and makes exact submit retries idempotent', () => {
@@ -134,11 +161,27 @@ describe('notification producer authorization migration', () => {
     );
     expect(review).toContain('FOR UPDATE');
     expect(review).toContain("'REQUEST_ALREADY_REVIEWED'");
+
+    const update = functionBody(
+      migration,
+      'update_appointment',
+      'ALTER FUNCTION public.update_appointment',
+    );
+    expect(update).toContain('FOR UPDATE');
+    expect(update).toContain(
+      'public.can_current_employee_access_appointment(p_appointment_id)',
+    );
+    expect(crew).toContain(
+      'public.can_current_employee_manage_appointment_crew(',
+    );
   });
 
   it('keeps occurrence and generic delivery claims private and service-only', () => {
     expect(migration).toContain(
       'ALTER TABLE public.notification_producer_occurrences\n  FORCE ROW LEVEL SECURITY;',
+    );
+    expect(migration).toContain(
+      'CREATE POLICY notification_producer_occurrences_service_role',
     );
     expect(migration).toContain(
       'ALTER TABLE public.notification_delivery_claims\n  FORCE ROW LEVEL SECURITY;',
@@ -148,6 +191,15 @@ describe('notification producer authorization migration', () => {
     );
     expect(migration).toContain(
       "IF current_user <> 'service_role' THEN",
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.validate_notification_producer_delivery(',
+    );
+    expect(migration).toContain(
+      'occurrence.entity_type = p_entity_type',
+    );
+    expect(migration).toContain(
+      'occurrence.entity_id = p_entity_id',
     );
     expect(migration).toContain(
       'GRANT EXECUTE ON FUNCTION public.claim_notification_delivery(',
@@ -164,6 +216,10 @@ describe('notification producer authorization migration', () => {
     expect(migration).toContain(
       "|| jsonb_build_object('notification_event_id', v_occurrence_id)",
     );
+    expect(migration).toContain(
+      "'appointment.assigned',\n    'appointment.assigned:' || NEW.id::text,\n    'appointment_crew',\n    NEW.id",
+    );
+    expect(migration).toContain("'appointment_crew_id', NEW.id");
     expect(migration).toContain(
       'FROM public.notification_producer_occurrences occurrence',
     );
