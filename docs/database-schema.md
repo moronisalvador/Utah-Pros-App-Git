@@ -862,3 +862,24 @@ the additive history after compatible code stops calling them. A read-only produ
 on 2026-07-31 verified the exact committed source as
 `20260729183731_notification_delivery_diagnostic_claims`; the compatible Worker/UI was deployed
 before the owner-authorized live sweep.
+
+## Five-producer occurrence and delivery claims (repository candidate)
+
+`20260801215912_notification_producer_authorization.sql` proposes two additive private tables:
+
+- `notification_producer_occurrences` gives only the three appointment and two timesheet producer
+  types one unique occurrence key/UUID; and
+- `notification_delivery_claims` gives bell, Web Push, and transactional email a deterministic
+  per-occurrence/employee/target claim.
+
+Both tables force RLS and grant no browser access. Occurrences are insertable only inside the
+private database producer helper; claims are inserted/deleted only by `SECURITY INVOKER`,
+`service_role`-asserting RPCs. Claims contain UUID fingerprints, not addresses, notification copy,
+provider payload, or credentials, and cleanup is bounded to 1,000 rows older than 90 days.
+
+The migration also narrows existing `appointments`/`appointment_crew` policies and ACLs, preserves
+the deployed appointment/timesheet/notify RPC signatures and return shapes, and replaces
+destructive crew rebuilding with a locked set diff. Its recovery rollback contains all five flags
+first and retains authorization/occurrence evidence rather than recreating the unsafe boundary.
+This schema is authored and tested statically only; it is absent from local, `qa-staging`, and the
+shared project until separately authorized and verified.

@@ -630,6 +630,30 @@ and private media remain separate. Exact migration, rollback, catalog-only role/
 evidence are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
+## Five contained notification producer authorization (repository candidate)
+
+Migration `20260801215912_notification_producer_authorization.sql` is a source candidate, not a
+live database contract. It preserves the four deployed browser/service RPC signatures while
+requiring browser calls to resolve one active, non-external internal employee from `auth.uid()`.
+`p_actor_id` remains in each compatibility signature but must be null or equal that resolved
+employee; time-entry review additionally requires the existing admin tier. Trusted
+`service_role`/database-owner chains remain compatible, but any supplied audit actor must itself be
+active/internal.
+
+`appointments` and `appointment_crew` lose anonymous table privileges/policies. Authenticated
+direct writes require the same active-internal predicate both through RLS and a BEFORE trigger, so
+a definer path cannot accidentally recover the old browser-wide boundary. The crew RPC locks its
+appointment row, validates one duplicate-free active/internal target set, then applies only
+delete/update/insert differences. Timesheet submit locks the entry and pending request, returns the
+same row for an exact retry, and rejects a different concurrent proposal; review locks the request
+and records the server-derived reviewer.
+
+The five trigger/RPC producers may emit only through a private durable occurrence row. The Worker
+rejects these types without that row's UUID, re-resolves appointment crew or timesheet audience,
+and uses service-only per-target claims for bell, Web Push, and email; APNs retains its existing
+device claim. The catalog flags remain disabled in forward and recovery source. No local/hosted
+apply, provider call, delivery, or device proof exists yet.
+
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.
 
