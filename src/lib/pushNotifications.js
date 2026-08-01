@@ -28,6 +28,8 @@
  *   - Detach is bounded and reports ready only after both the owner-scoped
  *     server delete and local unregister/cleanup succeed. Local cleanup is
  *     still attempted when the database is offline or denies the request.
+ *   - Emergency token retirement requires both an exact build flag and the
+ *     OS-reported UPR Dev bundle id; official UPR cannot enter that path.
  *   - Foreground delivery never auto-navigates or forwards notification copy.
  *     A user tap/action must match the current employee's opaque recipient
  *     binding and pass the canonical native-route resolver.
@@ -475,6 +477,58 @@ export function isNativePushEnrollmentEnabled(env = import.meta.env) {
 export function nativeApnsEnvironment(env = import.meta.env) {
   const value = env?.VITE_APNS_ENV;
   return value === 'sandbox' || value === 'production' ? value : null;
+}
+
+/**
+ * Emergency replacement-build reconciliation for the separately identified
+ * UPR Dev app. The exact build flag and OS-reported bundle id are both
+ * required, so an official UPR build can never enter this detach path.
+ */
+export async function reconcileRetiredDevNativePushDevice(db, {
+  storage = nativePushStorage(),
+  ownerKey,
+  env = import.meta.env,
+  loadBundleId = getInstalledAppBundleId,
+} = {}) {
+  if (!canRegisterPush()) {
+    return { ok: false, ready: false, reason: 'not_native' };
+  }
+  if (env?.VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN !== 'true') {
+    return { ok: false, ready: false, reason: 'retirement_not_requested' };
+  }
+  if (env?.VITE_NATIVE_PUSH_ENABLED !== 'false') {
+    return { ok: false, ready: false, reason: 'native_push_not_disabled' };
+  }
+  if (env?.VITE_APNS_ENV !== 'production') {
+    return { ok: false, ready: false, reason: 'not_distribution_apns' };
+  }
+
+  let bundleIdentifier = null;
+  try {
+    bundleIdentifier = await loadBundleId();
+  } catch {
+    bundleIdentifier = null;
+  }
+  if (bundleIdentifier !== 'com.utahprosrestoration.upr.dev') {
+    return { ok: false, ready: false, reason: 'not_upr_dev' };
+  }
+
+  const preferenceStored = setNativePushUserEnabled(
+    false,
+    storage,
+    ownerKey,
+  );
+  const result = await detachNativePushDevice(db, {
+    storage,
+    ownerKey,
+  });
+  return {
+    ...result,
+    ok: preferenceStored && result.ready,
+    ready: preferenceStored && result.ready,
+    preferenceStored,
+    retiredDevToken: true,
+  };
 }
 
 function nativePushActionCandidates(action) {
