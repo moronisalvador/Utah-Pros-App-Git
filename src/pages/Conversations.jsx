@@ -22,14 +22,16 @@
  *              @/lib/messageMedia (image attach), @/components/conversations/*,
  *              @/components/Icons, @/components/DatePicker, @/components/ui,
  *              @/components/TabLoading, @/hooks/useResumeRefetch,
- *              @/lib/nativeHaptics, @/lib/toast
+ *              @/lib/nativeHaptics, @/lib/reducedMotion, @/lib/toast,
+ *              @/lib/scheduledMessageOperation
  *   Data:      reads  → conversations, conversation_participants, messages, jobs,
  *                       message_templates, service_sms_consents and
  *                       message_provider_events through GET /api/attest-sms-consent
  *              writes → conversation unread state through
  *                       set_my_conversation_unread_state; contact search and atomic
  *                       conversation creation through /api/message-conversations;
- *                       scheduled_messages, contacts (dnd), sms_consent_log,
+ *                       scheduled_messages through create_scheduled_message;
+ *                       contacts (dnd), sms_consent_log,
  *                       service_sms_consents and service_sms_consent_attestations through
  *                       POST /api/attest-sms-consent,
  *                       private message-attachments storage (MMS attachments). Outbound SMS/MMS is sent
@@ -51,7 +53,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import useLookup from '@/hooks/useLookup';
@@ -96,9 +98,14 @@ import { ErrorState } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
+import { scrollBehavior } from '@/lib/reducedMotion';
 import { toast as emitToast, err as showError } from '@/lib/toast';
 import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { resolveConversationId } from '@/lib/openInAppThread';
+import {
+  clearScheduledMessageOperation,
+  getScheduledMessageOperation,
+} from '@/lib/scheduledMessageOperation';
 import {
   getDraft,
   setDraft,
@@ -108,7 +115,6 @@ import {
   getServiceConsentUiState,
   withoutSupersededFailures,
 } from '@/components/conversations/messageUtils';
-import '@/components/conversations/conversationExperience.css';
 
 // ═══════════════════════════════════════════════════════════════════
 // INLINE ICONS
@@ -188,6 +194,19 @@ function getInitials(name) {
 }
 function cleanName(title) { return (title || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
+function HapticRetryButton({ onRetry }) {
+  return (
+    <button
+      type="button"
+      className="btn btn-primary"
+      onPointerUp={() => impact('light')}
+      onClick={onRetry}
+    >
+      Try again
+    </button>
+  );
+}
+
 const STATUS_MAP = {
   needs_response: { label: 'Needs Response', cls: 'status-needs-response' },
   waiting_on_client: { label: 'Waiting', cls: 'status-waiting' },
@@ -215,7 +234,7 @@ const LIST_PAGE = 40;    // conversations fetched per list page
 // ═══════════════════════════════════════════════════════════════════
 
 export default function Conversations({ replyAssist } = {}) {
-  const { db, employee } = useAuth();
+  const { db, employee, pwaOwnerLease } = useAuth();
   const queryClient = useQueryClient();
   const { data: employeeDirectory = [] } = useLookup('employees');
   const location = useLocation();
@@ -291,6 +310,7 @@ export default function Conversations({ replyAssist } = {}) {
   const attachCounter = useRef(0);
   const contactSearchRequestRef = useRef(0);
   const scheduleSendingRef = useRef(false);
+  const scheduledMessageOperationsRef = useRef(new Map());
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
@@ -716,7 +736,9 @@ export default function Conversations({ replyAssist } = {}) {
   // ─── SECTION: Scroll management ──────────────
 
   const scrollToBottom = useCallback((smooth = true) => {
-    const doScroll = () => messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+    const doScroll = () => messagesEndRef.current?.scrollIntoView({
+      behavior: scrollBehavior(smooth ? 'smooth' : 'instant'),
+    });
     doScroll();
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
@@ -1307,17 +1329,49 @@ export default function Conversations({ replyAssist } = {}) {
     if (showSchedule && scheduleDate && scheduleTime) {
       if (!text) return;
       // Synchronous guard: Enter bypasses the disabled button, so a same-tick
-      // double-Enter would otherwise insert two scheduled rows before `sending` flips.
+      // double-Enter would otherwise create two scheduled rows before `sending` flips.
       if (scheduleSendingRef.current) return;
       const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
       if (new Date(sendAt) <= new Date()) { emitToast('Scheduled time must be in the future', 'error'); return; }
+      // Keep this operation id after an ambiguous/lost response. The same exact
+      // conversation/body/time retry then reaches the RPC with the same id
+      // instead of creating a second scheduled row.
+      const scheduledOperation = getScheduledMessageOperation(
+        scheduledMessageOperationsRef.current,
+        { conversationId: activeId, body: text, sendAt },
+        { ownerLease: pwaOwnerLease },
+      );
       scheduleSendingRef.current = true;
       setSending(true);
       try {
-        await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
+        await db.rpc('create_scheduled_message', {
+          p_id: scheduledOperation.id,
+          p_conversation_id: activeId,
+          p_body: text,
+          p_send_at: sendAt,
+        });
+        clearScheduledMessageOperation(
+          scheduledMessageOperationsRef.current,
+          scheduledOperation,
+        );
         clearCompose(); clearDraft(activeId); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
         emitToast('Message scheduled', 'success');
-      } catch (err) { console.error('Schedule error:', err); emitToast('Failed to schedule', 'error'); }
+      } catch (err) {
+        console.error('Schedule error:', err);
+        const scheduleError = `${err?.code || ''} ${err?.message || ''}`.toLowerCase();
+        const message = scheduleError.includes('exactly one')
+          || scheduleError.includes('ambiguous')
+          || scheduleError.includes('group')
+          || scheduleError.includes('broadcast')
+          ? 'Scheduled messages are only available for one-to-one conversations'
+          : scheduleError.includes('42501')
+              || scheduleError.includes('not_authorized')
+              || scheduleError.includes('access denied')
+              || scheduleError.includes('messages access')
+            ? 'You no longer have access to this conversation'
+            : 'Failed to schedule';
+        emitToast(message, 'error');
+      }
       finally { setSending(false); scheduleSendingRef.current = false; }
       return;
     }
@@ -1578,20 +1632,18 @@ export default function Conversations({ replyAssist } = {}) {
           ) : accessProofUnverified && loadError ? (
             <ErrorState
               message={loadError}
-              onRetry={() => {
-                impact('light');
-                loadConversations({ silent: true });
-              }}
+              secondary={(
+                <HapticRetryButton
+                  onRetry={() => loadConversations({ silent: true })}
+                />
+              )}
             />
           ) : accessProofUnverified ? (
             <TabLoading label="Verifying conversation access…" />
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
-              onRetry={() => {
-                impact('light');
-                loadConversations();
-              }}
+              secondary={<HapticRetryButton onRetry={() => loadConversations()} />}
             />
           ) : (
             <>
@@ -1599,10 +1651,11 @@ export default function Conversations({ replyAssist } = {}) {
                 <ErrorState
                   className="conv-inline-error"
                   message={loadError}
-                  onRetry={() => {
-                    impact('light');
-                    loadConversations({ silent: true });
-                  }}
+                  secondary={(
+                    <HapticRetryButton
+                      onRetry={() => loadConversations({ silent: true })}
+                    />
+                  )}
                 />
               )}
               {filtered.length === 0 ? (
@@ -1684,9 +1737,9 @@ export default function Conversations({ replyAssist } = {}) {
                   }
                 </button>
                 {linkedJob && (
-                  <a href={`/jobs/${linkedJob.id}`} className="btn btn-sm btn-secondary conv-job-link" title={linkedJob.job_number}>
+                  <Link to={`/jobs/${linkedJob.id}`} className="btn btn-sm btn-secondary conv-job-link" title={linkedJob.job_number}>
                     <span className="conv-job-link-num">{linkedJob.job_number}</span><IconLink style={{ width: 12, height: 12 }} />
-                  </a>
+                  </Link>
                 )}
                 <button className="conv-info-btn" onClick={() => setShowInfo(!showInfo)} aria-label="Contact info"><IconInfo style={{ width: 18, height: 18 }} /></button>
               </div>
@@ -1697,10 +1750,7 @@ export default function Conversations({ replyAssist } = {}) {
               ) : messageLoadError && messages.length === 0 ? (
                 <ErrorState
                   message={messageLoadError}
-                  onRetry={() => {
-                    impact('light');
-                    reloadActiveMessages();
-                  }}
+                  secondary={<HapticRetryButton onRetry={reloadActiveMessages} />}
                 />
               ) : (
                 <>
@@ -1708,10 +1758,7 @@ export default function Conversations({ replyAssist } = {}) {
                     <ErrorState
                       className="conv-inline-error"
                       message={messageLoadError}
-                      onRetry={() => {
-                        impact('light');
-                        reloadActiveMessages();
-                      }}
+                      secondary={<HapticRetryButton onRetry={reloadActiveMessages} />}
                     />
                   )}
                   {messages.length === 0 ? (
@@ -1909,15 +1956,22 @@ export default function Conversations({ replyAssist } = {}) {
             <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
-              <a href={activeContact ? `/contacts/${activeContact.id}` : '#'} className="conv-detail-profile-link">
-                <div className="conv-detail-avatar-lg">{getInitials(activeContact?.name || activeConv.title)}</div>
-                <div className="conv-detail-name">{cleanName(activeContact?.name || activeConv.title)}</div>
-                {activeContact?.company && <div className="conv-detail-company">{activeContact.company}</div>}
-              </a>
+              {activeContact ? (
+                <Link to={`/contacts/${activeContact.id}`} className="conv-detail-profile-link">
+                  <div className="conv-detail-avatar-lg">{getInitials(activeContact.name || activeConv.title)}</div>
+                  <div className="conv-detail-name">{cleanName(activeContact.name || activeConv.title)}</div>
+                  {activeContact.company && <div className="conv-detail-company">{activeContact.company}</div>}
+                </Link>
+              ) : (
+                <div className="conv-detail-profile-link">
+                  <div className="conv-detail-avatar-lg">{getInitials(activeConv.title)}</div>
+                  <div className="conv-detail-name">{cleanName(activeConv.title)}</div>
+                </div>
+              )}
               {activeContact?.role && <span className="conv-detail-role-tag">{activeContact.role.replace(/_/g, ' ')}</span>}
               {activeContact && (
                 <div className="conv-detail-view-profile">
-                  <a href={`/contacts/${activeContact.id}`}>View full profile →</a>
+                  <Link to={`/contacts/${activeContact.id}`}>View full profile →</Link>
                 </div>
               )}
             </div>
@@ -1962,13 +2016,13 @@ export default function Conversations({ replyAssist } = {}) {
             {linkedJob && (
               <div className="conv-detail-section">
                 <div className="conv-detail-label">Linked Job</div>
-                <a href={`/jobs/${linkedJob.id}`} className="conv-detail-job-card">
+                <Link to={`/jobs/${linkedJob.id}`} className="conv-detail-job-card">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span className="conv-detail-job-num">{linkedJob.job_number}</span>
                     {linkedJob.division && <span className="division-badge" data-division={linkedJob.division}>{linkedJob.division}</span>}
                   </div>
                   {linkedJob.insured_name && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>{linkedJob.insured_name}</div>}
-                </a>
+                </Link>
               </div>
             )}
             <div className="conv-detail-section">
@@ -2037,10 +2091,11 @@ export default function Conversations({ replyAssist } = {}) {
               ) : contactsLoadError ? (
                 <ErrorState
                   message={contactsLoadError}
-                  onRetry={() => {
-                    impact('light');
-                    setContactSearchRetry((current) => current + 1);
-                  }}
+                  secondary={(
+                    <HapticRetryButton
+                      onRetry={() => setContactSearchRetry((current) => current + 1)}
+                    />
+                  )}
                 />
               ) : filteredContacts.length === 0 ? (
                 <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>

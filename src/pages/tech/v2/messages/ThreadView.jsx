@@ -22,7 +22,8 @@
  *              recipientCount), ./msgDateUtils (dayLabel),
  *              @/components/conversations/MessageBubble, @/components/tech/v2/nav
  *              (jobHref — NEVER a hardcoded /tech path, H3-safe), ./Composer,
- *              @/components/conversations/ConversationMemberEditor
+ *              @/components/conversations/ConversationMemberEditor,
+ *              @/components/TabLoading, @/components/ui
  *   Data:      via useThread — reads messages, writes through POST /api/send-message
  *
  * NOTES / GOTCHAS:
@@ -48,6 +49,8 @@ import MessageBubble from '@/components/conversations/MessageBubble';
 import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
 import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
+import TabLoading from '@/components/TabLoading';
+import { ErrorState } from '@/components/ui';
 import { getServiceConsentUiState, withoutSupersededFailures } from '@/components/conversations/messageUtils';
 import {
   captureVisibleMessageAnchor,
@@ -61,7 +64,6 @@ import { groupMessagesByDay, isMultiConversation, recipientCount } from './msgsS
 import { dayLabel } from './msgDateUtils';
 import Composer from './Composer';
 import { isServiceSmsBlocked, useServiceSmsConsent } from './useServiceSmsConsent';
-import '@/components/conversations/conversationExperience.css';
 
 function IconBack(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" {...props}><polyline points="15 18 9 12 15 6" /></svg>);
@@ -407,12 +409,14 @@ export default function ThreadView({
       {/* Message body — flex column so bubble align-self resolves. */}
       <div className="tv2-msgs-thread__body">
         {showLoader ? (
-          <div className="tv2-msgs-thread__loading">{t('states.loading')}</div>
+          <TabLoading label={t('states.loading')} />
         ) : error && messages.length === 0 ? (
-          <div className="tv2-msgs-thread__error">
-            <div className="tv2-msgs-thread__empty">{t('states.error')}</div>
-            <button type="button" className="tv2-msgs-retry-btn" onClick={() => refetch()}>{t('states.retry')}</button>
-          </div>
+          <ErrorState
+            className="tv2-msgs-thread__error"
+            message={t('states.error')}
+            onRetry={() => refetch()}
+            retryLabel={t('states.retry')}
+          />
         ) : messages.length === 0 ? (
           <div className="tv2-msgs-thread__empty">{t('thread.empty')}</div>
         ) : (

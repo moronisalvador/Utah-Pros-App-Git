@@ -9,8 +9,8 @@
  *   in conversations shared by more than one customer.
  *
  * DEPENDS ON:
- *   Packages:  vitest
- *   Internal:  ./messageUtils.js
+ *   Packages:  vitest, node:fs, node:url
+ *   Internal:  ./messageUtils.js, ./MessageBubble.jsx
  *   Data:      reads  → none (in-memory test values only)
  *              writes → none (in-memory test values only)
  *
@@ -19,7 +19,14 @@
  * ════════════════════════════════════════════════
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { isAmbiguousSend, messageSenderName } from './messageUtils.js';
+
+const messageBubbleSource = readFileSync(
+  fileURLToPath(new URL('./MessageBubble.jsx', import.meta.url)),
+  'utf8',
+);
 
 describe('MessageBubble ambiguous-send affordance', () => {
   it.each([
@@ -61,5 +68,20 @@ describe('MessageBubble sender labels', () => {
       type: 'internal_note',
       employees: { display_name: 'Ben' },
     })).toBeNull();
+  });
+});
+
+describe('MessageBubble private-media lifecycle', () => {
+  it('skips signed-URL refreshes while hidden and uses the shared resume subscription', () => {
+    expect(messageBubbleSource).toContain("import { subscribeResume } from '@/hooks/useResumeRefetch'");
+    expect(messageBubbleSource).toContain("typeof document !== 'undefined' && document.hidden");
+    expect(messageBubbleSource).toContain('unsubscribeResume?.()');
+  });
+
+  it('announces private attachment loading and failure without interrupting the user', () => {
+    expect(messageBubbleSource).toMatch(
+      /className="conv-media-file"[\s\S]*?role="status"[\s\S]*?aria-live="polite"/,
+    );
+    expect(messageBubbleSource).toContain('aria-atomic="true"');
   });
 });

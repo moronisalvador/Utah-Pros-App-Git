@@ -15,7 +15,8 @@
  *
  * DEPENDS ON:
  *   Packages:  react
- *   Internal:  ./messageUtils (media parsing, linkify, failure classification)
+ *   Internal:  ./messageUtils (media parsing, linkify, failure classification),
+ *              @/hooks/useResumeRefetch (shared foreground-resume subscription)
  *   Data:      reads/writes → none (pure presentation)
  *
  * NOTES / GOTCHAS:
@@ -28,6 +29,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { subscribeResume } from '@/hooks/useResumeRefetch';
 import {
   parseMediaUrls, isLikelyImageUrl, linkifyTokens, uiClassForMessage, failureReason,
   isAmbiguousSend, messageSenderName,
@@ -56,8 +58,18 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
       return undefined;
     }
     let active = true;
+    let loading = false;
     let refreshTimer;
     const load = async () => {
+      if (
+        loading
+        || (typeof document !== 'undefined' && document.hidden)
+      ) return;
+      loading = true;
+      if (refreshTimer) {
+        clearTimeout(refreshTimer);
+        refreshTimer = undefined;
+      }
       try {
         const res = await fetch('/api/message-media-url', {
           method: 'POST',
@@ -71,15 +83,31 @@ function usePrivateMediaUrl(messageId, index, reference, apiKey) {
         const payload = await res.json();
         if (active) {
           setState({ url: payload.url, failed: false });
-          refreshTimer = setTimeout(load, Math.max(60, payload.expires_in - 60) * 1000);
+          refreshTimer = setTimeout(() => {
+            refreshTimer = undefined;
+            void load();
+          }, Math.max(60, payload.expires_in - 60) * 1000);
         }
       } catch {
         if (active) setState({ url: null, failed: true });
+      } finally {
+        loading = false;
       }
     };
-    load();
+    const unsubscribeResume = (
+      typeof document !== 'undefined'
+      && typeof window !== 'undefined'
+    ) ? subscribeResume({
+        doc: document,
+        win: window,
+        getOnResume: () => load,
+        getOnFocus: () => undefined,
+        hiddenEdgeOnly: true,
+      }) : undefined;
+    void load();
     return () => {
       active = false;
+      unsubscribeResume?.();
       if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, [apiKey, index, isPrivate, messageId, reference]);
@@ -98,7 +126,12 @@ function MediaItem({ url, messageId, index, apiKey, onMediaLayout }) {
   };
   if (privateMedia.isPrivate && !resolvedUrl) {
     return (
-      <span className="conv-media-file">
+      <span
+        className="conv-media-file"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {privateMedia.failed ? '📎 Attachment unavailable' : 'Loading attachment…'}
       </span>
     );

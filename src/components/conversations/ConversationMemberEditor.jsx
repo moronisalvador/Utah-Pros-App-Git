@@ -18,7 +18,7 @@
  *   Internal:  @/contexts/AuthContext, @/components/ui, @/hooks/useTwoClickConfirm,
  *              @/lib/nativeHaptics, @/lib/toast
  *   Data:      reads  → conversation_member_overrides, conversation_default_members,
- *                       employees, appointment_crew through get_conversation_members
+ *                       employees through get_conversation_members
  *              writes → conversation_member_overrides through
  *                       set_conversation_member_override; conversation_default_members
  *                       through set_default_conversation_member
@@ -38,7 +38,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { ErrorState, Modal } from '@/components/ui';
+import { EmptyState, ErrorState, Modal } from '@/components/ui';
 import { useTwoClickConfirm } from '@/hooks/useTwoClickConfirm';
 import { notify, selection } from '@/lib/nativeHaptics';
 import { err, ok } from '@/lib/toast';
@@ -49,7 +49,6 @@ const SOURCE_LABELS = {
   manual_add: 'Added to this chat',
   manual_remove: 'Removed from this chat',
   default: 'Default technician',
-  appointment: 'Past appointment',
   none: 'Not included',
 };
 
@@ -315,7 +314,7 @@ export default function ConversationMemberEditor({
 
       <div
         className="ui-seg conversation-members__tabs"
-        role="tablist"
+        role="group"
         aria-label="Participant settings"
       >
         <span
@@ -324,8 +323,7 @@ export default function ConversationMemberEditor({
         />
         <button
           type="button"
-          role="tab"
-          aria-selected={tab === 'chat'}
+          aria-pressed={tab === 'chat'}
           data-active={tab === 'chat'}
           className="ui-seg-btn"
           onPointerUp={selection}
@@ -335,8 +333,7 @@ export default function ConversationMemberEditor({
         </button>
         <button
           type="button"
-          role="tab"
-          aria-selected={tab === 'defaults'}
+          aria-pressed={tab === 'defaults'}
           data-active={tab === 'defaults'}
           className="ui-seg-btn"
           onPointerUp={selection}
@@ -358,14 +355,30 @@ export default function ConversationMemberEditor({
           onRetry={() => refetch()}
         />
       ) : tab === 'chat' ? (
-        <ul className="conversation-members__list">{members.map(renderMember)}</ul>
+        members.length > 0 ? (
+          <ul className="conversation-members__list">{members.map(renderMember)}</ul>
+        ) : (
+          <EmptyState
+            className="conversation-members__empty"
+            title="No participants available"
+            sub="Active team members who can access this chat will appear here."
+          />
+        )
       ) : (
         <>
           <p className="conversation-members__help">
             Default technicians join every existing and future chat unless you remove
             them from one specific chat.
           </p>
-          <ul className="conversation-members__list">{technicians.map(renderDefault)}</ul>
+          {technicians.length > 0 ? (
+            <ul className="conversation-members__list">{technicians.map(renderDefault)}</ul>
+          ) : (
+            <EmptyState
+              className="conversation-members__empty"
+              title="No default technicians available"
+              sub="Active technicians who can join every chat will appear here."
+            />
+          )}
         </>
       )}
     </Modal>
