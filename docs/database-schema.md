@@ -877,8 +877,11 @@ private database producer helper; claims are inserted/deleted only by `SECURITY 
 `service_role`-asserting RPCs. Claims contain UUID fingerprints, not addresses, notification copy,
 provider payload, or credentials, and cleanup is bounded to 1,000 rows older than 90 days.
 
-The migration also narrows existing `appointments`/`appointment_crew` policies and ACLs, preserves
-the deployed appointment/timesheet/notify RPC signatures and return shapes, and replaces
+The migration alters the existing `appointments`/`appointment_crew` policies in place, removes
+anonymous ACLs, and scopes private rows to admins/project managers/assigned crew. A separate write
+predicate reserves private crew-membership changes and privacy elevation to active internal
+admins/project managers, so an assigned crew member cannot delegate private-row access. It
+preserves the deployed appointment/timesheet/notify RPC signatures and return shapes and replaces
 destructive crew rebuilding with a locked set diff. Its recovery rollback contains all five flags
 first and retains authorization/occurrence evidence rather than recreating the unsafe boundary.
 This schema is authored and tested statically only; it is absent from local, `qa-staging`, and the

@@ -4752,12 +4752,16 @@ authorization and negative tests pass.
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
 the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
 The migration derives browser actors from `auth.uid()`, denies inactive/external users and supplied
-actor mismatches, removes anonymous appointment/crew access, serializes crew/time-entry decisions,
-and keeps unchanged crew assignment row IDs. Each enabled real producer occurrence would receive a
-private durable UUID; the Worker requires that UUID for the five types and claims bell, Web Push,
-and email delivery per recipient/target while the existing APNs claim remains authoritative.
-All five catalog flags are explicitly left disabled. This candidate has passed repository build,
-full credential-free tests, changed-file lint, migration hygiene, and source contracts only. It has
-not been applied to local, QA, or shared production; no notification was sent and no PWA/native
-device path was exercised. The new sentinel-locked local SQL proof cannot run until the missing
-governed baseline/bootstrap is implemented.
+actor mismatches, removes anonymous appointment/crew access, scopes private appointments to
+admins/project managers/assigned crew, and separately reserves private crew-membership changes and
+privacy elevation to active internal admins/project managers so assigned staff cannot delegate
+private access. It serializes crew/time-entry decisions and keeps unchanged crew assignment row
+IDs. Each enabled real producer occurrence would receive a private durable UUID bound to its exact
+appointment, crew-assignment, or timesheet-request entity; the Worker requires and
+database-validates that UUID for the five types, revalidates each active/internal recipient before
+APNs, and claims bell, Web Push, and idempotent email delivery per recipient/target. All five
+catalog flags are explicitly left disabled. This candidate has passed repository build, full
+credential-free tests, changed-file lint, migration hygiene, and source contracts only. It has not
+been applied to local, QA, or shared production; no notification was sent and no PWA/native device
+path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed
+baseline/bootstrap is implemented.

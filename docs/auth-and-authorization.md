@@ -581,8 +581,9 @@ HTTP `/api/notify` retains two distinct identities:
 - an exact stored `x-webhook-secret`, checked first with no Bearer fallback on mismatch, preserves
   the deployed database-trigger payload and response contract; and
 - a Supabase Bearer must resolve to an active, non-external `admin`, then may request only
-  `appointment.assigned`, `appointment.updated`, `appointment.canceled`, or `estimate.accepted`.
-  The Worker verifies the appointment/crew/estimate state and passes only object IDs to
+  `estimate.accepted`. The repository-only five-producer repair retires the three appointment
+  Bearer types because a human request cannot mint the database occurrence identity required by
+  those producers. The Worker verifies the estimate state and passes only its object ID to
   `dispatchEvent`; caller-supplied recipients, title/body/HTML, payload/data, entity/job fields and
   links are rejected.
 
@@ -641,9 +642,12 @@ employee; time-entry review additionally requires the existing admin tier. Trust
 active/internal.
 
 `appointments` and `appointment_crew` lose anonymous table privileges/policies. Authenticated
-direct writes require the same active-internal predicate both through RLS and a BEFORE trigger, so
-a definer path cannot accidentally recover the old browser-wide boundary. The crew RPC locks its
-appointment row, validates one duplicate-free active/internal target set, then applies only
+direct access requires an active internal employee; a private appointment is visible/mutable only
+to an admin/project manager or assigned crew member. Assigned crew may not delegate private access:
+only an active internal admin/project manager may change a private appointment's crew. Privacy
+elevation is independently trigger-guarded and direct INSERT/UPDATE policy checks fail closed for
+non-managers. The crew RPC locks its appointment row, applies that separate management predicate,
+validates one duplicate-free active/internal target set, then applies only
 delete/update/insert differences. Timesheet submit locks the entry and pending request, returns the
 same row for an exact retry, and rejects a different concurrent proposal; review locks the request
 and records the server-derived reviewer.
