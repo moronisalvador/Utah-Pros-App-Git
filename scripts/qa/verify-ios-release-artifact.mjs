@@ -39,6 +39,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {
+  validateCapgoV2PublicKey,
+} from '../lib/capgo-public-key.mjs';
 
 const VALUE_ARGUMENTS = new Map([
   ['--archive', 'archive'],
@@ -498,6 +501,7 @@ function validateReleaseApp({
   requireFile(privacyPath, `${label} PrivacyInfo.xcprivacy`);
 
   let nativeRelease = null;
+  let otaPublicKeySha256 = null;
   if (expectedReleaseVariant) {
     const nativeReleasePath = path.join(
       appPath,
@@ -570,13 +574,10 @@ function validateReleaseApp({
           && updater.allowModifyUrl === false,
         `${label} updater mutation controls are not locked`,
       );
-      assertCondition(
-        typeof updater.publicKey === 'string'
-          && updater.publicKey.length > 0
-          && !updater.publicKey.includes('PRIVATE')
-          && !updater.publicKey.includes('BEGIN'),
-        `${label} updater public verification key is missing or unsafe`,
-      );
+      otaPublicKeySha256 = validateCapgoV2PublicKey(
+        updater.publicKey,
+        { label: `${label} updater public verification key` },
+      ).sha256;
     }
   }
 
@@ -701,6 +702,7 @@ function validateReleaseApp({
     nonExemptEncryption: info.ITSAppUsesNonExemptEncryption,
     privacy,
     nativeRelease,
+    otaPublicKeySha256,
   };
 }
 
@@ -728,6 +730,10 @@ function compareAppSummaries(archiveSummary, ipaSummary) {
     JSON.stringify(archiveSummary.nativeRelease) ===
       JSON.stringify(ipaSummary.nativeRelease),
     'Archive and IPA native release manifests differ',
+  );
+  assertCondition(
+    archiveSummary.otaPublicKeySha256 === ipaSummary.otaPublicKeySha256,
+    'Archive and IPA OTA public-key fingerprints differ',
   );
 }
 
@@ -848,6 +854,7 @@ async function verifyReleaseArtifact(rawArguments) {
         ...ipaSummary.privacy,
       },
       nativeRelease: ipaSummary.nativeRelease,
+      otaPublicKeySha256: ipaSummary.otaPublicKeySha256,
       toolchain: {
         xcode: xcodeVersion,
         node: process.version,

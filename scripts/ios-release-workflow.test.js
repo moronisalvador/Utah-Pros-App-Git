@@ -59,7 +59,16 @@ const devWorkflow = readRepositoryFile(
 const capgoWorkflow = readRepositoryFile('.github/workflows/capgo-deploy.yml');
 const archiveJob = section(workflow, '  archive:', '  publish:');
 const publishJob = workflow.slice(workflow.indexOf('  publish:'));
-const devPreflightJob = section(devWorkflow, '  preflight:', '  archive:');
+const devPreflightJob = section(
+  devWorkflow,
+  '  preflight:',
+  '  prepare-capgo-config:',
+);
+const devPrepareCapgoJob = section(
+  devWorkflow,
+  '  prepare-capgo-config:',
+  '  archive:',
+);
 const devArchiveJob = section(devWorkflow, '  archive:', '  publish:');
 const devPublishJob = devWorkflow.slice(devWorkflow.indexOf('  publish:'));
 const fastfile = readRepositoryFile('ios/fastlane/Fastfile');
@@ -525,6 +534,7 @@ describe('UPR Dev TestFlight isolation contract', () => {
   });
 
   it('uses separate GitHub environments and never requests external distribution', () => {
+    expect(devPrepareCapgoJob).toContain('environment: capgo-dev');
     expect(devArchiveJob).toContain('environment: ios-dev-signing');
     expect(devPublishJob).toContain('environment: ios-dev-testflight');
     expect(devPublishJob).toContain('TESTFLIGHT_INTERNAL_GROUP');
@@ -548,9 +558,18 @@ describe('UPR Dev TestFlight isolation contract', () => {
       'if [[ "$VITE_APNS_ENV" != "production" ]]',
     );
     expect(devArchiveJob).toContain('VITE_NATIVE_OTA_ENABLED: "true"');
-    expect(devArchiveJob).toContain(
-      'run: node scripts/configure-ios-capgo-dev.mjs',
+    expect(devPrepareCapgoJob).toContain(
+      "configureIosCapgoDev } from './scripts/configure-ios-capgo-dev.mjs'",
     );
+    expect(devWorkflow).not.toContain('vars.CAPGO_DEV_PUBLIC_KEY_V2');
+    expect(devPrepareCapgoJob).toContain(
+      'CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}',
+    );
+    expect(devArchiveJob).toContain('needs: prepare-capgo-config');
+    expect(devArchiveJob).toContain(
+      'name: upr-dev-capgo-config-${{ github.sha }}',
+    );
+    expect(devPublishJob).toContain('VITE_NATIVE_OTA_ENABLED: "true"');
   });
 
   it('archives and reverifies the dev artifact before upload', () => {
@@ -573,6 +592,8 @@ describe('UPR Dev TestFlight isolation contract', () => {
     }
     expect(devArchiveJob.indexOf('write-native-release-manifest.mjs'))
       .toBeLessThan(devArchiveJob.indexOf('cap sync ios'));
+    expect(verifier).toContain('validateCapgoV2PublicKey');
+    expect(verifier).toContain('otaPublicKeySha256');
     const reverifyIndex = devPublishJob.indexOf(
       'Reverify downloaded UPR Dev IPA',
     );

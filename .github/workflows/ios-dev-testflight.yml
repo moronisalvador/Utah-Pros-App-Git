@@ -93,14 +93,51 @@ jobs:
       - name: Run repository tests without signing or provider credentials
         run: npm test
 
+  prepare-capgo-config:
+    name: Prepare isolated UPR Dev updater config
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: capgo-dev
+    steps:
+      - name: Checkout the requested dev commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Generate the public UPR Dev updater config
+        shell: bash
+        env:
+          CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/dev"
+          mkdir -p capgo-dev-native-config
+          cp capacitor.config.json capgo-dev-native-config/capacitor.config.json
+          node --input-type=module -e "
+            import { configureIosCapgoDev } from './scripts/configure-ios-capgo-dev.mjs';
+            configureIosCapgoDev({
+              configPath: 'capgo-dev-native-config/capacitor.config.json',
+            });
+          "
+
+      - name: Retain the public updater config for the signing job
+        uses: actions/upload-artifact@v4
+        with:
+          name: upr-dev-capgo-config-${{ github.sha }}
+          path: capgo-dev-native-config/capacitor.config.json
+          if-no-files-found: error
+          retention-days: 1
+
   archive:
     name: Build and verify UPR Dev IPA
     if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: prepare-capgo-config
     runs-on: macos-26
     timeout-minutes: 45
     environment: ios-dev-signing
     env:
-      CAPGO_DEV_PUBLIC_KEY_V2: ${{ vars.CAPGO_DEV_PUBLIC_KEY_V2 }}
       VITE_APNS_ENV: production
       VITE_NATIVE_OTA_ENABLED: "true"
       VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
@@ -161,7 +198,6 @@ jobs:
             APPLE_PROVISIONING_PROFILE_NAME
           VITE_SUPABASE_URL
           VITE_SUPABASE_ANON_KEY
-          CAPGO_DEV_PUBLIC_KEY_V2
           )
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -189,11 +225,6 @@ jobs:
             echo "UPR Dev TestFlight must bake the reviewed Capgo health gate." >&2
             exit 1
           fi
-          if [[ "$CAPGO_DEV_PUBLIC_KEY_V2" == *PRIVATE* || "$CAPGO_DEV_PUBLIC_KEY_V2" == *BEGIN* ]]; then
-            echo "CAPGO_DEV_PUBLIC_KEY_V2 contains private-key material." >&2
-            exit 1
-          fi
-
       - name: Select and verify Xcode 26.6
         shell: bash
         run: |
@@ -227,8 +258,37 @@ jobs:
       - name: Synchronize the iOS platform
         run: node_modules/.bin/cap sync ios
 
-      - name: Apply the isolated UPR Dev Capgo contract
-        run: node scripts/configure-ios-capgo-dev.mjs
+      - name: Download the isolated public UPR Dev updater config
+        uses: actions/download-artifact@v4
+        with:
+          name: upr-dev-capgo-config-${{ github.sha }}
+          path: capgo-dev-native-config
+
+      - name: Apply the isolated public UPR Dev updater config
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f capgo-dev-native-config/capacitor.config.json
+          cp capgo-dev-native-config/capacitor.config.json ios/App/App/capacitor.config.json
+          node --input-type=module -e "
+            import { readFileSync } from 'node:fs';
+            import { validateCapgoV2PublicKey } from './scripts/lib/capgo-public-key.mjs';
+            const config = JSON.parse(readFileSync(
+              'ios/App/App/capacitor.config.json',
+              'utf8',
+            ));
+            const updater = config?.plugins?.CapacitorUpdater;
+            if (
+              config.appId !== process.env.APP_IDENTIFIER
+              || updater?.appId !== process.env.APP_IDENTIFIER
+              || updater?.defaultChannel !== 'upr-dev-canary'
+              || updater?.autoUpdate !== true
+              || updater?.directUpdate !== false
+            ) {
+              throw new Error('Downloaded UPR Dev updater config is not isolated');
+            }
+            validateCapgoV2PublicKey(updater.publicKey);
+          "
 
       - name: Reject uncommitted Capacitor project drift
         run: git diff --exit-code -- ios/App
@@ -320,6 +380,7 @@ jobs:
     environment: ios-dev-testflight
     env:
       VITE_APNS_ENV: production
+      VITE_NATIVE_OTA_ENABLED: "true"
       VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
       VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
     steps:
