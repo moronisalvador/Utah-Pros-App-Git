@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-07-31T19:18:19Z",
+  "capturedAt": "2026-08-01T05:06:02Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "38e7a54b31c44ee00b4d1ea1349e6dc1471efa62",
+  "captureBaseCommit": "d3ab4559af958a21f3a2e739d40579853cea31e1",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -235,6 +235,30 @@
     {
       "name": "oop_pricing_builder",
       "version": "20260731175328"
+    },
+    {
+      "name": "qbo_estimate_conversion_concurrency",
+      "version": "20260731205928"
+    },
+    {
+      "name": "qbo_invoice_command_ledger",
+      "version": "20260731205942"
+    },
+    {
+      "name": "inbound_lead_recording_source_boundary",
+      "version": "20260731225511"
+    },
+    {
+      "name": "qbo_multi_invoice_payment_receipts",
+      "version": "20260731225654"
+    },
+    {
+      "name": "notification_unsafe_producer_containment",
+      "version": "20260731225855"
+    },
+    {
+      "name": "qbo_receipt_service_grant_containment",
+      "version": "20260731230907"
     }
   ],
   "functions": [
@@ -641,7 +665,7 @@
       "publicExecute": false,
       "securityDefiner": true,
       "serviceRoleExecute": true,
-      "authenticatedExecute": true
+      "authenticatedExecute": false
     }
   ],
   "policies": [
