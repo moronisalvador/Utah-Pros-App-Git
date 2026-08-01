@@ -22,8 +22,12 @@
  *
  * NOTES / GOTCHAS:
  *   - This proves the guards are PRESENT in source. Cloudflare edge behaviour
- *     is NOT provable from here; two _redirects 404 variants were tried and
- *     both were ignored on a real preview. See public/_redirects.
+ *     is NOT provable from here; see public/_redirects for what was measured on
+ *     a real deployment, and tests/qa/unit/spa-route-coverage.test.js for the
+ *     rules that now make a missing asset return 404 instead of HTML.
+ *   - The guards below are RECOVERY. They are still required: prevention stops
+ *     new devices being poisoned, it cannot repair a device already holding a
+ *     bad copy from 2026-07-27.
  *   - The boot guard must stay a CLASSIC script above the module script. If it
  *     is ever converted to type="module" it inherits the exact failure it
  *     exists to catch and becomes decorative.
@@ -43,17 +47,27 @@ const headers = read('public/_headers');
 const indexHtml = read('index.html');
 const viteConfig = read('vite.config.js');
 
-describe('the SPA catch-all hazard stays documented, not silently forgotten', () => {
-  // There is deliberately NO test asserting that a missing asset 404s. Two
-  // _redirects variants were tried and BOTH were ignored by Cloudflare Pages on
-  // a real preview deployment (2026-07-27) — a missing asset still returned
-  // index.html with HTTP 200. Asserting a rule that does not work would be
-  // worse than having none: it manufactures confidence in a dead control.
-  // Prevention is not available to us here; recovery is what protects users.
-  it('keeps the hazard explained where the next person will edit it', () => {
-    expect(redirects).toContain('/* /index.html 200');
-    expect(redirects).toMatch(/KNOWN HAZARD/);
-    expect(redirects).toMatch(/BOTH FAILED/);
+describe('the SPA fallback hazard stays documented, not silently forgotten', () => {
+  // UPDATED 2026-07-27: prevention IS available, and it is now in place. What
+  // this file used to say — "Prevention is not available to us here" — rested on
+  // a wrong diagnosis. The 200-OK HTML answer never came from the `/*` catch-all
+  // in _redirects (Cloudflare rejects that rule as an infinite loop and ignores
+  // it); it came from Pages' BUILT-IN not-found fallback. A 404.html disables
+  // that fallback, and the enumerated route rules keep deep links working.
+  // Measured with `wrangler pages dev dist`, then on a preview deployment.
+  // The rules themselves are asserted in spa-route-coverage.test.js.
+  it('keeps the corrected explanation where the next person will edit it', () => {
+    expect(redirects).toMatch(/ORIGINAL DIAGNOSIS IN THIS FILE WAS WRONG/);
+    // The failed attempts stay recorded so they are not tried a fourth time.
+    expect(redirects).toMatch(/asset-missing\.html 404/);
+    expect(redirects).toMatch(/never ship it/);
+  });
+
+  it('no longer claims recovery is the only protection', () => {
+    // That conclusion was the practical cost of the wrong diagnosis: it told
+    // every later reader to stop looking for a fix. If someone reinstates the
+    // wording, this fails.
+    expect(redirects).not.toMatch(/NOT prevention but recovery/);
   });
 
   it('keeps the build output dir and the caching glob in step', () => {

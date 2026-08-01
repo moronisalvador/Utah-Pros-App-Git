@@ -1,30 +1,188 @@
-# SPA routing. Every non-file path renders the app shell.
+# ════════════════════════════════════════════════
+# FILE: public/_redirects
+# ════════════════════════════════════════════════
 #
-# ⚠️ KNOWN HAZARD, deliberately left in place because Cloudflare Pages gives us
-# no way to close it here.
+# WHAT THIS DOES (plain language):
+#   Tells Cloudflare which web addresses belong to the app. Every address listed
+#   below is handed the app's home page, which then shows the right screen. An
+#   address NOT listed gets a real "404 not found".
 #
-# This rule also answers a MISSING /app-assets/*.js with index.html at HTTP 200.
-# Combined with the immutable caching in _headers, that is what took
-# dev.utahpros.app down on 2026-07-27: during a deployment swap an edge node
-# requested a chunk that had not uploaded yet, cached the HTML answer under a
-# .js URL for a year, and every client that touched that PoP got a permanently
-# blank page — browsers refuse text/html for <script type="module">, so the
-# entry graph never instantiates and nothing throws.
+#   That second half is the whole point, and it is what closes the hazard that
+#   took the site down twice on 2026-07-27.
 #
-# Two attempts to make a missing asset 404 here BOTH FAILED on a real preview
-# deployment (2026-07-27):
-#   /app-assets/* /asset-missing.html 404   -> ignored; Pages 308-normalizes
-#                                              .html, and a redirecting target
-#                                              makes the rule fall through
-#   /app-assets/* /asset-missing 404        -> also ignored; a missing asset
-#                                              still returned index.html + 200
-# Do not re-add a variant of these without verifying it on a preview build
-# first. A rule that looks protective but is inert is worse than none.
+# ════════════════════════════════════════════════
+# THE HAZARD, AND WHAT WAS ACTUALLY CAUSING IT
+# ════════════════════════════════════════════════
 #
-# What actually protects users is therefore NOT prevention but recovery:
-#   - the boot guard in index.html repairs poisoned cache entries with
-#     fetch(url, {cache:'reload'}) and reloads, which works on Safari where
-#     /reset's Clear-Site-Data does not;
-#   - build.assetsDir (vite.config.js) can be moved to retire a poisoned URL
-#     namespace outright, as was done once on 2026-07-27.
-/* /index.html 200
+# Symptom (twice on 2026-07-27): a request landed during a deployment for a file
+# that was not there yet. Instead of failing, it received the app's HTML page
+# with status "200 OK". `_headers` marks /app-assets/* cacheable for a YEAR, so
+# Cloudflare and every device that touched that edge node kept the wrong answer.
+# First time it hit a .js file and the app was a blank white screen; second time
+# it hit a .css file and every page rendered unstyled.
+#
+# ⚠️ THE ORIGINAL DIAGNOSIS IN THIS FILE WAS WRONG, and that is why two attempts
+# to fix it here failed. This file used to blame its own last line, the catch-all
+#
+#     /* /index.html 200
+#
+# It was never the cause. That rule was INERT — Cloudflare rejects it outright.
+# Measured 2026-07-27 with `wrangler pages dev dist`, which reported
+# "Parsed 0 valid redirect rules" and, for that exact line:
+#
+#     Infinite loop detected in this rule and has been ignored.
+#
+# Deleting the line changed nothing: a missing asset still returned 200 + HTML,
+# and deep links still worked. Both facts had the same single explanation —
+# Cloudflare Pages has a BUILT-IN fallback that serves index.html at 200 for any
+# address it cannot find. Deep links were working by accident, and the poisoning
+# came from that built-in behaviour, not from any rule in this file.
+#
+# So the earlier attempts were competing with something they could not reach:
+#     /app-assets/* /asset-missing.html 404  -> ignored (404 is not a status
+#                                               `_redirects` supports at all)
+#     /app-assets/* /asset-missing     404   -> ignored, same reason
+# A third variant was tried on 2026-07-27 and is WORSE — never ship it:
+#     /app-assets/* /asset-not-found   200   -> parses as VALID, and rewrites
+#                                               REAL assets to HTML too. Rewrites
+#                                               here run BEFORE the file lookup,
+#                                               so any rule matching /app-assets/*
+#                                               breaks every asset it matches.
+#
+# ════════════════════════════════════════════════
+# WHAT ACTUALLY CLOSES IT
+# ════════════════════════════════════════════════
+#
+# The built-in "200 + index.html for anything missing" fallback is disabled the
+# moment a 404.html exists in the output directory. `public/404.html` is that
+# file, and it is load-bearing — deleting it silently restores the outage.
+#
+# With the fallback gone, nothing serves the app any more, so every real address
+# has to be listed here. Hence the rules below. A missing asset now matches no
+# rule, finds no file, and returns 404 — verified below.
+#
+# Two rules per prefix because `/x/*` does not match a bare `/x`.
+# The target is `/` and NOT `/index.html`, for two measured reasons:
+#   - a rule with a `*` whose target ends in `.html` is rejected as an infinite
+#     loop, exactly like the old catch-all;
+#   - a rule WITHOUT a `*` is accepted but then 308-REDIRECTS to `/`, which
+#     throws the address away — `/jobs` landed the user on the dashboard.
+# `/ 200` is an internal rewrite: the app loads and the address is preserved.
+#
+# ⚠️ ADDING A ROUTE TO src/App.jsx NOW REQUIRES A LINE HERE. Without one, that
+# page's address returns 404.html instead of the app.
+# tests/qa/unit/spa-route-coverage.test.js re-derives this list from App.jsx and
+# fails when one is missing, so this cannot drift silently.
+#
+# The list is deliberately a SUPERSET: it is generated from every route path
+# segment, including ones nested under a parent (`/overview` lives under `/crm`).
+# Listing an address that is not a real top-level route costs nothing — the app
+# renders its own not-found screen, exactly as it does today — whereas MISSING
+# one breaks a real page. Over-inclusion is the safe direction.
+#
+# Do not re-add a variant of the failed rules above without verifying it on a
+# preview build first. A rule that looks protective but is inert is worse than
+# none. How to verify, all four properties at once:
+#   curl -sI <preview>/app-assets/does-not-exist.css   # want 404, not 200+HTML
+#   curl -sI <preview>/app-assets/<a real hashed file>  # want 200 + immutable
+#   curl -sI <preview>/crm/leads                        # want 200 + text/html
+#   node scripts/smoke-deploy.mjs <preview>             # asserts all of the above
+# ════════════════════════════════════════════════
+
+# ─── SECTION: exact prefixes (no splat — kept first, Cloudflare prefers it) ────
+/admin          / 200
+/attribution    / 200
+/automations    / 200
+/call-log       / 200
+/campaigns      / 200
+/claims         / 200
+/closed         / 200
+/collections    / 200
+/contacts       / 200
+/conversations  / 200
+/crm            / 200
+/customers      / 200
+/dev-tools      / 200
+/estimates      / 200
+/feedback       / 200
+/forms          / 200
+/help           / 200
+/homebuilding   / 200
+/import         / 200
+/integrations   / 200
+/invoices       / 200
+/jobs           / 200
+/leads          / 200
+/login          / 200
+/marketing      / 200
+/melds          / 200
+/new            / 200
+/overview       / 200
+/payments       / 200
+/privacy        / 200
+/production     / 200
+/reports        / 200
+/roadmap        / 200
+/s              / 200
+/schedule       / 200
+/sequences      / 200
+/set-password   / 200
+/settings       / 200
+/sign           / 200
+/status         / 200
+/support        / 200
+/tasks          / 200
+/tech           / 200
+/tech-feedback  / 200
+/terms          / 200
+/time-tracking  / 200
+/tools          / 200
+
+# ─── SECTION: everything below each prefix ────────────────────────────────────
+/admin/*        / 200
+/attribution/*  / 200
+/automations/*  / 200
+/call-log/*     / 200
+/campaigns/*    / 200
+/claims/*       / 200
+/closed/*       / 200
+/collections/*  / 200
+/contacts/*     / 200
+/conversations/* / 200
+/crm/*          / 200
+/customers/*    / 200
+/dev-tools/*    / 200
+/estimates/*    / 200
+/feedback/*     / 200
+/forms/*        / 200
+/help/*         / 200
+/homebuilding/* / 200
+/import/*       / 200
+/integrations/* / 200
+/invoices/*     / 200
+/jobs/*         / 200
+/leads/*        / 200
+/login/*        / 200
+/marketing/*    / 200
+/melds/*        / 200
+/new/*          / 200
+/overview/*     / 200
+/payments/*     / 200
+/privacy/*      / 200
+/production/*   / 200
+/reports/*      / 200
+/roadmap/*      / 200
+/s/*            / 200
+/schedule/*     / 200
+/sequences/*    / 200
+/set-password/* / 200
+/settings/*     / 200
+/sign/*         / 200
+/status/*       / 200
+/support/*      / 200
+/tasks/*        / 200
+/tech/*         / 200
+/tech-feedback/* / 200
+/terms/*        / 200
+/time-tracking/* / 200
+/tools/*        / 200
