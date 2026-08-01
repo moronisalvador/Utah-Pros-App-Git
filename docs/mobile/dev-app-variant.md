@@ -3,7 +3,7 @@ FILE: docs/mobile/dev-app-variant.md
 
 WHAT THIS DOES (plain language):
   Explains the "UPR Dev" side-by-side iOS app: its development-signed direct-device
-  lane and its separately gated distribution configuration for internal TestFlight.
+  lane, internal TestFlight configuration, and isolated Capgo canary.
 
 DEPENDS ON:
   Internal: ios/App/App.xcodeproj (Dev + DevRelease configurations and schemes),
@@ -11,7 +11,8 @@ DEPENDS ON:
             ios/App/App/Assets.xcassets/AppIcon-Dev.appiconset,
             .github/workflows/ios-dev-testflight.yml,
             package.json (build:ios:dev), src/lib/nativeApiOrigin.js,
-            docs/mobile/push-activation-owner-gate.md
+            docs/mobile/push-activation-owner-gate.md,
+            docs/mobile/capgo-dev-runbook.md
   Data:     reads → the SAME shared production Supabase as the production app (see caveat)
             writes → the SAME shared production Supabase as the production app (see caveat)
 
@@ -38,7 +39,7 @@ Both install alongside the official UPR app and both keep the amber-badged UPR D
 | Signing | Manual Apple Distribution | Automatic development | Manual Apple Distribution |
 | Entitlements | production APNs | development APNs | production APNs |
 | Web API origin | `https://utahpros.app` | `https://dev.utahpros.app` | `https://dev.utahpros.app` |
-| Delivery | manual, owner-gated TestFlight | Xcode run to device | guarded `ios-dev-testflight.yml` |
+| Delivery | manual, owner-gated TestFlight | Xcode run to device + isolated Capgo canary | guarded `ios-dev-testflight.yml` + isolated Capgo canary |
 
 The existing `Debug` and production `Release` configurations remain unchanged. `Dev` is a
 development copy with the bundle id, display name, and icon overridden. `DevRelease` is
@@ -60,7 +61,12 @@ From the `dev` branch:
 npm run build:ios:dev
 ```
 
-That script is `VITE_APNS_ENV=sandbox VITE_NATIVE_PUSH_ENABLED=true npm run build:ios`.
+That existing script keeps OTA off. For an explicitly Capgo-enabled development
+build, use `npm run build:ios:dev:capgo`; it builds with exact sandbox Push and
+OTA flags, runs `cap sync ios`, and then applies
+`scripts/configure-ios-capgo-dev.mjs` to the gitignored generated iOS
+configuration. The Capgo form requires the public v2 verification key as
+`CAPGO_DEV_PUBLIC_KEY_V2`; the private key is never used for a device build.
 It deliberately sets **no `VITE_NATIVE_API_ORIGIN`** — `src/lib/nativeApiOrigin.js`
 defaults a native build to `https://dev.utahpros.app`, which is exactly where the dev app
 should send its `/api/*` calls. Don't export `VITE_NATIVE_API_ORIGIN` (or put it in
@@ -92,9 +98,16 @@ The phone then shows two apps: **UPR** (TestFlight, production) and **UPR Dev**
 `.github/workflows/ios-dev-testflight.yml` is the dedicated distribution path for
 `com.utahprosrestoration.upr.dev`. It builds only from `dev`, pins
 `https://dev.utahpros.app`, uses production APNs, embeds a non-secret contract containing
-the variant/origin/Push mode/source SHA, verifies that contract in both the archive and
+the variant/origin/Push/OTA mode/source SHA, verifies that contract plus the
+embedded Capgo app/channel/public-key controls in both the archive and
 exported IPA, and requests only the internal group named **UPR Dev**. It never submits to
 App Review or distributes externally.
+
+The separate `.github/workflows/capgo-dev.yml` is manual-only, GitHub-environment
+gated, and locked to `.upr.dev` plus `upr-dev-canary`. Its validate operation is
+read-only; publish uses v2 encryption and compatibility floors; rollback selects
+an explicit prior bundle; disable stops future channel delivery. Exact setup and
+device drills live in `docs/mobile/capgo-dev-runbook.md`.
 
 Every push to `dev` runs only a credential-free Linux test preflight. Signing, archiving,
 and the optional internal upload are `workflow_dispatch` only; there is deliberately no
@@ -193,13 +206,15 @@ Xcode refreshes it.
   arbitrarily for scheme opens; Universal Links (`applinks:` in the entitlements) are the
   primary deep-link path and carry both `utahpros.app` and `dev.utahpros.app` in both
   entitlement files.
-- **`capacitor.config.json` is untouched by design.** Its `appId` stays
-  `com.utahprosrestoration.upr` (it seeds new-platform generation and the dormant Capgo
-  updater identity); the dev bundle id lives only in the `Dev` build configuration in
-  `project.pbxproj`. `cap sync ios` writes the gitignored copy
-  `ios/App/App/capacitor.config.json`, so a normal `npm run build:ios`/`build:ios:dev`
-  leaves zero tracked drift — that remains a release invariant checked by
-  `ios-release.yml` (`git diff --exit-code -- ios/App`).
+- **The checked-in `capacitor.config.json` is untouched by design.** Its `appId`
+  stays `com.utahprosrestoration.upr`, and production `autoUpdate` stays false.
+  The dev bundle id still lives in the `Dev`/`DevRelease` configurations.
+  `cap sync ios` writes the gitignored
+  `ios/App/App/capacitor.config.json`; the explicit dev sync then patches only
+  that generated copy to `.upr.dev`/`upr-dev-canary`. Normal production sync
+  never runs the patch. Both paths leave zero tracked drift, and the signed
+  UPR Dev artifact verifier checks the generated values rather than trusting
+  source intent.
 - **Biometrics/Face ID state, push intent, and the offline owner lease are per-app.**
   The two apps keep independent WKWebView storage, so sessions do not leak between them;
   signing into UPR Dev does not sign the production app in or out.
