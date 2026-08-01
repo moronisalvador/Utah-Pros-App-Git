@@ -85,6 +85,8 @@ ratchet compares findings by file, severity and rule against
 `scripts/eslint-ratchet-baseline.json`: debt present on `dev` at the 2026-07-29 release boundary may
 shrink but never grow, while a new file or rule starts at zero. Never raise that baseline.
 `no-use-before-define` is variables-only at warning level so new warnings remain blocking.
+Shrink opportunities are reported only for files actually linted in the current changed-file set;
+an untouched baseline file is absent evidence, not a verified zero-finding cleanup.
 GitHub branch protection is external configuration and must be checked before relying on a workflow
 as an enforced gate.
 

@@ -167,3 +167,13 @@ describe('KB-03 — no fixed-position tech surface with an input is left unhandl
     }
   });
 });
+
+describe('ReadingEntrySheet feedback contract', () => {
+  const src = read('src/components/tech/ReadingEntrySheet.jsx');
+
+  it('routes every toast through the sanctioned shared entry point', () => {
+    expect(src).toContain("import { ok, err } from '@/lib/toast'");
+    expect(src).not.toContain("new CustomEvent('upr:toast'");
+    expect(src).not.toContain('window.dispatchEvent(');
+  });
+});
