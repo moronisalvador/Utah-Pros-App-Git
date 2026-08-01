@@ -32,6 +32,7 @@ import {
   enrichInboundMessageBody,
   nativeNotificationEventKey,
 } from './notify.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const ENV = { SUPABASE_URL: 'https://db.test', SUPABASE_ANON_KEY: 'anon' };
 const CONVERSATION_ID = '11111111-1111-4111-8111-111111111111';
@@ -371,6 +372,32 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
     expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
   });
 
+  it('defaults in-process Web Push dispatch to the bounded transport', async () => {
+    const sendWebPushImpl = vi.fn(async (_subscription, _payload, _env, options) => {
+      expect(options.fetchImpl).toBe(fetchWithTimeout);
+      return { ok: true, status: 201 };
+    });
+    const db = makeDb({
+      types: { 'feedback.submitted': baseType },
+      employees: [{ id: 'a1', role: 'admin' }],
+      prefsByEmp: { a1: prefRows('feedback.submitted', { push: true }) },
+      subsByEmp: {
+        a1: [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+      },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'feedback.submitted',
+      body: {},
+      sendWebPushImpl,
+    });
+
+    expect(sendWebPushImpl).toHaveBeenCalledOnce();
+    expect(out.results[0].push).toMatchObject({ sent: 1, attempted: 1, pruned: 0 });
+  });
+
   it('makes the validated presentation route authoritative over producer data', async () => {
     const payloads = [];
     const db = makeDb({
@@ -466,8 +493,8 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       typeKey: 'feedback.submitted',
       notificationBody: body,
       eventKey: nativeNotificationEventKey(baseType, body, 'a1'),
+      fetchImpl: fetchWithTimeout,
     });
-    expect(nativeSends[0]).not.toHaveProperty('fetchImpl');
     expect(out.results[0].push).toMatchObject({
       sent: 1,
       attempted: 1,
@@ -1293,6 +1320,35 @@ describe('handleNotify — auth', () => {
       typeKey: 'appointment.updated',
       body: { appointment_id: APPOINTMENT_ID },
     }));
+  });
+
+  it('threads the injected bounded transport through Auth and provider dispatch', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'user-1' }), { status: 200 }),
+    );
+    const dispatchImpl = dispatcher();
+    const db = makeDb({
+      employees: [admin()],
+      apptsById: { [APPOINTMENT_ID]: { id: APPOINTMENT_ID, status: 'scheduled' } },
+    });
+    const request = req({ auth: 'Bearer tok' });
+
+    const res = await handleNotify({
+      request,
+      env: ENV,
+      db,
+      fetchImpl,
+      dispatchImpl,
+    });
+
+    expect(res.status).toBe(200);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://db.test/auth/v1/user',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer tok' }),
+      }),
+    );
+    expect(dispatchImpl).toHaveBeenCalledWith(expect.objectContaining({ fetchImpl }));
   });
 
   it.each([

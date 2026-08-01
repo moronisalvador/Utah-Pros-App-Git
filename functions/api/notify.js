@@ -309,7 +309,8 @@ export async function dispatchToRecipient({
           eventKey,
         };
         // The real APNs sender owns its bounded fetchWithTimeout default.
-        // Only an explicitly injected sender receives the caller's fake fetch.
+        // An explicitly injected sender receives the selected bounded/fake
+        // transport so tests and alternate implementations retain the boundary.
         if (sendNativePushImpl && fetchImpl) nativeInput.fetchImpl = fetchImpl;
         const native = await nativeSender(nativeInput);
         result.push.native = native;
@@ -639,7 +640,7 @@ export async function dispatchEvent({
   env,
   typeKey,
   body = {},
-  fetchImpl,
+  fetchImpl = fetchWithTimeout,
   sendWebPushImpl,
   sendNativePushImpl,
   sendEmailImpl,
@@ -721,7 +722,12 @@ export async function dispatchEvent({
 
 // ─── SECTION: HTTP identity + object contract ───
 
-export async function authorizeNotifyRequest(request, env, db) {
+export async function authorizeNotifyRequest(
+  request,
+  env,
+  db,
+  fetchImpl = fetchWithTimeout,
+) {
   const secret = request.headers.get('x-webhook-secret');
   if (request.headers.has('x-webhook-secret')) {
     let expected = null;
@@ -733,7 +739,13 @@ export async function authorizeNotifyRequest(request, env, db) {
     return { ok: false, status: 401, error: 'Invalid webhook secret' };
   }
 
-  const auth = await requireRole(request, env, db, NOTIFY_BROWSER_ROLES);
+  const auth = await requireRole(
+    request,
+    env,
+    db,
+    NOTIFY_BROWSER_ROLES,
+    fetchImpl,
+  );
   if (auth.error) {
     return {
       ok: false,
@@ -831,12 +843,12 @@ export async function handleNotify({
   request,
   env,
   db,
-  fetchImpl = fetch,
+  fetchImpl = fetchWithTimeout,
   sendWebPushImpl,
   sendEmailImpl,
   dispatchImpl = dispatchEvent,
 }) {
-  const auth = await authorizeNotifyRequest(request, env, db);
+  const auth = await authorizeNotifyRequest(request, env, db, fetchImpl);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
 
   let body;
@@ -877,7 +889,7 @@ export async function onRequestPost(context) {
     request,
     env,
     db: supabase(env, fetchWithTimeout),
-    fetchImpl: fetch,
+    fetchImpl: fetchWithTimeout,
   });
   return jsonResponse(data, status, request, env);
 }
