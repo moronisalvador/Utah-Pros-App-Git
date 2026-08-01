@@ -40,9 +40,11 @@ promotion.
   scoped contact/opening paths, per-ID cache revocation, admin per-chat/default controls,
   technician self-leave, sender labels, and 18px mobile message text. Historical disposable proof
   for the superseded `40339` source remains historical; it is not evidence for `31213000/31213100`.
-  The corrected participant proof and scheduled-delivery pgTAP proof now pass on a disposable
-  local Supabase clone with their fixture transactions rolled back. The governed full database
-  runner, physical-iPhone proof, and supported-native-release evidence remain open gates.
+  Earlier corrected participant and scheduled-delivery sources passed on a disposable local
+  Supabase clone with fixture transactions rolled back. The exact current source adds the
+  authorized-media RPC, explicit-deny queue policies, legacy-claim no-op, and their assertions;
+  the governed full database runner, physical-iPhone proof, and supported-native-release evidence
+  remain open gates.
 - Scheduled-message hardening is authored and unapplied as
   `20260731220000_scheduled_message_delivery_compatibility.sql` then
   `20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility requires the exact
@@ -51,8 +53,9 @@ promotion.
   Actor-derived creation stores immutable creator, conversation, body/send time, recipient contact,
   and recipient phone provenance. Token-fenced service RPCs recheck the snapshot/current recipient
   plus creator access and link exactly one provider attempt only after kill-switch, consent, DND,
-  and quiet-hours gates. Enforcement leaves the three legacy scheduled policies as inert catalog
-  records, closes table ACLs, and revokes the fail-closed legacy claim from service execution.
+  and quiet-hours gates. Compatibility changes the three legacy scheduled policies to explicit
+  deny predicates and closes browser table ACLs; enforcement reasserts both layers. The frozen
+  legacy claim remains callable to historical roles only as a side-effect-free `false` no-op.
   Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
   and provider transports are bounded; a reserved scheduled send requires a fresh managed
   credential lookup and cannot use cached/environment fallback after that lookup times out.
@@ -249,7 +252,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
   has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
   writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
-  the six SQL/pgTAP proofs through the still-missing governed local runtime.
+  the eight SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)

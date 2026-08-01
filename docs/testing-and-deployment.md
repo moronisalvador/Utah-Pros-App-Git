@@ -158,6 +158,18 @@ allowed origins and provider sandboxes.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 
+### Conversation participant compatibility apply unit (2026-07-31)
+
+Production treats `20260731040337_conversation_participant_scoping.sql`,
+`20260731040338_conversation_unread_state_compatibility.sql`, and
+`20260731213000_conversation_assignment_authority_containment.sql` as one exposure-free apply
+unit. Apply them in that order in one separately authorized low-traffic window; if a step fails,
+reverse every prior step before closing the window. QA already contains immutable `40337/40338`,
+so its next step is only `31213000`. Verify the resulting function bodies contain no
+appointment/job/claim authority, then deploy compatible web and supported-native callers.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains post-adoption only and
+must not run until older direct-unread writers are unsupported.
+
 ### Static-asset serving contract (2026-07-27)
 
 Two outages on 2026-07-27 came from the same cause: Cloudflare Pages answered a request for a
@@ -189,18 +201,6 @@ The serving contract now is:
 
 Prevention does not replace recovery. The boot guard in `index.html` is still required: it repairs a
 device already holding a poisoned copy from 2026-07-27, which prevention cannot reach.
-
-### Conversation participant compatibility apply unit (2026-07-31)
-
-Production treats `20260731040337_conversation_participant_scoping.sql`,
-`20260731040338_conversation_unread_state_compatibility.sql`, and
-`20260731213000_conversation_assignment_authority_containment.sql` as one exposure-free apply
-unit. Apply them in that order in one separately authorized low-traffic window; if a step fails,
-reverse every prior step before closing the window. QA already contains immutable `40337/40338`,
-so its next step is only `31213000`. Verify the resulting function bodies contain no
-appointment/job/claim authority, then deploy compatible web and supported-native callers.
-`20260731213100_conversation_participant_policy_enforcement.sql` remains post-adoption only and
-must not run until older direct-unread writers are unsupported.
 
 ## Mobile PWA/Capacitor readiness workflow
 
@@ -392,13 +392,13 @@ must refuse scheduling/dequeue rather than fall back to the old send path. Then,
 owner-approved low-traffic window, apply and verify
 `20260731220000_scheduled_message_delivery_compatibility.sql` followed by
 `20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility preserves the legacy
-claim signature only as a fail-closed stub, so a stale Worker also pauses rather than sending
-without a reservation. Compatibility requires exact participant enforcement, locks the queue, and
+claim signature and historical grants as a callable `false` no-op, so a stale Worker also pauses
+rather than sending without a reservation. Compatibility requires exact participant enforcement, locks the queue, and
 aborts with SQLSTATE `55000` when the aggregate pending count is nonzero; it never edits those
 rows. It creates FORCE-RLS actor-derived provenance that snapshots creator, conversation,
-body/send time, recipient contact, and recipient phone, and closes raw browser queue writes in
-that transaction. Enforcement leaves the dormant broad policies inert behind revoked ACLs,
-retains the provenance boundary, and revokes the stub's remaining service execution. Do not leave
+body/send time, recipient contact, and recipient phone, closes raw browser queue writes, and sets
+all historical queue policy predicates to `false` in that transaction. Enforcement reasserts the
+fail-closed policies and revoked browser ACLs while retaining the provenance boundary. Do not leave
 compatibility without enforcement as the intended steady state.
 
 The compatibility migration is additive and introduces the fenced claim plus one durable linked
@@ -415,10 +415,11 @@ and the provider barrier/concurrent scheduler case proving one reservation permi
 provider invocation. `supabase/tests/scheduled_message_delivery.test.sql` is the paired guarded,
 rollback-only isolated-database proof for RPC ACLs, idempotent creation, one reservation,
 fresh-in-flight preservation and exactly-once materialization. It must run only on a disposable
-local clone with the isolation sentinel; it is not CI or hosted proof. On 2026-07-31, the corrected
-participant behavior proof exited cleanly and the scheduled-delivery pgTAP proof passed `1/1` on
-an existing disposable local Supabase clone; both final transactions rolled back. The full governed
-runner was not invoked because this worktree has no local Supabase project configuration. Focused
+local clone with the isolation sentinel; it is not CI or hosted proof. Earlier 2026-07-31 source
+revisions passed the participant and scheduled proofs with final transactions rolled back. The
+current source adds the authorized-media RPC, explicit-deny queue policies, legacy-claim no-op,
+and their behavioral assertions; the full governed runner remains open because this worktree has
+no local Supabase project configuration. Focused
 tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
 cached/environment fallback. No migration apply, deployment, provider traffic, or live
 scheduled-message claim follows from repository tests.
@@ -717,10 +718,10 @@ design and was deliberately not run there. Earlier on 2026-07-31, superseded `40
 candidate sources passed disposable local Colima/Supabase clones and rollback/reapply cycles.
 That evidence remains useful history but is not proof of the corrected
 `31213000 + 31213100 + 31220000 + 31220100` train. Source-contract tests now cover the corrected
-authority, ACL, pending-count, provenance, reservation, and full rollback chain. The two corrected
-behavioral proofs subsequently passed on a disposable local clone, with fixtures rolled back; the
-full governed runner remains a separate release gate. Production, deployment, and provider traffic
-remain untouched.
+authority, authorized-media lookup, ACL, pending-count, provenance, reservation, and full rollback
+chain. Earlier revisions of both behavioral proofs passed on a disposable local clone with fixtures
+rolled back, but the exact current source has not run through the full governed runner. Production,
+deployment, and provider traffic remain untouched.
 
 Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
 revocation helper missing from its explicit page allowlist; after that correction,
@@ -766,14 +767,15 @@ Release order is compatibility-sensitive because dev and main share production S
    owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
    one legacy production pending row, so production is currently stopped at this gate.
 7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
-   fencing, grants, inert-policy posture, and legacy-claim refusal.
+   fencing, grants, fail-closed policy posture, and legacy-claim no-op behavior.
 8. Preserve the exact reviewed source through dev, web production, and the supported native
    release; complete negative authorization and physical-device checks.
 
-Before step 1, reconfirm the exact `qa-staging` target. Supabase reported the known
-`MIGRATIONS_FAILED` seed badge and `persistent=false` on 2026-07-31 while read-only database access
-remained healthy; the badge alone is not apply-failure evidence. Only immutable `40337/40338` were
-ledgered, and none of `31213000/31213100/31220000/31220100` had applied.
+Before step 1, target the exact `qa-staging` ref. Its seeded catalog is healthy and usable, while
+the `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
+staging runbook; do not use rebase or ad-hoc ledger writes to clear it. Only immutable
+`40337/40338` were ledgered for this train, and none of
+`31213000/31213100/31220000/31220100` had applied.
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
