@@ -100,7 +100,9 @@ jobs:
     timeout-minutes: 45
     environment: ios-dev-signing
     env:
+      CAPGO_DEV_PUBLIC_KEY_V2: ${{ vars.CAPGO_DEV_PUBLIC_KEY_V2 }}
       VITE_APNS_ENV: production
+      VITE_NATIVE_OTA_ENABLED: "true"
       VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
       VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
     steps:
@@ -157,8 +159,9 @@ jobs:
             APPLE_CERTIFICATE_PASSWORD
             APPLE_PROVISIONING_PROFILE_BASE64
             APPLE_PROVISIONING_PROFILE_NAME
-            VITE_SUPABASE_URL
-            VITE_SUPABASE_ANON_KEY
+          VITE_SUPABASE_URL
+          VITE_SUPABASE_ANON_KEY
+          CAPGO_DEV_PUBLIC_KEY_V2
           )
           for name in "${required_names[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -180,6 +183,14 @@ jobs:
           fi
           if [[ "$VITE_APNS_ENV" != "production" ]]; then
             echo "UPR Dev TestFlight must use production APNs." >&2
+            exit 1
+          fi
+          if [[ "$VITE_NATIVE_OTA_ENABLED" != "true" ]]; then
+            echo "UPR Dev TestFlight must bake the reviewed Capgo health gate." >&2
+            exit 1
+          fi
+          if [[ "$CAPGO_DEV_PUBLIC_KEY_V2" == *PRIVATE* || "$CAPGO_DEV_PUBLIC_KEY_V2" == *BEGIN* ]]; then
+            echo "CAPGO_DEV_PUBLIC_KEY_V2 contains private-key material." >&2
             exit 1
           fi
 
@@ -215,6 +226,9 @@ jobs:
 
       - name: Synchronize the iOS platform
         run: node_modules/.bin/cap sync ios
+
+      - name: Apply the isolated UPR Dev Capgo contract
+        run: node scripts/configure-ios-capgo-dev.mjs
 
       - name: Reject uncommitted Capacitor project drift
         run: git diff --exit-code -- ios/App

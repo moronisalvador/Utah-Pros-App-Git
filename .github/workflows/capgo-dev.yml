@@ -1,0 +1,256 @@
+# ════════════════════════════════════════════════
+# FILE: .github/workflows/capgo-dev.yml
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Builds, verifies, publishes, rolls back, or disables updates for the
+#   separately identified UPR Dev iOS app. It cannot address the official UPR
+#   app or any production Capgo channel.
+#
+# DEPENDS ON:
+#   Internal: scripts/build-native.mjs, package-lock.json
+#   Data:     reads  → capgo-dev environment secret/variable values
+#             writes → UPR Dev Capgo app/channel only for publish, rollback,
+#                      or disable operations
+#
+# NOTES / GOTCHAS:
+#   - The environment is additionally restricted to refs/heads/dev in GitHub.
+#   - "prod" below means a distribution-signed UPR Dev/TestFlight binary, not
+#     the official production UPR app, which has a different app identifier.
+# ════════════════════════════════════════════════
+
+name: Capgo UPR Dev
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Dev-only operation; validate makes no Capgo change
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - publish
+          - rollback
+          - disable
+      rollback_bundle:
+        description: Existing UPR Dev bundle version required only for rollback
+        required: false
+        type: string
+      confirmation:
+        description: Enter UPR DEV CAPGO followed by the selected operation in uppercase
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capgo-upr-dev
+  cancel-in-progress: false
+
+env:
+  CAPGO_DEV_APP_ID: com.utahprosrestoration.upr.dev
+  CAPGO_DEV_CHANNEL: upr-dev-canary
+  VITE_BUILD_TARGET: native
+  VITE_NATIVE_API_ORIGIN: https://dev.utahpros.app
+  VITE_NATIVE_OTA_ENABLED: "true"
+  VITE_RELEASE_SHA: "${{ github.sha }}"
+
+jobs:
+  capgo-dev:
+    name: Guarded UPR Dev Capgo operation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: capgo-dev
+    steps:
+      - name: Checkout the requested dev commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce the isolated dev boundary
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+          ROLLBACK_BUNDLE: ${{ inputs.rollback_bundle }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/dev"
+          test "$CAPGO_DEV_APP_ID" = "com.utahprosrestoration.upr.dev"
+          test "$CAPGO_DEV_CHANNEL" = "upr-dev-canary"
+          test "$VITE_NATIVE_API_ORIGIN" = "https://dev.utahpros.app"
+          test "$VITE_NATIVE_OTA_ENABLED" = "true"
+          test "$VITE_RELEASE_SHA" = "$GITHUB_SHA"
+          expected_confirmation="UPR DEV CAPGO ${OPERATION^^}"
+          if [[ "$CONFIRMATION" != "$expected_confirmation" ]]; then
+            echo "Confirmation must be exactly: $expected_confirmation" >&2
+            exit 1
+          fi
+          if [[ "$OPERATION" = "rollback" && ! "$ROLLBACK_BUNDLE" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,127}$ ]]; then
+            echo "rollback_bundle must be an explicit existing UPR Dev version." >&2
+            exit 1
+          fi
+          if [[ "$OPERATION" != "rollback" && -n "$ROLLBACK_BUNDLE" ]]; then
+            echo "rollback_bundle is accepted only for rollback." >&2
+            exit 1
+          fi
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Validate the dev-only Capgo credentials
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+          CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
+          CAPGO_DEV_PUBLIC_KEY_V2: ${{ vars.CAPGO_DEV_PUBLIC_KEY_V2 }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CAPGO_DEV_API_KEY:-}" ]]; then
+            echo "Missing required capgo-dev environment value: CAPGO_DEV_API_KEY" >&2
+            exit 1
+          fi
+          if [[ "$OPERATION" = "validate" || "$OPERATION" = "publish" ]]; then
+            required_names=(CAPGO_DEV_PRIVATE_KEY_V2 CAPGO_DEV_PUBLIC_KEY_V2)
+          else
+            required_names=()
+          fi
+          for name in "${required_names[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required capgo-dev environment value: $name" >&2
+              exit 1
+            fi
+          done
+          if [[ -n "${CAPGO_DEV_PUBLIC_KEY_V2:-}" && ("$CAPGO_DEV_PUBLIC_KEY_V2" == *PRIVATE* || "$CAPGO_DEV_PUBLIC_KEY_V2" == *BEGIN*) ]]; then
+            echo "CAPGO_DEV_PUBLIC_KEY_V2 contains private-key material." >&2
+            exit 1
+          fi
+
+      - name: Build the isolated native web bundle
+        if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node scripts/build-native.mjs
+
+      - name: Verify native cache and release boundaries
+        if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test ! -e dist/sw.js
+          test ! -e dist/manifest.json
+          rg -Fq "$GITHUB_SHA" dist/assets
+
+      - name: Compute immutable UPR Dev bundle identity
+        if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          native_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$native_version"
+          short_sha="${GITHUB_SHA:0:12}"
+          bundle_version="${native_version}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
+          echo "native_version=$native_version" >> "$GITHUB_OUTPUT"
+          echo "bundle_version=$bundle_version" >> "$GITHUB_OUTPUT"
+
+      - name: Publish encrypted bundle to the UPR Dev canary
+        if: ${{ inputs.operation == 'publish' }}
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+          CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/capgo bundle upload "$CAPGO_DEV_APP_ID" \
+            --apikey "$CAPGO_DEV_API_KEY" \
+            --path dist \
+            --channel "$CAPGO_DEV_CHANNEL" \
+            --bundle "${{ steps.bundle.outputs.bundle_version }}" \
+            --key-data-v2 "$CAPGO_DEV_PRIVATE_KEY_V2" \
+            --min-update-version "${{ steps.bundle.outputs.native_version }}" \
+            --fail-on-incompatible
+
+      - name: Roll back the UPR Dev canary
+        if: ${{ inputs.operation == 'rollback' }}
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+          ROLLBACK_BUNDLE: ${{ inputs.rollback_bundle }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
+            --apikey "$CAPGO_DEV_API_KEY" \
+            --bundle "$ROLLBACK_BUNDLE" \
+            --state default \
+            --no-downgrade \
+            --ios \
+            --no-android \
+            --self-assign \
+            --disable-auto-update patch \
+            --dev \
+            --prod \
+            --emulator \
+            --device \
+            --rollout-disable
+
+      - name: Disable future UPR Dev update delivery
+        if: ${{ inputs.operation == 'disable' }}
+        shell: bash
+        env:
+          CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
+        run: |
+          set -euo pipefail
+          node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
+            --apikey "$CAPGO_DEV_API_KEY" \
+            --no-ios \
+            --no-android \
+            --no-dev \
+            --no-prod \
+            --no-emulator \
+            --no-device
+
+      - name: Write sanitized release evidence
+        if: ${{ always() }}
+        shell: bash
+        env:
+          OPERATION: ${{ inputs.operation }}
+          BUNDLE_VERSION: ${{ steps.bundle.outputs.bundle_version }}
+          NATIVE_VERSION: ${{ steps.bundle.outputs.native_version }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            fs.writeFileSync("capgo-dev-release-evidence.json", JSON.stringify({
+              schemaVersion: 1,
+              appId: process.env.CAPGO_DEV_APP_ID,
+              channel: process.env.CAPGO_DEV_CHANNEL,
+              operation: process.env.OPERATION,
+              bundleVersion: process.env.BUNDLE_VERSION || null,
+              nativeVersion: process.env.NATIVE_VERSION || null,
+              sourceCommit: process.env.GITHUB_SHA,
+              apiOrigin: process.env.VITE_NATIVE_API_ORIGIN,
+              nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true"
+            }, null, 2) + "\\n", { mode: 0o644 });
+          '
+
+      - name: Retain sanitized UPR Dev release evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: capgo-upr-dev-${{ inputs.operation }}-${{ github.sha }}
+          path: capgo-dev-release-evidence.json
+          if-no-files-found: error
+          retention-days: 30
