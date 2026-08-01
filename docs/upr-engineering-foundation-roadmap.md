@@ -320,7 +320,7 @@ would keep mutation-heavy integration tests on the shared production database. P
 On 2026-07-31 the raw hosted lane at `a513af37` reported 163 / 375 assertions passed, 0 failed,
 212 skipped, and 46 setup errors across 44 files. Failed assertions are hard-gated at zero; the
 previously hidden setup debt is shrink-only at 44 failed files / 90 recursively failed suite
-nodes. Those setups, the skips, and six local-only SQL/pgTAP proofs remain explicit coverage debt.
+nodes. Those setups, the skips, and eight local-only SQL/pgTAP proofs remain explicit coverage debt.
 P2a execution still requires exact local-runtime/config ownership. The hosted branch already
 exists; its billing, retention, destructive reset, and eventual retirement remain owner-controlled.
 
