@@ -371,6 +371,21 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
               p_media_urls: mediaUrls,
             },
           ));
+          const expectedDenials = new Set([
+            'sms_disabled',
+            'dnd',
+            'no_consent',
+          ]);
+          if (
+            expectedDenials.has(reservation?.outcome)
+            && !reservation?.attempt_id
+          ) {
+            return {
+              shouldSubmit: false,
+              attemptId: null,
+              reason: reservation.outcome,
+            };
+          }
           if (!reservation?.attempt_id) {
             throw new Error('Scheduled delivery reservation was refused');
           }

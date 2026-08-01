@@ -116,8 +116,31 @@ DO UPDATE SET can_view = EXCLUDED.can_view;
 
 UPDATE public.feature_flags SET force_disabled = false WHERE key = 'page:conversations';
 
-INSERT INTO public.contacts (id, name, phone)
-VALUES ('a1000000-0000-4000-8000-000000000003', '[scheduled delivery test] recipient', '+15550001901');
+INSERT INTO public.contacts (id, name, phone, opt_in_status)
+VALUES (
+  'a1000000-0000-4000-8000-000000000003',
+  '[scheduled delivery test] recipient',
+  '+15550001901',
+  true
+);
+
+DO $enable_test_sms$
+BEGIN
+  UPDATE public.automation_settings setting
+  SET sms_sending_enabled = true
+  WHERE setting.org_id = (
+    SELECT organization.id
+    FROM public.crm_orgs organization
+    WHERE NOT organization.is_test
+    ORDER BY organization.created_at ASC
+    LIMIT 1
+  );
+  IF NOT FOUND THEN
+    RAISE EXCEPTION
+      'scheduled delivery test requires the seeded real-org automation setting';
+  END IF;
+END;
+$enable_test_sms$;
 
 INSERT INTO public.conversations (id, type, title, status)
 VALUES ('a1000000-0000-4000-8000-000000000004', 'direct', '[scheduled delivery test] conversation', 'needs_response');
@@ -319,6 +342,9 @@ DO $browser_create$
 DECLARE
   v_id uuid := 'a1000000-0000-4000-8000-000000000005';
   v_phone_race_id uuid := 'a1000000-0000-4000-8000-000000000007';
+  v_disabled_id uuid := 'a1000000-0000-4000-8000-000000000022';
+  v_dnd_id uuid := 'a1000000-0000-4000-8000-000000000023';
+  v_no_consent_id uuid := 'a1000000-0000-4000-8000-000000000024';
   v_send_at timestamptz := now() + interval '2 minutes';
 BEGIN
   IF public.create_scheduled_message(
@@ -344,6 +370,27 @@ BEGIN
        v_send_at + interval '1 minute'
      ) IS DISTINCT FROM v_phone_race_id THEN
     RAISE EXCEPTION 'phone-change race fixture was not created';
+  END IF;
+
+  IF public.create_scheduled_message(
+       v_disabled_id,
+       'a1000000-0000-4000-8000-000000000004',
+       'kill-switch race body',
+       v_send_at + interval '2 minutes'
+     ) IS DISTINCT FROM v_disabled_id
+     OR public.create_scheduled_message(
+       v_dnd_id,
+       'a1000000-0000-4000-8000-000000000004',
+       'DND race body',
+       v_send_at + interval '3 minutes'
+     ) IS DISTINCT FROM v_dnd_id
+     OR public.create_scheduled_message(
+       v_no_consent_id,
+       'a1000000-0000-4000-8000-000000000004',
+       'consent race body',
+       v_send_at + interval '4 minutes'
+     ) IS DISTINCT FROM v_no_consent_id THEN
+    RAISE EXCEPTION 'final compliance race fixtures were not created';
   END IF;
 
   IF public.claim_scheduled_message(v_id) THEN
@@ -390,6 +437,144 @@ END;
 $actor_derived_persistence$;
 
 SET LOCAL ROLE service_role;
+
+DO $final_compliance_gate$
+DECLARE
+  v_disabled_id uuid := 'a1000000-0000-4000-8000-000000000022';
+  v_dnd_id uuid := 'a1000000-0000-4000-8000-000000000023';
+  v_no_consent_id uuid := 'a1000000-0000-4000-8000-000000000024';
+  v_disabled_token uuid := 'a1000000-0000-4000-8000-000000000025';
+  v_dnd_token uuid := 'a1000000-0000-4000-8000-000000000026';
+  v_no_consent_token uuid := 'a1000000-0000-4000-8000-000000000027';
+  v_outcome text;
+  v_attempt uuid;
+BEGIN
+  UPDATE public.automation_settings setting
+  SET sms_sending_enabled = false
+  WHERE setting.org_id = (
+    SELECT organization.id
+    FROM public.crm_orgs organization
+    WHERE NOT organization.is_test
+    ORDER BY organization.created_at ASC
+    LIMIT 1
+  );
+  IF NOT public.claim_scheduled_message_v2(v_disabled_id, v_disabled_token) THEN
+    RAISE EXCEPTION 'kill-switch race row was not claimed';
+  END IF;
+  SELECT outcome, attempt_id
+    INTO v_outcome, v_attempt
+  FROM public.reserve_scheduled_message_delivery(
+    v_disabled_id,
+    v_disabled_token,
+    'a1000000-0000-4000-8000-000000000003',
+    '+15550001901',
+    'kill-switch race body',
+    'kill-switch race body',
+    '[]'::jsonb
+  );
+  IF v_outcome IS DISTINCT FROM 'sms_disabled'
+     OR v_attempt IS NOT NULL
+     OR (SELECT delivery_attempt_id FROM public.scheduled_messages
+         WHERE id = v_disabled_id) IS NOT NULL
+     OR (SELECT count(*) FROM public.message_send_attempts
+         WHERE client_request_id = v_disabled_id) <> 0 THEN
+    RAISE EXCEPTION
+      'final kill-switch denial crossed the provider-attempt boundary';
+  END IF;
+  IF NOT public.fail_scheduled_message_claim(
+    v_disabled_id,
+    v_disabled_token,
+    'kill-switch race test cleanup'
+  ) THEN
+    RAISE EXCEPTION 'kill-switch race claim was not closed';
+  END IF;
+
+  UPDATE public.automation_settings setting
+  SET sms_sending_enabled = true
+  WHERE setting.org_id = (
+    SELECT organization.id
+    FROM public.crm_orgs organization
+    WHERE NOT organization.is_test
+    ORDER BY organization.created_at ASC
+    LIMIT 1
+  );
+  UPDATE public.contacts
+  SET dnd = true
+  WHERE id = 'a1000000-0000-4000-8000-000000000003';
+  IF NOT public.claim_scheduled_message_v2(v_dnd_id, v_dnd_token) THEN
+    RAISE EXCEPTION 'DND race row was not claimed';
+  END IF;
+  SELECT outcome, attempt_id
+    INTO v_outcome, v_attempt
+  FROM public.reserve_scheduled_message_delivery(
+    v_dnd_id,
+    v_dnd_token,
+    'a1000000-0000-4000-8000-000000000003',
+    '+15550001901',
+    'DND race body',
+    'DND race body',
+    '[]'::jsonb
+  );
+  IF v_outcome IS DISTINCT FROM 'dnd'
+     OR v_attempt IS NOT NULL
+     OR (SELECT delivery_attempt_id FROM public.scheduled_messages
+         WHERE id = v_dnd_id) IS NOT NULL
+     OR (SELECT count(*) FROM public.message_send_attempts
+         WHERE client_request_id = v_dnd_id) <> 0 THEN
+    RAISE EXCEPTION
+      'final DND denial crossed the provider-attempt boundary';
+  END IF;
+  IF NOT public.fail_scheduled_message_claim(
+    v_dnd_id,
+    v_dnd_token,
+    'DND race test cleanup'
+  ) THEN
+    RAISE EXCEPTION 'DND race claim was not closed';
+  END IF;
+
+  UPDATE public.contacts
+  SET dnd = false,
+      opt_in_status = false
+  WHERE id = 'a1000000-0000-4000-8000-000000000003';
+  IF NOT public.claim_scheduled_message_v2(
+    v_no_consent_id,
+    v_no_consent_token
+  ) THEN
+    RAISE EXCEPTION 'consent race row was not claimed';
+  END IF;
+  SELECT outcome, attempt_id
+    INTO v_outcome, v_attempt
+  FROM public.reserve_scheduled_message_delivery(
+    v_no_consent_id,
+    v_no_consent_token,
+    'a1000000-0000-4000-8000-000000000003',
+    '+15550001901',
+    'consent race body',
+    'consent race body',
+    '[]'::jsonb
+  );
+  IF v_outcome IS DISTINCT FROM 'no_consent'
+     OR v_attempt IS NOT NULL
+     OR (SELECT delivery_attempt_id FROM public.scheduled_messages
+         WHERE id = v_no_consent_id) IS NOT NULL
+     OR (SELECT count(*) FROM public.message_send_attempts
+         WHERE client_request_id = v_no_consent_id) <> 0 THEN
+    RAISE EXCEPTION
+      'final consent denial crossed the provider-attempt boundary';
+  END IF;
+  IF NOT public.fail_scheduled_message_claim(
+    v_no_consent_id,
+    v_no_consent_token,
+    'consent race test cleanup'
+  ) THEN
+    RAISE EXCEPTION 'consent race claim was not closed';
+  END IF;
+
+  UPDATE public.contacts
+  SET opt_in_status = true
+  WHERE id = 'a1000000-0000-4000-8000-000000000003';
+END;
+$final_compliance_gate$;
 
 DO $reservation_and_reconciliation$
 DECLARE

@@ -333,6 +333,55 @@ describe('processQueue consent and delivery reservation', () => {
     expect(calls.update).toEqual([]);
   });
 
+  it.each([
+    ['sms_disabled', 'release_scheduled_message_claim', 0],
+    ['dnd', 'fail_scheduled_message_claim', 1],
+    ['no_consent', 'fail_scheduled_message_claim', 1],
+  ])(
+    'honors the final database %s refusal without a provider attempt',
+    async (outcome, lifecycleRpc, failed) => {
+      let reserveResult;
+      sendAutomatedMessageMock.mockImplementation(async (
+        _channel,
+        _contactId,
+        _template,
+        _variables,
+        _env,
+        extra,
+      ) => {
+        reserveResult = await extra.reserveDelivery({
+          phone: extra.destinationPhone,
+          body: extra.body,
+          mediaUrls: extra.mediaUrls,
+        });
+        return {
+          ok: false,
+          skipped: true,
+          reason: reserveResult.reason,
+          deliveryAttemptId: reserveResult.attemptId,
+        };
+      });
+      const { db, calls } = makeDb({
+        pending: due(),
+        reservation: { outcome, attempt_id: null },
+      });
+
+      await expect(processQueue(db, {}, { now: SENDABLE_NOW })).resolves.toMatchObject({
+        processed: 0,
+        failed,
+      });
+      expect(reserveResult).toEqual({
+        shouldSubmit: false,
+        attemptId: null,
+        reason: outcome,
+      });
+      expect(calls.rpc).toContainEqual({
+        fn: lifecycleRpc,
+        params: expect.objectContaining({ p_id: 's1' }),
+      });
+    },
+  );
+
   it('reserves exactly one provider delivery after the central gates and reconciles it', async () => {
     let reserveResult;
     sendAutomatedMessageMock.mockImplementation(async (_channel, _contactId, _template, _variables, _env, extra) => {
