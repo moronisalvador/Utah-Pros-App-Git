@@ -202,13 +202,19 @@ nonemployees, inactive employees, external employees, force-disabled access, and
 overrides/roles remain excluded. A future tenant scope must tighten Worker and RLS together.
 
 The compatible participant foundation and unread-state compatibility layer are now present only
-on isolated `qa-staging` (ledgers `20260731143710` and `20260731181046`), not production. They
-define one staff decision shared by the staged inbox,
-message-author lookup, admin membership controls, technician self-leave, and service-only
-recipient/search/create helpers: privileged internal roles always pass; `crm_partner` does not;
-then explicit per-chat choice wins over default field technician and historical appointment crew.
-The admin/self mutation RPCs derive the actor from `auth.uid()` and the membership tables deny
-direct browser reads/writes.
+on isolated `qa-staging` (ledgers `20260731143710` and `20260731181046`), not production. The
+authored, unapplied correction
+`20260731213000_conversation_assignment_authority_containment.sql` replaces every independent
+participant/contact helper with one trusted decision shared by the inbox, message-author lookup,
+admin membership controls, technician self-leave, and service-only recipient/search/create
+helpers: privileged internal role → explicit per-chat override → default technician → deny.
+`crm_partner` never passes. Appointment, job, claim, and crew records are scheduling context, not
+conversation authorization, because browser roles can currently mutate those records. The
+correction preflights the exact employee-identity containment posture and replaces
+`messaging_employee_can_access_conversation`, `get_conversation_members`,
+`find_or_create_scoped_conversation`, and `search_scoped_conversation_contacts`. The admin/self
+mutation RPCs derive the actor from `auth.uid()` and the membership tables deny direct browser
+reads/writes.
 
 The candidate clients retain actor-scoped conversation data only under a 30-second proof measured
 from request start, not response receipt. A response resolving after that boundary is rejected.
@@ -236,18 +242,22 @@ This staging schema does not make the product participant-scoped in production.
 and is applied only to QA as ledger `20260731181046`; catalog and rolled-back no-write behavior
 checks passed. It also completes the standard `authenticated, service_role` grants without
 rewriting the already-applied staging foundation source.
-`20260731040339_conversation_participant_policy_enforcement.sql`
-narrows the existing broad `ALL` policies in place to membership-scoped reads with a
+`20260731213100_conversation_participant_policy_enforcement.sql` remains authored and unapplied
+everywhere. It follows the authority correction and narrows the existing broad `ALL` policies in
+place to membership-scoped reads with a
 fail-closed write check, revokes browser direct table writes, and explicitly preserves
-`service_role`. Candidate Workers also
+`service_role`. Its preflight requires the exact expected policy/ACL allowlist across
+`conversations`, `conversation_participants`, and `messages`, so an extra policy or grant aborts
+the migration. Candidate Workers also
 recheck current membership before sends/notes, use scoped contact search/creation, and resolve
-inbound recipients only through the canonical helper. 40337 + 40338 are one indivisible
-compatibility apply unit: in one separately authorized window, apply 40338 immediately after
-40337 and do not expose compatible callers between them. If 40338 fails, immediately run the
-paired 40337 rollback so the shared catalog is never intentionally left in the intermediate grant
-posture. Only deploy those callers after both migrations and catalog checks succeed; apply 40339
-only after compatible web/supported native adoption, disposable DB proof, and a separate
-owner-authorized window.
+inbound recipients only through the canonical helper. Production must apply
+`40337 → 40338 → 31213000` in one exposure-free, separately authorized window; QA needs only
+`31213000` because its immutable `40337/40338` sources are already applied. Verify that no trusted
+function contains appointment/job/claim authority, then deploy compatible web and supported
+native callers. Apply `31213100` only after older direct-unread writers are unsupported,
+disposable DB proof passes, and a separate owner-authorized window is open. Reverse recovery is
+`31213100 → 31213000 → 40338 → 40337` and is a fail-closed service pause, never restoration of
+broad browser access.
 
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed
@@ -299,6 +309,72 @@ any JWT role other than `service_role`, and revokes execution from `PUBLIC`, `an
 worker's claim authority; browser sessions cannot claim or replay provider events. It is live
 under migration-ledger version `20260724051500`; read-only catalog verification confirmed the
 reviewed body fingerprint and the same service-only invoker boundary.
+
+### Scheduled-message delivery boundary (authored; not applied)
+
+The authored scheduled-message hardening is a code-first, two-migration release candidate, not
+evidence of a deployed or applied control. After the participant foundation, the hardened callers
+deploy first and fail closed while their RPCs are absent. Compatibility then moves browser
+scheduling to `create_scheduled_message`, which derives the employee from `auth.uid()` rather than
+accepting an actor ID. The RPC requires an active, non-external
+employee with the Conversations capability and current conversation membership/access, then
+requires exactly one active customer participant with a non-empty phone. It persists the derived
+creator plus the exact recipient contact/phone snapshot and rejects an idempotency-key reuse with
+changed content. `get_scheduled_queue` and
+`cancel_scheduled_message` are exact DevTools-owner contracts; cancellation is restricted to an
+unreserved pending row.
+
+Compatibility first requires the exact `31213100` participant-policy ledger and catalog posture,
+takes the queue lock, and aborts the transaction with SQLSTATE `55000` if the aggregate count of
+legacy `pending` rows is nonzero. It never quarantines, fails, or otherwise edits those rows.
+It then creates a FORCE-RLS actor-derived provenance ledger whose immutable snapshot includes the
+creator, conversation, canonical body/send time, recipient contact, and recipient phone; only a
+row whose stored values still match that snapshot may be claimed or reserved. It closes raw
+browser queue writes in the same transaction and preserves
+the legacy claim signature only as a service-callable fail-closed stub, so a stale Worker cannot
+submit without a durable reservation. After compatible web/Worker callers are deployed and
+verified, enforcement follows compatibility in the same serialized release window. The three
+legacy queue policies remain as inert catalog records while table ACLs make them unreachable;
+this avoids destructive policy DDL while retaining the provenance boundary. Browser roles then
+have no raw queue read/write route and retain only the narrow authenticated RPCs above. The frozen legacy
+`claim_scheduled_message(uuid)` signature remains fail closed and loses service execution; it
+cannot claim or initiate a send.
+
+All lifecycle operations after browser creation are `SECURITY INVOKER`, service-role-only RPCs
+with an explicit `current_user = 'service_role'` fence: token-fenced claim, token-matched
+release/failure, reservation, and reconciliation. `claim_token` prevents an old worker from
+releasing or finishing a newer claim. A nullable `delivery_attempt_id`, uniquely linked to one
+`message_send_attempts` row, prevents a linked scheduled row from being reclaimed for another
+provider submission; it must be reconciled instead. Reservation revalidates the stored creator's
+capability and conversation access, the immutable recipient contact/phone snapshot against both
+the scheduled row and current participant, and the canonical body in the same transaction. The
+Worker also repeats creator access and exact-recipient checks at
+dequeue, so capability revocation, membership removal, deactivation, or recipient drift fails
+closed before provider dispatch.
+
+`GET`/`POST /api/process-scheduled` is not public: it accepts either the validated scheduler
+secret or the exact DevTools-owner identity, and the human path must also retain Messages
+capability. The direct platform `scheduled()` handler is a distinct non-HTTP scheduler capability.
+Authorized delivery still routes through `sendAutomatedMessage()` and its consent/DND gates; the
+new reservation/reconciliation boundary does not authorize a provider bypass or automatic replay
+of an ambiguous outcome. The HTTP/scheduled wrappers, owner Auth check, service PostgREST/RPC
+client, and provider adapter use the bounded worker transport. A scheduled reservation also selects
+fresh fail-closed Twilio credential resolution: managed-store timeout cannot fall back to an older
+cache/environment secret and reaches no provider request. Ordinary non-scheduled credential
+consumers retain the existing bounded DB-first/environment-fallback compatibility behavior.
+
+Required release evidence is negative as well as positive: browser raw-table and lifecycle-RPC
+calls must be denied; wrong, inactive, external, revoked-capability, non-member, or non-owner
+actors must fail before queue mutation or provider work; exact recipient changes must fail at
+dequeue/reservation; and a durable link must allow only one attempt/materialization. Run the
+behavioral SQL proof only against an isolated disposable database, plus source-level ACL/rollback
+tests. The full recovery-only reverse chain is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`. Each rollback seals browser
+tables and RPCs, preserves provenance/reservation evidence, and preflights unresolved linked
+pending work; it never restores broad authenticated access or appointment-derived authority.
+Unknown provider outcomes are retained for owner review and never automatically resubmitted.
+Neither rollback, migration apply, Worker deployment, scheduler-secret configuration, nor
+provider activation is authorized by this repository documentation.
 
 ## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 

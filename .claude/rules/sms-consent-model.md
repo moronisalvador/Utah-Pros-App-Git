@@ -125,3 +125,34 @@ staff 1:1 path, which accepts `IMPLIED_CONSENT`; every automated, scheduled, gro
 campaign and marketing path still accepts `GLOBAL_OPT_IN` only. The code-side revert (remove
 `IMPLIED_CONSENT` from `STAFF_ACCEPTED_CONSENT_CODES` and redeploy) remains the faster rollback and
 needs no database window; the rollback migration reverses the database return code itself.
+
+---
+
+## 14. Scheduled free-form delivery safety amendment (2026-07-31) — owner-directed
+
+Scheduled free-form SMS remains automated traffic and accepts only `GLOBAL_OPT_IN`. It keeps every
+§13 refusal, including DND, explicit opt-out, pending STOP, missing or changed destination,
+quiet-hours, kill-switch, worker-only writes, and no channel/provider fallback.
+
+The scheduled-delivery hardening may add optional internal reservation controls to the existing
+`sendAutomatedMessage(..., extra)` / `sendGatedSms(env, options)` object arguments and additive
+delivery-attempt metadata to results. It must preserve the positional signatures, the base
+`{ ok, skipped, reason }` contract, and the load-bearing `sms_disabled` and `quiet_hours` reason
+strings. This permission does not create a second send door.
+
+Creation is actor-derived and idempotent. The database records immutable provenance for creator,
+conversation, canonical body/send time, recipient contact, and recipient phone; a forged
+appointment, job, claim, crew, dry-log, or room assignment never grants conversation access or
+schedule authority. Browser roles cannot write the raw queue.
+
+Delivery is token-fenced and permits at most one durable provider reservation/submission per
+scheduled text. After reservation, an uncertain provider outcome is reconciled without another
+provider call; neither a worker retry nor a second claimant may submit again. A managed
+credential-store timeout after reservation fails closed before provider fetch, bypasses warm cache,
+and never falls back to an environment credential.
+
+Compatibility migration `20260731220000_scheduled_message_delivery_compatibility.sql` locks the
+queue and aborts with SQLSTATE `55000` without mutation unless the aggregate pending count is zero.
+Enforcement migration `20260731220100_scheduled_message_delivery_enforcement.sql` follows only
+after compatible clients/workers are deployed. Authored source and local proofs are not evidence
+that either migration, application code, or provider behavior is live.

@@ -21,41 +21,58 @@ cross-session reconciliation; do not mark it ready, merge it, or otherwise promo
 owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
 promotion.
 
-## Conversation participant scoping — QA foundation only
+## Conversation participant scoping — QA foundation live; corrected release train authored
 
-- Compatible foundation `20260731040337_conversation_participant_scoping.sql` is applied **only**
-  to isolated `qa-staging` as ledger `20260731143710` from reviewed commit `0d5b7fab` (source
-  SHA-256 `f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`). Catalog
-  verification passed: both new membership tables use forced RLS, browser roles cannot read them,
-  their rows remain empty, the intended RPC signatures/grants are present, and the legacy browser
-  INSERT compatibility window remains open. Nothing was applied to the shared production project.
-- `20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
-  `qa-staging`, as ledger `20260731181046`, from immutable reconciled candidate `487ec641`
-  (source SHA-256 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`).
-  Catalog checks confirmed its two actor-derived RPCs, pinned `search_path`, intended
-  `authenticated, service_role` grants, and `anon=false` execution; an authorized empty-input,
-  nonexistent-conversation denial, and unmapped-actor denial proof completed inside a rolled-back
-  transaction. `20260731040339_conversation_participant_policy_enforcement.sql` remains unapplied
-  everywhere.
-- The release candidate now routes unread changes through the compatibility RPC,
-  checks membership before sends/notes, resolves inbound notification recipients canonically,
-  uses scoped contact search/creation, purges expired inbox/thread/draft caches, and revokes direct
-  browser writes in `40339`. The enforcement migration alters the existing policies in place with
-  fail-closed write checks rather than dropping them, and `40338` completes the required
-  service-role grants without changing the exact `40337` source staged on QA.
-- Required order: `40337` + `40338` are one indivisible compatibility apply unit. Apply `40338`
-  immediately after `40337` in the same separately authorized window, without exposing an app
-  between them. If `40338` fails, immediately run the paired `40337` rollback so the shared catalog
-  is never intentionally left in the intermediate grant posture. Only after both apply and catalog
-  verification may compatible web and supported native code deploy/promote; then apply `40339` in
-  its own reviewed window after older native callers no longer depend on direct writes.
-- The guarded behavior suite passed locally on 2026-07-31 against a disposable Colima/Supabase
-  baseline clone with `40337`–`40339` applied; all fixtures rolled back. Capacitor sync, unsigned
-  Xcode simulator compilation, and an iPhone 17 Pro Simulator smoke passed: sender labels/readable
-  bubbles, title-expanded info, and the native participant sheet rendered. The sheet's RPC
-  correctly failed against production because `40337` is not live there. Physical-device and
-  supported native-release evidence remain gates. No shared-database apply, push, deploy, or
-  enforcement is authorized by this status entry.
+- `20260731040337_conversation_participant_scoping.sql` and
+  `20260731040338_conversation_unread_state_compatibility.sql` are applied **only** to isolated
+  `qa-staging` as ledgers `20260731143710` and `20260731181046`. Their immutable source hashes and
+  catalog checks remain recorded evidence; production has neither participant migration.
+- Appointment, job, claim, and crew rows are browser-writable and are **not conversation
+  authorization**. New, unapplied
+  `20260731213000_conversation_assignment_authority_containment.sql` replaces the four independent
+  membership/contact paths with privileged role → explicit per-chat override → default technician
+  → deny, after exact employee-identity and QA/production lineage preflights.
+  `20260731213100_conversation_participant_policy_enforcement.sql` is also authored and unapplied.
+  It must follow `31213000`, narrows the three protected table policies in place, and removes every
+  authenticated direct write. Both carry recovery-pause rollbacks that seal browser tables/RPCs;
+  they never restore the historical broad policies or derived appointment trust.
+- Candidate UI/Worker source uses actor-derived unread changes, canonical notification recipients,
+  scoped contact/opening paths, per-ID cache revocation, admin per-chat/default controls,
+  technician self-leave, sender labels, and 18px mobile message text. Historical disposable proof
+  for the superseded `40339` source remains historical; it is not evidence for `31213000/31213100`.
+  The corrected participant proof and scheduled-delivery pgTAP proof now pass on a disposable
+  local Supabase clone with their fixture transactions rolled back. The governed full database
+  runner, physical-iPhone proof, and supported-native-release evidence remain open gates.
+- Scheduled-message hardening is authored and unapplied as
+  `20260731220000_scheduled_message_delivery_compatibility.sql` then
+  `20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility requires the exact
+  `31213100` policy/ACL ledger before it can run, takes the queue lock, and aborts with SQLSTATE
+  `55000` if even one legacy pending row remains; it never quarantines or edits those rows.
+  Actor-derived creation stores immutable creator, conversation, body/send time, recipient contact,
+  and recipient phone provenance. Token-fenced service RPCs recheck the snapshot/current recipient
+  plus creator access and link exactly one provider attempt only after kill-switch, consent, DND,
+  and quiet-hours gates. Enforcement leaves the three legacy scheduled policies as inert catalog
+  records, closes table ACLs, and revokes the fail-closed legacy claim from service execution.
+  Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
+  and provider transports are bounded; a reserved scheduled send requires a fresh managed
+  credential lookup and cannot use cached/environment fallback after that lookup times out.
+- Read-only catalog evidence on 2026-07-31 found one legacy production `pending` scheduled row
+  (overdue since `2026-07-24T22:45:00Z`) and zero on QA. Do not inspect, send, cancel, or rewrite
+  that row from this initiative: compatibility correctly stops on the aggregate count until the
+  owner separately resolves it. The seeded `qa-staging` catalog remains healthy and usable, but
+  its `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
+  runbook; it is not evidence that the current catalog is broken and must not be cleared through
+  rebase or ad-hoc ledger writes. Only `40337/40338` are ledgered for this train; target the exact
+  branch ref and obtain a clean direct QA apply before promotion.
+- Exact release order is foundation/correction → compatible web plus supported native adoption →
+  `31213100` participant enforcement → aggregate zero-pending gate → `31220000` →
+  `31220100`. Hardened callers deploy immediately before the serialized enforcement/scheduled
+  window and intentionally fail closed until the RPCs exist. Reverse recovery is
+  `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
+  browser denial. Focused source/Worker tests, migration hygiene, and the two changed behavioral
+  database proofs pass; the governed full database runner, healthy QA apply, pending-row decision,
+  and signed-device proof remain explicit release gates. No commit, push, deploy, hosted apply,
+  provider call, production-row mutation, or device claim is authorized by this entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 

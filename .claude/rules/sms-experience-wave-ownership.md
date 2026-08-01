@@ -6,4 +6,5 @@ specifications (§§1–11) and their history moved to
 they bind no active session and no longer auto-load.
 
 **Live consent law is unchanged and lives in [`sms-consent-model.md`](sms-consent-model.md)** —
-former §12 (prior-consent attestation) and §13 (opt-out-only), verbatim, section numbers preserved.
+former §12 (prior-consent attestation), §13 (opt-out-only), and the current §14 scheduled-delivery
+amendment, with section numbers preserved.

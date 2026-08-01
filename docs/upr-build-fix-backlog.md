@@ -176,7 +176,7 @@ apply windows must not overlap. Do not run them in parallel sessions.
 
 | # | Work | Registry ID | Status | Size |
 |---|---|---|---|---|
-| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **Repository release candidate implemented 2026-07-31; staged foundation only, release gates remain.** Staff visibility, participant/default controls, self-leave, Worker send/notification/contact scoping, unread compatibility, sender labels and mobile readability are implemented. `20260731040337` is applied only to `qa-staging`; `40338` and `40339` are unapplied everywhere. See §4A for the compatibility-sensitive rollout. | **M** |
+| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **Repository release candidate implemented 2026-07-31; staged foundation only, release gates remain.** Staff visibility, participant/default controls, self-leave, Worker send/notification/contact scoping, unread compatibility, sender labels and mobile readability are implemented. `20260731040337` and `20260731040338` are applied only to `qa-staging` as ledgers `20260731143710` and `20260731181046`; corrective `20260731213000` and enforcement `20260731213100` are unapplied everywhere. See §4A for the compatibility-sensitive rollout. | **M** |
 | 4.2 | **A2P + on-device verification** | `MSG-002` | 🔵 Provider approval, live smoke, owner device. | external |
 | 4.3 | **Text campaigns 4b** | `CRM-001` | Blocked on 4.2, or explicitly supersede it. | M, blocked |
 | 4.4 | **Inbound email Phase I** | `OMNI-001` | Foundation exists; `email-worker/` and `inbound-email.js` absent. Needs a Cloudflare route + secret first. | M, external gate |
@@ -187,28 +187,21 @@ apply windows must not overlap. Do not run them in parallel sessions.
 
 ### 4A. Participant scoping — approved design [owner, 2026-07-26], release candidate 2026-07-31
 
-**Three layers. The third is what stops it rotting.**
+**Trusted precedence. Explicit decisions stop it rotting.**
 
 1. **Role short-circuit — by role, not by row.** `admin`, `office`, `project_manager`, `supervisor`
    ⇒ always true. Nothing to backfill, nothing to drift, no admin can be accidentally removed.
    `crm_partner` (5 active, external) gets **nothing**.
-2. **Derived membership: historical, computed live.** A tech sees a thread if they are on *any*
-   appointment for that client, **ever** — not an active-only window. Restoration has long tails
-   (follow-ups, warranty, re-opens); losing thread access the moment a job closes is worse than mild
-   over-inclusion. Computed inside the predicate at read time — **no materialized table, no nightly
-   derivation pass.**
-3. **Manual overrides only.** `conversation_member_overrides` holds explicit staff adds/removes and
+2. **Manual override.** `conversation_member_overrides` holds explicit staff adds/removes and
    `conversation_default_members` holds the technicians admins want included by default. Manual
-   per-chat choice wins over derived/default membership.
+   per-chat choice wins over the default.
+3. **Default technician, then deny.** A configured default technician is included unless explicitly
+   removed; every other non-privileged employee is denied.
 
-**Why live-computed matters:** the handoff flagged "admin removes a tech, tomorrow's derivation pass
-re-adds them" as the likeliest bug. With no pass, and overrides as the only stored rows, that bug
-**cannot exist** — designed out rather than tested for. Adding a tech to an appointment grants access
-immediately, with no sync step.
-
-**Join path** (verified): `appointment_crew → appointments → jobs → COALESCE(jobs.primary_contact_id,
-claims.contact_id) → conversation_participants.contact_id`. It **must** join through
-`conversation_participants.contact_id` — `conversations.job_id` is NULL on all 7 rows.
+Appointment, job, claim, crew, dry-log, and room records are scheduling/operational context, not
+conversation authorization. They are currently browser-writable and cannot safely grant access.
+`20260731213000` replaces all four independent access/member/contact bodies so no appointment join
+survives as a trusted path.
 
 **Enforce at every boundary:** `get_tech_conversations`, actor-derived unread mutation,
 `conversations`/`messages` SELECT policies, send/internal-note Workers, contact
@@ -222,22 +215,22 @@ thread (`/conversations?c=` and `/tech/conversations?c=`). **Email for `message.
 an option entirely — push + bell only.** (The `field_tech` email default is `enabled=true` today: a
 latent trap the moment anyone sets `assigned_to`.)
 
-**Accepted outcome [owner]:** 2 of 4 active techs would currently see 0 of 7 conversations; the other
-2 would see 3.
-
 **Rule amendments to disclose:** `get_tech_conversations` is F-M-frozen
 (`tech-messages-v2-wave-ownership.md` §2); `conversation_participants` is Foundation-owned
 (`omni-inbox-wave-ownership.md` §1).
 
-**Release order:** apply `20260731040337` + `20260731040338` before any compatible Worker/UI
-deployment; validate dev, then promote the same reviewed web source and a supported native build;
-run the isolated SQL and negative device checks; apply `20260731040339` only after older native
-direct-unread callers are no longer supported. Every hosted apply/deploy/promotion is a separate
-owner-authorized gate.
+**Release order:** production applies `40337 → 40338 → 31213000` in one exposure-free authorized
+window; QA, which already has `40337/40338`, applies only `31213000`. Verify no trusted function
+contains appointment/job/claim authority, deploy/validate compatible web plus supported native,
+then apply `31213100` only after older direct-unread callers are unsupported. Deploy hardened
+scheduled callers immediately before their database window, prove the aggregate pending count is
+zero without mutation, and apply `31220000 → 31220100`. Every hosted apply, deployment, promotion,
+or provider action is a separate owner-authorized gate.
 
 **Deferred lifecycle context:** when future rooms/dry logs can prove the final appointment marked
-the mitigation job dry and equipment picked up, derived mitigation technicians should fall out
-automatically unless privileged or manually re-added. Until then, removal stays manual or
+the mitigation job dry and equipment picked up, a trusted server/privileged workflow may record an
+explicit removal for mitigation technicians unless they are privileged or manually re-added. Job
+state must never become conversation authority. Until then, removal stays manual or
 technician-initiated.
 
 ---

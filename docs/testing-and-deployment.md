@@ -192,14 +192,15 @@ device already holding a poisoned copy from 2026-07-27, which prevention cannot 
 
 ### Conversation participant compatibility apply unit (2026-07-31)
 
-`20260731040337_conversation_participant_scoping.sql` and
-`20260731040338_conversation_unread_state_compatibility.sql` are one indivisible compatibility
-apply unit. In one separately authorized low-traffic window, apply 40337 and then immediately
-apply 40338; do not deploy or expose a compatible web/native app between them. If 40338 fails,
-immediately run the paired 40337 rollback before closing the window, so the shared catalog is
-never intentionally left in 40337's intermediate grant posture. Proceed to compatible deployment
-only after both migrations and their catalog checks succeed. The separately authorized 40339
-enforcement migration remains post-adoption only.
+Production treats `20260731040337_conversation_participant_scoping.sql`,
+`20260731040338_conversation_unread_state_compatibility.sql`, and
+`20260731213000_conversation_assignment_authority_containment.sql` as one exposure-free apply
+unit. Apply them in that order in one separately authorized low-traffic window; if a step fails,
+reverse every prior step before closing the window. QA already contains immutable `40337/40338`,
+so its next step is only `31213000`. Verify the resulting function bodies contain no
+appointment/job/claim authority, then deploy compatible web and supported-native callers.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains post-adoption only and
+must not run until older direct-unread writers are unsupported.
 
 ## Mobile PWA/Capacitor readiness workflow
 
@@ -221,12 +222,14 @@ minutes per subprocess. The launcher owns the full child tree, cleans it in `try
 the port/process is gone, and records the result. Unsigned compilation or simulator launch is not
 signed-device, TestFlight, privacy, entitlement, push, deep-link, OTA, or App Review proof.
 
-The initial release promise stays online-first with tested warm continuity. Cold-offline PWA,
-admin-mobile in the native binary, native push, and OTA are excluded/disabled until their owner
-decisions and roadmap evidence gates are complete. Expanded field use requires zero P0 findings and
-closure or explicit exclusion of every P1 within the promise. Live migration/apply, deploy,
-provider/customer action, signing, distribution, and submission remain separately authorized
-owner gates.
+The initial audited release promise (2026-07-25) stayed online-first with tested warm continuity
+and excluded cold-offline PWA, admin-mobile in the native binary, native Push, and OTA. Native Push
+subsequently passed production TestFlight physical-device delivery on 2026-07-29; that historical
+exclusion is no longer a claim that APNs has never shipped. Per-token/dev-app re-enrollment,
+account-switch, and feature-specific device matrices remain separate open gates. Expanded field use
+requires zero P0 findings and closure or explicit exclusion of every P1 within the promise. Live
+migration/apply, deploy, provider/customer action, signing, distribution, and submission remain
+separately authorized owner gates.
 
 R0's current source/live map and first local authorization slice are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the source-only S1b QBO
@@ -378,6 +381,47 @@ The combined Phase 2–4 build is not a one-step deploy:
 
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
+
+### Scheduled-message delivery hardening release gate
+
+The scheduled-message hardening source is a code-first, fail-closed two-migration release; it is
+not applied or live evidence. After the participant authorization foundation is present, deploy
+and verify the hardened browser and scheduler callers, including the stable browser operation ID
+and the central `sendAutomatedMessage()` reservation hook. Until the new RPCs exist, those callers
+must refuse scheduling/dequeue rather than fall back to the old send path. Then, in a separately
+owner-approved low-traffic window, apply and verify
+`20260731220000_scheduled_message_delivery_compatibility.sql` followed by
+`20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility preserves the legacy
+claim signature only as a fail-closed stub, so a stale Worker also pauses rather than sending
+without a reservation. Compatibility requires exact participant enforcement, locks the queue, and
+aborts with SQLSTATE `55000` when the aggregate pending count is nonzero; it never edits those
+rows. It creates FORCE-RLS actor-derived provenance that snapshots creator, conversation,
+body/send time, recipient contact, and recipient phone, and closes raw browser queue writes in
+that transaction. Enforcement leaves the dormant broad policies inert behind revoked ACLs,
+retains the provenance boundary, and revokes the stub's remaining service execution. Do not leave
+compatibility without enforcement as the intended steady state.
+
+The compatibility migration is additive and introduces the fenced claim plus one durable linked
+attempt. Its reconciliation path is provider-free: accepted provider evidence materializes once,
+a fresh linked attempt stays `in_flight`, and an unknown stale result is failed for owner review
+rather than re-sent. Reverse recovery is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; it is containment, not a normal
+reversal. Every step seals browser tables/RPCs and retains provenance, delivery links, and the
+unique index. Unresolved linked pending work blocks rollback for owner reconciliation.
+
+Required repository checks cover actor/membership and exactly-one-recipient revalidation, stable
+operation-ID retry semantics, direct-browser-table denial, reservation/reconciliation contracts,
+and the provider barrier/concurrent scheduler case proving one reservation permits only one
+provider invocation. `supabase/tests/scheduled_message_delivery.test.sql` is the paired guarded,
+rollback-only isolated-database proof for RPC ACLs, idempotent creation, one reservation,
+fresh-in-flight preservation and exactly-once materialization. It must run only on a disposable
+local clone with the isolation sentinel; it is not CI or hosted proof. On 2026-07-31, the corrected
+participant behavior proof exited cleanly and the scheduled-delivery pgTAP proof passed `1/1` on
+an existing disposable local Supabase clone; both final transactions rolled back. The full governed
+runner was not invoked because this worktree has no local Supabase project configuration. Focused
+tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
+cached/environment fallback. No migration apply, deployment, provider traffic, or live
+scheduled-message claim follows from repository tests.
 
 ## Prior SMS consent attestation release sequence
 
@@ -669,22 +713,14 @@ zero-row empty unread update, denied a nonexistent conversation and an unmapped 
 back. It read no conversation content and retained no fixture or business-row change.
 
 The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
-design and was deliberately not run there. On 2026-07-31 it passed against a disposable local
-Colima/Supabase clone loaded from `db/baseline/schema.sql`, with the isolation GUC and explicit
-test variable set, all three participant migrations applied, and the final fixture transaction
-rolled back. The baseline dump's managed-role default-privilege tail is not portable to the local
-CLI container; that tail follows the public schema, policies, and object ACLs exercised here.
-Production, deployment, provider traffic, and
-`20260731040339_conversation_participant_policy_enforcement.sql` remain untouched. Candidate source
-now narrows legacy direct writes in place in 40339, preserves service-role ACLs, and integrates
-Worker recipient/member checks. After the no-drop policy revision, a fresh disposable clone again
-accepted 40337–40339, the guarded behavior suite passed and rolled back every fixture, and the
-40339 rollback/reapply cycle completed cleanly. Before the later QA apply recorded above, the final
-40338 batch-access-snapshot revision was
-then proven on another disposable local Docker clone: the prior 40339/40338 were rolled back,
-current 40338 and 40339 applied, the guarded isolated SQL suite passed through its final rollback,
-and current 40339 again rolled back and reapplied cleanly. That local proof changed no hosted
-database.
+design and was deliberately not run there. Earlier on 2026-07-31, superseded `40337–40339`
+candidate sources passed disposable local Colima/Supabase clones and rollback/reapply cycles.
+That evidence remains useful history but is not proof of the corrected
+`31213000 + 31213100 + 31220000 + 31220100` train. Source-contract tests now cover the corrected
+authority, ACL, pending-count, provenance, reservation, and full rollback chain. The two corrected
+behavioral proofs subsequently passed on a disposable local clone, with fixtures rolled back; the
+full governed runner remains a separate release gate. Production, deployment, and provider traffic
+remain untouched.
 
 Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
 revocation helper missing from its explicit page allowlist; after that correction,
@@ -719,12 +755,25 @@ unchanged row identity while removing omissions and appending new rows.
 
 Release order is compatibility-sensitive because dev and main share production Supabase:
 
-1. separately authorize/apply 40337 + 40338 and verify catalog postconditions;
-2. deploy the compatible Worker/UI candidate to dev, validate, then promote the same reviewed
-   source to web production and a supported native release;
-3. retain the green isolated behavioral SQL evidence and run negative authorization/device checks;
-4. separately authorize/apply 40339 only after older native direct-unread callers are no longer
-   supported.
+1. Production: authorize/apply `40337 → 40338 → 31213000`; QA: apply only `31213000`.
+2. Verify that trusted conversation authority contains no appointment/job/claim source.
+3. Deploy and validate compatible web plus a supported native release; retire older direct-unread
+   writers.
+4. Apply `31213100` participant enforcement.
+5. Deploy hardened web/Worker callers immediately before the scheduled database window; they fail
+   closed until their RPCs exist.
+6. Verify the aggregate scheduled pending count is zero; if it is not, stop for separate
+   owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
+   one legacy production pending row, so production is currently stopped at this gate.
+7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
+   fencing, grants, inert-policy posture, and legacy-claim refusal.
+8. Preserve the exact reviewed source through dev, web production, and the supported native
+   release; complete negative authorization and physical-device checks.
+
+Before step 1, reconfirm the exact `qa-staging` target. Supabase reported the known
+`MIGRATIONS_FAILED` seed badge and `persistent=false` on 2026-07-31 while read-only database access
+remained healthy; the badge alone is not apply-failure evidence. Only immutable `40337/40338` were
+ledgered, and none of `31213000/31213100/31220000/31220100` had applied.
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,

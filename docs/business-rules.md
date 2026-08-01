@@ -187,11 +187,22 @@ Detailed authority and open rulings: `docs/crm-lead-lifecycle.md`.
 - CallRail's text API is restricted to a staff-triggered, person-to-person send. UPR scheduled,
   automated, group, broadcast, bulk and campaign sends must never use it.
 - Scheduled SMS/MMS must call `sendAutomatedMessage()` rather than a provider primitive. That
-  central boundary rechecks the global `sms_sending_enabled` switch, global opt-in, DND and
-  recipient-local quiet hours immediately before Twilio submission. A disabled switch or quiet
-  hours releases the scheduled claim for a later retry; durable consent failures remain terminal.
-  The HTTP trigger accepts only the scheduler secret or an active internal admin, office or
-  project-manager session; authentication without that role is insufficient.
+  central boundary rechecks the unchanged global `sms_sending_enabled` switch, global opt-in, DND
+  and recipient-local quiet hours immediately before Twilio submission. Only after all of those
+  gates pass may a scheduled worker create and link its one durable provider-attempt reservation;
+  that reservation permits one Twilio invocation, never a retrying second submission. A disabled
+  switch or quiet hours releases the unreserved claim for a later retry; durable consent failures
+  remain terminal. Once a row is linked, replay reconciles the durable attempt and never submits
+  again: a fresh linked attempt remains in flight, while an unknown stale outcome fails closed for
+  owner review. The creator's active internal membership and conversation capability, plus exactly
+  one active customer recipient with a usable phone, are checked at creation/dequeue and again at
+  the final reservation boundary. The browser supplies a stable, owner-scoped operation ID for an
+  identical retry; the RPC derives the actor and rejects a changed payload for that ID. The HTTP
+  trigger accepts only the scheduler secret or the exact active internal DevTools owner, who must
+  also retain the Conversations capability; an ordinary authenticated or privileged session is
+  insufficient. All Auth/database/provider calls are timeout-bounded. Once reservation exists,
+  Twilio credential resolution is fresh and fail closed: a managed credential-store timeout may
+  not use a cache or environment fallback and must reach no provider request.
 - CallRail inbound STOP/START/HELP changes the same canonical consent/DND state as Twilio, but UPR
   must not auto-send the keyword reply through CallRail. HELP requires a staff response until an
   owner-approved provider-native compliant mechanism is evidenced.
@@ -299,6 +310,11 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
 - Employee identity and authorization predicates may trust `employees.auth_user_id`, status, and
   role only after browser roles are unable to insert, update, delete, self-bind, or self-promote
   those authority fields.
+- Conversation staff authority is privileged internal role → explicit per-chat override → default
+  technician → deny. Appointment, job, claim, crew, dry-log, and room records are scheduling or
+  operational context, never conversation authorization, while browser roles can mutate them.
+  A future dry-completion removal must use a trusted server/privileged operation that records an
+  explicit membership decision; it must not derive authority from browser-writable job state.
 - Trusted service-role dispatchers may resolve employee preferences and directly read/prune
   subscription/token rows only after their own Worker authorization or trusted scheduler/webhook
   boundary. The stale S1h personal-ownership migration is retired and must never apply: newer live

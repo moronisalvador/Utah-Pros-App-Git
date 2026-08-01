@@ -619,7 +619,7 @@ functions/
                                     doc instead of duplicated here — see CLAUDE.md's Workers section for the
                                     full grouped list of all 58.
     admin-users.js                — POST/PATCH/PUT/DELETE employee + auth management
-    process-scheduled.js          — Cron: process scheduled SMS messages (60s). **Phase A hardening (Jul 9 2026):** the GET/POST trigger is **authenticated** by scheduler `x-webhook-secret` or an active, non-external admin/office/project-manager session; the `scheduled()` cron handler stays platform-authenticated. Each due row is claimed atomically via **`claim_scheduled_message(p_id)`** (F-core RPC) — the old non-atomic `status='processing'` write is RETIRED (that value isn't even in the `scheduled_messages` status CHECK); terminal `sent`/`failed` is written immediately post-send to shrink the crash/re-claim window (F-11). A **TCPA quiet-hours** guard (`isWithinQuietHours`, business-default America/Denver; per-recipient TZ is Phase D) defers the whole due batch outside 8am–9pm instead of texting overnight. **Central-gate repair (Jul 24 2026):** after the worker's defense-in-depth consent check, every scheduled SMS/MMS now calls `sendAutomatedMessage()` instead of Twilio directly, so the global `sms_sending_enabled` kill-switch, global opt-in/DND, recipient-local quiet hours, retry policy, status callback and worker-owned thread row cannot be bypassed. `sms_disabled`/`quiet_hours` release the claim and leave the row pending; durable refusal remains terminal. Provider outcomes marked ambiguous are submitted only once and become terminal reconciliation cases instead of automatic retries. Writes a `worker_runs` row.
+    process-scheduled.js          — Cron: process scheduled SMS messages (60s). GET/POST accepts the scheduler `x-webhook-secret` or the exact internal DevTools owner with the Conversations capability; `scheduled()` remains platform-authenticated. **Scheduled-message delivery hardening (Jul 31 2026, authored source only — not applied/deployed/provider- or device-verified):** hardened callers deploy first and fail closed until the compatibility RPCs exist. Compatibility requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` if the aggregate pending count is nonzero; it never edits those rows. It creates FORCE-RLS provenance that snapshots creator, conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser `scheduled_messages` writes; disables the legacy claim body; and adds token-fenced service-only claim/release/fail/reserve/reconcile RPCs. A current worker may reserve exactly one durable delivery attempt only after the worker consent checks and the central `sendAutomatedMessage()` gates; it then makes at most one Twilio submission. Fresh linked `prepared`/`submitting`/`ambiguous` work stays in-flight, while accepted work is materialized into the canonical message and unknown outcomes become owner-review failures with no automatic resend. Reservation repeats creator capability/conversation access and validates the immutable recipient snapshot against the current participant at the pre-provider boundary. Enforcement follows compatibility in the same serialized release window, leaves the dormant broad policies inert behind revoked ACLs, retains the provenance boundary, and revokes the fail-closed legacy stub from the service role; no native scheduling caller is introduced by this slice. The existing batch quiet-hours guard (America/Denver) defers the queue; central `sms_disabled`/`quiet_hours` results release an unreserved claim. Writes a `worker_runs` row.
     resend-webhook.js             — Omni-inbox (Jul 4 2026): Resend bounce/complaint webhook. Svix
                                     HMAC-SHA256 verify (Web Crypto, raw body, ±5min, svix-id dedup,
                                     fail-closed 503 until RESEND_WEBHOOK_SECRET set). Permanent bounce →
@@ -917,7 +917,19 @@ conversation_default_members — Field technicians included by default in every 
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
-                          claimed_at timestamptz (compare-and-set marker for claim_scheduled_message)
+                          claimed_at timestamptz (legacy compare-and-set marker). Scheduled-message
+                          delivery hardening (Jul 31 2026) is authored only, not applied: adds nullable
+                          `claim_token` (current-worker fence) and `delivery_attempt_id` (unique,
+                          irreversible message_send_attempt link). `create_scheduled_message` derives
+                          the active internal actor and accepts a stable client UUID only for that
+                          actor's accessible conversation with exactly one active customer recipient;
+                          identical retry returns the existing row and divergent reuse fails.
+                          `cancel_scheduled_message` and `get_scheduled_queue` are exact DevTools-owner
+                          contracts. Compatibility requires exact participant enforcement, aborts with
+                          SQLSTATE `55000` without mutation when any pending row exists, and creates a
+                          FORCE-RLS creator/conversation/body/send-time/recipient provenance ledger while
+                          closing raw browser queue writes. Enforcement leaves legacy policies inert behind
+                          revoked ACLs and revokes legacy execution. No native scheduling caller is introduced.
 message_templates       — 10 rows — SMS templates
 sms_consent_log         — TCPA opt-in/out audit log
                           Live `attest_prior_sms_consent` RPC (applied Jul 23 2026) atomically
@@ -948,19 +960,22 @@ Later phases: I (inbound Email Worker), O (send-message.js email branch), U (uni
 
 **Conversation participant controls — RELEASE CANDIDATE; QA COMPATIBILITY ONLY (2026-07-31):**
 `20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
-`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. The
-canonical staff decision is privileged role → explicit per-chat choice → default field technician
-→ historical appointment crew for the conversation contact. Admin RPCs manage per-chat/default
-membership, a non-privileged participant may persist their own exclusion, the inbox and message
-author directory retain their deployed signatures, and service-only helpers support scoped
-creation/search/notification recipients. Post-apply catalog checks proved forced RLS, no
+`qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. Its
+original appointment-derived decision is superseded by authored, unapplied
+`20260731213000_conversation_assignment_authority_containment.sql`. Appointment, job, claim, and
+crew records are browser-writable scheduling context and are never conversation authorization.
+The correction replaces the four independent access/member/contact bodies with the trusted rule:
+privileged role → explicit per-chat choice → default technician → deny, after exact
+employee-identity and lineage preflights. Admin RPCs manage per-chat/default membership, a
+non-privileged participant may persist their own exclusion, the inbox and message author directory
+retain their deployed signatures, and service-only helpers support scoped
+creation/search/notification recipients. Post-apply catalog checks for the original foundation proved forced RLS, no
 anonymous/authenticated membership-table reads, intended RPC ACLs/signatures, zero membership rows,
-and exactly one foundation ledger row. The guarded SQL behavior suite requires a disposable
-database with all three migrations. It passed on 2026-07-31 against a disposable local
-Colima/Supabase clone loaded from `db/baseline/schema.sql`; 40337–40339 applied cleanly and every
-fixture rolled back. The baseline dump's managed-role default-privilege tail is not portable to
-the CLI container, but it occurs after the public schema, policies, and object ACLs used by this
-test and is unrelated to the participant assertions.
+and exactly one foundation ledger row. Earlier guarded SQL behavior proof for the superseded
+`40337–40339` train passed on a disposable local clone and remains historical evidence only. It
+does not prove the corrected sources. The corrected participant proof and scheduled-delivery
+pgTAP proof subsequently passed on a disposable local Supabase clone, with both fixture
+transactions rolled back; the full governed database runner remains a release gate.
 
 `20260731040338_conversation_unread_state_compatibility.sql` is also applied only to
 `qa-staging`, as ledger `20260731181046`, from reconciled candidate `487ec641` (source SHA-256
@@ -968,12 +983,21 @@ test and is unrelated to the participant assertions.
 its actor-derived access-snapshot and unread-state RPCs have pinned search paths, deny `anon`, and
 retain only the intended `authenticated, service_role` execution. An authorized empty-input,
 nonexistent-conversation denial, and unmapped-actor denial proof ran inside a rolled-back
-transaction with no retained row change. `20260731040339_conversation_participant_policy_enforcement.sql`
-remains unapplied everywhere.
+transaction with no retained row change.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains authored and unapplied
+everywhere. It follows `31213000`, narrows the existing protected-table policies in place, revokes
+authenticated direct writes, and requires the exact policy/ACL allowlist.
 Candidate code now uses scoped contact search/creation, actor-derived unread changes, canonical
 notification recipients, send-time membership checks, a short successful-access lease that
 purges warm inbox previews plus thread/draft data when offline authorization cannot be renewed, admin
 per-chat/default controls, technician self-leave, sender labels, and 18px mobile message text.
+UI close-out keeps participant tabs as an ordinary `aria-pressed` button group, locates all
+conversation styling in the global reserved marker, uses shared loading/error primitives, keeps
+contact/job navigation inside React Router, and pauses private-media signed-URL refresh while the
+WebView is hidden before resuming through the shared lifecycle subscription. Retry haptics fire
+only for pointer activation, programmatic scrolling honors Reduce Motion, tech/mobile retry and
+attachment actions meet the 48/44px target rules, empty participant tabs are explicit, and async
+private-attachment state is politely announced.
 Desktop and tech access proof now starts when the actor-scoped request starts, so a response that
 arrives after the 30-second boundary is rejected instead of receiving a fresh receipt-time lease.
 Desktop inbox probes are also monotonic: an older poll/resume result cannot commit after a newer
@@ -997,8 +1021,8 @@ remove rows no longer returned for that view.
 Hidden→visible synchronously removes expired desktop and tech inbox
 rows/previews before network revalidation starts, including the no-active-thread list state.
 The QA-applied 40338 completes the standard `authenticated, service_role` RPC grants without
-rewriting the exact 40337 source already staged on QA. The separately gated 40339 no longer drops
-and recreates policies: it alters the existing `ALL` policies in place to participant-scoped
+rewriting the exact 40337 source already staged on QA. The separately gated 31213100 alters the
+existing `ALL` policies in place to participant-scoped
 `USING` predicates with `WITH CHECK (false)`, revokes direct browser writes, and explicitly
 preserves service-role table access.
 `npm run build:ios:dev` and the unsigned Xcode iOS Simulator build passed on 2026-07-31. The
@@ -1006,14 +1030,23 @@ compiled app then launched on an iPhone 17 Pro Simulator and visually proved the
 readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
 showed the expected load error because that app points at production, where 40337 is deliberately
 unapplied; no production data was changed.
-The safe shared-database sequence treats 40337 + 40338 as one indivisible compatibility apply
-unit: apply 40338 immediately after 40337 in the same separately authorized window and do not
-expose compatible code between them. If 40338 fails, immediately run the paired 40337 rollback so
-the shared catalog is never intentionally left in the intermediate grant posture. Only after both
-migrations and catalog checks succeed may compatible web/native adoption begin; apply 40339
-enforcement only afterward in a separately reviewed window. Older
-Capacitor/web callers that directly update unread state remain compatible until 40339; that final
-grant/policy narrowing must not precede supported native adoption.
+Production must apply `40337 → 40338 → 31213000` in one exposure-free authorized window; QA,
+where immutable `40337/40338` are already applied, needs only `31213000`. Verify that no trusted
+authority body contains appointment/job/claim access, then deploy compatible web and supported
+native callers. Only after older direct-unread writers are unsupported may `31213100` apply in a
+separately reviewed window. Hardened scheduled callers deploy immediately before the serialized
+scheduled window. Auth/database/provider calls are bounded, and a reserved scheduled send cannot
+fall back to a cached/environment Twilio credential after managed credential lookup timeout.
+After the aggregate pending count is verified zero, apply
+`31220000 → 31220100`. Reverse recovery is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step is a browser-sealed
+recovery pause and preserves reservation/provenance evidence.
+Read-only evidence on 2026-07-31 found exactly one legacy production pending scheduled row, so
+production currently stops at the zero-pending gate until a separately authorized owner decision.
+Supabase also reported `qa-staging` `MIGRATIONS_FAILED` and non-persistent, with only
+`40337/40338` ledgered. Read-only catalog access remains healthy and the badge is the known
+cosmetic seed artifact; reconfirm the exact branch target and obtain a clean QA apply before
+promotion.
 Nothing has been applied to production or deployed from this candidate.
 
 ### Documents & Esign
@@ -1324,7 +1357,7 @@ merge_jobs(p_keep_id, p_merge_id)      — Atomic merge: fills blanks, sums fina
 ### Messaging Tools (Phase 5 — complete)
 ```
 get_message_log(p_limit, p_offset, p_direction, p_status) — Paginated message log with contact info (direction inferred from sender_contact_id)
-get_scheduled_queue(p_limit)    — Scheduled messages with contact + template info (joins via conversation_participants)
+get_scheduled_queue(p_limit)    — Exact DevTools-owner scheduled queue with contact + template info (joins via conversation_participants)
 ```
 
 Dev Tools now includes an owner-only **Provider Events** subtab, reached directly from ops-health
@@ -1353,12 +1386,31 @@ omni_verify_foundation() → jsonb  — SECURITY DEFINER self-cleaning self-test
 
 ### SMS-experience — F-core (Foundation, Jul 9 2026)
 ```
-claim_scheduled_message(p_id UUID) → boolean — SECURITY DEFINER, GRANT authenticated+service_role
-                                  (never anon). Atomic compare-and-set on scheduled_messages.claimed_at:
-                                  TRUE to exactly ONE caller claiming a still-'pending' row (unclaimed,
-                                  or stale-claimed >10 min ago → crash recovery); FALSE otherwise. Kills
-                                  the process-scheduled double-send (finding F-11). Does NOT set 'status'
-                                  (the status CHECK has no 'processing' value). Consumed by Phase A.
+Scheduled-message delivery hardening (Jul 31 2026) — **authored source only; neither migration is
+applied, deployed, provider-verified, nor device-verified.** Compatibility requires the exact
+`31213100` participant-enforcement posture, locks the queue, and aborts with SQLSTATE `55000` when
+the aggregate pending count is nonzero; it never edits those rows. It creates a FORCE-RLS
+actor-derived creation-provenance ledger that snapshots creator, conversation, canonical body/send
+time, recipient contact, and recipient phone. `create_scheduled_message(p_id,
+p_conversation_id,p_body,p_send_at)` derives the active internal actor, validates Conversations
+capability/access and exactly one active customer recipient, and treats the stable client UUID as an
+idempotency key. `get_scheduled_queue(p_limit)` and `cancel_scheduled_message(p_id)` are exact
+DevTools-owner contracts; cancellation only succeeds for an unreserved pending row. Hardened callers
+deploy first and fail closed until the compatibility RPCs exist. Compatibility preserves the legacy
+`claim_scheduled_message(uuid)` signature only as a service-callable fail-closed stub, closes raw
+browser queue writes in the same transaction, and adds
+service-role-only `claim_scheduled_message_v2`, release/fail, reservation, and reconciliation RPCs
+fenced by a random claim token. Reservation rechecks creator capability/access and the immutable
+recipient snapshot against the exact-one current recipient, links one irreversible
+`message_send_attempt`, and permits one provider attempt
+only after the worker and central automated-send consent/DND/kill-switch/quiet-hours gates. Reconciliation
+materializes accepted delivery, preserves fresh in-flight work, and sends an unknown outcome to owner
+review without automatic resubmission. Enforcement follows compatibility in the same serialized release
+window, leaves the dormant broad policies inert behind revoked ACLs, retains the provenance
+boundary, and revokes the legacy stub from the service role. This slice
+adds no native scheduling caller. The unresolved browser operation ID is scoped to the current
+opaque account owner+epoch, so a still-mounted Capacitor WebView cannot reuse another account's ID;
+cancel refreshes also preserve the visible queue instead of replacing it with a loading state.
 increment_conversation_unread(p_conversation_id UUID, p_by INT DEFAULT 1) → integer — SECURITY DEFINER,
                                   GRANT authenticated+service_role (never anon). One atomic UPDATE (no
                                   read-modify-write race); clamps at 0; returns new unread_count, NULL if
@@ -3422,7 +3474,7 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
-  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live, but enrollment remains exact-default-off pending compatible deployment/build-time activation, fresh runtime-binding/re-enrollment verification, and signed-device proof. Broad S1h is not an activation prerequisite.
+  - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
     **Sign-out always completes + ended-session revival guard (2026-07-29, owner-directed +
     security-reviewed, unified):** explicit sign-out runs one bounded best-effort cleanup pass and
     completes regardless of its outcome; unfinished server detach stays in the durable owner-bound
@@ -4126,11 +4178,11 @@ Pure helpers `selectAdminIds(employees, submitterId)` + `buildPushPayload(feedba
 node-tested; the handler test injects fake db + fetch to prove 401-without-Bearer,
 submitter-excluded fan-out count, and a 503 from send-push reported without failing the request.
 
-⚠️ **Owner-gated — push delivery reaches nobody today:** APNs env vars (`APNS_*`) are unset (the
-send-push worker returns 503) and `device_tokens` has 0 rows, and admins work on desktop where
-the iOS token path never runs. The **in-app bell is the channel that works now**; the push
-fan-out is wired degrade-gracefully and becomes real the day the owner configures APNs + devices
-register. Zero schema migrations shipped (Session B constraint).
+**Historical Session B snapshot (2026-07-02; not current state):** APNs env vars were unset and
+`device_tokens` had zero rows, so only the in-app bell worked at that boundary. Current APNs,
+TestFlight/device, and per-token-topic evidence is recorded in the later native notification
+sections and the live `20260731154315_device_token_apns_topic` ledger. This historical note must
+not be used as a current release blocker.
 
 ### Session C (AdminFeedback rebuild + gallery) — shipped (Jul 3 2026)
 
