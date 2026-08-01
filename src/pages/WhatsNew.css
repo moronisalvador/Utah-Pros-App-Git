@@ -559,6 +559,39 @@
   }
 }
 
+/* ─── SECTION: Tech shell, dark theme ────────────── */
+
+/* The page is shared with the field app at /tech/whats-new. Every colour above
+   is a token, so `[data-theme="dark"] .tech-layout` re-themes the whole page
+   for free — surfaces, text and borders all resolve correctly with no work
+   here. Two measured exceptions:
+                                                        contrast on dark
+     .wn-kind-new    --info    #2563eb on #14233d              3.04  ✗
+     .wn-kind-improved --success                               4.59  ✓
+     .wn-kind-fixed  --warning                                 4.79  ✓
+     .wn-area / .wn-week-count  --text-tertiary                4.08  ✗
+
+   Cause: the dark theme redefines the `-bg` and `-border` tokens but leaves
+   `--info` / `--success` / `--warning` at their light values, so the pairing is
+   only coincidentally readable. The two that pass do so by luck, not design.
+
+   Fixed locally rather than by editing the shared tokens: `--info` and
+   `--text-tertiary` are used across the entire tech shell and re-tuning them is
+   a design-system change, not a change this page is entitled to make. */
+[data-theme="dark"] .tech-layout .wn-kind {
+  /* The tinted background and border still carry the colour identity; only the
+     label switches, which takes every badge to ~15:1. */
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .tech-layout .wn-area,
+[data-theme="dark"] .tech-layout .wn-week-count,
+[data-theme="dark"] .tech-layout .wn-row-area,
+[data-theme="dark"] .tech-layout .wn-row-date {
+  /* 4.08 → 7.65. Techs read this on a phone in daylight. */
+  color: var(--text-secondary);
+}
+
 /* ─── SECTION: Reduced motion ────────────── */
 
 /* HARD gate, motion-standard.md §5: collapse to instant, end state still lands. */

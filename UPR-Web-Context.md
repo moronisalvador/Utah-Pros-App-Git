@@ -157,6 +157,28 @@ are absent from the native registry), route in `App.jsx`, nav in `Sidebar.jsx` +
 the address returns `404.html` in production, which `tests/qa/unit/spa-route-coverage.test.js`
 catches. Lazy route chunk: 75.6 KB raw / 21.1 KB gzip, entry graph unchanged.
 
+**Techs get the same page, not a copy** (2026-07-31). `/tech/whats-new`, reached from
+**Tech > More > Resources**, renders the *identical* `WhatsNew` component — one record that cannot
+drift into two. It works because the page reads no database and every colour is a token, so
+`[data-theme="dark"] .tech-layout` re-themes it with no extra CSS (verified: card surfaces drop to
+luminance 29, text rises to 243).
+
+Two measured exceptions needed local dark overrides, and the reason is a design-system gap worth
+knowing: **the tech dark theme redefines the `-bg`/`-border` tokens but leaves `--info`,
+`--success` and `--warning` at their light values.** So `--info` on `--info-bg` scored **3.04**
+(below AA) while green and amber passed at 4.59/4.79 — by luck, not design. Fixed inside
+`WhatsNew.css` scoped to `[data-theme="dark"] .tech-layout` (badge label → `--text-primary`,
+tertiary labels → `--text-secondary`); every element now passes AA, and light mode is untouched.
+Re-tuning the shared tokens would be a design-system change this page is not entitled to make —
+but the gap is real and affects any surface pairing those tokens.
+
+Native: the page is in `buildTargetPages.native.jsx` **and** `NATIVE_PAGE_ALLOWLIST`, so the iOS
+app carries it (+76 KB). Both `WhatsNew.jsx` and `WhatsNew.css` need allowlist entries — the rule
+matches every module under `src/pages/`, and the source-contract test passes without the CSS entry
+while `npm run build:native` fails, which is exactly the split those two checks exist for.
+`/tech/*` already covers the route in `_redirects`. Menu label lives in `more.json` as
+`rowWhatsNew` across en/pt/es.
+
 **Upkeep:** `.githooks/commit-msg` (activate per clone with
 `git config core.hooksPath .githooks`) reminds on a `feat`/`fix`/`perf` commit touching
 `src/pages`, `src/components` or `functions/api` that carries no entry. **Non-blocking by design** —

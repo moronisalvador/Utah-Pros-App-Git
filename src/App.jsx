@@ -343,6 +343,12 @@ function TechRoutes() {
       <Route path="tech/more" element={<ErrorBoundary section="TechMore"><TechMore /></ErrorBoundary>} />
       <Route path="tech/settings" element={<ErrorBoundary section="TechSettings"><TechSettings /></ErrorBoundary>} />
       <Route path="tech/help" element={<ErrorBoundary section="TechHelp"><TechHelp /></ErrorBoundary>} />
+      {/* What's New — the SAME page the office shell serves at /whats-new, not a
+          tech copy. It reads no database and every colour is a token, so the
+          tech shell's dark theme ([data-theme="dark"] .tech-layout) re-themes it
+          for free and there is one record, not two that drift apart.
+          In the native registry too, so the iOS app carries it. */}
+      <Route path="tech/whats-new" element={<ErrorBoundary section="What's New"><WhatsNew /></ErrorBoundary>} />
       {/* Legal/support INSIDE the field shell. Apple requires these reachable in-app,
           and TechSettings links them. The office copies at /privacy, /terms and
           /support render with no shell at all — correct pre-login, but a dead end
