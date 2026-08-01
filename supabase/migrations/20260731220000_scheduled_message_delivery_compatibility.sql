@@ -49,9 +49,12 @@ DECLARE
 BEGIN
   IF to_regclass('public.scheduled_messages') IS NULL
      OR to_regclass('public.message_send_attempts') IS NULL
+     OR to_regclass('public.automation_settings') IS NULL
+     OR to_regclass('public.crm_orgs') IS NULL
      OR to_regprocedure('public.materialize_message_send_attempt(uuid)') IS NULL
      OR to_regprocedure('public.messaging_employee_has_conversations_capability(uuid)') IS NULL
      OR to_regprocedure('public.messaging_employee_can_access_conversation(uuid,uuid)') IS NULL
+     OR to_regprocedure('public.get_service_sms_consent_status(uuid,text)') IS NULL
      OR to_regprocedure('extensions.digest(bytea,text)') IS NULL THEN
     RAISE EXCEPTION 'scheduled delivery compatibility: required messaging foundation is absent';
   END IF;
@@ -242,6 +245,46 @@ BEGIN
      ) THEN
     RAISE EXCEPTION
       'scheduled delivery compatibility: materialization boundary drifted';
+  END IF;
+
+  -- The final delivery reservation consumes only GLOBAL_OPT_IN from the
+  -- canonical service-role consent authority. QA still carries the reviewed
+  -- pre-implied-consent body while production carries the reviewed 2026-07-28
+  -- opt-out-only body; both hashes retain the same DND, explicit opt-out,
+  -- pending-STOP, phone-lock, and GLOBAL_OPT_IN semantics used here.
+  IF NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_proc procedure
+       JOIN pg_catalog.pg_roles owner_role
+         ON owner_role.oid = procedure.proowner
+       WHERE procedure.oid =
+         to_regprocedure('public.get_service_sms_consent_status(uuid,text)')
+         AND owner_role.rolname = 'postgres'
+         AND NOT procedure.prosecdef
+         AND procedure.provolatile = 'v'
+         AND procedure.proconfig = ARRAY['search_path=""']::text[]
+         AND md5(replace(procedure.prosrc, chr(13), '')) IN (
+           'e6747ca478873d45faef76f7f3b2ff49',
+           'e106318eef49f04f16f295d881bc41fe'
+         )
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.get_service_sms_consent_status(uuid,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.get_service_sms_consent_status(uuid,text)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.get_service_sms_consent_status(uuid,text)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'scheduled delivery compatibility: consent authority drifted';
   END IF;
 END;
 $scheduled_delivery_compat_preflight$;
@@ -546,6 +589,8 @@ DECLARE
   v_scheduled public.scheduled_messages%ROWTYPE;
   v_provenance public.scheduled_message_creation_provenance%ROWTYPE;
   v_recipient record;
+  v_sms_sending_enabled boolean := false;
+  v_consent_status jsonb;
   v_attempt_id uuid;
 BEGIN
   IF current_user <> 'service_role' THEN RAISE EXCEPTION 'scheduled reservation is service-role only' USING ERRCODE = '42501'; END IF;
@@ -618,6 +663,44 @@ BEGIN
       AND participant.contact_id IS NOT NULL AND NULLIF(btrim(participant.phone), '') IS NOT NULL) <> 1 THEN
     RAISE EXCEPTION 'scheduled message requires exactly one active customer recipient' USING ERRCODE = '22023';
   END IF;
+
+  -- Final provider-boundary compliance gate. Hold a share lock on the exact
+  -- global kill-switch row and consume the canonical phone-locked consent
+  -- authority in this same reservation transaction. A concurrent disable,
+  -- DND, explicit opt-out, or inbound STOP therefore wins before an attempt is
+  -- linked; expected denials return without creating provider-attempt residue.
+  SELECT setting.sms_sending_enabled
+    INTO v_sms_sending_enabled
+  FROM public.crm_orgs organization
+  JOIN public.automation_settings setting
+    ON setting.org_id = organization.id
+  WHERE NOT organization.is_test
+  ORDER BY organization.created_at ASC
+  LIMIT 1
+  FOR SHARE OF setting;
+
+  IF COALESCE(v_sms_sending_enabled, false) IS NOT TRUE THEN
+    RETURN QUERY SELECT 'sms_disabled'::text, NULL::uuid;
+    RETURN;
+  END IF;
+
+  SELECT public.get_service_sms_consent_status(
+    p_recipient_contact_id,
+    btrim(p_recipient_address)
+  )
+    INTO v_consent_status;
+
+  IF v_consent_status->>'code' = 'DND_ACTIVE' THEN
+    RETURN QUERY SELECT 'dnd'::text, NULL::uuid;
+    RETURN;
+  END IF;
+
+  IF COALESCE((v_consent_status->>'allowed')::boolean, false) IS NOT TRUE
+     OR v_consent_status->>'code' IS DISTINCT FROM 'GLOBAL_OPT_IN' THEN
+    RETURN QUERY SELECT 'no_consent'::text, NULL::uuid;
+    RETURN;
+  END IF;
+
   INSERT INTO public.message_send_attempts (conversation_id, actor_employee_id, recipient_contact_id, client_request_id,
     provider, request_fingerprint, recipient_address, submitted_body, canonical_body, media_urls, requested_channel, state)
   VALUES (v_scheduled.conversation_id, v_scheduled.created_by, v_recipient.contact_id, v_scheduled.id,

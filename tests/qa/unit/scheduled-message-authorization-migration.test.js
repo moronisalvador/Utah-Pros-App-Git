@@ -45,6 +45,9 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibility).toMatch(/claim_scheduled_message_v2[\s\S]*scheduled_message_creation_provenance provenance[\s\S]*provenance\.created_by = message\.created_by[\s\S]*provenance\.conversation_id = message\.conversation_id[\s\S]*provenance\.send_at = message\.send_at[\s\S]*provenance\.body_fingerprint/);
     expect(compatibility).toMatch(/reserve_scheduled_message_delivery[\s\S]*v_provenance\.recipient_contact_id[\s\S]*IS DISTINCT FROM p_recipient_contact_id[\s\S]*v_provenance\.recipient_address[\s\S]*IS DISTINCT FROM btrim\(p_recipient_address\)/);
     expect(compatibility).toMatch(/reserve_scheduled_message_delivery\([\s\S]*p_media_urls jsonb DEFAULT '\[\]'::jsonb[\s\S]*RETURNS TABLE\(outcome text, attempt_id uuid\)/);
+    expect(compatibility).toMatch(/reserve_scheduled_message_delivery[\s\S]*FOR SHARE OF setting[\s\S]*COALESCE\(v_sms_sending_enabled, false\) IS NOT TRUE[\s\S]*'sms_disabled'::text, NULL::uuid/);
+    expect(compatibility).toMatch(/reserve_scheduled_message_delivery[\s\S]*get_service_sms_consent_status\([\s\S]*v_consent_status->>'code' = 'DND_ACTIVE'[\s\S]*'dnd'::text, NULL::uuid[\s\S]*v_consent_status->>'code' IS DISTINCT FROM 'GLOBAL_OPT_IN'[\s\S]*'no_consent'::text, NULL::uuid[\s\S]*INSERT INTO public\.message_send_attempts/);
+    expect(compatibility).toMatch(/e6747ca478873d45faef76f7f3b2ff49[\s\S]*e106318eef49f04f16f295d881bc41fe[\s\S]*consent authority drifted/);
     expect(compatibility).toMatch(/extensions\.digest\(convert_to\(/);
     expect(compatibility).toMatch(/jsonb_array_length\(p_media_urls\) > 0 THEN 'mms' ELSE 'sms'/);
   });
