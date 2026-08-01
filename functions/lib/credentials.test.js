@@ -105,6 +105,20 @@ describe('resolveCredential — safety', () => {
     expect(await resolveCredential(env, db, 'stripe')).toEqual({ secretKey: 'sk_env' });
   });
 
+  it('fails closed in strict mode instead of using an older environment secret', async () => {
+    const db = fakeDb({ throws: true });
+    const env = {
+      ...DB_ENV,
+      TWILIO_ACCOUNT_SID: 'AC_env',
+      TWILIO_AUTH_TOKEN: 'old-env-token',
+      TWILIO_MESSAGING_SERVICE_SID: 'MG_env',
+    };
+
+    await expect(resolveCredential(env, db, 'twilio', {
+      failClosedOnDbError: true,
+    })).rejects.toThrow('Managed credential lookup failed');
+  });
+
   it('returns undefined fields when neither DB nor env has the value', async () => {
     const db = fakeDb({ credentials: [] });
     expect(await resolveCredential(DB_ENV, db, 'stripe')).toEqual({ secretKey: undefined });

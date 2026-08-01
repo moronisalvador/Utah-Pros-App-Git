@@ -31,21 +31,44 @@ const state = {
   inserts: [],
   updates: [],
   selects: [],
+  rpcs: [],
   consentStatus: null,
+  supabaseFetchImpls: [],
+  failDbRead: false,
 };
 
 vi.mock('./twilio.js', () => ({
   // Behaviour is overridable per-test via state.sendImpl (e.g. to throw a 429).
-  sendMessage: vi.fn(async (_env, { to, body, mediaUrls, statusCallback }) => {
-    state.sentTo.push({ to, body, mediaUrls, statusCallback });
+  sendMessage: vi.fn(async (
+    _env,
+    {
+      to,
+      body,
+      mediaUrls,
+      statusCallback,
+      failClosedOnCredentialError,
+    },
+  ) => {
+    state.sentTo.push({
+      to,
+      body,
+      mediaUrls,
+      statusCallback,
+      failClosedOnCredentialError,
+    });
     if (state.sendImpl) return state.sendImpl({ to, body, mediaUrls, statusCallback });
     return { sid: 'SM_test', status: 'queued' };
   }),
 }));
 
 vi.mock('./supabase.js', () => ({
-  supabase: () => ({
+  supabase: (_env, fetchImpl) => {
+    state.supabaseFetchImpls.push(fetchImpl);
+    return {
     async select(table, query = '') {
+      if (state.failDbRead) {
+        throw Object.assign(new Error('request timed out'), { name: 'TimeoutError' });
+      }
       state.selects.push({ table, query });
       if (table === 'crm_orgs') return [{ id: 'org-real' }];
       if (table === 'automation_settings') return [{ sms_sending_enabled: state.smsEnabled }];
@@ -69,11 +92,19 @@ vi.mock('./supabase.js', () => ({
       return [{ ...data }];
     },
     async update(table, filter, data) { state.updates.push({ table, filter, data }); return null; },
-    async rpc(name) {
+    async rpc(name, params) {
+      state.rpcs.push({ name, params });
       if (name === 'get_service_sms_consent_status') return state.consentStatus;
+      if (name === 'materialize_message_send_attempt') {
+        if (state.failMaterialize) {
+          throw new Error('DB unavailable (attempt materialization)');
+        }
+        return [{ outcome: 'message_materialized', message_id: 'msg-reserved' }];
+      }
       return null;
     },
-  }),
+    };
+  },
 }));
 
 import {
@@ -89,6 +120,7 @@ import {
   isTransactionalServiceSmsPurpose,
   TRANSACTIONAL_SERVICE_ACCEPTED_CONSENT_CODES,
 } from './sms-consent.js';
+import { fetchWithTimeout } from './http.js';
 // Non-owned held-retry consumers — Phase D must not break their dependence on the
 // frozen return vocabulary (sms-experience-wave-ownership §3/§8).
 import { planStepOutcome } from '../api/process-sequences.js';
@@ -108,15 +140,36 @@ beforeEach(() => {
   state.inserts = [];
   state.updates = [];
   state.selects = [];
+  state.rpcs = [];
+  state.supabaseFetchImpls = [];
+  state.failDbRead = false;
   state.contact = OPTED_IN;
   state.consentStatus = { allowed: true, code: 'GLOBAL_OPT_IN' };
   state.sendImpl = null;
   state.failThreadWrite = false;
+  state.failMaterialize = false;
   state.existingConversation = null;
   sendMessage.mockClear();
 });
 
 describe('sendAutomatedMessage — SMS gate', () => {
+  it('fails closed before the provider when the bounded database transport times out', async () => {
+    state.smsEnabled = true;
+    state.failDbRead = true;
+
+    await expect(sendAutomatedMessage(
+      'sms',
+      'c1',
+      null,
+      {},
+      {},
+      { body: 'hi', now: DAYTIME },
+    )).rejects.toThrow('request timed out');
+
+    expect(state.supabaseFetchImpls).toEqual([fetchWithTimeout]);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
   it('reserves implied service permission for the three reviewed transactional producers', () => {
     expect([
       'appointment_scheduled',
@@ -375,6 +428,158 @@ describe('sendAutomatedMessage — SMS gate', () => {
       data: expect.objectContaining({
         status: 'waiting_on_client',
         status_changed_at: expect.any(String),
+      }),
+    }));
+  });
+
+  it('reserves a scheduled delivery only after every compliance gate passes', async () => {
+    const reserveDelivery = vi.fn(async () => ({
+      shouldSubmit: true,
+      attemptId: 'attempt-scheduled',
+    }));
+
+    const disabled = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'held while disabled',
+      reserveDelivery,
+      maxProviderAttempts: 1,
+    });
+
+    expect(disabled).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'sms_disabled',
+    });
+    expect(reserveDelivery).not.toHaveBeenCalled();
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    state.smsEnabled = true;
+    const sent = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'one reserved send',
+      recordBody: 'one reserved send',
+      conversationId: 'conv-scheduled',
+      sentBy: 'employee-1',
+      now: DAYTIME,
+      reserveDelivery,
+      maxProviderAttempts: 1,
+    });
+
+    expect(reserveDelivery).toHaveBeenCalledTimes(1);
+    expect(state.sentTo).toEqual([
+      expect.objectContaining({ failClosedOnCredentialError: true }),
+    ]);
+    expect(sent).toMatchObject({
+      ok: true,
+      skipped: false,
+      sid: 'SM_test',
+      messageId: 'msg-reserved',
+      deliveryAttemptId: 'attempt-scheduled',
+    });
+    expect(state.updates).toContainEqual(expect.objectContaining({
+      table: 'message_send_attempts',
+      filter: 'id=eq.attempt-scheduled',
+      data: expect.objectContaining({
+        state: 'accepted',
+        provider_message_id: 'SM_test',
+      }),
+    }));
+    expect(state.rpcs).toContainEqual({
+      name: 'materialize_message_send_attempt',
+      params: { p_attempt_id: 'attempt-scheduled' },
+    });
+    expect(state.inserts).toContainEqual(expect.objectContaining({
+      table: 'sms_consent_log',
+      data: expect.objectContaining({
+        event_type: 'automated_send',
+        performed_by: 'employee-1',
+      }),
+    }));
+    expect(state.inserts.some(({ table }) => table === 'messages')).toBe(false);
+  });
+
+  it('never invokes the provider when a scheduled delivery is already reserved', async () => {
+    state.smsEnabled = true;
+
+    const result = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'do not replay',
+      now: DAYTIME,
+      reserveDelivery: async () => ({
+        shouldSubmit: false,
+        attemptId: 'attempt-existing',
+        reason: 'delivery_reserved',
+      }),
+      maxProviderAttempts: 1,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      skipped: true,
+      reason: 'delivery_reserved',
+      deliveryAttemptId: 'attempt-existing',
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('caps a reserved scheduled delivery at one provider invocation', async () => {
+    state.smsEnabled = true;
+    state.sendImpl = () => {
+      throw new Error('Twilio send failed: Too Many Requests');
+    };
+
+    const result = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'single provider submission',
+      now: DAYTIME,
+      reserveDelivery: async () => ({
+        shouldSubmit: true,
+        attemptId: 'attempt-once',
+      }),
+      // Even a mistakenly wider caller hint cannot override a durable
+      // scheduled reservation's one-submission invariant.
+      maxProviderAttempts: 3,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      skipped: false,
+      permanent: false,
+      deliveryAttemptId: 'attempt-once',
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(state.updates).toContainEqual(expect.objectContaining({
+      table: 'message_send_attempts',
+      filter: 'id=eq.attempt-once',
+      data: expect.objectContaining({ state: 'failed' }),
+    }));
+  });
+
+  it('retains the provider SID when accepted delivery materialization is pending', async () => {
+    state.smsEnabled = true;
+    state.failMaterialize = true;
+
+    const result = await sendAutomatedMessage('sms', 'c1', null, {}, {}, {
+      body: 'accepted once',
+      now: DAYTIME,
+      reserveDelivery: async () => ({
+        shouldSubmit: true,
+        attemptId: 'attempt-pending',
+      }),
+      maxProviderAttempts: 1,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      skipped: false,
+      sid: 'SM_test',
+      ambiguous: true,
+      deliveryAttemptId: 'attempt-pending',
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(state.updates).toContainEqual(expect.objectContaining({
+      table: 'message_send_attempts',
+      filter: 'id=eq.attempt-pending',
+      data: expect.objectContaining({
+        state: 'accepted',
+        provider_message_id: 'SM_test',
+        error_code: 'SCHEDULED_MATERIALIZATION_PENDING',
       }),
     }));
   });

@@ -15,7 +15,8 @@
  * DEPENDS ON:
  *   Packages:  none (pure fetch via ./supabase.js — runs in V8 isolates)
  *   Internal:  ./supabase.js (service-role REST client, used to read the
- *              RLS-locked integration_credentials + integration_config tables)
+ *              RLS-locked integration_credentials + integration_config tables),
+ *              ./http.js (bounded transport)
  *   Data:      reads  → integration_credentials (access_token per provider),
  *                        integration_config (twilio_* non-secret bits)
  *              writes → none (the Encircle admin Worker and the existing
@@ -36,7 +37,9 @@
  *     skipped entirely and the result is env-only — this is also why the existing
  *     sendEmail/sendMessage unit tests keep passing unchanged.
  *   - A DB read failure is swallowed (never throws) and falls back to env: a
- *     transient database blip must NOT block a payment, text, or email.
+ *     transient database blip must NOT block a payment, text, or email unless
+ *     the caller selects the additive fail-closed mode. Scheduled texts select
+ *     it so a timeout cannot bypass a newer managed disable or rotation.
  *   - The secret is READ here for the worker's own outbound call only; it is never
  *     returned to the browser. The browser sees booleans via
  *     get_managed_credentials_status().
@@ -44,6 +47,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { fetchWithTimeout } from './http.js';
 
 // ─── SECTION: Config ──────────────
 const CACHE_TTL_MS = 60_000; // 1 minute — avoids a DB read per send during a burst
@@ -65,13 +69,18 @@ const pick = (dbVal, envVal) => clean(dbVal) ?? clean(envVal) ?? undefined;
 // Read the provider's row + (for twilio) config bits from the RLS-locked tables.
 // Returns { accessToken, config } or null when the DB is unreachable/unconfigured.
 // NEVER throws — a DB blip must not block an outbound send.
-async function readFromDb(env, db, provider) {
+async function readFromDb(
+  env,
+  db,
+  provider,
+  { failClosedOnDbError = false } = {},
+) {
   // No SUPABASE_URL → can't reach the DB (e.g. unit tests): env-only. When a URL
   // is present the service client is built from env; a missing/blank service key
   // just makes the read fail below and fall through to the env fallback.
   if (!db && !env?.SUPABASE_URL) return null;
   try {
-    const client = db || supabase(env);
+    const client = db || supabase(env, fetchWithTimeout);
     const [creds, cfgRows] = await Promise.all([
       client.select(
         'integration_credentials',
@@ -89,6 +98,9 @@ async function readFromDb(env, db, provider) {
       config,
     };
   } catch {
+    if (failClosedOnDbError) {
+      throw new Error('Managed credential lookup failed');
+    }
     return null; // fall back to env
   }
 }
@@ -131,22 +143,33 @@ function shape(provider, dbRow, env) {
  * @param {object} env      Cloudflare env (SUPABASE_URL for the DB read; the *_KEY vars for fallback)
  * @param {object|null} db  optional service-role client to reuse; when null one is built from env
  * @param {string} provider 'stripe' | 'twilio' | 'resend' | 'encircle'
+ * @param {{failClosedOnDbError?: boolean}} options
  * @returns {Promise<object>} provider-shaped credential object (see file header)
  */
-export async function resolveCredential(env, db, provider) {
+export async function resolveCredential(
+  env,
+  db,
+  provider,
+  { failClosedOnDbError = false } = {},
+) {
   if (!PROVIDERS.includes(provider)) {
     throw new Error(`resolveCredential: unknown provider "${provider}"`);
   }
 
   const hit = cache.get(provider);
-  if (provider !== 'encircle' && hit && hit.expires > Date.now()) return hit.value;
+  if (
+    !failClosedOnDbError
+    && provider !== 'encircle'
+    && hit
+    && hit.expires > Date.now()
+  ) return hit.value;
 
-  const dbRow = await readFromDb(env, db, provider);
+  const dbRow = await readFromDb(env, db, provider, { failClosedOnDbError });
   const value = shape(provider, dbRow, env);
 
   // Encircle is intentionally uncached: an emergency disable must suppress the
   // legacy fallback on the very next request, including in a warm isolate.
-  if (provider !== 'encircle') {
+  if (!failClosedOnDbError && provider !== 'encircle') {
     cache.set(provider, { value, expires: Date.now() + CACHE_TTL_MS });
   }
   return value;
