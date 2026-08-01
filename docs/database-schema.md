@@ -391,7 +391,7 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
-## Conversation participant controls (release candidate; compatibility on qa-staging only)
+## Conversation participant controls (release candidate; authority correction on qa-staging)
 
 Migration `20260731040337_conversation_participant_scoping.sql` is recorded only on the isolated
 `qa-staging` branch as ledger `20260731143710`; the shared production database is unchanged. It
@@ -402,14 +402,18 @@ message authors, and the existing inbox signature.
 
 The QA-applied foundation's original appointment-derived rule is not the release authority.
 Appointment, job, claim, and crew rows are browser-writable scheduling context and must never
-authorize conversation access. Authored, unapplied
-`20260731213000_conversation_assignment_authority_containment.sql` replaces
+authorize conversation access. Exact committed
+`20260731213000_conversation_assignment_authority_containment.sql` is applied only to
+`qa-staging` as ledger `20260801144448` (source SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) and replaces
 `messaging_employee_can_access_conversation`, `get_conversation_members`,
 `find_or_create_scoped_conversation`, and `search_scoped_conversation_contacts` with the trusted
 rule: privileged internal role → explicit per-chat override → default technician → deny. Its
 preflight requires the exact contained `employees` identity posture plus an allowed QA or
-production foundation lineage. Its paired rollback is a privileged-only recovery pause; it never
-restores appointment-derived trust.
+production foundation lineage. Post-apply verification matched all four reviewed function
+hashes/properties and ACLs, found no derived assignment authority, and retained zero pending
+scheduled rows. Its paired rollback is a privileged-only recovery pause; it never restores
+appointment-derived trust.
 
 The additive compatibility migration
 `20260731040338_conversation_unread_state_compatibility.sql` is also recorded only on
@@ -426,7 +430,8 @@ revokes all execution.
 
 Production release order is `40337 → 40338 → 31213000`, then verified compatible web and
 supported-native adoption, then `31213100` only after older direct-unread writers are unsupported.
-QA already contains immutable `40337/40338`, so its next database step is `31213000`. Historical
+QA already contains immutable `40337/40338/31213000`; its next database step is `31213100` only
+after compatible-caller verification. Historical
 disposable proof for the superseded `40339` source is not proof of `31213000/31213100`. An earlier
 corrected participant source passed on a disposable local clone; the exact current
 authorized-media source has CI-visible contract coverage but still requires the full governed

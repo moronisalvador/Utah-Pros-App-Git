@@ -715,6 +715,16 @@ browser-inaccessible. A transaction-only QA proof returned an empty authorized s
 zero-row empty unread update, denied a nonexistent conversation and an unmapped actor, then rolled
 back. It read no conversation content and retained no fixture or business-row change.
 
+The exact committed `20260731213000_conversation_assignment_authority_containment.sql` source
+(SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied only to
+`qa-staging` on 2026-08-01 as ledger
+`20260801144448_conversation_assignment_authority_containment`. Its migration preflight and
+postcondition completed transactionally. Independent readback matched all four reviewed function
+body hashes, postgres ownership, invoker/definer and volatility settings, pinned search paths,
+and exact browser/service ACLs; no body references appointment/job/claim/crew authority. The
+scheduled pending aggregate remained zero. Production was not touched.
+
 The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
 design and was deliberately not run there. Earlier on 2026-07-31, superseded `40337–40339`
 candidate sources passed disposable local Colima/Supabase clones and rollback/reapply cycles.
@@ -758,7 +768,8 @@ unchanged row identity while removing omissions and appending new rows.
 
 Release order is compatibility-sensitive because dev and main share production Supabase:
 
-1. Production: authorize/apply `40337 → 40338 → 31213000`; QA: apply only `31213000`.
+1. Production: authorize/apply `40337 → 40338 → 31213000`; QA completed `31213000` on
+   2026-08-01.
 2. Verify that trusted conversation authority contains no appointment/job/claim source.
 3. Deploy and validate compatible web plus a supported native release; retire older direct-unread
    writers.
@@ -775,11 +786,12 @@ Release order is compatibility-sensitive because dev and main share production S
 8. Preserve the exact reviewed source through dev, web production, and the supported native
    release; complete negative authorization and physical-device checks.
 
-Before step 1, target the exact `qa-staging` ref. Its seeded catalog is healthy and usable, while
+For every remaining QA step, target the exact `qa-staging` ref. Its seeded catalog is healthy and
+usable, while
 the `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
-staging runbook; do not use rebase or ad-hoc ledger writes to clear it. Only immutable
-`40337/40338` were ledgered for this train, and none of
-`31213000/31213100/31220000/31220100` had applied.
+staging runbook; do not use rebase or ad-hoc ledger writes to clear it. Immutable
+`40337/40338/31213000` are ledgered for this train; none of
+`31213100/31220000/31220100` has applied.
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,
