@@ -21,15 +21,20 @@ cross-session reconciliation; do not mark it ready, merge it, or otherwise promo
 owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
 promotion.
 
-## Conversation participant scoping — QA foundation live; corrected release train authored
+## Conversation participant scoping — QA authority correction live; enforcement authored
 
 - `20260731040337_conversation_participant_scoping.sql` and
   `20260731040338_conversation_unread_state_compatibility.sql` are applied **only** to isolated
   `qa-staging` as ledgers `20260731143710` and `20260731181046`. Their immutable source hashes and
-  catalog checks remain recorded evidence; production has neither participant migration.
+  catalog checks remain recorded evidence. The exact committed
+  `20260731213000_conversation_assignment_authority_containment.sql` source (SHA-256
+  `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) is also applied
+  **only** to `qa-staging` as ledger `20260801144448`. Post-apply checks matched all four reviewed
+  function hashes/owners/search paths/volatility settings and ACLs, found no
+  appointment/job/claim/crew authority source, and retained zero pending scheduled rows.
+  Production has none of these participant migrations.
 - Appointment, job, claim, and crew rows are browser-writable and are **not conversation
-  authorization**. New, unapplied
-  `20260731213000_conversation_assignment_authority_containment.sql` replaces the four independent
+  authorization**. The QA-applied correction replaces the four independent
   membership/contact paths with privileged role → explicit per-chat override → default technician
   → deny, after exact employee-identity and QA/production lineage preflights.
   `20260731213100_conversation_participant_policy_enforcement.sql` is also authored and unapplied.
@@ -67,8 +72,8 @@ promotion.
   owner separately resolves it. The seeded `qa-staging` catalog remains healthy and usable, but
   its `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
   runbook; it is not evidence that the current catalog is broken and must not be cleared through
-  rebase or ad-hoc ledger writes. Only `40337/40338` are ledgered for this train; target the exact
-  branch ref and obtain a clean direct QA apply before promotion.
+  rebase or ad-hoc ledger writes. `40337/40338/31213000` are ledgered for this train; target the
+  exact branch ref and keep every later QA apply serialized.
 - Exact release order is foundation/correction → compatible web plus supported native adoption →
   `31213100` participant enforcement → aggregate zero-pending gate → `31220000` →
   `31220100`. Hardened callers deploy immediately before the serialized enforcement/scheduled
@@ -76,9 +81,10 @@ promotion.
   `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
   browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
   proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
-  governed full database runner, healthy QA apply, pending-row decision,
-  and signed-device proof remain explicit release gates. No commit, push, deploy, hosted apply,
-  provider call, production-row mutation, or device claim is authorized by this entry.
+  governed full database runner, compatible-caller deployment, remaining QA applies,
+  pending-row decision, and signed-device proof remain explicit release gates. The source is
+  committed and `31213000` is QA-applied; no push, deployment, production apply/provider call,
+  production-row mutation, or device claim follows from this entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 

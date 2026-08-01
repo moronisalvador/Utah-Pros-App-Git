@@ -961,11 +961,14 @@ conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
 
-**Conversation participant controls — RELEASE CANDIDATE; QA COMPATIBILITY ONLY (2026-07-31):**
+**Conversation participant controls — RELEASE CANDIDATE; QA AUTHORITY CORRECTION LIVE (2026-08-01):**
 `20260731040337_conversation_participant_scoping.sql` is applied only to Supabase branch
 `qa-staging` (`uizgwvkvzyldystqrcsk`) as ledger `20260731143710`; production is untouched. Its
-original appointment-derived decision is superseded by authored, unapplied
-`20260731213000_conversation_assignment_authority_containment.sql`. Appointment, job, claim, and
+original appointment-derived decision is superseded on QA by
+`20260731213000_conversation_assignment_authority_containment.sql`, applied from exact committed
+source (SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) as ledger
+`20260801144448`. Appointment, job, claim, and
 crew records are browser-writable scheduling context and are never conversation authorization.
 The correction replaces the four independent access/member/contact bodies with the trusted rule:
 privileged role → explicit per-chat choice → default technician → deny, after exact
@@ -1034,10 +1037,11 @@ compiled app then launched on an iPhone 17 Pro Simulator and visually proved the
 readable bubbles, title-expanded info panel, and native participant sheet. Its participant RPC
 showed the expected load error because that app points at production, where 40337 is deliberately
 unapplied; no production data was changed.
-Production must apply `40337 → 40338 → 31213000` in one exposure-free authorized window; QA,
-where immutable `40337/40338` are already applied, needs only `31213000`. Verify that no trusted
-authority body contains appointment/job/claim access, then deploy compatible web and supported
-native callers. Only after older direct-unread writers are unsupported may `31213100` apply in a
+QA post-apply verification for `31213000` matched all four reviewed body hashes, owners, pinned
+search paths, volatility settings, and ACLs; every body excludes appointment/job/claim/crew
+authority and the aggregate pending scheduled count remains zero. Production must still apply
+`40337 → 40338 → 31213000` in one exposure-free authorized window. Next deploy compatible web and
+supported native callers. Only after older direct-unread writers are unsupported may `31213100` apply in a
 separately reviewed window. Hardened scheduled callers deploy immediately before the serialized
 scheduled window. Auth/database/provider calls are bounded, and a reserved scheduled send cannot
 fall back to a cached/environment Twilio credential after managed credential lookup timeout.
@@ -1049,8 +1053,8 @@ Read-only evidence on 2026-07-31 found exactly one legacy production pending sch
 production currently stops at the zero-pending gate until a separately authorized owner decision.
 The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
 reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
-through rebase or ad-hoc ledger writes. Only `40337/40338` are ledgered for this train; target the
-exact branch ref and obtain a clean direct QA apply before promotion.
+through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
+target the exact branch ref and keep later QA applies serialized.
 Nothing has been applied to production or deployed from this candidate.
 
 ### Documents & Esign
