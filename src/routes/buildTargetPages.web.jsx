@@ -63,6 +63,7 @@ const ClaimCollectionPage = lazyRetry(() => import('@/pages/ClaimCollectionPage'
 const DevTools = lazyRetry(() => import('@/pages/DevTools'));
 const Status = lazyRetry(() => import('@/pages/Status'));
 const PublicRoadmap = lazyRetry(() => import('@/pages/PublicRoadmap'));
+const WhatsNew = lazyRetry(() => import('@/pages/WhatsNew'));
 const PrivacyPolicy = lazyRetry(() => import('@/pages/Legal')
   .then((module) => ({ default: module.PrivacyPolicy })));
 const TermsOfService = lazyRetry(() => import('@/pages/Legal')
@@ -217,4 +218,5 @@ export default Object.freeze({
   TemplatesEditor,
   TermsOfService,
   TimeTracking,
+  WhatsNew,
 });

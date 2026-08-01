@@ -149,6 +149,7 @@ const {
   TemplatesEditor,
   TermsOfService,
   TimeTracking,
+  WhatsNew,
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
@@ -542,6 +543,16 @@ function WebRoutes() {
             Feedback Media Phase F (docs/feedback-media-roadmap.md). */}
         <Route path="feedback" element={
           <ErrorBoundary section="Feedback"><Feedback /></ErrorBoundary>
+        } />
+
+        {/* What's New — the record of everything built, fixed and improved.
+            Deliberately ungated like /feedback and /help: every logged-in
+            employee should be able to see what shipped. Reads no database at
+            all; the content is bundled (hand-written highlights in
+            src/data/changelog/ plus src/data/changelog-activity.json, which is
+            generated from the project history by npm run generate:changelog). */}
+        <Route path="whats-new" element={
+          <ErrorBoundary section="What's New"><WhatsNew /></ErrorBoundary>
         } />
 
         {/* CRM (docs/crm-roadmap.md) — invisible to everyone but Moroni until each

@@ -137,6 +137,7 @@
 /terms          / 200
 /time-tracking  / 200
 /tools          / 200
+/whats-new      / 200
 
 # ─── SECTION: everything below each prefix ────────────────────────────────────
 /admin/*        / 200
@@ -186,3 +187,4 @@
 /terms/*        / 200
 /time-tracking/* / 200
 /tools/*        / 200
+/whats-new/*    / 200

@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
 import { IconLogout } from './Icons';
-import { NAV_ITEMS, isItemVisible, IconPlus, IconHelp, IconDevTools, IconHomebuilding, IconFeedback, IconRoadmap } from '@/lib/navItems';
+import { NAV_ITEMS, isItemVisible, IconPlus, IconHelp, IconDevTools, IconHomebuilding, IconFeedback, IconRoadmap, IconWhatsNew } from '@/lib/navItems';
 import { isMoroni as isMoroniOwner } from '@/lib/owner';
 
 export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true }) {
@@ -99,6 +99,21 @@ export default function Sidebar({ isOpen, onNavClick, onAction, showBell = true 
           >
             <IconRoadmap className="nav-icon" />
             Roadmap
+          </NavLink>
+        )}
+
+        {/* What's New — the record of what has shipped, the backward-looking
+            counterpart to Roadmap above. Same hardcoded treatment and the same
+            crm_partner exclusion, for the same reasons. */}
+        {employee?.role !== 'crm_partner' && (
+          <NavLink
+            to="/whats-new"
+            viewTransition
+            className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+            onClick={onNavClick}
+          >
+            <IconWhatsNew className="nav-icon" />
+            What&rsquo;s New
           </NavLink>
         )}
 
