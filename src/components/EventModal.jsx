@@ -1,9 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { err, ok } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
-const okToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'success' } }));
 
 const TIME_OPTIONS = (() => {
   const opts = [];
@@ -97,9 +95,6 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
           await db.update('appointments', `id=eq.${eventId}`, { is_private: isPrivate });
         }
 
-        // Reconcile crew: remove all existing, insert current selection.
-        // Simple and correct — the crew set is small.
-        await db.delete('appointment_crew', `appointment_id=eq.${eventId}`);
       } else {
         // Create new event (kind='event', no job_id)
         const result = await db.insert('appointments', {
@@ -117,19 +112,29 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
         if (!eventId) throw new Error('Failed to create event');
       }
 
-      for (const c of selectedCrew) {
-        await db.insert('appointment_crew', {
-          appointment_id: eventId,
-          employee_id: c.employee_id,
-          role: c.role,
+      if (isEdit) {
+        await db.rpc('sync_appointment_crew', {
+          p_appointment_id: eventId,
+          p_crew: selectedCrew.map((crew) => ({
+            employee_id: crew.employee_id,
+            role: crew.role,
+          })),
         });
+      } else {
+        for (const crew of selectedCrew) {
+          await db.insert('appointment_crew', {
+            appointment_id: eventId,
+            employee_id: crew.employee_id,
+            role: crew.role,
+          });
+        }
       }
 
-      okToast(isEdit ? 'Event updated' : 'Event created');
+      ok(isEdit ? 'Event updated' : 'Event created');
       onSaved(date);
     } catch (e) {
       console.error('Save event:', e);
-      errToast('Failed to save: ' + (e.message || 'unknown error'));
+      err('Failed to save: ' + (e.message || 'unknown error'));
     } finally {
       setSaving(false);
     }
@@ -141,11 +146,11 @@ function EventModal({ event, dateKey, prefillTimeStart, prefillTimeEnd, db, empl
     setSaving(true);
     try {
       await db.rpc('delete_appointment', { p_appointment_id: event.id, p_actor_id: employee?.id || null });
-      okToast('Event deleted');
+      ok('Event deleted');
       onDeleted?.();
     } catch (e) {
       console.error('Delete event:', e);
-      errToast('Failed to delete: ' + (e.message || 'unknown error'));
+      err('Failed to delete: ' + (e.message || 'unknown error'));
       setSaving(false);
     }
   };

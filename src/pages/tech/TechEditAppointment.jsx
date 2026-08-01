@@ -29,8 +29,9 @@
  *                        (get_unassigned_tasks)
  *              writes → appointments (update_appointment for core fields;
  *                        db.update for the is_private column; delete_appointment
- *                        removes it); appointment_crew (db.delete then db.insert
- *                        to re-sync the crew; also cleared by delete_appointment);
+ *                        removes it); appointment_crew
+ *                        (sync_appointment_crew applies a locked set diff;
+ *                        also cleared by delete_appointment);
  *                        job_tasks (add_adhoc_job_task creates a task;
  *                        assign_tasks_to_appointment links them;
  *                        toggle_appointment_task flips completion;
@@ -39,8 +40,8 @@
  * NOTES / GOTCHAS:
  *   - is_private is NOT part of update_appointment; it is written separately via
  *     a direct db.update, and only when an admin/PM actually changed it.
- *   - Crew editing is destructive-then-rebuild: every appointment_crew row for
- *     this appointment is deleted, then the current selection is re-inserted.
+ *   - Crew editing uses sync_appointment_crew so unchanged assignments retain
+ *     their row identity and cannot emit duplicate assignment notifications.
  *   - Delete uses the two-tap confirm pattern (no native dialog): first tap arms
  *     it for 3 seconds, second tap deletes; blur cancels.
  *   - An optional ?section=tasks query param auto-opens and scrolls to the
@@ -256,15 +257,15 @@ export default function TechEditAppointment() {
         await db.update('appointments', `id=eq.${id}`, { is_private: isPrivate });
       }
 
-      // 2. Sync crew — delete all + re-insert
-      await db.delete('appointment_crew', `appointment_id=eq.${id}`);
-      for (const c of selectedCrew) {
-        await db.insert('appointment_crew', {
-          appointment_id: id,
-          employee_id: c.employee_id,
-          role: c.role,
-        });
-      }
+      // 2. Sync crew under the database's appointment-row lock. The RPC applies
+      // a set diff so unchanged assignments keep their durable row identity.
+      await db.rpc('sync_appointment_crew', {
+        p_appointment_id: id,
+        p_crew: selectedCrew.map((crew) => ({
+          employee_id: crew.employee_id,
+          role: crew.role,
+        })),
+      });
 
       // 3. Assign new tasks (if any selected from pool)
       if (selectedNewTasks.length > 0) {

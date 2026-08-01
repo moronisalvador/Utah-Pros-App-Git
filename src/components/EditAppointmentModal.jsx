@@ -2,9 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { APPT_TYPES } from '@/lib/scheduleUtils';
+import { err } from '@/lib/toast';
 import DatePicker from '@/components/DatePicker';
-
-const errToast = (msg) => window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message: msg, type: 'error' } }));
 
 const TIME_OPTIONS = (() => {
   const opts = [];
@@ -220,20 +219,18 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
         await db.update('appointments', `id=eq.${appointment.id}`, { is_private: isPrivate });
       }
 
-      // Save crew changes — delete all and re-insert
-      await db.delete('appointment_crew', `appointment_id=eq.${appointment.id}`);
-      for (const c of selectedCrew) {
-        await db.insert('appointment_crew', {
-          appointment_id: appointment.id,
-          employee_id: c.employee_id,
-          role: c.role,
-        });
-      }
+      await db.rpc('sync_appointment_crew', {
+        p_appointment_id: appointment.id,
+        p_crew: selectedCrew.map((crew) => ({
+          employee_id: crew.employee_id,
+          role: crew.role,
+        })),
+      });
 
       onSaved();
     } catch (e) {
       console.error('Save appointment:', e);
-      errToast('Failed to save: ' + e.message);
+      err('Failed to save: ' + e.message);
     } finally { setSaving(false); }
   };
 
@@ -273,7 +270,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
         }
       }
       onSaved();
-    } catch (e) { console.error('Clone visit:', e); errToast('Failed: ' + e.message); }
+    } catch (e) { console.error('Clone visit:', e); err('Failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
@@ -291,7 +288,7 @@ function EditAppointmentModal({ appointment, db, employees = [], onClose, onSave
     try {
       await db.rpc('delete_appointment', { p_appointment_id: appointment.id, p_actor_id: employee?.id || null });
       onDeleted?.();
-    } catch (e) { console.error('Delete:', e); errToast('Failed: ' + e.message); }
+    } catch (e) { console.error('Delete:', e); err('Failed: ' + e.message); }
     finally { setSaving(false); }
   };
 
