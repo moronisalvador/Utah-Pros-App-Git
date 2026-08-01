@@ -19,11 +19,7 @@ vi.mock('@/contexts/AuthContext', () => ({
   useAuth: vi.fn(),
 }));
 
-vi.mock('@/lib/nativeUpdater', () => ({
-  markBundleReady: vi.fn(),
-}));
-
-import { isNativeUpdateHealthVerified } from './NativeUpdateHealthGate.jsx';
+import { isNativeUpdateHealthVerified } from '@/lib/nativeUpdater';
 
 describe('native update application health checkpoint', () => {
   it('accepts only an explicitly completed and healthy auth startup', () => {

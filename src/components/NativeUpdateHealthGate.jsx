@@ -26,15 +26,10 @@
  */
 import { useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { markBundleReady } from '@/lib/nativeUpdater';
-
-export function isNativeUpdateHealthVerified({
-  loading,
-  error,
-  sessionExpired,
-}) {
-  return loading === false && error == null && sessionExpired === false;
-}
+import {
+  isNativeUpdateHealthVerified,
+  markBundleReady,
+} from '@/lib/nativeUpdater';
 
 export default function NativeUpdateHealthGate() {
   const { loading, error, sessionExpired } = useAuth();
