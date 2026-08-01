@@ -153,6 +153,11 @@ export const OVERFLOW_ITEMS = [
   // always: true — a read-only "what are we building" board every logged-in
   // employee may see (no permission key). Public no-login mirror: /roadmap/public.
   { key: 'roadmap',            label: 'Roadmap',            path: '/roadmap',            icon: IconRoadmap,    always: true, hideForRoles: ['crm_partner'] },
+  // always: true — same reasoning as Roadmap and Feedback above. The record of
+  // what has shipped, readable by every logged-in employee; there is no
+  // permission key, so without `always` canAccess('whats_new') returns false
+  // and the row disappears for everyone.
+  { key: 'whats_new',          label: "What's New",         path: '/whats-new',          icon: IconWhatsNew,   always: true, hideForRoles: ['crm_partner'] },
 ];
 
 // SYSTEM_ITEMS removed by Settings Overhaul Phase F: the settings hub rail no
