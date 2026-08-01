@@ -35,6 +35,7 @@ const CATALOG_MIGRATIONS = [
   '../../supabase/migrations/20260708_meld_received_notification_type.sql',
   '../../supabase/migrations/20260714_feedback_resolved_notification_type.sql',
   '../../supabase/migrations/20260725190000_ops_health_alerting.sql',
+  '../../supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql',
 ];
 
 function catalogTypeKeys() {
@@ -94,6 +95,7 @@ describe('native notification presentation catalog', () => {
     ['appointment.assigned', 'New appointment'],
     ['appointment.updated', 'Appointment updated'],
     ['appointment.canceled', 'Appointment canceled'],
+    ['appointment.reminder', 'Appointment in one hour'],
   ])('routes %s to the exact native appointment', (typeKey, title) => {
     expect(buildNativeNotificationPresentation(typeKey, {
       appointment_id: 'appt-1',

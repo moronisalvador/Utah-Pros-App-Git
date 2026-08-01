@@ -86,6 +86,7 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.assigned',
   'appointment.updated',
   'appointment.canceled',
+  'appointment.reminder',
 ]);
 
 function inboundConversationId(body = {}) {
@@ -145,11 +146,35 @@ async function resolveAppointmentAudience(db, typeKey, body) {
     return [];
   }
   let crewIds = uniq((crew || []).map((row) => row.employee_id));
-  if (typeKey === 'appointment.assigned') {
+  if (typeKey === 'appointment.assigned' || typeKey === 'appointment.reminder') {
     if (!body.employee_id) return [];
     crewIds = crewIds.filter((id) => id === body.employee_id);
   }
   return filterActiveInternalEmployeeIds(db, crewIds);
+}
+
+/** Fixed technician quiet time is Denver 5:30 PM–8:00 AM.  It is evaluated
+ * immediately before fan-out so a setting change always affects the next send. */
+export function isTechnicianQuietTime(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Denver', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const value = (name) => Number(parts.find((part) => part.type === name)?.value || 0);
+  const minutes = value('hour') * 60 + value('minute');
+  return minutes >= (17 * 60 + 30) || minutes < (8 * 60);
+}
+
+async function recipientHasQuietTimeEnabled(db, recipientId) {
+  try {
+    const rows = await db.select(
+      'notification_quiet_time_preferences',
+      `employee_id=eq.${recipientId}&enabled=eq.true&select=employee_id&limit=1`,
+    );
+    return rows?.length > 0;
+  } catch {
+    // A preference lookup failure must not silently disable operational alerts.
+    return false;
+  }
 }
 
 async function resolveInboundMessageAudience(db, body) {
@@ -259,6 +284,10 @@ export async function dispatchToRecipient({
   nativeRetryOnly = false,
 }) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
+
+  if (isTechnicianQuietTime() && await recipientHasQuietTimeEnabled(db, recipientId)) {
+    return { ...result, skipped: true, reason: 'technician_quiet_time' };
+  }
 
   let prefs = [];
   try { prefs = await db.rpc('get_effective_notification_prefs', { p_employee_id: recipientId }); }

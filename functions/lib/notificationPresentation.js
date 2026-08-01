@@ -86,6 +86,14 @@ const PRESENTATIONS = Object.freeze({
     body: () => 'Tap to review the appointment.',
     route: appointmentRoute,
   },
+  'appointment.reminder': {
+    title: (body) => body.presentation_context?.appointment_title
+      ? `Appointment in one hour · ${body.presentation_context.appointment_title}`
+      : 'Appointment in one hour',
+    body: (body) => body.presentation_context?.appointment_when
+      || 'Tap to review the appointment and let the client know if you are running late.',
+    route: appointmentRoute,
+  },
   'estimate.accepted': {
     title: () => 'Estimate accepted',
     body: () => 'Open Utah Pros to review the estimate.',
@@ -543,6 +551,14 @@ const CONFIGURABLE_PRESENTATIONS = Object.freeze({
       'job_invoiced_amount',
       'job_collected_amount',
     ],
+    bellRoutes: ['appointment.detail', 'office.home'],
+    pwaRoutes: ['appointment.detail', 'field.home'],
+    nativeRoute: 'appointment.detail',
+  }),
+  'appointment.reminder': browserAndNative({
+    title: 'Appointment in one hour · {{appointment_title}}',
+    body: '{{customer_name}} · {{appointment_when}}',
+    variables: ['customer_name', 'appointment_title', 'appointment_when'],
     bellRoutes: ['appointment.detail', 'office.home'],
     pwaRoutes: ['appointment.detail', 'field.home'],
     nativeRoute: 'appointment.detail',
