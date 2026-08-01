@@ -21,7 +21,7 @@
  *              @/lib/toast, ./techConstants,
  *              @/components/tech/EsignRequestSheet, @/lib/publicSigningUrl,
  *              @/lib/backNav, @/components/tech/v2/nav (jobHref),
- *              @/hooks/useResumeRefetch
+ *              @/hooks/useResumeRefetch, @/components/ui (StatusPill)
  *   Data:      All access goes through the db client from useAuth.
  *              reads  → jobs, contact_jobs, contacts, sign_requests (direct db.select)
  *              writes → sign_requests (db.update — cancel; and indirectly via the
@@ -52,6 +52,7 @@ import { publicSigningUrl } from '@/lib/publicSigningUrl';
 import { goBackOr } from '@/lib/backNav';
 import { jobHref } from '@/components/tech/v2/nav';
 import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import { StatusPill } from '@/components/ui';
 
 // ─── SECTION: Helpers ──────────────
 const DOC_TYPE_LABELS = {
@@ -70,10 +71,12 @@ function fmtDate(v) {
   return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+// Tone + label are explicit: toneForStatus() would classify 'signed' as neutral
+// and 'cancelled' as danger, and the label is curated ("Awaiting signature").
 const STATUS_PILL = {
-  signed:    { label: 'Signed',            bg: '#ecfdf5', color: '#059669', border: '#a7f3d0', dot: '#059669' },
-  pending:   { label: 'Awaiting signature', bg: '#fffbeb', color: '#d97706', border: '#fde68a', dot: '#d97706' },
-  cancelled: { label: 'Cancelled',          bg: '#f9fafb', color: '#6b7280', border: '#e5e7eb', dot: '#9ca3af' },
+  signed:    { label: 'Signed',             tone: 'success' },
+  pending:   { label: 'Awaiting signature', tone: 'warning' },
+  cancelled: { label: 'Cancelled',          tone: 'neutral' },
 };
 
 export default function TechJobDocuments() {
@@ -288,16 +291,11 @@ export default function TechJobDocuments() {
         boxShadow: 'var(--tech-shadow-card, 0 1px 3px rgba(0,0,0,0.06))',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ width: 9, height: 9, borderRadius: '50%', background: pill.dot, flexShrink: 0 }} />
+          <span aria-hidden="true" style={{ width: 9, height: 9, borderRadius: '50%', background: `var(--${pill.tone})`, flexShrink: 0 }} />
           <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', flex: 1, minWidth: 0 }}>
             {docTypeLabel(sr.doc_type)}
           </span>
-          <span style={{
-            fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--radius-full)',
-            background: pill.bg, color: pill.color, border: `1px solid ${pill.border}`, whiteSpace: 'nowrap',
-          }}>
-            {pill.label}
-          </span>
+          <StatusPill tone={pill.tone} label={pill.label} />
         </div>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           {sr.signer_name}{sr.signer_email && !sr.signer_email.endsWith('@noemail.local') ? ` · ${sr.signer_email}` : ''}
@@ -318,9 +316,9 @@ export default function TechJobDocuments() {
               onBlur={() => setConfirmCancel(null)}
               style={{
                 ...actionBtn,
-                background: confirmCancel === sr.id ? '#fef2f2' : 'var(--bg-tertiary)',
-                color: confirmCancel === sr.id ? '#dc2626' : 'var(--text-tertiary)',
-                border: `1px solid ${confirmCancel === sr.id ? '#fecaca' : 'var(--border-light)'}`,
+                background: confirmCancel === sr.id ? 'var(--danger-bg)' : 'var(--bg-tertiary)',
+                color: confirmCancel === sr.id ? 'var(--danger)' : 'var(--text-tertiary)',
+                border: `1px solid ${confirmCancel === sr.id ? 'var(--danger-border)' : 'var(--border-light)'}`,
               }}
             >
               {confirmCancel === sr.id ? 'Confirm cancel' : 'Cancel'}

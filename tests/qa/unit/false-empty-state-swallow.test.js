@@ -187,6 +187,16 @@ describe('LES-01 — TechJobDocuments (one swallow behind five call sites)', () 
   it('commits `job` only after the requests read resolves', () => {
     expect(body.indexOf('await loadRequests();')).toBeLessThan(body.indexOf('setJob(j);'));
   });
+
+  it('uses the shared status primitive and theme-safe destructive tokens', () => {
+    expect(body).toContain("import { StatusPill } from '@/components/ui'");
+    expect(body).toContain('<StatusPill tone={pill.tone} label={pill.label} />');
+    expect(body).toContain("background: confirmCancel === sr.id ? 'var(--danger-bg)'");
+    expect(body).toContain("color: confirmCancel === sr.id ? 'var(--danger)'");
+    for (const staleDangerHex of ['#fef2f2', '#fecaca', '#dc2626']) {
+      expect(body).not.toContain(staleDangerHex);
+    }
+  });
 });
 
 describe('LES-01 — the remaining tech surfaces', () => {
