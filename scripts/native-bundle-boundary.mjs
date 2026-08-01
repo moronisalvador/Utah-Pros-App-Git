@@ -31,8 +31,8 @@ export const NATIVE_PAGE_ALLOWLIST = Object.freeze([
   // own CSS — no shell, no office component, no database client.
   // The stylesheet needs its own entry because this rule matches every module
   // under src/pages/, not only components; it is the first co-located CSS here.
-  'src/pages/WhatsNew.jsx',
   'src/pages/WhatsNew.css',
+  'src/pages/WhatsNew.jsx',
   'src/pages/tech/TechAppointment.jsx',
   'src/pages/tech/TechClaimAlbum.jsx',
   'src/pages/tech/TechClaimDetail.jsx',

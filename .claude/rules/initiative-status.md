@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-31 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-01 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -250,6 +250,15 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   everything automated/bulk/marketing is global-opt-in-only. Authority:
   `.claude/rules/sms-consent-model.md` §13 (a CI contract test reads it; §§12–13 were extracted
   verbatim 2026-07-31 when the completed sms-experience manifest was archived).
+- **UPR Dev internal-TestFlight automation:** the repository source adds an isolated `.upr.dev`
+  distribution configuration and a dev-only workflow. Every `dev` push runs credential-free tests
+  only; each signed archive and each optional internal-TestFlight upload requires a fresh manual
+  dispatch. The artifact embeds and verifies its dev origin, source SHA, Push/retirement mode, and
+  production APNs contract. A Push-disabled replacement can retire only the OS-verified `.upr.dev`
+  app's remembered owner-scoped token; zero dispatch remains a device/provider evidence gate. The
+  Apple record/profile/group, separate dev-exclusive GitHub secrets, dry archive, upload, install,
+  and device matrix remain owner gates. Official UPR remains manual/main-only; no Production or
+  Cloudflare variable change is part of this slice.
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
   2026-07-29; schema-usable and CI db lane LIVE, with initial catalog parity but a historical
   migration ledger that is not replay-compatible** (details:
