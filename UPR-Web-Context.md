@@ -3538,22 +3538,31 @@ gates.
     `src/components/NativeUpdateHealthGate.jsx`, mounted inside the native route
     Suspense boundary, acknowledges only an explicitly enabled native bundle
     after auth startup is complete/error-free/unexpired and the selected lazy
-    route has committed. `scripts/configure-ios-capgo-dev.mjs` applies
-    `.upr.dev`/`upr-dev-canary`, v2 public-key verification, 30-second health,
-    mutation locks, and background auto-update only to the gitignored generated
-    UPR Dev iOS config; direct update remains false.
+    route has committed without any React error boundary latching a launch
+    render failure. `scripts/configure-ios-capgo-dev.mjs` applies
+    `.upr.dev`/`upr-dev-canary`, structural RSA-4096 v2 public-key verification,
+    30-second health, mutation locks, and background auto-update only to the
+    gitignored generated UPR Dev iOS config; direct update remains false. The
+    signed-artifact verifier validates and records only the embedded public-key
+    SHA-256 fingerprint.
 - **OTA deploy pipelines:** legacy `.github/workflows/capgo-deploy.yml` remains
   hard-disabled and cannot publish official UPR production/beta bundles.
   `.github/workflows/capgo-dev.yml` is the isolated replacement for
   `com.utahprosrestoration.upr.dev` only: manual `dev` ref, branch-restricted
-  `capgo-dev` GitHub environment, exact operation confirmation, v2-encrypted
-  publish, installed-native minimum, compatibility refusal, named rollback,
-  future-delivery disable, pruned native SW/manifest, and sanitized evidence
-  artifact. GitHub environment `capgo-dev` was created in the console and
-  restricted to branch `dev`; its secrets/variable are not yet populated.
-  Capgo app/channel/key setup remains blocked on the owner completing private
-  Capgo login/2FA and confirming that setup is no-charge. Full runbook:
-  `docs/mobile/capgo-dev-runbook.md`.
+  `capgo-dev` GitHub environment, exact operation confirmation, credential-free
+  validation, channel compatibility proof, v2-encrypted unassigned bundle
+  staging, future-delivery disable, pruned native SW/manifest, and sanitized
+  evidence artifact. The workflow cannot assign a staged bundle or deliver it
+  to a device; rollback is absent until a provenance-bound allowlist exists.
+  Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
+  `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
+  patch-only, no-downgrade, no-progressive-rollout selector contract; GitHub
+  environment `capgo-dev` restricted to `dev`; and encrypted secrets
+  `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
+  `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
+  `app_developer` API key expires 2027-08-01. No bundle upload/assignment,
+  device delivery, plan purchase, or production UPR change occurred. Full
+  runbook: `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
@@ -3567,8 +3576,10 @@ gates.
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
   embeds and verifies the release variant/origin/Push/OTA mode/source SHA plus
-  the generated Capgo dev app/channel/key controls before upload, serializes
-  release runs, and requests only the internal **UPR Dev** group. A `dev` push runs
+  the generated Capgo dev app/channel/key controls before upload, and bridges
+  the public updater config from the separate `capgo-dev` environment to the
+  signing job through a one-day artifact without exposing the private/API keys.
+  It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
   credential-free tests only; every signed archive and optional upload requires a fresh manual
   dispatch. A manual `native_push_enabled:false` build also embeds
   `retireDevToken:true`; on authenticated boot, the exact build flag plus the OS-reported
