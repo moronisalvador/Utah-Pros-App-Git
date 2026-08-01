@@ -18,7 +18,7 @@ import test from 'node:test';
 import {
   classifyBranch,
   classifyRepositoryTopology,
-  MOBILE_FOUNDATION_REF,
+  MOBILE_FOUNDATION_COMMIT,
   REQUIRED_PATHS,
 } from './mobile-readiness-preflight.mjs';
 
@@ -122,5 +122,8 @@ test('rejects stale, rewritten, unresolved, or unverifiable topology', () => {
     ancestryCheckFailed: true,
   });
   assert.equal(missingFoundation.level, 'error');
-  assert.match(missingFoundation.message, new RegExp(MOBILE_FOUNDATION_REF));
+  assert.match(
+    missingFoundation.message,
+    new RegExp(MOBILE_FOUNDATION_COMMIT.slice(0, 12)),
+  );
 });
