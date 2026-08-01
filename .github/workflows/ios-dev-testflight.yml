@@ -1,0 +1,388 @@
+# ════════════════════════════════════════════════
+# FILE: .github/workflows/ios-dev-testflight.yml
+# ════════════════════════════════════════════════
+#
+# WHAT THIS DOES (plain language):
+#   Runs credential-free tests for each dev push. A separate manual dispatch
+#   can build and verify the separately identified UPR Dev app and, only when
+#   explicitly selected for that run, upload it to internal TestFlight.
+#
+# DEPENDS ON:
+#   Internal: ios/fastlane/Fastfile, ios/App/App.xcodeproj,
+#             scripts/qa/verify-ios-release-artifact.mjs
+#   Data:     reads  → GitHub environment/repository secrets
+#             writes → short-lived CI artifacts; App Store Connect only in the
+#                      separately gated publish job
+#
+# NOTES / GOTCHAS:
+#   - This workflow never builds the official com.utahprosrestoration.upr app.
+#   - TestFlight uses production APNs even though the web API origin is Preview.
+#   - It creates no external group and never submits anything to App Review.
+# ════════════════════════════════════════════════
+
+name: iOS dev TestFlight
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+    inputs:
+      publish_to_testflight:
+        description: Upload the verified UPR Dev IPA to its internal TestFlight group
+        required: true
+        default: false
+        type: boolean
+      native_push_enabled:
+        description: Enable native Push in this UPR Dev build; set false for a dev-only emergency replacement
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-dev-testflight-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APP_IDENTIFIER: com.utahprosrestoration.upr.dev
+  BUILD_NUMBER: "${{ github.run_number }}.${{ github.run_attempt }}"
+  DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+  EXPECTED_TEAM_ID: H6ZUT739T9
+  FASTLANE_HIDE_CHANGELOG: "1"
+  FASTLANE_SKIP_UPDATE_CHECK: "1"
+  TESTFLIGHT_INTERNAL_GROUP: UPR Dev
+  UPR_RELEASE_VARIANT: dev
+  VITE_NATIVE_API_ORIGIN: https://dev.utahpros.app
+  VITE_RELEASE_SHA: "${{ github.sha }}"
+
+jobs:
+  preflight:
+    name: Credential-free dev preflight
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout the pushed dev commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce the dev source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/dev"
+          test "$UPR_RELEASE_VARIANT" = "dev"
+          test "$APP_IDENTIFIER" = "com.utahprosrestoration.upr.dev"
+          test "$VITE_NATIVE_API_ORIGIN" = "https://dev.utahpros.app"
+          test "$VITE_RELEASE_SHA" = "$GITHUB_SHA"
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run repository tests without signing or provider credentials
+        run: npm test
+
+  archive:
+    name: Build and verify UPR Dev IPA
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: ios-dev-signing
+    env:
+      VITE_APNS_ENV: production
+      VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
+      VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
+    steps:
+      - name: Checkout the requested dev commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Enforce dev identity and locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/dev" ]]; then
+            echo "UPR Dev archives must be created from refs/heads/dev." >&2
+            exit 1
+          fi
+          if [[ "$APP_IDENTIFIER" != "com.utahprosrestoration.upr.dev" ]]; then
+            echo "UPR Dev archive identity changed unexpectedly." >&2
+            exit 1
+          fi
+          if [[ "$VITE_NATIVE_API_ORIGIN" != "https://dev.utahpros.app" ]]; then
+            echo "UPR Dev must use the Preview native API origin." >&2
+            exit 1
+          fi
+          if [[ "$VITE_RELEASE_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Native release identity must match the archived commit." >&2
+            exit 1
+          fi
+          if [[ ! -f ios/Gemfile.lock ]]; then
+            echo "ios/Gemfile.lock is required before signing material is handled." >&2
+            exit 1
+          fi
+          if [[ ! "$BUILD_NUMBER" =~ ^[1-9][0-9]*(\.[0-9]+){0,2}$ ]]; then
+            echo "Generated BUILD_NUMBER is not a valid Apple bundle version." >&2
+            exit 1
+          fi
+
+      - name: Validate UPR Dev archive inputs
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.IOS_DEV_APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.IOS_DEV_APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEV_APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          required_names=(
+            APPLE_TEAM_ID
+            APPLE_CERTIFICATE_BASE64
+            APPLE_CERTIFICATE_PASSWORD
+            APPLE_PROVISIONING_PROFILE_BASE64
+            APPLE_PROVISIONING_PROFILE_NAME
+            VITE_SUPABASE_URL
+            VITE_SUPABASE_ANON_KEY
+          )
+          for name in "${required_names[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required UPR Dev archive secret: $name" >&2
+              exit 1
+            fi
+          done
+          if [[ "$APPLE_TEAM_ID" != "$EXPECTED_TEAM_ID" ]]; then
+            echo "APPLE_TEAM_ID does not match the reviewed UPR team." >&2
+            exit 1
+          fi
+          if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" && "$VITE_NATIVE_PUSH_ENABLED" != "false" ]]; then
+            echo "VITE_NATIVE_PUSH_ENABLED must be exactly true or false." >&2
+            exit 1
+          fi
+          if [[ "$VITE_NATIVE_PUSH_ENABLED" = "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN" ]]; then
+            echo "UPR Dev must retire its token exactly when native Push is disabled." >&2
+            exit 1
+          fi
+          if [[ "$VITE_APNS_ENV" != "production" ]]; then
+            echo "UPR Dev TestFlight must use production APNs." >&2
+            exit 1
+          fi
+
+      - name: Select and verify Xcode 26.6
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcode_version="$(xcodebuild -version)"
+          grep -Fx "Xcode 26.6" <<<"$xcode_version"
+          grep -Fx "Build version 17F113" <<<"$xcode_version"
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+          cache: npm
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Run repository tests
+        run: npm test
+
+      - name: Build the UPR Dev native web bundle
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node scripts/build-native.mjs
+
+      - name: Embed the reviewed native release contract
+        run: node scripts/write-native-release-manifest.mjs
+
+      - name: Synchronize the iOS platform
+        run: node_modules/.bin/cap sync ios
+
+      - name: Reject uncommitted Capacitor project drift
+        run: git diff --exit-code -- ios/App
+
+      - name: Setup Ruby 3.3.12 and locked gems
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3.12
+          bundler: 2.5.22
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Decode UPR Dev signing assets into runner temporary storage
+        shell: bash
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.IOS_DEV_APPLE_CERTIFICATE_BASE64 }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          certificate_path="$RUNNER_TEMP/upr-dev-signing-certificate.p12"
+          profile_path="$RUNNER_TEMP/upr-dev-signing-profile.mobileprovision"
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | /usr/bin/base64 -D >"$certificate_path"
+          printf '%s' "$APPLE_PROVISIONING_PROFILE_BASE64" | /usr/bin/base64 -D >"$profile_path"
+          chmod 600 "$certificate_path" "$profile_path"
+
+      - name: Create signed UPR Dev archive without provider upload
+        shell: bash
+        env:
+          APPLE_TEAM_ID: ${{ secrets.IOS_DEV_APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEV_APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_NAME: ${{ secrets.IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME }}
+        run: |
+          set -euo pipefail
+          keychain_password="$(/usr/bin/openssl rand -hex 32)"
+          echo "::add-mask::$keychain_password"
+          export KEYCHAIN_PASSWORD="$keychain_password"
+          export APPLE_CERTIFICATE_PATH="$RUNNER_TEMP/upr-dev-signing-certificate.p12"
+          export APPLE_PROVISIONING_PROFILE_PATH="$RUNNER_TEMP/upr-dev-signing-profile.mobileprovision"
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            --cwd ios \
+            -- bundle exec fastlane ios archive
+
+      - name: Verify UPR Dev archive and exported IPA
+        run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
+          node scripts/qa/verify-ios-release-artifact.mjs \
+            --archive ios/build/UPR-Dev.xcarchive \
+            --ipa ios/build/UPR-Dev.ipa \
+            --report ios/build/UPR-Dev-release-verification.json \
+            --expected-bundle-id "$APP_IDENTIFIER" \
+            --expected-team-id "$EXPECTED_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
+            --expected-build-number "$BUILD_NUMBER" \
+            --expected-release-variant "$UPR_RELEASE_VARIANT" \
+            --expected-native-api-origin "$VITE_NATIVE_API_ORIGIN" \
+            --expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED" \
+            --expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN" \
+            --expected-apns-environment "$VITE_APNS_ENV" \
+            --expected-release-sha "$VITE_RELEASE_SHA"
+
+      - name: Retain verified UPR Dev IPA and sanitized report
+        uses: actions/upload-artifact@v4
+        with:
+          name: upr-dev-ios-release-${{ github.sha }}
+          path: |
+            ios/build/UPR-Dev.ipa
+            ios/build/UPR-Dev-release-verification.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove decoded UPR Dev signing assets
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f -- "$RUNNER_TEMP/upr-dev-signing-certificate.p12"
+          rm -f -- "$RUNNER_TEMP/upr-dev-signing-profile.mobileprovision"
+
+  publish:
+    name: Upload UPR Dev to internal TestFlight
+    needs: archive
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_testflight && needs.archive.result == 'success' }}
+    runs-on: macos-26
+    timeout-minutes: 20
+    environment: ios-dev-testflight
+    env:
+      VITE_APNS_ENV: production
+      VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
+      VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
+    steps:
+      - name: Checkout the archived commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download the verified UPR Dev artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: upr-dev-ios-release-${{ github.sha }}
+          path: release-artifact
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.1
+
+      - name: Validate internal-only provider inputs
+        shell: bash
+        env:
+          ASC_KEY_ID: ${{ secrets.IOS_DEV_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.IOS_DEV_ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.IOS_DEV_ASC_KEY_CONTENT_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -f ios/Gemfile.lock
+          required_names=(
+            ASC_KEY_ID
+            ASC_ISSUER_ID
+            ASC_KEY_CONTENT_BASE64
+          )
+          for name in "${required_names[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required UPR Dev TestFlight secret: $name" >&2
+              exit 1
+            fi
+          done
+          test "$APP_IDENTIFIER" = "com.utahprosrestoration.upr.dev"
+          test "$TESTFLIGHT_INTERNAL_GROUP" = "UPR Dev"
+
+      - name: Reverify downloaded UPR Dev IPA
+        run: |
+          set -euo pipefail
+          marketing_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$marketing_version"
+          node scripts/qa/verify-ios-release-artifact.mjs \
+            --ipa release-artifact/UPR-Dev.ipa \
+            --report "$RUNNER_TEMP/UPR-Dev-publish-verification.json" \
+            --expected-bundle-id "$APP_IDENTIFIER" \
+            --expected-team-id "$EXPECTED_TEAM_ID" \
+            --expected-marketing-version "$marketing_version" \
+            --expected-build-number "$BUILD_NUMBER" \
+            --expected-release-variant "$UPR_RELEASE_VARIANT" \
+            --expected-native-api-origin "$VITE_NATIVE_API_ORIGIN" \
+            --expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED" \
+            --expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN" \
+            --expected-apns-environment "$VITE_APNS_ENV" \
+            --expected-release-sha "$VITE_RELEASE_SHA"
+
+      - name: Setup Ruby 3.3.12 and locked gems
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3.12
+          bundler: 2.5.22
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Upload and assign UPR Dev to its internal group
+        env:
+          ASC_KEY_ID: ${{ secrets.IOS_DEV_ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.IOS_DEV_ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT_BASE64: ${{ secrets.IOS_DEV_ASC_KEY_CONTENT_BASE64 }}
+          IPA_PATH: ${{ github.workspace }}/release-artifact/UPR-Dev.ipa
+        run: |
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            --cwd ios \
+            -- bundle exec fastlane ios upload

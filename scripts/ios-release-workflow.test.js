@@ -29,8 +29,12 @@ import {
   EXPECTED_COLLECTED_DATA_TYPES,
   assertSafeArchiveEntries,
   parseVerifierArguments,
+  validateNativeReleaseManifest,
   validatePrivacyManifest,
 } from './qa/verify-ios-release-artifact.mjs';
+import {
+  createNativeReleaseManifest,
+} from './write-native-release-manifest.mjs';
 
 function repositoryFile(relativePath) {
   return fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -49,9 +53,15 @@ function section(source, start, end) {
 }
 
 const workflow = readRepositoryFile('.github/workflows/ios-release.yml');
+const devWorkflow = readRepositoryFile(
+  '.github/workflows/ios-dev-testflight.yml',
+);
 const capgoWorkflow = readRepositoryFile('.github/workflows/capgo-deploy.yml');
 const archiveJob = section(workflow, '  archive:', '  publish:');
 const publishJob = workflow.slice(workflow.indexOf('  publish:'));
+const devPreflightJob = section(devWorkflow, '  preflight:', '  archive:');
+const devArchiveJob = section(devWorkflow, '  archive:', '  publish:');
+const devPublishJob = devWorkflow.slice(devWorkflow.indexOf('  publish:'));
 const fastfile = readRepositoryFile('ios/fastlane/Fastfile');
 const archiveLane = section(fastfile, '  lane :archive do', '  desc "Upload');
 const uploadLane = fastfile.slice(fastfile.indexOf('  lane :upload do'));
@@ -70,7 +80,15 @@ const debugBuildConfiguration = section(
 const releaseBuildConfiguration = section(
   project,
   '504EC3181FED79650016851F /* Release */',
+  '5D5E7A022E5B4B7C9F1032D4 /* Dev */',
+);
+const devReleaseBuildConfiguration = section(
+  project,
+  '5D5E7A042E5B4B7C9F1032D4 /* DevRelease */',
   '/* End XCBuildConfiguration section */',
+);
+const devTestFlightScheme = readRepositoryFile(
+  'ios/App/App.xcodeproj/xcshareddata/xcschemes/UPR Dev TestFlight.xcscheme',
 );
 const debugEntitlements = readRepositoryFile('ios/App/App/App.entitlements');
 const releaseEntitlements = readRepositoryFile(
@@ -81,6 +99,9 @@ const gemfileLock = readRepositoryFile('ios/Gemfile.lock');
 const xcodeCloudHook = readRepositoryFile('ci_scripts/ci_post_clone.sh');
 const iosGitignore = readRepositoryFile('ios/.gitignore');
 const nativeBuildScript = readRepositoryFile('scripts/build-native.mjs');
+const nativeReleaseManifestWriter = readRepositoryFile(
+  'scripts/write-native-release-manifest.mjs',
+);
 const verifier = readRepositoryFile('scripts/qa/verify-ios-release-artifact.mjs');
 const ownedSubprocessRunner = readRepositoryFile(
   'scripts/qa/run-owned-subprocess.mjs',
@@ -440,6 +461,174 @@ describe('iOS release workflow authorization boundary', () => {
   });
 });
 
+describe('UPR Dev TestFlight isolation contract', () => {
+  it('keeps every pushed-dev run credential-free and requires a fresh manual release dispatch', () => {
+    expect(devWorkflow).toMatch(/^\s{2}push:\s*$/m);
+    expect(devWorkflow).toMatch(/branches:\s*\n\s+- dev/);
+    expect(devWorkflow).toMatch(/^\s{2}workflow_dispatch:\s*$/m);
+    expect(devPreflightJob).toContain("github.event_name == 'push'");
+    expect(devPreflightJob).toContain('runs-on: ubuntu-latest');
+    expect(devPreflightJob).not.toContain('environment:');
+    expect(devPreflightJob).not.toContain('secrets.');
+    expect(devPreflightJob).not.toContain('fastlane');
+    expect(devArchiveJob).toContain("github.event_name == 'workflow_dispatch'");
+    expect(devArchiveJob).not.toContain('IOS_DEV_TESTFLIGHT_ENABLED');
+    expect(devPublishJob).toContain(
+      "github.event_name == 'workflow_dispatch' && inputs.publish_to_testflight",
+    );
+    expect(devWorkflow).not.toContain('IOS_DEV_TESTFLIGHT_ENABLED');
+    expect(devWorkflow).toMatch(
+      /concurrency:[\s\S]*?cancel-in-progress:\s*false/,
+    );
+    expect(devWorkflow).toContain('UPR_RELEASE_VARIANT: dev');
+    expect(devWorkflow).toContain('persist-credentials: false');
+  });
+
+  it('cannot fall back to official-app signing or provider credentials', () => {
+    expect(devWorkflow).not.toContain('${{ secrets.APPLE_');
+    expect(devWorkflow).not.toContain('${{ secrets.ASC_');
+    for (const secretName of [
+      'IOS_DEV_APPLE_TEAM_ID',
+      'IOS_DEV_APPLE_CERTIFICATE_BASE64',
+      'IOS_DEV_APPLE_CERTIFICATE_PASSWORD',
+      'IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64',
+      'IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME',
+      'IOS_DEV_ASC_KEY_ID',
+      'IOS_DEV_ASC_ISSUER_ID',
+      'IOS_DEV_ASC_KEY_CONTENT_BASE64',
+    ]) {
+      expect(devWorkflow).toContain(`secrets.${secretName}`);
+    }
+  });
+
+  it('uses only the dev bundle identity and Preview API origin', () => {
+    expect(devWorkflow).toContain(
+      'APP_IDENTIFIER: com.utahprosrestoration.upr.dev',
+    );
+    expect(devWorkflow).toContain(
+      'VITE_NATIVE_API_ORIGIN: https://dev.utahpros.app',
+    );
+    expect(devArchiveJob).toContain('refs/heads/dev');
+    expect(devArchiveJob).not.toContain('refs/heads/main');
+    expect(devWorkflow).not.toContain(
+      'VITE_NATIVE_API_ORIGIN: https://utahpros.app',
+    );
+
+    const refGuardIndex = devArchiveJob.indexOf(
+      'Enforce dev identity and locked dependencies',
+    );
+    const signingDecodeIndex = devArchiveJob.indexOf(
+      'Decode UPR Dev signing assets into runner temporary storage',
+    );
+    expect(refGuardIndex).toBeGreaterThanOrEqual(0);
+    expect(signingDecodeIndex).toBeGreaterThan(refGuardIndex);
+  });
+
+  it('uses separate GitHub environments and never requests external distribution', () => {
+    expect(devArchiveJob).toContain('environment: ios-dev-signing');
+    expect(devPublishJob).toContain('environment: ios-dev-testflight');
+    expect(devPublishJob).toContain('TESTFLIGHT_INTERNAL_GROUP');
+    expect(devPublishJob).toContain('bundle exec fastlane ios upload');
+    expect(fastfile).toContain('distribute_external: false');
+    expect(fastfile).not.toContain('distribute_external: true');
+  });
+
+  it('requires production APNs for the distribution-signed dev app', () => {
+    expect(devArchiveJob).toContain(
+      `VITE_NATIVE_PUSH_ENABLED: "\${{ inputs.native_push_enabled && 'true' || 'false' }}"`,
+    );
+    expect(devArchiveJob).toContain(
+      `VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "\${{ inputs.native_push_enabled && 'false' || 'true' }}"`,
+    );
+    expect(devArchiveJob).toContain('VITE_APNS_ENV: production');
+    expect(devArchiveJob).toContain(
+      'if [[ "$VITE_NATIVE_PUSH_ENABLED" != "true" && "$VITE_NATIVE_PUSH_ENABLED" != "false" ]]',
+    );
+    expect(devArchiveJob).toContain(
+      'if [[ "$VITE_APNS_ENV" != "production" ]]',
+    );
+  });
+
+  it('archives and reverifies the dev artifact before upload', () => {
+    expect(devArchiveJob).toContain('ios/build/UPR-Dev.xcarchive');
+    expect(devArchiveJob).toContain('ios/build/UPR-Dev.ipa');
+    expect(devArchiveJob).toContain(
+      '--expected-bundle-id "$APP_IDENTIFIER"',
+    );
+    for (const contractArgument of [
+      '--expected-release-variant "$UPR_RELEASE_VARIANT"',
+      '--expected-native-api-origin "$VITE_NATIVE_API_ORIGIN"',
+      '--expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED"',
+      '--expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN"',
+      '--expected-apns-environment "$VITE_APNS_ENV"',
+      '--expected-release-sha "$VITE_RELEASE_SHA"',
+    ]) {
+      expect(devArchiveJob).toContain(contractArgument);
+      expect(devPublishJob).toContain(contractArgument);
+    }
+    expect(devArchiveJob.indexOf('write-native-release-manifest.mjs'))
+      .toBeLessThan(devArchiveJob.indexOf('cap sync ios'));
+    const reverifyIndex = devPublishJob.indexOf(
+      'Reverify downloaded UPR Dev IPA',
+    );
+    const uploadIndex = devPublishJob.indexOf(
+      'Upload and assign UPR Dev to its internal group',
+    );
+    expect(reverifyIndex).toBeGreaterThanOrEqual(0);
+    expect(uploadIndex).toBeGreaterThan(reverifyIndex);
+  });
+
+  it('keeps dev archive and upload inside the default five-minute owned-process budget', () => {
+    for (const job of [devArchiveJob, devPublishJob]) {
+      expect(job).toContain('--timeout-ms 292000');
+      expect(job).not.toContain('--total-runtime-ms');
+    }
+  });
+
+  it('adds a distribution-only configuration without changing the development lane', () => {
+    expect(devReleaseBuildConfiguration).toContain(
+      'baseConfigurationReference = B91C4E122E5A4B7C9F1032D4',
+    );
+    expect(devReleaseBuildConfiguration).toContain(
+      'PRODUCT_BUNDLE_IDENTIFIER = com.utahprosrestoration.upr.dev;',
+    );
+    expect(devReleaseBuildConfiguration).toContain(
+      'CODE_SIGN_ENTITLEMENTS = App/App.Release.entitlements;',
+    );
+    expect(devReleaseBuildConfiguration).toContain(
+      'CODE_SIGN_IDENTITY = "Apple Distribution";',
+    );
+    expect(devReleaseBuildConfiguration).toContain('CODE_SIGN_STYLE = Manual;');
+    expect(devReleaseBuildConfiguration).toContain(
+      'PROVISIONING_PROFILE_SPECIFIER = "$(UPR_DEV_RELEASE_PROFILE_NAME)";',
+    );
+    expect(devTestFlightScheme).toMatch(
+      /<ArchiveAction\s+buildConfiguration = "DevRelease"/,
+    );
+    expect(devTestFlightScheme).toMatch(
+      /<LaunchAction\s+buildConfiguration = "Dev"/,
+    );
+  });
+
+  it('allowlists the two release variants while preserving production defaults', () => {
+    expect(fastfile).toContain(
+      'RELEASE_VARIANT_NAME = ENV.fetch("UPR_RELEASE_VARIANT", "production")',
+    );
+    expect(fastfile).toContain(
+      'raise ArgumentError, "Unsupported UPR_RELEASE_VARIANT:',
+    );
+    expect(fastfile).toContain(
+      'app_identifier: "com.utahprosrestoration.upr"',
+    );
+    expect(fastfile).toContain(
+      'app_identifier: "com.utahprosrestoration.upr.dev"',
+    );
+    expect(fastfile).toContain('scheme: "UPR Dev TestFlight"');
+    expect(fastfile).toContain('configuration: "DevRelease"');
+    expect(fastfile).toContain('internal_group: "UPR Dev"');
+  });
+});
+
 describe('Fastlane signing and provider contracts', () => {
   it('keeps manual distribution signing scoped to the app target', () => {
     expect(fastfile).toContain('File.join(IOS_ROOT, "App", "App.xcodeproj")');
@@ -453,7 +642,10 @@ describe('Fastlane signing and provider contracts', () => {
     );
     expect(archiveLane).not.toContain('codesigning_identity:');
     expect(archiveLane).toContain(
-      'xcode_assignment("UPR_RELEASE_PROFILE_NAME", provisioning_profile_name)',
+      'xcode_assignment(PROFILE_SETTING, provisioning_profile_name)',
+    );
+    expect(fastfile).toContain(
+      'profile_setting: "UPR_RELEASE_PROFILE_NAME"',
     );
     expect(archiveLane).toContain('signingStyle: "manual"');
     expect(archiveLane).toContain('signingCertificate: "Apple Distribution"');
@@ -490,6 +682,85 @@ describe('Fastlane signing and provider contracts', () => {
 });
 
 describe('native release artifact safety contract', () => {
+  const devReleaseEnvironment = {
+    UPR_RELEASE_VARIANT: 'dev',
+    VITE_NATIVE_API_ORIGIN: 'https://dev.utahpros.app',
+    VITE_NATIVE_PUSH_ENABLED: 'true',
+    VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'false',
+    VITE_APNS_ENV: 'production',
+    VITE_RELEASE_SHA: 'a'.repeat(40),
+  };
+
+  it('creates and validates the non-secret UPR Dev artifact contract', () => {
+    const manifest = createNativeReleaseManifest(devReleaseEnvironment);
+    const expected = {
+      variant: 'dev',
+      bundleIdentifier: 'com.utahprosrestoration.upr.dev',
+      apiOrigin: 'https://dev.utahpros.app',
+      nativePushEnabled: true,
+      retireDevToken: false,
+      apnsEnvironment: 'production',
+      sourceCommit: 'a'.repeat(40),
+    };
+
+    expect(manifest).toEqual({ schemaVersion: 1, ...expected });
+    expect(() =>
+      validateNativeReleaseManifest(manifest, expected, 'fixture'),
+    ).not.toThrow();
+    expect(nativeReleaseManifestWriter).not.toContain('SUPABASE');
+    expect(nativeReleaseManifestWriter).not.toContain('APPLE_');
+    expect(nativeReleaseManifestWriter).not.toContain('ASC_');
+  });
+
+  it('rejects missing or tampered native origin, Push mode, APNs mode, and source SHA', () => {
+    const manifest = createNativeReleaseManifest(devReleaseEnvironment);
+    const expected = {
+      variant: 'dev',
+      bundleIdentifier: 'com.utahprosrestoration.upr.dev',
+      apiOrigin: 'https://dev.utahpros.app',
+      nativePushEnabled: true,
+      retireDevToken: false,
+      apnsEnvironment: 'production',
+      sourceCommit: 'a'.repeat(40),
+    };
+
+    for (const [field, value] of [
+      ['apiOrigin', 'https://utahpros.app'],
+      ['nativePushEnabled', false],
+      ['retireDevToken', true],
+      ['apnsEnvironment', 'sandbox'],
+      ['sourceCommit', 'b'.repeat(40)],
+    ]) {
+      expect(() =>
+        validateNativeReleaseManifest(
+          { ...manifest, [field]: value },
+          expected,
+          'tampered fixture',
+        ),
+      ).toThrow();
+    }
+    expect(() =>
+      validateNativeReleaseManifest(undefined, expected, 'missing fixture'),
+    ).toThrow(/not an object/);
+    expect(verifier).toContain(
+      "path.join(\n      appPath,\n      'public',\n      'upr-native-release.json'",
+    );
+  });
+
+  it('allows an explicit dev-only emergency build with native Push disabled', () => {
+    const manifest = createNativeReleaseManifest({
+      ...devReleaseEnvironment,
+      VITE_NATIVE_PUSH_ENABLED: 'false',
+      VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'true',
+    });
+    expect(manifest.bundleIdentifier).toBe(
+      'com.utahprosrestoration.upr.dev',
+    );
+    expect(manifest.nativePushEnabled).toBe(false);
+    expect(manifest.retireDevToken).toBe(true);
+    expect(manifest.apnsEnvironment).toBe('production');
+  });
+
   it('registers PrivacyInfo.xcprivacy in the app group and Resources phase', () => {
     expect(project).toMatch(
       /PBXFileReference; lastKnownFileType = text\.xml; path = PrivacyInfo\.xcprivacy;/,
@@ -626,6 +897,24 @@ describe('native release artifact safety contract', () => {
     expect(() => parseVerifierArguments(['--unknown', 'value'])).toThrow(
       /Unknown verifier argument/,
     );
+    expect(() =>
+      parseVerifierArguments([
+        '--ipa',
+        'UPR.ipa',
+        '--report',
+        'report.json',
+        '--expected-bundle-id',
+        'com.example.app',
+        '--expected-team-id',
+        'TEAM123',
+        '--expected-marketing-version',
+        '1.0.0',
+        '--expected-build-number',
+        '42.1',
+        '--expected-release-variant',
+        'dev',
+      ]),
+    ).toThrow(/complete set/);
   });
 
   it('rejects unsafe IPA entry paths before extraction', () => {
