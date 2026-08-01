@@ -213,6 +213,12 @@ deployment conventions, update the corresponding canonical doc in the same commi
 - **Env:** Cloudflare keeps separate Production and Preview variable sets — a new secret needs
   both, plus a redeploy. Counts (pages, workers, migrations) drift — derive them, never quote a
   doc.
+- **Branch → domain (never infer this):** `dev` deploys to **`dev.utahpros.app`** (Cloudflare
+  **Preview** variable set); `main` deploys to **`utahpros.app`** (Cloudflare **Production**
+  variable set). **"Staging" never means `dev.utahpros.app`** — it means only the `qa-staging`
+  Supabase branch (`uizgwvkvzyldystqrcsk`). Call the deployments `dev`/Preview and
+  `main`/Production; both share ONE Supabase project (§13), so neither domain is a safe place
+  to test a write.
 
 **Starting a task:** `git fetch origin` FIRST and base new work on `origin/dev` (or the
 designated branch's remote tip) — never on the shared checkout's current local state; local
