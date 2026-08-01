@@ -45,8 +45,9 @@ PWA. Native now shares the event's variable allowlist and editable templates, bu
 separate field-only route allowlist. This does not permit generic payload traversal, arbitrary APNs
 fields, paths/URLs, or partially rendered copy. Missing trusted context uses immutable generic copy;
 rendered output and the final Apple payload are bounded; saved generic wording is honored without
-content-based legacy inference; `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server
-rollback seam.
+content-based legacy inference. Rich lock-screen copy is privacy-sensitive and activates only
+when `NATIVE_RICH_NOTIFICATION_PRESENTATION=true`; unset, `false`, or any other value uses the
+generic private fallback without disabling Push.
 
 ## Decision
 

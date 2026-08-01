@@ -15,23 +15,25 @@
  * DEPENDS ON:
  *   Packages:  none
  *   Internal:  functions/lib/cors.js, functions/lib/messaging-auth.js,
- *              functions/lib/supabase.js
- *   Data:      reads  → contacts, messaging authorization tables
+ *              functions/lib/supabase.js, functions/lib/http.js
+ *   Data:      reads  → contacts through search_scoped_conversation_contacts,
+ *                        messaging authorization tables
  *              writes → conversations, conversation_participants through the
- *                       service-only find_or_create_conversation RPC
+ *                       service-only find_or_create_scoped_conversation RPC
  *
  * NOTES / GOTCHAS:
  *   - Search requires two characters, is capped at 80 characters/25 results,
  *     and returns only fields the picker renders.
  *   - Creating a conversation never sends a message or changes SMS consent.
- *   - The RPC is intentionally service-role-only; this worker is its trusted
- *     authorization boundary.
+ *   - The RPC is intentionally service-role-only and repeats the caller's page
+ *     capability plus per-conversation membership check before returning data.
  * ════════════════════════════════════════════════
  */
 
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { requireMessagingAccess } from '../lib/messaging-auth.js';
 import { supabase } from '../lib/supabase.js';
+import { fetchWithTimeout } from '../lib/http.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MIN_SEARCH_LENGTH = 2;
@@ -57,25 +59,14 @@ function isValidSearch(search) {
     && SEARCH_INPUT_PATTERN.test(search);
 }
 
-export function buildContactSearchQuery(search) {
-  const pattern = encodeURIComponent(`*${search}*`);
-  return [
-    'phone=not.is.null',
-    `or=(name.ilike.${pattern},phone.ilike.${pattern},company.ilike.${pattern})`,
-    'select=id,name,phone,company',
-    'order=name.asc.nullslast',
-    `limit=${RESULT_LIMIT}`,
-  ].join('&');
-}
-
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
 }
 
 export async function onRequestGet(context) {
   const { request, env } = context;
-  const db = supabase(env);
-  const auth = await requireMessagingAccess(request, env, db);
+  const db = supabase(env, fetchWithTimeout);
+  const auth = await requireMessagingAccess(request, env, db, fetchWithTimeout);
   if (auth.error) {
     return noStoreResponse({
       error: auth.error,
@@ -104,7 +95,11 @@ export async function onRequestGet(context) {
   }
 
   try {
-    const contacts = await db.select('contacts', buildContactSearchQuery(search));
+    const contacts = await db.rpc('search_scoped_conversation_contacts', {
+      p_employee_id: auth.employee.id,
+      p_search: search,
+      p_limit: RESULT_LIMIT,
+    });
     const eligibleContacts = contacts
       .filter((contact) => (
         typeof contact.phone === 'string' && contact.phone.trim().length > 0
@@ -127,8 +122,8 @@ export async function onRequestGet(context) {
 
 export async function onRequestPost(context) {
   const { request, env } = context;
-  const db = supabase(env);
-  const auth = await requireMessagingAccess(request, env, db);
+  const db = supabase(env, fetchWithTimeout);
+  const auth = await requireMessagingAccess(request, env, db, fetchWithTimeout);
   if (auth.error) {
     return noStoreResponse({
       error: auth.error,
@@ -155,8 +150,9 @@ export async function onRequestPost(context) {
   }
 
   try {
-    const conversation = await db.rpc('find_or_create_conversation', {
+    const conversation = await db.rpc('find_or_create_scoped_conversation', {
       p_contact_id: contactId,
+      p_employee_id: auth.employee.id,
     });
     if (!conversation?.id) {
       throw new Error('find_or_create_conversation returned no conversation');

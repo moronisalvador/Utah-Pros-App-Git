@@ -28,7 +28,8 @@
  *                        employees (audience + email), appointment_crew (crew
  *                        audience), push_subscriptions + device_tokens (devices),
  *                        integration_config (webhook secret);
- *                        get_effective_notification_prefs (RPC)
+ *                        get_effective_notification_prefs +
+ *                        get_conversation_notification_recipients (RPCs)
  *              writes → notifications (via create_notification, per recipient);
  *                        prunes dead push subscriptions/registrations
  *
@@ -87,6 +88,15 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.canceled',
 ]);
 
+function inboundConversationId(body = {}) {
+  const candidate = body.data?.conversation_id
+    || body.conversation_id
+    || (body.entity_type === 'conversation' ? body.entity_id : null);
+  return typeof candidate === 'string' && UUID_RE.test(candidate)
+    ? candidate
+    : null;
+}
+
 // There is no checked-in browser caller for POST /api/notify. Keep the legacy
 // Bearer capability deliberately narrow: only events whose recipient and
 // message can be derived from an existing database object. All other event
@@ -142,15 +152,43 @@ async function resolveAppointmentAudience(db, typeKey, body) {
   return filterActiveInternalEmployeeIds(db, crewIds);
 }
 
+async function resolveInboundMessageAudience(db, body) {
+  const conversationId = inboundConversationId(body);
+  if (!conversationId) return [];
+
+  // The database owns this predicate because it is also the conversation and
+  // message read boundary. Missing/invalid ids and lookup failures fail closed:
+  // stale assigned_to or caller-provided recipients are never notification
+  // authority for customer message content.
+  let recipients = [];
+  try {
+    recipients = await db.rpc('get_conversation_notification_recipients', {
+      p_conversation_id: conversationId,
+    });
+  } catch {
+    return [];
+  }
+
+  return filterActiveInternalEmployeeIds(
+    db,
+    (recipients || []).map((recipient) => recipient?.employee_id),
+  );
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
  *  1. appointment types always resolve from current assignment/crew state;
- *  2. other explicit body.recipient_ids win after active/internal validation;
- *  3. otherwise a role-based default (minus body.exclude_employee_id).
+ *  2. inbound customer messages always resolve from current conversation access;
+ *  3. other explicit body.recipient_ids win after active/internal validation;
+ *  4. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
   if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
     return resolveAppointmentAudience(db, typeKey, body);
+  }
+
+  if (typeKey === 'message.inbound') {
+    return resolveInboundMessageAudience(db, body);
   }
 
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {
@@ -271,7 +309,8 @@ export async function dispatchToRecipient({
           eventKey,
         };
         // The real APNs sender owns its bounded fetchWithTimeout default.
-        // Only an explicitly injected sender receives the caller's fake fetch.
+        // An explicitly injected sender receives the selected bounded/fake
+        // transport so tests and alternate implementations retain the boundary.
         if (sendNativePushImpl && fetchImpl) nativeInput.fetchImpl = fetchImpl;
         const native = await nativeSender(nativeInput);
         result.push.native = native;
@@ -601,7 +640,7 @@ export async function dispatchEvent({
   env,
   typeKey,
   body = {},
-  fetchImpl,
+  fetchImpl = fetchWithTimeout,
   sendWebPushImpl,
   sendNativePushImpl,
   sendEmailImpl,
@@ -683,7 +722,12 @@ export async function dispatchEvent({
 
 // ─── SECTION: HTTP identity + object contract ───
 
-export async function authorizeNotifyRequest(request, env, db) {
+export async function authorizeNotifyRequest(
+  request,
+  env,
+  db,
+  fetchImpl = fetchWithTimeout,
+) {
   const secret = request.headers.get('x-webhook-secret');
   if (request.headers.has('x-webhook-secret')) {
     let expected = null;
@@ -695,7 +739,13 @@ export async function authorizeNotifyRequest(request, env, db) {
     return { ok: false, status: 401, error: 'Invalid webhook secret' };
   }
 
-  const auth = await requireRole(request, env, db, NOTIFY_BROWSER_ROLES);
+  const auth = await requireRole(
+    request,
+    env,
+    db,
+    NOTIFY_BROWSER_ROLES,
+    fetchImpl,
+  );
   if (auth.error) {
     return {
       ok: false,
@@ -793,12 +843,12 @@ export async function handleNotify({
   request,
   env,
   db,
-  fetchImpl = fetch,
+  fetchImpl = fetchWithTimeout,
   sendWebPushImpl,
   sendEmailImpl,
   dispatchImpl = dispatchEvent,
 }) {
-  const auth = await authorizeNotifyRequest(request, env, db);
+  const auth = await authorizeNotifyRequest(request, env, db, fetchImpl);
   if (!auth.ok) return { status: auth.status, data: { error: auth.error } };
 
   let body;
@@ -839,7 +889,7 @@ export async function onRequestPost(context) {
     request,
     env,
     db: supabase(env, fetchWithTimeout),
-    fetchImpl: fetch,
+    fetchImpl: fetchWithTimeout,
   });
   return jsonResponse(data, status, request, env);
 }

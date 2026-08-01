@@ -27,6 +27,19 @@ migration ledger was never baselined after the manual schema restore, so automat
 replays old history and fails (§1). Do not use rebase as the parity mechanism until that ledger
 gap is deliberately repaired.
 
+> **Operator erratum — conversation participant train:** the already-applied, fingerprinted
+> `20260731040338_conversation_unread_state_compatibility.sql` source contains a historical header
+> reference to nonexistent `20260731040339`. Do not edit that applied source. The governed order is
+> `20260731040337` → `20260731040338` → `20260731213000` → deploy compatible callers →
+> `20260731213100`, followed later by the separately gated scheduled-message pair.
+>
+> **2026-08-01 receipt:** exact committed `20260731213000` source (SHA-256
+> `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied cleanly
+> to this branch as ledger `20260801144448_conversation_assignment_authority_containment`.
+> Read-only postconditions matched all four reviewed function bodies/properties and intended ACLs,
+> found no appointment/job/claim/crew authority references, and retained zero pending scheduled
+> rows. `31213100/31220000/31220100` remain unapplied pending their caller-deployment gates.
+
 ## 1. What happened and what we learned (2026-07-29)
 
 A persistent Supabase branch (`qa-staging`) was created from the shared production project
@@ -100,7 +113,7 @@ there and no outbound worker request was used as staging evidence.
    hardened runner refuses rather than falling back to a literal.
 3. ~~Replace the stale all-dark database coverage guard~~ **DONE 2026-07-31**.
    `tests/qa/unit/db-lane-coverage.test.js` now distinguishes the 78 JavaScript suites discovered
-   by hosted CI from the six SQL/pgTAP proofs that remain local-only. Static wiring evidence does
+   by hosted CI from the eight SQL/pgTAP proofs that remain local-only. Static wiring evidence does
    not replace the hosted receipt above or local execution of those SQL files.
 
 ## 3. How agents use the branch once it exists

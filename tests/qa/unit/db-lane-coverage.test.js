@@ -36,12 +36,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const DB_TESTS = join(ROOT, 'supabase', 'tests');
 const read = (relative) => readFileSync(join(ROOT, relative), 'utf8').replace(/\r\n/g, '\n');
 const LOCAL_ONLY_SQL = [
+  'conversation_participant_scoping.test.sql',
   'inbound_lead_recording_source.test.sql',
   'mobile_employee_identity_authority.test.sql',
   'mobile_personal_ownership_boundary.test.sql',
   'notification_read_recipient_boundary.test.sql',
   'oop_pricing_builder.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
+  'scheduled_message_delivery.test.sql',
 ];
 
 describe('db-lane coverage contracts', () => {

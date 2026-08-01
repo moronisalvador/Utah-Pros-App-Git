@@ -18,8 +18,10 @@
  * DEPENDS ON:
  *   Packages:  @tanstack/react-query
  *   Internal:  @/contexts/AuthContext (db, employee), @/lib/techQuery (invalidateTech),
+ *              @/lib/conversationUnread, @/lib/toast,
  *              ./msgsSelectors (setConvoUnreadInData)
- *   Data:      writes → conversations (unread_count), contacts (dnd/dnd_at),
+ *   Data:      writes → conversations.unread_count through
+ *                       set_my_conversation_unread_state; contacts (dnd/dnd_at),
  *                       sms_consent_log (the DND audit row — copied verbatim from legacy)
  *
  * NOTES / GOTCHAS:
@@ -36,12 +38,10 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { setMyConversationUnreadState } from '@/lib/conversationUnread';
 import { invalidateTech } from '@/lib/techQuery';
+import { err, ok } from '@/lib/toast';
 import { setConvoUnreadInData } from './msgsSelectors';
-
-function emitToast(message, type = 'info') {
-  window.dispatchEvent(new CustomEvent('upr:toast', { detail: { message, type } }));
-}
 
 const CONVOS_PREFIX = ['tech', 'convos'];
 
@@ -59,22 +59,22 @@ export function useConvoMutations() {
     const newCount = unread ? 1 : 0;
     patchUnread(convId, newCount);
     try {
-      await db.update('conversations', `id=eq.${convId}`, { unread_count: newCount });
-    } catch (err) {
-      console.error('Set unread error:', err);
+      await setMyConversationUnreadState(db, [convId], unread);
+    } catch (error) {
+      console.error('Set unread error:', error);
       invalidateTech(queryClient, 'message');   // resync on failure
-      emitToast('Could not update', 'error');
+      err('Could not update');
     }
   }, [db, patchUnread, queryClient]);
 
   const markAllRead = useCallback(async () => {
     try {
       // Server-count-driven: clears EVERY unread conversation, not just the loaded page.
-      await db.update('conversations', 'unread_count=gt.0', { unread_count: 0 });
+      await setMyConversationUnreadState(db, null, false);
       invalidateTech(queryClient, 'message');
-    } catch (err) {
-      console.error('Mark all read error:', err);
-      emitToast('Could not mark all read', 'error');
+    } catch (error) {
+      console.error('Mark all read error:', error);
+      err('Could not mark all read');
     }
   }, [db, queryClient]);
 
@@ -105,11 +105,11 @@ export function useConvoMutations() {
         }));
         return { ...data, conversations };
       });
-      emitToast('Do Not Disturb on — texting blocked', 'info');
-    } catch (err) {
-      console.error('Enable DND error:', err);
+      ok('Do Not Disturb on — texting blocked');
+    } catch (error) {
+      console.error('Enable DND error:', error);
       invalidateTech(queryClient, 'message');
-      emitToast('Could not update Do Not Disturb', 'error');
+      err('Could not update Do Not Disturb');
     }
   }, [db, employee, queryClient]);
 

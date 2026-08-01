@@ -265,16 +265,23 @@ when applicable.
 
 Primary contracts:
 
-- `get_tech_conversations` plus bounded thread message query/Realtime;
-- direct conversation unread/contact DND and `sms_consent_log` writes;
+- `get_tech_conversations`, actor-derived unread-state RPCs, scoped participant/member RPCs, plus
+  bounded thread message query/Realtime;
+- contact DND and `sms_consent_log` writes through their governed contracts;
 - templates and attachments;
 - governed `/api/send-message` worker.
 
 Required send semantics:
 
 - server verifies active employee and conversation/contact authority;
+- conversation staff authority is privileged internal role → explicit per-chat override → default
+  technician → deny. Appointment, job, claim, crew, dry-log, and room records are operational
+  context, not authority; a future completion-driven removal must record a trusted explicit
+  override rather than infer access from browser-writable job state;
 - consent, DND, STOP/START/HELP, approved sender, quiet hours/retry, attachment access, and audit
-  rules are enforced in the company-send path;
+  rules are enforced in the company-send path; private attachment signing resolves canonical
+  message media only through the service-only membership-authorized RPC, never through a
+  pre-authorization service-role row read;
 - a stable send/idempotency key distinguishes accepted, delivered/provider-pending, failed, and
   duplicate;
 - optimistic UI reconciles with the canonical provider/message row;
@@ -282,6 +289,42 @@ Required send semantics:
 
 Thread pagination uses stable chronological cursors/limits. Realtime inserts deduplicate against
 optimistic/canonical messages and unsubscribe on scope change.
+
+#### Scheduled-message hardening (authored, not live)
+
+The pending Jul 31 scheduled-message source is a shared Conversations contract for web and CRM;
+the native scheduling caller remains out of scope. It is **not** evidence that either migration,
+deployment, provider path, or device path has been verified.
+
+- Browser creation calls `create_scheduled_message` with a stable operation UUID. The database
+  derives the active internal actor, requires their Conversations capability and conversation access,
+  and accepts only exactly one active customer recipient. Retrying the same payload returns the same
+  row; reusing the UUID for a changed payload is rejected.
+- That operation UUID is retained in an owner-scoped durable WebView key for the same unresolved
+  conversation/body/send-time payload, so an owner-scoped Capacitor WebView restart can retry rather
+  than duplicate it. It is cleared only after server confirmation.
+- Queue inspection and cancellation are exact DevTools-owner contracts. The queued row cannot be
+  cancelled once a delivery reservation exists. Compatibility requires exact participant
+  enforcement, locks the queue, and aborts with SQLSTATE `55000` without mutation when any pending
+  row exists. It creates FORCE-RLS provenance for creator, conversation, canonical body/send time,
+  recipient contact, and recipient phone, closes raw browser queue writes, changes the historical
+  policies to explicit deny predicates, and leaves the frozen legacy claim callable only as a
+  `false` no-op. Enforcement reasserts those policy/ACL boundaries and retains provenance.
+- Service processing uses a fresh random fencing token for claim, release, failure, reservation, and
+  reconciliation. It rechecks the creator's capability/access and the immutable recipient snapshot
+  against the exact-one current active customer recipient at dequeue and again atomically at
+  reservation. The reservation transaction also share-locks the current automated-SMS kill switch
+  and calls the canonical phone-locked consent authority; only `GLOBAL_OPT_IN` may create an
+  attempt. A disabled switch, DND, explicit opt-out, pending STOP, or other consent result leaves
+  no provider-attempt residue.
+- After those database checks plus the worker's consent/DND and central automated-send gates,
+  reservation links one irreversible `message_send_attempt`; scheduled delivery permits one
+  Twilio invocation. Accepted
+  attempts materialize the canonical message. Fresh linked in-flight work is preserved; an unknown
+  outcome is failed for owner review and is never automatically resent.
+- Auth, database/RPC, credential, and provider transport is bounded. A reserved scheduled send
+  requires a fresh managed credential read; timeout cannot fall through to cached/environment
+  Twilio credentials and causes no provider request.
 
 ### Demo/scope sheet and OOP pricing
 
@@ -383,8 +426,9 @@ same event-approved variables as PWA, including customer, scheduling, and
 financial details. Those values must be typed server context, never raw
 producer APNs fields or generic payload traversal. Missing values use immutable
 generic event copy. Rendered values and final APNs JSON are bounded before
-provider use, and `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` restores generic
-presentation at the provider boundary.
+provider use. Rich presentation is explicitly opt-in at the provider boundary:
+only `NATIVE_RICH_NOTIFICATION_PRESENTATION=true` enables approved details;
+unset, `false`, or any other value keeps generic presentation.
 
 Native token registration is browser-RPC-only: the focused
 `20260728223000_native_apns_token_boundary.sql` source is live under reconciled

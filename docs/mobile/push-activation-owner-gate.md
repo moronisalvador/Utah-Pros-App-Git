@@ -218,7 +218,7 @@ failure rather than an explicit configuration error.
 | `APNS_TEAM_ID` | `H6ZUT739T9` |
 | `APNS_TOPIC` | `com.utahprosrestoration.upr` — same in BOTH sets, and stays there: with the per-token topic change now live it is only the fallback for legacy `device_tokens` rows with no recorded `apns_topic`. Never flip it per app (2026-07-30 outage). |
 | `APNS_ENV` | Preview/debug: `sandbox`; Production/TestFlight/App Store: `production` |
-| `NATIVE_RICH_NOTIFICATION_PRESENTATION` | unset = typed rich copy enabled (fail-open by design); exact string `false` reverts native copy to the generic fallback WITHOUT disabling push delivery — this is the copy-level rollback seam |
+| `NATIVE_RICH_NOTIFICATION_PRESENTATION` | exact string `true` enables typed approved details; unset, `false`, or any other value uses generic privacy-safe copy WITHOUT disabling push delivery |
 | `VITE_NATIVE_PUSH_ENABLED` | default/hold value `false`; the focused native-token migration is live-verified as ledger `20260731154315`, but enabling a build and proving its signed-device path remain separate owner gates |
 | `VITE_APNS_ENV` | native debug/Preview: `sandbox`; TestFlight/App Store: `production` |
 
@@ -318,9 +318,9 @@ then fails closed before token lookup or Apple. This operational action is
 owner-gated and must be applied separately to Preview and Production.
 
 For sensitive or wrong notification COPY specifically, the narrower stop is
-setting `NATIVE_RICH_NOTIFICATION_PRESENTATION` to the exact string `false` in
-the affected Cloudflare environment and redeploying: typed rich copy reverts to
-the generic fallback while push delivery itself stays up. Reach for the
+removing `NATIVE_RICH_NOTIFICATION_PRESENTATION` or setting it to any value
+other than exact `true` in the affected Cloudflare environment and redeploying:
+typed rich copy reverts to the generic fallback while push delivery itself stays up. Reach for the
 `APNS_ENV` stop only when delivery itself must halt.
 
 After a stop:

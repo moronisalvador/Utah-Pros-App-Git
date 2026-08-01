@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-31 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-01 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -20,6 +20,72 @@ The `dev → main` promotion hold is **ACTIVE** by owner direction on 2026-07-31
 cross-session reconciliation; do not mark it ready, merge it, or otherwise promote `main` until the
 owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
 promotion.
+
+## Conversation participant scoping — compatibility live on QA + production; enforcement authored
+
+- `20260731040337_conversation_participant_scoping.sql` and
+  `20260731040338_conversation_unread_state_compatibility.sql` are applied to isolated
+  `qa-staging` as ledgers `20260731143710` and `20260731181046`, and to production as ledgers
+  `20260801145727` and `20260801145753`. Their immutable source hashes and catalog checks remain
+  recorded evidence. The exact committed
+  `20260731213000_conversation_assignment_authority_containment.sql` source (SHA-256
+  `0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) is also applied
+  to `qa-staging` as ledger `20260801144448` and production as ledger `20260801145825`.
+  Post-apply checks on both targets matched all four reviewed function hashes/owners/search
+  paths/volatility settings and ACLs and found no appointment/job/claim/crew authority source.
+  QA retained zero pending scheduled rows; production retained its known aggregate of one.
+- Appointment, job, claim, and crew rows are browser-writable and are **not conversation
+  authorization**. The QA/production-applied correction replaces the four independent
+  membership/contact paths with privileged role → explicit per-chat override → default technician
+  → deny, after exact employee-identity and QA/production lineage preflights.
+  `20260731213100_conversation_participant_policy_enforcement.sql` is also authored and unapplied.
+  It must follow `31213000`, narrows the three protected table policies in place, and removes every
+  authenticated direct write. Both carry recovery-pause rollbacks that seal browser tables/RPCs;
+  they never restore the historical broad policies or derived appointment trust.
+- Candidate UI/Worker source uses actor-derived unread changes, canonical notification recipients,
+  scoped contact/opening paths, per-ID cache revocation, admin per-chat/default controls,
+  technician self-leave, sender labels, and 18px mobile message text. Historical disposable proof
+  for the superseded `40339` source remains historical; it is not evidence for `31213000/31213100`.
+  Earlier corrected participant and scheduled-delivery sources passed on a disposable local
+  Supabase clone with fixture transactions rolled back. The exact current source adds the
+  authorized-media RPC, explicit-deny queue policies, legacy-claim no-op, and their assertions;
+  the governed full database runner, physical-iPhone proof, and supported-native-release evidence
+  remain open gates.
+- Scheduled-message hardening is authored and unapplied as
+  `20260731220000_scheduled_message_delivery_compatibility.sql` then
+  `20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility requires the exact
+  `31213100` policy/ACL ledger before it can run, takes the queue lock, and aborts with SQLSTATE
+  `55000` if even one legacy pending row remains; it never quarantines or edits those rows.
+  Actor-derived creation stores immutable creator, conversation, body/send time, recipient contact,
+  and recipient phone provenance. Token-fenced service RPCs recheck the snapshot/current recipient
+  plus creator access. The final reservation transaction share-locks the live automated-SMS switch,
+  invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and leaves no
+  provider-attempt link for a disabled switch, DND, explicit opt-out, pending STOP, or any other
+  non-global result. Compatibility changes the three legacy scheduled policies to explicit
+  deny predicates and closes browser table ACLs; enforcement reasserts both layers. The frozen
+  legacy claim remains callable to historical roles only as a side-effect-free `false` no-op.
+  Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
+  and provider transports are bounded; a reserved scheduled send requires a fresh managed
+  credential lookup and cannot use cached/environment fallback after that lookup times out.
+- Read-only catalog evidence on 2026-07-31 found one legacy production `pending` scheduled row
+  (overdue since `2026-07-24T22:45:00Z`) and zero on QA. Do not inspect, send, cancel, or rewrite
+  that row from this initiative: compatibility correctly stops on the aggregate count until the
+  owner separately resolves it. The seeded `qa-staging` catalog remains healthy and usable, but
+  its `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
+  runbook; it is not evidence that the current catalog is broken and must not be cleared through
+  rebase or ad-hoc ledger writes. `40337/40338/31213000` are ledgered for this train; target the
+  exact branch ref and keep every later QA apply serialized.
+- Exact release order is foundation/correction → compatible web plus supported native adoption →
+  `31213100` participant enforcement → aggregate zero-pending gate → `31220000` →
+  `31220100`. Hardened callers deploy immediately before the serialized enforcement/scheduled
+  window and intentionally fail closed until the RPCs exist. Reverse recovery is
+  `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
+  browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
+  proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
+  governed full database runner, compatible-caller deployment, remaining enforcement applies,
+  pending-row decision, and signed-device proof remain explicit release gates. The source is
+  committed and the compatibility train is live on QA and production; no push, deployment,
+  provider call, production-row mutation, or device claim follows from this entry.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
@@ -205,7 +271,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   migration `20260312194505_001_phase_conversion_and_costing.sql` because the seeded schema already
   has dependent objects; do not call this migration-ledger parity or repair it with ad-hoc ledger
   writes. Open tail: convert failed setups/skips with minimal non-production reference rows and run
-  the six SQL/pgTAP proofs through the still-missing governed local runtime.
+  the eight SQL/pgTAP proofs through the still-missing governed local runtime.
 - **A2P / live sends / provider webhooks / feature-flag flips:** owner-gated, always.
 
 ## Open initiatives (verdicts pending — see `docs/wip-inventory-2026-07.md`)

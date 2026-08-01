@@ -175,6 +175,18 @@ allowed origins and provider sandboxes.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 
+### Conversation participant compatibility apply unit (2026-07-31)
+
+Production treats `20260731040337_conversation_participant_scoping.sql`,
+`20260731040338_conversation_unread_state_compatibility.sql`, and
+`20260731213000_conversation_assignment_authority_containment.sql` as one exposure-free apply
+unit. Apply them in that order in one separately authorized low-traffic window; if a step fails,
+reverse every prior step before closing the window. QA already contains immutable `40337/40338`,
+so its next step is only `31213000`. Verify the resulting function bodies contain no
+appointment/job/claim authority, then deploy compatible web and supported-native callers.
+`20260731213100_conversation_participant_policy_enforcement.sql` remains post-adoption only and
+must not run until older direct-unread writers are unsupported.
+
 ### Static-asset serving contract (2026-07-27)
 
 Two outages on 2026-07-27 came from the same cause: Cloudflare Pages answered a request for a
@@ -227,12 +239,14 @@ minutes per subprocess. The launcher owns the full child tree, cleans it in `try
 the port/process is gone, and records the result. Unsigned compilation or simulator launch is not
 signed-device, TestFlight, privacy, entitlement, push, deep-link, OTA, or App Review proof.
 
-The initial release promise stays online-first with tested warm continuity. Cold-offline PWA,
-admin-mobile in the native binary, native push, and OTA are excluded/disabled until their owner
-decisions and roadmap evidence gates are complete. Expanded field use requires zero P0 findings and
-closure or explicit exclusion of every P1 within the promise. Live migration/apply, deploy,
-provider/customer action, signing, distribution, and submission remain separately authorized
-owner gates.
+The initial audited release promise (2026-07-25) stayed online-first with tested warm continuity
+and excluded cold-offline PWA, admin-mobile in the native binary, native Push, and OTA. Native Push
+subsequently passed production TestFlight physical-device delivery on 2026-07-29; that historical
+exclusion is no longer a claim that APNs has never shipped. Per-token/dev-app re-enrollment,
+account-switch, and feature-specific device matrices remain separate open gates. Expanded field use
+requires zero P0 findings and closure or explicit exclusion of every P1 within the promise. Live
+migration/apply, deploy, provider/customer action, signing, distribution, and submission remain
+separately authorized owner gates.
 
 R0's current source/live map and first local authorization slice are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-r0-recapture-2026-07-25.md`; the source-only S1b QBO
@@ -384,6 +398,50 @@ The combined Phase 2–4 build is not a one-step deploy:
 
 At no point may worker code that requires a new column/table deploy before that schema exists.
 Rollback first sets the mode to `disabled`; code can roll back while additive schema remains.
+
+### Scheduled-message delivery hardening release gate
+
+The scheduled-message hardening source is a code-first, fail-closed two-migration release; it is
+not applied or live evidence. After the participant authorization foundation is present, deploy
+and verify the hardened browser and scheduler callers, including the stable browser operation ID
+and the central `sendAutomatedMessage()` reservation hook. Until the new RPCs exist, those callers
+must refuse scheduling/dequeue rather than fall back to the old send path. Then, in a separately
+owner-approved low-traffic window, apply and verify
+`20260731220000_scheduled_message_delivery_compatibility.sql` followed by
+`20260731220100_scheduled_message_delivery_enforcement.sql`. Compatibility preserves the legacy
+claim signature and historical grants as a callable `false` no-op, so a stale Worker also pauses
+rather than sending without a reservation. Compatibility requires exact participant enforcement, locks the queue, and
+aborts with SQLSTATE `55000` when the aggregate pending count is nonzero; it never edits those
+rows. It creates FORCE-RLS actor-derived provenance that snapshots creator, conversation,
+body/send time, recipient contact, and recipient phone, closes raw browser queue writes, and sets
+all historical queue policy predicates to `false` in that transaction. Enforcement reasserts the
+fail-closed policies and revoked browser ACLs while retaining the provenance boundary. Do not leave
+compatibility without enforcement as the intended steady state.
+
+The compatibility migration is additive and introduces the fenced claim plus one durable linked
+attempt. Its reconciliation path is provider-free: accepted provider evidence materializes once,
+a fresh linked attempt stays `in_flight`, and an unknown stale result is failed for owner review
+rather than re-sent. Reverse recovery is
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; it is containment, not a normal
+reversal. Every step seals browser tables/RPCs and retains provenance, delivery links, and the
+unique index. Unresolved linked pending work blocks rollback for owner reconciliation.
+
+Required repository checks cover actor/membership and exactly-one-recipient revalidation, stable
+operation-ID retry semantics, direct-browser-table denial, reservation/reconciliation contracts,
+and the provider barrier/concurrent scheduler case proving one reservation permits only one
+provider invocation. `supabase/tests/scheduled_message_delivery.test.sql` is the paired guarded,
+rollback-only isolated-database proof for RPC ACLs, idempotent creation, one reservation,
+fresh-in-flight preservation and exactly-once materialization. It must run only on a disposable
+local clone with the isolation sentinel; it is not CI or hosted proof. Earlier 2026-07-31 source
+revisions passed the participant and scheduled proofs with final transactions rolled back. The
+current source adds the authorized-media RPC, explicit-deny queue policies, legacy-claim no-op,
+and an atomic final reservation gate. The latter share-locks the current automated-SMS switch,
+invokes the canonical phone-locked consent authority, accepts only `GLOBAL_OPT_IN`, and proves
+that kill-switch, DND, and no-consent races leave zero provider-attempt residue. The full governed
+runner remains open because this worktree has no local Supabase project configuration. Focused
+tests also prove a managed-credential timeout fails before Twilio and cannot use the normal
+cached/environment fallback. No migration apply, deployment, provider traffic, or live
+scheduled-message claim follows from repository tests.
 
 ## Prior SMS consent attestation release sequence
 
@@ -654,6 +712,106 @@ before any production provider switch. Production mode, number routing, provider
 Cloudflare binding changes, deployment promotion, and traffic remain independent gates.
 
 ### Mobile messaging release acceptance
+
+The participant foundation migration was applied to `qa-staging` on 2026-07-31 as ledger
+`20260731143710`, then to production on 2026-08-01 as ledger `20260801145727`, from source SHA-256
+`f9bb379dc794be199cbe6f9e057d5582b61eee71f12e913c9b7a18ad4c6cb1cb`. Read-only postconditions
+proved forced RLS and service-only policies on both empty membership tables, no browser table
+reads, intended RPC signatures/ACLs and body markers, one foundation ledger row, no enforcement
+ledger row, and retained legacy INSERT compatibility. Security/performance advisors introduced no
+error-level participant finding; authenticated-definer warnings are intentional caller-gated RPCs,
+while two nullable actor foreign keys retain informational index advisories.
+
+The exact reconciled `20260731040338_conversation_unread_state_compatibility.sql` source
+(SHA-256 `727669d58ed55ccac46673c4db3f8ac354406f00b791097ef44d98b1a9e88e3d`) was then applied to
+`qa-staging` as ledger `20260731181046` and production as ledger `20260801145753`. Post-apply
+catalog checks proved both new RPCs are
+caller-derived definers with `search_path=pg_catalog, public`, execute for
+`authenticated, service_role`, deny `anon`, and leave both membership tables forced-RLS and
+browser-inaccessible. A transaction-only QA proof returned an empty authorized snapshot and
+zero-row empty unread update, denied a nonexistent conversation and an unmapped actor, then rolled
+back. It read no conversation content and retained no fixture or business-row change.
+
+The exact committed `20260731213000_conversation_assignment_authority_containment.sql` source
+(SHA-256
+`0c7b8769f53bbb45fd7d6127b86b88d53c4fc3101d3b7b72e2b6f51bb5c87f51`) applied to
+`qa-staging` on 2026-08-01 as ledger
+`20260801144448_conversation_assignment_authority_containment`, then to production as ledger
+`20260801145825_conversation_assignment_authority_containment` after production first applied
+`40337` and `40338` as ledgers `20260801145727` and `20260801145753`. Each migration preflight and
+postcondition completed transactionally. Independent readback matched all four reviewed function
+body hashes, postgres ownership, invoker/definer and volatility settings, pinned search paths,
+and exact browser/service ACLs; no body references appointment/job/claim/crew authority. QA's
+scheduled pending aggregate remained zero; production retained the known aggregate of one.
+
+The hosted step was catalog verification only; the guarded SQL behavior suite is destructive by
+design and was deliberately not run there. Earlier on 2026-07-31, superseded `40337–40339`
+candidate sources passed disposable local Colima/Supabase clones and rollback/reapply cycles.
+That evidence remains useful history but is not proof of the corrected
+`31213000 + 31213100 + 31220000 + 31220100` train. Source-contract tests now cover the corrected
+authority, authorized-media lookup, ACL, pending-count, provenance, reservation, and full rollback
+chain. Earlier revisions of both behavioral proofs passed on a disposable local clone with fixtures
+rolled back, but the exact current source has not run through the full governed runner. Provider
+traffic and deployment remained untouched during the database apply.
+
+Native repository proof also passed on 2026-07-31: the graph boundary first caught the new
+revocation helper missing from its explicit page allowlist; after that correction,
+`npm run build:ios:dev` completed the native Vite build and Capacitor sync, and an unsigned
+`xcodebuild` for the generic iOS Simulator completed with `BUILD SUCCEEDED`. The installed iPhone
+17 Pro Simulator app rendered readable messages, staff sender labels, the title-expanded chat
+information, and the native **Chat participants** sheet. The sheet's expected load error is
+positive sequencing evidence from the pre-apply state: the simulator app targeted production
+before 40337 was applied there. No RPC mutation, provider send, hosted apply, or deployment
+occurred during that simulator proof.
+Physical-device/TestFlight proof remains separate.
+
+Credential-free negative tests use fake time and deferred actor-scoped responses to prove four
+revocation cases: successful inbox omission clears all removed desktop drafts/leases; tech
+per-ID expiry enumerates that conversation's sensitive caches and clears its draft; a success arriving
+after 30 seconds cannot renew either the tech inbox or active-thread lease; and hidden→visible
+purges expired private rows synchronously before an offline revalidation promise starts. These are
+local contract proofs, not installed-device or production evidence. A separate deferred
+out-of-order test resolves a newer desktop proof first and confirms that the older response is
+superseded; silent-reconcile coverage pins stable ordering, omission/addition behavior, and exact
+object identity for unchanged rows.
+Tech omission coverage also proves actor-derived snapshot batches are capped at 200; filtered
+hooks check only exact prior-page omissions; and the always-mounted default hook rechecks sensitive
+IDs outside the capped top 50. Fake-timer tests model an unread-to-read omission across repeated
+15-second polls beyond the original 30-second lease: allowed snapshots preserve its thread and
+draft, while a later denial purges both immediately. QueryObserver tests prove timer expiry and an
+authoritative empty proof publish an in-place tombstone without detaching the observer, a
+background error retains data only inside the current-owner lease and can recover on refetch, and
+delayed account-A responses/timers cannot repopulate or purge same-ID account-B caches. Page-state
+contracts additionally pin desktop and tech expired-proof markers ahead of successful empty
+states, and executable loader coverage proves tech refresh preserves prior exact-key order and
+unchanged row identity while removing omissions and appending new rows.
+
+Release order is compatibility-sensitive because dev and main share production Supabase:
+
+1. **Completed 2026-08-01:** production applied `40337 → 40338 → 31213000`; QA completed
+   `31213000`.
+2. Verify that trusted conversation authority contains no appointment/job/claim source.
+3. Deploy and validate compatible web plus a supported native release; retire older direct-unread
+   writers.
+4. Apply `31213100` participant enforcement.
+5. Deploy hardened web/Worker callers immediately before the scheduled database window; they fail
+   closed until their RPCs exist.
+6. Verify the aggregate scheduled pending count is zero; if it is not, stop for separate
+   owner-directed reconciliation without mutating rows. A read-only 2026-07-31 check found exactly
+   one legacy production pending row, so production is currently stopped at this gate.
+7. Apply `31220000 → 31220100` in one serialized window and verify provenance, recipient snapshot,
+   fencing, grants, fail-closed policy posture, legacy-claim no-op behavior, and that the final
+   reservation refuses a disabled SMS switch or any consent result other than
+   `GLOBAL_OPT_IN` without linking an attempt.
+8. Preserve the exact reviewed source through dev, web production, and the supported native
+   release; complete negative authorization and physical-device checks.
+
+For every remaining QA step, target the exact `qa-staging` ref. Its seeded catalog is healthy and
+usable, while
+the `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
+staging runbook; do not use rebase or ad-hoc ledger writes to clear it. Immutable
+`40337/40338/31213000` are ledgered for this train; none of
+`31213100/31220000/31220100` has applied.
 
 Repository close-out must cover the bounded contact picker, denied messaging capability, direct-only
 find-or-create behavior, service-role-only RPC grant, consent loading/error/suppression states,

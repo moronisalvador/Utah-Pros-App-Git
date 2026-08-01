@@ -82,8 +82,9 @@ bindings and provider consoles.
   native routes remain field-only and arbitrary producer alert/data, paths, URLs, payload traversal,
   or route parameters still cannot enter APNs. Typed context missing any required value uses the
   immutable generic event copy; rendered copy and final APNs JSON are bounded before Apple.
-  `NATIVE_RICH_NOTIFICATION_PRESENTATION=false` is the server-side rollback seam. Preview uses
-  synthetic values and makes no provider call.
+  Native details activate only with exact `NATIVE_RICH_NOTIFICATION_PRESENTATION=true`; unset,
+  `false`, or any other value is the privacy-safe generic-copy posture. Preview uses synthetic
+  values and makes no provider call.
 - Appointment assigned/updated/canceled presentation resolves customer name and job number from
   the appointment's trusted linked-job record. Those values join appointment title/time and
   separately labeled estimated, approved, invoiced, and collected job amounts in the event
@@ -271,8 +272,8 @@ dead-subscription pruning and transactional email behavior are unchanged.
 The retained legacy Bearer surface now requires an active internal admin and accepts only four
 object-derived events: appointment assigned/updated/canceled and estimate accepted. It rejects all
 caller message copy, recipient, payload and link fields before dispatch. Shared Auth and Web Push
-still use their pre-existing raw fetch paths; adding global timeouts there is outside this identity
-slice. Email retains its timed provider request.
+use the shared bounded Worker transport; the transport remains injectable in tests. Email retains
+its timed provider request.
 
 At the S1c checkpoint, the dated generated/live inventory showed `notify_emit(text,jsonb)` remained
 `SECURITY DEFINER` and executable by `authenticated`; S1c therefore did not close the

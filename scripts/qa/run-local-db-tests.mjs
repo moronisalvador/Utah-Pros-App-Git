@@ -5,8 +5,10 @@
  *
  * WHAT THIS DOES (plain language):
  *   Refuses to start database tests unless the caller names the exact approved local database.
- *   After the checks pass, it runs the exact guarded identity, S1e, S1g, S1h, and OOP pricing pgTAP proofs
- *   against that local stack and then runs only the separately configured local database Vitest lane.
+ *   After the checks pass, it runs the exact guarded identity, S1e, S1g, S1h,
+ *   OOP pricing, conversation-participant, and scheduled-delivery proofs
+ *   against that local stack and then runs only the separately configured
+ *   local database Vitest lane.
  *
  * DEPENDS ON:
  *   Packages:  Node.js built-ins, Supabase CLI, vitest
@@ -57,6 +59,8 @@ if (process.env.UPR_QA_LOCAL_SENTINEL !== LOCAL_DATABASE_SENTINEL) {
       'supabase/tests/notification_read_recipient_boundary.test.sql',
       'supabase/tests/mobile_personal_ownership_boundary.test.sql',
       'supabase/tests/oop_pricing_builder.test.sql',
+      'supabase/tests/conversation_participant_scoping_isolated.sql',
+      'supabase/tests/scheduled_message_delivery.test.sql',
     ];
 
     for (const sqlProofFile of sqlProofFiles) {

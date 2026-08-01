@@ -5752,3 +5752,42 @@ its live `authenticated` EXECUTE grant (no browser caller found; tightening is a
 ACL-only change); (2) the two `transcribe_call_worker_url` pg_cron command strings inline
 `net.http_post` with no allowlist — hardening a cron command string is a different shape
 (unschedule/reschedule) and gets its own change.
+
+## 2026-07-31 — Scheduled-message participant boundary and one-submission source authored
+
+The conversation-participant release review found a pre-existing escape hatch: any authenticated
+browser could write `scheduled_messages`, choose `created_by`, and the dequeue Worker did not
+recheck that creator's current Messages capability or conversation access. A retry could also
+reclaim a stale scheduled row after an unknown provider outcome.
+
+Repository source now contains a compatibility/enforcement pair, both **unapplied**. Compatibility
+requires exact participant enforcement, locks the queue, and aborts with SQLSTATE `55000` without
+mutation when the aggregate pending count is nonzero. It creates FORCE-RLS provenance for creator,
+conversation, canonical body/send time, recipient contact, and recipient phone; closes raw browser
+queue writes; and adds actor-derived stable-ID creation, exact-owner queue/cancel, random
+token-fenced service lifecycle RPCs, and one irreversible `delivery_attempt_id` reservation made
+only after the central kill-switch/consent/DND/quiet-hours gates. The Worker rechecks creator
+access and the immutable recipient snapshot against the one current active phone recipient at
+dequeue and reservation, permits one Twilio
+invocation, preserves fresh in-flight work, and reconciles accepted/unknown outcomes without
+automatic resubmission. The browser retains only an opaque owner-scoped operation ID across a
+Capacitor WebView restart so a lost create response can be retried rather than duplicated.
+Compatibility preserves the frozen legacy claim signature only as a fail-closed stub so a stale
+Worker pauses before sending; enforcement leaves the dormant broad policies inert behind revoked
+ACLs, preserves the provenance boundary, and revokes that stub from the service role.
+
+The same review found that appointment/job/claim rows are browser-writable and therefore cannot be
+conversation authority. New, unapplied `20260731213000` replaces every independent member/contact
+decision with privileged role → explicit override → default technician → deny;
+`20260731213100` applies the protected-table enforcement only after compatible web/native
+adoption. Reverse recovery is the fail-closed evidence-preserving chain
+`31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`.
+
+Focused Worker and credential-free QA tests, migration hygiene, syntax, lint, and the mocked
+provider-barrier concurrency proof passed during authoring. The corrected participant proof and
+scheduled-delivery pgTAP proof then passed on a disposable local Supabase clone and rolled back all
+fixtures. Worker transport now bounds Auth/PostgREST/RPC/credential/provider calls; scheduled
+credential lookup fails closed without cache/environment fallback. A read-only live audit found
+one legacy production pending scheduled row, so the migration's zero-pending gate correctly blocks
+production until a separately authorized owner decision. No hosted migration, deployment, provider
+call, production data change, or device claim occurred.

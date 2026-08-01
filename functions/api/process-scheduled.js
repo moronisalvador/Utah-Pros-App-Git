@@ -9,8 +9,9 @@
  *   arrived, checks the recipient still consents, sends each one through the
  *   central automated-message safety gate, and records the result. Phase A
  *   hardened it:
- *     1. The public trigger endpoint now requires the scheduler secret (or a
- *        logged-in employee) — it used to be open to anyone.
+ *     1. The public trigger endpoint now requires the scheduler secret (or the
+ *        exact internal DevTools owner with Conversations access) — it used to
+ *        be open to anyone.
  *     2. Two copies of the job running at once can no longer both grab the same
  *        text and send it twice — each message is claimed atomically in the
  *        database; only one worker wins.
@@ -22,7 +23,7 @@
  *
  * WHERE IT LIVES:
  *   ENDPOINT: GET/POST /api/process-scheduled  (authenticated — scheduler secret
- *             or an active internal admin/office/project manager)
+ *             or the active internal Dev Tools owner)
  *             Also exports scheduled() for a Cloudflare Cron Trigger (no HTTP).
  *
  * DEPENDS ON:
@@ -30,26 +31,26 @@
  *   Internal:  ../lib/supabase.js, ../lib/cors.js,
  *              ../lib/automated-send.js (sendAutomatedMessage,
  *              isWithinQuietHours, DEFAULT_SMS_TIMEZONE),
- *              ../lib/auth.js (checkCronSecret, requireRole)
+ *              ../lib/auth.js (checkCronSecret, requireOwner),
+ *              ../lib/http.js (bounded Auth/database transport),
+ *              ../lib/worker-runs.js (shared run telemetry)
  *   Data:      reads  → scheduled_messages, conversations,
  *                       conversation_participants, contacts, employees,
  *                       integration_config
- *              writes → scheduled_messages (claimed_at via RPC, terminal status),
+ *              writes → scheduled_messages (token-fenced RPCs),
+ *                       message_send_attempts (one durable provider reservation),
  *                       messages, conversations, sms_consent_log, worker_runs
  *
  * NOTES / GOTCHAS:
- *   - The HTTP trigger accepts the scheduler secret or an active, non-external
- *     admin/office/project manager. A valid session alone cannot trigger company
- *     messaging.
- *   - The claim is F-core's claim_scheduled_message(p_id): an atomic compare-and-set
- *     on scheduled_messages.claimed_at. The old worker wrote status='processing',
- *     which the scheduled_messages status CHECK (pending|sent|cancelled|failed)
- *     does not even allow — that write is RETIRED. The row moves straight from
- *     'pending' to a terminal 'sent'/'failed'.
- *   - At-least-once: a claim guarantees exactly-one-winner per claim window, not
- *     exactly-once end-to-end. We write the terminal status IMMEDIATELY after the
- *     provider send (before any later non-critical bookkeeping) to keep the
- *     crash-and-re-claim window as small as possible.
+ *   - The HTTP trigger accepts the scheduler secret or the exact owner identity
+ *     allowed into Dev Tools, and a manual caller must still have Messages access.
+ *   - Every claim has a random fencing token. Release/failure writes match that
+ *     token, so an old worker cannot clear or finish a newer worker's claim.
+ *   - At-most-once provider boundary: after every consent gate passes, one
+ *     message_send_attempt is atomically linked to the scheduled row. Scheduled
+ *     mode authorizes one provider invocation and never automatically replays a
+ *     linked submitting/accepted/ambiguous attempt. An unknown crash outcome is
+ *     failed for owner review rather than risking a duplicate customer text.
  *   - Quiet-hours uses the business-default timezone (America/Denver). Per-recipient
  *     timezone is Phase D; here the whole due batch defers together outside the
  *     window, which is the correct TCPA-safe default.
@@ -63,22 +64,28 @@ import {
   isWithinQuietHours,
   DEFAULT_SMS_TIMEZONE,
 } from '../lib/automated-send.js';
-import { checkCronSecret, requireRole } from '../lib/auth.js';
+import { checkCronSecret, requireOwner } from '../lib/auth.js';
+import { fetchWithTimeout } from '../lib/http.js';
 import { SCHEDULED_ACCEPTED_CONSENT_CODES, isAcceptedConsent } from '../lib/sms-consent.js';
+import { recordWorkerRun } from '../lib/worker-runs.js';
 
 const WORKER_NAME = 'process-scheduled';
 const BATCH_LIMIT = 20;
-const MANUAL_TRIGGER_ROLES = ['admin', 'office', 'project_manager'];
 
 // ─── SECTION: Auth ──────────────
 export { checkCronSecret };
 
-export async function authorizeRequest(request, env, db) {
+export async function authorizeRequest(
+  request,
+  env,
+  db,
+  fetchImpl = fetchWithTimeout,
+) {
   if (await checkCronSecret(request, db)) {
     return { authorized: true, actor: 'scheduler' };
   }
 
-  const auth = await requireRole(request, env, db, MANUAL_TRIGGER_ROLES);
+  const auth = await requireOwner(request, env, db, fetchImpl);
   if (auth.error) {
     return {
       authorized: false,
@@ -86,10 +93,30 @@ export async function authorizeRequest(request, env, db) {
       status: auth.status || 403,
     };
   }
-  if (auth.employee?.is_external) {
+  if (auth.employee?.is_external !== false) {
     return {
       authorized: false,
-      error: 'External employees cannot trigger scheduled messaging',
+      error: 'Insufficient role',
+      status: 403,
+    };
+  }
+  let hasMessagingCapability = false;
+  try {
+    hasMessagingCapability = await db.rpc(
+      'messaging_employee_has_conversations_capability',
+      { p_employee_id: auth.employee.id },
+    );
+  } catch {
+    return {
+      authorized: false,
+      error: 'Messaging authorization lookup failed',
+      status: 500,
+    };
+  }
+  if (hasMessagingCapability !== true) {
+    return {
+      authorized: false,
+      error: 'Messaging access is not granted',
       status: 403,
     };
   }
@@ -98,23 +125,47 @@ export async function authorizeRequest(request, env, db) {
 
 // ─── SECTION: worker_runs ──────────────
 async function recordRun(db, { status, processed, errorMessage, startedAt }) {
-  try {
-    await db.insert('worker_runs', {
-      worker_name: WORKER_NAME,
-      status,
-      records_processed: processed,
-      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
-      started_at: startedAt,
-      completed_at: new Date().toISOString(),
-    });
-  } catch { /* telemetry is best-effort */ }
+  return recordWorkerRun(db, {
+    workerName: WORKER_NAME,
+    status,
+    recordsProcessed: processed,
+    errorMessage,
+    startedAt,
+  });
 }
 
-async function releaseClaim(db, scheduledId, reason) {
-  await db.update('scheduled_messages', `id=eq.${scheduledId}`, {
-    claimed_at: null,
-    error_message: reason ? String(reason).slice(0, 500) : null,
+function firstRow(value) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+async function releaseClaim(db, scheduledId, claimToken, reason) {
+  return db.rpc('release_scheduled_message_claim', {
+    p_id: scheduledId,
+    p_claim_token: claimToken,
+    p_error_message: reason ? String(reason).slice(0, 500) : null,
   });
+}
+
+async function failClaim(db, scheduledId, claimToken, reason) {
+  return db.rpc('fail_scheduled_message_claim', {
+    p_id: scheduledId,
+    p_claim_token: claimToken,
+    p_error_message: String(reason || 'Scheduled message failed').slice(0, 500),
+  });
+}
+
+async function reconcileDelivery(db, scheduledId) {
+  return firstRow(await db.rpc('reconcile_scheduled_message_delivery', {
+    p_id: scheduledId,
+  }));
+}
+
+function reconciliationWasSent(result) {
+  return result?.status === 'sent' || result?.outcome === 'sent';
+}
+
+function reconciliationIsInFlight(result) {
+  return result?.status === 'in_flight' || result?.outcome === 'in_flight';
 }
 
 function parseMediaUrls(value) {
@@ -153,27 +204,62 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
     }
 
     for (const scheduled of pending) {
+      let claimToken = null;
       try {
-        // ── Atomic claim (F-core RPC) — exactly one worker wins a pending row ──
-        const claimed = await db.rpc('claim_scheduled_message', { p_id: scheduled.id });
+        // A linked provider reservation is irreversible. Reconcile its durable
+        // state without claiming or calling the provider again.
+        if (scheduled.delivery_attempt_id) {
+          const reconciled = await reconcileDelivery(db, scheduled.id);
+          if (reconciliationWasSent(reconciled)) {
+            processed.push({
+              id: scheduled.id,
+              message_id: reconciled.message_id || null,
+              recovered: true,
+            });
+          } else if (!reconciliationIsInFlight(reconciled)) {
+            errors.push({
+              id: scheduled.id,
+              error: reconciled?.error || 'Reserved provider outcome requires review',
+            });
+          }
+          continue;
+        }
+
+        // ── Atomic token-fenced claim — exactly one current worker wins ──
+        claimToken = crypto.randomUUID();
+        const claimed = await db.rpc('claim_scheduled_message_v2', {
+          p_id: scheduled.id,
+          p_claim_token: claimToken,
+        });
         if (claimed !== true) continue; // another worker took it, or it is no longer pending
 
         // Load conversation
         const [conversation] = await db.select('conversations', `id=eq.${scheduled.conversation_id}`);
         if (!conversation) {
-          await markFailed(db, scheduled.id, 'Conversation not found');
+          await failClaim(db, scheduled.id, claimToken, 'Conversation not found');
           errors.push({ id: scheduled.id, error: 'Conversation not found' });
           continue;
         }
 
-        // Load participants
-        const participants = await db.select(
+        // Scheduled traffic is intentionally one-customer-only. The legacy path
+        // silently picked participants[0], which made a group send ambiguous.
+        const participantRows = await db.select(
           'conversation_participants',
-          `conversation_id=eq.${scheduled.conversation_id}&is_active=eq.true`
+          `conversation_id=eq.${scheduled.conversation_id}` +
+            '&is_active=eq.true&removed_at=is.null&contact_id=not.is.null' +
+            '&phone=not.is.null' +
+            '&select=contact_id,phone'
         );
-        if (participants.length === 0) {
-          await markFailed(db, scheduled.id, 'No active participants');
-          errors.push({ id: scheduled.id, error: 'No active participants' });
+        const participants = participantRows.filter(
+          (participant) => typeof participant.phone === 'string'
+            && participant.phone.trim().length > 0,
+        );
+        if (participants.length !== 1) {
+          const reason = participants.length === 0
+            ? 'No active customer participant'
+            : 'Scheduled messages require exactly one active customer participant';
+          await failClaim(db, scheduled.id, claimToken, reason);
+          errors.push({ id: scheduled.id, error: reason });
           continue;
         }
 
@@ -185,8 +271,44 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
         // (mirrors send-message.js's CONTACT_NOT_FOUND guard; a missing contact
         // means the DND/opt-in checks below can't run, so we refuse the send).
         if (!contact) {
-          await markFailed(db, scheduled.id, 'Blocked: could not resolve contact for compliance check');
+          await failClaim(
+            db,
+            scheduled.id,
+            claimToken,
+            'Blocked: could not resolve contact for compliance check',
+          );
           errors.push({ id: scheduled.id, error: 'Contact not found' });
+          continue;
+        }
+
+        // Participant removal, account deactivation, a Messages override, or a
+        // force-disable all take effect at dequeue. The reservation RPC repeats
+        // both predicates atomically at the final pre-provider boundary.
+        if (!scheduled.created_by) {
+          await failClaim(db, scheduled.id, claimToken, 'Creator identity is missing');
+          errors.push({ id: scheduled.id, error: 'Creator identity is missing' });
+          continue;
+        }
+        const [creatorHasCapability, creatorCanAccess] = await Promise.all([
+          db.rpc('messaging_employee_has_conversations_capability', {
+            p_employee_id: scheduled.created_by,
+          }),
+          db.rpc('messaging_employee_can_access_conversation', {
+            p_employee_id: scheduled.created_by,
+            p_conversation_id: scheduled.conversation_id,
+          }),
+        ]);
+        if (creatorHasCapability !== true || creatorCanAccess !== true) {
+          await failClaim(
+            db,
+            scheduled.id,
+            claimToken,
+            'Creator no longer has access to this conversation',
+          );
+          errors.push({
+            id: scheduled.id,
+            error: 'Creator no longer has access to this conversation',
+          });
           continue;
         }
 
@@ -199,10 +321,10 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
           : rawConsentStatus;
 
         if (consentStatus?.code === 'DND_ACTIVE') {
-          await markFailed(db, scheduled.id, 'Blocked: contact has DND enabled');
+          await failClaim(db, scheduled.id, claimToken, 'Blocked: contact has DND enabled');
           await db.insert('sms_consent_log', {
             contact_id: contact.id,
-            phone: contact.phone,
+            phone: primaryParticipant.phone,
             event_type: 'send_blocked_dnd',
             source: 'system',
             details: `Scheduled message ${scheduled.id} blocked: DND active.`,
@@ -215,10 +337,10 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
         // Scheduled traffic consumes GLOBAL_OPT_IN only. Purpose-scoped
         // SERVICE_CONSENT and IMPLIED_CONSENT are staff P2P-only.
         if (!isAcceptedConsent(consentStatus, SCHEDULED_ACCEPTED_CONSENT_CODES)) {
-          await markFailed(db, scheduled.id, 'Blocked: no consent for this contact');
+          await failClaim(db, scheduled.id, claimToken, 'Blocked: no consent for this contact');
           await db.insert('sms_consent_log', {
             contact_id: contact.id,
-            phone: contact.phone,
+            phone: primaryParticipant.phone,
             event_type: 'send_blocked_no_consent',
             source: 'system',
             details: `Scheduled message ${scheduled.id} blocked: ${consentStatus?.code || 'consent status unavailable'}.`,
@@ -230,14 +352,51 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
 
         // ── Build & send ──
         let senderPrefix = '';
-        if (scheduled.created_by) {
-          const [employee] = await db.select('employees', `id=eq.${scheduled.created_by}`);
-          if (employee?.full_name) senderPrefix = `${employee.full_name}: `;
-        }
+        const [employee] = await db.select('employees', `id=eq.${scheduled.created_by}`);
+        if (employee?.full_name) senderPrefix = `${employee.full_name}: `;
 
         const clientBody = senderPrefix + scheduled.body.trim();
 
         const mediaUrls = parseMediaUrls(scheduled.media_urls);
+        const reserveDelivery = async () => {
+          const reservation = firstRow(await db.rpc(
+            'reserve_scheduled_message_delivery',
+            {
+              p_id: scheduled.id,
+              p_claim_token: claimToken,
+              p_recipient_contact_id: contact.id,
+              p_recipient_address: primaryParticipant.phone,
+              p_submitted_body: clientBody,
+              p_canonical_body: scheduled.body.trim(),
+              p_media_urls: mediaUrls,
+            },
+          ));
+          const expectedDenials = new Set([
+            'sms_disabled',
+            'dnd',
+            'no_consent',
+          ]);
+          if (
+            expectedDenials.has(reservation?.outcome)
+            && !reservation?.attempt_id
+          ) {
+            return {
+              shouldSubmit: false,
+              attemptId: null,
+              reason: reservation.outcome,
+            };
+          }
+          if (!reservation?.attempt_id) {
+            throw new Error('Scheduled delivery reservation was refused');
+          }
+          return {
+            shouldSubmit: reservation.outcome === 'reserved',
+            attemptId: reservation.attempt_id,
+            reason: reservation.outcome === 'reserved'
+              ? null
+              : 'delivery_reserved',
+          };
+        };
         const gatedResult = await sendAutomatedMessage('sms', contact.id, null, {}, env, {
           body: clientBody,
           now,
@@ -247,41 +406,70 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
           sentBy: scheduled.created_by,
           recordBody: scheduled.body.trim(),
           markWaitingOnClient: true,
+          reserveDelivery,
+          maxProviderAttempts: 1,
         });
 
         if (
           gatedResult?.skipped
           && ['sms_disabled', 'quiet_hours'].includes(gatedResult.reason)
         ) {
-          await releaseClaim(db, scheduled.id, `Deferred: ${gatedResult.reason}`);
+          await releaseClaim(
+            db,
+            scheduled.id,
+            claimToken,
+            `Deferred: ${gatedResult.reason}`,
+          );
           continue;
         }
 
-        if (!gatedResult?.ok) {
-          const reason = gatedResult?.ambiguous
-            ? `Ambiguous provider outcome; reconcile before retry: ${gatedResult.error || 'unknown'}`
-            : gatedResult?.reason || gatedResult?.error || 'Scheduled send failed';
-          await markFailed(db, scheduled.id, `Blocked: ${reason}`);
-          errors.push({ id: scheduled.id, error: reason });
+        if (gatedResult?.deliveryAttemptId) {
+          const reconciled = await reconcileDelivery(db, scheduled.id);
+          if (reconciliationWasSent(reconciled)) {
+            processed.push({
+              id: scheduled.id,
+              message_id: reconciled.message_id || gatedResult.messageId || null,
+            });
+          } else if (!reconciliationIsInFlight(reconciled)) {
+            errors.push({
+              id: scheduled.id,
+              error: reconciled?.error
+                || gatedResult.error
+                || 'Reserved provider outcome requires review',
+            });
+          }
           continue;
         }
 
-        // Terminal status FIRST (closes the crash/re-claim double-send window),
-        // then the non-critical conversation bookkeeping.
-        await db.update('scheduled_messages', `id=eq.${scheduled.id}`, {
-          status: 'sent',
-          sent_message_id: gatedResult.messageId || null,
-          error_message: null,
-        });
-
-        processed.push({
-          id: scheduled.id,
-          message_id: gatedResult.messageId || null,
-        });
+        const reason = gatedResult?.reason
+          || gatedResult?.error
+          || 'Scheduled delivery was not reserved';
+        await failClaim(db, scheduled.id, claimToken, `Blocked: ${reason}`);
+        errors.push({ id: scheduled.id, error: reason });
 
       } catch (err) {
         console.error(`Error processing scheduled ${scheduled.id}:`, err);
-        await markFailed(db, scheduled.id, err.message);
+        // If a reservation was linked before an unexpected error, reconcile its
+        // ledger state and never submit again. Without a reservation, only the
+        // current fencing token may fail the row.
+        let reconciled = null;
+        try {
+          reconciled = await reconcileDelivery(db, scheduled.id);
+        } catch { /* fall through to token-bound failure */ }
+        if (reconciliationWasSent(reconciled)) {
+          processed.push({
+            id: scheduled.id,
+            message_id: reconciled.message_id || null,
+            recovered: true,
+          });
+          continue;
+        }
+        if (reconciliationIsInFlight(reconciled)) {
+          continue;
+        }
+        if (claimToken) {
+          await failClaim(db, scheduled.id, claimToken, err.message);
+        }
         errors.push({ id: scheduled.id, error: err.message });
       }
     }
@@ -301,13 +489,6 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
   };
 }
 
-async function markFailed(db, scheduledId, errorMessage) {
-  await db.update('scheduled_messages', `id=eq.${scheduledId}`, {
-    status: 'failed',
-    error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
-  });
-}
-
 // ─── SECTION: HTTP + cron wrappers ──────────────
 export async function onRequestOptions(context) {
   return handleOptions(context.request, context.env);
@@ -324,15 +505,15 @@ export async function onRequestPost(context) {
 // Cloudflare invokes this directly for a scheduled Cron Trigger — no HTTP, no
 // auth check needed (it never reaches the public request path).
 export async function scheduled(event, env) {
-  const db = supabase(env);
+  const db = supabase(env, fetchWithTimeout);
   const result = await processQueue(db, env);
   console.log('process-scheduled cron:', JSON.stringify(result));
 }
 
 async function runAuthenticated(context) {
   const { request, env } = context;
-  const db = supabase(env);
-  const auth = await authorizeRequest(request, env, db);
+  const db = supabase(env, fetchWithTimeout);
+  const auth = await authorizeRequest(request, env, db, fetchWithTimeout);
   if (!auth.authorized) {
     return jsonResponse(
       { error: auth.error || 'Unauthorized' },

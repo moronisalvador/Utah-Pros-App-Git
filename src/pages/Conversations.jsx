@@ -22,12 +22,16 @@
  *              @/lib/messageMedia (image attach), @/components/conversations/*,
  *              @/components/Icons, @/components/DatePicker, @/components/ui,
  *              @/components/TabLoading, @/hooks/useResumeRefetch,
- *              @/lib/nativeHaptics, @/lib/toast
- *   Data:      reads  → conversations, conversation_participants, contacts, messages,
- *                       jobs, message_templates, service_sms_consents and
+ *              @/lib/nativeHaptics, @/lib/reducedMotion, @/lib/toast,
+ *              @/lib/scheduledMessageOperation
+ *   Data:      reads  → conversations, conversation_participants, messages, jobs,
+ *                       message_templates, service_sms_consents and
  *                       message_provider_events through GET /api/attest-sms-consent
- *              writes → conversations (metadata/unread), scheduled_messages,
- *                       conversation_participants, contacts (dnd), sms_consent_log,
+ *              writes → conversation unread state through
+ *                       set_my_conversation_unread_state; contact search and atomic
+ *                       conversation creation through /api/message-conversations;
+ *                       scheduled_messages through create_scheduled_message;
+ *                       contacts (dnd), sms_consent_log,
  *                       service_sms_consents and service_sms_consent_attestations through
  *                       POST /api/attest-sms-consent,
  *                       private message-attachments storage (MMS attachments). Outbound SMS/MMS is sent
@@ -49,8 +53,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } from 'react';
-import { useLocation, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import useLookup from '@/hooks/useLookup';
 import { subscribeToMessages, subscribeToConversations, getAuthHeader } from '@/lib/realtime';
@@ -68,6 +72,18 @@ import {
   validateMessageFile,
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
+import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
+import {
+  createConversationAccessRequestGuard,
+  conversationAccessLeaseIsFresh,
+  hasConversationAccess,
+  reconcileAccessibleConversations,
+  revalidateConversationAccessAfterResume,
+  revokeConversationsOmittedFromProof,
+  runConversationAccessProbe,
+  scheduleConversationAccessExpiry,
+} from '@/components/conversations/conversationAccessState';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
@@ -82,7 +98,14 @@ import { ErrorState } from '@/components/ui';
 import TabLoading from '@/components/TabLoading';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
+import { scrollBehavior } from '@/lib/reducedMotion';
 import { toast as emitToast, err as showError } from '@/lib/toast';
+import { setMyConversationUnreadState } from '@/lib/conversationUnread';
+import { resolveConversationId } from '@/lib/openInAppThread';
+import {
+  clearScheduledMessageOperation,
+  getScheduledMessageOperation,
+} from '@/lib/scheduledMessageOperation';
 import {
   getDraft,
   setDraft,
@@ -171,6 +194,19 @@ function getInitials(name) {
 }
 function cleanName(title) { return (title || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
+function HapticRetryButton({ onRetry }) {
+  return (
+    <button
+      type="button"
+      className="btn btn-primary"
+      onPointerUp={() => impact('light')}
+      onClick={onRetry}
+    >
+      Try again
+    </button>
+  );
+}
+
 const STATUS_MAP = {
   needs_response: { label: 'Needs Response', cls: 'status-needs-response' },
   waiting_on_client: { label: 'Waiting', cls: 'status-waiting' },
@@ -198,7 +234,8 @@ const LIST_PAGE = 40;    // conversations fetched per list page
 // ═══════════════════════════════════════════════════════════════════
 
 export default function Conversations({ replyAssist } = {}) {
-  const { db, employee } = useAuth();
+  const { db, employee, pwaOwnerLease } = useAuth();
+  const queryClient = useQueryClient();
   const { data: employeeDirectory = [] } = useLookup('employees');
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -206,17 +243,20 @@ export default function Conversations({ replyAssist } = {}) {
 
   const [conversations, setConversations] = useState([]);
   const [activeId, setActiveId] = useState(null);
+  const [activeAccessAuthorized, setActiveAccessAuthorized] = useState(false);
   const [messages, setMessages] = useState([]);
   const [linkedJob, setLinkedJob] = useState(null);
 
   const [mobileView, setMobileView] = useState('list');
   const [showInfo, setShowInfo] = useState(false);
+  const [memberEditorOpen, setMemberEditorOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [compose, setCompose] = useState('');
   const [isNote, setIsNote] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  const [accessProofUnverified, setAccessProofUnverified] = useState(true);
   const [msgLoading, setMsgLoading] = useState(false);
   const [messageLoadError, setMessageLoadError] = useState(null);
   const [sending, setSending] = useState(false);
@@ -228,6 +268,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsLoadError, setContactsLoadError] = useState(null);
   const [contactSearch, setContactSearch] = useState('');
+  const [contactSearchRetry, setContactSearchRetry] = useState(0);
   const [creatingConv, setCreatingConv] = useState(false);
 
   const [showTemplates, setShowTemplates] = useState(false);
@@ -259,9 +300,17 @@ export default function Conversations({ replyAssist } = {}) {
   const composeRef = useRef(null);
   const fileInputRef = useRef(null);
   const activeIdRef = useRef(null);
+  const conversationsRef = useRef([]);
+  const conversationAccessLeasesRef = useRef(new Map());
+  const conversationInboxAccessVerifiedAtRef = useRef(0);
+  const conversationAccessRequestGuardRef = useRef(
+    createConversationAccessRequestGuard(),
+  );
   const atBottomRef = useRef(true);
   const attachCounter = useRef(0);
+  const contactSearchRequestRef = useRef(0);
   const scheduleSendingRef = useRef(false);
+  const scheduledMessageOperationsRef = useRef(new Map());
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
   const justOpenedRef = useRef(false);     // force instant scroll on thread open
@@ -273,7 +322,11 @@ export default function Conversations({ replyAssist } = {}) {
     [messages, employeeDirectory],
   );
   const { data: historicalMessageAuthors = [] } = useQuery({
-    queryKey: ['message-author-directory', unresolvedMessageAuthorIds],
+    queryKey: [
+      'message-author-directory',
+      employee?.id || 'signed-out',
+      unresolvedMessageAuthorIds,
+    ],
     queryFn: () => loadMessageAuthorDirectory(
       db,
       unresolvedMessageAuthorIds,
@@ -285,8 +338,12 @@ export default function Conversations({ replyAssist } = {}) {
 
   const attachmentsRef = useRef([]);
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+  useEffect(() => { conversationsRef.current = conversations; }, [conversations]);
   useEffect(() => { atBottomRef.current = atBottom; }, [atBottom]);
   useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+  useEffect(() => () => {
+    conversationAccessRequestGuardRef.current.invalidate();
+  }, [db, employee?.id]);
 
   // Revoke any object-URL previews and empty the tray (prevents a blob-URL leak).
   const clearAttachments = useCallback(() => {
@@ -298,40 +355,190 @@ export default function Conversations({ replyAssist } = {}) {
     attachmentsRef.current.forEach(a => { if (a.localPreview) { try { URL.revokeObjectURL(a.localPreview); } catch { /* ignore */ } } });
   }, []);
 
+  const revokeConversationAccess = useCallback((
+    conversationId,
+    { announce = true } = {},
+  ) => {
+    if (!conversationId) return;
+    conversationAccessLeasesRef.current.delete(conversationId);
+    clearDraft(conversationId);
+    queryClient.removeQueries({
+      predicate: (query) => (
+        query.queryKey?.[0] === 'conversation-members'
+        && query.queryKey?.[2] === conversationId
+      ),
+    });
+    queryClient.removeQueries({ queryKey: ['message-author-directory'] });
+    conversationsRef.current = conversationsRef.current.filter(
+      (conversation) => conversation.id !== conversationId,
+    );
+    setConversations((current) => current.filter(
+      (conversation) => conversation.id !== conversationId,
+    ));
+
+    if (activeIdRef.current === conversationId) {
+      activeIdRef.current = null;
+      retryStore.current = {};
+      clearAttachments();
+      setActiveId(null);
+      setActiveAccessAuthorized(false);
+      setMessages([]);
+      setLinkedJob(null);
+      setHasMoreMessages(false);
+      setMsgLoading(false);
+      setMessageLoadError(null);
+      setCompose('');
+      setIsNote(false);
+      setShowTemplates(false);
+      setShowSchedule(false);
+      setScheduleDate('');
+      setScheduleTime('');
+      setShowComposeActions(false);
+      setConsentPrompt(null);
+      setContextMenu(null);
+      setMemberEditorOpen(false);
+      setShowInfo(false);
+      setMobileView('list');
+      setNewInThread(0);
+      setAtBottom(true);
+      if (composeRef.current) composeRef.current.innerText = '';
+    }
+
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      if (next.get('c') === conversationId) next.delete('c');
+      return next;
+    }, { replace: true });
+    if (announce) emitToast('You no longer have access to this chat', 'info');
+  }, [clearAttachments, queryClient, setSearchParams]);
+
+  const restoreAuthorizedDraft = useCallback((conversationId) => {
+    if (!conversationId || activeIdRef.current !== conversationId) return;
+    const draft = getDraft(conversationId);
+    setCompose(draft);
+    if (composeRef.current) composeRef.current.innerText = draft;
+  }, []);
+
+  const purgeExpiredConversationAccess = useCallback(() => {
+    const inboxProofExpired = !conversationAccessLeaseIsFresh(
+      conversationInboxAccessVerifiedAtRef.current,
+    );
+    if (inboxProofExpired) {
+      conversationInboxAccessVerifiedAtRef.current = 0;
+      setAccessProofUnverified(true);
+    }
+    const cachedIds = [
+      ...conversationsRef.current.map((conversation) => conversation?.id),
+      ...conversationAccessLeasesRef.current.keys(),
+    ];
+    [...new Set(cachedIds.filter(Boolean))].forEach((conversationId) => {
+      const verifiedAt = conversationAccessLeasesRef.current.get(conversationId) || 0;
+      if (!conversationAccessLeaseIsFresh(verifiedAt)) {
+        revokeConversationAccess(conversationId, { announce: false });
+      }
+    });
+    return inboxProofExpired;
+  }, [revokeConversationAccess]);
+
   // ─── SECTION: Data fetching ──────────────
 
   const loadConversations = useCallback(async ({ silent = false } = {}) => {
+    let requestIsCurrent = true;
     try {
-      const data = await db.select('conversations',
-        'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
-      );
-      setLoadError(null);
-      setConversations(prev => {
-        if (!silent || prev.length === 0) return data;
-        const freshById = new Map(data.map(row => [row.id, row]));
-        const patched = prev.map(row => freshById.has(row.id)
-          ? { ...row, ...freshById.get(row.id) }
-          : row);
-        const existingIds = new Set(prev.map(row => row.id));
-        return [...patched, ...data.filter(row => !existingIds.has(row.id))];
+      const proof = await runConversationAccessProbe({
+        request: () => db.select('conversations',
+          'select=*,conversation_participants(contact_id,phone,role,contacts(id,name,phone,email,company,role,dnd,dnd_at,opt_in_status,opt_in_source,opt_in_at,opt_out_at,opt_out_reason))&order=last_message_at.desc.nullslast'
+        ),
+        requestGuard: conversationAccessRequestGuardRef.current,
+        onExpired: purgeExpiredConversationAccess,
       });
+      if (proof.superseded) {
+        requestIsCurrent = false;
+        return null;
+      }
+      if (!proof.accepted) {
+        setLoadError('Could not confirm conversation access. Check your connection and try again.');
+        return null;
+      }
+      const rows = proof.value;
+      const data = Array.isArray(rows) ? rows : [];
+      const openBeforeRefresh = activeIdRef.current;
+      revokeConversationsOmittedFromProof({
+        cachedConversations: conversationsRef.current,
+        authorizedConversations: data,
+        leasedConversationIds: conversationAccessLeasesRef.current.keys(),
+        onRevoke: (conversationId) => {
+          revokeConversationAccess(conversationId, {
+            announce: conversationId === openBeforeRefresh,
+          });
+        },
+      });
+      const verifiedAt = proof.requestStartedAt;
+      conversationInboxAccessVerifiedAtRef.current = verifiedAt;
+      data.forEach((conversation) => {
+        if (conversation?.id) conversationAccessLeasesRef.current.set(conversation.id, verifiedAt);
+      });
+      setLoadError(null);
+      setAccessProofUnverified(false);
+      setConversations((previous) => {
+        const next = reconcileAccessibleConversations(previous, data, silent);
+        conversationsRef.current = next;
+        return next;
+      });
+      const openConversationId = activeIdRef.current;
+      if (
+        openConversationId
+        && !hasConversationAccess(data, openConversationId)
+      ) {
+        revokeConversationAccess(openConversationId);
+      } else if (openConversationId) {
+        setActiveAccessAuthorized(true);
+        restoreAuthorizedDraft(openConversationId);
+      }
+      return data;
     } catch (error) {
+      purgeExpiredConversationAccess();
       console.error('Load conversations error:', error);
       setLoadError('Could not load conversations. Check your connection and try again.');
+      return null;
     } finally {
-      setLoading(false);
+      if (requestIsCurrent) setLoading(false);
     }
-  }, [db]);
+  }, [
+    db,
+    purgeExpiredConversationAccess,
+    restoreAuthorizedDraft,
+    revokeConversationAccess,
+  ]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
+
+  // Inbox labels and previews are private too. Track the list proof independently
+  // from row leases so an accepted empty list also becomes "unverified" at expiry
+  // instead of rendering a false-success empty state while resume I/O is pending.
+  useEffect(() => {
+    const verifiedAt = conversationInboxAccessVerifiedAtRef.current;
+    if (!verifiedAt || accessProofUnverified) return undefined;
+    return scheduleConversationAccessExpiry({
+      verifiedAt,
+      onExpire: purgeExpiredConversationAccess,
+    });
+  }, [accessProofUnverified, conversations, purgeExpiredConversationAccess]);
 
   // Idempotent "this thread is read now" — clears the badge locally + server-side.
   const markActiveRead = useCallback(async (convId) => {
     if (!convId) return;
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
-    try { await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 }); }
-    catch (err) { console.error('Mark active read error:', err); }
-  }, [db]);
+    try {
+      await setMyConversationUnreadState(db, [convId], false);
+    } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        revokeConversationAccess(convId);
+        return;
+      }
+      console.error('Mark active read error:', error);
+    }
+  }, [db, revokeConversationAccess]);
 
   // Refetch the newest page for the OPEN thread, preserving any un-reconciled
   // optimistic bubbles. Used by the Capacitor suspend/focus recovery.
@@ -348,10 +555,14 @@ export default function Conversations({ replyAssist } = {}) {
       setHasMoreMessages(rows.length === PAGE);
       setMessageLoadError(null);
     } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        revokeConversationAccess(convId);
+        return;
+      }
       console.error('Reload messages error:', error);
       setMessageLoadError('Could not refresh this conversation. Existing messages are still shown.');
     }
-  }, [db]);
+  }, [db, revokeConversationAccess]);
 
   // Deep-link: open a conversation for a contact passed via location.state, or via
   // the ?c=<conversationId> query param (push-notification / shareable URL).
@@ -360,30 +571,44 @@ export default function Conversations({ replyAssist } = {}) {
     const targetContactId = location.state?.contactId;
     const targetConvId = searchParams.get('c');
 
-    if (targetConvId && conversations.some(c => c.id === targetConvId)) {
+    if (targetConvId) {
       deepLinkHandled.current = true;
-      selectConversation(targetConvId);
+      if (hasConversationAccess(conversations, targetConvId)) {
+        selectConversation(targetConvId);
+      } else if (!loadError) {
+        revokeConversationAccess(targetConvId);
+      }
       return;
     }
     if (!targetContactId) return;
     deepLinkHandled.current = true;
     const existing = conversations.find(c => c.conversation_participants?.some(p => p.contact_id === targetContactId));
     if (existing) { selectConversation(existing.id); return; }
-    // No existing conversation — create one
+    // No existing conversation — ask the capability-checked Worker to atomically
+    // find or create it. The browser must never leave a recipient-less thread.
     (async () => {
       try {
-        const rows = await db.select('contacts', `id=eq.${targetContactId}&select=id,name,phone,company`);
-        const contact = rows?.[0];
-        if (!contact || !contact.phone) return;
-        const title = contact.company ? `${contact.name} — ${contact.company}` : contact.name;
-        const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
-        await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
-        await loadConversations();
-        selectConversation(conv.id);
-      } catch (err) { console.error('Deep-link conversation error:', err); }
+        const conversationId = await resolveConversationId(targetContactId);
+        if (!conversationId) throw new Error('Could not open this conversation');
+        const refreshed = await loadConversations({ silent: true });
+        if (!hasConversationAccess(refreshed, conversationId)) {
+          throw new Error('Created conversation was not returned by the inbox refresh');
+        }
+        selectConversation(conversationId);
+      } catch (error) {
+        console.error('Deep-link conversation error:', error);
+        showError(error?.message || 'Could not open this conversation');
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, conversations, location.state, searchParams]);
+  }, [
+    conversations,
+    loadError,
+    loading,
+    location.state,
+    revokeConversationAccess,
+    searchParams,
+  ]);
 
   // Conversation-list realtime. Guards the open+visible thread from a server-side
   // unread bump re-marking it unread under the reader (the unread-desync fix).
@@ -406,9 +631,30 @@ export default function Conversations({ replyAssist } = {}) {
     return unsubscribe;
   }, [loadConversations, markActiveRead]);
 
+  // Participant changes do not mutate the conversation row, so realtime alone
+  // cannot renew either the inbox-preview lease or an open thread. Recheck the
+  // visible inbox before expiry; an active thread uses the tighter cadence.
+  useEffect(() => {
+    const accessTimer = window.setInterval(
+      () => {
+        if (document.hidden) return;
+        if (activeId) {
+          const verifiedAt = conversationAccessLeasesRef.current.get(activeId) || 0;
+          if (!conversationAccessLeaseIsFresh(verifiedAt)) {
+            revokeConversationAccess(activeId);
+            return;
+          }
+        }
+        loadConversations({ silent: true });
+      },
+      activeId ? 5_000 : 15_000,
+    );
+    return () => window.clearInterval(accessTimer);
+  }, [activeId, loadConversations, revokeConversationAccess]);
+
   // Load the newest page of messages when a thread opens.
   useEffect(() => {
-    if (!activeId) {
+    if (!activeId || !activeAccessAuthorized) {
       setMessages([]);
       setLinkedJob(null);
       setHasMoreMessages(false);
@@ -437,6 +683,10 @@ export default function Conversations({ replyAssist } = {}) {
           } catch { if (!cancelled) setLinkedJob(null); }
         } else if (!cancelled) setLinkedJob(null);
       } catch (error) {
+        if (error?.status === 401 || error?.status === 403) {
+          revokeConversationAccess(activeId);
+          return;
+        }
         console.error('Load messages error:', error);
         if (!cancelled) {
           setMessageLoadError('Could not load messages for this conversation. Try again.');
@@ -447,12 +697,12 @@ export default function Conversations({ replyAssist } = {}) {
     load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, db]);
+  }, [activeAccessAuthorized, activeId, db, revokeConversationAccess]);
 
   // Per-thread message realtime. Reconciles inserts against optimistic bubbles and
   // keeps the open thread marked read when an inbound arrives.
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || !activeAccessAuthorized) return;
     const convId = activeId;
     const unsubscribe = subscribeToMessages(convId, (newMsg, eventType) => {
       // A realtime frame already in flight can fire after a thread switch but before
@@ -481,12 +731,14 @@ export default function Conversations({ replyAssist } = {}) {
       }
     });
     return unsubscribe;
-  }, [activeId, markActiveRead]);
+  }, [activeAccessAuthorized, activeId, markActiveRead]);
 
   // ─── SECTION: Scroll management ──────────────
 
   const scrollToBottom = useCallback((smooth = true) => {
-    const doScroll = () => messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+    const doScroll = () => messagesEndRef.current?.scrollIntoView({
+      behavior: scrollBehavior(smooth ? 'smooth' : 'instant'),
+    });
     doScroll();
     requestAnimationFrame(() => requestAnimationFrame(doScroll));
   }, []);
@@ -686,11 +938,30 @@ export default function Conversations({ replyAssist } = {}) {
     loadServiceConsentStatus();
   }, [loadServiceConsentStatus]);
 
-  const refreshAfterResume = useCallback(() => {
-    loadConversations({ silent: true });
-    reloadActiveMessages();
-    loadServiceConsentStatus();
-  }, [loadConversations, reloadActiveMessages, loadServiceConsentStatus]);
+  const refreshAfterResume = useCallback(() => (
+    revalidateConversationAccessAfterResume({
+      // This runs synchronously on hidden→visible, including when there is no
+      // selected thread, so expired titles/previews/drafts disappear before I/O.
+      purgeExpired: purgeExpiredConversationAccess,
+      revalidate: async () => {
+        const refreshed = await loadConversations({ silent: true });
+        const openConversationId = activeIdRef.current;
+        if (
+          refreshed
+          && openConversationId
+          && hasConversationAccess(refreshed, openConversationId)
+        ) {
+          await reloadActiveMessages();
+        }
+        loadServiceConsentStatus();
+      },
+    })
+  ), [
+    loadConversations,
+    reloadActiveMessages,
+    loadServiceConsentStatus,
+    purgeExpiredConversationAccess,
+  ]);
 
   useResumeRefetch({
     onResume: refreshAfterResume,
@@ -771,11 +1042,7 @@ export default function Conversations({ replyAssist } = {}) {
     return g;
   }, [templates]);
 
-  const filteredContacts = useMemo(() => {
-    if (!contactSearch.trim()) return contacts;
-    const q = contactSearch.toLowerCase();
-    return contacts.filter(c => c.name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.company?.toLowerCase().includes(q));
-  }, [contacts, contactSearch]);
+  const filteredContacts = contacts;
 
   const uploadingAttachment = attachments.some(a => a.uploading);
 
@@ -793,16 +1060,29 @@ export default function Conversations({ replyAssist } = {}) {
     isPrependingRef.current = false;
     setAtBottom(true);
     setNewInThread(0);
+    const verifiedAt = conversationAccessLeasesRef.current.get(id) || 0;
+    const hasFreshAccessLease = conversationAccessLeaseIsFresh(verifiedAt);
+    // The silent actor-scoped recheck below can resolve before React commits the
+    // activeId state. Keep the authorization target synchronous so that success
+    // renews this exact thread rather than leaving an expired deep link covered.
+    activeIdRef.current = id;
+    setActiveAccessAuthorized(hasFreshAccessLease);
     setActiveId(id); setMobileView('thread'); setShowInfo(false);
     setConsentPrompt(null);
     clearComposeState();
+    setMessages([]);
+    setLinkedJob(null);
+    setHasMoreMessages(false);
+    setMessageLoadError(null);
+    setCompose('');
+    if (composeRef.current) composeRef.current.innerText = '';
     setContextMenu(null); setShowComposeActions(false);
     setListLimit(LIST_PAGE);
-    // Restore any saved draft for this thread into the composer.
-    const draft = getDraft(id);
-    setCompose(draft);
-    if (composeRef.current) composeRef.current.innerText = draft;
+    // A cached draft is private content. It may return only with a current
+    // actor-scoped proof, never merely because the selected row still exists.
+    if (hasFreshAccessLease) restoreAuthorizedDraft(id);
     syncDeepLinkParam(id);
+    if (!hasFreshAccessLease) loadConversations({ silent: true });
   };
   const goBackToList = () => {
     setMobileView('list'); setShowInfo(false); setShowTemplates(false); setShowSchedule(false);
@@ -820,10 +1100,14 @@ export default function Conversations({ replyAssist } = {}) {
   const markAsUnread = async (convId) => {
     setContextMenu(null);
     try {
-      await db.update('conversations', `id=eq.${convId}`, { unread_count: 1 });
+      await setMyConversationUnreadState(db, [convId], true);
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 1 } : c));
       emitToast('Marked as unread', 'info');
     } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        revokeConversationAccess(convId);
+        return;
+      }
       console.error('Mark unread error:', error);
       showError('Could not mark this conversation as unread');
     }
@@ -831,10 +1115,14 @@ export default function Conversations({ replyAssist } = {}) {
   const markAsRead = async (convId) => {
     setContextMenu(null);
     try {
-      await db.update('conversations', `id=eq.${convId}`, { unread_count: 0 });
+      await setMyConversationUnreadState(db, [convId], false);
       setConversations(prev => prev.map(c => c.id === convId ? { ...c, unread_count: 0 } : c));
       emitToast('Marked as read', 'info');
     } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        revokeConversationAccess(convId);
+        return;
+      }
       console.error('Mark read error:', error);
       showError('Could not mark this conversation as read');
     }
@@ -843,11 +1131,14 @@ export default function Conversations({ replyAssist } = {}) {
     const unread = conversations.filter(c => c.unread_count > 0);
     if (!unread.length) return;
     try {
-      const ids = unread.map(c => c.id).join(',');
-      await db.update('conversations', `id=in.(${ids})`, { unread_count: 0 });
+      await setMyConversationUnreadState(db, null, false);
       setConversations(prev => prev.map(c => ({ ...c, unread_count: 0 })));
       emitToast(`${unread.length} conversations marked as read`, 'success');
     } catch (error) {
+      if (error?.status === 401 || error?.status === 403) {
+        await loadConversations({ silent: true });
+        return;
+      }
       console.error('Read all error:', error);
       showError('Could not mark all conversations as read');
     }
@@ -959,6 +1250,10 @@ export default function Conversations({ replyAssist } = {}) {
       if (!res.ok) {
         let data = {};
         try { data = await res.json(); } catch { /* non-JSON error body */ }
+        if (res.status === 401 || data.code === 'CONVERSATION_NOT_AUTHORIZED') {
+          revokeConversationAccess(convId);
+          return;
+        }
         const reason = data.code === 'DND_ACTIVE' ? 'Contact has Do Not Disturb enabled'
           : data.code === 'NO_CONSENT' ? 'Contact has not opted in to SMS'
             : (data.error || `Message not sent (${res.status})`);
@@ -995,6 +1290,10 @@ export default function Conversations({ replyAssist } = {}) {
       }
       if (clientId) delete retryStore.current[clientId];
     } catch (err) {
+      if (err?.status === 401 || err?.status === 403) {
+        revokeConversationAccess(convId);
+        return;
+      }
       console.error('Send error:', err);
       if (activeIdRef.current === convId) {
         setMessages(prev => prev.map(m => m._clientId === clientId
@@ -1003,7 +1302,7 @@ export default function Conversations({ replyAssist } = {}) {
       }
       emitToast('Network error — message not sent', 'error');
     }
-  }, [employee, canAttestPriorConsent]);
+  }, [employee, canAttestPriorConsent, revokeConversationAccess]);
 
   const handleSend = async () => {
     if (!activeId) return;
@@ -1030,17 +1329,49 @@ export default function Conversations({ replyAssist } = {}) {
     if (showSchedule && scheduleDate && scheduleTime) {
       if (!text) return;
       // Synchronous guard: Enter bypasses the disabled button, so a same-tick
-      // double-Enter would otherwise insert two scheduled rows before `sending` flips.
+      // double-Enter would otherwise create two scheduled rows before `sending` flips.
       if (scheduleSendingRef.current) return;
       const sendAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
       if (new Date(sendAt) <= new Date()) { emitToast('Scheduled time must be in the future', 'error'); return; }
+      // Keep this operation id after an ambiguous/lost response. The same exact
+      // conversation/body/time retry then reaches the RPC with the same id
+      // instead of creating a second scheduled row.
+      const scheduledOperation = getScheduledMessageOperation(
+        scheduledMessageOperationsRef.current,
+        { conversationId: activeId, body: text, sendAt },
+        { ownerLease: pwaOwnerLease },
+      );
       scheduleSendingRef.current = true;
       setSending(true);
       try {
-        await db.insert('scheduled_messages', { conversation_id: activeId, body: text, send_at: sendAt, status: 'pending', created_by: employee?.id || null });
+        await db.rpc('create_scheduled_message', {
+          p_id: scheduledOperation.id,
+          p_conversation_id: activeId,
+          p_body: text,
+          p_send_at: sendAt,
+        });
+        clearScheduledMessageOperation(
+          scheduledMessageOperationsRef.current,
+          scheduledOperation,
+        );
         clearCompose(); clearDraft(activeId); setShowSchedule(false); setScheduleDate(''); setScheduleTime('');
         emitToast('Message scheduled', 'success');
-      } catch (err) { console.error('Schedule error:', err); emitToast('Failed to schedule', 'error'); }
+      } catch (err) {
+        console.error('Schedule error:', err);
+        const scheduleError = `${err?.code || ''} ${err?.message || ''}`.toLowerCase();
+        const message = scheduleError.includes('exactly one')
+          || scheduleError.includes('ambiguous')
+          || scheduleError.includes('group')
+          || scheduleError.includes('broadcast')
+          ? 'Scheduled messages are only available for one-to-one conversations'
+          : scheduleError.includes('42501')
+              || scheduleError.includes('not_authorized')
+              || scheduleError.includes('access denied')
+              || scheduleError.includes('messages access')
+            ? 'You no longer have access to this conversation'
+            : 'Failed to schedule';
+        emitToast(message, 'error');
+      }
       finally { setSending(false); scheduleSendingRef.current = false; }
       return;
     }
@@ -1154,25 +1485,65 @@ export default function Conversations({ replyAssist } = {}) {
 
   // ─── SECTION: Event handlers — new conversation / templates ──────────────
 
-  const loadContacts = useCallback(async () => {
+  const loadContacts = useCallback(async (query, signal) => {
+    const requestId = contactSearchRequestRef.current + 1;
+    contactSearchRequestRef.current = requestId;
     setContactsLoading(true);
     setContactsLoadError(null);
     try {
-      const data = await db.select('contacts', 'select=id,name,phone,email,company,role&order=name.asc');
-      setContacts(data);
+      const authHeader = await getAuthHeader();
+      const response = await fetch(
+        `/api/message-conversations?q=${encodeURIComponent(query)}`,
+        { headers: authHeader, signal },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not search contacts');
+      if (requestId === contactSearchRequestRef.current) {
+        setContacts(Array.isArray(data.contacts) ? data.contacts : []);
+      }
     } catch (error) {
+      if (error?.name === 'AbortError') return;
+      if (requestId !== contactSearchRequestRef.current) return;
       console.error('Load contacts error:', error);
+      setContacts([]);
       setContactsLoadError('Could not load contacts. Check your connection and try again.');
       showError('Could not load contacts');
     } finally {
-      setContactsLoading(false);
+      if (!signal?.aborted && requestId === contactSearchRequestRef.current) {
+        setContactsLoading(false);
+      }
     }
-  }, [db]);
+  }, []);
+
+  useEffect(() => {
+    if (!showNewConv) return undefined;
+    const query = contactSearch.trim();
+    if (query.length < 2) {
+      setContacts([]);
+      setContactsLoading(false);
+      setContactsLoadError(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setContacts([]);
+    setContactsLoading(true);
+    setContactsLoadError(null);
+    const searchTimer = window.setTimeout(
+      () => loadContacts(query, controller.signal),
+      200,
+    );
+    return () => {
+      contactSearchRequestRef.current += 1;
+      window.clearTimeout(searchTimer);
+      controller.abort();
+    };
+  }, [contactSearch, contactSearchRetry, loadContacts, showNewConv]);
 
   const openNewConvModal = () => {
     setShowNewConv(true);
     setContactSearch('');
-    loadContacts();
+    setContacts([]);
+    setContactsLoadError(null);
   };
   const createNewConversation = async (contact) => {
     if (creatingConv) return;
@@ -1180,10 +1551,14 @@ export default function Conversations({ replyAssist } = {}) {
     if (existing) { setShowNewConv(false); selectConversation(existing.id); return; }
     setCreatingConv(true);
     try {
-      const title = contact.company ? `${contact.name} — ${contact.company}` : contact.name;
-      const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
-      await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
-      setShowNewConv(false); await loadConversations(); selectConversation(conv.id);
+      const conversationId = await resolveConversationId(contact.id);
+      if (!conversationId) throw new Error('Could not start this conversation');
+      const refreshed = await loadConversations({ silent: true });
+      if (!hasConversationAccess(refreshed, conversationId)) {
+        throw new Error('Created conversation was not returned by the inbox refresh');
+      }
+      setShowNewConv(false);
+      selectConversation(conversationId);
     } catch (err) { console.error('Create conversation error:', err); emitToast('Could not start conversation', 'error'); }
     finally { setCreatingConv(false); }
   };
@@ -1254,13 +1629,21 @@ export default function Conversations({ replyAssist } = {}) {
         <div className="conv-list-items">
           {loading ? (
             <div className="loading-page"><div className="spinner" /></div>
+          ) : accessProofUnverified && loadError ? (
+            <ErrorState
+              message={loadError}
+              secondary={(
+                <HapticRetryButton
+                  onRetry={() => loadConversations({ silent: true })}
+                />
+              )}
+            />
+          ) : accessProofUnverified ? (
+            <TabLoading label="Verifying conversation access…" />
           ) : loadError && conversations.length === 0 ? (
             <ErrorState
               message={loadError}
-              onRetry={() => {
-                impact('light');
-                loadConversations();
-              }}
+              secondary={<HapticRetryButton onRetry={() => loadConversations()} />}
             />
           ) : (
             <>
@@ -1268,10 +1651,11 @@ export default function Conversations({ replyAssist } = {}) {
                 <ErrorState
                   className="conv-inline-error"
                   message={loadError}
-                  onRetry={() => {
-                    impact('light');
-                    loadConversations({ silent: true });
-                  }}
+                  secondary={(
+                    <HapticRetryButton
+                      onRetry={() => loadConversations({ silent: true })}
+                    />
+                  )}
                 />
               )}
               {filtered.length === 0 ? (
@@ -1322,6 +1706,8 @@ export default function Conversations({ replyAssist } = {}) {
       <div className="conv-thread-panel">
         {!activeId ? (
           <div className="conv-empty-thread"><div className="empty-state-icon">💬</div><div className="empty-state-title">Select a conversation</div><div className="empty-state-text">Choose from the list to view messages</div></div>
+        ) : !activeAccessAuthorized || !activeConv ? (
+          <TabLoading label="Verifying conversation access…" />
         ) : (
           <>
             <div className="conv-thread-header">
@@ -1351,9 +1737,9 @@ export default function Conversations({ replyAssist } = {}) {
                   }
                 </button>
                 {linkedJob && (
-                  <a href={`/jobs/${linkedJob.id}`} className="btn btn-sm btn-secondary conv-job-link" title={linkedJob.job_number}>
+                  <Link to={`/jobs/${linkedJob.id}`} className="btn btn-sm btn-secondary conv-job-link" title={linkedJob.job_number}>
                     <span className="conv-job-link-num">{linkedJob.job_number}</span><IconLink style={{ width: 12, height: 12 }} />
-                  </a>
+                  </Link>
                 )}
                 <button className="conv-info-btn" onClick={() => setShowInfo(!showInfo)} aria-label="Contact info"><IconInfo style={{ width: 18, height: 18 }} /></button>
               </div>
@@ -1364,10 +1750,7 @@ export default function Conversations({ replyAssist } = {}) {
               ) : messageLoadError && messages.length === 0 ? (
                 <ErrorState
                   message={messageLoadError}
-                  onRetry={() => {
-                    impact('light');
-                    reloadActiveMessages();
-                  }}
+                  secondary={<HapticRetryButton onRetry={reloadActiveMessages} />}
                 />
               ) : (
                 <>
@@ -1375,10 +1758,7 @@ export default function Conversations({ replyAssist } = {}) {
                     <ErrorState
                       className="conv-inline-error"
                       message={messageLoadError}
-                      onRetry={() => {
-                        impact('light');
-                        reloadActiveMessages();
-                      }}
+                      secondary={<HapticRetryButton onRetry={reloadActiveMessages} />}
                     />
                   )}
                   {messages.length === 0 ? (
@@ -1397,6 +1777,12 @@ export default function Conversations({ replyAssist } = {}) {
                         <MessageBubble
                           key={item.data.id}
                           msg={item.data}
+                          participants={activeConv?.conversation_participants || []}
+                          isMultiConversation={
+                            activeConv?.type === 'group'
+                            || activeConv?.type === 'broadcast'
+                            || (activeConv?.conversation_participants?.length || 0) > 1
+                          }
                           onRetry={retryMessage}
                           onMediaLayout={handleMediaLayout}
                         />
@@ -1565,20 +1951,27 @@ export default function Conversations({ replyAssist } = {}) {
       {/* ═══ RIGHT: Detail ═══ */}
       {showInfo && <div className="conv-info-backdrop" onClick={() => setShowInfo(false)} />}
       <div className={`conv-detail-panel${showInfo ? ' open' : ''}`}>
-        {activeConv ? (
+        {activeAccessAuthorized && activeConv ? (
           <>
             <div className="conv-detail-close-row"><button className="conv-detail-close-btn" onClick={() => setShowInfo(false)}><IconX style={{ width: 18, height: 18 }} /></button></div>
 
             <div className="conv-detail-section" style={{ textAlign: 'center' }}>
-              <a href={activeContact ? `/contacts/${activeContact.id}` : '#'} className="conv-detail-profile-link">
-                <div className="conv-detail-avatar-lg">{getInitials(activeContact?.name || activeConv.title)}</div>
-                <div className="conv-detail-name">{cleanName(activeContact?.name || activeConv.title)}</div>
-                {activeContact?.company && <div className="conv-detail-company">{activeContact.company}</div>}
-              </a>
+              {activeContact ? (
+                <Link to={`/contacts/${activeContact.id}`} className="conv-detail-profile-link">
+                  <div className="conv-detail-avatar-lg">{getInitials(activeContact.name || activeConv.title)}</div>
+                  <div className="conv-detail-name">{cleanName(activeContact.name || activeConv.title)}</div>
+                  {activeContact.company && <div className="conv-detail-company">{activeContact.company}</div>}
+                </Link>
+              ) : (
+                <div className="conv-detail-profile-link">
+                  <div className="conv-detail-avatar-lg">{getInitials(activeConv.title)}</div>
+                  <div className="conv-detail-name">{cleanName(activeConv.title)}</div>
+                </div>
+              )}
               {activeContact?.role && <span className="conv-detail-role-tag">{activeContact.role.replace(/_/g, ' ')}</span>}
               {activeContact && (
                 <div className="conv-detail-view-profile">
-                  <a href={`/contacts/${activeContact.id}`}>View full profile →</a>
+                  <Link to={`/contacts/${activeContact.id}`}>View full profile →</Link>
                 </div>
               )}
             </div>
@@ -1623,13 +2016,13 @@ export default function Conversations({ replyAssist } = {}) {
             {linkedJob && (
               <div className="conv-detail-section">
                 <div className="conv-detail-label">Linked Job</div>
-                <a href={`/jobs/${linkedJob.id}`} className="conv-detail-job-card">
+                <Link to={`/jobs/${linkedJob.id}`} className="conv-detail-job-card">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span className="conv-detail-job-num">{linkedJob.job_number}</span>
                     {linkedJob.division && <span className="division-badge" data-division={linkedJob.division}>{linkedJob.division}</span>}
                   </div>
                   {linkedJob.insured_name && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>{linkedJob.insured_name}</div>}
-                </a>
+                </Link>
               </div>
             )}
             <div className="conv-detail-section">
@@ -1641,10 +2034,35 @@ export default function Conversations({ replyAssist } = {}) {
             <div className="conv-detail-section">
               <div className="conv-detail-label">Actions</div>
               <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => markAsUnread(activeId)}>Mark as unread</button>
+              {employee?.role === 'admin' && employee?.is_external !== true && (
+                <button
+                  className="btn btn-secondary conversation-members__launch"
+                  style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                  onPointerUp={() => impact('light')}
+                  onClick={() => setMemberEditorOpen(true)}
+                >
+                  Manage chat participants
+                </button>
+              )}
+              <LeaveConversationButton
+                conversationId={activeId}
+                className="btn btn-sm"
+                onLeft={(conversationId) => revokeConversationAccess(
+                  conversationId,
+                  { announce: false },
+                )}
+              />
             </div>
           </>
         ) : (<div className="conv-detail-section" style={{ color: 'var(--text-tertiary)', textAlign: 'center', paddingTop: 40 }}>Select a conversation</div>)}
       </div>
+
+      <ConversationMemberEditor
+        open={memberEditorOpen && activeAccessAuthorized}
+        onClose={() => setMemberEditorOpen(false)}
+        conversationId={activeId}
+        conversationTitle={activeAccessAuthorized ? cleanName(activeConv?.title) : ''}
+      />
 
       {/* Context menu */}
       {contextMenu && (
@@ -1673,13 +2091,16 @@ export default function Conversations({ replyAssist } = {}) {
               ) : contactsLoadError ? (
                 <ErrorState
                   message={contactsLoadError}
-                  onRetry={() => {
-                    impact('light');
-                    loadContacts();
-                  }}
+                  secondary={(
+                    <HapticRetryButton
+                      onRetry={() => setContactSearchRetry((current) => current + 1)}
+                    />
+                  )}
                 />
               ) : filteredContacts.length === 0 ? (
-                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>{contactSearch ? 'No contacts found' : 'No contacts available'}</div>
+                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+                  {contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}
+                </div>
               ) : filteredContacts.map(contact => (
                 <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
                   <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
@@ -1689,7 +2110,6 @@ export default function Conversations({ replyAssist } = {}) {
                       <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
                     </div>
                   </div>
-                  <span className="conv-detail-role-tag" style={{ fontSize: '10px' }}>{contact.role?.replace(/_/g, ' ')}</span>
                 </button>
               ))}
             </div>

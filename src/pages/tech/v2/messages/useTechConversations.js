@@ -39,13 +39,29 @@
  *     path. REST polling and Realtime are both verified with a real login.
  * ════════════════════════════════════════════════
  */
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { subscribeToConversations } from '@/lib/realtime';
-import { techKeys, invalidateTech } from '@/lib/techQuery';
+import {
+  captureTechQueryAccountGeneration,
+  techKeys,
+  invalidateTech,
+  techQueryAccountGenerationIsCurrent,
+} from '@/lib/techQuery';
+import {
+  revalidateConversationAccessAfterResume,
+  scheduleConversationAccessExpiry,
+} from '@/components/conversations/conversationAccessState';
+import { useResumeRefetch } from '@/hooks/useResumeRefetch';
+import {
+  hasFreshTechConversationInboxAccess,
+  loadTechConversationInboxAccess,
+  purgeExpiredConversationInboxAccess,
+  techConversationInboxAccessError,
+} from './accessRevocation';
 
-const REFETCH_MS = 60_000; // 60s silent revalidate — the TechLayout taskCount precedent.
+const REFETCH_MS = 15_000; // Renew the 30s actor-scoped inbox-access lease before expiry.
 const EMPTY = { conversations: [], unread_total: 0, status_counts: {} };
 
 // ─── SECTION: Shared realtime channel (ref-counted singleton) ──────────────
@@ -95,23 +111,68 @@ export function useTechConversations(options = {}) {
   const { db, employee } = useAuth();
   const queryClient = useQueryClient();
   const enabled = !!db && !!employee?.id;
+  const accountGeneration = captureTechQueryAccountGeneration();
 
   const status = options.status && options.status !== 'all' ? options.status : null;
   const search = options.search && options.search.trim() ? options.search.trim() : null;
   const filterKey = conversationsFilterKey({ status: options.status, search: options.search });
+  const queryKey = useMemo(() => techKeys.convos(filterKey), [filterKey]);
 
   const query = useQuery({
-    queryKey: techKeys.convos(filterKey),
+    queryKey,
     enabled,
     refetchInterval: REFETCH_MS,
-    queryFn: async () => {
-      const res = await db.rpc('get_tech_conversations', {
+    queryFn: () => loadTechConversationInboxAccess({
+      db,
+      queryClient,
+      queryKey,
+      accountOwner: employee.id,
+      accountGeneration,
+      revalidateAllCachedAccess: filterKey === null,
+      params: {
         p_limit: 50,
         p_search: search,
         p_status: status,
+      },
+    }),
+  });
+
+  const purgeExpiredInbox = useCallback(() => {
+    if (techQueryAccountGenerationIsCurrent(accountGeneration)) {
+      purgeExpiredConversationInboxAccess(queryClient, {
+        accountOwner: employee?.id,
+        accountGeneration,
       });
-      return res || EMPTY;
-    },
+    }
+  }, [accountGeneration, employee?.id, queryClient]);
+
+  // A mounted inbox can otherwise sit idle forever with stale titles/previews. A
+  // successful RPC moves actorAccessVerifiedAt and reschedules this boundary; a
+  // failed/offline renewal or local cache patch cannot move it. The per-ID lease
+  // registry removes only conversations whose own proof actually expired.
+  useEffect(() => {
+    const verifiedAt = query.data?.actorAccessVerifiedAt || 0;
+    if (!verifiedAt) return undefined;
+    return scheduleConversationAccessExpiry({
+      verifiedAt,
+      onExpire: purgeExpiredInbox,
+    });
+  }, [purgeExpiredInbox, query.data?.actorAccessVerifiedAt]);
+
+  const resumeInboxAccess = useCallback(() => (
+    revalidateConversationAccessAfterResume({
+      purgeExpired: purgeExpiredInbox,
+      revalidate: query.refetch,
+    })
+  ), [purgeExpiredInbox, query.refetch]);
+
+  // This remains enabled with no active thread: inbox titles and previews are
+  // private data too. Resume purges expired rows synchronously, then starts the
+  // actor-scoped network revalidation.
+  useResumeRefetch({
+    onResume: resumeInboxAccess,
+    hiddenEdgeOnly: true,
+    enabled,
   });
 
   // Shared realtime channel → refresh every convos view (+ the badge) on any change.
@@ -121,14 +182,21 @@ export function useTechConversations(options = {}) {
     return acquireConversationsChannel(onChange);
   }, [enabled, queryClient]);
 
-  const data = query.data || EMPTY;
+  const hasFreshInboxAccessLease = hasFreshTechConversationInboxAccess(
+    query.data,
+    employee?.id,
+  );
+  const data = hasFreshInboxAccessLease ? (query.data || EMPTY) : EMPTY;
   return {
-    conversations: data.conversations || [],
+    conversations: (data.conversations || []).map((conversation) => ({
+      ...conversation,
+      accessLeaseVerifiedAt: query.data?.actorAccessVerifiedAt,
+    })),
     unreadTotal: data.unread_total || 0,
     statusCounts: data.status_counts || {},
     isColdStart: query.isPending, // no cached page yet → skeleton (never a spinner over content)
     isFetching: query.isFetching,
-    error: query.error,
+    error: techConversationInboxAccessError(query.data, query.error),
     refresh: query.refetch,
   };
 }
