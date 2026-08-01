@@ -451,21 +451,21 @@ export default function TechJobDetail() {
           style={{
             display: 'flex', alignItems: 'center', gap: 10, width: '100%',
             padding: '12px var(--space-4)', minHeight: 52,
-            background: '#fef2f2', borderTop: '1px solid #fecaca', borderBottom: '1px solid #fecaca',
+            background: 'var(--danger-bg)', borderTop: '1px solid var(--danger-border)', borderBottom: '1px solid var(--danger-border)',
             borderLeft: 'none', borderRight: 'none',
             cursor: 'pointer', fontFamily: 'var(--font-sans)', textAlign: 'left',
             WebkitTapHighlightColor: 'transparent',
           }}
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
             <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{t('complianceTitle')}</div>
-            <div style={{ fontSize: 12, color: '#b91c1c', marginTop: 1 }}>{t('complianceSub')}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger)' }}>{t('complianceTitle')}</div>
+            <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 1 }}>{t('complianceSub')}</div>
           </div>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <polyline points="9 18 15 12 9 6" />
           </svg>
         </button>
@@ -875,10 +875,10 @@ export default function TechJobDetail() {
               onClick={() => { setMenuOpen(false); setDeleteOpen(true); setDeleteInput(''); }}
               style={{
                 width: '100%', minHeight: 56, padding: '14px 16px',
-                borderRadius: 12, background: '#fef2f2',
-                border: '1px solid #fecaca',
+                borderRadius: 12, background: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
                 display: 'flex', alignItems: 'center', gap: 10,
-                fontSize: 15, fontWeight: 600, color: '#dc2626',
+                fontSize: 15, fontWeight: 600, color: 'var(--danger)',
                 cursor: 'pointer', fontFamily: 'var(--font-sans)',
                 WebkitTapHighlightColor: 'transparent', textAlign: 'left',
               }}
@@ -908,7 +908,7 @@ export default function TechJobDetail() {
           type="job"
           keepRecord={job}
           onClose={() => setShowMerge(false)}
-          onMerged={() => { setShowMerge(false); load(); }}
+          onMerged={() => { setShowMerge(false); load({ silent: true }); }}
         />
       )}
 
@@ -930,7 +930,7 @@ export default function TechJobDetail() {
               border: '1px solid var(--border-color)',
             }}
           >
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#dc2626', marginBottom: 10 }}>{t('deleteTitle')}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--danger)', marginBottom: 10 }}>{t('deleteTitle')}</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10, lineHeight: 1.5 }}>
               <Trans
                 t={t}
@@ -978,7 +978,7 @@ export default function TechJobDetail() {
                 disabled={deleteInput !== 'DELETE' || deleting}
                 style={{
                   padding: '10px 18px', minHeight: 44, borderRadius: 10,
-                  background: deleteInput === 'DELETE' ? '#dc2626' : 'var(--bg-tertiary)',
+                  background: deleteInput === 'DELETE' ? 'var(--danger)' : 'var(--bg-tertiary)',
                   color: deleteInput === 'DELETE' ? '#fff' : 'var(--text-tertiary)',
                   border: 'none',
                   cursor: deleteInput === 'DELETE' && !deleting ? 'pointer' : 'not-allowed',

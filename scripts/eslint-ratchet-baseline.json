@@ -26,7 +26,6 @@
       "warning:no-restricted-syntax": 1
     },
     "src/components/tech/ReadingEntrySheet.jsx": {
-      "warning:no-restricted-syntax": 1,
       "warning:no-use-before-define": 1
     },
     "src/contexts/AuthContext.jsx": {
@@ -45,9 +44,8 @@
     "src/pages/JobPage.jsx": {
       "error:no-empty": 2,
       "error:no-unused-vars": 8,
-      "warning:no-restricted-syntax": 8,
       "warning:no-use-before-define": 13,
-      "warning:react-hooks/exhaustive-deps": 4
+      "warning:react-hooks/exhaustive-deps": 3
     },
     "src/pages/tech/TechNewCustomer.jsx": {
       "warning:no-restricted-syntax": 1

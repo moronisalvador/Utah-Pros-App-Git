@@ -61,7 +61,10 @@ export function compareSummaries(actual, baseline) {
       const allowed = baseline[file]?.[rule] || 0;
       if (found > allowed) {
         failures.push(`${file} ${rule}: found ${found}, baseline ${allowed}`);
-      } else if (found < allowed) {
+      } else if (found < allowed && actual[file]) {
+        // Only a file that was actually linted can have shrunk. A baseline file
+        // absent from this run simply wasn't in the diff, and reporting it as
+        // "found 0" would claim it got cleaner when it was never examined.
         opportunities.push(`${file} ${rule}: found ${found}, baseline ${allowed}`);
       }
     }

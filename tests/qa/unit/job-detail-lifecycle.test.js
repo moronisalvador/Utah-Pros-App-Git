@@ -76,6 +76,24 @@ describe('JOB-01 — TechJobDetail loading gate', () => {
     expect(source).not.toContain('onRefresh={load}');
   });
 
+  it('refreshes a merged job without re-gating the rendered page', () => {
+    const mergeModal = source.slice(
+      source.indexOf('{showMerge && ('),
+      source.indexOf('{deleteOpen && ('),
+    );
+    expect(mergeModal).toContain('onMerged={() => { setShowMerge(false); load({ silent: true }); }}');
+    expect(mergeModal).not.toMatch(/onMerged=.*\bload\(\)/s);
+  });
+
+  it('uses theme-safe danger tokens for compliance and destructive controls', () => {
+    expect(source).toContain("background: 'var(--danger-bg)'");
+    expect(source).toContain("border: '1px solid var(--danger-border)'");
+    expect(source).toContain("color: 'var(--danger)'");
+    for (const staleDangerHex of ['#fef2f2', '#fecaca', '#dc2626', '#b91c1c']) {
+      expect(source).not.toContain(staleDangerHex);
+    }
+  });
+
   it('leaves the draft and the open editor alone when a save fails', () => {
     // setNoteText('')/setNoteOpen(false) must stay AFTER the await inside try,
     // so a rejection skips them and the tech keeps what they typed. The app is
