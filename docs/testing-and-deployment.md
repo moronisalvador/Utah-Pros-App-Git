@@ -790,9 +790,13 @@ Release order is compatibility-sensitive because dev and main share production S
 
 1. **Completed 2026-08-01:** production applied `40337 → 40338 → 31213000`; QA completed
    `31213000`.
-2. Verify that trusted conversation authority contains no appointment/job/claim source.
-3. Deploy and validate compatible web plus a supported native release; retire older direct-unread
-   writers.
+2. **Completed 2026-08-01:** trusted conversation authority was verified to contain no
+   appointment/job/claim/crew source on QA or production.
+3. **Web completed 2026-08-01; native pending:** compatible web source merged to `dev` as
+   `745de63c` and Cloudflare Preview deployment
+   `7249c5de-a24d-4ffe-ba86-6a57168aa776` completed successfully in 40 seconds. The `dev` custom
+   domain served the matching `index-PE0YoM2i.js` asset and loaded the authenticated Conversations
+   page. A supported native release and retirement of older direct-unread writers remain required.
 4. Apply `31213100` participant enforcement.
 5. Deploy hardened web/Worker callers immediately before the scheduled database window; they fail
    closed until their RPCs exist.

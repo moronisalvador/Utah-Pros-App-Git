@@ -82,10 +82,11 @@ promotion.
   `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step preserves evidence and
   browser denial. Focused source/Worker tests and migration hygiene pass; the scheduled behavioral
   proof now includes final kill-switch/DND/consent race cases with zero attempt residue. The
-  governed full database runner, compatible-caller deployment, remaining enforcement applies,
-  pending-row decision, and signed-device proof remain explicit release gates. The source is
-  committed and the compatibility train is live on QA and production; no push, deployment,
-  provider call, production-row mutation, or device claim follows from this entry.
+  governed full database runner, supported-native adoption, remaining enforcement applies,
+  pending-row decision, and signed-device proof remain explicit release gates. Compatible web
+  callers are live on `dev` at merge `745de63c` through successful Cloudflare Preview deployment
+  `7249c5de-a24d-4ffe-ba86-6a57168aa776`. The compatibility train is live on QA and production.
+  No provider call, production-row mutation, production/main deployment, or device claim followed.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
