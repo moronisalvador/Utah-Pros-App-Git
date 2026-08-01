@@ -21,7 +21,8 @@
  *   Internal:  ./useThread, ./msgsSelectors (groupMessagesByDay, isMultiConversation,
  *              recipientCount), ./msgDateUtils (dayLabel),
  *              @/components/conversations/MessageBubble, @/components/tech/v2/nav
- *              (jobHref — NEVER a hardcoded /tech path, H3-safe), ./Composer
+ *              (jobHref — NEVER a hardcoded /tech path, H3-safe), ./Composer,
+ *              @/components/conversations/ConversationMemberEditor
  *   Data:      via useThread — reads messages, writes through POST /api/send-message
  *
  * NOTES / GOTCHAS:
@@ -41,8 +42,11 @@ import { useTranslation } from 'react-i18next';
 import { Capacitor } from '@capacitor/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { observeKeyboardInset } from '@/lib/nativeKeyboardLayout';
+import { selection } from '@/lib/nativeHaptics';
 import { scrollBehavior } from '@/lib/reducedMotion';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
+import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
 import SmsConsentAttestationModal from '@/components/conversations/SmsConsentAttestationModal';
 import { getServiceConsentUiState, withoutSupersededFailures } from '@/components/conversations/messageUtils';
 import {
@@ -73,6 +77,9 @@ function IconBriefcase(props) {
 function IconMute(props) {
   return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M18.63 13A17.89 17.89 0 0 1 18 8" /><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14" /><path d="M18 8a6 6 0 0 0-9.33-5" /><line x1="1" y1="1" x2="23" y2="23" /></svg>);
 }
+function IconPeople(props) {
+  return (<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
+}
 
 function cleanName(s) { return (s || 'Unknown').replace(/\s*\[DEMO\]\s*/g, ''); }
 
@@ -80,6 +87,7 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
   const { t } = useTranslation('msgs');
   const { employee } = useAuth();
   const [consentPromptOpen, setConsentPromptOpen] = useState(false);
+  const [memberEditorOpen, setMemberEditorOpen] = useState(false);
   const isMulti = isMultiConversation(conv);
   const contact = useMemo(() => {
     const parts = conv?.conversation_participants || [];
@@ -361,6 +369,26 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
               </button>
             )
           )}
+          {employee?.role === 'admin' && employee?.is_external !== true && (
+            <button
+              type="button"
+              className="tv2-msgs-info__dnd"
+              onClick={() => {
+                selection();
+                setMemberEditorOpen(true);
+              }}
+            >
+              <IconPeople width={16} height={16} />
+              Chat participants
+            </button>
+          )}
+          <LeaveConversationButton
+            conversationId={convId}
+            onLeft={() => {
+              setShowInfo(false);
+              onBack();
+            }}
+          />
         </div>
       )}
 
@@ -388,6 +416,8 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
               <MessageBubble
                 key={item.data._clientId || item.data.id}
                 msg={item.data}
+                participants={conv?.conversation_participants || []}
+                isMultiConversation={isMulti}
                 onRetry={retry}
                 onMediaLayout={handleMediaLayout}
               />
@@ -446,6 +476,12 @@ export default function ThreadView({ convId, conv, active, onBack, onEnableDnd, 
           recordConsent(record);
           setConsentPromptOpen(false);
         }}
+      />
+      <ConversationMemberEditor
+        open={memberEditorOpen}
+        onClose={() => setMemberEditorOpen(false)}
+        conversationId={convId}
+        conversationTitle={cleanName(conv?.title)}
       />
     </div>
   );

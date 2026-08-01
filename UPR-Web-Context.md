@@ -763,7 +763,15 @@ messages                — SMS/MMS + EMAIL messages. Omni-inbox (Jul 4 2026) ad
                           in_reply_to, email_references, email_from, email_to, subject, email_html,
                           sender_email. SMS-experience F-core (Jul 9 2026) additive: num_segments int,
                           price numeric (Twilio metering; Phase A fills from the status callback).
-conversation_participants — Omni-inbox adds nullable `email` (email participants)
+conversation_participants — External customer/contact recipients only; Omni-inbox adds nullable
+                          `email` (email participants). It is not internal staff membership.
+conversation_member_overrides — **SOURCE-AUTHORED ONLY (2026-07-31; not applied/deployed):**
+                          administrator-authored per-conversation internal staff include/exclude;
+                          explicit choice wins over default and historical derivation. A
+                          non-privileged participant may record their own durable exclusion.
+conversation_default_members — **SOURCE-AUTHORED ONLY (2026-07-31; not applied/deployed):**
+                          active internal field technicians included in every conversation unless
+                          an explicit per-conversation override excludes them.
 conversation_reads      — Read receipts per participant
 conversation_tags       — Tags on conversations
 scheduled_messages      — Queued outbound messages. SMS-experience F-core (Jul 9 2026) additive:
@@ -795,6 +803,41 @@ notification_queue      — Queued notifications
 conversation model, unified per-contact. Docs: `docs/omni-inbox-roadmap.md`,
 `.claude/rules/omni-inbox-wave-ownership.md`. Feature-flagged `feature:email_inbox` (owner-only).
 Later phases: I (inbound Email Worker), O (send-message.js email branch), U (unified UI).
+
+**Conversation participant scoping — SOURCE-AUTHORED ONLY (2026-07-31; not applied/deployed):**
+`messaging_employee_can_access_conversation(employee_id, conversation_id)` is the planned canonical
+staff rule for the inbox, message reads, unread/status counts, participant controls and
+`message.inbound` bell/push audience: active internal `admin`, `office`, `project_manager`, and
+`supervisor` always pass; `crm_partner` never passes; then manual per-chat override → default field
+technician → any historical appointment crew membership for the conversation contact. The join is
+`appointment_crew → appointments → jobs → COALESCE(jobs.primary_contact_id, claims.contact_id) →
+conversation_participants.contact_id`. `messaging_can_access_conversation(conversation_id)` is the
+browser capability plus that predicate. `get_conversation_members`,
+`set_conversation_member_override`, and `set_default_conversation_member` are planned admin-only
+RPCs; `leave_conversation(conversation_id)` lets a non-privileged participant persist their own
+manual removal, while privileged roles remain non-removable. Notification recipients must pass
+both that membership rule and the target employee's current Messages page capability. New/reused
+direct threads from browser flows go through `/api/message-conversations` and the service-only
+`find_or_create_scoped_conversation(contact_id, employee_id)` RPC, which refuses an existing
+unassigned thread and creates only for privileged, default, or appointment-derived staff; the
+browser no longer performs the former two-request conversation/participant insert. Both desktop
+and tech pickers use the bounded `search_scoped_conversation_contacts` RPC through that Worker,
+returning only id/name/phone/company for contacts the employee may open or start—not the bulk
+contact directory. Delivery is staged: apply compatible `20260731040337` foundation → deploy and
+verify Worker/UI callers → separately apply `20260731040338` policy/INSERT enforcement. Neither
+migration is applied. The separate phase-scoped/multiple-conversation question remains open.
+Deferred only—not authored here—final dry plus equipment pickup may eventually auto-remove
+mitigation technicians after dry logs, rooms and phases exist, except privileged staff and a
+technician manually re-added to the chat.
+
+**Message readability and sender labels — SOURCE-AUTHORED ONLY (2026-07-31; not
+applied/deployed):** the shared `MessageBubble` uses a tokenized 18px mobile message body. It shows
+minimal external sender labels only above inbound bubbles in a multi-customer thread, and a staff/
+system name above every outbound message. The body-only replacement of
+`get_message_author_directory(uuid[])` preserves its `TABLE(id, full_name, display_name)` result
+shape but authorizes every requested message through participant-aware conversation access before
+returning its staff sender. Accessibility/dynamic-type and installed Capacitor device proof remain
+pending; this is not evidence of a live migration or deployment.
 
 ### Documents & Esign
 ```

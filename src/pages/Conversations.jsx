@@ -68,6 +68,8 @@ import {
   validateMessageFile,
 } from '@/lib/messageMedia';
 import MessageBubble from '@/components/conversations/MessageBubble';
+import ConversationMemberEditor from '@/components/conversations/ConversationMemberEditor';
+import LeaveConversationButton from '@/components/conversations/LeaveConversationButton';
 import {
   captureVisibleMessageAnchor,
   countNewCanonicalMessages,
@@ -83,6 +85,7 @@ import TabLoading from '@/components/TabLoading';
 import useResumeRefetch from '@/hooks/useResumeRefetch';
 import { impact } from '@/lib/nativeHaptics';
 import { toast as emitToast, err as showError } from '@/lib/toast';
+import { resolveConversationId } from '@/lib/openInAppThread';
 import {
   getDraft,
   setDraft,
@@ -211,6 +214,7 @@ export default function Conversations({ replyAssist } = {}) {
 
   const [mobileView, setMobileView] = useState('list');
   const [showInfo, setShowInfo] = useState(false);
+  const [memberEditorOpen, setMemberEditorOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [compose, setCompose] = useState('');
@@ -228,6 +232,7 @@ export default function Conversations({ replyAssist } = {}) {
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsLoadError, setContactsLoadError] = useState(null);
   const [contactSearch, setContactSearch] = useState('');
+  const [contactSearchRetry, setContactSearchRetry] = useState(0);
   const [creatingConv, setCreatingConv] = useState(false);
 
   const [showTemplates, setShowTemplates] = useState(false);
@@ -261,6 +266,7 @@ export default function Conversations({ replyAssist } = {}) {
   const activeIdRef = useRef(null);
   const atBottomRef = useRef(true);
   const attachCounter = useRef(0);
+  const contactSearchRequestRef = useRef(0);
   const scheduleSendingRef = useRef(false);
   const retryStore = useRef({});          // clientId -> { text, media_urls, isNote }
   const prevLastIdRef = useRef(undefined); // last message id seen (tail-growth detector)
@@ -315,9 +321,11 @@ export default function Conversations({ replyAssist } = {}) {
         const existingIds = new Set(prev.map(row => row.id));
         return [...patched, ...data.filter(row => !existingIds.has(row.id))];
       });
+      return data;
     } catch (error) {
       console.error('Load conversations error:', error);
       setLoadError('Could not load conversations. Check your connection and try again.');
+      return null;
     } finally {
       setLoading(false);
     }
@@ -369,18 +377,22 @@ export default function Conversations({ replyAssist } = {}) {
     deepLinkHandled.current = true;
     const existing = conversations.find(c => c.conversation_participants?.some(p => p.contact_id === targetContactId));
     if (existing) { selectConversation(existing.id); return; }
-    // No existing conversation — create one
+    // No existing conversation — ask the capability-checked Worker to atomically
+    // find or create it. The browser must never insert a conversation and its
+    // recipient separately: that can leave a visible, recipient-less thread.
     (async () => {
       try {
-        const rows = await db.select('contacts', `id=eq.${targetContactId}&select=id,name,phone,company`);
-        const contact = rows?.[0];
-        if (!contact || !contact.phone) return;
-        const title = contact.company ? `${contact.name} — ${contact.company}` : contact.name;
-        const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
-        await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
-        await loadConversations();
-        selectConversation(conv.id);
-      } catch (err) { console.error('Deep-link conversation error:', err); }
+        const conversationId = await resolveConversationId(targetContactId);
+        if (!conversationId) throw new Error('Could not open this conversation');
+        const refreshed = await loadConversations({ silent: true });
+        if (!refreshed?.some((conversation) => conversation.id === conversationId)) {
+          throw new Error('Created conversation was not returned by the inbox refresh');
+        }
+        selectConversation(conversationId);
+      } catch (error) {
+        console.error('Deep-link conversation error:', error);
+        showError(error?.message || 'Could not open this conversation');
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, conversations, location.state, searchParams]);
@@ -771,11 +783,7 @@ export default function Conversations({ replyAssist } = {}) {
     return g;
   }, [templates]);
 
-  const filteredContacts = useMemo(() => {
-    if (!contactSearch.trim()) return contacts;
-    const q = contactSearch.toLowerCase();
-    return contacts.filter(c => c.name?.toLowerCase().includes(q) || c.phone?.includes(q) || c.company?.toLowerCase().includes(q));
-  }, [contacts, contactSearch]);
+  const filteredContacts = contacts;
 
   const uploadingAttachment = attachments.some(a => a.uploading);
 
@@ -1154,25 +1162,65 @@ export default function Conversations({ replyAssist } = {}) {
 
   // ─── SECTION: Event handlers — new conversation / templates ──────────────
 
-  const loadContacts = useCallback(async () => {
+  const loadContacts = useCallback(async (query, signal) => {
+    const requestId = contactSearchRequestRef.current + 1;
+    contactSearchRequestRef.current = requestId;
     setContactsLoading(true);
     setContactsLoadError(null);
     try {
-      const data = await db.select('contacts', 'select=id,name,phone,email,company,role&order=name.asc');
-      setContacts(data);
+      const authHeader = await getAuthHeader();
+      const response = await fetch(
+        `/api/message-conversations?q=${encodeURIComponent(query)}`,
+        { headers: authHeader, signal },
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Could not search contacts');
+      if (requestId === contactSearchRequestRef.current) {
+        setContacts(Array.isArray(data.contacts) ? data.contacts : []);
+      }
     } catch (error) {
+      if (error?.name === 'AbortError') return;
+      if (requestId !== contactSearchRequestRef.current) return;
       console.error('Load contacts error:', error);
+      setContacts([]);
       setContactsLoadError('Could not load contacts. Check your connection and try again.');
       showError('Could not load contacts');
     } finally {
-      setContactsLoading(false);
+      if (!signal?.aborted && requestId === contactSearchRequestRef.current) {
+        setContactsLoading(false);
+      }
     }
-  }, [db]);
+  }, []);
+
+  useEffect(() => {
+    if (!showNewConv) return undefined;
+    const query = contactSearch.trim();
+    if (query.length < 2) {
+      setContacts([]);
+      setContactsLoading(false);
+      setContactsLoadError(null);
+      return undefined;
+    }
+    const controller = new AbortController();
+    setContacts([]);
+    setContactsLoading(true);
+    setContactsLoadError(null);
+    const timeout = window.setTimeout(
+      () => loadContacts(query, controller.signal),
+      200,
+    );
+    return () => {
+      contactSearchRequestRef.current += 1;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [contactSearch, contactSearchRetry, loadContacts, showNewConv]);
 
   const openNewConvModal = () => {
     setShowNewConv(true);
     setContactSearch('');
-    loadContacts();
+    setContacts([]);
+    setContactsLoadError(null);
   };
   const createNewConversation = async (contact) => {
     if (creatingConv) return;
@@ -1180,10 +1228,14 @@ export default function Conversations({ replyAssist } = {}) {
     if (existing) { setShowNewConv(false); selectConversation(existing.id); return; }
     setCreatingConv(true);
     try {
-      const title = contact.company ? `${contact.name} — ${contact.company}` : contact.name;
-      const [conv] = await db.insert('conversations', { type: 'direct', title, status: 'needs_response' });
-      await db.insert('conversation_participants', { conversation_id: conv.id, contact_id: contact.id, phone: contact.phone, role: 'primary' });
-      setShowNewConv(false); await loadConversations(); selectConversation(conv.id);
+      const conversationId = await resolveConversationId(contact.id);
+      if (!conversationId) throw new Error('Could not start this conversation');
+      const refreshed = await loadConversations({ silent: true });
+      if (!refreshed?.some((conversation) => conversation.id === conversationId)) {
+        throw new Error('Created conversation was not returned by the inbox refresh');
+      }
+      setShowNewConv(false);
+      selectConversation(conversationId);
     } catch (err) { console.error('Create conversation error:', err); emitToast('Could not start conversation', 'error'); }
     finally { setCreatingConv(false); }
   };
@@ -1397,6 +1449,12 @@ export default function Conversations({ replyAssist } = {}) {
                         <MessageBubble
                           key={item.data.id}
                           msg={item.data}
+                          participants={activeConv?.conversation_participants || []}
+                          isMultiConversation={
+                            activeConv?.type === 'group'
+                            || activeConv?.type === 'broadcast'
+                            || (activeConv?.conversation_participants?.length || 0) > 1
+                          }
                           onRetry={retryMessage}
                           onMediaLayout={handleMediaLayout}
                         />
@@ -1641,10 +1699,39 @@ export default function Conversations({ replyAssist } = {}) {
             <div className="conv-detail-section">
               <div className="conv-detail-label">Actions</div>
               <button className="btn btn-sm btn-secondary" style={{ width: '100%' }} onClick={() => markAsUnread(activeId)}>Mark as unread</button>
+              {employee?.role === 'admin' && employee?.is_external !== true && (
+                <button
+                  className="btn btn-secondary conversation-members__launch"
+                  style={{ width: '100%', marginTop: 'var(--space-2)' }}
+                  onClick={() => setMemberEditorOpen(true)}
+                >
+                  Manage chat participants
+                </button>
+              )}
+              <LeaveConversationButton
+                conversationId={activeId}
+                className="btn btn-sm"
+                onLeft={() => {
+                  setConversations((current) => current.filter((item) => item.id !== activeId));
+                  setActiveId(null);
+                  setMessages([]);
+                  setLinkedJob(null);
+                  setShowInfo(false);
+                  setMobileView('list');
+                  syncDeepLinkParam(null);
+                }}
+              />
             </div>
           </>
         ) : (<div className="conv-detail-section" style={{ color: 'var(--text-tertiary)', textAlign: 'center', paddingTop: 40 }}>Select a conversation</div>)}
       </div>
+
+      <ConversationMemberEditor
+        open={memberEditorOpen}
+        onClose={() => setMemberEditorOpen(false)}
+        conversationId={activeId}
+        conversationTitle={cleanName(activeConv?.title)}
+      />
 
       {/* Context menu */}
       {contextMenu && (
@@ -1675,11 +1762,11 @@ export default function Conversations({ replyAssist } = {}) {
                   message={contactsLoadError}
                   onRetry={() => {
                     impact('light');
-                    loadContacts();
+                    setContactSearchRetry((current) => current + 1);
                   }}
                 />
               ) : filteredContacts.length === 0 ? (
-                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>{contactSearch ? 'No contacts found' : 'No contacts available'}</div>
+                <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>{contactSearch.trim().length >= 2 ? 'No contacts found' : 'Type at least 2 characters to search'}</div>
               ) : filteredContacts.map(contact => (
                 <button key={contact.id} className="conv-contact-item" onClick={() => createNewConversation(contact)} disabled={creatingConv}>
                   <div className="conv-item-avatar" style={{ width: 36, height: 36, fontSize: 'var(--text-xs)' }}>{getInitials(contact.name)}</div>
@@ -1689,7 +1776,6 @@ export default function Conversations({ replyAssist } = {}) {
                       <span>{contact.phone}</span>{contact.company && <span>· {contact.company}</span>}
                     </div>
                   </div>
-                  <span className="conv-detail-role-tag" style={{ fontSize: '10px' }}>{contact.role?.replace(/_/g, ' ')}</span>
                 </button>
               ))}
             </div>

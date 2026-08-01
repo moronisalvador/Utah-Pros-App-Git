@@ -43,7 +43,8 @@ function makeDb(opts = {}) {
     types = {}, employees = [], prefsByEmp = {}, subsByEmp = {},
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
     contactsById = {}, presentationOverrides = {}, webhookSecret = null,
-    selectErrorTable = null,
+    selectErrorTable = null, conversationRecipients = {},
+    conversationRecipientsError = false,
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -114,6 +115,11 @@ function makeDb(opts = {}) {
     async rpc(fn, params) {
       rpcCalls.push({ fn, params });
       if (fn === 'get_effective_notification_prefs') return prefsByEmp[params.p_employee_id] || [];
+      if (fn === 'get_conversation_notification_recipients') {
+        if (conversationRecipientsError) throw new Error('recipient lookup failed');
+        return (conversationRecipients[params.p_conversation_id] || [])
+          .map((employee_id) => ({ employee_id }));
+      }
       return null;
     },
     async delete(table, filter) { deletes.push({ table, filter }); return null; },
@@ -229,6 +235,39 @@ describe('resolveAudience', () => {
     expect(ids).toEqual(['active-admin']);
   });
 
+  it('message.inbound with a conversation resolves only database-scoped recipients', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'tech', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'inactive', role: 'field_tech', is_active: false, is_external: false },
+      ],
+      conversationRecipients: {
+        'conversation-1': ['tech', 'inactive'],
+      },
+    });
+
+    await expect(resolveAudience(db, 'message.inbound', {
+      recipient_ids: ['admin'],
+      data: { conversation_id: 'conversation-1' },
+    })).resolves.toEqual(['tech']);
+    expect(db.rpcCalls).toContainEqual({
+      fn: 'get_conversation_notification_recipients',
+      params: { p_conversation_id: 'conversation-1' },
+    });
+  });
+
+  it('message.inbound fails closed when its scoped recipient RPC errors', async () => {
+    const db = makeDb({
+      employees: [{ id: 'admin', role: 'admin', is_active: true, is_external: false }],
+      conversationRecipientsError: true,
+    });
+
+    await expect(resolveAudience(db, 'message.inbound', {
+      data: { conversation_id: 'conversation-1' },
+    })).resolves.toEqual([]);
+  });
+
   it('assigned and crew audiences exclude inactive and external employees', async () => {
     const db = makeDb({
       employees: [
@@ -317,6 +356,7 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
           contract_version: 1,
         },
       },
+      conversationRecipients: { 'conversation-1': ['a1'] },
     });
 
     await dispatchEvent({
@@ -698,6 +738,7 @@ describe('message.inbound deep links', () => {
           auth: 'a',
         }],
       },
+      conversationRecipients: { 'conversation-1': ['admin-1'] },
     });
 
     await dispatchEvent({

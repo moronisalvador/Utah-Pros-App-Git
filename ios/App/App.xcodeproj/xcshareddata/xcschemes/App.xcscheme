@@ -1,17 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  App — the production UPR iOS app scheme.
-
-  Debug launches use the Debug configuration (development entitlements);
-  Product > Archive and the CI release lane (fastlane gym, scheme "App") use
-  the Release configuration: bundle id com.utahprosrestoration.upr, manual
-  signing via UPR_RELEASE_PROFILE_NAME, App.Release.entitlements.
-
-  COMMITTED ON PURPOSE (2026-07-30): this scheme previously existed only as an
-  untracked local file, which (a) let the Xcode 27 beta silently drop it and
-  (b) meant a fresh CI checkout had no "App" scheme at all — the ios-release
-  workflow's archive step would have failed on a clean runner. Keep it shared.
--->
 <Scheme
    LastUpgradeVersion = "0920"
    version = "1.3">

@@ -28,7 +28,8 @@
  *                        employees (audience + email), appointment_crew (crew
  *                        audience), push_subscriptions + device_tokens (devices),
  *                        integration_config (webhook secret);
- *                        get_effective_notification_prefs (RPC)
+ *                        get_effective_notification_prefs +
+ *                        get_conversation_notification_recipients (RPCs)
  *              writes → notifications (via create_notification, per recipient);
  *                        prunes dead push subscriptions/registrations
  *
@@ -87,6 +88,12 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.canceled',
 ]);
 
+function inboundConversationId(body = {}) {
+  return body.data?.conversation_id
+    || body.conversation_id
+    || (body.entity_type === 'conversation' ? body.entity_id : null);
+}
+
 // There is no checked-in browser caller for POST /api/notify. Keep the legacy
 // Bearer capability deliberately narrow: only events whose recipient and
 // message can be derived from an existing database object. All other event
@@ -142,6 +149,29 @@ async function resolveAppointmentAudience(db, typeKey, body) {
   return filterActiveInternalEmployeeIds(db, crewIds);
 }
 
+async function resolveInboundMessageAudience(db, body) {
+  const conversationId = inboundConversationId(body);
+  if (!conversationId) return null;
+
+  // The database owns this predicate because it is also the conversation and
+  // message read boundary. Do not fall back to the broad role audience when a
+  // scoped lookup fails: that would expose an inbound notification for a thread
+  // the recipient can no longer open.
+  let recipients = [];
+  try {
+    recipients = await db.rpc('get_conversation_notification_recipients', {
+      p_conversation_id: conversationId,
+    });
+  } catch {
+    return [];
+  }
+
+  return filterActiveInternalEmployeeIds(
+    db,
+    (recipients || []).map((recipient) => recipient?.employee_id),
+  );
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
  *  1. appointment types always resolve from current assignment/crew state;
@@ -151,6 +181,11 @@ async function resolveAppointmentAudience(db, typeKey, body) {
 export async function resolveAudience(db, typeKey, body = {}) {
   if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
     return resolveAppointmentAudience(db, typeKey, body);
+  }
+
+  if (typeKey === 'message.inbound') {
+    const scopedAudience = await resolveInboundMessageAudience(db, body);
+    if (scopedAudience !== null) return scopedAudience;
   }
 
   if (Array.isArray(body.recipient_ids) && body.recipient_ids.length) {

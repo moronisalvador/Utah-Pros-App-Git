@@ -18,8 +18,8 @@
  * NOTES / GOTCHAS:
  *   - The directory RPC is additive and must deploy before callers use it.
  *   - Inactive names are limited server-side to existing time-admin roles.
- *   - The message-author RPC accepts only the loaded internal-note message IDs
- *     and returns id/full_name/display_name for their authors.
+ *   - The message-author RPC accepts loaded authored-message IDs of every type
+ *     and returns only id/full_name/display_name for their authors.
  * ════════════════════════════════════════════════
  */
 
@@ -70,8 +70,7 @@ export function missingMessageAuthorMessageIds(
   return [...new Set(
     messages
       .filter((message) => (
-        message?.type === 'internal_note'
-        && !message._pending
+        !message?._pending
         && UUID_PATTERN.test(message.id || '')
         && message.sent_by
         && !known.has(message.sent_by)
@@ -91,9 +90,10 @@ export function employeeDirectoryMap(rows = []) {
 export function attachEmployeeDirectory(message, directoryById) {
   if (!message || message.employees || !message.sent_by) return message;
   const employee = directoryById?.get?.(message.sent_by);
-  if (!employee?.full_name) return message;
+  const name = employee?.display_name?.trim?.() || employee?.full_name;
+  if (!name) return message;
   return {
     ...message,
-    employees: { full_name: employee.full_name },
+    employees: { full_name: name },
   };
 }

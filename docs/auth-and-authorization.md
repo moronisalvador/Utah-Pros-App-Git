@@ -172,12 +172,47 @@ precedence, employee override, admin allowance, then role permission. The worker
 `sent_by` from that identity and rejects a forged actor before service-role domain reads or
 provider calls.
 
-The current product is single-organization and treats conversations as company-wide for internal
-employees who have that capability; there is no narrower conversation assignment/ownership model
-to enforce today. The proposed `messages` RLS predicate mirrors the same capability and excludes
-anonymous users, nonemployees, inactive employees, external employees, force-disabled access, and
-denied overrides/roles. A future tenant or assignment scope must tighten both Worker and RLS
-together.
+Conversation participant scoping is **locally authored only as of 2026-07-31; it is not applied to
+Supabase or deployed.** When it is applied, the company-wide internal-read model above is replaced
+by one canonical per-conversation staff predicate used by the inbox, individual message reads,
+unread/status counts, participant editing, and inbound-notification audience. `admin`, `office`,
+`project_manager`, and `supervisor` always belong; `crm_partner` never belongs. For other active,
+internal staff, a per-chat administrator choice wins, then a global default-field-technician choice,
+then live historical appointment membership. The historical join is
+`appointment_crew → appointments → jobs → COALESCE(jobs.primary_contact_id, claims.contact_id) →
+conversation_participants.contact_id`; it intentionally has no active-job window or materialized
+sync job. The administrator-only member RPCs—not UI filtering—enforce manual additions/removals.
+Non-privileged participants may remove themselves; this writes the same durable manual-exclude
+override, so default or appointment derivation cannot re-add them. Privileged roles are not
+removable. Inbound notification recipients must independently pass the same target-employee page
+capability predicate, including force-disable and employee override precedence, so a hidden thread
+cannot still deliver customer content by bell, push, or email.
+
+`conversation_participants` remains the external customer/contact recipient list used by transport
+and send selection; it does **not** become an internal employee-membership table. Staff membership
+uses the separate additive `conversation_member_overrides` and `conversation_default_members`
+tables. The still-open product question about phase-scoped/multiple conversations is separate and
+must not be inferred from this per-thread visibility rule. A later, separately designed workflow
+may auto-remove mitigation technicians after final dry plus equipment pickup once dry logs/rooms/
+phases exist; it must preserve privileged access and a manual re-add. That behavior is deferred and
+is not part of this authored change.
+
+Conversation creation follows the same boundary. Browser surfaces call the existing
+capability-checked `/api/message-conversations` Worker; they do not directly insert a conversation
+and its first external participant in separate requests. The Worker passes its authenticated
+employee ID to the service-only `find_or_create_scoped_conversation(uuid, uuid)` RPC. That RPC may
+reuse a thread only when the employee is already an effective member and may create a new direct
+thread only for privileged, default, or appointment-derived staff. The same Worker GET route uses
+`search_scoped_conversation_contacts(uuid, text, integer)` so a page-capable but unassigned
+technician cannot enumerate unrelated customer names or phone numbers; the response is capped and
+contains only id, name, phone, and company.
+
+The same source-authored, unapplied foundation migration broadens
+`get_message_author_directory(uuid[])` without changing its signature or returned
+`TABLE(id, full_name, display_name)` shape. It returns a staff sender only for each requested
+message whose conversation the authenticated caller can access through the participant-aware
+predicate; a service-role caller retains its trusted path. This supports labels for every outbound
+staff/system message while avoiding a directory-wide employee disclosure.
 
 `/api/callrail-connect` is separately admin-only and rejects inactive or external employees before
 credential or webhook-secret access. These repository changes are not proof of deployed

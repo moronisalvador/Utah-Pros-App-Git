@@ -331,6 +331,54 @@ default-OFF `feature:encircle_managed_credentials` flag. The secret table retain
 the migration also revokes unnecessary `anon`/`authenticated` table privileges. The status RPC keeps
 its signature, becomes active-admin gated, and returns no secret fields.
 
+## Pending conversation participant scoping (source-authored, not applied/deployed)
+
+`20260731040337_conversation_participant_scoping.sql` and
+`20260731040338_conversation_participant_policy_enforcement.sql` are locally authored source only.
+Neither has been applied to the shared Supabase project or deployed with its consuming
+application/Worker code. The first adds two RPC-only, forced-RLS staff-membership tables without
+changing the shape of the existing external-recipient table:
+
+- `conversation_member_overrides` records an administrator's explicit per-chat include/exclude;
+  that choice wins over every derived source. A non-privileged participant may create their own
+  durable exclude; privileged roles cannot be removed.
+- `conversation_default_members` records active internal field technicians included in every chat
+  unless a per-chat override excludes them.
+
+The canonical membership decision is historical and computed live: `admin`, `office`,
+`project_manager`, and `supervisor` always have access; `crm_partner` has none; other active
+internal staff resolve manual override → default technician → any historical crew appointment for
+the conversation contact. The appointment path is `appointment_crew → appointments → jobs →
+COALESCE(jobs.primary_contact_id, claims.contact_id) → conversation_participants.contact_id`.
+`conversation_participants` continues to hold customer/contact recipients for transport and must
+not be repurposed to store employees.
+
+The authored foundation uses that same decision for `get_tech_conversations` (including unread and
+status aggregates), conversation/message RLS, administrator-only membership controls,
+`leave_conversation(uuid)` for a non-privileged participant's own durable exclusion, and the
+service-only inbound-notification recipient list. Recipient resolution requires both effective
+membership and the target employee's Messages page capability. Browser conversation creation is
+atomic through `/api/message-conversations` and the service-only
+`find_or_create_scoped_conversation(uuid, uuid)` RPC: existing unassigned threads are refused and
+new direct threads require privileged, default, or appointment-derived access. Direct browser
+INSERT grants on `conversations` and `conversation_participants` are revoked with the shipped
+browser callers moved to that Worker before the separate enforcement migration performs the
+policy/ACL narrowing. Its service-only
+`search_scoped_conversation_contacts(uuid, text, integer)` companion caps results at 25 and returns
+only id/name/phone/company after the same existing-thread or start-eligibility decision; desktop no
+longer bulk-loads the contacts table. The migration also replaces
+`get_message_author_directory(uuid[])` body-only: its existing signature and
+`TABLE(id, full_name, display_name)` shape remain frozen, while each requested message is checked
+against the participant-aware conversation predicate before its staff sender is returned. It
+preserves the existing `get_tech_conversations` signature and trusted service-role worker path. Its
+paired rollbacks restore the prior broad policies/function bodies and drop the new tables/functions.
+Rollout order is binding: apply the compatible foundation, deploy/verify Worker/UI consumers, then
+apply policy enforcement in a separate window. Each apply needs staging/local behavioral proof and
+separate owner authorization. The open phase-scoped/multiple-conversation product decision remains
+out of scope. Future deferred context only: after dry logs, rooms and phases are available, final
+dry plus equipment pickup may auto-write an exclude for mitigation technicians, except privileged
+roles or a technician manually re-added to that chat. It is not in this migration.
+
 ## Pending mobile messaging and CallRail reconciliation hardening
 
 `20260724173000_harden_find_or_create_conversation.sql` changes no table shape. It preserves

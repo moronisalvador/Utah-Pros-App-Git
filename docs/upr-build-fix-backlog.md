@@ -176,7 +176,7 @@ apply windows must not overlap. Do not run them in parallel sessions.
 
 | # | Work | Registry ID | Status | Size |
 |---|---|---|---|---|
-| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **[recon] Diagnosis done — it is VISIBILITY, not notification fan-out.** 0 of 57 `message.inbound` bell rows ever reached a technician; all 57 went to 4 admins. What techs actually see: `page:tech_msgs_v2` is live to everyone, and two unscoped read paths (`get_tech_conversations`, definer + granted to `authenticated` + **no caller predicate**; and the `conversations` ALL/true policy) hand them all 7 threads. `messages` only *looks* scoped — `messaging_can_access_conversations()` is a page-access gate with no `conversation_id` parameter. **Design [owner]-approved — see §4A.** | **M** |
+| 4.1 | **Conversation participant scoping** | *(new — no registry row)* | **[source-authored, NOT applied/deployed]** The approved visibility design now has locally authored migration/UI/Worker source. It is still not evidence of a shared-database policy change, Worker deployment, or device proof. The original diagnosis remains: it is VISIBILITY, not notification fan-out. 0 of 57 `message.inbound` bell rows ever reached a technician; all 57 went to 4 admins. The authored contract scopes inboxes, message reads, unread/status counts and notifications with the same staff-membership predicate; see §4A. | **M** |
 | 4.2 | **A2P + on-device verification** | `MSG-002` | 🔵 Provider approval, live smoke, owner device. | external |
 | 4.3 | **Text campaigns 4b** | `CRM-001` | Blocked on 4.2, or explicitly supersede it. | M, blocked |
 | 4.4 | **Inbound email Phase I** | `OMNI-001` | Foundation exists; `email-worker/` and `inbound-email.js` absent. Needs a Cloudflare route + secret first. | M, external gate |
@@ -197,8 +197,13 @@ apply windows must not overlap. Do not run them in parallel sessions.
    (follow-ups, warranty, re-opens); losing thread access the moment a job closes is worse than mild
    over-inclusion. Computed inside the predicate at read time — **no materialized table, no nightly
    derivation pass.**
-3. **Manual overrides only.** A small `conversation_members` table holding *nothing but* explicit
-   adds and removes. Manual always wins.
+3. **Manual overrides plus owner-requested defaults.** `conversation_member_overrides` holds
+   explicit per-chat adds/removes and always wins. `conversation_default_members` is a separate
+   small list of active internal field technicians included in every chat unless a per-chat
+   removal overrides it. Both are internal-staff state; the existing external
+   `conversation_participants` table remains customer/contact recipient state. A non-privileged
+   participant may remove themselves by recording the same durable manual-remove override;
+   privileged roles remain non-removable.
 
 **Why live-computed matters:** the handoff flagged "admin removes a tech, tomorrow's derivation pass
 re-adds them" as the likeliest bug. With no pass, and overrides as the only stored rows, that bug
@@ -209,11 +214,30 @@ immediately, with no sync step.
 claims.contact_id) → conversation_participants.contact_id`. It **must** join through
 `conversation_participants.contact_id` — `conversations.job_id` is NULL on all 7 rows.
 
+**Implementation state (2026-07-31):** the compatible foundation migration, later policy-enforcement
+migration, both rollbacks, admin controls and notification consumers are locally authored only;
+they are **not applied or deployed**. Binding rollout is foundation apply → Worker/UI deploy and
+verification → separate policy-enforcement apply. The remaining gates are code review,
+isolated/local or staging behavioral proof, and separate owner approval for each shared-database
+apply/deployment. The still-open phase-scoped/multiple-conversation product
+question is not resolved by these per-thread controls. Future context only: once dry logs, rooms
+and phases exist, final dry plus equipment pickup may auto-remove mitigation technicians unless
+they are privileged or an administrator manually re-added them; this deferred lifecycle behavior
+is not authored in the current feature.
+
+Creation and notification are part of the same boundary: browser surfaces use the existing
+capability-checked `/api/message-conversations` Worker plus a service-only scoped find/create RPC,
+not separate table inserts, and the RPC refuses existing unassigned threads. Inbound notification
+recipients must pass both effective membership and the target employee's current Messages page
+capability so force-disabled or individually denied staff receive no customer content. The desktop
+and tech contact pickers share the Worker's bounded, scoped search and return only minimal contact
+fields; page access alone cannot enumerate unrelated customers.
+
 **Apply at three read points, never in the UI:** `get_tech_conversations` (body-only replace — **and
 fix `v_unread` + the `status_counts` CTE, or the badge keeps leaking a global unread count**), the
-`conversations` policies (replace ALL/true with operation-specific), and `messages_authenticated_select`
-(page gate **AND** per-conversation predicate). Success tell: `src/pages/Conversations.jsx` and
-`src/pages/tech/v2/messages/**` need **no scoping edits**.
+`conversations` policy (narrow ALL/true in place and revoke browser INSERT after moving creation
+to the atomic Worker), and `messages_authenticated_select` (page gate **AND** per-conversation
+predicate). Success tell: neither conversation page adds client-side visibility filtering.
 
 **Notifications [owner]:** audience aligns to the same predicate — techs are notified only for threads
 they belong to; admins/office/PM/supervisor keep receiving everything. Deep links already land in the

@@ -1,14 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-  UPR Dev — side-by-side development variant of the UPR iOS app.
-
-  Runs the "Dev" build configuration: bundle id com.utahprosrestoration.upr.dev,
-  display name "UPR Dev", automatic signing (team H6ZUT739T9), development push
-  entitlements (App/App.entitlements). Installs ALONGSIDE the production
-  TestFlight app; it never replaces it. The TestFlight/CI lane keeps using the
-  Release configuration via fastlane and is unaffected by this scheme.
-  See docs/mobile/dev-app-variant.md.
--->
 <Scheme
    LastUpgradeVersion = "0920"
    version = "1.3">

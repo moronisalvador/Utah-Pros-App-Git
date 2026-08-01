@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-07-29 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-07-30 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -21,7 +21,15 @@ before promoting.
 
 ## Authored but NOT applied to the shared database
 
-**None.** Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
+`20260731040337_conversation_participant_scoping.sql` and staged follow-up
+`20260731040338_conversation_participant_policy_enforcement.sql` are source-authored locally and
+**NOT applied or deployed**. The first adds compatible internal chat membership/default state,
+scoped inbox/notification/search/create RPCs; after those Worker/UI callers deploy, the second
+narrows browser policies and revokes direct INSERT. Both paired rollbacks are authored.
+Isolated/staging behavioral proof, review closure, and fresh owner approval are required before
+either shared-database apply.
+
+Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
 - `20260729220000_tech_onboarding_state.sql` → live ledger `20260730115220`. Postconditions and an
   independent check passed (RLS enabled+forced, no browser-role table grant, `anon` EXECUTE false on

@@ -56,7 +56,10 @@ const DB_TESTS = join(ROOT, 'supabase', 'tests');
 // counterpart is tests/qa/unit/crm-lead-value-from-claim.test.js, which guards
 // the migration source in the credential-free lanes; the behavioural trigger
 // proof runs in the db lane against the qa-staging branch.
-const DARK_BASELINE = 80;
+// 80 → 81 on 2026-07-30: conversation_participant_scoping.test.sql. Its
+// credential-free counterpart verifies migration source and rollout ordering;
+// the behavioral access/RLS proof remains gated on an isolated database.
+const DARK_BASELINE = 81;
 // 2026-07-27: 76 -> 77, adding anon_closure_tranche_b.test.js. Acknowledged
 // deliberately, per the rule above: that file proves the customer-list closure
 // actually took effect, and it will NOT protect anything in CI until the db lane

@@ -43,30 +43,37 @@ verifiable in the next native build — group them accordingly.
 
 **Theme: message legibility / accessibility**
 
-- [ ] (P2) SMS thread text is hard to read — owner reports thread body copy is
-      genuinely hard to read in normal field use → rework size, weight, contrast and
-      bubble density so a thread is comfortably readable one-handed, outdoors, moving.
-      Run it through the `impeccable` design skill plus `design:accessibility-review`
-      (measure real contrast ratios and dynamic-type behaviour rather than eyeballing).
-      The bubble is shared — `src/components/conversations/MessageBubble.jsx` — so one
-      fix reaches `/conversations`, the CRM wrapper and the tech v2 pane together;
-      that also makes it a frozen consumed contract (tech-messages-v2 imports it), so
-      additive changes only. (Owner request 2026-07-30.)
+- [ ] (P2) SMS thread text and sender legibility — **source authored, NOT applied/deployed
+      (2026-07-31).** The shared `MessageBubble` now has a tokenized 18px mobile body, preserving
+      contrast and bubble density for one-handed outdoor field use. Minimal sender labels sit above
+      inbound bubbles only for multi-customer threads; every outbound staff/system message shows
+      its sender name. The consumed component reaches `/conversations`, the CRM wrapper and the
+      tech-v2 pane without a parallel renderer. The accompanying
+      `get_message_author_directory(uuid[])` change keeps its signature and returned shape, but
+      broadens its lookup per requested message only after the caller passes participant-aware
+      conversation authorization. Finish accessibility/dynamic-type review and native-device proof
+      before calling the result shipped; no migration has been applied. (Owner request 2026-07-30.)
 
 **Theme: conversation participants (feature-sized — finishing parked work)**
 
-- [ ] (P2) Manual participant control — no way to add or remove people from an existing
-      conversation → staff can add/remove technicians and any other users on a thread at
-      will. **State of the parked work, checked 2026-07-30:** the data model is already
-      live — `conversation_participants` carries `is_active`, and
-      `functions/api/send-message.js:524` already loads only `is_active=eq.true` rows, so
-      deactivating a participant already stops their sends. What was never built is the
-      control surface: a repo-wide grep finds no `add_participant` / `remove_participant`
-      RPC anywhere, and `src/pages/tech/v2/messages/useConvoMutations.js` exposes only
-      unread + DND mutations. So this is "add an RPC + UI over an existing table", not a
-      new subsystem. New RPC follows `database-standard.md` (invoker-preferred,
-      caller-validated, additive migration + paired rollback + a CI-visible contract
-      test in `tests/qa/unit/**`). (Owner request 2026-07-30.)
+- [ ] (P2) Manual participant control — **source authored, NOT applied/deployed (2026-07-31).**
+      Admins can add/remove active internal staff on a thread and maintain the default list of
+      field technicians included in every chat; non-privileged participants can remove themselves
+      and create the same durable manual-remove override, while privileged roles remain
+      non-removable. On Capacitor the control is a touch-target-safe, safe-area-aware native-style
+      sheet; desktop uses the same contract. Effective membership is privileged role always
+      (`admin`, `office`, `project_manager`, `supervisor`), then a manual per-chat choice, then a
+      default technician, then live historical appointment membership; `crm_partner` never receives
+      a thread. Inbox, individual messages, unread/status counts and inbound notifications must use
+      that same rule—not a client filter. The initial “existing table” assessment was wrong:
+      `conversation_participants.is_active` and `functions/api/send-message.js:524` govern external
+      customer/contact recipients for sending, not internal employee access. The additive
+      `conversation_member_overrides` and `conversation_default_members` source plus paired rollback
+      correct that boundary. Finish isolated/local or staging proof and obtain separate owner
+      authorization before any shared DB apply/deployment. The separate phase-scoped/multiple-chat
+      product question remains open. Deferred future behavior only: final dry plus equipment pickup
+      may auto-remove mitigation technicians once dry logs/rooms/phases exist, except privileged
+      staff and a technician manually re-added to the chat; it is not part of this feature.
 
 **Theme: secondary contacts on a thread (feature-sized — sequenced after participant control)**
 
