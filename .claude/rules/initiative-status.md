@@ -64,12 +64,13 @@ ledger. Its database rollout flag changed after the initial disabled apply proof
   seven service-only RPCs. Staging repeated the full transaction-rolled-back behavior suite after
   containment with zero residue. A fresh production readback at `2026-07-31 23:43:23Z` shows
   `feature:qbo_receive_payment` enabled and not force-disabled, updated through an active internal
-  admin employee identity; this supersedes the earlier disabled readback. The separate Cloudflare
-  `QBO_RECEIVE_PAYMENT_ENABLED` value was not independently read back. Receipt/attempt/event and
-  receipt-linked payment counts remain zero, with no `qbo-receive-payment` Worker run or QBO event
-  since that flag change. Do not exercise the provider path until the two-gate intent and
-  environment value are reconciled. No QBO Payment, sandbox call, authenticated end-to-end proof,
-  or `main` promotion occurred.
+  admin employee identity; this supersedes the earlier disabled readback. Cloudflare Pages readback
+  at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
+  **Production**. The two gates therefore expose the admin workflow on `dev`, while the production
+  Worker fails closed. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
+  `qbo-receive-payment` Worker run or QBO event since the database-flag change. This reconciliation
+  did not flip either QBO gate, exercise the provider path, create a QBO Payment, or call the
+  sandbox. Authenticated end-to-end proof and `main` promotion remain absent.
   Roadmap: `docs/qbo-multi-invoice-payment-receipts-roadmap.md`.
 
 ## Applied and reconciled 2026-07-31
@@ -202,7 +203,7 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
 
 | Initiative | State | Archived manifest |
 |---|---|---|
-| **QBO multi-invoice payment receipts** | Source is on `dev`; exact prior deployment proof belongs to `52a07d9e`, while each newer reconciled head needs its own smoke; QA + shared schema/ACL applies verified; the database flag is currently enabled but the Worker gate and sandbox/named-admin/provider path are unverified, so activation is not qualified and `main` promotion remains gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
+| **QBO multi-invoice payment receipts** | Source is on `dev`; exact prior deployment proof belongs to `52a07d9e`, while each newer reconciled head needs its own smoke; QA + shared schema/ACL applies verified; the database flag and Preview Worker gate are open, the Production Worker gate is absent/fail-closed, and sandbox/named-admin/provider proof is still missing, so `main` promotion remains gated | `docs/qbo-multi-invoice-payment-receipts-roadmap.md` |
 | **Phase-scoped conversations** | **DECISION PENDING — owner has not chosen. See below.** | — |
 | Messaging transport | Built, activation owner-gated | `docs/archive/rules/messaging-transport-wave-ownership.md` |
 | Tech v2 Job Hub H3 cutover | Open, owner-bake-gated | `docs/archive/rules/tech-v2-wave-ownership.md` |

@@ -2,10 +2,10 @@
 
 **Status:** Source is on `dev`, with exact prior deployment proof at `52a07d9e`; every newer
 reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
-migrations are verified. The shared database flag is currently enabled/not force-disabled; the
-separate Cloudflare Worker gate has not been independently read back, so provider activation is
-not qualified. Provider sandbox, authenticated browser/named-admin proof, and `dev → main`
-promotion remain pending.
+migrations are verified. The shared database flag is enabled/not force-disabled, Cloudflare
+Preview has `QBO_RECEIVE_PAYMENT_ENABLED=true`, and Cloudflare Production has no such key. The
+admin workflow is therefore exposed on `dev` while the production Worker fails closed. Provider
+sandbox, authenticated browser/named-admin proof, and `dev → main` promotion remain pending.
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
@@ -34,11 +34,13 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
   `2026-07-31 23:43:23Z` shows it enabled/not force-disabled through an active internal admin
   employee update; this supersedes the initial disabled readback.
 - The money endpoint requires that exact row enabled and not force-disabled plus
-  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
+  `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed. Cloudflare
+  readback at `2026-08-01 00:14:45Z` shows the Worker key `true` in Preview and absent in
+  Production.
 - Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
-  heads require independent deployment/smoke verification. No provider Payment mutation, Intuit
-  sandbox run, feature activation, authenticated browser proof, `main` merge, or production web
-  deployment occurred.
+  heads require independent deployment/smoke verification. This reconciliation did not flip either
+  QBO gate, mutate a provider Payment, or call the Intuit sandbox. Authenticated browser proof,
+  `main` merge, and production web deployment remain absent.
 
 ## Local verification evidence
 
@@ -78,14 +80,14 @@ managed-default service-role write drift described above. The corrective migrati
 CI-tested, applied on staging, and followed by the full transactional receipt suite plus direct-role
 denial proof: receipts/attempts are SELECT-only, events have no direct grant, all writes remain RPC
 only, and zero fixture/receipt residue remained. Production now matches that exact privilege shape,
-contains zero receipt/attempt/event/linked-payment rows. The later database-flag change is recorded
-above; the Worker environment value remains unverified.
+contains zero receipt/attempt/event/linked-payment rows. The later database-flag change and exact
+Preview/Production Worker environment split are recorded above.
 
 These checks still do **not** prove a provider-connected or user-qualified system. No authenticated
-rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof, qualified
-two-gate activation, named-admin production proof, or `main` promotion occurred. A post-flag-change
-readback found zero `qbo-receive-payment` Worker runs and zero new QBO events; do not use that
-absence as Worker-gate proof.
+rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof,
+named-admin production proof, or `main` promotion occurred. A post-flag-change readback found zero
+`qbo-receive-payment` Worker runs and zero new QBO events; that proves no recorded provider-path
+exercise, not end-to-end correctness.
 
 ## Frozen v1 product contract
 

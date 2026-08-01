@@ -417,17 +417,18 @@ The payment-sync cron is a separate owner gate: apply `20260724180100_qbo_paymen
 `https://utahpros.app/api/qbo-webhook`. The poller is idempotent (dedup on `qbo_payment_id`), so an
 extra fire never double-counts.
 
-## QBO multi-invoice payment receipts release sequence (schema live; gate intent unresolved 2026-07-31)
+## QBO multi-invoice payment receipts release sequence (schema live; Preview gates open 2026-07-31)
 
 This slice is reconciled on `dev` through `52a07d9e` and deployed to the dev app. Migration
 `20260731045407_qbo_multi_invoice_payment_receipts.sql` is live on `qa-staging` as
 `20260731223150` and the shared project as `20260731225654`; no QuickBooks Payment was created.
 The database flag `feature:qbo_receive_payment` was enabled/not force-disabled through an active
-internal admin update at `2026-07-31 23:43:23Z`; the separate Cloudflare
-`QBO_RECEIVE_PAYMENT_ENABLED` value has not been independently read back. Receipt tables,
-receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO events
-all remain at zero. Do not infer the Worker gate from that absence or exercise the provider path
-until the two-gate intent is reconciled.
+internal admin update at `2026-07-31 23:43:23Z`. Cloudflare Pages readback at
+`2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in Preview and no key in Production.
+The admin workflow is therefore live on `dev`, while the production Worker fails closed. Receipt
+tables, receipt-linked payments, post-change `qbo-receive-payment` Worker runs, and post-change QBO
+events all remain at zero. This reconciliation did not change either gate or exercise the provider
+path; the concurrent QBO validation owner retains that activation boundary.
 
 Before any external step, pin an exact committed revision and require: credential-free unit,
 Worker, and QA lanes; focused exact-cents, 1/100/101 allocation, duplicate/concurrent request,
