@@ -1,0 +1,3781 @@
+{
+  "_generated": "npm run generate:changelog — do not hand-edit",
+  "since": "2026-07-01",
+  "totals": {
+    "changes": 460,
+    "weeks": 5,
+    "areas": 13,
+    "testing": 19
+  },
+  "weeks": [
+    {
+      "start": "2026-07-27",
+      "end": "2026-08-02",
+      "items": [
+        {
+          "sha": "06dfe48",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Harden transcription worker boundary",
+          "live": false
+        },
+        {
+          "sha": "20436be",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Narrow recording source service grant",
+          "live": false
+        },
+        {
+          "sha": "206be74",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add receive payment workflow",
+          "live": false
+        },
+        {
+          "sha": "2b33ce7",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Add responsive configured calculator",
+          "live": true
+        },
+        {
+          "sha": "2ca5027",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Recover invoice commands safely",
+          "live": false
+        },
+        {
+          "sha": "2daa0d9",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Sync estimate acceptance from QuickBooks back into UPR",
+          "live": true
+        },
+        {
+          "sha": "2f7fda3",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Receive and reconcile grouped payments",
+          "live": false
+        },
+        {
+          "sha": "3f61e7f",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add durable invoice command ledger",
+          "live": false
+        },
+        {
+          "sha": "3f743fe",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden branch fixture seed",
+          "live": false
+        },
+        {
+          "sha": "44eae38",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add durable command recovery helpers",
+          "live": false
+        },
+        {
+          "sha": "524dafa",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Redact recording proxy errors",
+          "live": false
+        },
+        {
+          "sha": "52a07d9",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Contain QBO receipt service grants",
+          "live": false
+        },
+        {
+          "sha": "57e6c95",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add grouped payment receipt services",
+          "live": false
+        },
+        {
+          "sha": "5cc8bdb",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Add OOP pricing builder",
+          "live": true
+        },
+        {
+          "sha": "5d9adea",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Contain unsafe producer types",
+          "live": false
+        },
+        {
+          "sha": "6eb3bc3",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add configurable OOP pricing schema",
+          "live": true
+        },
+        {
+          "sha": "7022253",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Bump tracked rules inventory 13 -> 14",
+          "live": false
+        },
+        {
+          "sha": "7cf12ef",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add multi-invoice receipt schema",
+          "live": false
+        },
+        {
+          "sha": "895a43d",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Wire role-gated web and native access",
+          "live": true
+        },
+        {
+          "sha": "9132415",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Isolate inbound recording sources",
+          "live": false
+        },
+        {
+          "sha": "9bc153c",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Inject fixture credential securely",
+          "live": false
+        },
+        {
+          "sha": "abb9f31",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Add configurable pricing runtime",
+          "live": true
+        },
+        {
+          "sha": "be739a9",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Honor mobile breakpoint contract",
+          "live": false
+        },
+        {
+          "sha": "c738e34",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Payment.received names the client and job",
+          "live": true
+        },
+        {
+          "sha": "caa117f",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Transcribe-call cron allowlist wake functions (authored; NOT applied)",
+          "live": true
+        },
+        {
+          "sha": "edcd872",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Preserve reconciliation outcomes",
+          "live": false
+        },
+        {
+          "sha": "0acff17",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Resolve the committed merge conflict in UPR-Web-Context.md",
+          "live": true
+        },
+        {
+          "sha": "12d6132",
+          "day": "2026-07-30",
+          "kind": "Faster",
+          "area": "Interface",
+          "text": "Lazy-load the four quick-action modals; breadcrumb + pin the guard's storage derivation",
+          "live": true
+        },
+        {
+          "sha": "1a93e5a",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Close the unclosed rule that was swallowing every .crm-lead-value style",
+          "live": true
+        },
+        {
+          "sha": "1be58ee",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Strip whole -- comments; a leaked fragment faked a GRANT-TO-anon block",
+          "live": true
+        },
+        {
+          "sha": "208f177",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Surface submit failures inline to the signing customer",
+          "live": true
+        },
+        {
+          "sha": "244e51e",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Purge on event evidence even when persisted storage reads empty",
+          "live": true
+        },
+        {
+          "sha": "36de681",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Back out the WIP test files again — same mistake, now prevented",
+          "live": true
+        },
+        {
+          "sha": "3db0a30",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Commit the App scheme as shared — closes a latent CI archive gap",
+          "live": true
+        },
+        {
+          "sha": "3eabad5",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Make the lead Value row match the CRM panel",
+          "live": true
+        },
+        {
+          "sha": "46f06de",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Route the four raw upr:toast dispatches through lib/toast (Rule 2)",
+          "live": true
+        },
+        {
+          "sha": "5cb97d0",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Normalize LES-01 walker paths for Windows",
+          "live": true
+        },
+        {
+          "sha": "5f8a2d9",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Hidden-guard the More-tab badge poll; drop the last hand-rolled resume listener",
+          "live": true
+        },
+        {
+          "sha": "6316f8d",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Restore the closing brace I dropped resolving a merge conflict",
+          "live": true
+        },
+        {
+          "sha": "7c41a19",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Stop .catch(() => []) swallows rendering false empty states",
+          "live": true
+        },
+        {
+          "sha": "8bd77a8",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Per-token APNs topic routing (authored; migration NOT applied)",
+          "live": true
+        },
+        {
+          "sha": "8fb7797",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add OOP calculator rollout control",
+          "live": true
+        },
+        {
+          "sha": "a6f5094",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Correct db-lane test fixtures found by the qa-staging proof run",
+          "live": true
+        },
+        {
+          "sha": "b30356b",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Pg_net worker-URL allowlists for notify_emit + gcal sync (authored; NOT applied)",
+          "live": true
+        },
+        {
+          "sha": "b6752a2",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Un-arm superseded sign-out exits; close third security-review findings",
+          "live": true
+        },
+        {
+          "sha": "c3142c2",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Press feedback on every field-shell button; record the open channel question",
+          "live": true
+        },
+        {
+          "sha": "d95b655",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Every field-shell button now answers a press",
+          "live": true
+        },
+        {
+          "sha": "e366974",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Kill native button chrome on the lead Value trigger",
+          "live": true
+        },
+        {
+          "sha": "f1b5124",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Back out another session's WIP test files I swept in by accident",
+          "live": true
+        },
+        {
+          "sha": "f27fc36",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Migrate the last 4 hand-rolled resume listeners to useResumeRefetch",
+          "live": true
+        },
+        {
+          "sha": "f2ea2ef",
+          "day": "2026-07-30",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden pending APNs and worker migrations",
+          "live": true
+        },
+        {
+          "sha": "ff9e606",
+          "day": "2026-07-30",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Lead value — manual entry + claim-wide billed total",
+          "live": true
+        },
+        {
+          "sha": "0942f89",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Cross-session review hardenings on the sign-out guards",
+          "live": true
+        },
+        {
+          "sha": "0d88a75",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Sign-out completes through journaled-transient cleanup failures",
+          "live": true
+        },
+        {
+          "sha": "150417d",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add owner-gated provider event operations",
+          "live": true
+        },
+        {
+          "sha": "1f6b1f0",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Close review-animations + gauntlet findings on the onboarding tour",
+          "live": true
+        },
+        {
+          "sha": "2f96b0d",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Add NSLocationAlwaysAndWhenInUseUsageDescription + verifier guard (ITMS-90683)",
+          "live": true
+        },
+        {
+          "sha": "31eddfb",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Refuse post-sign-out session revival via ended-session registry",
+          "live": true
+        },
+        {
+          "sha": "32ff4af",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add notification presentation settings page",
+          "live": true
+        },
+        {
+          "sha": "36363d3",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add notification presentation control plane",
+          "live": true
+        },
+        {
+          "sha": "390b776",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Side-by-side UPR Dev app variant (Dev config + shared scheme)",
+          "live": true
+        },
+        {
+          "sha": "4125d84",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Npm run ios:dev — one-command UPR Dev build+install; document Xcode 27 beta launch trap",
+          "live": true
+        },
+        {
+          "sha": "4218e4e",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Close security-review findings on the sign-out deferral",
+          "live": true
+        },
+        {
+          "sha": "472678c",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Classify journaled-transient sign-out cleanup + bounded push retry",
+          "live": true
+        },
+        {
+          "sha": "4f1086d",
+          "day": "2026-07-29",
+          "kind": "Faster",
+          "area": "Notifications",
+          "text": "Resolve presentation once per event, not twice per recipient",
+          "live": true
+        },
+        {
+          "sha": "527d2aa",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Close security-review findings on always-complete sign-out",
+          "live": true
+        },
+        {
+          "sha": "538d133",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add provider event operations panel",
+          "live": true
+        },
+        {
+          "sha": "5f956a0",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Deep link Dev Tools provider events",
+          "live": true
+        },
+        {
+          "sha": "63ab211",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Silent refetch after mutations, per page-lifecycle §1",
+          "live": true
+        },
+        {
+          "sha": "6a10c90",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make local verification gates Windows-compatible",
+          "live": true
+        },
+        {
+          "sha": "83a5a91",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Enrich trusted notification context",
+          "live": true
+        },
+        {
+          "sha": "845795d",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Raise archive/upload subprocess budgets via explicit opt-in",
+          "live": true
+        },
+        {
+          "sha": "86b00fc",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Light-impact haptic + standard press scale on nav tab taps",
+          "live": true
+        },
+        {
+          "sha": "8dd4505",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Allow typed rich native notification copy",
+          "live": true
+        },
+        {
+          "sha": "9fb58fb",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Distinguish payment notification references",
+          "live": true
+        },
+        {
+          "sha": "9febb9d",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Complete native notification parity",
+          "live": true
+        },
+        {
+          "sha": "a7f2744",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Origin-aware job-screen back navigation (field-polish P2)",
+          "live": true
+        },
+        {
+          "sha": "acd7927",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Escape hatches for legal pages and in-app signing (field-polish P2)",
+          "live": true
+        },
+        {
+          "sha": "ae976d0",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Field App",
+          "text": "First-run onboarding tour with fail-closed push priming",
+          "live": true
+        },
+        {
+          "sha": "b45786d",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Onboarding rework to owner spec refinement (2026-07-29 PM)",
+          "live": true
+        },
+        {
+          "sha": "bc76146",
+          "day": "2026-07-29",
+          "kind": "Faster",
+          "area": "General",
+          "text": "Route-scope notification settings styles",
+          "live": true
+        },
+        {
+          "sha": "c1a846a",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Route provider alerts to operations",
+          "live": true
+        },
+        {
+          "sha": "c5ba2bb",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add audited presentation settings storage",
+          "live": true
+        },
+        {
+          "sha": "d5d2a1b",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Publish signed-out UI before the resurrection sweep; harden the in-flight sign-in window",
+          "live": true
+        },
+        {
+          "sha": "d8fa775",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Add notification variable pickers",
+          "live": true
+        },
+        {
+          "sha": "df12c7b",
+          "day": "2026-07-29",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Sign-out completes immediately per owner directive 2026-07-29",
+          "live": true
+        },
+        {
+          "sha": "e44d78b",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Bind event variables to notification producers",
+          "live": true
+        },
+        {
+          "sha": "ed00991",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "General",
+          "text": "Expand appointment notification variables",
+          "live": true
+        },
+        {
+          "sha": "f228d1e",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Author tech onboarding version-seen state (NOT applied)",
+          "live": true
+        },
+        {
+          "sha": "f8d7643",
+          "day": "2026-07-29",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Surface positive journal evidence on detach results",
+          "live": true
+        },
+        {
+          "sha": "0b37d82",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Add bounded APNs delivery",
+          "live": true
+        },
+        {
+          "sha": "0de3ab7",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Show installed version in settings",
+          "live": true
+        },
+        {
+          "sha": "0de7d1c",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Let the installed app reach the Pages Functions",
+          "live": true
+        },
+        {
+          "sha": "10768dd",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Polish native notification popovers",
+          "live": true
+        },
+        {
+          "sha": "15a86d9",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Route APNs through notification dispatcher",
+          "live": true
+        },
+        {
+          "sha": "16c11b9",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-03 counted the keyboard twice, hiding Save on smaller iPhones",
+          "live": true
+        },
+        {
+          "sha": "1858522",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Challenge biometrics only at sign-in",
+          "live": true
+        },
+        {
+          "sha": "1c490f4",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Bind push environment and Face ID login",
+          "live": true
+        },
+        {
+          "sha": "1d7eb97",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-03 part 2 — docked bars parked under the keyboard",
+          "live": true
+        },
+        {
+          "sha": "2a8df3d",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Keep automated sends globally opted in",
+          "live": true
+        },
+        {
+          "sha": "2b95ec1",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Allow exact transactional service notices",
+          "live": true
+        },
+        {
+          "sha": "2cb8a47",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Suppress hidden consent status copy",
+          "live": true
+        },
+        {
+          "sha": "2e5baa3",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "ENCIRCLE-02 — \"Posted to Encircle\" for a note never posted",
+          "live": true
+        },
+        {
+          "sha": "2ec57f2",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "COMPOSER-01 — the tab bar sometimes survived an open thread",
+          "live": true
+        },
+        {
+          "sha": "3409ef4",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden notification recipient migration",
+          "live": true
+        },
+        {
+          "sha": "38ae7c9",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "MOTION-01 — Back returns you to where you were",
+          "live": true
+        },
+        {
+          "sha": "3b97bab",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Fail closed on biometric probe errors",
+          "live": true
+        },
+        {
+          "sha": "3bacff8",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Define purpose-scoped consent codes",
+          "live": true
+        },
+        {
+          "sha": "40293e9",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Reuse safe-area owner for bell",
+          "live": true
+        },
+        {
+          "sha": "44891be",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Audit implied service sends before provider",
+          "live": true
+        },
+        {
+          "sha": "5a64e9a",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "ESIGN-02 — a rejected text reported as \"texted to the customer\"",
+          "live": true
+        },
+        {
+          "sha": "5eaba75",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Rewrite same-origin /api calls to the deployed Workers",
+          "live": true
+        },
+        {
+          "sha": "64cc0f3",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "MSG-06 — the keyboard flashed on every send",
+          "live": true
+        },
+        {
+          "sha": "6daa10a",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "ESIGN-03 — \"Reminder sent\" for an email nobody sent",
+          "live": true
+        },
+        {
+          "sha": "7c6cd99",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Stabilize notification panel lifecycle",
+          "live": true
+        },
+        {
+          "sha": "7f075d7",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "HOTFIX — every /tech route crashed to the ErrorBoundary",
+          "live": true
+        },
+        {
+          "sha": "89b055b",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-02 — the message composer was hidden under the keyboard",
+          "live": true
+        },
+        {
+          "sha": "8bdf6be",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-01 — actually reveal the focused field, found by testing",
+          "live": true
+        },
+        {
+          "sha": "8c4b3d0",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Animate notification popover",
+          "live": true
+        },
+        {
+          "sha": "92de820",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Resolve which origin the installed app sends /api calls to",
+          "live": true
+        },
+        {
+          "sha": "92f5f12",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Install the /api rewrite at boot, and refuse a bad origin at build",
+          "live": true
+        },
+        {
+          "sha": "a55d77f",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "TOAST-01 — toasts survive a resume, are reachable, and get announced",
+          "live": true
+        },
+        {
+          "sha": "b543c92",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Enforce direct one-to-one service consent",
+          "live": true
+        },
+        {
+          "sha": "b6712ee",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Interface",
+          "text": "MODAL-01 — give the tech sheets the dialog lifecycle they declared",
+          "live": true
+        },
+        {
+          "sha": "c2dc530",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-03 — four field sheets opened behind the keyboard",
+          "live": true
+        },
+        {
+          "sha": "c538ebc",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Align sign-in and bell controls",
+          "live": true
+        },
+        {
+          "sha": "c7ee3f6",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Interface",
+          "text": "MOTION-02 — honour Reduce Motion in CSS and in JS",
+          "live": true
+        },
+        {
+          "sha": "d5129b2",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Make bell mutations recoverable",
+          "live": true
+        },
+        {
+          "sha": "d5d08cb",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add owner native push test",
+          "live": true
+        },
+        {
+          "sha": "df68952",
+          "day": "2026-07-28",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Remove thread-open consent preflight",
+          "live": true
+        },
+        {
+          "sha": "f66e284",
+          "day": "2026-07-28",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "MSG-05 — Message opens the customer's thread, not the picker",
+          "live": true
+        },
+        {
+          "sha": "0363875",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make cache recovery work on iOS, and un-poison existing devices",
+          "live": true
+        },
+        {
+          "sha": "0a0e991",
+          "day": "2026-07-27",
+          "kind": "Faster",
+          "area": "Translations",
+          "text": "Lazy-load pt/es locales, and switch the JS budget gate on",
+          "live": true
+        },
+        {
+          "sha": "0afd842",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Drop the asset-404 rule — Cloudflare ignores it",
+          "live": true
+        },
+        {
+          "sha": "161f0c0",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-01 — lift the sticky Save above the keyboard in all four forms",
+          "live": true
+        },
+        {
+          "sha": "1b09482",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "PRIV-01 — sweep durable drafts on logout and account switch",
+          "live": true
+        },
+        {
+          "sha": "1d5b8e9",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Scheduling",
+          "text": "Give appointments an office screen so the bell stops sending desktop to the phone UI",
+          "live": true
+        },
+        {
+          "sha": "22598c5",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Close the three gaps that let the CSS outage happen twice",
+          "live": true
+        },
+        {
+          "sha": "2d6c131",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Interface",
+          "text": "KB-01 part 1 — one shared keyboard-inset port",
+          "live": true
+        },
+        {
+          "sha": "35533ea",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "STAT-01 — un-invert the status bar, and restore it to the theme",
+          "live": true
+        },
+        {
+          "sha": "3fc77ef",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make the employee-identity guard runnable on Windows",
+          "live": true
+        },
+        {
+          "sha": "4304133",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Catch the break that broke login — the one the obvious check misses",
+          "live": true
+        },
+        {
+          "sha": "43480aa",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "The PR #525 apply order would have taken production down",
+          "live": true
+        },
+        {
+          "sha": "48e6310",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop refusing the rollbacks, and the last TRUNCATE false positive",
+          "live": true
+        },
+        {
+          "sha": "50b368f",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Retire the undefined --crm-bg-page token",
+          "live": true
+        },
+        {
+          "sha": "53a7d18",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "PICK-02a — Today selects today, not the month being browsed",
+          "live": true
+        },
+        {
+          "sha": "56f0b13",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Grant employees.is_external — two sibling policies read it",
+          "live": true
+        },
+        {
+          "sha": "5b723db",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "The catch-all was never the cause — close the poisoning for real",
+          "live": false
+        },
+        {
+          "sha": "6562743",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Measure the real bundle, and gate the budgets that pass",
+          "live": true
+        },
+        {
+          "sha": "673c70e",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "The bell keeps you in the shell you are standing in",
+          "live": true
+        },
+        {
+          "sha": "7162c53",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Add a search bar to the Leads board",
+          "live": true
+        },
+        {
+          "sha": "7a259ff",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "JOB-01 — stop collapsing the job page on every save",
+          "live": true
+        },
+        {
+          "sha": "7e5b53a",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Close the customer list to the internet, and the notification back door",
+          "live": true
+        },
+        {
+          "sha": "815fc24",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "ESIGN-01 — copied signing links a customer can actually open",
+          "live": true
+        },
+        {
+          "sha": "84b3ee4",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Interface",
+          "text": "SAFE-02 — give public native routes a safe-area contract",
+          "live": true
+        },
+        {
+          "sha": "8662265",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Post-deploy smoke check that would have caught today in seconds",
+          "live": true
+        },
+        {
+          "sha": "8859318",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop a deploy race from leaving the app permanently blank",
+          "live": true
+        },
+        {
+          "sha": "8d7ad66",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Move the Leads search box after the filters",
+          "live": true
+        },
+        {
+          "sha": "97b81c8",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Repair Dorothy downstairs reconstruction AR",
+          "live": true
+        },
+        {
+          "sha": "983b8ca",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Stop showing techs raw database errors, and route schedule to the PWA",
+          "live": true
+        },
+        {
+          "sha": "9d19889",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "PICK-05 — pickers reach the gloved-hands tap-target floor",
+          "live": true
+        },
+        {
+          "sha": "a04f133",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "REL-02 — restore reproducible native release input",
+          "live": true
+        },
+        {
+          "sha": "a7038de",
+          "day": "2026-07-27",
+          "kind": "Faster",
+          "area": "Mobile App",
+          "text": "PERF-02 (partial) — stop shipping web-only assets in the .app",
+          "live": true
+        },
+        {
+          "sha": "b2ed1ce",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "MSG-01 — stop the installed app advertising its own installation",
+          "live": true
+        },
+        {
+          "sha": "b42a720",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "PICK-02b — company-time \"today\" on the field surface",
+          "live": true
+        },
+        {
+          "sha": "b64daae",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "MSG-04 — Messages separators were never drawn at all",
+          "live": true
+        },
+        {
+          "sha": "c2f5cad",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "SAFE-01 — one owner for the top safe-area inset",
+          "live": true
+        },
+        {
+          "sha": "c75640b",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "RES-01 — dissolve the privacy shield instead of cutting to content",
+          "live": true
+        },
+        {
+          "sha": "cc3779c",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Scheduling",
+          "text": "PICK-03 — reject an end time at or before the start",
+          "live": true
+        },
+        {
+          "sha": "cfcd558",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "PUSH-01 — repair the live appointment push deep link",
+          "live": true
+        },
+        {
+          "sha": "d18d01e",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "KB-01 — lift the Request Signature sheet above the keyboard",
+          "live": true
+        },
+        {
+          "sha": "d4a0e86",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Refresh live evidence and map four unmapped ledger rows",
+          "live": true
+        },
+        {
+          "sha": "d63a3f8",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "REL-01 — point signing and app association at the paid team",
+          "live": true
+        },
+        {
+          "sha": "d8492e2",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Point the asset-404 rule at an extensionless destination",
+          "live": true
+        },
+        {
+          "sha": "d90d0c8",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "PICK-01 (partial) — localize the calendar, unstrip the date input",
+          "live": true
+        },
+        {
+          "sha": "dc3a30f",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Give Codex the same 12 reviewers, pinned read-only",
+          "live": true
+        },
+        {
+          "sha": "df7becb",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Correct Dorothy apply evidence",
+          "live": true
+        },
+        {
+          "sha": "e4dfe34",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "A known customer's call shows her name, not her phone number",
+          "live": true
+        },
+        {
+          "sha": "e80e017",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "SET-01 — stop telling native app users to install the app",
+          "live": true
+        },
+        {
+          "sha": "e8af14b",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Match TRUNCATE the statement, not TRUNCATE the privilege name",
+          "live": true
+        },
+        {
+          "sha": "eafa811",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "A tech tapping the bell lands in the PWA, not the office site",
+          "live": true
+        },
+        {
+          "sha": "ebb9ae3",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Assert the applied provenance contract for notify_emit",
+          "live": true
+        },
+        {
+          "sha": "ee728e8",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Keep legal/support inside the field shell",
+          "live": true
+        },
+        {
+          "sha": "f694582",
+          "day": "2026-07-27",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "AUTH-01 — gate the field shell by role, not just by session",
+          "live": true
+        },
+        {
+          "sha": "fe7da1b",
+          "day": "2026-07-27",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "NAV-01 (partial) — guard the room route, un-deaden Admin view",
+          "live": true
+        }
+      ],
+      "count": 185,
+      "areas": [
+        "Billing",
+        "CRM",
+        "Field App",
+        "General",
+        "Interface",
+        "Messaging",
+        "Mobile App",
+        "Notifications",
+        "Platform",
+        "Scheduling",
+        "Settings & Access",
+        "Translations"
+      ],
+      "testing": 19
+    },
+    {
+      "start": "2026-07-20",
+      "end": "2026-07-26",
+      "items": [
+        {
+          "sha": "0262d2f",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "A retry replaces the message, it does not sit beside it",
+          "live": true
+        },
+        {
+          "sha": "07d1d8f",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Defer recording source foreign key",
+          "live": true
+        },
+        {
+          "sha": "1025041",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Support recording source rollout",
+          "live": true
+        },
+        {
+          "sha": "1da9632",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Measure the paths: globs — the inherited brace claim does not reproduce",
+          "live": true
+        },
+        {
+          "sha": "21e0b86",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "The database guard was not wired to the free-form SQL tool",
+          "live": true
+        },
+        {
+          "sha": "245c0c4",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Close the two doors that falsified this batch's own promises",
+          "live": true
+        },
+        {
+          "sha": "275eef5",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "The glob linter used the wrong matcher dialect for unanchored patterns",
+          "live": true
+        },
+        {
+          "sha": "2f9b61b",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Measure which instruction files actually load, instead of believing it",
+          "live": true
+        },
+        {
+          "sha": "2fd14bb",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Surface a refresh failure that happens over existing rows",
+          "live": true
+        },
+        {
+          "sha": "3491682",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "A successful retry left a live Retry button behind",
+          "live": true
+        },
+        {
+          "sha": "3568eeb",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Recognize missing completion wrapper",
+          "live": true
+        },
+        {
+          "sha": "38f6eaf",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Text the signing link, through the send chokepoint",
+          "live": true
+        },
+        {
+          "sha": "3966458",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop a large backlog reading as healthy (worker-security-reviewer)",
+          "live": true
+        },
+        {
+          "sha": "3fdef64",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Surface the bridge check from the law layer, record the MSYS trap, resync byte counts",
+          "live": true
+        },
+        {
+          "sha": "41091bc",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Pin read-only sandbox on the governed Codex reviewers",
+          "live": true
+        },
+        {
+          "sha": "41a8c0a",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Bind notification reads to authenticated recipient",
+          "live": true
+        },
+        {
+          "sha": "4656226",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Lock the notification catalog, and make inbound-text email impossible",
+          "live": true
+        },
+        {
+          "sha": "48a788f",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Contain notify emit capability",
+          "live": true
+        },
+        {
+          "sha": "4eb0c2f",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "The deny list named servers that do not exist",
+          "live": true
+        },
+        {
+          "sha": "5272ab7",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Interface",
+          "text": "Pin work authorization SMS disclosure",
+          "live": true
+        },
+        {
+          "sha": "545645f",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "RiskTier + modelInvocable, so a capability can declare its own gates",
+          "live": true
+        },
+        {
+          "sha": "5a3dcdf",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Contain direct bell emission",
+          "live": true
+        },
+        {
+          "sha": "5f63aec",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Let a failed message be acknowledged, and escalate when it is ignored",
+          "live": true
+        },
+        {
+          "sha": "6505402",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Carve the shared law core into AGENTS.md, and stop Codex silently truncating it",
+          "live": true
+        },
+        {
+          "sha": "65fddb5",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Add the missing retry path for failed picture messages",
+          "live": true
+        },
+        {
+          "sha": "68c0a12",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Claims & Jobs",
+          "text": "The credential validator rejected every key, valid or not",
+          "live": true
+        },
+        {
+          "sha": "6c51791",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "A signing link that does not look like malware",
+          "live": true
+        },
+        {
+          "sha": "6ce055b",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Send system-health alerts to the owner only",
+          "live": true
+        },
+        {
+          "sha": "6d08858",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "A runnable check for the shared-law bridge, so P3 cannot break it quietly",
+          "live": true
+        },
+        {
+          "sha": "71d6ada",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Record signed work authorization consent",
+          "live": true
+        },
+        {
+          "sha": "76a0dff",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Apply_migration belongs in ask, not deny; record the closed gates",
+          "live": true
+        },
+        {
+          "sha": "7cc7504",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Readable alert bodies + stop swallowing same-day failures",
+          "live": true
+        },
+        {
+          "sha": "7d315d2",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Contain CallRail recording access",
+          "live": true
+        },
+        {
+          "sha": "8450700",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Production could text customers dev links",
+          "live": true
+        },
+        {
+          "sha": "893ebb8",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "A glob linter that checks the budget, not brace-freedom",
+          "live": true
+        },
+        {
+          "sha": "9c4ac2e",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Bridge CLAUDE.md to the shared core with @AGENTS.md, duplicate kept",
+          "live": true
+        },
+        {
+          "sha": "9e77c5b",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Constrain notify HTTP identity",
+          "live": true
+        },
+        {
+          "sha": "9e79d28",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add work authorization consent evidence",
+          "live": true
+        },
+        {
+          "sha": "9fd5e2a",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Close nested recording source exposure",
+          "live": true
+        },
+        {
+          "sha": "a5ef85c",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Audit who arms customer texting (consent-path-auditor #5)",
+          "live": true
+        },
+        {
+          "sha": "b075007",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop the 121 pre-approvals shipping to every clone, and add the deny backstop",
+          "live": true
+        },
+        {
+          "sha": "bad298f",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Close anonymous write access to the SMS kill switch and opt-out list",
+          "live": true
+        },
+        {
+          "sha": "bba8835",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make the local dev server work in a git worktree, and stop failed loads showing \"nothing here\"",
+          "live": true
+        },
+        {
+          "sha": "c12465f",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "The sender prefix ate 41 of CallRail's characters before you typed one",
+          "live": true
+        },
+        {
+          "sha": "c8778f1",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Make Roles & Permissions a real gate, not a UI suggestion",
+          "live": true
+        },
+        {
+          "sha": "cb59263",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Platform",
+          "text": "A hook that reads the ref, so Rule 4 cannot be pushed past",
+          "live": true
+        },
+        {
+          "sha": "cf50beb",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Message opens the customer's UPR thread, not the phone's SMS app",
+          "live": true
+        },
+        {
+          "sha": "dba999b",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop the provenance gate hiding whether the code even builds",
+          "live": true
+        },
+        {
+          "sha": "dd3fed0",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "The 140-character limit was never enforced by CallRail",
+          "live": true
+        },
+        {
+          "sha": "e298d8b",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Isolate inbound recording sources",
+          "live": true
+        },
+        {
+          "sha": "e9bf8f2",
+          "day": "2026-07-26",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "The canary was quotable from the docs, and \"209 references\" was wrong",
+          "live": true
+        },
+        {
+          "sha": "f97cbc0",
+          "day": "2026-07-26",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "A Text button on both signature sheets",
+          "live": true
+        },
+        {
+          "sha": "146d2bd",
+          "day": "2026-07-25",
+          "kind": "New",
+          "area": "General",
+          "text": "Add mobile readiness workflow roles",
+          "live": true
+        },
+        {
+          "sha": "33b96fc",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Gate QBO payment and query workers",
+          "live": true
+        },
+        {
+          "sha": "372a622",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Stop the bell polling a dead session all night",
+          "live": true
+        },
+        {
+          "sha": "42a7501",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Claim before send to close the duplicate-send window",
+          "live": true
+        },
+        {
+          "sha": "66182f3",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Gate QBO invoice and estimate workers",
+          "live": true
+        },
+        {
+          "sha": "6f062d6",
+          "day": "2026-07-25",
+          "kind": "New",
+          "area": "General",
+          "text": "Add mobile readiness review roles",
+          "live": true
+        },
+        {
+          "sha": "725ff51",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Recover a rejected session instead of failing silently forever",
+          "live": true
+        },
+        {
+          "sha": "a063138",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make \"missed call\" authoritative, not inferred",
+          "live": true
+        },
+        {
+          "sha": "ad29bb1",
+          "day": "2026-07-25",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add the ops-health watchman worker",
+          "live": true
+        },
+        {
+          "sha": "bc6fb01",
+          "day": "2026-07-25",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Schedule ops-health and seed its alert type",
+          "live": true
+        },
+        {
+          "sha": "f81bef7",
+          "day": "2026-07-25",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "P0 — inbound STOP was never honoured (42702 ambiguous contact_id)",
+          "live": true
+        },
+        {
+          "sha": "072630d",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Owner-attested prior service consent for existing customers",
+          "live": true
+        },
+        {
+          "sha": "09e3287",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Stop cross-realm payment reads and record why a QBO read failed",
+          "live": true
+        },
+        {
+          "sha": "0ff443f",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Harden CallRail MMS event recovery",
+          "live": true
+        },
+        {
+          "sha": "13493f8",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Atomically claim CallRail recovery events",
+          "live": true
+        },
+        {
+          "sha": "16b348b",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Lead detail Notes section is now a dated notes log",
+          "live": true
+        },
+        {
+          "sha": "1ed7371",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Honor recorded opt-in in composer",
+          "live": true
+        },
+        {
+          "sha": "2914cf1",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Close the public-form anon exposure",
+          "live": true
+        },
+        {
+          "sha": "44dc519",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Append-only lead notes log (migration + RPCs + test)",
+          "live": true
+        },
+        {
+          "sha": "48c7f0d",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Retry expired CallRail MMS media",
+          "live": true
+        },
+        {
+          "sha": "5217ae8",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Complete mobile conversation workflow",
+          "live": true
+        },
+        {
+          "sha": "5bb17a8",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Route scheduled sends through consent gate",
+          "live": true
+        },
+        {
+          "sha": "5eeb879",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Make attachment idempotency actually hold (Codex review P2 ×2)",
+          "live": true
+        },
+        {
+          "sha": "5f8e00f",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Match CallRail MMS by provider media identity",
+          "live": true
+        },
+        {
+          "sha": "625cb1b",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Close messaging readiness gaps",
+          "live": true
+        },
+        {
+          "sha": "7f86aaf",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Prefer masked CallRail account identity",
+          "live": true
+        },
+        {
+          "sha": "83ccfe4",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Claim fence schema to close the duplicate-send window",
+          "live": true
+        },
+        {
+          "sha": "8e018a0",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Normalize CallRail MMS media host",
+          "live": true
+        },
+        {
+          "sha": "8e761e6",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Accept frozen MMS media shape",
+          "live": true
+        },
+        {
+          "sha": "91db2b1",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Fetch inbound MMS through CallRail API",
+          "live": true
+        },
+        {
+          "sha": "91eef81",
+          "day": "2026-07-24",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Invoice/estimate attachments to QuickBooks + payments-sync cron",
+          "live": true
+        },
+        {
+          "sha": "9dc5681",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make consent hardening SQL parseable",
+          "live": true
+        },
+        {
+          "sha": "a6c9c9f",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Constrain CallRail asset redirects",
+          "live": true
+        },
+        {
+          "sha": "a8782cd",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Close the live-ledger gap and de-stale the release gate",
+          "live": true
+        },
+        {
+          "sha": "c7efa35",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Stop burning leads on no_consent + record the live activation",
+          "live": true
+        },
+        {
+          "sha": "ca0f982",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Skip unnecessary MMS image decode",
+          "live": true
+        },
+        {
+          "sha": "cf0cadf",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Constrain CallRail history redirects",
+          "live": true
+        },
+        {
+          "sha": "d48d1f4",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Classify CallRail provider rejections",
+          "live": true
+        },
+        {
+          "sha": "d876316",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Cast employee role to text in qbo_attachments RLS (enum has no 'manager')",
+          "live": true
+        },
+        {
+          "sha": "f46e50f",
+          "day": "2026-07-24",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "DB-level guard against duplicate QBO payments on one invoice",
+          "live": true
+        },
+        {
+          "sha": "01f59ce",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Finish consent release hardening",
+          "live": true
+        },
+        {
+          "sha": "09cd28a",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Preserve durable request reconciliation",
+          "live": true
+        },
+        {
+          "sha": "0a06a21",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "General",
+          "text": "Add managed Encircle credentials",
+          "live": true
+        },
+        {
+          "sha": "0f79743",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Harden service consent serialization",
+          "live": true
+        },
+        {
+          "sha": "142d3c4",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Deep-link inbound message alerts (#507)",
+          "live": true
+        },
+        {
+          "sha": "1f8b6dc",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Isolate live consent hardening migration",
+          "live": true
+        },
+        {
+          "sha": "21e5536",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add deterministic guarded browser fixture",
+          "live": true
+        },
+        {
+          "sha": "2f26c1d",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Fetch provenance history",
+          "live": true
+        },
+        {
+          "sha": "2fbf755",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Tolerate missing CallRail event id",
+          "live": true
+        },
+        {
+          "sha": "33c325e",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Restore applied consent source",
+          "live": true
+        },
+        {
+          "sha": "3d7da53",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Build disabled provider-neutral transport",
+          "live": true
+        },
+        {
+          "sha": "433092f",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Preserve thread position and resume history",
+          "live": true
+        },
+        {
+          "sha": "4464555",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Reconcile resumed thread tails",
+          "live": true
+        },
+        {
+          "sha": "4799feb",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Keep Encircle rollback least privileged",
+          "live": true
+        },
+        {
+          "sha": "5115455",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Add admin setup contract",
+          "live": true
+        },
+        {
+          "sha": "5cf546b",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Contain exec_read_sql to service role",
+          "live": true
+        },
+        {
+          "sha": "5df64d2",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Add messaging setup panel",
+          "live": true
+        },
+        {
+          "sha": "616f1e5",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Add prior consent attestation UI",
+          "live": true
+        },
+        {
+          "sha": "625ccfd",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Dispatch inbound message notifications (#506)",
+          "live": true
+        },
+        {
+          "sha": "70ff7fd",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Declare Node process globals",
+          "live": true
+        },
+        {
+          "sha": "722c569",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Close consent race and UI gates",
+          "live": true
+        },
+        {
+          "sha": "78c7182",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Enforce local-only runner targets",
+          "live": true
+        },
+        {
+          "sha": "8498a69",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Preserve outbound request identity",
+          "live": true
+        },
+        {
+          "sha": "88020a0",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Bind media retrieval to provider requests",
+          "live": true
+        },
+        {
+          "sha": "8bee1ac",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Add private provider media pipeline",
+          "live": true
+        },
+        {
+          "sha": "8c3fc05",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden provenance release gate",
+          "live": true
+        },
+        {
+          "sha": "8e1928b",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Close recovery and recipient claim races",
+          "live": true
+        },
+        {
+          "sha": "8ef44ef",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Configure isolated Playwright runtime",
+          "live": true
+        },
+        {
+          "sha": "9a9b35f",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Upload and retry private images",
+          "live": true
+        },
+        {
+          "sha": "9d937f8",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Validate paused iOS release workflow",
+          "live": true
+        },
+        {
+          "sha": "a010462",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Close reviewer safety findings",
+          "live": true
+        },
+        {
+          "sha": "a45e796",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Record verified prior SMS consent",
+          "live": true
+        },
+        {
+          "sha": "ab9e74f",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make profile isolation cross-platform",
+          "live": true
+        },
+        {
+          "sha": "b6d7092",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make public form RPC worker-only",
+          "live": true
+        },
+        {
+          "sha": "c85af2e",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Harden money worker boundaries",
+          "live": true
+        },
+        {
+          "sha": "c91a8c1",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Scan retained artifacts fail closed",
+          "live": true
+        },
+        {
+          "sha": "ca746cb",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Partition credential-free lanes",
+          "live": true
+        },
+        {
+          "sha": "d22a692",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Handle live CallRail contracts",
+          "live": true
+        },
+        {
+          "sha": "db46358",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Show traced and company-wide sales",
+          "live": true
+        },
+        {
+          "sha": "e195511",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Harden scoped service SMS consent",
+          "live": true
+        },
+        {
+          "sha": "e5ccb68",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Verify CallRail MMS account aliases",
+          "live": true
+        },
+        {
+          "sha": "e71e759",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Close scoped consent review findings",
+          "live": true
+        },
+        {
+          "sha": "eb27dd5",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Reconcile live transport schema",
+          "live": true
+        },
+        {
+          "sha": "ec2520e",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Schedule retained CallRail event recovery",
+          "live": true
+        },
+        {
+          "sha": "edda3e9",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Enforce scoped consent authority",
+          "live": true
+        },
+        {
+          "sha": "f0bf5ed",
+          "day": "2026-07-23",
+          "kind": "New",
+          "area": "Interface",
+          "text": "Codify disconnected permission contract",
+          "live": true
+        },
+        {
+          "sha": "fcd0759",
+          "day": "2026-07-23",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Restore inbound message bubble contrast",
+          "live": true
+        }
+      ],
+      "count": 139,
+      "areas": [
+        "Billing",
+        "CRM",
+        "Claims & Jobs",
+        "Field App",
+        "General",
+        "Interface",
+        "Messaging",
+        "Notifications",
+        "Platform",
+        "Settings & Access"
+      ],
+      "testing": 0
+    },
+    {
+      "start": "2026-07-13",
+      "end": "2026-07-19",
+      "items": [
+        {
+          "sha": "132b50c",
+          "day": "2026-07-13",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Show retry on failed load; guard against stale-response clobber",
+          "live": true
+        },
+        {
+          "sha": "24648ad",
+          "day": "2026-07-13",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Notify the submitting tech when their feedback is resolved",
+          "live": true
+        },
+        {
+          "sha": "b053b91",
+          "day": "2026-07-13",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Notify the submitting tech when their feedback is resolved",
+          "live": true
+        },
+        {
+          "sha": "b117826",
+          "day": "2026-07-13",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Show retry on failed load; guard against stale-response clobber",
+          "live": true
+        },
+        {
+          "sha": "b8615d4",
+          "day": "2026-07-13",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Stop submitted sheets reverting to draft on re-open",
+          "live": true
+        },
+        {
+          "sha": "ddc30e4",
+          "day": "2026-07-13",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Stop submitted sheets reverting to draft on re-open",
+          "live": true
+        }
+      ],
+      "count": 6,
+      "areas": [
+        "Field App"
+      ],
+      "testing": 0
+    },
+    {
+      "start": "2026-07-06",
+      "end": "2026-07-12",
+      "items": [
+        {
+          "sha": "2b522c9",
+          "day": "2026-07-09",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Fail closed when the participant contact can't be resolved",
+          "live": true
+        },
+        {
+          "sha": "37d92a5",
+          "day": "2026-07-09",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Digits-OR STOP match + never swallow yes/info replies (F-3, F-7)",
+          "live": true
+        },
+        {
+          "sha": "754caf3",
+          "day": "2026-07-09",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Kill the silent fake-send in the composer (F-1)",
+          "live": true
+        },
+        {
+          "sha": "94799c5",
+          "day": "2026-07-09",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Remove skip_compliance bypass + refuse group/broadcast (F-2, F-4)",
+          "live": true
+        },
+        {
+          "sha": "12e8d0b",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Backfill estimate line items; verify mobile PWA invoices/estimates/payments",
+          "live": true
+        },
+        {
+          "sha": "1773929",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Techs can configure their timesheet-review alert",
+          "live": true
+        },
+        {
+          "sha": "17b3b5e",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Backfill missing line items on 35 reconciliation invoices",
+          "live": true
+        },
+        {
+          "sha": "2a0e29f",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Correct 4 recon line amounts + harden invoice-number generation",
+          "live": true
+        },
+        {
+          "sha": "3d7947f",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Pad the settings sub-pages so content clears the rail",
+          "live": true
+        },
+        {
+          "sha": "54b15e4",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Harden estimate-number generation (UNIQUE + drift-proof generator)",
+          "live": true
+        },
+        {
+          "sha": "6848048",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "P8 Connections hub — Deepgram card + status/cross-link cards",
+          "live": true
+        },
+        {
+          "sha": "8014308",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "P5 Lead Center — leads list, recording playback, transcripts",
+          "live": true
+        },
+        {
+          "sha": "cfac97d",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Notify the tech about their own abandoned clock",
+          "live": true
+        },
+        {
+          "sha": "dd8efb4",
+          "day": "2026-07-07",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Admins see all notification categories in the PWA",
+          "live": true
+        },
+        {
+          "sha": "dfccd7e",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "App-managed Stripe/Twilio/Resend credentials",
+          "live": true
+        },
+        {
+          "sha": "f681e04",
+          "day": "2026-07-07",
+          "kind": "New",
+          "area": "Platform",
+          "text": "'Clear cache & reload' button on error screen + Settings",
+          "live": true
+        },
+        {
+          "sha": "1c0e79b",
+          "day": "2026-07-06",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Estimate view + send + convert (mobile)",
+          "live": true
+        },
+        {
+          "sha": "b10035c",
+          "day": "2026-07-06",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Widen the invoice/estimate builder on ultra-wide screens",
+          "live": true
+        },
+        {
+          "sha": "ed85e61",
+          "day": "2026-07-06",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Portal SearchSelect menu so it isn't clipped",
+          "live": true
+        }
+      ],
+      "count": 19,
+      "areas": [
+        "Billing",
+        "Field App",
+        "Messaging",
+        "Mobile App",
+        "Platform",
+        "Settings & Access"
+      ],
+      "testing": 0
+    },
+    {
+      "start": "2026-06-29",
+      "end": "2026-07-05",
+      "items": [
+        {
+          "sha": "01fc507",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Schedule v2 — agenda, day timeline, week-strip pager",
+          "live": true
+        },
+        {
+          "sha": "0553469",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Session B — event wiring for the Notification Center (#298)",
+          "live": true
+        },
+        {
+          "sha": "06db5b9",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Reviewer fixes — token red now-line, robust anchoring, docs",
+          "live": true
+        },
+        {
+          "sha": "09f1375",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Day view opens with ~2.5h above the now-line; tighter time gutter",
+          "live": true
+        },
+        {
+          "sha": "0d4db13",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Language preference (EN/PT/ES) foundation + tech chrome pilot",
+          "live": true
+        },
+        {
+          "sha": "147ea32",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TechClaims (claims namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "1f7a8c2",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Push_subscriptions table + own-row RPCs (applied)",
+          "live": true
+        },
+        {
+          "sha": "20ef29c",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Purge stray control bytes in email-threading URL sanitizer",
+          "live": true
+        },
+        {
+          "sha": "234885d",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Show Travel / On-site / Total time columns",
+          "live": true
+        },
+        {
+          "sha": "25793d7",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TechTasks (tasks namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "2e6c72f",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate the v2 tech dashboard (TechDashV2 + dash/*, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "2fb0122",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Right-align Required/Width controls on every field",
+          "live": true
+        },
+        {
+          "sha": "3d39051",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Testable preview + real field editors (comprehensive polish)",
+          "live": true
+        },
+        {
+          "sha": "3e00244",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Interface",
+          "text": "Company roadmap page — in-app + public no-login view (#275)",
+          "live": true
+        },
+        {
+          "sha": "3fa27e2",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Keep loadFeatureFlags non-reactive (emp defaults null)",
+          "live": true
+        },
+        {
+          "sha": "405fd37",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Default new appointments to 1 hour (still editable)",
+          "live": true
+        },
+        {
+          "sha": "41b141c",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TechDash (dash namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "4e15b38",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Read Turnstile keys from Supabase, not Cloudflare env (#281)",
+          "live": true
+        },
+        {
+          "sha": "4f11a6f",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Crew initials + job city on blocks/rows; Day is default view",
+          "live": true
+        },
+        {
+          "sha": "4fb5825",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Scheduling",
+          "text": "Space out Total and Next appt columns",
+          "live": true
+        },
+        {
+          "sha": "5070578",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Shared `tech` namespace + locale-aware date/relative-time helpers",
+          "live": true
+        },
+        {
+          "sha": "5a45420",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Show travel + on-site + total time on board & dashboard",
+          "live": true
+        },
+        {
+          "sha": "5d1d8ba",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Interface",
+          "text": "Serve the public roadmap at the short /roadmap URL (#278)",
+          "live": true
+        },
+        {
+          "sha": "5d40f45",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Travel/on-site/total on By Job + reframe Payroll → By Employee",
+          "live": true
+        },
+        {
+          "sha": "5ecd62c",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Resend-webhook, sequence-exit widen, seams + docs",
+          "live": true
+        },
+        {
+          "sha": "6102328",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Collapse search bar into a header icon",
+          "live": true
+        },
+        {
+          "sha": "632445e",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Interface",
+          "text": "Company roadmap page (public /roadmap + side menu) (#277)",
+          "live": true
+        },
+        {
+          "sha": "63a3e8a",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Put the tech bell in the dashboard header, not a global overlay",
+          "live": true
+        },
+        {
+          "sha": "6641d34",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TimeTracker clock controls (tracker namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "6976136",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Tech Settings hub at /tech/settings (appearance + push)",
+          "live": true
+        },
+        {
+          "sha": "6a39142",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TechAppointment (appointment namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "727274e",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Show travel + on-site + total time on board & dashboard",
+          "live": true
+        },
+        {
+          "sha": "78b0639",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Scheduling",
+          "text": "Space out Total and Next appt columns",
+          "live": true
+        },
+        {
+          "sha": "7b3e3d1",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Store VAPID in Supabase (zero Cloudflare env needed)",
+          "live": true
+        },
+        {
+          "sha": "7b74291",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Settings & Access",
+          "text": "Templates Editor crash — useBlocker unavailable under BrowserRouter",
+          "live": true
+        },
+        {
+          "sha": "7c19b3d",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Day view opens at current time, not the bottom",
+          "live": true
+        },
+        {
+          "sha": "7da07cc",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Lock record_email_suppression to service_role only",
+          "live": true
+        },
+        {
+          "sha": "8205aa0",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Read Turnstile keys from Supabase, not Cloudflare env (#281)",
+          "live": true
+        },
+        {
+          "sha": "82bd89a",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Per-recipient bell + mount NotificationBell in the tech shell",
+          "live": true
+        },
+        {
+          "sha": "833f954",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Show Travel / On-site / Total time columns",
+          "live": true
+        },
+        {
+          "sha": "8716fdc",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Scheduling",
+          "text": "Scheduler-secret auth on the three automation workers",
+          "live": true
+        },
+        {
+          "sha": "8a73c28",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Make consent links easy to add (Privacy Policy / Terms)",
+          "live": true
+        },
+        {
+          "sha": "90818f0",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Day view opens on today; taller day-timeline rows",
+          "live": true
+        },
+        {
+          "sha": "9108c28",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Route 5PM banner through apptHref; 48px targets; reconcile roadmap",
+          "live": true
+        },
+        {
+          "sha": "96df416",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Checkbox multi-select group validation",
+          "live": true
+        },
+        {
+          "sha": "9bdadc7",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "SW re-enable (flag-gated), subscribe client, Settings panel, feedback push",
+          "live": true
+        },
+        {
+          "sha": "a796754",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "My-notification-prefs UI + stub fills (Session C) (#296)",
+          "live": true
+        },
+        {
+          "sha": "aed647a",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Keep Sign Out menu open on first tap so two-click confirm is visible",
+          "live": true
+        },
+        {
+          "sha": "b1e9a62",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Day anchor beats the pane-host scroll-restore",
+          "live": true
+        },
+        {
+          "sha": "b4334ff",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Data foundation migration — catalog, prefs, per-recipient bell",
+          "live": true
+        },
+        {
+          "sha": "b79a674",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate the v2 tech schedule (TechScheduleV2 + schedule/*, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "be266e5",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Travel/on-site/total on By Job + reframe Payroll → By Employee",
+          "live": true
+        },
+        {
+          "sha": "c4eb983",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Translations",
+          "text": "Translate TechSchedule (schedule namespace, EN/PT/ES)",
+          "live": true
+        },
+        {
+          "sha": "cda693f",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Default theme to Light (System/Dark remain opt-in)",
+          "live": true
+        },
+        {
+          "sha": "d5a669a",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Schema widen + email-threading/conversation-email libs",
+          "live": true
+        },
+        {
+          "sha": "daa1e27",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Appointment copy polish + wire the 4 emitter-less types (#300)",
+          "live": true
+        },
+        {
+          "sha": "ddf054d",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Per-field width for multi-column form rows",
+          "live": true
+        },
+        {
+          "sha": "df612fd",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Light/dark theme system (System/Light/Dark, per-device)",
+          "live": true
+        },
+        {
+          "sha": "e822b32",
+          "day": "2026-07-03",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "48px touch targets on header controls + Today pill",
+          "live": true
+        },
+        {
+          "sha": "e8273d7",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "RFC 8291 aes128gcm encryption + VAPID ES256 JWT lib",
+          "live": true
+        },
+        {
+          "sha": "f045a61",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Repoint tech nav to the Job Hub per-user via the flag",
+          "live": true
+        },
+        {
+          "sha": "f266fb1",
+          "day": "2026-07-03",
+          "kind": "New",
+          "area": "Notifications",
+          "text": "Prefs-driven dispatcher + rewire feedback-notify through it",
+          "live": true
+        },
+        {
+          "sha": "0894003",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Sequence RPC bodies + process-sequences cron worker",
+          "live": true
+        },
+        {
+          "sha": "0b060fb",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "ForecastWidget + fixed report set on /crm/reports",
+          "live": true
+        },
+        {
+          "sha": "0eff460",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Headline sums open stages only, not realized won revenue",
+          "live": true
+        },
+        {
+          "sha": "1203adc",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Tasks page, overdue widget, lost-reason + stage-age + click-to-call, Conversations shell",
+          "live": true
+        },
+        {
+          "sha": "13c32b8",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Merge_contacts reconciles consent flags to the more-restrictive record",
+          "live": true
+        },
+        {
+          "sha": "14a213e",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Fill task RPC bodies — get/upsert/set_task_status/delete + get_overdue_tasks",
+          "live": true
+        },
+        {
+          "sha": "1c7128c",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Combine input+textarea classes on the Details field",
+          "live": true
+        },
+        {
+          "sha": "1ea5c66",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Fill import_contacts/set_contact_owner/set_contact_lifecycle + audit-harden email-campaign RPCs",
+          "live": true
+        },
+        {
+          "sha": "2035b29",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Codify merge_contacts GRANT EXECUTE in migration; fix stale test ref",
+          "live": true
+        },
+        {
+          "sha": "27f3cbe",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Wire AiReplySuggestions into the CRM Conversations composer",
+          "live": true
+        },
+        {
+          "sha": "2884458",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Seed roadmap v3 phases F/6a/6b/7/8/9/10 into build tracker",
+          "live": true
+        },
+        {
+          "sha": "30fd424",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Fill score_lead + 7 report RPC bodies (function-body-only replace)",
+          "live": true
+        },
+        {
+          "sha": "36e9610",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Schedule weekly digest via pg_cron (secret auth + DB recipients)",
+          "live": true
+        },
+        {
+          "sha": "398e1a8",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Five adversarial-review findings in the composer + nav",
+          "live": true
+        },
+        {
+          "sha": "3afa1b2",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F consent gate — SMS branch of automated-send behind kill-switch",
+          "live": true
+        },
+        {
+          "sha": "3bfd4cf",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "The form builder UI (CrmForms.jsx) + styles",
+          "live": true
+        },
+        {
+          "sha": "4567bc3",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Feedback-notify worker — in-app bell + per-admin push fan-out",
+          "live": true
+        },
+        {
+          "sha": "4f3d342",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Sequence builder UI + reserved Phase 8 styles",
+          "live": true
+        },
+        {
+          "sha": "5cbcd68",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Rebuild AdminFeedback — media gallery, per-row notes, manual purge (Session C)",
+          "live": true
+        },
+        {
+          "sha": "5f06534",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase 6a — contacts directory, read detail & segments",
+          "live": true
+        },
+        {
+          "sha": "6016afc",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Supersede merge_contacts to preserve CRM history on merge (Phase F P0)",
+          "live": true
+        },
+        {
+          "sha": "65a771c",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Allow per-employee page:crm grant via employee_page_access",
+          "live": true
+        },
+        {
+          "sha": "6787c78",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F shared RPC replaces — move_lead_to_stage + get_contact_activity",
+          "live": true
+        },
+        {
+          "sha": "6a62936",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F signature-frozen RPC stubs (30) for the parallel wave",
+          "live": true
+        },
+        {
+          "sha": "6add9c2",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "CrmAutomations builder + seam wiring + reserved styles",
+          "live": true
+        },
+        {
+          "sha": "6c5dd5e",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "CSV import wizard + export, duplicate/merge + owner/lifecycle tool, per-screen staff role gating",
+          "live": true
+        },
+        {
+          "sha": "6f31c3e",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F frontend — ActivityTimeline extraction, slots, skeletons",
+          "live": true
+        },
+        {
+          "sha": "721385f",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Four fixed automations + settings toggles",
+          "live": true
+        },
+        {
+          "sha": "7fefcfe",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Shared form lib + fill the 3 frozen RPC bodies",
+          "live": true
+        },
+        {
+          "sha": "807f6d5",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F wiring — routes, nav, icons, reserved index.css sections",
+          "live": true
+        },
+        {
+          "sha": "843495a",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Rebuild TechFeedback on shared composer + wire notify",
+          "live": true
+        },
+        {
+          "sha": "85a6a01",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "StageWeight win_probability preference + lead scoring + report math",
+          "live": true
+        },
+        {
+          "sha": "8b1557e",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Automation engine worker (process-crm-automations.js)",
+          "live": true
+        },
+        {
+          "sha": "9490362",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Messaging",
+          "text": "Enforce TCPA quiet-hours (8am-9pm local) in the automated send gate",
+          "live": true
+        },
+        {
+          "sha": "9f854b2",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Shared FeedbackAttachments composer + desktop /feedback page",
+          "live": true
+        },
+        {
+          "sha": "a468284",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Phase F wave schema — all tables + columns for the parallel wave",
+          "live": true
+        },
+        {
+          "sha": "a56fd47",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Pattern-checker nits — onBlur delete cancel, CSS tokens, doc header",
+          "live": true
+        },
+        {
+          "sha": "aaab652",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Mobile Sidebar 'Send Feedback' link (Help precedent), close Phase F's last box",
+          "live": true
+        },
+        {
+          "sha": "af26ec1",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "MediaCompress lib — pure caps/validation/path helpers + browser compress/probe",
+          "live": true
+        },
+        {
+          "sha": "b58ab7f",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Sanitize the thank-you before it reaches the innerHTML sink",
+          "live": true
+        },
+        {
+          "sha": "b74bf47",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add migration-safety-checker + consent-path-auditor",
+          "live": true
+        },
+        {
+          "sha": "c2d9ca7",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Submit worker, hosted form page & embed snippet",
+          "live": true
+        },
+        {
+          "sha": "d58c40c",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add /masterplan — reusable roadmap-v3-standard planning recipe",
+          "live": true
+        },
+        {
+          "sha": "d7317e2",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Additive migration — crm_automations + _runs, RPCs, S1 guard",
+          "live": true
+        },
+        {
+          "sha": "f1aa0f8",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Weekly AI digest cron + standalone AiReplySuggestions",
+          "live": true
+        },
+        {
+          "sha": "f2ee8b7",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Purge worker — retention delete + orphan sweep (Session C)",
+          "live": true
+        },
+        {
+          "sha": "f7a2eb5",
+          "day": "2026-07-02",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Use --crm-success-bg token instead of hardcoded hex",
+          "live": true
+        },
+        {
+          "sha": "f7dfe34",
+          "day": "2026-07-02",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Phase F migration — attachments/source/resolved_at columns + RPC cutover",
+          "live": true
+        },
+        {
+          "sha": "ec57268",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Real touch drag-and-drop for the Leads pipeline board",
+          "live": true
+        }
+      ],
+      "count": 111,
+      "areas": [
+        "Billing",
+        "CRM",
+        "Field App",
+        "Interface",
+        "Messaging",
+        "Notifications",
+        "Platform",
+        "Scheduling",
+        "Settings & Access",
+        "Translations"
+      ],
+      "testing": 0
+    }
+  ]
+}

@@ -22,6 +22,7 @@
     "test:browser": "node scripts/qa/run-playwright-lane.mjs",
     "test:browser:launcher": "node scripts/qa/launch-ephemeral-browser.mjs",
     "test:artifacts": "node scripts/qa/scan-test-artifacts.mjs",
+    "generate:changelog": "node scripts/generate-changelog-activity.mjs",
     "generate:tooling": "node scripts/render-tooling-adapters.mjs --write",
     "check:tooling-generated": "node scripts/render-tooling-adapters.mjs --check",
     "preflight:mobile": "node scripts/mobile-readiness-preflight.mjs",
