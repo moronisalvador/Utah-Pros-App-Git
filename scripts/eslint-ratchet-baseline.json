@@ -26,7 +26,6 @@
       "warning:no-restricted-syntax": 1
     },
     "src/components/tech/ReadingEntrySheet.jsx": {
-      "warning:no-restricted-syntax": 1,
       "warning:no-use-before-define": 1
     },
     "src/contexts/AuthContext.jsx": {
