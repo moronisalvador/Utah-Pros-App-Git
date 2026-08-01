@@ -2,8 +2,10 @@
 
 **Status:** Source is on `dev`, with exact prior deployment proof at `52a07d9e`; every newer
 reconciled head requires its own deployment/smoke readback. `qa-staging` and shared-database
-migrations are verified with both rollout gates disabled. Provider sandbox, authenticated
-browser/named-admin proof, feature activation, and `dev → main` promotion remain pending.
+migrations are verified. The shared database flag is currently enabled/not force-disabled; the
+separate Cloudflare Worker gate has not been independently read back, so provider activation is
+not qualified. Provider sandbox, authenticated browser/named-admin proof, and `dev → main`
+promotion remain pending.
 **Last verified:** 2026-07-31
 **Owner:** Utah Pros Restoration
 **Risk:** Money / QuickBooks / shared-database
@@ -28,7 +30,9 @@ without allowing retries, webhooks, or row-level edits to duplicate or corrupt t
   `20260731231000_qbo_receipt_service_grant_containment.sql` is live on staging as `20260731230543`
   and production as `20260731230907`.
 - No QuickBooks sandbox or production Payment is created by repository tests.
-- The database flag `feature:qbo_receive_payment` is seeded disabled.
+- The database flag `feature:qbo_receive_payment` was seeded disabled. Fresh production readback at
+  `2026-07-31 23:43:23Z` shows it enabled/not force-disabled through an active internal admin
+  employee update; this supersedes the initial disabled readback.
 - The money endpoint requires that exact row enabled and not force-disabled plus
   `QBO_RECEIVE_PAYMENT_ENABLED=true`; either closed/missing/malformed gate fails closed.
 - Code reached `dev`, and the exact `52a07d9e` deployment passed its own Cloudflare check; newer
@@ -63,8 +67,9 @@ The receipt foundation is recorded on `qa-staging` as
 `20260731223150_qbo_multi_invoice_payment_receipts`; the three staging-discovered supporting
 foreign-key indexes are recorded there as
 `20260731223813_qbo_multi_invoice_payment_receipt_fk_indexes`. Authoritative readback confirmed
-the database feature flag remains disabled, all three receipt tables have forced RLS, browser
-roles cannot execute the receipt RPCs, and all receipt RPCs remain service-role-only. The full
+the database feature flag was disabled at that earlier qualification point, all three receipt
+tables have forced RLS, browser roles cannot execute the receipt RPCs, and all receipt RPCs remain
+service-role-only. The full
 transactional SQL behavior suite passed with two synthetic same-contact/QBO-linked invoices and
 then rolled back; readback confirmed zero fixture, receipt, attempt, or event residue. Supabase
 security/performance advisors reported no receipt-surface security warning; the supporting indexes
@@ -73,11 +78,14 @@ managed-default service-role write drift described above. The corrective migrati
 CI-tested, applied on staging, and followed by the full transactional receipt suite plus direct-role
 denial proof: receipts/attempts are SELECT-only, events have no direct grant, all writes remain RPC
 only, and zero fixture/receipt residue remained. Production now matches that exact privilege shape,
-contains zero receipt/attempt/event/linked-payment rows, and retains the disabled database flag.
+contains zero receipt/attempt/event/linked-payment rows. The later database-flag change is recorded
+above; the Worker environment value remains unverified.
 
 These checks still do **not** prove a provider-connected or user-qualified system. No authenticated
-rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof, feature
-activation, named-admin production proof, or `main` promotion occurred.
+rendered-browser session, Intuit Development sandbox call, provider Payment/webhook proof, qualified
+two-gate activation, named-admin production proof, or `main` promotion occurred. A post-flag-change
+readback found zero `qbo-receive-payment` Worker runs and zero new QBO events; do not use that
+absence as Worker-gate proof.
 
 ## Frozen v1 product contract
 
