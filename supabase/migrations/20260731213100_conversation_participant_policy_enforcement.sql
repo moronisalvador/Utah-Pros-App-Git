@@ -289,6 +289,46 @@ GRANT SELECT ON TABLE public.conversations, public.conversation_participants, pu
 GRANT ALL ON TABLE public.conversations, public.conversation_participants, public.messages
   TO service_role;
 
+-- The attachment signer must not read a caller-selected private message with
+-- service-role table access before proving that the employee can still access
+-- its conversation. Keep that lookup and authorization in one database call.
+CREATE OR REPLACE FUNCTION public.messaging_get_authorized_message_media(
+  p_employee_id uuid,
+  p_message_id uuid
+)
+RETURNS TABLE(conversation_id uuid, media_urls jsonb)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+BEGIN
+  IF auth.role() <> 'service_role'
+     OR p_employee_id IS NULL
+     OR p_message_id IS NULL THEN
+    RAISE EXCEPTION 'message media lookup is service-role only'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
+  SELECT message.conversation_id, message.media_urls
+  FROM public.messages message
+  WHERE message.id = p_message_id
+    AND public.messaging_employee_can_access_conversation(
+      p_employee_id,
+      message.conversation_id
+    );
+END;
+$function$;
+ALTER FUNCTION public.messaging_get_authorized_message_media(uuid, uuid)
+  OWNER TO postgres;
+REVOKE ALL ON FUNCTION
+  public.messaging_get_authorized_message_media(uuid, uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION
+  public.messaging_get_authorized_message_media(uuid, uuid)
+  TO service_role;
+
 DO $conversation_policy_postcondition$
 DECLARE
   v_table text;
@@ -399,5 +439,42 @@ BEGIN
         v_table;
     END IF;
   END LOOP;
+
+  IF has_function_privilege(
+       'anon',
+       'public.messaging_get_authorized_message_media(uuid,uuid)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.messaging_get_authorized_message_media(uuid,uuid)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.messaging_get_authorized_message_media(uuid,uuid)',
+       'EXECUTE'
+     )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_proc procedure
+       JOIN pg_catalog.pg_roles owner_role
+         ON owner_role.oid = procedure.proowner
+       WHERE procedure.oid = to_regprocedure(
+         'public.messaging_get_authorized_message_media(uuid,uuid)'
+       )
+         AND owner_role.rolname = 'postgres'
+         AND procedure.prosecdef
+         AND procedure.provolatile = 's'
+         AND procedure.proconfig =
+           ARRAY['search_path=pg_catalog, public']::text[]
+         AND procedure.prosrc ~
+           'messaging_employee_can_access_conversation'
+         AND procedure.prosrc ~ 'auth\.role\(\)'
+         AND procedure.prosrc ~ 'service_role'
+     ) THEN
+    RAISE EXCEPTION
+      'conversation policy enforcement: message media boundary drifted';
+  END IF;
 END;
 $conversation_policy_postcondition$;

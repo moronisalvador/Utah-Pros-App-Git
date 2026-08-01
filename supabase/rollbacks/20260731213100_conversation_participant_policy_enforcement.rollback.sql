@@ -57,7 +57,17 @@ BEGIN
     WHERE procedure.oid = to_regprocedure(
       'public.claim_scheduled_message(uuid)'
     )
-      AND NOT procedure.prosecdef;
+      AND procedure.prolang = (
+        SELECT language.oid
+        FROM pg_catalog.pg_language language
+        WHERE language.lanname = 'plpgsql'
+      )
+      AND procedure.proowner = 'postgres'::regrole
+      AND procedure.provolatile = 'v'
+      AND procedure.proparallel = 'u'
+      AND NOT procedure.prosecdef
+      AND procedure.proconfig =
+        ARRAY['search_path=pg_catalog, public']::text[];
 
     IF has_table_privilege('authenticated', 'public.scheduled_messages', 'SELECT')
        OR has_table_privilege('authenticated', 'public.scheduled_messages', 'INSERT')
@@ -108,9 +118,15 @@ BEGIN
          'DELETE'
        )
        OR v_legacy_claim_source IS NULL
-       OR v_legacy_claim_source !~
-         'disabled during scheduled-delivery recovery'
-       OR has_function_privilege(
+       OR lower(
+         regexp_replace(
+           btrim(v_legacy_claim_source),
+           '[[:space:]]+',
+           ' ',
+           'g'
+         )
+       ) <> 'begin return false; end;'
+       OR NOT has_function_privilege(
          'authenticated',
          'public.claim_scheduled_message(uuid)',
          'EXECUTE'
@@ -269,7 +285,8 @@ REVOKE ALL ON FUNCTION
     uuid
   ),
   public.get_my_conversation_access_snapshot(uuid[]),
-  public.set_my_conversation_unread_state(uuid[], boolean)
+  public.set_my_conversation_unread_state(uuid[], boolean),
+  public.messaging_get_authorized_message_media(uuid, uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 
 REVOKE ALL ON FUNCTION
@@ -370,7 +387,8 @@ BEGIN
     'public.get_message_author_directory(uuid[])',
     'public.get_tech_conversations(integer,timestamp with time zone,uuid,text,text,uuid)',
     'public.get_my_conversation_access_snapshot(uuid[])',
-    'public.set_my_conversation_unread_state(uuid[],boolean)'
+    'public.set_my_conversation_unread_state(uuid[],boolean)',
+    'public.messaging_get_authorized_message_media(uuid,uuid)'
   ]
   LOOP
     IF has_function_privilege('anon', v_function, 'EXECUTE')
