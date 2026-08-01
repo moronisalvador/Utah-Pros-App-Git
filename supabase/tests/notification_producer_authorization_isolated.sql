@@ -37,7 +37,7 @@ BEGIN
     WHERE migration.name = 'notification_producer_authorization'
   )
      OR to_regprocedure(
-       'public.claim_notification_delivery(uuid,uuid,uuid,text,text,uuid)'
+       'public.claim_notification_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid)'
      ) IS NULL THEN
     RAISE EXCEPTION
       'apply notification_producer_authorization to the disposable clone first';
@@ -59,6 +59,7 @@ BEGIN
   PERFORM set_config('upr.npa.employee_external', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.job', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.appointment', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.private_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.entry', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.occurrence', gen_random_uuid()::text, true);
 END;
@@ -285,6 +286,28 @@ SELECT pg_temp.expect_sqlstate(
   )
 );
 
+DO $compatible_update$
+DECLARE
+  v_updated jsonb;
+BEGIN
+  v_updated := public.update_appointment(
+    p_appointment_id => current_setting('upr.npa.appointment')::uuid,
+    p_title => '[NPA isolated] Compatible RPC update',
+    p_actor_id => NULL
+  );
+  IF v_updated ->> 'title' <> '[NPA isolated] Compatible RPC update' THEN
+    RAISE EXCEPTION 'compatible update_appointment call shape failed';
+  END IF;
+
+  UPDATE public.appointments
+  SET notes = '[NPA isolated] compatible direct patch'
+  WHERE id = current_setting('upr.npa.appointment')::uuid;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'compatible direct appointment patch failed';
+  END IF;
+END;
+$compatible_update$;
+
 DO $crew_diff$
 DECLARE
   v_original_id uuid;
@@ -346,6 +369,168 @@ SELECT pg_temp.expect_sqlstate(
     )::text
   )
 );
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_admin'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+INSERT INTO public.appointments (
+  id,
+  job_id,
+  title,
+  date,
+  is_private
+)
+VALUES (
+  current_setting('upr.npa.private_appointment')::uuid,
+  current_setting('upr.npa.job')::uuid,
+  '[NPA isolated] Private appointment',
+  CURRENT_DATE,
+  true
+);
+INSERT INTO public.appointment_crew (
+  appointment_id,
+  employee_id,
+  role
+)
+VALUES (
+  current_setting('upr.npa.private_appointment')::uuid,
+  current_setting('upr.npa.employee_tech')::uuid,
+  'tech'
+);
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_other'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $private_row_hidden$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.appointments appointment
+    WHERE appointment.id = current_setting('upr.npa.private_appointment')::uuid
+  ) THEN
+    RAISE EXCEPTION 'unassigned employee could read a private appointment';
+  END IF;
+END;
+$private_row_hidden$;
+SELECT pg_temp.expect_sqlstate(
+  'unassigned employee cannot mutate private appointment through RPC',
+  format(
+    'SELECT public.update_appointment(%L::uuid,NULL,NULL,NULL,%L,NULL,NULL,NULL,NULL)',
+    current_setting('upr.npa.private_appointment'),
+    '[NPA isolated] private forged update'
+  )
+);
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_tech'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $assigned_private_access$
+DECLARE
+  v_updated jsonb;
+BEGIN
+  v_updated := public.update_appointment(
+    p_appointment_id => current_setting('upr.npa.private_appointment')::uuid,
+    p_notes => '[NPA isolated] assigned private update',
+    p_actor_id => NULL
+  );
+  IF v_updated ->> 'id' <> current_setting('upr.npa.private_appointment') THEN
+    RAISE EXCEPTION 'assigned employee lost private appointment access';
+  END IF;
+END;
+$assigned_private_access$;
+
+SELECT pg_temp.expect_sqlstate(
+  'assigned tech cannot make a private appointment public',
+  format(
+    'UPDATE public.appointments SET is_private=false WHERE id=%L::uuid',
+    current_setting('upr.npa.private_appointment')
+  )
+);
+
+DO $private_stays_private$
+BEGIN
+  IF NOT (
+    SELECT appointment.is_private
+    FROM public.appointments appointment
+    WHERE appointment.id = current_setting('upr.npa.private_appointment')::uuid
+  ) THEN
+    RAISE EXCEPTION 'failed privacy downgrade exposed the private appointment';
+  END IF;
+END;
+$private_stays_private$;
+
+SELECT pg_temp.expect_sqlstate(
+  'assigned tech cannot delegate private appointment access through direct crew insert',
+  format(
+    'INSERT INTO public.appointment_crew (appointment_id,employee_id,role) VALUES (%L::uuid,%L::uuid,%L)',
+    current_setting('upr.npa.private_appointment'),
+    current_setting('upr.npa.employee_other'),
+    'helper'
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'assigned tech cannot delegate private appointment access through crew sync',
+  format(
+    'SELECT * FROM public.sync_appointment_crew(%L::uuid,%L::jsonb)',
+    current_setting('upr.npa.private_appointment'),
+    jsonb_build_array(
+      jsonb_build_object(
+        'employee_id',
+        current_setting('upr.npa.employee_tech'),
+        'role',
+        'tech'
+      ),
+      jsonb_build_object(
+        'employee_id',
+        current_setting('upr.npa.employee_other'),
+        'role',
+        'helper'
+      )
+    )::text
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'tech cannot turn a public appointment private',
+  format(
+    'UPDATE public.appointments SET is_private=true WHERE id=%L::uuid',
+    current_setting('upr.npa.appointment')
+  )
+);
+
+DO $public_stays_public$
+BEGIN
+  IF (
+    SELECT appointment.is_private
+    FROM public.appointments appointment
+    WHERE appointment.id = current_setting('upr.npa.appointment')::uuid
+  ) IS TRUE THEN
+    RAISE EXCEPTION 'failed privacy escalation changed the public appointment';
+  END IF;
+END;
+$public_stays_public$;
 
 SELECT pg_temp.expect_sqlstate(
   'tech cannot submit for another employee actor',
@@ -466,13 +651,15 @@ SELECT set_config(
 SELECT pg_temp.expect_sqlstate(
   'browser cannot claim worker delivery',
   format(
-    'SELECT public.claim_notification_delivery(%L::uuid,%L::uuid,%L::uuid,%L,%L,%L::uuid)',
+    'SELECT public.claim_notification_delivery(%L::uuid,%L::uuid,%L::uuid,%L,%L,%L::uuid,%L,%L::uuid)',
     gen_random_uuid(),
     current_setting('upr.npa.occurrence'),
     current_setting('upr.npa.employee_admin'),
     'appointment.updated',
     'bell',
-    gen_random_uuid()
+    gen_random_uuid(),
+    'appointment',
+    current_setting('upr.npa.appointment')
   )
 );
 
@@ -491,7 +678,9 @@ BEGIN
        current_setting('upr.npa.employee_admin')::uuid,
        'appointment.updated',
        'bell',
-       v_target
+       v_target,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid
      ) IS NOT TRUE
      OR public.claim_notification_delivery(
        v_delivery_key,
@@ -499,7 +688,9 @@ BEGIN
        current_setting('upr.npa.employee_admin')::uuid,
        'appointment.updated',
        'bell',
-       v_target
+       v_target,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid
      ) IS NOT FALSE THEN
     RAISE EXCEPTION 'delivery occurrence was not claimed exactly once';
   END IF;

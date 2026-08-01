@@ -101,6 +101,15 @@ REVOKE EXECUTE ON FUNCTION public.claim_notification_delivery(
   uuid,
   text,
   text,
+  uuid,
+  text,
+  uuid
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.validate_notification_producer_delivery(
+  uuid,
+  text,
+  text,
+  uuid,
   uuid
 ) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.release_notification_delivery_claim(uuid)
