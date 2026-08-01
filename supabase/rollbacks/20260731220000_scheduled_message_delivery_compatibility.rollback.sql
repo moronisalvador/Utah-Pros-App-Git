@@ -57,8 +57,8 @@ GRANT EXECUTE ON FUNCTION
   public.get_scheduled_queue(integer)
   TO authenticated;
 
--- Preserve the frozen signature for stale workers, but leave it service-only
--- and fail closed before it can read or mutate any scheduled row.
+-- Preserve the frozen signature and historical grants for stale callers. It
+-- returns FALSE without reading or mutating any scheduled row.
 CREATE OR REPLACE FUNCTION public.claim_scheduled_message(p_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -66,15 +66,14 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
-  RAISE EXCEPTION
-    'claim_scheduled_message is disabled during scheduled-delivery recovery'
-    USING ERRCODE = '42501';
+  RETURN false;
 END;
 $function$;
+ALTER FUNCTION public.claim_scheduled_message(uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.claim_scheduled_message(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.claim_scheduled_message(uuid)
-  TO service_role;
+  TO authenticated, service_role;
 
 DO $scheduled_delivery_compatibility_rollback_postcondition$
 BEGIN
@@ -106,7 +105,7 @@ BEGIN
        'public.create_scheduled_message(uuid,uuid,text,timestamp with time zone)',
        'EXECUTE'
      )
-     OR has_function_privilege('authenticated', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
      OR has_function_privilege('service_role', 'public.claim_scheduled_message_v2(uuid,uuid)', 'EXECUTE')

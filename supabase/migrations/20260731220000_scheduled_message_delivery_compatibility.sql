@@ -32,7 +32,8 @@
 -- 20260731213100 participant policy enforcement must already be applied and
 -- catalog-verified; otherwise browser-mutable recipient rows are not trusted.
 -- If this migration lands before a stale Worker is replaced, the preserved
--- legacy claim signature below also fails closed, so delivery pauses safely.
+-- legacy claim signature returns FALSE without touching a row, so delivery
+-- pauses safely while the deployed caller contract remains callable.
 
 DO $scheduled_delivery_compat_preflight$
 DECLARE
@@ -464,9 +465,9 @@ BEGIN
 END;
 $function$;
 
--- Keep the deployed signature present during the compatibility window, but
--- make every stale worker stop before provider submission. Only the v2 fenced
--- workflow may claim a scheduled row after this migration.
+-- Keep the deployed signature and its historical callers compatible during the
+-- migration window, but return FALSE without reading or updating any row. Old
+-- workers stop normally; only the v2 fenced workflow may claim a scheduled row.
 CREATE OR REPLACE FUNCTION public.claim_scheduled_message(p_id uuid)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -474,12 +475,14 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public
 AS $function$
 BEGIN
-  RAISE EXCEPTION 'claim_scheduled_message is disabled; deploy the fenced scheduled worker'
-    USING ERRCODE = '42501';
+  RETURN false;
 END;
 $function$;
-REVOKE ALL ON FUNCTION public.claim_scheduled_message(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.claim_scheduled_message(uuid) TO service_role;
+ALTER FUNCTION public.claim_scheduled_message(uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.claim_scheduled_message(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.claim_scheduled_message(uuid)
+  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.claim_scheduled_message_v2(p_id uuid, p_claim_token uuid)
 RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog, public AS $function$
@@ -699,9 +702,120 @@ GRANT EXECUTE ON FUNCTION public.create_scheduled_message(uuid,uuid,text,timesta
 REVOKE ALL ON FUNCTION public.claim_scheduled_message_v2(uuid,uuid), public.release_scheduled_message_claim(uuid,uuid,text), public.fail_scheduled_message_claim(uuid,uuid,text), public.reserve_scheduled_message_delivery(uuid,uuid,uuid,text,text,text,jsonb), public.reconcile_scheduled_message_delivery(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_scheduled_message_v2(uuid,uuid), public.release_scheduled_message_claim(uuid,uuid,text), public.fail_scheduled_message_claim(uuid,uuid,text), public.reserve_scheduled_message_delivery(uuid,uuid,uuid,text,text,text,jsonb), public.reconcile_scheduled_message_delivery(uuid) TO service_role;
 
--- Close the legacy browser table seam in this same transaction. The permissive
--- historical policies remain only as dormant catalog objects after 31220100;
--- without table privileges they cannot authorize a raw browser
--- INSERT/UPDATE that could reopen or alter a provenance-backed scheduled row.
+-- Close the legacy browser table seam in this same transaction. The historical
+-- policy objects remain for catalog compatibility, but each is explicitly
+-- fail-closed so claim_token is protected by both RLS and table ACLs.
 REVOKE ALL ON TABLE public.scheduled_messages FROM PUBLIC, authenticated, anon, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.scheduled_messages TO service_role;
+
+ALTER POLICY allow_anon_read_scheduled_messages
+  ON public.scheduled_messages
+  TO authenticated
+  USING (false);
+ALTER POLICY allow_anon_insert_scheduled_messages
+  ON public.scheduled_messages
+  TO authenticated
+  WITH CHECK (false);
+ALTER POLICY allow_authenticated_scheduled_messages
+  ON public.scheduled_messages
+  TO authenticated
+  USING (false)
+  WITH CHECK (false);
+
+DO $scheduled_delivery_compat_postcondition$
+DECLARE
+  v_policy record;
+BEGIN
+  FOR v_policy IN
+    SELECT *
+    FROM pg_catalog.pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'scheduled_messages'
+  LOOP
+    IF v_policy.policyname NOT IN (
+         'allow_anon_read_scheduled_messages',
+         'allow_anon_insert_scheduled_messages',
+         'allow_authenticated_scheduled_messages'
+       )
+       OR v_policy.roles <> ARRAY['authenticated']::name[]
+       OR (
+         v_policy.policyname = 'allow_anon_read_scheduled_messages'
+         AND (
+           v_policy.cmd <> 'SELECT'
+           OR regexp_replace(
+             COALESCE(v_policy.qual, ''),
+             '\s+',
+             '',
+             'g'
+           ) <> 'false'
+           OR v_policy.with_check IS NOT NULL
+         )
+       )
+       OR (
+         v_policy.policyname = 'allow_anon_insert_scheduled_messages'
+         AND (
+           v_policy.cmd <> 'INSERT'
+           OR v_policy.qual IS NOT NULL
+           OR regexp_replace(
+             COALESCE(v_policy.with_check, ''),
+             '\s+',
+             '',
+             'g'
+           ) <> 'false'
+         )
+       )
+       OR (
+         v_policy.policyname = 'allow_authenticated_scheduled_messages'
+         AND (
+           v_policy.cmd <> 'ALL'
+           OR regexp_replace(
+             COALESCE(v_policy.qual, ''),
+             '\s+',
+             '',
+             'g'
+           ) <> 'false'
+           OR regexp_replace(
+             COALESCE(v_policy.with_check, ''),
+             '\s+',
+             '',
+             'g'
+           ) <> 'false'
+         )
+       ) THEN
+      RAISE EXCEPTION
+        'scheduled delivery compatibility: fail-closed policy postcondition failed';
+    END IF;
+  END LOOP;
+
+  IF (
+       SELECT count(*)
+       FROM pg_catalog.pg_policies
+       WHERE schemaname = 'public'
+         AND tablename = 'scheduled_messages'
+     ) <> 3
+     OR has_table_privilege(
+       'authenticated',
+       'public.scheduled_messages',
+       'SELECT'
+     )
+     OR has_table_privilege('anon', 'public.scheduled_messages', 'SELECT')
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.claim_scheduled_message(uuid)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.claim_scheduled_message(uuid)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.claim_scheduled_message(uuid)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'scheduled delivery compatibility: legacy boundary postcondition failed';
+  END IF;
+END;
+$scheduled_delivery_compat_postcondition$;
