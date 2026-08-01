@@ -43,6 +43,7 @@ const LOCAL_ONLY_SQL = [
   'notification_read_recipient_boundary.test.sql',
   'oop_pricing_builder.test.sql',
   'qbo_multi_invoice_payment_receipts.test.sql',
+  'scheduled_message_delivery.test.sql',
 ];
 
 describe('db-lane coverage contracts', () => {

@@ -39,7 +39,7 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibility).toMatch(/ALTER TABLE public\.scheduled_message_creation_provenance ENABLE ROW LEVEL SECURITY;[\s\S]*ALTER TABLE public\.scheduled_message_creation_provenance FORCE ROW LEVEL SECURITY;[\s\S]*FOR ALL TO postgres USING \(true\) WITH CHECK \(true\);[\s\S]*FOR SELECT TO service_role USING \(true\)[\s\S]*REVOKE ALL ON TABLE public\.scheduled_message_creation_provenance[\s\S]*GRANT SELECT ON TABLE public\.scheduled_message_creation_provenance TO service_role/);
     expect(compatibility).toMatch(/ACCESS EXCLUSIVE lock[\s\S]*v_legacy_pending bigint[\s\S]*SELECT count\(\*\)[\s\S]*WHERE status = 'pending'[\s\S]*v_legacy_pending <> 0[\s\S]*owner-led resolution before apply[\s\S]*ERRCODE = '55000'/);
     expect(compatibility).not.toMatch(/UPDATE public\.scheduled_messages message\s+SET status = 'failed'/);
-    expect(compatibility).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*claim_scheduled_message is disabled; deploy the fenced scheduled worker/);
+    expect(compatibility).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
     expect(compatibility).not.toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*UPDATE public\.scheduled_messages[\s\S]*REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\)/);
     expect(compatibility).toMatch(/claim_scheduled_message_v2[\s\S]*delivery_attempt_id IS NULL/);
     expect(compatibility).toMatch(/claim_scheduled_message_v2[\s\S]*scheduled_message_creation_provenance provenance[\s\S]*provenance\.created_by = message\.created_by[\s\S]*provenance\.conversation_id = message\.conversation_id[\s\S]*provenance\.send_at = message\.send_at[\s\S]*provenance\.body_fingerprint/);
@@ -77,6 +77,21 @@ describe('scheduled-message authorization migration', () => {
       'browser-forged assignment created a scheduled row or provenance',
     );
     expect(isolatedProof).toContain(
+      'crm_partner cannot create a scheduled message even with Conversations capability',
+    );
+    expect(isolatedProof).toContain(
+      'crm_partner denial left scheduled-message residue',
+    );
+    expect(isolatedProof).toContain(
+      'authenticated browser cannot insert raw scheduled queue rows',
+    );
+    expect(isolatedProof).toContain(
+      'anonymous browser cannot insert raw scheduled queue rows',
+    );
+    expect(isolatedProof).toContain(
+      'raw browser insert created scheduled-message residue',
+    );
+    expect(isolatedProof).toContain(
       'authenticated browser cannot rewrite a scheduled recipient',
     );
     expect(isolatedProof).toContain(
@@ -88,11 +103,17 @@ describe('scheduled-message authorization migration', () => {
     expect(isolatedProof).toContain(
       'null-token reservation crossed the provider-attempt boundary',
     );
+    expect(isolatedProof).toContain(
+      'legacy authenticated claim did not remain a callable false no-op',
+    );
+    expect(isolatedProof).toContain(
+      'legacy claim reclaimed a delivery-linked scheduled row',
+    );
   });
 
   it('keeps every new send lifecycle RPC service-only and reconciliation provider-free', () => {
     expect(compatibility).toMatch(/ROLLOUT ORDER: deploy the hardened web\/Worker callers first; they fail closed/);
-    expect(compatibility).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\) TO service_role;/);
+    expect(compatibility).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(compatibility).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message_v2[\s\S]*public\.reconcile_scheduled_message_delivery\(uuid\) FROM PUBLIC, anon, authenticated;/);
     expect(compatibility).toMatch(/GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message_v2[\s\S]*public\.reconcile_scheduled_message_delivery\(uuid\) TO service_role;/);
     expect(compatibility).toMatch(/reconcile_scheduled_message_delivery\(p_id uuid\)/);
@@ -101,15 +122,15 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibility).toMatch(/v_scheduled\.claimed_at >= now\(\) - interval '10 minutes'[\s\S]*'status', 'in_flight'/);
     expect(compatibility).toMatch(/SCHEDULED_OUTCOME_UNKNOWN/);
     expect(compatibility).not.toMatch(/reconcile_scheduled_message_delivery\(\s*p_id uuid,[^)]/);
-    expect(compatibility).toMatch(/Close the legacy browser table seam in this same transaction[\s\S]*REVOKE ALL ON TABLE public\.scheduled_messages FROM PUBLIC, authenticated, anon, service_role;[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.scheduled_messages TO service_role;/);
+    expect(compatibility).toMatch(/Close the legacy browser table seam in this same transaction[\s\S]*REVOKE ALL ON TABLE public\.scheduled_messages FROM PUBLIC, authenticated, anon, service_role;[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.scheduled_messages TO service_role;[\s\S]*ALTER POLICY allow_anon_read_scheduled_messages[\s\S]*USING \(false\);[\s\S]*ALTER POLICY allow_anon_insert_scheduled_messages[\s\S]*WITH CHECK \(false\);[\s\S]*ALTER POLICY allow_authenticated_scheduled_messages[\s\S]*USING \(false\)[\s\S]*WITH CHECK \(false\);/);
   });
 
   it('preflights then removes direct authenticated access without dropping legacy policies', () => {
     expect(enforcement).toMatch(/legacy policy or ACL baseline drifted/);
     expect(enforcement).toMatch(/has_table_privilege\('authenticated', 'public\.scheduled_messages', 'INSERT'\)[\s\S]*OR NOT has_table_privilege\('service_role', 'public\.scheduled_messages', 'INSERT'\)/);
     expect(enforcement).not.toMatch(/DROP POLICY/);
-    expect(enforcement).toMatch(/Historical policy objects remain as inert catalog records/);
-    expect(enforcement).toMatch(/inert legacy policy postcondition failed/);
+    expect(enforcement).toMatch(/Historical policy objects remain as fail-closed catalog records/);
+    expect(enforcement).toMatch(/fail-closed policy postcondition failed/);
     expect(enforcement).toMatch(/SELECT count\(\*\)[\s\S]*tablename = 'scheduled_messages'[\s\S]*<> 3/);
     expect(enforcement).toMatch(/REVOKE ALL ON TABLE public\.scheduled_messages FROM PUBLIC, authenticated, anon, service_role/);
     expect(enforcement).toMatch(/GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.scheduled_messages TO service_role/);
@@ -117,8 +138,8 @@ describe('scheduled-message authorization migration', () => {
     expect(enforcement).toMatch(/has_table_privilege\('authenticated', 'public\.scheduled_message_creation_provenance', 'INSERT'\)[\s\S]*has_table_privilege\('service_role', 'public\.scheduled_message_creation_provenance', 'INSERT'\)/);
     expect(enforcement).toMatch(/has_table_privilege\('anon', 'public\.scheduled_messages', 'TRUNCATE'\)/);
     expect(enforcement).toMatch(/has_table_privilege\('service_role', 'public\.scheduled_messages', 'TRIGGER'\)/);
-    expect(enforcement).toMatch(/claim_scheduled_message is retired; use claim_scheduled_message_v2/);
-    expect(enforcement).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated, service_role/);
+    expect(enforcement).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
+    expect(enforcement).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(enforcement).toMatch(/has_function_privilege\('service_role', 'public\.claim_scheduled_message\(uuid\)', 'EXECUTE'\)/);
   });
 
@@ -130,19 +151,18 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibilityRollback).not.toMatch(/GRANT (?:SELECT|INSERT|UPDATE|DELETE|ALL)[^;]*scheduled_messages TO authenticated/i);
     expect(compatibilityRollback).toMatch(/REVOKE ALL ON TABLE public\.scheduled_messages[\s\S]*FROM PUBLIC, authenticated, anon, service_role;[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.scheduled_messages[\s\S]*TO service_role;/);
     expect(compatibilityRollback).toMatch(/REVOKE ALL ON FUNCTION[\s\S]*public\.create_scheduled_message[\s\S]*public\.claim_scheduled_message_v2[\s\S]*public\.reconcile_scheduled_message_delivery\(uuid\)[\s\S]*FROM PUBLIC, anon, authenticated, service_role;/);
-    expect(compatibilityRollback).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*claim_scheduled_message is disabled during scheduled-delivery recovery/);
+    expect(compatibilityRollback).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
     expect(compatibilityRollback).not.toMatch(/UPDATE public\.scheduled_messages[\s\S]*SET claimed_at = now\(\)/);
-    expect(compatibilityRollback).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\) TO authenticated/);
-    expect(compatibilityRollback).toMatch(/GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO service_role;/);
+    expect(compatibilityRollback).toMatch(/GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(compatibilityRollback).toMatch(/paused ACL postcondition failed/);
     expect(enforcementRollback).not.toMatch(/CREATE POLICY allow_anon_read_scheduled_messages/);
     expect(enforcementRollback).not.toMatch(/CREATE POLICY allow_anon_insert_scheduled_messages/);
     expect(enforcementRollback).not.toMatch(/CREATE POLICY allow_authenticated_scheduled_messages/);
     expect(enforcementRollback).toMatch(/REVOKE ALL ON TABLE public\.scheduled_messages FROM PUBLIC, authenticated, anon, service_role;[\s\S]*GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.scheduled_messages TO service_role;/);
     expect(enforcementRollback).toMatch(/REVOKE ALL ON TABLE public\.scheduled_message_creation_provenance[\s\S]*GRANT SELECT ON TABLE public\.scheduled_message_creation_provenance TO service_role;/);
-    expect(enforcementRollback).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*claim_scheduled_message is disabled; deploy the fenced scheduled worker/);
+    expect(enforcementRollback).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
     expect(enforcementRollback).not.toMatch(/UPDATE public\.scheduled_messages SET claimed_at = now\(\)/);
-    expect(enforcementRollback).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\) TO service_role;/);
+    expect(enforcementRollback).toMatch(/REVOKE ALL ON FUNCTION public\.claim_scheduled_message\(uuid\) FROM PUBLIC, anon, authenticated, service_role;[\s\S]*GRANT EXECUTE ON FUNCTION public\.claim_scheduled_message\(uuid\)[\s\S]*TO authenticated, service_role;/);
     expect(enforcementRollback).toMatch(/safe compatibility ACL postcondition failed/);
     expect(isolatedProof).toMatch(/SAVEPOINT scheduled_full_rollback_chain[\s\S]*20260731220100_scheduled_message_delivery_enforcement\.rollback\.sql[\s\S]*20260731220000_scheduled_message_delivery_compatibility\.rollback\.sql[\s\S]*20260731213100_conversation_participant_policy_enforcement\.rollback\.sql[\s\S]*20260731213000_conversation_assignment_authority_containment\.rollback\.sql[\s\S]*20260731040338_conversation_unread_state_compatibility\.rollback\.sql[\s\S]*20260731040337_conversation_participant_scoping\.rollback\.sql/);
     expect(isolatedProof).toContain('full rollback chain blocks raw conversation reads');

@@ -3,8 +3,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
---   Proves actor-derived scheduled creation, the one-attempt reservation fence,
---   in-flight reconciliation, exactly-once materialization, and final ACLs.
+--   Proves actor-derived scheduled creation, participant and crm_partner
+--   rejection, raw-browser denial, the one-attempt reservation fence, in-flight
+--   reconciliation, exactly-once materialization, and final ACLs.
 --
 -- DEPENDS ON:
 --   20260731220000_scheduled_message_delivery_compatibility.sql,
@@ -88,14 +89,28 @@ VALUES
     'scheduled-delivery-forged@upr-qa.test',
     'a1000000-0000-4000-8000-000000000012',
     'field_tech', true, false
+  ),
+  (
+    'a1000000-0000-4000-8000-000000000017',
+    '[scheduled delivery test] crm partner',
+    'Scheduled delivery CRM partner',
+    'scheduled-delivery-crm-partner@upr-qa.test',
+    'a1000000-0000-4000-8000-000000000018',
+    'crm_partner', true, false
   );
 
 INSERT INTO public.employee_page_access (employee_id, nav_key, can_view)
-VALUES (
-  'a1000000-0000-4000-8000-000000000011',
-  'conversations',
-  true
-)
+VALUES
+  (
+    'a1000000-0000-4000-8000-000000000011',
+    'conversations',
+    true
+  ),
+  (
+    'a1000000-0000-4000-8000-000000000017',
+    'conversations',
+    true
+  )
 ON CONFLICT (employee_id, nav_key)
 DO UPDATE SET can_view = EXCLUDED.can_view;
 
@@ -113,6 +128,120 @@ VALUES (
   'a1000000-0000-4000-8000-000000000003',
   '+15550001901', 'primary', true
 );
+
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"a1000000-0000-4000-8000-000000000018","role":"authenticated"}',
+  true
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'crm_partner cannot create a scheduled message even with Conversations capability',
+  format(
+    'SELECT public.create_scheduled_message(%L::uuid, %L::uuid, %L, %L::timestamptz)',
+    'a1000000-0000-4000-8000-000000000019',
+    'a1000000-0000-4000-8000-000000000004',
+    'crm partner must not enqueue',
+    now() + interval '5 minutes'
+  ),
+  '42501'
+);
+
+RESET ROLE;
+
+DO $crm_partner_left_no_provenance$
+BEGIN
+  IF EXISTS (
+       SELECT 1
+       FROM public.scheduled_messages
+       WHERE id = 'a1000000-0000-4000-8000-000000000019'
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.scheduled_message_creation_provenance
+       WHERE scheduled_message_id =
+         'a1000000-0000-4000-8000-000000000019'
+     ) THEN
+    RAISE EXCEPTION
+      'crm_partner denial left scheduled-message residue';
+  END IF;
+END;
+$crm_partner_left_no_provenance$;
+
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"sub":"a1000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'authenticated browser cannot insert raw scheduled queue rows',
+  $sql$
+    INSERT INTO public.scheduled_messages (
+      id, conversation_id, body, send_at, created_by, status
+    )
+    VALUES (
+      'a1000000-0000-4000-8000-000000000020',
+      'a1000000-0000-4000-8000-000000000004',
+      'raw authenticated insert must fail',
+      now() + interval '5 minutes',
+      'a1000000-0000-4000-8000-000000000001',
+      'pending'
+    )
+  $sql$,
+  '42501'
+);
+
+RESET ROLE;
+
+SET LOCAL ROLE anon;
+SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);
+
+SELECT pg_temp.expect_sqlstate(
+  'anonymous browser cannot insert raw scheduled queue rows',
+  $sql$
+    INSERT INTO public.scheduled_messages (
+      id, conversation_id, body, send_at, created_by, status
+    )
+    VALUES (
+      'a1000000-0000-4000-8000-000000000021',
+      'a1000000-0000-4000-8000-000000000004',
+      'raw anonymous insert must fail',
+      now() + interval '5 minutes',
+      'a1000000-0000-4000-8000-000000000001',
+      'pending'
+    )
+  $sql$,
+  '42501'
+);
+
+RESET ROLE;
+
+DO $raw_browser_inserts_left_no_provenance$
+BEGIN
+  IF EXISTS (
+       SELECT 1
+       FROM public.scheduled_messages
+       WHERE id IN (
+         'a1000000-0000-4000-8000-000000000020',
+         'a1000000-0000-4000-8000-000000000021'
+       )
+     )
+     OR EXISTS (
+       SELECT 1
+       FROM public.scheduled_message_creation_provenance
+       WHERE scheduled_message_id IN (
+         'a1000000-0000-4000-8000-000000000020',
+         'a1000000-0000-4000-8000-000000000021'
+       )
+     ) THEN
+    RAISE EXCEPTION
+      'raw browser insert created scheduled-message residue';
+  END IF;
+END;
+$raw_browser_inserts_left_no_provenance$;
 
 -- Exercise the actual live threat shape: authenticated clients may still write
 -- appointment/job assignment records. Even a complete forged chain must not
@@ -216,6 +345,11 @@ BEGIN
      ) IS DISTINCT FROM v_phone_race_id THEN
     RAISE EXCEPTION 'phone-change race fixture was not created';
   END IF;
+
+  IF public.claim_scheduled_message(v_id) THEN
+    RAISE EXCEPTION
+      'legacy authenticated claim did not remain a callable false no-op';
+  END IF;
 END;
 $browser_create$;
 
@@ -310,10 +444,9 @@ BEGIN
   IF public.claim_scheduled_message_v2(v_id, gen_random_uuid()) THEN
     RAISE EXCEPTION 'v2 claim reclaimed a delivery-linked scheduled row';
   END IF;
-  PERFORM pg_temp.expect_sqlstate(
-    'retired legacy claim cannot reclaim a linked row',
-    format('SELECT public.claim_scheduled_message(%L::uuid)', v_id), '42501'
-  );
+  IF public.claim_scheduled_message(v_id) THEN
+    RAISE EXCEPTION 'legacy claim reclaimed a delivery-linked scheduled row';
+  END IF;
 
   v_result := public.reconcile_scheduled_message_delivery(v_id);
   IF v_result->>'status' <> 'in_flight'
@@ -447,9 +580,9 @@ BEGIN
      OR NOT has_table_privilege('service_role', 'public.scheduled_messages', 'INSERT')
      OR NOT has_table_privilege('service_role', 'public.scheduled_messages', 'UPDATE')
      OR NOT has_table_privilege('service_role', 'public.scheduled_messages', 'DELETE')
-     OR has_function_privilege('authenticated', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
-     OR has_function_privilege('service_role', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.claim_scheduled_message(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('authenticated', 'public.create_scheduled_message(uuid,uuid,text,timestamp with time zone)', 'EXECUTE')
      OR has_function_privilege('service_role', 'public.create_scheduled_message(uuid,uuid,text,timestamp with time zone)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.claim_scheduled_message_v2(uuid,uuid)', 'EXECUTE')
@@ -485,10 +618,54 @@ BEGIN
              'allow_authenticated_scheduled_messages'
            )
            OR policy.roles <> ARRAY['authenticated']::name[]
+           OR (
+             policy.policyname = 'allow_anon_read_scheduled_messages'
+             AND (
+               policy.cmd <> 'SELECT'
+               OR regexp_replace(
+                 COALESCE(policy.qual, ''),
+                 '\s+',
+                 '',
+                 'g'
+               ) <> 'false'
+               OR policy.with_check IS NOT NULL
+             )
+           )
+           OR (
+             policy.policyname = 'allow_anon_insert_scheduled_messages'
+             AND (
+               policy.cmd <> 'INSERT'
+               OR policy.qual IS NOT NULL
+               OR regexp_replace(
+                 COALESCE(policy.with_check, ''),
+                 '\s+',
+                 '',
+                 'g'
+               ) <> 'false'
+             )
+           )
+           OR (
+             policy.policyname = 'allow_authenticated_scheduled_messages'
+             AND (
+               policy.cmd <> 'ALL'
+               OR regexp_replace(
+                 COALESCE(policy.qual, ''),
+                 '\s+',
+                 '',
+                 'g'
+               ) <> 'false'
+               OR regexp_replace(
+                 COALESCE(policy.with_check, ''),
+                 '\s+',
+                 '',
+                 'g'
+               ) <> 'false'
+             )
+           )
          )
      ) THEN
     RAISE EXCEPTION
-      'scheduled-message inert legacy policy catalog drifted';
+      'scheduled-message fail-closed policy catalog drifted';
   END IF;
 END;
 $final_grants$;
