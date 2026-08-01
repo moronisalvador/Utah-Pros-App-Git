@@ -41,6 +41,26 @@ NOTES / GOTCHAS:
 Exact active providers and configuration must be confirmed against `functions/`, current environment
 bindings and provider consoles.
 
+### Capgo / Apple release boundary
+
+The checked-in production UPR Capacitor config and legacy Capgo workflow remain
+default-off/hard-disabled. The only active repository design is an isolated,
+manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
+`upr-dev-canary`, Preview API origin, v2-encrypted uploads, minimum native
+version, signed-artifact config verification, late auth/route health
+acknowledgement, explicit rollback, and future-delivery disable. Its dedicated
+GitHub environment accepts only `dev`; API/private keys are masked
+environment secrets and the public verification key is a non-secret
+environment variable. App Store Connect/TestFlight remains a separately signed
+UPR Dev distribution path. Full operational contract:
+`docs/mobile/capgo-dev-runbook.md`.
+
+This source does not prove the Capgo objects, keys, plan capacity, signed
+archive, TestFlight install, or device update exist. Creating a paid plan,
+uploading signing material, changing official UPR signing/listing, activating a
+production Capgo channel, or delivering to production users remains an exact
+owner/provider gate.
+
 ## Shared integration rules
 
 - Credentials remain in Cloudflare/provider secret storage or service-only database objects. Browser
