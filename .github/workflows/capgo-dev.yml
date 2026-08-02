@@ -137,7 +137,7 @@ jobs:
           test -f dist/index.html
           test ! -e dist/sw.js
           test ! -e dist/manifest.json
-          rg -Fq "$GITHUB_SHA" dist/assets
+          grep -R -F -q -- "$GITHUB_SHA" dist/assets
 
       - name: Compute immutable UPR Dev bundle identity
         if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}
