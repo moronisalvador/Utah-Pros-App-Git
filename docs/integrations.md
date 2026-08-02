@@ -48,11 +48,12 @@ default-off/hard-disabled. The only active repository design is an isolated,
 manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
 `upr-dev-canary`, Preview API origin, v2-encrypted uploads, minimum native
 version, signed-artifact config verification, late auth/route health
-acknowledgement, explicit rollback, and future-delivery disable. Its dedicated
-GitHub environment accepts only `dev`; API/private keys are masked
-environment secrets and the public verification key is a non-secret
-environment variable. App Store Connect/TestFlight remains a separately signed
-UPR Dev distribution path. Full operational contract:
+acknowledgement, unassigned staging, and future-delivery disable. Its dedicated
+GitHub environment accepts only `dev`; API/private keys are masked environment
+secrets. The public verification key is an encrypted secret in both the
+dev-only Capgo environment and the protected UPR Dev signing environment, where
+the same archive job embeds it only in the `.upr.dev` app/IPA. App Store
+Connect/TestFlight remains a separately signed UPR Dev distribution path. Full operational contract:
 `docs/mobile/capgo-dev-runbook.md`.
 
 This source does not prove the Capgo objects, keys, plan capacity, signed

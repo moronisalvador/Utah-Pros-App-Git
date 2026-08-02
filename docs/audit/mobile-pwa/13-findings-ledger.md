@@ -392,8 +392,9 @@ excluded from the supported product promise before release.
   production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
   `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, compatibility,
   unassigned staging, bounded network subprocesses, disable-only containment, and sanitized
-  evidence; the iOS artifact verifier re-reads the embedded config and rejects keys/channels in the
-  updater-off TestFlight lane. Live 2026-08-01 evidence records the `.upr.dev` Capgo app, default
+  evidence; the iOS artifact verifier re-reads the embedded config and fingerprints the RSA-4096
+  public half that the same protected signing job embeds only in the `.upr.dev` app/IPA. Live
+  2026-08-01 evidence records the `.upr.dev` Capgo app, default
   `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
   GitHub environment with the three encrypted secrets present. No bundle was uploaded or assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
@@ -402,9 +403,9 @@ excluded from the supported product promise before release.
   `docs/mobile/capgo-dev-runbook.md`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Obtain exact owner clarification before
-  embedding the public verification key in an isolated `.upr.dev` app/IPA; keep private/API values
-  secret-only and never use a transient key artifact. Then produce a signed UPR Dev archive and,
+- **Recommended remediation / verification / dependencies:** Store the authorized public half in the
+  protected `ios-dev-signing` environment without exposing it; keep private/API values secret-only
+  and never use a transient key artifact. Then produce a signed UPR Dev archive and,
   behind separate upload/assignment/device gates, verify one-device canary isolation,
   interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
   official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
