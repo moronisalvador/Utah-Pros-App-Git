@@ -3,11 +3,11 @@
 -- Phase: MOB-PUSH-01 appointment-reminder incident containment
 -- ════════════════════════════════════════════════
 --
--- WHAT THIS DOES:
---   Preserves a usable service-producer notification occurrence id instead of
---   replacing it with a random UUID. This is required for reminder APNs retry
---   deduplication. Missing/blank ids on ordinary notification types still get
---   a generated UUID.
+-- WHAT THIS DOES (plain language):
+--   Keeps the same appointment-reminder identity through delivery instead of
+--   replacing it with a new one. This prevents repeated native delivery from
+--   looking like a new reminder, while ordinary notifications still receive
+--   an identity when one is missing.
 --
 --   The earlier producer-authorization migration may or may not already be
 --   present when this file is qualified. Its exact five guarded types retain
@@ -17,6 +17,10 @@
 --   The migration also codifies the live incident containment: the reminder
 --   type stays disabled and the named cron stays absent. Durable bell/PWA/email
 --   replay fencing remains a required activation prerequisite.
+--
+-- ADDITIVE-ONLY / attribute-only / etc.:
+--   Compatible function/comment replacement plus reminder containment only;
+--   no table/column drop or rename and no reminder enable or schedule.
 --
 -- DEPENDS ON:
 --   Tables: public.notification_types, public.integration_config
@@ -33,6 +37,7 @@
 --   Brief function-catalog lock, one bounded catalog UPDATE, and removal of
 --   only the named reminder cron. Apply in a reviewed low-traffic window.
 --
+-- ════════════════════════════════════════════════
 -- ROLLBACK:
 --   supabase/rollbacks/20260802040935_preserve_notify_emit_event_id.rollback.sql
 --   restores the byte-exact predecessor body selected by the predecessor

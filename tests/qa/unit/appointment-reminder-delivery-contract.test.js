@@ -3,13 +3,20 @@
  * FILE: appointment-reminder-delivery-contract.test.js
  * ════════════════════════════════════════════════
  *
- * WHAT THIS DOES:
- *   Guards stable reminder occurrence IDs, composition with the exact five
- *   private guarded producers, byte-exact rollback bodies, least privilege,
- *   incident containment, and explicit activation prerequisites.
+ * WHAT THIS DOES (plain language):
+ *   Checks that appointment reminders keep the same identity through delivery,
+ *   restore the exact prior database behavior during recovery, and stay turned
+ *   off until every listed safety requirement is complete.
  *
- * DATA:
- *   Reads repository source only. No database or network access.
+ * DEPENDS ON:
+ *   Packages:  Node.js crypto/fs, Vitest
+ *   Internal:  the reminder migration, rollback, and release documentation
+ *   Data:      reads  → repository source files only
+ *              writes → none
+ *
+ * NOTES / GOTCHAS:
+ *   - This is a source contract; database behavior still requires the governed
+ *     disposable-local and QA database lanes.
  * ════════════════════════════════════════════════
  */
 import { createHash } from 'node:crypto';
