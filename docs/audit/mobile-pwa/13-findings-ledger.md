@@ -400,9 +400,16 @@ excluded from the supported product promise before release.
   keypair rotation was accepted in `capgo-dev`, and the same public half was accepted in
   `ios-dev-signing`; only secret names, presence, and successful write-only submissions were
   verified. Fresh metadata timestamps for all three key submissions and an unchanged API-key
-  timestamp resolved the earlier pair-mismatch concern. PR #569 remains unmerged, and the protected
-  signing environment still lacks its five required private `IOS_DEV_*` Apple inputs. No archive was
-  dispatched and no bundle was uploaded or assigned.
+  timestamp resolved the earlier pair-mismatch concern. PR #569 merged into `dev` as `e0a1ec6f`.
+  Manual validate run `30732493520` built the isolated graph but failed before bundle identity or
+  any Capgo command because `rg` was absent and the probe still named stale `dist/assets`; its
+  sanitized evidence records no assignment or device delivery. The protected signing environment
+  now shows all six expected secret names, including its public key, Apple team, certificate, and
+  provisioning-profile inputs; encrypted values remain unreadable. Authorized dry archive run
+  `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, distribution signing/profile, production
+  APNs, Preview origin, OTA/native Push enabled, exact `e0a1ec6f`, and the embedded public-key
+  fingerprint. TestFlight upload was disabled/skipped and runner signing assets were cleaned. No
+  bundle was uploaded or assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
   `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
@@ -410,10 +417,8 @@ excluded from the supported product promise before release.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
 - **Recommended remediation / verification / dependencies:** Keep private/API values secret-only
-  and never use a transient key artifact. Under separate exact owner gates, merge the reviewed
-  source to `dev`, privately populate only the isolated UPR Dev signing environment, and produce a
-  signed UPR Dev archive to verify the embedded public half and isolated identity; then, behind
-  separate upload/assignment/device gates, verify one-device canary isolation,
+  and never use a transient key artifact. The dry archive now verifies the embedded public half
+  and isolated identity; behind separate upload/assignment/device gates, verify one-device canary isolation,
   interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
   official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
   release telemetry (`MOB-OBS-024`) and the signed native pipeline.

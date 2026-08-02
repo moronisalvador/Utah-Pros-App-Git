@@ -121,6 +121,16 @@ record, profile, environments, dry archive, upload, install, and signed-device m
 are owner-verified, it is source—not a verified live release path. The official
 `ios-release.yml` remains manual/main-only and unchanged.
 
+The separate manual `.github/workflows/capgo-dev.yml` keeps credential-free
+validation portable across the pinned Ubuntu runner: its native release-SHA
+proof uses the pinned Node runtime to inspect Vite's configured
+`dist/app-assets` directory. The verifier fails closed on malformed or absent
+release identity, missing/empty/unreadable output, symlinks, unexpected entry
+types, or an absent SHA. Source contracts reject undeclared `rg`/`grep`
+dependencies and the stale `dist/assets` path. This verification makes no
+Capgo request and does not broaden the independently gated publish, channel
+assignment, device-delivery, signing, or production actions.
+
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
 show that employee A cannot read or change employee B's notification
