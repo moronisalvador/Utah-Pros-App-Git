@@ -1043,8 +1043,10 @@ showed the expected load error because that app points at production and, at the
 pre-apply proof, 40337 was deliberately absent there; no production data was changed by that test.
 QA and production post-apply verification for `31213000` matched all four reviewed body hashes,
 owners, pinned search paths, volatility settings, and ACLs; every body excludes
-appointment/job/claim/crew authority. QA retained zero pending scheduled rows and production
-retained its known aggregate of one. Compatible web callers are live on `dev` at merge
+appointment/job/claim/crew authority. Fresh read-only evidence on 2026-08-01 found exactly zero
+pending scheduled rows on both QA and production; the sole legacy production row was previously
+guard-cancelled, and this verification read no body or other PII. Compatible web callers are live
+on `dev` at merge
 `745de63c` through successful Cloudflare Preview deployment
 `7249c5de-a24d-4ffe-ba86-6a57168aa776`; supported native adoption remains pending.
 Only after older direct-unread writers are unsupported may `31213100` apply in a
@@ -1055,8 +1057,8 @@ After the aggregate pending count is verified zero, apply
 `31220000 → 31220100`. Reverse recovery is
 `31220100 → 31220000 → 31213100 → 31213000 → 40338 → 40337`; every step is a browser-sealed
 recovery pause and preserves reservation/provenance evidence.
-Read-only evidence on 2026-07-31 found exactly one legacy production pending scheduled row, so
-production currently stops at the zero-pending gate until a separately authorized owner decision.
+The scheduled-message release must still recheck the aggregate under its governed lock and fail
+closed if it is no longer zero; current zero is evidence, not permission to apply.
 The seeded `qa-staging` catalog remains healthy and usable, but its `MIGRATIONS_FAILED` badge
 reflects the real historical ledger/replay gap documented in the staging runbook. Do not clear it
 through rebase or ad-hoc ledger writes. `40337/40338/31213000` are now ledgered for this train;
@@ -4839,6 +4841,15 @@ been applied to local, QA, or shared production; no notification was sent and no
 path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed
 baseline/bootstrap is implemented.
 
+The later repository-only
+`20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are ordered after that
+producer repair. They accept either the current live dispatcher or its hardened predecessor,
+preserve a usable producer occurrence ID for non-guarded types such as
+`appointment.reminder`, retain UUID plus occurrence-ledger validation for all five guarded types,
+and roll back to the guarded predecessor rather than the unsafe legacy dispatcher. They also keep
+the reminder flag disabled and cron absent. Neither migration has been applied to QA or the shared
+project.
+
 **Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
 is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
 Cloudflare Production was still main `478330d9` when the first real reminder became due. That older
@@ -4850,7 +4861,12 @@ fallback. One appointment produced two legitimate crew claims and eight bell row
 presentation entry, explaining the generic APNs lock-screen copy; stored bell copy was typed and
 its payload was empty. The five contained appointment/timesheet producer flags remained disabled,
 and repository-only `20260801215912` was not applied, so that repair did not cause the incident.
-`appointment.reminder` is currently observed disabled. Its minute cron remains active and can
-consume reminder claims while disabled, so keep the flag off until the dev audience/presentation
-repair is regression-tested, promoted code-first, and the exact Production revision is verified.
-Re-enabling the reminder is a separate owner action.
+`appointment.reminder` is currently observed disabled, and fresh read-only evidence confirms the
+`upr_appointment_reminders` cron has zero rows. Production contains the reminder ledger
+`20260801232759`; QA does not contain that quiet-time/reminder migration. Keep the flag off and
+cron absent until the repaired audience/presentation Worker is regression-tested, promoted
+code-first, and the exact Production revision is verified. Generic APNs copy must remain
+privacy-safe unless rich presentation is exactly enabled. Activation also requires the
+caller-bound appointment-crew authorization migration plus negative authorization proof and
+durable per-recipient/channel replay claims for bell, Web Push, and email. Re-enabling or
+rescheduling the reminder is a separate owner action.

@@ -33,7 +33,9 @@ promotion.
   to `qa-staging` as ledger `20260801144448` and production as ledger `20260801145825`.
   Post-apply checks on both targets matched all four reviewed function hashes/owners/search
   paths/volatility settings and ACLs and found no appointment/job/claim/crew authority source.
-  QA retained zero pending scheduled rows; production retained its known aggregate of one.
+  Fresh read-only evidence on 2026-08-01 found zero pending scheduled rows on both QA and
+  production; the sole legacy production row was previously guard-cancelled without reading its
+  body or other PII.
 - Appointment, job, claim, and crew rows are browser-writable and are **not conversation
   authorization**. The QA/production-applied correction replaces the four independent
   membership/contact paths with privileged role → explicit per-chat override → default technician
@@ -67,10 +69,11 @@ promotion.
   Unknown provider outcomes are never automatically resubmitted. Auth, PostgREST, RPC, credential,
   and provider transports are bounded; a reserved scheduled send requires a fresh managed
   credential lookup and cannot use cached/environment fallback after that lookup times out.
-- Read-only catalog evidence on 2026-07-31 found one legacy production `pending` scheduled row
-  (overdue since `2026-07-24T22:45:00Z`) and zero on QA. Do not inspect, send, cancel, or rewrite
-  that row from this initiative: compatibility correctly stops on the aggregate count until the
-  owner separately resolves it. The seeded `qa-staging` catalog remains healthy and usable, but
+- Fresh read-only catalog evidence on 2026-08-01 found zero legacy `pending` scheduled rows on
+  production and QA. The sole legacy production row recorded on 2026-07-31 was previously
+  guard-cancelled; this verification read only the aggregate and did not inspect body or other
+  PII. The zero-row preflight remains mandatory and must fail closed if the aggregate changes.
+  The seeded `qa-staging` catalog remains healthy and usable, but
   its `MIGRATIONS_FAILED` badge reflects the real historical ledger/replay gap documented in the
   runbook; it is not evidence that the current catalog is broken and must not be cleared through
   rebase or ad-hoc ledger writes. `40337/40338/31213000` are ledgered for this train; target the
@@ -159,9 +162,14 @@ The reversible notification producer containment also applied from exact reviewe
   occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
   delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
   Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
-  fail-closed, and both files keep the same five flags disabled. The candidate includes the
+  fail-closed, and both files keep the same five flags disabled. The later repository-only
+  `20260802040935_preserve_notify_emit_event_id.sql` reminder-containment migration composes with
+  this boundary: it preserves producer-supplied IDs for non-guarded types, retains UUID plus
+  occurrence-ledger validation for the five guarded types, and rolls back to the guarded
+  predecessor rather than the unsafe legacy dispatcher. Both migrations and rollbacks remain
+  unapplied. The candidate includes the
   reviewed private-crew compatibility correction: non-manager field users cannot edit private
-  crew, and unchanged crew skips the locked diff RPC. Reconciliation through current `origin/dev`
+  crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
   `ec6b3583`, build, full unit `1579/1579`, Worker `1934/1934`, QA `1016/1016`, focused
   producer/APNs `123/123`, producer QA `7/7`, private-crew `4/4`, lint, migration hygiene, and the
   migration, worker-security, anonymous-grant, mobile-security, project-law, design and release
@@ -176,11 +184,15 @@ The reversible notification producer containment also applied from exact reviewe
   four for non-current crew, between 20:59:00 and 21:00:02 America/Denver. Native delivery claims
   corroborate the two events; generic native copy came from the older Worker's missing reminder
   presentation. The five contained producer flags remain disabled and the repository-only producer
-  repair was not involved. `appointment.reminder` is currently observed disabled, so further
-  `notify_emit` fan-out is contained, although the still-active minute cron can consume reminder
-  claims while disabled. Keep it off until the already-landed dev audience/presentation repair is
-  regression-tested, promoted code-first, and the Production revision is verified; any re-enable
-  remains a separate owner action.
+  repair was not involved. `appointment.reminder` is currently observed disabled, and fresh
+  read-only evidence confirms the `upr_appointment_reminders` cron has zero rows. Production
+  ledgers include the participant foundation/correction/authority containment plus reminder ledger
+  `20260801232759`; QA contains only the three participant ledgers and does not contain the
+  quiet-time/reminder migration. Keep reminders off and unscheduled until the repaired
+  audience/presentation Worker is regression-tested with privacy-safe generic APNs copy, the
+  caller-bound appointment-crew authorization migration is applied and negative-tested, and the
+  exact Production revision is verified. Durable bell/Web Push/email replay claims are also an
+  activation prerequisite. Any re-enable or reschedule remains a separate owner action.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
