@@ -311,7 +311,8 @@ containment is `appointment.reminder.enabled=false` with no
 
 Production alone has the original migration ledger row
 `20260801232759 technician_quiet_time_and_appointment_reminders`;
-`qa-staging` does not. Pending `20260802040935` is applied nowhere. Treat QA
+`qa-staging` does not. The reviewed `20260802040935` source landed in `dev`
+through PR #571 at `9e723f4a`, but remains applied nowhere. Treat QA
 application/behavioral proof, later Production apply, re-enable/reschedule,
 and provider/device proof as separate gates.
 
