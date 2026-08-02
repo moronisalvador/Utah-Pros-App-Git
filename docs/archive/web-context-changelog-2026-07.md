@@ -5791,3 +5791,16 @@ credential lookup fails closed without cache/environment fallback. A read-only l
 one legacy production pending scheduled row, so the migration's zero-pending gate correctly blocks
 production until a separately authorized owner decision. No hosted migration, deployment, provider
 call, production data change, or device claim occurred.
+## 2026-08-01 — isolated UPR Dev Capgo canary source and console preflight
+
+The official UPR updater and legacy production/beta Capgo workflow remain
+default-off/hard-disabled. A new manual, branch-restricted
+`com.utahprosrestoration.upr.dev` / `upr-dev-canary` lane adds generated
+dev-only Capacitor configuration, v2 encrypted publishing, patch/native
+compatibility limits, late auth/route health acknowledgement, signed-artifact
+verification, sanitized evidence, explicit rollback, and future-delivery
+disable. GitHub environment `capgo-dev` exists and allows only `dev`; App Store
+Connect already contains the separate UPR Dev record. Capgo app/channel/key/plan
+state, GitHub key values, archive/install, and device update remain external
+gates pending private owner login and no-charge verification. Operational
+contract: `docs/mobile/capgo-dev-runbook.md`.

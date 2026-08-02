@@ -351,9 +351,13 @@ available; the redirect/registry continuity lane passes 27/27.
 
 The mounted native navigation bridge validates custom/Universal Links and Push actions through one
 allowlist, retains protected links only until the verified account lease is ready, drops stale
-account intents, and never surfaces raw foreground Push content. Native Push enrollment and OTA are
-exact-default-off; OTA has zero boot acknowledgment and requires a future explicit health
-checkpoint.
+account intents, and never surfaces raw foreground Push content. Native Push enrollment and the
+official UPR OTA path remain exact-default-off. An isolated UPR Dev Capgo canary now has source
+contracts for generated `.upr.dev` configuration, v2 encryption, minimum native compatibility,
+late auth/route health acknowledgement, signed-artifact verification, sanitized evidence, explicit
+rollback, and future-delivery disable. `MOB-OTA-019` remains open until Capgo plan/object/key state,
+a signed UPR Dev archive/install, interruption/failed-bundle drills, device rollback, statistics,
+and official-UPR non-regression are observed.
 
 These source changes do not make the product production-ready. The reviewed
 `@capacitor/app` sync and checked-in `ios/Gemfile.lock` now align with Ruby
