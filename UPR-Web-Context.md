@@ -4877,9 +4877,9 @@ current token ownership. Guarded Web Push atomically binds the selected subscrip
 ID/employee/endpoint, and guarded email binds the employee's current normalized address; stale
 targets cannot reach a provider after logout, reassignment, deactivation, or address change. Bell
 and the three outbound channels retain service-only per-target claims. All five
-catalog flags are explicitly left disabled. After merging current `origin/dev` `9e723f4a` without
+catalog flags are explicitly left disabled. After merging current `origin/dev` `8e51aa92` without
 rewriting history, this candidate passed build, full unit `1582/1582`, Worker `1945/1945`, QA
-`1032/1032`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
+`1037/1037`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
 changed-file lint, migration hygiene, and source contracts only. It has not
 been applied to local, QA, or shared production; no notification was sent and no PWA/native device
 path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed

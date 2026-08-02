@@ -176,7 +176,7 @@ The reversible notification producer containment also applied from exact reviewe
   migration is applied to QA or the shared project. The candidate includes the
   reviewed private-crew compatibility correction: non-manager field users cannot edit private
   crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
-  `9e723f4a`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1032/1032`, focused
+  `8e51aa92`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1037/1037`, focused
   producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`, changed-file lint,
   migration hygiene, and diff integrity pass. The sentinel-locked SQL behavior proof is authored
   but cannot run until the governed local Supabase bootstrap supplies its local stack key. Fresh
