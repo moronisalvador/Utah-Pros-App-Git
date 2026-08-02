@@ -1,5 +1,6 @@
 -- ════════════════════════════════════════════════
 -- MIGRATION: 20260801215912_notification_producer_authorization
+-- Phase: Mobile readiness — notification producer authorization
 -- ════════════════════════════════════════════════
 --
 -- WHAT THIS DOES (plain language):
@@ -9,6 +10,10 @@
 --   diff-based, timesheet retries/reviews are serialized, and each real event
 --   receives one durable occurrence id. Bell/Web Push/email delivery gains the
 --   same stable-claim posture already used by native APNs.
+--
+-- ADDITIVE-ONLY / attribute-only / etc.:
+--   Additive private tables/column plus compatible function, policy, trigger,
+--   and grant replacements; no table/column drop or rename and no flag enable.
 --
 -- DEPENDS ON:
 --   Tables: appointments, appointment_crew, employees, notification_types,
@@ -24,6 +29,7 @@
 --   - Existing direct appointment create/edit callers remain compatible during
 --     the code-first/schema-second window.
 --
+-- ════════════════════════════════════════════════
 -- ROLLBACK:
 --   supabase/rollbacks/20260801215912_notification_producer_authorization.rollback.sql
 --   Recovery is fail-closed: it disables the five flags and preserves the
@@ -41,6 +47,8 @@ DECLARE
   ]::text[];
   v_missing text[];
   v_enabled text[];
+  v_notify_oid oid := to_regprocedure('public.notify_emit(text,jsonb)');
+  v_notify_source_hash text;
 BEGIN
   SELECT array_agg(required.type_key ORDER BY required.type_key)
     INTO v_missing
@@ -112,6 +120,66 @@ BEGIN
      ) IS NULL THEN
     RAISE EXCEPTION
       'notification producer authorization preflight found deployed RPC signature drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  SELECT md5(function_record.prosrc)
+    INTO v_notify_source_hash
+  FROM pg_proc function_record
+  WHERE function_record.oid = v_notify_oid;
+
+  IF v_notify_oid IS NULL
+     OR (
+       SELECT count(*)
+       FROM pg_proc function_record
+       JOIN pg_namespace namespace_record
+         ON namespace_record.oid = function_record.pronamespace
+       WHERE namespace_record.nspname = 'public'
+         AND function_record.proname = 'notify_emit'
+     ) IS DISTINCT FROM 1
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       WHERE function_record.oid = v_notify_oid
+         AND pg_get_userbyid(function_record.proowner) = 'postgres'
+         AND function_record.prosecdef
+         AND function_record.proconfig =
+           ARRAY['search_path=public']::text[]
+         AND md5(function_record.prosrc) =
+           'c72e0f7fd40a4abec42cce1cd912a45b'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization notify_emit predecessor drift (md5 %)',
+      v_notify_source_hash
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid = v_notify_oid
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
+     OR has_function_privilege('anon', v_notify_oid, 'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       v_notify_oid,
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       v_notify_oid,
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization notify_emit execute-grant drift'
       USING ERRCODE = '55000';
   END IF;
 
@@ -2511,6 +2579,7 @@ DECLARE
     'timesheet.change_reviewed'
   ]::text[];
   v_enabled text[];
+  v_notify_oid oid := to_regprocedure('public.notify_emit(text,jsonb)');
 BEGIN
   SELECT array_agg(catalog.type_key ORDER BY catalog.type_key)
     INTO v_enabled
@@ -2522,6 +2591,60 @@ BEGIN
     RAISE EXCEPTION
       'notification producer authorization postflight found enabled flags: %',
       v_enabled
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF v_notify_oid IS NULL
+     OR (
+       SELECT count(*)
+       FROM pg_proc function_record
+       JOIN pg_namespace namespace_record
+         ON namespace_record.oid = function_record.pronamespace
+       WHERE namespace_record.nspname = 'public'
+         AND function_record.proname = 'notify_emit'
+     ) IS DISTINCT FROM 1
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       WHERE function_record.oid = v_notify_oid
+         AND pg_get_userbyid(function_record.proowner) = 'postgres'
+         AND function_record.prosecdef
+         AND function_record.proconfig =
+           ARRAY['search_path=public']::text[]
+         AND md5(function_record.prosrc) =
+           '72d1973cff37b95c7149700a7c5bb5b7'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization notify_emit replacement drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid = v_notify_oid
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
+     OR has_function_privilege('anon', v_notify_oid, 'EXECUTE')
+     OR has_function_privilege(
+       'authenticated',
+       v_notify_oid,
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       v_notify_oid,
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization notify_emit postflight grant drift'
       USING ERRCODE = '55000';
   END IF;
 

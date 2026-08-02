@@ -21,6 +21,7 @@
  *     contract for the authored migration.
  * ════════════════════════════════════════════════
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -52,7 +53,46 @@ function functionBody(sql, name, nextMarker) {
   return sql.slice(start, end);
 }
 
+function notifyEmitBody(sql) {
+  return sql.match(
+    /CREATE OR REPLACE FUNCTION public\.notify_emit\([\s\S]*?AS \$function\$\n([\s\S]*?)\n\$function\$;/,
+  )?.[1];
+}
+
+function md5Prosrc(body) {
+  return createHash('md5').update(`\n${body}\n`).digest('hex');
+}
+
 describe('notification producer authorization migration', () => {
+  it('pins the exact notify_emit predecessor, replacement, and rollback bodies', () => {
+    const forwardBody = notifyEmitBody(migration);
+    const rollbackBody = notifyEmitBody(rollback);
+    expect(forwardBody).toBeTruthy();
+    expect(rollbackBody).toBeTruthy();
+    expect(md5Prosrc(forwardBody)).toBe(
+      '72d1973cff37b95c7149700a7c5bb5b7',
+    );
+    expect(md5Prosrc(rollbackBody)).toBe(
+      'c72e0f7fd40a4abec42cce1cd912a45b',
+    );
+    expect(migration).toContain(
+      "md5(function_record.prosrc) =\n           'c72e0f7fd40a4abec42cce1cd912a45b'",
+    );
+    expect(migration).toContain(
+      "md5(function_record.prosrc) =\n           '72d1973cff37b95c7149700a7c5bb5b7'",
+    );
+    expect(rollback).toContain(
+      "md5(function_record.prosrc) =\n           '72d1973cff37b95c7149700a7c5bb5b7'",
+    );
+    expect(rollback).toContain(
+      "md5(function_record.prosrc) =\n           'c72e0f7fd40a4abec42cce1cd912a45b'",
+    );
+    for (const sql of [migration, rollback]) {
+      expect(sql).toContain("acldefault('f', function_record.proowner)");
+      expect(sql).toContain('acl.grantee = 0');
+    }
+  });
+
   it('keeps all five producer flags disabled before and after the repair', () => {
     expect(migration).toContain(
       'notification producer authorization requires all five flags disabled',
