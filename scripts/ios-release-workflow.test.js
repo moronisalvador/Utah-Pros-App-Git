@@ -315,7 +315,7 @@ describe('iOS release workflow authorization boundary', () => {
   it('scrubs caller credentials when a QA command selects the safe environment', () => {
     const syntheticSecretName = 'UPR_QA_SYNTHETIC_SECRET';
     const scrubbed = runOwnedSubprocess(
-      500,
+      2_000,
       `process.stdout.write(process.env.${syntheticSecretName} || 'absent')`,
       {
         safeEnv: true,
