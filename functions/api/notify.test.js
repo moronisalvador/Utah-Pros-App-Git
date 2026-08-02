@@ -32,6 +32,7 @@ import {
   enrichInboundMessageBody,
   nativeNotificationEventKey,
   guardedProducerEntity,
+  GUARDED_PRODUCER_TYPES,
 } from './notify.js';
 import { fetchWithTimeout } from '../lib/http.js';
 
@@ -790,6 +791,17 @@ describe('dispatchEvent — channel gating by effective prefs', () => {
       entity_type: 'appointment',
       entity_id: '22222222-2222-4222-8222-222222222222',
     })).toBeNull();
+  });
+
+  it('keeps appointment reminders outside the exact five guarded producers', () => {
+    expect([...GUARDED_PRODUCER_TYPES].sort()).toEqual([
+      'appointment.assigned',
+      'appointment.canceled',
+      'appointment.updated',
+      'timesheet.change_requested',
+      'timesheet.change_reviewed',
+    ]);
+    expect(GUARDED_PRODUCER_TYPES.has('appointment.reminder')).toBe(false);
   });
 
   it('skips native APNs when the producer omits a stable occurrence id', async () => {

@@ -96,7 +96,9 @@ const TIMESHEET_AUDIENCE_TYPES = new Set([
   'timesheet.change_reviewed',
 ]);
 export const GUARDED_PRODUCER_TYPES = new Set([
-  ...APPOINTMENT_AUDIENCE_TYPES,
+  'appointment.assigned',
+  'appointment.updated',
+  'appointment.canceled',
   ...TIMESHEET_AUDIENCE_TYPES,
 ]);
 
