@@ -34,6 +34,7 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - `tests/qa/unit/appointment-reminder-delivery-contract.test.js`
 - `.claude/rules/appointment-reminder-wave-ownership.md`
 - `.claude/rules/initiative-status.md`
+- `.claude/tooling-governance.json`
 
 Shared hotspots with the separate five-producer authorization candidate are
 `functions/api/notify.js`, `functions/api/notify.test.js`, `functions/lib/apns.test.js`,
