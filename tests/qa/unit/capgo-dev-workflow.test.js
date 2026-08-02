@@ -35,6 +35,10 @@ const encryptionCredentialStep = workflow.slice(
   workflow.indexOf('      - name: Validate the dev-only Capgo encryption credentials'),
   workflow.indexOf('      - name: Build the isolated native web bundle'),
 );
+const nativeCacheVerificationStep = workflow.slice(
+  workflow.indexOf('      - name: Verify native cache and release boundaries'),
+  workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
+);
 
 describe('UPR Dev Capgo workflow boundary', () => {
   it('is manual, serialized, read-only, and environment-gated', () => {
@@ -84,6 +88,15 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).toContain('bundleAssignedToChannel: false');
     expect(workflow).toContain('deviceDeliveryActivated: false');
     expect(workflow).not.toContain('--send-update-notification');
+  });
+
+  it('verifies the exact release SHA in assets without a runner-specific rg dependency', () => {
+    expect(nativeCacheVerificationStep).toContain('node -e');
+    expect(nativeCacheVerificationStep).toContain('readFileSync');
+    expect(nativeCacheVerificationStep).toContain('containsReleaseSha("dist/app-assets")');
+    expect(nativeCacheVerificationStep).toContain('process.env.GITHUB_SHA');
+    expect(nativeCacheVerificationStep).toContain('includes(process.env.GITHUB_SHA)');
+    expect(workflow).not.toMatch(/(?:^|\s)rg(?:\s|$)/m);
   });
 
   it('contains every Capgo network command in the five-minute owned runner', () => {

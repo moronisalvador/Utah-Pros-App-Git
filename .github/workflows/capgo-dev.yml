@@ -137,7 +137,17 @@ jobs:
           test -f dist/index.html
           test ! -e dist/sw.js
           test ! -e dist/manifest.json
-          rg -Fq "$GITHUB_SHA" dist/assets
+          node -e '
+            const { readdirSync, readFileSync } = require("node:fs");
+            const { join } = require("node:path");
+            const containsReleaseSha = (directory) => readdirSync(directory, { withFileTypes: true })
+              .some((entry) => entry.isDirectory()
+                ? containsReleaseSha(join(directory, entry.name))
+                : entry.isFile() && readFileSync(join(directory, entry.name)).includes(process.env.GITHUB_SHA));
+            if (!containsReleaseSha("dist/app-assets")) {
+              throw new Error("Native bundle does not contain the requested release SHA.");
+            }
+          '
 
       - name: Compute immutable UPR Dev bundle identity
         if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}
