@@ -99,9 +99,12 @@ Use the Capgo console at `https://console.capgo.app/`:
    this app. Do not reuse an account-owner, production, or personal CLI token.
 6. Create a Capgo v2 encryption keypair. Store both
    `CAPGO_DEV_PUBLIC_KEY_V2` and `CAPGO_DEV_PRIVATE_KEY_V2` only as encrypted
-   GitHub environment secrets. The public half is embedded in the signed app
-   through a short-lived GitHub artifact; the private half never enters an app
-   build or artifact.
+   GitHub environment secrets. The current authorization forbids either half
+   from entering a CI artifact, including an IPA, so the TestFlight lane keeps
+   OTA disabled and does not read either value. A future OTA-enabled `.upr.dev`
+   binary requires fresh exact owner clarification permitting the public half
+   inside that signed app; the private half never enters an app build or
+   artifact.
 7. Store the dedicated API key only as the masked environment secret
    `CAPGO_DEV_API_KEY`.
 
@@ -118,17 +121,19 @@ workflow inputs, artifacts, logs, or a local `.env` file.
    verifies the native service worker/manifest are absent, and makes no Capgo
    change.
 3. Dispatch **iOS dev TestFlight** with publication off. The archive must verify
-   the `.upr.dev` identifier, canary channel, public key, updater mode, Preview
-   API origin, source SHA, signing, entitlements, and privacy manifest.
-4. After owner approval, upload only that verified UPR Dev archive to its
-   internal TestFlight group and install it on a designated device.
+   the `.upr.dev` identifier, updater-off/keyless mode, Preview API origin,
+   source SHA, signing, entitlements, and privacy manifest. It cannot test
+   Capgo delivery while the no-key-in-artifacts boundary remains in force.
+4. After owner approval, upload only that verified updater-off UPR Dev archive
+   to its internal TestFlight group and install it on a designated device.
 5. After a fresh exact owner approval, run **Capgo UPR Dev** with operation
    `publish` and confirmation `UPR DEV CAPGO PUBLISH`. The workflow first checks
    compatibility against `upr-dev-canary`, then encrypts and uploads an
    immutable version tied to native version/run/SHA **without assigning it to a
    channel**. It cannot deliver that bundle.
 6. After a separate exact bundle-assignment/device-delivery approval, assign
-   only the reviewed staged version to `upr-dev-canary` and keep exposure at one
+   only the reviewed staged version to `upr-dev-canary` after a separately
+   approved OTA-enabled `.upr.dev` binary exists, and keep exposure at one
    designated UPR Dev device. Verify cold launch,
    signed-out launch, authenticated bootstrap, current route, background/resume,
    network interruption, account switch, and next cold launch. Confirm the

@@ -67,6 +67,10 @@ OTA flags, runs `cap sync ios`, and then applies
 `scripts/configure-ios-capgo-dev.mjs` to the gitignored generated iOS
 configuration. The Capgo form requires the public v2 verification key as
 `CAPGO_DEV_PUBLIC_KEY_V2`; the private key is never used for a device build.
+Because the current owner authorization forbids even public-key material in an
+app/IPA artifact, do not run this form with the live dev key until the owner
+expressly permits public-key embedding in the isolated `.upr.dev` binary. The
+checked-in TestFlight lane remains updater-off and keyless.
 It deliberately sets **no `VITE_NATIVE_API_ORIGIN`** — `src/lib/nativeApiOrigin.js`
 defaults a native build to `https://dev.utahpros.app`, which is exactly where the dev app
 should send its `/api/*` calls. Don't export `VITE_NATIVE_API_ORIGIN` (or put it in

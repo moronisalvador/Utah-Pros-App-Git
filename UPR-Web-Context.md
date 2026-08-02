@@ -3575,10 +3575,14 @@ gates.
 - **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
-  embeds and verifies the release variant/origin/Push/OTA mode/source SHA plus
-  the generated Capgo dev app/channel/key controls before upload, and bridges
-  the public updater config from the separate `capgo-dev` environment to the
-  signing job through a one-day artifact without exposing the private/API keys.
+  and embeds/verifies the release variant/origin/Push/updater-off mode/source SHA
+  before upload. It writes a keyless `.upr.dev` generated Capacitor identity and
+  rejects any embedded Capgo key/channel material. The separate `capgo-dev`
+  environment is never attached to this signing workflow: the current owner
+  boundary forbids public/private/API key material in artifacts, and an
+  OTA-enabled IPA inherently contains the public verification key. Fresh exact
+  owner clarification plus a same-job least-privilege secret design is required
+  before an OTA-enabled `.upr.dev` binary can exist.
   It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
   credential-free tests only; every signed archive and optional upload requires a fresh manual
   dispatch. A manual `native_push_enabled:false` build also embeds

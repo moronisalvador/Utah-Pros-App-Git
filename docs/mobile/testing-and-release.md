@@ -74,7 +74,10 @@ read-only audit command.
 requires `CAPGO_DEV_PUBLIC_KEY_V2`; it patches only the gitignored generated
 iOS config. The key must be a canonical PKCS#1 RSA-4096 public PEM; the signed
 artifact verifier records its SHA-256 fingerprint without recording key
-material. Neither command changes the checked-in production Capacitor config.
+material. Do not run this form with the live dev key while the current owner
+boundary forbids public-key material in an app/IPA artifact. The checked-in
+TestFlight lane therefore uses the keyless updater-off dev identity. Neither
+command changes the checked-in production Capacitor config.
 
 Release-source checks also include:
 

@@ -382,24 +382,30 @@ excluded from the supported product promise before release.
   Source-remediated, external proof pending / M / **Yes** before production OTA is enabled.
 - **Production-readiness impact:** The official UPR path remains default-off. The isolated UPR Dev
   canary now has a late auth/route health gate, generated app/channel isolation, encryption,
-  native-version/compatibility controls, signed-artifact verification, and rollback/disable source;
-  Capgo plan/object/key state and signed-device interruption/rollback evidence are still absent.
+  native-version/compatibility controls, signed-artifact verification, and disable-only containment
+  source. The live no-charge dev app/channel/environment/key objects are configured; signed-device
+  interruption/rollback evidence is still absent.
 - **User or business impact:** A bad bundle can strand field devices or drift from native plugins and
   the shared database.
 - **Evidence:** `NativeUpdateHealthGate.jsx` is inside native-route Suspense and refuses loading,
   auth error, or expired-session state before calling guarded `markBundleReady`; checked-in
   production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
-  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, minimum native
-  version, explicit rollback/disable, and sanitized evidence; the iOS artifact verifier re-reads the
-  embedded config. GitHub `capgo-dev` is branch-restricted; Capgo login/setup and device proof remain.
+  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, compatibility,
+  unassigned staging, bounded network subprocesses, disable-only containment, and sanitized
+  evidence; the iOS artifact verifier re-reads the embedded config and rejects keys/channels in the
+  updater-off TestFlight lane. Live 2026-08-01 evidence records the `.upr.dev` Capgo app, default
+  `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
+  GitHub environment with the three encrypted secrets present. No bundle was uploaded or assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
-  `.github/workflows/capgo-deploy.yml:3-14,37-58`; native launch/update; all versioned contracts.
+  `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
+  `docs/mobile/capgo-dev-runbook.md`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Complete private Capgo login and
-  no-charge plan verification, create/verify only `.upr.dev`/`upr-dev-canary`, enter scoped GitHub
-  values directly, produce a signed UPR Dev archive, then verify one-device canary isolation,
+- **Recommended remediation / verification / dependencies:** Obtain exact owner clarification before
+  embedding the public verification key in an isolated `.upr.dev` app/IPA; keep private/API values
+  secret-only and never use a transient key artifact. Then produce a signed UPR Dev archive and,
+  behind separate upload/assignment/device gates, verify one-device canary isolation,
   interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
   official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
   release telemetry (`MOB-OBS-024`) and the signed native pipeline.
