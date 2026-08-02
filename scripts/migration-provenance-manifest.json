@@ -386,6 +386,24 @@
       "name": "qbo_receipt_service_grant_containment",
       "path": "supabase/migrations/20260731231000_qbo_receipt_service_grant_containment.sql",
       "reviewedOriginCommit": "52a07d9e99e67f6baa24513ae4e0d35674027693"
+    },
+    {
+      "version": "20260801145727",
+      "name": "conversation_participant_scoping",
+      "path": "supabase/migrations/20260731040337_conversation_participant_scoping.sql",
+      "reviewedOriginCommit": "56b2d6130c0c2177a0082cbc556c9d6bcb9e3865"
+    },
+    {
+      "version": "20260801145753",
+      "name": "conversation_unread_state_compatibility",
+      "path": "supabase/migrations/20260731040338_conversation_unread_state_compatibility.sql",
+      "reviewedOriginCommit": "2753b7bbc7f37e86a75e4d88231891369f505f19"
+    },
+    {
+      "version": "20260801145825",
+      "name": "conversation_assignment_authority_containment",
+      "path": "supabase/migrations/20260731213000_conversation_assignment_authority_containment.sql",
+      "reviewedOriginCommit": "a48c55fa8529d58b11279ebcc8c24a6fc60b74c4"
     }
   ],
   "selectedFunctions": [

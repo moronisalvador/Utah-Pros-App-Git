@@ -4472,6 +4472,11 @@ It adds no migration or live-database change.
   has explicit **Turn on** / **Turn off** controls, owner-bound versioned local
   intent, permission checks on load/resume, exact token cleanup journaling, and
   delivered-notification cleanup during detach.
+- Technicians can optionally enable one fixed Denver quiet-time window (5:30 PM
+  through 8:00 AM). The server checks it immediately before notification
+  fan-out. The minute scheduler claims each assigned technician once and emits
+  `appointment.reminder` when a scheduled appointment is one hour away; the
+  typed push destination is that exact technician appointment route.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed
