@@ -431,5 +431,12 @@ describe('notification producer authorization migration', () => {
         "db.delete('appointment_crew'",
       );
     }
+
+    const techEditor = source('src/pages/tech/TechEditAppointment.jsx');
+    expect(techEditor).toContain('shouldSyncAppointmentCrew({');
+    expect(techEditor).toContain(
+      'const canEditCrew = !isPrivate || canTogglePrivate;',
+    );
+    expect(techEditor).toContain('{canEditCrew && showCrew && (');
   });
 });
