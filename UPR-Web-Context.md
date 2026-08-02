@@ -3554,6 +3554,11 @@ gates.
   staging, future-delivery disable, pruned native SW/manifest, and sanitized
   evidence artifact. The workflow cannot assign a staged bundle or deliver it
   to a device; rollback is absent until a provenance-bound allowlist exists.
+  Bundle identities use the next patch line above the signed native version
+  (`1.0.0` native → `1.0.1-capgo.<run>.<attempt>+<sha>`), because SemVer sorts
+  `1.0.0-capgo...` below stable `1.0.0` and Capgo's no-downgrade-under-native
+  guard correctly rejects it. Activation independently re-derives and enforces
+  that next-patch prefix, so an older prerelease cannot be assigned manually.
   Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
   `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
   patch-only, no-downgrade, no-progressive-rollout selector contract; GitHub
@@ -3619,6 +3624,16 @@ gates.
   gates. Publishing this source to `dev` deploys the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
+  Manual GitHub Actions run `30734568277` later built, signed, uploaded,
+  processed, and assigned UPR Dev `1.0.0 (19.1)` to the internal group. This was
+  not an Xcode Cloud build and does not make TestFlight uploads automatic on
+  `dev` pushes. Physical installation verified build `19.1`. Capgo activation
+  run `30734822512` safely assigned encrypted bundle
+  `1.0.0-capgo.4.1+562ec9b2e6bb`, but the device update request then returned
+  `disable_auto_update_under_native` / `Cannot revert under native version`;
+  that bundle is therefore retained as rejected evidence, not successful OTA
+  delivery. The next-patch generator/activation guard above is the source fix;
+  a newly published bundle and physical-device install remain external gates.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for

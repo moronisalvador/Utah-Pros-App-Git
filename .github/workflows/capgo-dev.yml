@@ -88,14 +88,23 @@ jobs:
           test "$VITE_NATIVE_API_ORIGIN" = "https://dev.utahpros.app"
           test "$VITE_NATIVE_OTA_ENABLED" = "true"
           test "$VITE_RELEASE_SHA" = "$GITHUB_SHA"
+          native_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
+          test -n "$native_version"
+          native_major="${native_version%%.*}"
+          native_remainder="${native_version#*.}"
+          native_minor="${native_remainder%%.*}"
+          native_patch="${native_version##*.}"
+          ota_patch="$((10#$native_patch + 1))"
+          expected_ota_prefix="${native_major}.${native_minor}.${ota_patch}-capgo."
           expected_confirmation="UPR DEV CAPGO ${OPERATION^^}"
           if [[ "$CONFIRMATION" != "$expected_confirmation" ]]; then
             echo "Confirmation must be exactly: $expected_confirmation" >&2
             exit 1
           fi
           if [[ "$OPERATION" == "activate" ]]; then
-            if [[ ! "$REQUESTED_BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-capgo\.[1-9][0-9]*\.[1-9][0-9]*\+[0-9a-f]{12}$ ]]; then
-              echo "activate requires an exact immutable UPR Dev bundle version." >&2
+            if [[ ! "$REQUESTED_BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-capgo\.[1-9][0-9]*\.[1-9][0-9]*\+[0-9a-f]{12}$ ]] \
+              || [[ "$REQUESTED_BUNDLE_VERSION" != "${expected_ota_prefix}"* ]]; then
+              echo "activate requires an exact immutable UPR Dev bundle version above native $native_version." >&2
               exit 1
             fi
           elif [[ -n "$REQUESTED_BUNDLE_VERSION" ]]; then
@@ -165,8 +174,13 @@ jobs:
           set -euo pipefail
           native_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
           test -n "$native_version"
+          native_major="${native_version%%.*}"
+          native_remainder="${native_version#*.}"
+          native_minor="${native_remainder%%.*}"
+          native_patch="${native_version##*.}"
+          ota_patch="$((10#$native_patch + 1))"
           short_sha="${GITHUB_SHA:0:12}"
-          bundle_version="${native_version}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
+          bundle_version="${native_major}.${native_minor}.${ota_patch}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
           echo "native_version=$native_version" >> "$GITHUB_OUTPUT"
           echo "bundle_version=$bundle_version" >> "$GITHUB_OUTPUT"
 

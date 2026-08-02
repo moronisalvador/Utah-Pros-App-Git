@@ -55,6 +55,10 @@ const nativeBoundaryStep = workflow.slice(
   workflow.indexOf('      - name: Verify native cache and release boundaries'),
   workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
 );
+const bundleIdentityStep = workflow.slice(
+  workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
+  workflow.indexOf('      - name: Verify compatibility with the UPR Dev canary'),
+);
 const RELEASE_SHA = 'a'.repeat(40);
 
 function withAssetFixture(run) {
@@ -124,7 +128,19 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(activateStep).toContain('--bundle "$REQUESTED_BUNDLE_VERSION"');
     expect(activateStep).toContain('--ignore-metadata-check');
     expect(workflow).toContain(
-      'activate requires an exact immutable UPR Dev bundle version.',
+      'activate requires an exact immutable UPR Dev bundle version above native $native_version.',
+    );
+    expect(workflow).toContain(
+      'expected_ota_prefix="${native_major}.${native_minor}.${ota_patch}-capgo."',
+    );
+    expect(bundleIdentityStep).toContain(
+      'ota_patch="$((10#$native_patch + 1))"',
+    );
+    expect(bundleIdentityStep).toContain(
+      'bundle_version="${native_major}.${native_minor}.${ota_patch}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"',
+    );
+    expect(bundleIdentityStep).not.toContain(
+      'bundle_version="${native_version}-capgo.',
     );
     expect(workflow).not.toContain('rollback_bundle');
     expect(workflow).not.toContain("inputs.operation == 'rollback'");
