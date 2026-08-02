@@ -4536,9 +4536,15 @@ It adds no migration or live-database change.
   reminder claims or sends occur. Preferences and existing claims remain.
   Repository source keeps the reminder scoped to the named active/internal
   current crew member, renders the appointment/client/Denver time for
-  bell/PWA/APNs, and fails closed inside quiet time if its preference lookup
-  errors. Do not enable the type or reschedule the cron until the exact
-  compatible Production Worker SHA is verified.
+  bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
+  preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
+  reminder copy. Production records the original migration as ledger
+  `20260801232759`; `qa-staging` does not have it, and pending
+  `20260802040935` is applied nowhere. Do not enable the type or reschedule the
+  cron until the exact compatible Production Worker SHA is verified, durable
+  per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
+  and server-authoritative appointment crew mutation denies unmapped,
+  inactive, external, and unrelated identities.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed
