@@ -172,8 +172,9 @@ async function recipientHasQuietTimeEnabled(db, recipientId) {
     );
     return rows?.length > 0;
   } catch {
-    // A preference lookup failure must not silently disable operational alerts.
-    return false;
+    // Fail closed inside the quiet window. A transient authorization/state read
+    // failure must not disclose an alert a technician explicitly paused.
+    return null;
   }
 }
 
@@ -285,8 +286,14 @@ export async function dispatchToRecipient({
 }) {
   const result = { recipient_id: recipientId, bell: false, push: { sent: 0, attempted: 0, pruned: 0 }, email: 'off' };
 
-  if (isTechnicianQuietTime() && await recipientHasQuietTimeEnabled(db, recipientId)) {
-    return { ...result, skipped: true, reason: 'technician_quiet_time' };
+  if (isTechnicianQuietTime()) {
+    const quietTimeEnabled = await recipientHasQuietTimeEnabled(db, recipientId);
+    if (quietTimeEnabled === null) {
+      return { ...result, skipped: true, reason: 'technician_quiet_time_lookup_failed' };
+    }
+    if (quietTimeEnabled) {
+      return { ...result, skipped: true, reason: 'technician_quiet_time' };
+    }
   }
 
   let prefs = [];
@@ -483,6 +490,7 @@ const APPT_VERB = {
   'appointment.assigned': 'New appointment',
   'appointment.updated': 'Appointment updated',
   'appointment.canceled': 'Appointment canceled',
+  'appointment.reminder': 'Appointment in one hour',
 };
 
 function formatPresentationMoney(value) {
@@ -522,10 +530,13 @@ export async function enrichAppointmentBody(db, typeKey, body = {}) {
   const when = formatApptWhen(appt.date, appt.time_start, appt.time_end);
   const customerName = (job?.insured_name && String(job.insured_name).trim()) || '';
   const jobNumber = (job?.job_number && String(job.job_number).trim()) || '';
+  const fallbackBody = typeKey === 'appointment.reminder'
+    ? [customerName, when].filter(Boolean).join(' · ')
+    : when;
   return {
     ...body,
     title: body.title || (what ? `${verb} · ${what}` : verb),
-    body: body.body || when || '',
+    body: body.body || fallbackBody || '',
     // Store the OFFICE path. A notification has no idea who will open it or on
     // what, so the reader's shell decides (src/lib/techShellRoutes.js): field techs
     // are routed to /tech/appointment/:id, the office keeps this one. Storing the
