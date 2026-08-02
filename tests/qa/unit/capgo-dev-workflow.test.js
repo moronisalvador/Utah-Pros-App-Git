@@ -126,6 +126,7 @@ describe('UPR Dev Capgo workflow boundary', () => {
       'capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID"',
     );
     expect(activateStep).toContain('--bundle "$REQUESTED_BUNDLE_VERSION"');
+    expect(activateStep).toContain('--disable-auto-update minor');
     expect(activateStep).toContain('--ignore-metadata-check');
     expect(workflow).toContain(
       'activate requires an exact immutable UPR Dev bundle version above native $native_version.',

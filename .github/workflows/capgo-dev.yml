@@ -246,6 +246,7 @@ jobs:
             -- node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
               --apikey "$CAPGO_DEV_API_KEY" \
               --bundle "$REQUESTED_BUNDLE_VERSION" \
+              --disable-auto-update minor \
               --ignore-metadata-check
 
       - name: Disable future UPR Dev update delivery

@@ -3561,7 +3561,8 @@ gates.
   that next-patch prefix, so an older prerelease cannot be assigned manually.
   Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
   `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
-  patch-only, no-downgrade, no-progressive-rollout selector contract; GitHub
+  patch-line-only (`disable_auto_update=minor`), no-downgrade,
+  no-progressive-rollout selector contract; GitHub
   environment `capgo-dev` restricted to `dev`; and encrypted secrets
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
   `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
@@ -3632,8 +3633,15 @@ gates.
   `1.0.0-capgo.4.1+562ec9b2e6bb`, but the device update request then returned
   `disable_auto_update_under_native` / `Cannot revert under native version`;
   that bundle is therefore retained as rejected evidence, not successful OTA
-  delivery. The next-patch generator/activation guard above is the source fix;
-  a newly published bundle and physical-device install remain external gates.
+  delivery. The next-patch generator/activation guard then published and
+  activated `1.0.1-capgo.7.1+b81ffcdd99a5` in runs `30735860100` and
+  `30735943439`. The physical device reached Capgo at 19:18 America/Denver, but
+  the update API returned `disable_auto_update_to_patch` because the canary had
+  been configured with Capgo's `patch` blocking strategy; that strategy permits
+  suffix-only changes and blocks `1.0.0` to `1.0.1`. Activation must enforce
+  Capgo's `minor` strategy, which keeps the same major/minor native line while
+  allowing the intended patch OTA. A corrected activation and physical-device
+  install remain external gates.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
