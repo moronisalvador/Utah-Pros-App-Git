@@ -279,6 +279,26 @@ drift checks and catalog-only pre/post-apply checks. It is live as ledger entry
 reviewed body hash and owner/service-only EXECUTE. The
 tests never invoke `notify_emit`, pg_net, a trigger, schedule, Worker, or provider.
 
+The 2026-08-01 appointment-reminder incident adds two focused release
+contracts:
+
+- `functions/api/notify.test.js` proves reminder audience derivation cannot be
+  widened by producer recipients, excludes inactive/external/non-crew
+  employees, pins Denver quiet-time boundaries, fails closed on a quiet-time
+  preference read error, and checks exact bell/PWA/APNs reminder context.
+- `tests/qa/unit/appointment-reminder-delivery-contract.test.js` statically
+  proves the pending same-signature `notify_emit` repair preserves a usable
+  producer occurrence ID, keeps the function argument authoritative for
+  `type_key`, disables/unschedules before replacement, retains service-only
+  execution, and never reactivates reminders during rollback.
+
+These credential-free tests do not prove the pending database function on the
+shared project or physical-device receipt. Reminder activation is blocked
+until the compatible Production Worker SHA is observed and the exact pending
+migration has separate reviewed apply/verification evidence. The current live
+containment is `appointment.reminder.enabled=false` with no
+`upr_appointment_reminders` cron job.
+
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
