@@ -307,6 +307,29 @@ describe('resolveAudience', () => {
     })).resolves.toEqual([]);
   });
 
+  it('appointment.reminder follows exact crew membership for every internal role', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'assigned-admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'unassigned-office', role: 'office', is_active: true, is_external: false },
+      ],
+      crewByAppt: {
+        'ap-1': [{ employee_id: 'assigned-admin' }],
+      },
+    });
+
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'assigned-admin',
+      recipient_ids: ['unassigned-office'],
+    })).resolves.toEqual(['assigned-admin']);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'unassigned-office',
+      recipient_ids: ['unassigned-office'],
+    })).resolves.toEqual([]);
+  });
+
   it('clock.abandoned → admins plus the affected tech from the payload', async () => {
     const db = makeDb({ employees: [
       { id: 'a1', role: 'admin' }, { id: 'a2', role: 'admin' },
