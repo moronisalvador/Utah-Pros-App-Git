@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: July 31, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 1, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -3470,8 +3470,11 @@ Zero migrations, zero CRM-file edits.
 ## Native iOS App (Capacitor) — source-hardened, release gates remain
 
 Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
-popover are integrated in source. Push enrollment and Capgo OTA remain exact-default-off, and
-distribution signing/TestFlight/App Review remain separate owner/external gates.
+popover are integrated in source. Push enrollment and the official UPR Capgo updater remain
+exact-default-off. A separately identified UPR Dev Capgo canary is source-integrated but still
+awaits Capgo login/object/key/plan verification, signed archive, internal TestFlight install, and
+device rollout proof. Distribution signing/TestFlight/App Review remain separate owner/external
+gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3530,8 +3533,36 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
   - `@capacitor/geolocation` — `src/lib/nativeGeolocation.js` captures coords on OMW + Start Work (saved to `job_time_entries.travel_start_lat/lng` and `clock_in_lat/lng`); TechDash renders an "away from jobsite" banner when current position is >200m from `clock_in_lat/lng` for an in_progress/paused appointment (foreground check on mount + app resume)
   - `@capacitor/haptics` + `@capacitor/status-bar` + `@capacitor/splash-screen` — `src/lib/nativeHaptics.js` (impact/notify) and `src/lib/nativeAppearance.js` (`setStatusBarBase` / `pushStatusBarSurface` / `restoreStatusBarBase`, `hideSplash`). Splash held until React mounts. The status-bar API is keyed on the SURFACE behind the strip, never the text colour: `ThemeContext` owns the base and the three gradient-hero routes push `'dark'` then hand it back. (STAT-01, 2026-07-27: the previous `statusBarLight`/`statusBarDark` pair named the text colour and mapped onto the same-sounding Capacitor enum member, which documents the opposite — both were inverted, so every native route painted the wrong icon colour.)
   - `@aparajita/capacitor-biometric-auth` — `src/lib/nativeLoginVerification.js` + `src/lib/nativeBiometric.js`. Native password login verifies Face ID / Touch ID after prior-account cleanup and before Supabase publishes the new session. Cancel/failure blocks that login. Unavailable or unenrolled biometry preserves password login. Retained authenticated sessions reopen without another prompt. Token storage remains the default WebView store — a Keychain migration is future hardening.
-  - `@capgo/capacitor-updater` — OTA React/CSS/HTML support remains exact-default-off. `src/lib/nativeUpdater.js` exposes guarded helpers, but `CapacitorUpdater.autoUpdate` is `false`, `VITE_NATIVE_OTA_ENABLED` must be exactly `true`, and no boot path calls `notifyAppReady()` pending a real health checkpoint.
-- **OTA deploy pipeline:** `.github/workflows/capgo-deploy.yml` — **paused since 2026-06-24** (Capgo account hit its plan limit; every automated upload was rejected). Push triggers are commented out; it's `workflow_dispatch` (manual) only until the Capgo plan is upgraded. Requires GitHub repo secrets `CAPGO_TOKEN`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+  - `@capgo/capacitor-updater` — the official UPR
+    `capacitor.config.json` remains exact-default-off with no channel.
+    `src/components/NativeUpdateHealthGate.jsx`, mounted inside the native route
+    Suspense boundary, acknowledges only an explicitly enabled native bundle
+    after auth startup is complete/error-free/unexpired and the selected lazy
+    route has committed without any React error boundary latching a launch
+    render failure. `scripts/configure-ios-capgo-dev.mjs` applies
+    `.upr.dev`/`upr-dev-canary`, structural RSA-4096 v2 public-key verification,
+    30-second health, mutation locks, and background auto-update only to the
+    gitignored generated UPR Dev iOS config; direct update remains false. The
+    signed-artifact verifier validates and records only the embedded public-key
+    SHA-256 fingerprint.
+- **OTA deploy pipelines:** legacy `.github/workflows/capgo-deploy.yml` remains
+  hard-disabled and cannot publish official UPR production/beta bundles.
+  `.github/workflows/capgo-dev.yml` is the isolated replacement for
+  `com.utahprosrestoration.upr.dev` only: manual `dev` ref, branch-restricted
+  `capgo-dev` GitHub environment, exact operation confirmation, credential-free
+  validation, channel compatibility proof, v2-encrypted unassigned bundle
+  staging, future-delivery disable, pruned native SW/manifest, and sanitized
+  evidence artifact. The workflow cannot assign a staged bundle or deliver it
+  to a device; rollback is absent until a provenance-bound allowlist exists.
+  Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
+  `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
+  patch-only, no-downgrade, no-progressive-rollout selector contract; GitHub
+  environment `capgo-dev` restricted to `dev`; and encrypted secrets
+  `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
+  `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
+  `app_developer` API key expires 2027-08-01. No bundle upload/assignment,
+  device delivery, plan purchase, or production UPR change occurred. Full
+  runbook: `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
@@ -3544,17 +3575,36 @@ distribution signing/TestFlight/App Review remain separate owner/external gates.
 - **UPR Dev TestFlight pipeline (repository path, 2026-08-01):**
   `.github/workflows/ios-dev-testflight.yml` accepts only `dev`, pins
   `com.utahprosrestoration.upr.dev` + `https://dev.utahpros.app`, uses production APNs,
-  embeds and verifies the release variant/origin/Push mode/source SHA before upload, serializes
-  release runs, and requests only the internal **UPR Dev** group. A `dev` push runs
+  and embeds/verifies the release variant/origin/Push/OTA mode/source SHA plus
+  the isolated app/channel/RSA-4096 public-key fingerprint before upload. Per
+  exact owner authorization on 2026-08-01, the archive job reads only
+  `CAPGO_DEV_PUBLIC_KEY_V2` from the protected `ios-dev-signing` environment
+  alongside the UPR Dev signing inputs, applies it after `cap sync`, and signs
+  the `.upr.dev` app in the same job. There is no key handoff artifact.
+  A fresh dev-only RSA-4096 v2 keypair was generated on 2026-08-01; GitHub
+  accepted replacement public/private submissions in `capgo-dev` and the same
+  public-half submission in `ios-dev-signing`. Only names, presence, and
+  successful submissions were verified because encrypted values cannot be read
+  back. A follow-up metadata check confirmed fresh timestamps for all three key
+  submissions and an unchanged timestamp for the existing app-scoped
+  `CAPGO_DEV_API_KEY`.
+  `CAPGO_DEV_PRIVATE_KEY_V2` and `CAPGO_DEV_API_KEY` never enter the signing or
+  TestFlight workflow; production UPR stays updater-off.
+  It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
   credential-free tests only; every signed archive and optional upload requires a fresh manual
   dispatch. A manual `native_push_enabled:false` build also embeds
   `retireDevToken:true`; on authenticated boot, the exact build flag plus the OS-reported
   `.upr.dev` identity gates owner-scoped deletion/unregistration of its remembered token. This is
   the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
   references use only `IOS_DEV_*` names so they cannot fall back to the official app's
-  credentials. The `.dev` Apple record/profile/group, `ios-dev-signing` /
-  `ios-dev-testflight` environments, dry archive, upload, install, and signed-device matrix are
-  unverified external gates. Publishing this source to `dev` deploys the guarded web runtime and
+  credentials. The `.dev` Apple record/profile/group and dev-only GitHub
+  environments exist, but PR #569 is still an unmerged draft and both release
+  workflows refuse any ref except `dev`. `ios-dev-signing` also lacks the five
+  private `IOS_DEV_*` Apple team/certificate/profile secrets required by the
+  archive job; repository Supabase build secrets are present. Merge and private
+  signing-secret entry require exact owner action before archive dispatch.
+  Upload, install, and the signed-device matrix remain later unverified external
+  gates. Publishing this source to `dev` deploys the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
