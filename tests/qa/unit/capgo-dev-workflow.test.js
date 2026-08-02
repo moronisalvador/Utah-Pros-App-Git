@@ -76,6 +76,10 @@ describe('UPR Dev Capgo workflow boundary', () => {
   it('stages without delivery and keeps only the emergency disable mutation', () => {
     expect(workflow).toContain('test ! -e dist/sw.js');
     expect(workflow).toContain('test ! -e dist/manifest.json');
+    expect(workflow).toContain(
+      'grep -R -F -q -- "$GITHUB_SHA" dist/app-assets',
+    );
+    expect(workflow).not.toContain('rg -Fq');
     expect(publishStep).toContain('capgo bundle upload "$CAPGO_DEV_APP_ID"');
     expect(publishStep).not.toContain('--channel');
     expect(workflow).not.toContain('rollback_bundle');
