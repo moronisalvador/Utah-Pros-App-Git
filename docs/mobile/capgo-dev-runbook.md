@@ -69,6 +69,11 @@ As of 2026-08-01:
 - GitHub `capgo-dev` contains exactly the encrypted environment secrets
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
   `CAPGO_DEV_PUBLIC_KEY_V2`; secret presence was verified without reading values.
+- `ios-dev-signing` does not yet have a verified `CAPGO_DEV_PUBLIC_KEY_V2`
+  secret. GitHub cannot reveal the value already stored in `capgo-dev`, and
+  Capgo does not expose a recoverable copy. The owner must privately add the
+  retained public half or separately authorize a coordinated dev-key rotation
+  before any archive dispatch.
 - The app-scoped Capgo API key is limited to `UPR Dev` with the
   `app_developer` role and expires 2027-08-01.
 - No Capgo upload, subscription purchase, production activation, or installed

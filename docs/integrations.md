@@ -50,9 +50,11 @@ manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
 version, signed-artifact config verification, late auth/route health
 acknowledgement, unassigned staging, and future-delivery disable. Its dedicated
 GitHub environment accepts only `dev`; API/private keys are masked environment
-secrets. The public verification key is an encrypted secret in both the
-dev-only Capgo environment and the protected UPR Dev signing environment, where
-the same archive job embeds it only in the `.upr.dev` app/IPA. App Store
+secrets. The public verification key is verified present in the dev-only Capgo
+environment. The archive workflow also requires it as an encrypted secret in
+the protected UPR Dev signing environment, where the same job embeds it only in
+the `.upr.dev` app/IPA; that second live secret remains pending owner entry
+because encrypted GitHub secrets cannot be read back. App Store
 Connect/TestFlight remains a separately signed UPR Dev distribution path. Full operational contract:
 `docs/mobile/capgo-dev-runbook.md`.
 

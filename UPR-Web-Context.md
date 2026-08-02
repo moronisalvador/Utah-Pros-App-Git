@@ -3581,6 +3581,9 @@ gates.
   `CAPGO_DEV_PUBLIC_KEY_V2` from the protected `ios-dev-signing` environment
   alongside the UPR Dev signing inputs, applies it after `cap sync`, and signs
   the `.upr.dev` app in the same job. There is no key handoff artifact.
+  The workflow contract is implemented, but the live `ios-dev-signing`
+  public-key secret remains pending owner entry because the encrypted value in
+  `capgo-dev` cannot be read back and Capgo does not expose a recoverable copy.
   `CAPGO_DEV_PRIVATE_KEY_V2` and `CAPGO_DEV_API_KEY` never enter the signing or
   TestFlight workflow; production UPR stays updater-off.
   It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
