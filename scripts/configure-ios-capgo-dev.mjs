@@ -27,7 +27,10 @@ export const CAPGO_DEV_APP_ID = 'com.utahprosrestoration.upr.dev';
 export const CAPGO_DEV_CHANNEL = 'upr-dev-canary';
 export const CAPGO_PRODUCTION_APP_ID = 'com.utahprosrestoration.upr';
 
-export function createCapgoDevConfig(source, { publicKey } = {}) {
+export function createCapgoDevConfig(source, {
+  otaEnabled = true,
+  publicKey,
+} = {}) {
   if (source?.appId !== CAPGO_PRODUCTION_APP_ID) {
     throw new Error(
       `Expected generated production appId ${CAPGO_PRODUCTION_APP_ID} before dev isolation`,
@@ -42,31 +45,39 @@ export function createCapgoDevConfig(source, { publicKey } = {}) {
     ? plugins.CapacitorUpdater
     : {};
 
+  const configuredUpdater = {
+    ...updater,
+    appId: CAPGO_DEV_APP_ID,
+    autoUpdate: otaEnabled,
+    autoDeleteFailed: true,
+    autoDeletePrevious: true,
+    resetWhenUpdate: true,
+    directUpdate: false,
+    appReadyTimeout: 30000,
+    responseTimeout: 20,
+    allowSetDefaultChannel: false,
+    allowModifyAppId: false,
+    allowModifyUrl: false,
+    persistModifyUrl: false,
+    shakeMenu: false,
+    allowShakeChannelSelector: false,
+  };
+  delete configuredUpdater.publicKey;
+  delete configuredUpdater.defaultChannel;
+
+  if (otaEnabled) {
+    configuredUpdater.publicKey =
+      validateCapgoV2PublicKey(publicKey).publicKey;
+    configuredUpdater.defaultChannel = CAPGO_DEV_CHANNEL;
+  }
+
   return {
     ...source,
     appId: CAPGO_DEV_APP_ID,
     appName: 'UPR Dev',
     plugins: {
       ...plugins,
-      CapacitorUpdater: {
-        ...updater,
-        appId: CAPGO_DEV_APP_ID,
-        autoUpdate: true,
-        autoDeleteFailed: true,
-        autoDeletePrevious: true,
-        resetWhenUpdate: true,
-        directUpdate: false,
-        appReadyTimeout: 30000,
-        responseTimeout: 20,
-        publicKey: validateCapgoV2PublicKey(publicKey).publicKey,
-        defaultChannel: CAPGO_DEV_CHANNEL,
-        allowSetDefaultChannel: false,
-        allowModifyAppId: false,
-        allowModifyUrl: false,
-        persistModifyUrl: false,
-        shakeMenu: false,
-        allowShakeChannelSelector: false,
-      },
+      CapacitorUpdater: configuredUpdater,
     },
   };
 }
@@ -74,10 +85,14 @@ export function createCapgoDevConfig(source, { publicKey } = {}) {
 export function configureIosCapgoDev({
   environment = process.env,
   configPath = path.resolve('ios/App/App/capacitor.config.json'),
+  otaEnabled = true,
 } = {}) {
   const source = JSON.parse(readFileSync(configPath, 'utf8'));
   const configured = createCapgoDevConfig(source, {
-    publicKey: environment.CAPGO_DEV_PUBLIC_KEY_V2,
+    otaEnabled,
+    publicKey: otaEnabled
+      ? environment.CAPGO_DEV_PUBLIC_KEY_V2
+      : undefined,
   });
   writeFileSync(configPath, `${JSON.stringify(configured, null, 2)}\n`, {
     mode: 0o644,

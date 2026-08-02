@@ -159,10 +159,12 @@ jobs:
           CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
         run: |
           set -euo pipefail
-          node_modules/.bin/capgo bundle compatibility "$CAPGO_DEV_APP_ID" \
-            --apikey "$CAPGO_DEV_API_KEY" \
-            --channel "$CAPGO_DEV_CHANNEL" \
-            --text
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            -- node_modules/.bin/capgo bundle compatibility "$CAPGO_DEV_APP_ID" \
+              --apikey "$CAPGO_DEV_API_KEY" \
+              --channel "$CAPGO_DEV_CHANNEL" \
+              --text
 
       - name: Stage encrypted bundle without channel assignment
         if: ${{ inputs.operation == 'publish' }}
@@ -172,11 +174,13 @@ jobs:
           CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
         run: |
           set -euo pipefail
-          node_modules/.bin/capgo bundle upload "$CAPGO_DEV_APP_ID" \
-            --apikey "$CAPGO_DEV_API_KEY" \
-            --path dist \
-            --bundle "${{ steps.bundle.outputs.bundle_version }}" \
-            --key-data-v2 "$CAPGO_DEV_PRIVATE_KEY_V2"
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            -- node_modules/.bin/capgo bundle upload "$CAPGO_DEV_APP_ID" \
+              --apikey "$CAPGO_DEV_API_KEY" \
+              --path dist \
+              --bundle "${{ steps.bundle.outputs.bundle_version }}" \
+              --key-data-v2 "$CAPGO_DEV_PRIVATE_KEY_V2"
 
       - name: Disable future UPR Dev update delivery
         if: ${{ inputs.operation == 'disable' }}
@@ -185,14 +189,16 @@ jobs:
           CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
         run: |
           set -euo pipefail
-          node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
-            --apikey "$CAPGO_DEV_API_KEY" \
-            --no-ios \
-            --no-android \
-            --no-dev \
-            --no-prod \
-            --no-emulator \
-            --no-device
+          node scripts/qa/run-owned-subprocess.mjs \
+            --timeout-ms 292000 \
+            -- node_modules/.bin/capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID" \
+              --apikey "$CAPGO_DEV_API_KEY" \
+              --no-ios \
+              --no-android \
+              --no-dev \
+              --no-prod \
+              --no-emulator \
+              --no-device
 
       - name: Write sanitized release evidence
         if: ${{ always() }}

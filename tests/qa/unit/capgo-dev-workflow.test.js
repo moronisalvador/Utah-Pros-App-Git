@@ -86,6 +86,19 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).not.toContain('--send-update-notification');
   });
 
+  it('contains every Capgo network command in the five-minute owned runner', () => {
+    expect(
+      workflow.match(
+        /node scripts\/qa\/run-owned-subprocess\.mjs\s+\\\n\s+--timeout-ms 292000/g,
+      ),
+    ).toHaveLength(3);
+    expect(workflow).toContain(
+      '-- node_modules/.bin/capgo bundle compatibility',
+    );
+    expect(workflow).toContain('-- node_modules/.bin/capgo bundle upload');
+    expect(workflow).toContain('-- node_modules/.bin/capgo channel set');
+  });
+
   it('keeps credential-free validation independent of Capgo secrets', () => {
     expect(apiCredentialStep).toContain(
       "if: ${{ inputs.operation == 'publish' || inputs.operation == 'disable' }}",

@@ -73,6 +73,19 @@ test('accepts and fingerprints a canonical Capgo v2 RSA-4096 public key', () => 
   assert.match(validated.sha256, /^[a-f0-9]{64}$/);
 });
 
+test('creates a keyless UPR Dev identity while OTA remains disabled', () => {
+  const configured = createCapgoDevConfig(source, { otaEnabled: false });
+  const updater = configured.plugins.CapacitorUpdater;
+
+  assert.equal(configured.appId, CAPGO_DEV_APP_ID);
+  assert.equal(configured.appName, 'UPR Dev');
+  assert.equal(updater.appId, CAPGO_DEV_APP_ID);
+  assert.equal(updater.autoUpdate, false);
+  assert.equal(updater.directUpdate, false);
+  assert.equal(updater.publicKey, undefined);
+  assert.equal(updater.defaultChannel, undefined);
+});
+
 test('refuses missing, private, malformed, or undersized key material', () => {
   assert.throws(
     () => createCapgoDevConfig(source),

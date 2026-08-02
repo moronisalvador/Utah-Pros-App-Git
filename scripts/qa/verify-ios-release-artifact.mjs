@@ -578,6 +578,12 @@ function validateReleaseApp({
         updater.publicKey,
         { label: `${label} updater public verification key` },
       ).sha256;
+    } else {
+      assertCondition(
+        updater.publicKey === undefined
+          && updater.defaultChannel === undefined,
+        `${label} updater-off artifact must not contain Capgo key or channel material`,
+      );
     }
   }
 
