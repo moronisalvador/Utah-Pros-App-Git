@@ -35,7 +35,8 @@
 --
 -- ROLLBACK:
 --   supabase/rollbacks/20260802040935_preserve_notify_emit_event_id.rollback.sql
---   restores the byte-exact predecessor body selected by catalog state and
+--   restores the byte-exact predecessor body selected by the predecessor
+--   marker recorded only after the exact source/ACL preflight succeeds, and
 --   deliberately keeps reminders disabled/unscheduled.
 -- ════════════════════════════════════════════════
 
@@ -71,6 +72,7 @@ BEGIN
       AND pg_get_userbyid(function_record.proowner) = 'postgres'
       AND function_record.prosecdef
       AND function_record.proconfig = ARRAY['search_path=public']::text[]
+      AND obj_description(function_record.oid, 'pg_proc') IS NULL
       AND md5(function_record.prosrc) IN (
         'c72e0f7fd40a4abec42cce1cd912a45b',
         '72d1973cff37b95c7149700a7c5bb5b7'
@@ -98,6 +100,18 @@ BEGIN
      OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
      OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
     RAISE EXCEPTION 'preserve notify event id: execute-grant drift';
+  END IF;
+
+  IF v_source_hash = '72d1973cff37b95c7149700a7c5bb5b7' THEN
+    EXECUTE $comment$
+      COMMENT ON FUNCTION public.notify_emit(text, jsonb)
+      IS 'upr:20260802040935:predecessor=guarded'
+    $comment$;
+  ELSE
+    EXECUTE $comment$
+      COMMENT ON FUNCTION public.notify_emit(text, jsonb)
+      IS 'upr:20260802040935:predecessor=baseline'
+    $comment$;
   END IF;
 END;
 $preflight$;
@@ -252,6 +266,10 @@ BEGIN
       AND function_record.prosecdef
       AND function_record.proconfig = ARRAY['search_path=public']::text[]
       AND md5(function_record.prosrc) = 'ea3a9b3b6cca96722c008d7e9b23f6bc'
+      AND obj_description(function_record.oid, 'pg_proc') IN (
+        'upr:20260802040935:predecessor=baseline',
+        'upr:20260802040935:predecessor=guarded'
+      )
   ) THEN
     RAISE EXCEPTION 'preserve notify event id: replacement drift';
   END IF;

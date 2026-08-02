@@ -7,7 +7,12 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-**None.** No file or seam in this repository is currently under a sole-writer lease.
+The standalone appointment-reminder containment repair is owned by the appointment-reminder task
+through its PR-to-`dev` handoff. Its exact files, shared `notify.js` overlap, reviewer roles, and
+inert activation gates are frozen in
+[`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
+This lease does not include the separate five-producer authorization migration and ends when the
+standalone reminder PR is merged or explicitly parked.
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the

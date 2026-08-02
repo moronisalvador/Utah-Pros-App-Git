@@ -290,7 +290,8 @@ contracts:
   proves the pending same-signature `notify_emit` repair preserves a usable
   producer occurrence ID, keeps the function argument authoritative for
   `type_key`, disables/unschedules before replacement, retains service-only
-  execution, and never reactivates reminders during rollback.
+  execution, records the exact validated predecessor instead of inferring it
+  from an optional table, and never reactivates reminders during rollback.
 
 These credential-free tests do not prove the pending database function on the
 shared project or physical-device receipt. Reminder activation is blocked

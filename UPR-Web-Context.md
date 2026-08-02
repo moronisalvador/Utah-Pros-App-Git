@@ -4544,7 +4544,9 @@ It adds no migration or live-database change.
   cron until the exact compatible Production Worker SHA is verified, durable
   per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
   and server-authoritative appointment crew mutation denies unmapped,
-  inactive, external, and unrelated identities.
+  inactive, external, and unrelated identities. Standalone file ownership and
+  release roles are recorded in
+  `.claude/rules/appointment-reminder-wave-ownership.md`.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed

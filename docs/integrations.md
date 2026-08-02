@@ -348,8 +348,10 @@ trusted service-only producer supplied a stable occurrence ID. Pending
 migration `20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
 string/number occurrence ID, generates only a missing/blank one, keeps
 `p_type_key` authoritative, and records disabled/unscheduled containment. It
-has a paired rollback that restores the prior function without reactivating
-the producer. The migration is repository-only and unapplied; activation
+records the exact validated predecessor in a function comment so the paired
+rollback restores that body even if an inert occurrence table remains from
+another migration's rollback. The rollback clears the marker and never
+reactivates the producer. The migration is repository-only and unapplied; activation
 requires compatible Production SHA evidence before a separate enable/schedule
 operation.
 
