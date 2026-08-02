@@ -277,8 +277,12 @@ origin/Push/OTA/SHA contract and embedded dev app/channel/public-key controls
 before an internal-only upload. A `dev` push runs credential-free
 tests only. Dev-exclusive `IOS_DEV_*` signing/provider names prevent fallback to official
 UPR credentials, and runs serialize across the Apple side effect. The external Apple
-record/profile/group, GitHub environments, first dry archive, upload, install, and device
-matrix remain independent owner gates. The manual `native_push_enabled:false` replacement
+record/profile and dev-only GitHub environments are configured. Authorized dry archive run
+`30732945226` succeeded from exact `dev` source `e0a1ec6f` with
+`publish_to_testflight:false`, proving the `.upr.dev` distribution signature/profile and embedded
+dev-only native contract without an Apple upload or device delivery. The internal TestFlight group
+upload, install, and device matrix remain independent owner gates. The manual
+`native_push_enabled:false` replacement
 also embeds the exact dev-token retirement flag; authenticated boot must prove the
 OS-reported `.upr.dev` identity before deleting its remembered owner-scoped token and
 unregistering locally. The exact containment and zero-dispatch evidence sequence lives in
