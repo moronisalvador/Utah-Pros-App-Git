@@ -4527,6 +4527,26 @@ It adds no migration or live-database change.
   fan-out. The minute scheduler claims each assigned technician once and emits
   `appointment.reminder` when a scheduled appointment is one hour away; the
   typed push destination is that exact technician appointment route.
+- **Appointment-reminder incident containment (2026-08-01):** the shared
+  migration activated the reminder producer before the compatible Production
+  Worker reached `main`. Production treated the unknown type as the generic
+  admin audience, producing the observed generic native alert and duplicate
+  admin bell rows. The shared catalog type is now `enabled=false` and the
+  single `upr_appointment_reminders` cron has been unscheduled, so no new
+  reminder claims or sends occur. Preferences and existing claims remain.
+  Repository source keeps the reminder scoped to the named active/internal
+  current crew member, renders the appointment/client/Denver time for
+  bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
+  preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
+  reminder copy. Production records the original migration as ledger
+  `20260801232759`; `qa-staging` does not have it, and pending
+  `20260802040935` is applied nowhere. Do not enable the type or reschedule the
+  cron until the exact compatible Production Worker SHA is verified, durable
+  per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
+  and server-authoritative appointment crew mutation denies unmapped,
+  inactive, external, and unrelated identities. Standalone file ownership and
+  release roles are recorded in
+  `.claude/rules/appointment-reminder-wave-ownership.md`.
 - APNs banners use an exhaustive typed presentation catalog. This paragraph's
   original generic-only privacy budget was superseded by the owner's 2026-07-29
   decision: native may show the same event-approved variables as PWA. Typed
@@ -4678,6 +4698,16 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   replacement bodies and service-role-only ACL. The gap it deferred — the two
   `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
   no allowlist — is closed by the follow-up below.
+- **Stable occurrence-ID repair (repository-only, unapplied 2026-08-01):**
+  the live allowlist body (read-only hash
+  `c72e0f7fd40a4abec42cce1cd912a45b`) replaces every producer-supplied
+  `notification_event_id` with `gen_random_uuid()`, defeating cross-retry APNs
+  deduplication. Pending
+  `20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
+  service-producer occurrence ID, generates one only when missing/blank, keeps
+  `p_type_key` authoritative, and codifies the disabled/unscheduled reminder
+  containment. Its paired rollback restores the prior function without
+  reactivating reminders. This migration is not applied to the shared project.
 - **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,

@@ -30,6 +30,7 @@ import {
   enrichDatabasePresentationContext,
   enrichEstimateBody,
   enrichInboundMessageBody,
+  isTechnicianQuietTime,
   nativeNotificationEventKey,
 } from './notify.js';
 import { fetchWithTimeout } from '../lib/http.js';
@@ -46,7 +47,7 @@ function makeDb(opts = {}) {
     emailByEmp = {}, crewByAppt = {}, apptsById = {}, estimatesById = {},
     contactsById = {}, presentationOverrides = {}, webhookSecret = null,
     selectErrorTable = null, conversationRecipients = {},
-    conversationRecipientsError = false,
+    conversationRecipientsError = false, quietTimeByEmp = {},
   } = opts;
   const rpcCalls = [];
   const deletes = [];
@@ -95,6 +96,12 @@ function makeDb(opts = {}) {
           ? `${decodeURIComponent(type[1])}:${surface[1]}`
           : '';
         return presentationOverrides[key] ? [presentationOverrides[key]] : [];
+      }
+      if (table === 'notification_quiet_time_preferences') {
+        const employee = /employee_id=eq\.([^&]+)/.exec(query);
+        return employee && quietTimeByEmp[employee[1]]
+          ? [{ employee_id: employee[1] }]
+          : [];
       }
       if (table === 'appointments') {
         const m = /id=eq\.([^&]+)/.exec(query);
@@ -206,6 +213,71 @@ describe('resolveAudience', () => {
     })).resolves.toEqual([]);
   });
 
+  it('appointment.reminder targets only the named current active internal crew member', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'named', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'other-crew', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'inactive', role: 'field_tech', is_active: false, is_external: false },
+        { id: 'external', role: 'field_tech', is_active: true, is_external: true },
+      ],
+      crewByAppt: {
+        'ap-1': [
+          { employee_id: 'named' },
+          { employee_id: 'other-crew' },
+          { employee_id: 'inactive' },
+          { employee_id: 'external' },
+        ],
+      },
+    });
+
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'named',
+      recipient_ids: ['admin', 'other-crew'],
+    })).resolves.toEqual(['named']);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'admin',
+      recipient_ids: ['admin'],
+    })).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'inactive',
+    })).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'external',
+    })).resolves.toEqual([]);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+    })).resolves.toEqual([]);
+  });
+
+  it('appointment.reminder follows exact crew membership for every internal role', async () => {
+    const db = makeDb({
+      employees: [
+        { id: 'assigned-admin', role: 'admin', is_active: true, is_external: false },
+        { id: 'unassigned-office', role: 'office', is_active: true, is_external: false },
+      ],
+      crewByAppt: {
+        'ap-1': [{ employee_id: 'assigned-admin' }],
+      },
+    });
+
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'assigned-admin',
+      recipient_ids: ['unassigned-office'],
+    })).resolves.toEqual(['assigned-admin']);
+    await expect(resolveAudience(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+      employee_id: 'unassigned-office',
+      recipient_ids: ['unassigned-office'],
+    })).resolves.toEqual([]);
+  });
+
   it('clock.abandoned → admins plus the affected tech from the payload', async () => {
     const db = makeDb({ employees: [
       { id: 'a1', role: 'admin' }, { id: 'a2', role: 'admin' },
@@ -303,6 +375,46 @@ describe('resolveAudience', () => {
 
 describe('dispatchEvent — channel gating by effective prefs', () => {
   const baseType = { type_key: 'feedback.submitted', label: 'Feedback', enabled: true };
+
+  it('uses the exact Denver quiet-time boundaries in summer and winter', () => {
+    expect(isTechnicianQuietTime(new Date('2026-08-01T23:29:00Z'))).toBe(false);
+    expect(isTechnicianQuietTime(new Date('2026-08-01T23:30:00Z'))).toBe(true);
+    expect(isTechnicianQuietTime(new Date('2026-08-01T13:59:00Z'))).toBe(true);
+    expect(isTechnicianQuietTime(new Date('2026-08-01T14:00:00Z'))).toBe(false);
+    expect(isTechnicianQuietTime(new Date('2026-01-15T00:30:00Z'))).toBe(true);
+    expect(isTechnicianQuietTime(new Date('2026-01-15T15:00:00Z'))).toBe(false);
+  });
+
+  it('fails closed inside quiet time when the preference lookup errors', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-01T23:30:00Z'));
+    try {
+      const db = makeDb({
+        types: { 'feedback.submitted': baseType },
+        employees: [{ id: 'a1', role: 'admin' }],
+        prefsByEmp: { a1: prefRows('feedback.submitted', { bell: true, push: true }) },
+        selectErrorTable: 'notification_quiet_time_preferences',
+      });
+      const sendWebPushImpl = vi.fn();
+
+      const out = await dispatchEvent({
+        db,
+        env: ENV,
+        typeKey: 'feedback.submitted',
+        body: {},
+        sendWebPushImpl,
+      });
+
+      expect(out.results[0]).toMatchObject({
+        skipped: true,
+        reason: 'technician_quiet_time_lookup_failed',
+      });
+      expect(db.rpcCalls.filter((call) => call.fn === 'create_notification')).toHaveLength(0);
+      expect(sendWebPushImpl).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it('skips a disabled type without touching anyone', async () => {
     const db = makeDb({ types: { 'feedback.submitted': { ...baseType, enabled: false } } });
@@ -944,6 +1056,33 @@ describe('enrichAppointmentBody', () => {
     expect(out.entity_type).toBe('appointment');
     expect(out.entity_id).toBe('ap-1');
   });
+  it('builds the reminder wording and client-aware fallback body without overrides', async () => {
+    const db = makeDb({
+      apptsById: {
+        'ap-1': {
+          title: 'Moisture check',
+          date: '2026-07-31',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+          jobs: { insured_name: 'Jordan Lee' },
+        },
+      },
+    });
+    const out = await enrichAppointmentBody(db, 'appointment.reminder', {
+      appointment_id: 'ap-1',
+    });
+    expect(out).toMatchObject({
+      title: 'Appointment in one hour · Moisture check',
+      body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+      link: '/schedule/appointment/ap-1',
+      data: { url: '/tech/appointment/ap-1' },
+      presentation_context: {
+        appointment_title: 'Moisture check',
+        appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
+      },
+    });
+  });
   it('does not clobber a caller-supplied push destination', async () => {
     const db = makeDb({ apptsById: { 'ap-1': { title: 'X', date: '2026-07-04', time_start: '09:00:00' } } });
     const out = await enrichAppointmentBody(db, 'appointment.assigned', {
@@ -1031,6 +1170,91 @@ describe('dispatchEvent — appointment enrichment end-to-end', () => {
     expect(payloads).toHaveLength(1);
     expect(payloads[0].url).toBe('/tech/appointment/ap-1');
     expect(payloads[0].url).not.toBe('/schedule/appointment/ap-1');
+  });
+
+  it('keeps reminder copy rich and sends only to the named technician', async () => {
+    const payloads = [];
+    const nativeSends = [];
+    const db = makeDb({
+      types: {
+        'appointment.reminder': {
+          type_key: 'appointment.reminder',
+          label: 'Appointment reminder',
+          enabled: true,
+        },
+      },
+      employees: [
+        { id: 'emp-9', role: 'field_tech', is_active: true, is_external: false },
+        { id: 'admin', role: 'admin', is_active: true, is_external: false },
+      ],
+      crewByAppt: { 'ap-1': [{ employee_id: 'emp-9' }] },
+      apptsById: {
+        'ap-1': {
+          title: 'Moisture check',
+          date: '2026-07-31',
+          time_start: '09:00:00',
+          time_end: '11:00:00',
+          jobs: { insured_name: 'Jordan Lee' },
+        },
+      },
+      prefsByEmp: {
+        'emp-9': prefRows('appointment.reminder', { bell: true, push: true }),
+        admin: prefRows('appointment.reminder', { bell: true, push: true }),
+      },
+      subsByEmp: {
+        'emp-9': [{ id: 's1', endpoint: 'https://push/1', p256dh: 'p', auth: 'a' }],
+      },
+    });
+
+    const out = await dispatchEvent({
+      db,
+      env: ENV,
+      typeKey: 'appointment.reminder',
+      body: {
+        appointment_id: 'ap-1',
+        employee_id: 'emp-9',
+        recipient_ids: ['admin'],
+        notification_event_id: 'reminder-occurrence-1',
+      },
+      sendWebPushImpl: async (_sub, payload) => {
+        payloads.push(JSON.parse(payload));
+        return { ok: true, status: 201 };
+      },
+      sendNativePushImpl: async (input) => {
+        nativeSends.push(input);
+        return { sent: 1, attempted: 1, pruned: 0 };
+      },
+    });
+
+    expect(out.recipients).toBe(1);
+    const bell = db.rpcCalls.find((call) => call.fn === 'create_notification');
+    expect(bell.params).toMatchObject({
+      p_recipient_id: 'emp-9',
+      p_title: 'Appointment in one hour · Moisture check',
+      p_body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+      p_link: '/schedule/appointment/ap-1',
+    });
+    expect(payloads[0]).toMatchObject({
+      title: 'Appointment in one hour · Moisture check',
+      body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+      url: '/tech/appointment/ap-1',
+    });
+    expect(nativeSends).toHaveLength(1);
+    expect(nativeSends[0]).toMatchObject({
+      employeeId: 'emp-9',
+      typeKey: 'appointment.reminder',
+      eventKey: JSON.stringify([
+        'appointment.reminder',
+        'emp-9',
+        'reminder-occurrence-1',
+      ]),
+      notificationBody: {
+        presentation_context: {
+          customer_name: 'Jordan Lee',
+          appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        },
+      },
+    });
   });
 });
 

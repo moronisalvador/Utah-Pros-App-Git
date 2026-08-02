@@ -87,11 +87,8 @@ const PRESENTATIONS = Object.freeze({
     route: appointmentRoute,
   },
   'appointment.reminder': {
-    title: (body) => body.presentation_context?.appointment_title
-      ? `Appointment in one hour · ${body.presentation_context.appointment_title}`
-      : 'Appointment in one hour',
-    body: (body) => body.presentation_context?.appointment_when
-      || 'Tap to review the appointment and let the client know if you are running late.',
+    title: () => 'Appointment in one hour',
+    body: () => 'Open Utah Pros to review the appointment.',
     route: appointmentRoute,
   },
   'estimate.accepted': {
@@ -287,6 +284,7 @@ function presentationContext(typeKey, body = {}) {
     case 'appointment.assigned':
     case 'appointment.updated':
     case 'appointment.canceled':
+    case 'appointment.reminder':
       context.appointment_title = contextValue(explicit.appointment_title);
       context.appointment_when = contextValue(explicit.appointment_when);
       context.customer_name = contextValue(explicit.customer_name);
