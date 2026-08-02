@@ -56,4 +56,3 @@ The reminder type stays disabled and the named cron stays absent. Activation req
 reviewed lanes: durable per-recipient/channel reminder claims for bell/PWA/email; server-authoritative
 appointment-crew mutations with negative authorization proof; QA apply and behavior evidence; later
 Production apply; a compatible Production Worker SHA; and provider/device receipt evidence.
-
