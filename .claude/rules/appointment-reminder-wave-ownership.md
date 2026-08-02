@@ -36,12 +36,9 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - `.claude/rules/initiative-status.md`
 - `.claude/tooling-governance.json`
 
-Shared hotspots with the separate five-producer authorization candidate are
-`functions/api/notify.js`, `functions/api/notify.test.js`, `functions/lib/apns.test.js`,
-`UPR-Web-Context.md`, `docs/testing-and-deployment.md`, and
-`.claude/rules/initiative-status.md`. The release coordinator owns reconciliation of every shared
-file. The standalone branch keeps the reminder outside that candidate's exact five guarded types
-and must not absorb its unapplied migration or delivery-claim schema.
+`functions/api/notify.js` and its test are shared hotspots with the separate five-producer
+authorization candidate. The standalone branch keeps the reminder outside that candidate's exact
+five guarded types and must not absorb its unapplied migration or delivery-claim schema.
 
 ## Review roles
 
