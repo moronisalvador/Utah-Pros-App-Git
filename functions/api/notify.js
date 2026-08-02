@@ -26,11 +26,16 @@
  *              ../lib/email.js
  *   Data:      reads  → notification_types (catalog + enabled master switch),
  *                        employees (audience + email), appointment_crew (crew
- *                        audience), push_subscriptions + device_tokens (devices),
- *                        integration_config (webhook secret);
+ *                        audience), time_entry_change_requests (canonical
+ *                        timesheet request), push_subscriptions + device_tokens
+ *                        (devices), integration_config (webhook secret);
  *                        get_effective_notification_prefs +
- *                        get_conversation_notification_recipients (RPCs)
+ *                        get_conversation_notification_recipients +
+ *                        validate_notification_producer_delivery (RPCs)
  *              writes → notifications (via create_notification, per recipient);
+ *                        guarded delivery claims (via claim_notification_delivery,
+ *                        claim_guarded_notification_target_delivery, and
+ *                        release_notification_delivery_claim RPCs);
  *                        prunes dead push subscriptions/registrations
  *
  * NOTES / GOTCHAS:
