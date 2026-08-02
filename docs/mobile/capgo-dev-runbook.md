@@ -68,20 +68,22 @@ As of 2026-08-01:
   native blocked, patch-only automatic updates, and progressive rollout off.
 - GitHub `capgo-dev` contains exactly the encrypted environment secrets
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
-  `CAPGO_DEV_PUBLIC_KEY_V2`; secret presence was verified without reading values.
-- `ios-dev-signing` does not yet have a verified `CAPGO_DEV_PUBLIC_KEY_V2`
-  secret. GitHub cannot reveal the value already stored in `capgo-dev`, and
-  Capgo does not expose a recoverable copy. The owner must privately add the
-  retained public half or separately authorize a coordinated dev-key rotation
-  before any archive dispatch.
+  `CAPGO_DEV_PUBLIC_KEY_V2`.
+- A fresh dev-only RSA-4096 v2 keypair was generated on 2026-08-01. GitHub
+  accepted replacement submissions for its public/private halves in
+  `capgo-dev` and accepted the same public half in `ios-dev-signing`. Only
+  secret names, presence, and successful submissions were verified; encrypted
+  values cannot be read back. The existing `CAPGO_DEV_API_KEY` was not changed.
 - The app-scoped Capgo API key is limited to `UPR Dev` with the
   `app_developer` role and expires 2027-08-01.
 - No Capgo upload, subscription purchase, production activation, or installed
-  device delivery has been performed by this setup.
+  device delivery has been performed by this setup. No archive or TestFlight
+  workflow was dispatched.
 
-Repository declarations are not proof that the pending Capgo or GitHub values
-exist. Record the dashboard object ids and a sanitized screenshot in the release
-evidence after setup; never record the values of tokens or keys.
+Repository declarations and accepted write-only secret submissions are not
+proof of secret-value readback or successful cryptographic use by a signed
+archive. Record provider object ids and sanitized evidence at each authorized
+release gate; never record the values of tokens or keys.
 
 ## One-time dashboard setup
 

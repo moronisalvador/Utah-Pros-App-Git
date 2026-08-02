@@ -396,17 +396,21 @@ excluded from the supported product promise before release.
   public half that the same protected signing job embeds only in the `.upr.dev` app/IPA. Live
   2026-08-01 evidence records the `.upr.dev` Capgo app, default
   `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
-  GitHub environment with the three encrypted secrets present. No bundle was uploaded or assigned.
+  GitHub environment with the three encrypted secrets present. A fresh dev-only RSA-4096 v2
+  keypair rotation was accepted in `capgo-dev`, and the same public half was accepted in
+  `ios-dev-signing`; only secret names, presence, and successful write-only submissions were
+  verified. The API key was unchanged. No archive was dispatched and no bundle was uploaded or
+  assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
   `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
   `docs/mobile/capgo-dev-runbook.md`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Store the authorized public half in the
-  protected `ios-dev-signing` environment without exposing it; keep private/API values secret-only
-  and never use a transient key artifact. Then produce a signed UPR Dev archive and,
-  behind separate upload/assignment/device gates, verify one-device canary isolation,
+- **Recommended remediation / verification / dependencies:** Keep private/API values secret-only
+  and never use a transient key artifact. Under a separate exact owner gate, produce a signed UPR
+  Dev archive to verify the embedded public half and isolated identity; then, behind separate
+  upload/assignment/device gates, verify one-device canary isolation,
   interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
   official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
   release telemetry (`MOB-OBS-024`) and the signed native pipeline.

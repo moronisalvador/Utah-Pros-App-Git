@@ -3581,9 +3581,11 @@ gates.
   `CAPGO_DEV_PUBLIC_KEY_V2` from the protected `ios-dev-signing` environment
   alongside the UPR Dev signing inputs, applies it after `cap sync`, and signs
   the `.upr.dev` app in the same job. There is no key handoff artifact.
-  The workflow contract is implemented, but the live `ios-dev-signing`
-  public-key secret remains pending owner entry because the encrypted value in
-  `capgo-dev` cannot be read back and Capgo does not expose a recoverable copy.
+  A fresh dev-only RSA-4096 v2 keypair was generated on 2026-08-01; GitHub
+  accepted replacement public/private submissions in `capgo-dev` and the same
+  public-half submission in `ios-dev-signing`. Only names, presence, and
+  successful submissions were verified because encrypted values cannot be read
+  back. The existing app-scoped `CAPGO_DEV_API_KEY` was left unchanged.
   `CAPGO_DEV_PRIVATE_KEY_V2` and `CAPGO_DEV_API_KEY` never enter the signing or
   TestFlight workflow; production UPR stays updater-off.
   It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
@@ -3593,9 +3595,9 @@ gates.
   `.upr.dev` identity gates owner-scoped deletion/unregistration of its remembered token. This is
   the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
   references use only `IOS_DEV_*` names so they cannot fall back to the official app's
-  credentials. The `.dev` Apple record/profile/group, `ios-dev-signing` /
-  `ios-dev-testflight` environments, dry archive, upload, install, and signed-device matrix are
-  unverified external gates. Publishing this source to `dev` deploys the guarded web runtime and
+  credentials. The `.dev` Apple record/profile/group and dev-only GitHub
+  environments exist, but archive dispatch, upload, install, and the
+  signed-device matrix remain unverified external gates. Publishing this source to `dev` deploys the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,

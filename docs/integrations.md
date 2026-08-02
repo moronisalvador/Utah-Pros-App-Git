@@ -50,18 +50,22 @@ manual UPR Dev canary: app `com.utahprosrestoration.upr.dev`, channel
 version, signed-artifact config verification, late auth/route health
 acknowledgement, unassigned staging, and future-delivery disable. Its dedicated
 GitHub environment accepts only `dev`; API/private keys are masked environment
-secrets. The public verification key is verified present in the dev-only Capgo
-environment. The archive workflow also requires it as an encrypted secret in
-the protected UPR Dev signing environment, where the same job embeds it only in
-the `.upr.dev` app/IPA; that second live secret remains pending owner entry
-because encrypted GitHub secrets cannot be read back. App Store
-Connect/TestFlight remains a separately signed UPR Dev distribution path. Full operational contract:
+secrets. On 2026-08-01, a fresh RSA-4096 v2 keypair was generated and the
+dev-only GitHub secret submissions were accepted: the public/private halves were
+replaced in `capgo-dev`, and the same public half was added to
+`ios-dev-signing`. Only secret names, presence, and successful submissions were
+verified because GitHub cannot read encrypted values back. The API key was left
+unchanged. The archive workflow reads only the public half from the protected
+UPR Dev signing environment and embeds it only in the `.upr.dev` app/IPA. App
+Store Connect/TestFlight remains a separately signed UPR Dev distribution path.
+Full operational contract:
 `docs/mobile/capgo-dev-runbook.md`.
 
-This source does not prove the Capgo objects, keys, plan capacity, signed
-archive, TestFlight install, or device update exist. Creating a paid plan,
-uploading signing material, changing official UPR signing/listing, activating a
-production Capgo channel, or delivering to production users remains an exact
+This source and write-only secret evidence do not prove key-value readback,
+cryptographic use by a signed archive, plan capacity, TestFlight install, or
+device update. Creating a paid plan, uploading signing material, dispatching a
+signed archive, changing official UPR signing/listing, activating a production
+Capgo channel, or delivering to production users remains an exact
 owner/provider gate.
 
 ## Shared integration rules
