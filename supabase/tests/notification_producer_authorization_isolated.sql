@@ -9,12 +9,16 @@
 --   timesheet submit/review decisions, and claim each delivery occurrence once.
 --
 -- DEPENDS ON:
---   20260801215912_notification_producer_authorization.sql and its existing
---   appointment, employee, time-entry, notification, and auth dependencies.
+--   Packages:  PostgreSQL, Supabase CLI
+--   Internal:  20260801215912_notification_producer_authorization.sql
+--   Data:      reads  → appointments, appointment_crew, employees,
+--                       job_time_entries, notification delivery/occurrence state
+--              writes → disposable test rows in those same local tables
 --
--- RUN ONLY ON AN ISOLATED DATABASE:
---   The governed npm run test:db:local runner supplies both UPR_ISOLATED_DB=1
---   and upr.isolated_test_database=on. This file refuses every other target.
+-- NOTES / GOTCHAS:
+--   - Run only through the governed local database runner. It supplies both
+--     UPR_ISOLATED_DB=1 and upr.isolated_test_database=on; this file refuses
+--     every other target and rolls back its fixture work.
 -- ═══════════════════════════════════════════════════════════════════════════════
 
 \if :{?UPR_ISOLATED_DB}
