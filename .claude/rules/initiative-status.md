@@ -159,12 +159,17 @@ The reversible notification producer containment also applied from exact reviewe
   occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
   delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
   Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
-  fail-closed, and both files keep the same five flags disabled. Credential-free focused
-  worker/source-contract tests, full build/test, lint, migration hygiene, and the migration,
-  worker-security and anonymous-grant reviews pass. Final current-`origin/dev` reconciliation and
-  release review remain. The sentinel-locked SQL behavior proof is authored but cannot run until
-  the governed local Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider,
-  or device action is implied.
+  fail-closed, and both files keep the same five flags disabled. Candidate `930bd399` includes the
+  reviewed private-crew compatibility correction: non-manager field users cannot edit private
+  crew, and unchanged crew skips the locked diff RPC. Reconciliation through `origin/dev`
+  `cd7d415a`, build, Worker `1934/1934`, focused producer/APNs `123/123`, producer QA `7/7`,
+  private-crew `4/4`, lint, migration hygiene, and the migration, worker-security,
+  anonymous-grant, mobile-security, project-law, design and release reviews pass. The current full
+  unit lane remains blocked only by four quiet-time locale/native-test regressions already routed
+  to their owning task; two QA five-second resource timeouts pass `56/56` on the exact unloaded
+  rerun. A final fetch/merge follows the owner-correct quiet-time commit. The sentinel-locked SQL
+  behavior proof is authored but cannot run until the governed local Supabase bootstrap exists.
+  No hosted SQL, deploy, delivery, flag, provider, or device action is implied.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
