@@ -78,18 +78,25 @@ As of 2026-08-01:
   existing `CAPGO_DEV_API_KEY`.
 - The app-scoped Capgo API key is limited to `UPR Dev` with the
   `app_developer` role and expires 2027-08-01.
-- PR #569 remains an unmerged draft. Both release workflows enforce
-  `refs/heads/dev`, so neither can be dispatched from the feature branch.
-- `ios-dev-signing` still requires private owner entry of
-  `IOS_DEV_APPLE_TEAM_ID`, `IOS_DEV_APPLE_CERTIFICATE_BASE64`,
-  `IOS_DEV_APPLE_CERTIFICATE_PASSWORD`,
-  `IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64`, and
-  `IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME`. The required repository-level
-  `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are present. TestFlight API
-  credentials remain a later upload gate.
-- No Capgo upload, subscription purchase, production activation, or installed
-  device delivery has been performed by this setup. No archive or TestFlight
-  workflow was dispatched.
+- PR #569 merged the reviewed release source into `dev` as `e0a1ec6f`; both
+  release workflows continue to enforce `refs/heads/dev`.
+- Manual validate run `30732493520` built the isolated native graph and then
+  failed before bundle identity or any Capgo command because `rg` was absent
+  from the Ubuntu runner. The same probe named stale `dist/assets` instead of
+  Vite's configured `dist/app-assets`. Its retained sanitized artifact records
+  no channel assignment or device delivery.
+- `ios-dev-signing` shows all six expected secret names: the Capgo public key
+  plus Apple team, certificate, certificate-password, profile-name, and profile
+  data. Encrypted values remain unreadable. Authorized dry archive run
+  `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, version `1.0.0 (11.1)`,
+  distribution signing/profile, production APNs, Preview origin, OTA/native
+  Push enabled, `retireDevToken:false`, exact `e0a1ec6f`, and the embedded
+  Capgo public-key fingerprint. TestFlight upload was disabled and skipped;
+  runner signing assets were cleaned. The repository Supabase build secrets are
+  present, and `ios-dev-testflight` contains its three App Store Connect API
+  secret names.
+- No Capgo upload, subscription purchase, production activation, installed
+  device delivery, or TestFlight upload has been performed.
 
 Repository declarations and accepted write-only secret submissions are not
 proof of secret-value readback or successful cryptographic use by a signed
