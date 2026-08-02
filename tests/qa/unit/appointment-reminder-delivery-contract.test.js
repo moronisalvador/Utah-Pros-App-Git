@@ -81,7 +81,7 @@ describe('appointment reminder delivery release contract', () => {
       "'appointment.assigned',\n    'appointment.updated',\n    'appointment.canceled',\n    'timesheet.change_requested',\n    'timesheet.change_reviewed'",
     );
     const guardedTypes = migration.match(
-      /IF p_type_key IN \(([\s\S]*?)\n  \) THEN/,
+      /IF p_type_key IN \(([\s\S]*?)\n {2}\) THEN/,
     )?.[1];
     expect(guardedTypes).toBeTruthy();
     expect(guardedTypes).not.toContain('appointment.reminder');
