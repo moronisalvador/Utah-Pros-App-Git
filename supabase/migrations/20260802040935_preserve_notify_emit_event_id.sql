@@ -3,45 +3,49 @@
 -- Phase: MOB-PUSH-01 appointment-reminder incident containment
 -- ════════════════════════════════════════════════
 --
--- WHAT THIS DOES (plain language):
---   Keeps a producer-supplied notification occurrence id intact when the
---   database calls /api/notify. The current function replaces that stable id
---   with a random UUID, which defeats APNs retry deduplication. Producers that
---   do not supply a usable string/number still receive a generated UUID.
+-- WHAT THIS DOES:
+--   Preserves a usable service-producer notification occurrence id instead of
+--   replacing it with a random UUID. This is required for reminder APNs retry
+--   deduplication. Missing/blank ids on ordinary notification types still get
+--   a generated UUID.
 --
---   This migration also records the incident containment already performed on
---   the shared project: appointment reminders stay disabled and their cron
---   stays absent until compatible Production Worker code is SHA-verified.
+--   The earlier producer-authorization migration may or may not already be
+--   present when this file is qualified. Its exact five guarded types retain
+--   UUID + occurrence-ledger validation in either order; appointment.reminder
+--   remains outside that private-producer authorization set.
+--
+--   The migration also codifies the live incident containment: the reminder
+--   type stays disabled and the named cron stays absent. Durable bell/PWA/email
+--   replay fencing remains a required activation prerequisite.
 --
 -- DEPENDS ON:
 --   Tables: public.notification_types, public.integration_config
+--   Optional predecessor: public.notification_producer_occurrences
 --   Functions: public.notify_emit(text,jsonb), net.http_post
 --   Extensions: pg_cron, pg_net, pgcrypto
 --
 -- SECURITY / COMPATIBILITY:
---   Backward-compatible same-signature SECURITY DEFINER replacement. The
---   catalog type_key remains authoritative and cannot be overridden by the
---   body. notify_emit remains service-role-only with a pinned search_path and
---   the existing exact Worker URL allowlist. No browser grant is added.
+--   Same signature and return type. SECURITY DEFINER, postgres owner, pinned
+--   search_path, exact Worker URL allowlist, authoritative p_type_key, and
+--   service-role-only execution are preserved.
 --
 -- LOCK / ROLLOUT:
---   CREATE OR REPLACE takes a brief function catalog lock. The bounded catalog
---   UPDATE touches one row. Unscheduling touches only the named reminder job.
---   Apply in a reviewed low-traffic window. Do not activate reminders in this
---   migration; activation is a later code-after-database release gate.
+--   Brief function-catalog lock, one bounded catalog UPDATE, and removal of
+--   only the named reminder cron. Apply in a reviewed low-traffic window.
 --
 -- ROLLBACK:
 --   supabase/rollbacks/20260802040935_preserve_notify_emit_event_id.rollback.sql
---   restores the exact prior notify_emit body but deliberately keeps reminders
---   disabled and unscheduled. Activation is never a rollback side effect.
+--   restores the byte-exact predecessor body selected by catalog state and
+--   deliberately keeps reminders disabled/unscheduled.
 -- ════════════════════════════════════════════════
 
 DO $preflight$
 DECLARE
   v_oid oid := to_regprocedure('public.notify_emit(text,jsonb)');
+  v_source_hash text;
 BEGIN
   IF v_oid IS NULL THEN
-    RAISE EXCEPTION 'preserve notify event id: missing public.notify_emit(text,jsonb)';
+    RAISE EXCEPTION 'preserve notify event id: function missing';
   END IF;
 
   IF (
@@ -52,8 +56,13 @@ BEGIN
     WHERE namespace_record.nspname = 'public'
       AND function_record.proname = 'notify_emit'
   ) IS DISTINCT FROM 1 THEN
-    RAISE EXCEPTION 'preserve notify event id: notify_emit overload drift';
+    RAISE EXCEPTION 'preserve notify event id: overload drift';
   END IF;
+
+  SELECT md5(function_record.prosrc)
+    INTO v_source_hash
+  FROM pg_proc function_record
+  WHERE function_record.oid = v_oid;
 
   IF NOT EXISTS (
     SELECT 1
@@ -62,14 +71,29 @@ BEGIN
       AND pg_get_userbyid(function_record.proowner) = 'postgres'
       AND function_record.prosecdef
       AND function_record.proconfig = ARRAY['search_path=public']::text[]
-      AND md5(function_record.prosrc) = 'c72e0f7fd40a4abec42cce1cd912a45b'
+      AND md5(function_record.prosrc) IN (
+        'c72e0f7fd40a4abec42cce1cd912a45b',
+        '72d1973cff37b95c7149700a7c5bb5b7'
+      )
   ) THEN
     RAISE EXCEPTION
-      'preserve notify event id: live function drift (md5 %)',
-      (SELECT md5(prosrc) FROM pg_proc WHERE oid = v_oid);
+      'preserve notify event id: predecessor drift (md5 %)',
+      v_source_hash;
   END IF;
 
-  IF has_function_privilege('PUBLIC', v_oid, 'EXECUTE')
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid = v_oid
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
      OR has_function_privilege('anon', v_oid, 'EXECUTE')
      OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
      OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
@@ -78,8 +102,6 @@ BEGIN
 END;
 $preflight$;
 
--- Release containment: no new reminder claims or sends are allowed until the
--- exact compatible Production Worker deployment has been verified.
 UPDATE public.notification_types
 SET enabled = false
 WHERE type_key = 'appointment.reminder'
@@ -114,6 +136,8 @@ DECLARE
   v_secret text;
   v_body jsonb;
   v_event_id jsonb;
+  v_guarded_event_id uuid;
+  v_occurrence_valid boolean := false;
 BEGIN
   IF p_type_key IS NULL THEN RETURN; END IF;
   SELECT enabled
@@ -140,14 +164,49 @@ BEGIN
 
   v_body := COALESCE(p_body, '{}'::jsonb);
   v_event_id := v_body -> 'notification_event_id';
-  IF v_event_id IS NULL
-     OR jsonb_typeof(v_event_id) NOT IN ('string', 'number')
-     OR NULLIF(btrim(v_body ->> 'notification_event_id'), '') IS NULL THEN
+
+  IF p_type_key IN (
+    'appointment.assigned',
+    'appointment.updated',
+    'appointment.canceled',
+    'timesheet.change_requested',
+    'timesheet.change_reviewed'
+  ) THEN
+    BEGIN
+      v_guarded_event_id :=
+        NULLIF(btrim(v_body ->> 'notification_event_id'), '')::uuid;
+    EXCEPTION
+      WHEN invalid_text_representation THEN
+        RETURN;
+    END;
+
+    IF v_guarded_event_id IS NULL
+       OR to_regclass('public.notification_producer_occurrences') IS NULL THEN
+      RETURN;
+    END IF;
+
+    EXECUTE $query$
+      SELECT EXISTS (
+        SELECT 1
+        FROM public.notification_producer_occurrences occurrence
+        WHERE occurrence.id = $1
+          AND occurrence.type_key = $2
+      )
+    $query$
+      INTO v_occurrence_valid
+      USING v_guarded_event_id, p_type_key;
+
+    IF v_occurrence_valid IS NOT TRUE THEN
+      RETURN;
+    END IF;
+
+    v_event_id := to_jsonb(v_guarded_event_id::text);
+  ELSIF v_event_id IS NULL
+        OR jsonb_typeof(v_event_id) NOT IN ('string', 'number')
+        OR NULLIF(btrim(v_body ->> 'notification_event_id'), '') IS NULL THEN
     v_event_id := to_jsonb(gen_random_uuid()::text);
   END IF;
 
-  -- The function argument owns type_key. The service-only producer owns a
-  -- stable occurrence id when it supplies one; missing/blank ids get a UUID.
   v_body := (v_body - 'type_key' - 'notification_event_id')
     || jsonb_build_object(
       'notification_event_id', v_event_id,
@@ -167,29 +226,53 @@ BEGIN
 END;
 $function$;
 
+ALTER FUNCTION public.notify_emit(text, jsonb)
+  OWNER TO postgres;
 REVOKE EXECUTE ON FUNCTION public.notify_emit(text, jsonb)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.notify_emit(text, jsonb)
   TO service_role;
 
 DO $postflight$
 DECLARE
   v_oid oid := to_regprocedure('public.notify_emit(text,jsonb)');
-  v_source text;
 BEGIN
-  SELECT prosrc INTO v_source FROM pg_proc WHERE oid = v_oid;
-  IF v_source NOT LIKE '%v_event_id := v_body -> ''notification_event_id'';%'
-     OR v_source NOT LIKE '%v_body := (v_body - ''type_key'' - ''notification_event_id'')%'
-     OR v_source NOT LIKE '%''notification_event_id'', v_event_id%'
-     OR v_source LIKE '%''notification_event_id'',%gen_random_uuid(),%''type_key''%' THEN
-    RAISE EXCEPTION 'preserve notify event id: replacement body did not land';
+  IF (
+    SELECT count(*)
+    FROM pg_proc function_record
+    JOIN pg_namespace namespace_record
+      ON namespace_record.oid = function_record.pronamespace
+    WHERE namespace_record.nspname = 'public'
+      AND function_record.proname = 'notify_emit'
+  ) IS DISTINCT FROM 1 OR NOT EXISTS (
+    SELECT 1
+    FROM pg_proc function_record
+    WHERE function_record.oid = v_oid
+      AND pg_get_userbyid(function_record.proowner) = 'postgres'
+      AND function_record.prosecdef
+      AND function_record.proconfig = ARRAY['search_path=public']::text[]
+      AND md5(function_record.prosrc) = 'ea3a9b3b6cca96722c008d7e9b23f6bc'
+  ) THEN
+    RAISE EXCEPTION 'preserve notify event id: replacement drift';
   END IF;
 
-  IF has_function_privilege('PUBLIC', v_oid, 'EXECUTE')
+  IF EXISTS (
+       SELECT 1
+       FROM pg_proc function_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           function_record.proacl,
+           acldefault('f', function_record.proowner)
+         )
+       ) acl
+       WHERE function_record.oid = v_oid
+         AND acl.grantee = 0
+         AND acl.privilege_type = 'EXECUTE'
+     )
      OR has_function_privilege('anon', v_oid, 'EXECUTE')
      OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
      OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
-    RAISE EXCEPTION 'preserve notify event id: postflight execute-grant drift';
+    RAISE EXCEPTION 'preserve notify event id: postflight grant drift';
   END IF;
 
   IF EXISTS (
@@ -200,7 +283,7 @@ BEGIN
     WHERE type_key = 'appointment.reminder'
       AND enabled
   ) THEN
-    RAISE EXCEPTION 'preserve notify event id: reminder containment did not land';
+    RAISE EXCEPTION 'preserve notify event id: reminder containment drift';
   END IF;
 END;
 $postflight$;
