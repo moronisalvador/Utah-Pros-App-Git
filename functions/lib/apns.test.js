@@ -38,6 +38,7 @@ function dbWithTokens(tokens) {
     select: vi.fn(async () => tokens),
     rpc: vi.fn(async (fn) => [
       'claim_native_push_delivery',
+      'claim_guarded_native_push_delivery',
       'release_native_push_delivery_claim',
       'prune_stale_native_device_token',
     ].includes(fn)),
@@ -77,6 +78,55 @@ describe('stableApnsId', () => {
 });
 
 describe('sendNativePushToEmployee', () => {
+  it('rechecks guarded authority and exact token/environment inside the claim before Apple', async () => {
+    const db = {
+      select: vi.fn(async () => [{
+        id: 'token-revoked',
+        token: 'private-token',
+        updated_at: '2026-07-28T12:00:00.000Z',
+      }]),
+      rpc: vi.fn(async (fn) => fn !== 'claim_guarded_native_push_delivery'),
+    };
+    const fetchImpl = vi.fn();
+    const producerClaim = {
+      notificationEventId: '11111111-1111-4111-8111-111111111111',
+      typeKey: 'appointment.assigned',
+      entityType: 'appointment_crew',
+      entityId: '22222222-2222-4222-8222-222222222222',
+    };
+
+    const result = await sendNativePushToEmployee({
+      db,
+      env: CONFIG,
+      employeeId: '33333333-3333-4333-8333-333333333333',
+      typeKey: 'appointment.assigned',
+      notificationBody: {
+        notification_event_id: producerClaim.notificationEventId,
+        appointment_crew_id: producerClaim.entityId,
+      },
+      eventKey: 'guarded-occurrence',
+      guardedProducerClaim: producerClaim,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    expect(db.rpc).toHaveBeenCalledWith(
+      'claim_guarded_native_push_delivery',
+      expect.objectContaining({
+        p_notification_event_id: producerClaim.notificationEventId,
+        p_employee_id: '33333333-3333-4333-8333-333333333333',
+        p_type_key: producerClaim.typeKey,
+        p_entity_type: producerClaim.entityType,
+        p_entity_id: producerClaim.entityId,
+        p_device_token_id: 'token-revoked',
+        p_token: 'private-token',
+        p_apns_environment: 'sandbox',
+      }),
+    );
+    expect(result.results[0].reason).toBe('delivery_already_claimed');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('uses the bounded default HTTP client when a caller does not inject one', async () => {
     const globalFetch = vi.fn(async (_url, options) => {
       expect(options.signal).toBeInstanceOf(AbortSignal);

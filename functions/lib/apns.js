@@ -183,8 +183,26 @@ async function claimDelivery(db, {
   employeeId,
   deviceTokenId,
   deviceFingerprint,
+  deviceToken,
+  apnsEnvironment,
+  guardedProducerClaim = null,
 }) {
   try {
+    if (guardedProducerClaim) {
+      return await db.rpc('claim_guarded_native_push_delivery', {
+        p_delivery_key: deliveryKey,
+        p_notification_event_id:
+          guardedProducerClaim.notificationEventId,
+        p_employee_id: employeeId,
+        p_type_key: guardedProducerClaim.typeKey,
+        p_entity_type: guardedProducerClaim.entityType,
+        p_entity_id: guardedProducerClaim.entityId,
+        p_device_token_id: deviceTokenId,
+        p_device_fingerprint: deviceFingerprint,
+        p_token: deviceToken,
+        p_apns_environment: apnsEnvironment,
+      }) === true;
+    }
     return await db.rpc('claim_native_push_delivery', {
       p_delivery_key: deliveryKey,
       p_employee_id: employeeId,
@@ -203,6 +221,7 @@ export async function sendNativePushToEmployee({
   typeKey,
   notificationBody = {},
   eventKey,
+  guardedProducerClaim = null,
   fetchImpl = fetchWithTimeout,
   signJwtImpl = signApnsJwt,
 }) {
@@ -323,6 +342,9 @@ export async function sendNativePushToEmployee({
       employeeId,
       deviceTokenId: row.id,
       deviceFingerprint,
+      deviceToken: row.token,
+      apnsEnvironment: config.environment,
+      guardedProducerClaim,
     });
     if (!claimed) {
       return {
@@ -423,6 +445,9 @@ export async function sendNativePushToEmployee({
           employeeId,
           deviceTokenId: row.id,
           deviceFingerprint,
+          deviceToken: row.token,
+          apnsEnvironment: config.environment,
+          guardedProducerClaim,
         });
         if (!claimed) {
           return {
