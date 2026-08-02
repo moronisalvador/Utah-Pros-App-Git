@@ -34,6 +34,7 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 - `tests/qa/unit/appointment-reminder-delivery-contract.test.js`
 - `.claude/rules/appointment-reminder-wave-ownership.md`
 - `.claude/rules/initiative-status.md`
+- `.claude/tooling-governance.json`
 
 `functions/api/notify.js` and its test are shared hotspots with the separate five-producer
 authorization candidate. The standalone branch keeps the reminder outside that candidate's exact
