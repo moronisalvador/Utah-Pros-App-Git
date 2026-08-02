@@ -153,13 +153,18 @@ The reversible notification producer containment also applied from exact reviewe
 - Candidate repair `20260801215912_notification_producer_authorization.sql` is repository-only on
   `codex/notification-producer-authorization`; it has not been applied to `qa-staging` or the
   shared project. It binds browser actor IDs to `auth.uid()`, closes anonymous appointment access,
-  applies locked crew diffs, serializes/idempotently retries timesheet decisions, adds durable
-  five-producer occurrence IDs, and gives bell/Web Push/email the service-only claim posture
-  already used by APNs. Its recovery rollback is intentionally fail-closed, and both files keep
-  the same five flags disabled. Credential-free build/test/lint/migration hygiene passed; the
-  sentinel-locked SQL behavior proof is authored but cannot run until the governed local
-  Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider, or device action is
-  implied.
+  applies locked crew diffs, makes crew identity immutable and active-internal-only, and
+  serializes/idempotently retries timesheet decisions. Timesheet audiences and copy are rebuilt
+  from locked database rows, time-request reads are requester-or-management scoped, and durable
+  occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
+  delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
+  Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
+  fail-closed, and both files keep the same five flags disabled. Credential-free focused
+  worker/source-contract tests, full build/test, lint, migration hygiene, and the migration,
+  worker-security and anonymous-grant reviews pass. Final current-`origin/dev` reconciliation and
+  release review remain. The sentinel-locked SQL behavior proof is authored but cannot run until
+  the governed local Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider,
+  or device action is implied.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
