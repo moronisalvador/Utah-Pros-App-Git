@@ -52,6 +52,7 @@ BEGIN
   PERFORM set_config('upr.npa.auth_admin', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.auth_inactive', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.auth_external', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.auth_orphan', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.employee_tech', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.employee_other', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.employee_admin', gen_random_uuid()::text, true);
@@ -59,9 +60,21 @@ BEGIN
   PERFORM set_config('upr.npa.employee_external', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.job', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.appointment', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.owned_appointment', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.service_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.private_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.entry', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.occurrence', gen_random_uuid()::text, true);
+  PERFORM set_config(
+    'upr.npa.requested_occurrence',
+    gen_random_uuid()::text,
+    true
+  );
+  PERFORM set_config(
+    'upr.npa.reviewed_occurrence',
+    gen_random_uuid()::text,
+    true
+  );
 END;
 $fixture_ids$;
 
@@ -95,7 +108,8 @@ FROM unnest(ARRAY[
   'upr.npa.auth_other',
   'upr.npa.auth_admin',
   'upr.npa.auth_inactive',
-  'upr.npa.auth_external'
+  'upr.npa.auth_external',
+  'upr.npa.auth_orphan'
 ]) setting_key;
 
 INSERT INTO public.employees (
@@ -155,12 +169,19 @@ VALUES (
 );
 
 INSERT INTO public.appointments (id, job_id, title, date)
-VALUES (
-  current_setting('upr.npa.appointment')::uuid,
-  current_setting('upr.npa.job')::uuid,
-  '[NPA isolated] Appointment',
-  CURRENT_DATE
-);
+VALUES
+  (
+    current_setting('upr.npa.appointment')::uuid,
+    current_setting('upr.npa.job')::uuid,
+    '[NPA isolated] Appointment',
+    CURRENT_DATE
+  ),
+  (
+    current_setting('upr.npa.service_appointment')::uuid,
+    current_setting('upr.npa.job')::uuid,
+    '[NPA isolated] Service appointment',
+    CURRENT_DATE
+  );
 
 INSERT INTO public.appointment_crew (
   appointment_id,
@@ -286,6 +307,207 @@ SELECT pg_temp.expect_sqlstate(
   )
 );
 
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_other'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $unassigned_public_update$
+BEGIN
+  UPDATE public.appointments
+  SET notes = '[NPA isolated] unassigned public write'
+  WHERE id = current_setting('upr.npa.appointment')::uuid;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'unassigned tech mutated a public appointment';
+  END IF;
+END;
+$unassigned_public_update$;
+
+SELECT pg_temp.expect_sqlstate(
+  'unassigned tech cannot update a public appointment through RPC',
+  format(
+    'SELECT public.update_appointment(%L::uuid,NULL,NULL,NULL,%L,NULL,NULL,NULL,NULL)',
+    current_setting('upr.npa.appointment'),
+    '[NPA isolated] unassigned RPC write'
+  )
+);
+
+DO $unassigned_public_delete$
+BEGIN
+  DELETE FROM public.appointments
+  WHERE id = current_setting('upr.npa.appointment')::uuid;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'unassigned tech directly deleted a public appointment';
+  END IF;
+END;
+$unassigned_public_delete$;
+
+SELECT pg_temp.expect_sqlstate(
+  'unassigned tech cannot delete a public appointment through RPC',
+  format(
+    'SELECT public.delete_appointment(%L::uuid,NULL,NULL)',
+    current_setting('upr.npa.appointment')
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'unassigned tech cannot directly join a public appointment crew',
+  format(
+    'INSERT INTO public.appointment_crew (appointment_id,employee_id,role) VALUES (%L::uuid,%L::uuid,%L)',
+    current_setting('upr.npa.appointment'),
+    current_setting('upr.npa.employee_other'),
+    'helper'
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'unassigned tech cannot sync a public appointment crew',
+  format(
+    'SELECT * FROM public.sync_appointment_crew(%L::uuid,%L::jsonb)',
+    current_setting('upr.npa.appointment'),
+    jsonb_build_array(
+      jsonb_build_object(
+        'employee_id',
+        current_setting('upr.npa.employee_tech'),
+        'role',
+        'tech'
+      ),
+      jsonb_build_object(
+        'employee_id',
+        current_setting('upr.npa.employee_other'),
+        'role',
+        'helper'
+      )
+    )::text
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'browser cannot forge a new appointment creator',
+  format(
+    'INSERT INTO public.appointments (id,job_id,title,date,created_by_employee_id) VALUES (%L::uuid,%L::uuid,%L,CURRENT_DATE,%L::uuid)',
+    current_setting('upr.npa.owned_appointment'),
+    current_setting('upr.npa.job'),
+    '[NPA isolated] Forged owner',
+    current_setting('upr.npa.employee_tech')
+  )
+);
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_tech'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+INSERT INTO public.appointments (
+  id,
+  job_id,
+  title,
+  date
+)
+VALUES (
+  current_setting('upr.npa.owned_appointment')::uuid,
+  current_setting('upr.npa.job')::uuid,
+  '[NPA isolated] Caller-owned appointment',
+  CURRENT_DATE
+);
+INSERT INTO public.appointment_crew (
+  appointment_id,
+  employee_id,
+  role
+)
+VALUES (
+  current_setting('upr.npa.owned_appointment')::uuid,
+  current_setting('upr.npa.employee_tech')::uuid,
+  'lead'
+);
+DO $creator_binding_compatibility$
+BEGIN
+  IF (
+    SELECT appointment.created_by_employee_id
+    FROM public.appointments appointment
+    WHERE appointment.id = current_setting('upr.npa.owned_appointment')::uuid
+  ) IS DISTINCT FROM current_setting('upr.npa.employee_tech')::uuid THEN
+    RAISE EXCEPTION 'direct appointment creation did not bind its caller';
+  END IF;
+
+  PERFORM public.delete_appointment(
+    current_setting('upr.npa.owned_appointment')::uuid,
+    NULL,
+    '[NPA isolated] creator compatibility'
+  );
+  IF EXISTS (
+    SELECT 1
+    FROM public.appointments appointment
+    WHERE appointment.id = current_setting('upr.npa.owned_appointment')::uuid
+  ) THEN
+    RAISE EXCEPTION 'appointment creator could not use the compatible delete RPC';
+  END IF;
+END;
+$creator_binding_compatibility$;
+
+RESET ROLE;
+SET LOCAL ROLE service_role;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"role":"service_role"}',
+  true
+);
+SELECT public.update_appointment(
+  p_appointment_id => current_setting('upr.npa.appointment')::uuid,
+  p_date => CURRENT_DATE + 1,
+  p_actor_id => current_setting('upr.npa.employee_admin')::uuid
+);
+SELECT public.delete_appointment(
+  p_appointment_id => current_setting('upr.npa.service_appointment')::uuid,
+  p_actor_id => current_setting('upr.npa.employee_admin')::uuid,
+  p_reason => '[NPA isolated] trusted caller compatibility'
+);
+DO $trusted_actor_history$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.appointment_status_history history
+    WHERE history.appointment_id = current_setting('upr.npa.appointment')::uuid
+      AND history.event_type = 'rescheduled'
+      AND history.actor_id = current_setting('upr.npa.employee_admin')::uuid
+  )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM public.appointment_status_history history
+       WHERE history.appointment_id =
+         current_setting('upr.npa.service_appointment')::uuid
+         AND history.event_type = 'deleted'
+         AND history.actor_id = current_setting('upr.npa.employee_admin')::uuid
+     ) THEN
+    RAISE EXCEPTION 'trusted caller actor was not retained in appointment history';
+  END IF;
+END;
+$trusted_actor_history$;
+
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_tech'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
 DO $compatible_update$
 DECLARE
   v_updated jsonb;
@@ -353,6 +575,31 @@ BEGIN
   END IF;
 END;
 $crew_diff$;
+
+UPDATE public.appointment_crew
+SET role = 'lead'
+WHERE appointment_id = current_setting('upr.npa.appointment')::uuid
+  AND employee_id = current_setting('upr.npa.employee_tech')::uuid;
+
+SELECT pg_temp.expect_sqlstate(
+  'browser cannot relabel an existing crew occurrence to another employee',
+  format(
+    'UPDATE public.appointment_crew SET employee_id=%L::uuid WHERE appointment_id=%L::uuid AND employee_id=%L::uuid',
+    current_setting('upr.npa.employee_admin'),
+    current_setting('upr.npa.appointment'),
+    current_setting('upr.npa.employee_tech')
+  )
+);
+
+SELECT pg_temp.expect_sqlstate(
+  'browser cannot directly assign an external employee',
+  format(
+    'INSERT INTO public.appointment_crew (appointment_id,employee_id,role) VALUES (%L::uuid,%L::uuid,%L)',
+    current_setting('upr.npa.appointment'),
+    current_setting('upr.npa.employee_external'),
+    'helper'
+  )
+);
 
 SELECT pg_temp.expect_sqlstate(
   'crew sync rejects an external employee',
@@ -574,6 +821,118 @@ BEGIN
 END;
 $submit_idempotency$;
 
+DO $requester_read_compatibility$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+      AND request.requested_by =
+        current_setting('upr.npa.employee_tech')::uuid
+  ) THEN
+    RAISE EXCEPTION 'requester could not read their own change request';
+  END IF;
+END;
+$requester_read_compatibility$;
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_other'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $unrelated_request_hidden$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+  ) THEN
+    RAISE EXCEPTION 'unrelated employee read another timesheet request';
+  END IF;
+END;
+$unrelated_request_hidden$;
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_inactive'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $inactive_request_hidden$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+  ) THEN
+    RAISE EXCEPTION 'inactive employee read a timesheet request';
+  END IF;
+END;
+$inactive_request_hidden$;
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_external'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $external_request_hidden$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+  ) THEN
+    RAISE EXCEPTION 'external employee read a timesheet request';
+  END IF;
+END;
+$external_request_hidden$;
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_orphan'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
+DO $orphan_request_hidden$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+  ) THEN
+    RAISE EXCEPTION 'orphan account read a timesheet request';
+  END IF;
+END;
+$orphan_request_hidden$;
+
+SELECT set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub',
+    current_setting('upr.npa.auth_tech'),
+    'role',
+    'authenticated'
+  )::text,
+  true
+);
 SELECT pg_temp.expect_sqlstate(
   'different pending correction conflicts',
   format(
@@ -605,6 +964,18 @@ SELECT set_config(
   )::text,
   true
 );
+DO $admin_request_read_compatibility$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM public.time_entry_change_requests request
+    WHERE request.id = current_setting('upr.npa.request')::uuid
+  ) THEN
+    RAISE EXCEPTION 'admin RequestsView lost timesheet request access';
+  END IF;
+END;
+$admin_request_read_compatibility$;
+
 SELECT public.review_time_entry_change_request(
   current_setting('upr.npa.request')::uuid,
   false,
@@ -629,13 +1000,28 @@ INSERT INTO public.notification_producer_occurrences (
   entity_type,
   entity_id
 )
-VALUES (
-  current_setting('upr.npa.occurrence')::uuid,
-  'appointment.updated',
-  'notification-producer-authorization-isolated',
-  'appointment',
-  current_setting('upr.npa.appointment')::uuid
-);
+VALUES
+  (
+    current_setting('upr.npa.occurrence')::uuid,
+    'appointment.updated',
+    'notification-producer-authorization-isolated',
+    'appointment',
+    current_setting('upr.npa.appointment')::uuid
+  ),
+  (
+    current_setting('upr.npa.requested_occurrence')::uuid,
+    'timesheet.change_requested',
+    'notification-producer-authorization-isolated-timesheet-request',
+    'time_entry_change_request',
+    current_setting('upr.npa.request')::uuid
+  ),
+  (
+    current_setting('upr.npa.reviewed_occurrence')::uuid,
+    'timesheet.change_reviewed',
+    'notification-producer-authorization-isolated-timesheet-review',
+    'time_entry_change_request',
+    current_setting('upr.npa.request')::uuid
+  );
 
 SET LOCAL ROLE authenticated;
 SELECT set_config(
@@ -654,7 +1040,7 @@ SELECT pg_temp.expect_sqlstate(
     'SELECT public.claim_notification_delivery(%L::uuid,%L::uuid,%L::uuid,%L,%L,%L::uuid,%L,%L::uuid)',
     gen_random_uuid(),
     current_setting('upr.npa.occurrence'),
-    current_setting('upr.npa.employee_admin'),
+    current_setting('upr.npa.employee_tech'),
     'appointment.updated',
     'bell',
     gen_random_uuid(),
@@ -675,7 +1061,7 @@ BEGIN
   IF public.claim_notification_delivery(
        v_delivery_key,
        current_setting('upr.npa.occurrence')::uuid,
-       current_setting('upr.npa.employee_admin')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
        'appointment.updated',
        'bell',
        v_target,
@@ -685,7 +1071,7 @@ BEGIN
      OR public.claim_notification_delivery(
        v_delivery_key,
        current_setting('upr.npa.occurrence')::uuid,
-       current_setting('upr.npa.employee_admin')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
        'appointment.updated',
        'bell',
        v_target,
@@ -693,6 +1079,44 @@ BEGIN
        current_setting('upr.npa.appointment')::uuid
      ) IS NOT FALSE THEN
     RAISE EXCEPTION 'delivery occurrence was not claimed exactly once';
+  END IF;
+
+  IF public.validate_notification_producer_delivery(
+       current_setting('upr.npa.occurrence')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.employee_admin')::uuid
+     ) IS NOT FALSE
+     OR public.validate_notification_producer_delivery(
+       current_setting('upr.npa.requested_occurrence')::uuid,
+       'timesheet.change_requested',
+       'time_entry_change_request',
+       current_setting('upr.npa.request')::uuid,
+       current_setting('upr.npa.employee_admin')::uuid
+     ) IS NOT TRUE
+     OR public.validate_notification_producer_delivery(
+       current_setting('upr.npa.requested_occurrence')::uuid,
+       'timesheet.change_requested',
+       'time_entry_change_request',
+       current_setting('upr.npa.request')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid
+     ) IS NOT FALSE
+     OR public.validate_notification_producer_delivery(
+       current_setting('upr.npa.reviewed_occurrence')::uuid,
+       'timesheet.change_reviewed',
+       'time_entry_change_request',
+       current_setting('upr.npa.request')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid
+     ) IS NOT TRUE
+     OR public.validate_notification_producer_delivery(
+       current_setting('upr.npa.reviewed_occurrence')::uuid,
+       'timesheet.change_reviewed',
+       'time_entry_change_request',
+       current_setting('upr.npa.request')::uuid,
+       current_setting('upr.npa.employee_admin')::uuid
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'delivery audience was not bound to its producer entity';
   END IF;
 END;
 $delivery_claim$;

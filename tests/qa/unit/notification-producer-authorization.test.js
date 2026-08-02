@@ -32,6 +32,10 @@ const rollback = source(
   'supabase/rollbacks/20260801215912_notification_producer_authorization.rollback.sql',
 );
 const notifyWorker = source('functions/api/notify.js');
+const apnsWorker = source('functions/lib/apns.js');
+const isolatedProof = source(
+  'supabase/tests/notification_producer_authorization_isolated.sql',
+);
 const guardedTypes = [
   'appointment.assigned',
   'appointment.updated',
@@ -83,6 +87,7 @@ describe('notification producer authorization migration', () => {
 
     for (const rpc of [
       'update_appointment',
+      'delete_appointment',
       'submit_time_entry_change_request',
       'review_time_entry_change_request',
       'sync_appointment_crew',
@@ -103,7 +108,22 @@ describe('notification producer authorization migration', () => {
       'CREATE OR REPLACE FUNCTION public.can_current_employee_manage_appointment_crew(',
     );
     expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.can_current_employee_mutate_appointment(',
+    );
+    expect(migration).toContain(
       'CREATE OR REPLACE FUNCTION public.is_current_appointment_manager()',
+    );
+    expect(migration).toContain(
+      'ADD COLUMN created_by_employee_id uuid',
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.bind_appointment_creator()',
+    );
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.is_trusted_notification_producer_caller()',
+    );
+    expect(migration).toContain(
+      "'NOT_AUTHORIZED: appointment creator does not match caller'",
     );
     expect(migration).toContain('appointment.is_private IS FALSE');
     expect(migration).toContain(
@@ -117,12 +137,99 @@ describe('notification producer authorization migration', () => {
       'public.can_current_employee_manage_appointment_crew(appointment_id)',
     );
     expect(migration).toContain(
+      'public.can_current_employee_mutate_appointment(id)',
+    );
+    expect(migration).toContain(
       "'NOT_AUTHORIZED: only active internal admins or project managers may change appointment privacy'",
+    );
+    expect(migration).toContain(
+      "'NOT_AUTHORIZED: appointment crew identity is immutable'",
+    );
+    expect(migration).toContain(
+      "'NOT_AUTHORIZED: active internal appointment crew required'",
+    );
+    expect(migration).toContain(
+      'NEW.employee_id IS DISTINCT FROM OLD.employee_id',
+    );
+    expect(migration).toContain(
+      "'public.enforce_private_appointment_role()'::regprocedure",
     );
     expect(migration).toContain(
       'OLD.is_private IS DISTINCT FROM NEW.is_private',
     );
     expect(migration).not.toContain('DROP POLICY');
+  });
+
+  it('freezes exact appointment policies/triggers and scopes timesheet request reads', () => {
+    expect(migration).toContain(
+      "policy.tablename IN ('appointments', 'appointment_crew')",
+    );
+    expect(migration).toContain(") <> 8");
+    expect(migration).toContain("policy.cmd = expected.command");
+    expect(migration).toContain("policy.permissive = 'PERMISSIVE'");
+    expect(migration).toContain(
+      "policy.roles = ARRAY['authenticated'::name]",
+    );
+    for (const triggerName of [
+      'trg_enforce_private_appointment',
+      'trg_appointment_notify',
+      'trg_appointment_crew_notify',
+      'trg_appointments_bind_creator',
+    ]) {
+      expect(migration).toContain(`'${triggerName}'`);
+    }
+    expect(migration).toContain("trigger.tgenabled IN ('O', 'A')");
+    expect(migration).toContain('trigger.tgqual IS NULL');
+    expect(migration).toContain("trigger.tgattr = ''::int2vector");
+    expect(migration).toContain('trigger.tgnargs = 0');
+
+    expect(migration).toContain(
+      'CREATE OR REPLACE FUNCTION public.can_current_employee_read_time_entry_change_request(',
+    );
+    expect(migration).toContain('ALTER POLICY tecr_read');
+    expect(migration).toContain(
+      "ARRAY['anon'::name, 'authenticated'::name]",
+    );
+    expect(migration).toContain(
+      'ALTER TABLE public.time_entry_change_requests ENABLE ROW LEVEL SECURITY;',
+    );
+    expect(migration).toContain(
+      'REVOKE ALL ON TABLE public.time_entry_change_requests FROM PUBLIC, anon;',
+    );
+    expect(migration).toContain(
+      'REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER',
+    );
+    expect(migration).toContain(
+      'GRANT SELECT ON TABLE public.time_entry_change_requests TO authenticated;',
+    );
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.can_current_employee_read_time_entry_change_request(uuid)\n  TO authenticated, service_role;',
+    );
+    expect(migration).toContain(
+      'employee.id = p_requested_by',
+    );
+    for (const role of [
+      "'admin'",
+      "'office'",
+      "'project_manager'",
+      "'supervisor'",
+    ]) {
+      expect(migration).toContain(role);
+    }
+    expect(migration).toContain(
+      "policy.tablename = 'time_entry_change_requests'",
+    );
+    expect(migration).toContain(") <> 1");
+    for (const proof of [
+      'requester could not read their own change request',
+      'unrelated employee read another timesheet request',
+      'inactive employee read a timesheet request',
+      'external employee read a timesheet request',
+      'orphan account read a timesheet request',
+      'admin RequestsView lost timesheet request access',
+    ]) {
+      expect(isolatedProof).toContain(proof);
+    }
   });
 
   it('serializes crew and timesheet decisions and makes exact submit retries idempotent', () => {
@@ -169,10 +276,29 @@ describe('notification producer authorization migration', () => {
     );
     expect(update).toContain('FOR UPDATE');
     expect(update).toContain(
-      'public.can_current_employee_access_appointment(p_appointment_id)',
+      'public.can_current_employee_mutate_appointment(p_appointment_id)',
+    );
+    expect(update).toContain(
+      'NOT public.is_trusted_notification_producer_caller()',
     );
     expect(crew).toContain(
       'public.can_current_employee_manage_appointment_crew(',
+    );
+
+    const remove = functionBody(
+      migration,
+      'delete_appointment',
+      'ALTER FUNCTION public.delete_appointment',
+    );
+    expect(remove).toContain('FOR UPDATE');
+    expect(remove).toContain(
+      'public.can_current_employee_mutate_appointment(',
+    );
+    expect(remove).toContain(
+      'NOT public.is_trusted_notification_producer_caller()',
+    );
+    expect(remove).toContain(
+      'public.require_notification_producer_actor(p_actor_id, false)',
     );
   });
 
@@ -201,8 +327,38 @@ describe('notification producer authorization migration', () => {
     expect(migration).toContain(
       'occurrence.entity_id = p_entity_id',
     );
+    expect(migration).toContain('crew.id = p_entity_id');
+    expect(migration).toContain(
+      'crew.appointment_id = p_entity_id',
+    );
+    expect(migration).toContain(
+      "employee.role::text = 'admin'",
+    );
+    expect(migration).toContain(
+      'request.requested_by = p_employee_id',
+    );
     expect(migration).toContain(
       'GRANT EXECUTE ON FUNCTION public.claim_notification_delivery(',
+    );
+    expect(migration).toContain(
+      'CREATE FUNCTION public.claim_guarded_native_push_delivery(',
+    );
+    expect(migration).toContain('token.token = p_token');
+    expect(migration).toContain("token.platform = 'ios'");
+    expect(migration).toContain(
+      'token.apns_environment = p_apns_environment',
+    );
+    expect(migration).toContain(
+      'CREATE FUNCTION public.claim_guarded_notification_target_delivery(',
+    );
+    expect(migration).toContain(
+      'subscription.endpoint = p_target',
+    );
+    expect(migration).toContain(
+      'lower(btrim(employee.email)) = lower(btrim(p_target))',
+    );
+    expect(migration).toContain(
+      'public.validate_notification_producer_delivery(',
     );
     expect(migration).toContain(
       ') TO service_role;',
@@ -237,6 +393,29 @@ describe('notification producer authorization migration', () => {
     );
     expect(notifyWorker).toContain(
       "db.rpc('release_notification_delivery_claim'",
+    );
+    expect(notifyWorker).toContain('guardedProducerClaim: {');
+    expect(apnsWorker).toContain(
+      "db.rpc('claim_guarded_native_push_delivery'",
+    );
+    expect(notifyWorker).toContain(
+      "'claim_guarded_notification_target_delivery'",
+    );
+    expect(notifyWorker.indexOf(
+      'if (TIMESHEET_AUDIENCE_TYPES.has(typeKey))',
+    )).toBeLessThan(
+      notifyWorker.indexOf(
+        'if (Array.isArray(body.recipient_ids) && body.recipient_ids.length)',
+      ),
+    );
+    expect(notifyWorker).toContain(
+      "'time_entry_change_requests',",
+    );
+    expect(notifyWorker).toContain(
+      "entity_type: 'time_entry_change_request'",
+    );
+    expect(notifyWorker).toContain(
+      "link: '/time-tracking'",
     );
   });
 
