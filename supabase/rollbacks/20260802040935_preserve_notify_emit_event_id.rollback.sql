@@ -2,15 +2,17 @@
 -- ROLLBACK: 20260802040935_preserve_notify_emit_event_id
 -- ════════════════════════════════════════════════
 --
--- Restores the byte-exact notify_emit predecessor selected by catalog state:
--- the guarded producer body when its occurrence ledger exists, otherwise the
--- live URL-allowlist baseline. Reminders remain disabled and unscheduled.
+-- Restores the byte-exact notify_emit predecessor selected by the marker that
+-- the forward migration recorded after validating its exact source and ACL.
+-- This stays correct even if another migration's rollback retains an inert
+-- occurrence table. Reminders remain disabled and unscheduled.
 -- ════════════════════════════════════════════════
 
 DO $rollback$
 DECLARE
   v_oid oid := to_regprocedure('public.notify_emit(text,jsonb)');
   v_expected_hash text;
+  v_predecessor_marker text;
 BEGIN
   IF v_oid IS NULL THEN
     RAISE EXCEPTION 'preserve notify event id rollback: function missing';
@@ -54,7 +56,11 @@ BEGIN
     RAISE EXCEPTION 'preserve notify event id rollback: execute-grant drift';
   END IF;
 
-  IF to_regclass('public.notification_producer_occurrences') IS NOT NULL THEN
+  SELECT obj_description(v_oid, 'pg_proc')
+    INTO v_predecessor_marker;
+
+  IF v_predecessor_marker =
+       'upr:20260802040935:predecessor=guarded' THEN
     v_expected_hash := '72d1973cff37b95c7149700a7c5bb5b7';
     EXECUTE $guarded$
 CREATE OR REPLACE FUNCTION public.notify_emit(
@@ -149,7 +155,8 @@ BEGIN
 END;
 $function$;
 $guarded$;
-  ELSE
+  ELSIF v_predecessor_marker =
+          'upr:20260802040935:predecessor=baseline' THEN
     v_expected_hash := 'c72e0f7fd40a4abec42cce1cd912a45b';
     EXECUTE $baseline$
 CREATE OR REPLACE FUNCTION public.notify_emit(
@@ -211,6 +218,10 @@ BEGIN
 END;
 $function$;
 $baseline$;
+  ELSE
+    RAISE EXCEPTION
+      'preserve notify event id rollback: predecessor marker drift (%)',
+      v_predecessor_marker;
   END IF;
 
   ALTER FUNCTION public.notify_emit(text, jsonb)
@@ -219,6 +230,7 @@ $baseline$;
     FROM PUBLIC, anon, authenticated, service_role;
   GRANT EXECUTE ON FUNCTION public.notify_emit(text, jsonb)
     TO service_role;
+  COMMENT ON FUNCTION public.notify_emit(text, jsonb) IS NULL;
 
   v_oid := to_regprocedure('public.notify_emit(text,jsonb)');
   IF (
@@ -236,6 +248,7 @@ $baseline$;
       AND function_record.prosecdef
       AND function_record.proconfig = ARRAY['search_path=public']::text[]
       AND md5(function_record.prosrc) = v_expected_hash
+      AND obj_description(function_record.oid, 'pg_proc') IS NULL
   ) THEN
     RAISE EXCEPTION 'preserve notify event id rollback: predecessor drift';
   END IF;

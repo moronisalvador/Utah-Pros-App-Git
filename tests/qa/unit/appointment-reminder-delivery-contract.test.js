@@ -153,6 +153,33 @@ describe('appointment reminder delivery release contract', () => {
     );
   });
 
+  it('records the exact predecessor instead of inferring it from retained tables', () => {
+    expect(migration).toContain(
+      "obj_description(function_record.oid, 'pg_proc') IS NULL",
+    );
+    expect(migration).toContain(
+      "'upr:20260802040935:predecessor=guarded'",
+    );
+    expect(migration).toContain(
+      "'upr:20260802040935:predecessor=baseline'",
+    );
+    expect(rollback).toContain(
+      "SELECT obj_description(v_oid, 'pg_proc')",
+    );
+    expect(rollback).toContain(
+      "v_predecessor_marker =\n       'upr:20260802040935:predecessor=guarded'",
+    );
+    expect(rollback).toContain(
+      "v_predecessor_marker =\n          'upr:20260802040935:predecessor=baseline'",
+    );
+    expect(rollback).not.toContain(
+      "to_regclass('public.notification_producer_occurrences')",
+    );
+    expect(rollback).toContain(
+      'COMMENT ON FUNCTION public.notify_emit(text, jsonb) IS NULL;',
+    );
+  });
+
   it('never reactivates reminders in either direction', () => {
     for (const sql of [migration, rollback]) {
       expect(sql).not.toMatch(
@@ -179,5 +206,28 @@ describe('appointment reminder delivery release contract', () => {
         'server-authoritative appointment crew',
       );
     }
+  });
+
+  it('records standalone ownership without absorbing the five-producer migration', () => {
+    const ownership = readFileSync(
+      new URL(
+        '../../../.claude/rules/appointment-reminder-wave-ownership.md',
+        import.meta.url,
+      ),
+      'utf8',
+    );
+    expect(ownership).toContain(
+      'codex/mobile-readiness-appointment-reminder-fix',
+    );
+    expect(ownership).toContain(
+      'supabase/migrations/20260802040935_preserve_notify_emit_event_id.sql',
+    );
+    expect(ownership).toContain('worker-security-reviewer');
+    expect(ownership).toContain('migration-safety-checker');
+    expect(ownership).toContain('anon-grant-auditor');
+    expect(ownership).toContain('mobile-readiness-release-auditor');
+    expect(ownership).toContain(
+      'must not absorb its unapplied migration or delivery-claim schema',
+    );
   });
 });
