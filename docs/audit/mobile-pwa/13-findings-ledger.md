@@ -376,26 +376,47 @@ excluded from the supported product promise before release.
   dedicated PNG/maskable/Apple asset suite; verify install, upgrade identity, crop/safe zone, dark
   launcher, and repeat launch on supported iOS/Android. Depends on brand/product approval.
 
-## MOB-OTA-019 — OTA readiness is acknowledged too early and channel compatibility is unproven
+## MOB-OTA-019 — OTA health/channel source remediated; signed-device compatibility remains unproven
 
 - **Category / Severity / Confidence / Effort / Blocks production:** Native OTA/update safety / P1 /
-  Confirmed / M / **Yes** before OTA is enabled.
-- **Production-readiness impact:** A Capgo bundle can be accepted before the application, auth, and
-  primary routes are usable; beta/production/binary compatibility and rollback are not proven.
+  Source-remediated, external proof pending / M / **Yes** before production OTA is enabled.
+- **Production-readiness impact:** The official UPR path remains default-off. The isolated UPR Dev
+  canary now has a late auth/route health gate, generated app/channel isolation, encryption,
+  native-version/compatibility controls, signed-artifact verification, and disable-only containment
+  source. The live no-charge dev app/channel/environment/key objects are configured; signed-device
+  interruption/rollback evidence is still absent.
 - **User or business impact:** A bad bundle can strand field devices or drift from native plugins and
   the shared database.
-- **Evidence:** `notifyAppReady()` runs at module load before `createRoot` and again on App mount;
-  client default channel is production with `resetWhenUpdate:false`; workflow selects channels
-  independently and is paused/manual.
+- **Evidence:** `NativeUpdateHealthGate.jsx` is inside native-route Suspense and refuses loading,
+  auth error, or expired-session state before calling guarded `markBundleReady`; checked-in
+  production config remains `autoUpdate:false`; `configure-ios-capgo-dev.mjs` patches only generated
+  `.upr.dev` config; manual `capgo-dev.yml` fixes `upr-dev-canary`, v2 encryption, compatibility,
+  unassigned staging, bounded network subprocesses, disable-only containment, and sanitized
+  evidence; the iOS artifact verifier re-reads the embedded config and fingerprints the RSA-4096
+  public half that the same protected signing job embeds only in the `.upr.dev` app/IPA. Live
+  2026-08-01 evidence records the `.upr.dev` Capgo app, default
+  `upr-dev-canary` channel, app-scoped `app_developer` API key, and branch-restricted `capgo-dev`
+  GitHub environment with the three encrypted secrets present. A fresh dev-only RSA-4096 v2
+  keypair rotation was accepted in `capgo-dev`, and the same public half was accepted in
+  `ios-dev-signing`; only secret names, presence, and successful write-only submissions were
+  verified. Fresh metadata timestamps for all three key submissions and an unchanged API-key
+  timestamp resolved the earlier pair-mismatch concern. PR #569 remains unmerged, and the protected
+  signing environment still lacks its five required private `IOS_DEV_*` Apple inputs. No archive was
+  dispatched and no bundle was uploaded or assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
-  `.github/workflows/capgo-deploy.yml:3-14,37-58`; native launch/update; all versioned contracts.
+  `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
+  `docs/mobile/capgo-dev-runbook.md`; native launch/update; all versioned contracts.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
-- **Recommended remediation / verification / dependencies:** Acknowledge only after a defined
-  health checkpoint; bind source/binary/plugin/database/channel IDs; verify beta isolation,
-  interrupted update, bad bundle rollback, offline boot, and downgrade on signed devices. Depends on
-  release telemetry (`MOB-OBS-024`) and a working native pipeline.
+- **Recommended remediation / verification / dependencies:** Keep private/API values secret-only
+  and never use a transient key artifact. Under separate exact owner gates, merge the reviewed
+  source to `dev`, privately populate only the isolated UPR Dev signing environment, and produce a
+  signed UPR Dev archive to verify the embedded public half and isolated identity; then, behind
+  separate upload/assignment/device gates, verify one-device canary isolation,
+  interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
+  official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
+  release telemetry (`MOB-OBS-024`) and the signed native pipeline.
 
 ## MOB-NATIVE-020 — Checked-in iOS release automation cannot produce the intended archive
 

@@ -172,8 +172,9 @@ was later made; see §6 for current gates.
   to an arbitrary `employee_id`; prune `device_tokens` on `400 BadDeviceToken`, not just `410 Gone`.
 - ~~`src/App.jsx`: call `nativeUpdater.markBundleReady()` on mount.~~
   **Superseded 2026-07-26:** OTA is exact-default-off and no boot path acknowledges a bundle.
-  A future explicit health checkpoint must call `markBundleReady({ healthVerified: true })`;
-  mounting React is not health proof.
+  **UPR Dev update 2026-08-01:** the official app remains exact-default-off. The isolated UPR Dev
+  canary now calls `markBundleReady({ healthVerified: true })` only after auth startup and the lazy
+  native route commit; Capgo provider/key/plan and signed-device rollback evidence remain gates.
 - Close-out: `npm run test` + `build` + `eslint` (changed files) → `migration-safety-checker` +
   `anon-grant-auditor` (mandatory, this ships a migration) → `upr-pattern-checker` → apply + verify
   the migration live via Supabase MCP → update `UPR-Web-Context.md` → PR into `dev`, stop.
@@ -294,7 +295,9 @@ Completed in source, pending final integration/release review:
   device intent is owner-lease-bound, APNs copy is generic, and taps require
   an opaque current-recipient match; public signing bearer routes remain valid
   app links but are rejected from Push payload data;
-- OTA is exact-default-off and has zero boot acknowledgment pending an explicit health gate;
+- official UPR OTA is exact-default-off; the isolated UPR Dev canary has a source health gate,
+  encrypted manual channel, signed-artifact verification, rollback and disable, with Capgo
+  provider/key/plan and signed-device proof still pending;
 - app-target `PrivacyInfo.xcprivacy` is registered and declares no tracking, UserDefaults `CA92.1`,
   and exactly 12 linked/non-tracking App Functionality data types, including Other Financial Info
   for retained OOP quote/pricing data; the archive/IPA verifier pins that exact declaration;

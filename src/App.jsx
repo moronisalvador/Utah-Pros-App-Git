@@ -38,6 +38,7 @@ import FieldShellRoute from '@/components/FieldShellRoute';
 import PublicNativeShell from '@/components/PublicNativeShell';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import NativeNavigationBridge from '@/components/NativeNavigationBridge';
+import NativeUpdateHealthGate from '@/components/NativeUpdateHealthGate';
 import RouteRestorer from '@/components/RouteRestorer';
 import { useNavDirection } from '@/lib/useNavDirection';
 import { hideSplash } from '@/lib/nativeAppearance';
@@ -398,6 +399,7 @@ function NativeRoutes() {
         <Route path="/" element={<Navigate to="/tech" replace />} />
         <Route path="*" element={<Navigate to="/tech" replace />} />
       </Routes>
+      <NativeUpdateHealthGate />
     </Suspense>
   );
 }

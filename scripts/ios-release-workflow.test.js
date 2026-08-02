@@ -59,9 +59,18 @@ const devWorkflow = readRepositoryFile(
 const capgoWorkflow = readRepositoryFile('.github/workflows/capgo-deploy.yml');
 const archiveJob = section(workflow, '  archive:', '  publish:');
 const publishJob = workflow.slice(workflow.indexOf('  publish:'));
-const devPreflightJob = section(devWorkflow, '  preflight:', '  archive:');
+const devPreflightJob = section(
+  devWorkflow,
+  '  preflight:',
+  '  archive:',
+);
 const devArchiveJob = section(devWorkflow, '  archive:', '  publish:');
 const devPublishJob = devWorkflow.slice(devWorkflow.indexOf('  publish:'));
+const devCapgoConfigStep = section(
+  devArchiveJob,
+  '      - name: Apply the isolated UPR Dev updater config inside the signing job',
+  '      - name: Reject uncommitted Capacitor project drift',
+);
 const fastfile = readRepositoryFile('ios/fastlane/Fastfile');
 const archiveLane = section(fastfile, '  lane :archive do', '  desc "Upload');
 const uploadLane = fastfile.slice(fastfile.indexOf('  lane :upload do'));
@@ -527,6 +536,11 @@ describe('UPR Dev TestFlight isolation contract', () => {
   it('uses separate GitHub environments and never requests external distribution', () => {
     expect(devArchiveJob).toContain('environment: ios-dev-signing');
     expect(devPublishJob).toContain('environment: ios-dev-testflight');
+    expect(devWorkflow).not.toContain('environment: capgo-dev');
+    expect(devWorkflow).not.toContain('upr-dev-capgo-config-');
+    expect(devWorkflow).not.toContain('CAPGO_DEV_PRIVATE_KEY_V2');
+    expect(devWorkflow).not.toContain('CAPGO_DEV_API_KEY');
+    expect(devPublishJob).not.toContain('CAPGO_DEV_PUBLIC_KEY_V2');
     expect(devPublishJob).toContain('TESTFLIGHT_INTERNAL_GROUP');
     expect(devPublishJob).toContain('bundle exec fastlane ios upload');
     expect(fastfile).toContain('distribute_external: false');
@@ -547,6 +561,21 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(devArchiveJob).toContain(
       'if [[ "$VITE_APNS_ENV" != "production" ]]',
     );
+    expect(devArchiveJob).toContain(
+      'VITE_NATIVE_OTA_ENABLED: "true"',
+    );
+    expect(devCapgoConfigStep).toContain(
+      'CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}',
+    );
+    expect(devCapgoConfigStep).toContain(
+      'configureIosCapgoDev({ otaEnabled: true })',
+    );
+    expect(devCapgoConfigStep).toContain(
+      'inside the signing job',
+    );
+    expect(devWorkflow.match(/secrets\.CAPGO_DEV_PUBLIC_KEY_V2/g)).toHaveLength(1);
+    expect(devPublishJob).toContain('VITE_NATIVE_OTA_ENABLED: "true"');
+    expect(devWorkflow).not.toContain('upr-dev-capgo-config-');
   });
 
   it('archives and reverifies the dev artifact before upload', () => {
@@ -558,6 +587,7 @@ describe('UPR Dev TestFlight isolation contract', () => {
     for (const contractArgument of [
       '--expected-release-variant "$UPR_RELEASE_VARIANT"',
       '--expected-native-api-origin "$VITE_NATIVE_API_ORIGIN"',
+      '--expected-native-ota-enabled "$VITE_NATIVE_OTA_ENABLED"',
       '--expected-native-push-enabled "$VITE_NATIVE_PUSH_ENABLED"',
       '--expected-retire-dev-token "$VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN"',
       '--expected-apns-environment "$VITE_APNS_ENV"',
@@ -568,6 +598,11 @@ describe('UPR Dev TestFlight isolation contract', () => {
     }
     expect(devArchiveJob.indexOf('write-native-release-manifest.mjs'))
       .toBeLessThan(devArchiveJob.indexOf('cap sync ios'));
+    expect(verifier).toContain('validateCapgoV2PublicKey');
+    expect(verifier).toContain('otaPublicKeySha256');
+    expect(verifier).toContain(
+      'updater-off artifact must not contain Capgo key or channel material',
+    );
     const reverifyIndex = devPublishJob.indexOf(
       'Reverify downloaded UPR Dev IPA',
     );
@@ -685,6 +720,7 @@ describe('native release artifact safety contract', () => {
   const devReleaseEnvironment = {
     UPR_RELEASE_VARIANT: 'dev',
     VITE_NATIVE_API_ORIGIN: 'https://dev.utahpros.app',
+    VITE_NATIVE_OTA_ENABLED: 'true',
     VITE_NATIVE_PUSH_ENABLED: 'true',
     VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: 'false',
     VITE_APNS_ENV: 'production',
@@ -697,6 +733,7 @@ describe('native release artifact safety contract', () => {
       variant: 'dev',
       bundleIdentifier: 'com.utahprosrestoration.upr.dev',
       apiOrigin: 'https://dev.utahpros.app',
+      nativeOtaEnabled: true,
       nativePushEnabled: true,
       retireDevToken: false,
       apnsEnvironment: 'production',
@@ -718,6 +755,7 @@ describe('native release artifact safety contract', () => {
       variant: 'dev',
       bundleIdentifier: 'com.utahprosrestoration.upr.dev',
       apiOrigin: 'https://dev.utahpros.app',
+      nativeOtaEnabled: true,
       nativePushEnabled: true,
       retireDevToken: false,
       apnsEnvironment: 'production',
@@ -726,6 +764,7 @@ describe('native release artifact safety contract', () => {
 
     for (const [field, value] of [
       ['apiOrigin', 'https://utahpros.app'],
+      ['nativeOtaEnabled', false],
       ['nativePushEnabled', false],
       ['retireDevToken', true],
       ['apnsEnvironment', 'sandbox'],
@@ -757,6 +796,7 @@ describe('native release artifact safety contract', () => {
       'com.utahprosrestoration.upr.dev',
     );
     expect(manifest.nativePushEnabled).toBe(false);
+    expect(manifest.nativeOtaEnabled).toBe(true);
     expect(manifest.retireDevToken).toBe(true);
     expect(manifest.apnsEnvironment).toBe('production');
   });

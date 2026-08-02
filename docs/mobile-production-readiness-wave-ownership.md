@@ -23,7 +23,18 @@
 # Mobile Production Readiness — Wave Ownership
 
 **Status:** active and binding for `UPRF-MOB-001`
-**Last verified:** 2026-07-26
+**Last verified:** 2026-08-01
+
+## Current bounded wave
+
+The 2026-08-01 Capgo wave uses the primary as the only repository writer over
+Capgo/Capacitor config, native health integration, iOS/Actions release source,
+tests, canonical docs, and in-app console setup. `mobile-readiness-mapper` owns
+read-only contract discovery; the security reviewer, contract tester, and
+release auditor remain independent read-only/verification close-out roles.
+OTA/release files, browser console state, Apple inspection, and canonical docs
+remain serialized through the primary. This record grants no production,
+provider, signing, purchase, secret, TestFlight, or device-delivery authority.
 
 ## Team shape
 
