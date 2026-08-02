@@ -325,6 +325,10 @@ so it selected the generic admin role audience and generic native copy. The
 shared project is contained with the type disabled and the named cron
 unscheduled; existing preferences and claims remain intact. This is deliberate
 producer-off state, not a completed rollout.
+Production records the original reminder migration as ledger version
+`20260801232759`; `qa-staging` does not have that migration. Production now
+has `appointment.reminder=false`, no `upr_appointment_reminders` cron row, and
+zero scheduled pending work. Pending `20260802040935` is applied nowhere.
 
 Compatible Worker source derives the audience from the named employee
 intersected with current `appointment_crew`, then rechecks active/internal
@@ -333,6 +337,10 @@ presentation is derived from the server-read appointment/job and shows the
 appointment, client, and Denver date/time. Inside the fixed Denver quiet-time
 window, a preference lookup error fails closed before bell, PWA, APNs, or email
 fan-out.
+APNs lock-screen details remain behind
+`NATIVE_RICH_NOTIFICATION_PRESENTATION=true` exactly; unset/false uses fixed
+privacy-safe reminder copy while retaining only the allowlisted appointment
+route.
 
 The current live `notify_emit(text,jsonb)` URL-allowlist body (read-only hash
 `c72e0f7fd40a4abec42cce1cd912a45b`) generates a new event UUID even when the
@@ -344,6 +352,15 @@ has a paired rollback that restores the prior function without reactivating
 the producer. The migration is repository-only and unapplied; activation
 requires compatible Production SHA evidence before a separate enable/schedule
 operation.
+
+Activation additionally requires durable per-recipient/channel reminder delivery claims
+for bell, PWA, and email replay, plus server-authoritative appointment crew
+mutations. The current general native claim already fences APNs, but the
+reminder must not reuse or widen the exact-five private-producer occurrence
+ledger. Crew authorization must reject unmapped, inactive, external, and
+unrelated identities before a current assignment can become notification
+authority. Until both prerequisites have isolated/QA behavior proof, the type
+and cron stay off.
 
 ## Notification dispatcher database checkpoint (S1d, live 2026-07-27)
 

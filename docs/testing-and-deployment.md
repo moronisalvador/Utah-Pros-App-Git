@@ -299,6 +299,20 @@ migration has separate reviewed apply/verification evidence. The current live
 containment is `appointment.reminder.enabled=false` with no
 `upr_appointment_reminders` cron job.
 
+Production alone has the original migration ledger row
+`20260801232759 technician_quiet_time_and_appointment_reminders`;
+`qa-staging` does not. Pending `20260802040935` is applied nowhere. Treat QA
+application/behavioral proof, later Production apply, re-enable/reschedule,
+and provider/device proof as separate gates.
+
+Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
+prevent bell/PWA/email replay and that server-authoritative appointment crew
+mutations deny unmapped, inactive, external, and unrelated identities.
+Assigned active internal crew may have any legitimate employee role; an
+unassigned admin/office identity is denied. Generic APNs tests must prove
+unset/false rich-presentation configuration excludes appointment title,
+customer, and time, while exact `true` alone renders those fields.
+
 The S1f direct-bell apply candidate is recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1f-create-notification-2026-07-26.md`. Its
 credential-free contract and catalog-only pre/post scripts pin the unchanged function body,
