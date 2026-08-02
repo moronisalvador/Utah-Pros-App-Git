@@ -65,13 +65,20 @@ Full operational contract:
 
 This source and write-only secret evidence do not prove key-value readback,
 cryptographic use by a signed archive, plan capacity, TestFlight install, or
-device update. The release workflows require merged `dev`; PR #569 remains an
-unmerged draft. The protected signing environment also still needs the five
-`IOS_DEV_*` Apple team/certificate/profile secrets named in the runbook before
-an archive can run. Merging to `dev`, entering signing material, creating a paid
-plan, dispatching a signed archive, changing official UPR signing/listing,
-activating a production Capgo channel, or delivering to production users
-remains an exact owner/provider gate.
+device update. PR #569 merged the release source into `dev` as `e0a1ec6f`.
+Manual validate run `30732493520` then failed before bundle identity or any
+Capgo command because its Ubuntu runner lacked `rg`; it also exposed the stale
+`dist/assets` probe while Vite emits `dist/app-assets`. The retained sanitized
+artifact records no channel assignment or device delivery. The protected
+signing environment now shows all six expected secret names, including its
+team, certificate, and profile inputs. Encrypted values remain unreadable, but
+authorized dry archive run `30732945226` verified their dev-only signing use on
+exact `e0a1ec6f`: `.upr.dev`, team `H6ZUT739T9`, distribution profile/signature,
+production APNs, Preview origin, OTA/native Push enabled, exact source SHA, and
+the embedded Capgo public-key fingerprint. TestFlight upload was disabled and
+skipped. Creating a paid plan, dispatching another archive/upload, changing
+official UPR signing/listing, activating a production Capgo channel, or
+delivering to users remains an exact owner/provider gate.
 
 ## Shared integration rules
 

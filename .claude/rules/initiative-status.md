@@ -307,10 +307,12 @@ lead's claim** (88 of 157 claims have more than one job, so multi-job is the nor
   only; each signed archive and each optional internal-TestFlight upload requires a fresh manual
   dispatch. The artifact embeds and verifies its dev origin, source SHA, Push/retirement mode, and
   production APNs contract. A Push-disabled replacement can retire only the OS-verified `.upr.dev`
-  app's remembered owner-scoped token; zero dispatch remains a device/provider evidence gate. The
-  Apple record/profile/group, separate dev-exclusive GitHub secrets, dry archive, upload, install,
-  and device matrix remain owner gates. Official UPR remains manual/main-only; no Production or
-  Cloudflare variable change is part of this slice.
+  app's remembered owner-scoped token. Authorized dry archive run `30732945226` succeeded from exact
+  `dev` source `e0a1ec6f` with `publish_to_testflight:false`, proving the `.upr.dev` distribution
+  signature/profile and embedded dev-only native contract without an Apple upload or device
+  delivery. The internal TestFlight group upload, install, and signed-device matrix remain owner
+  gates. Official UPR remains manual/main-only; no Production or Cloudflare variable change is part
+  of this slice.
 - **Staging database:** Supabase branch `qa-staging` (ref `uizgwvkvzyldystqrcsk`) — **SEEDED
   2026-07-29; schema-usable and CI db lane LIVE, with initial catalog parity but a historical
   migration ledger that is not replay-compatible** (details:

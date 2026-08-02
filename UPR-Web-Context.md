@@ -3563,8 +3563,14 @@ gates.
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
   `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
   `app_developer` API key expires 2027-08-01. No bundle upload/assignment,
-  device delivery, plan purchase, or production UPR change occurred. Full
-  runbook: `docs/mobile/capgo-dev-runbook.md`.
+  device delivery, plan purchase, or production UPR change occurred. PR #569
+  merged this source into `dev` as `e0a1ec6f`. The first manual validate run
+  (`30732493520`) built the native graph but failed before bundle identity or
+  any Capgo command because the runner lacked `rg`; its probe also used stale
+  `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
+  retained `bundleAssignedToChannel:false` and
+  `deviceDeliveryActivated:false`. Full runbook:
+  `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
   the forbidden direct `secrets.*` step expression into job `env`; a repository test preserves the
@@ -3600,11 +3606,17 @@ gates.
   the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
   references use only `IOS_DEV_*` names so they cannot fall back to the official app's
   credentials. The `.dev` Apple record/profile/group and dev-only GitHub
-  environments exist, but PR #569 is still an unmerged draft and both release
-  workflows refuse any ref except `dev`. `ios-dev-signing` also lacks the five
-  private `IOS_DEV_*` Apple team/certificate/profile secrets required by the
-  archive job; repository Supabase build secrets are present. Merge and private
-  signing-secret entry require exact owner action before archive dispatch.
+  environments exist; both release workflows refuse any ref except `dev`.
+  `ios-dev-signing` shows all six expected secret names: the Capgo public key
+  plus Apple team, certificate, certificate-password, profile-name, and profile
+  data. Encrypted values remain unreadable. Authorized dry archive run
+  `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, version `1.0.0 (11.1)`,
+  distribution signing/profile, production APNs, Preview origin, OTA/native
+  Push enabled, `retireDevToken:false`, exact `e0a1ec6f`, and the embedded
+  Capgo public-key fingerprint. TestFlight upload was disabled/skipped and
+  runner signing assets were cleaned. Repository Supabase build secrets and all
+  three `ios-dev-testflight` App Store Connect API secret names are present.
+  Any later archive or upload remains separately gated.
   Upload, install, and the signed-device matrix remain later unverified external
   gates. Publishing this source to `dev` deploys the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or

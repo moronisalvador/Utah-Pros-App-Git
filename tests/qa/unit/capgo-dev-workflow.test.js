@@ -15,9 +15,21 @@
  *              writes → none
  * ════════════════════════════════════════════════
  */
-import { readFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+import { verifyNativeReleaseAssets } from '../../../scripts/verify-native-release-assets.mjs';
 
 const workflow = readFileSync(
   fileURLToPath(new URL('../../../.github/workflows/capgo-dev.yml', import.meta.url)),
@@ -35,6 +47,22 @@ const encryptionCredentialStep = workflow.slice(
   workflow.indexOf('      - name: Validate the dev-only Capgo encryption credentials'),
   workflow.indexOf('      - name: Build the isolated native web bundle'),
 );
+const nativeBoundaryStep = workflow.slice(
+  workflow.indexOf('      - name: Verify native cache and release boundaries'),
+  workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
+);
+const RELEASE_SHA = 'a'.repeat(40);
+
+function withAssetFixture(run) {
+  const root = mkdtempSync(join(tmpdir(), 'upr-native-release-assets-'));
+  const assetsDir = join(root, 'app-assets');
+  mkdirSync(assetsDir);
+  try {
+    return run({ assetsDir, root });
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+}
 
 describe('UPR Dev Capgo workflow boundary', () => {
   it('is manual, serialized, read-only, and environment-gated', () => {
@@ -76,10 +104,6 @@ describe('UPR Dev Capgo workflow boundary', () => {
   it('stages without delivery and keeps only the emergency disable mutation', () => {
     expect(workflow).toContain('test ! -e dist/sw.js');
     expect(workflow).toContain('test ! -e dist/manifest.json');
-    expect(workflow).toContain(
-      'grep -R -F -q -- "$GITHUB_SHA" dist/app-assets',
-    );
-    expect(workflow).not.toContain('rg -Fq');
     expect(publishStep).toContain('capgo bundle upload "$CAPGO_DEV_APP_ID"');
     expect(publishStep).not.toContain('--channel');
     expect(workflow).not.toContain('rollback_bundle');
@@ -88,6 +112,17 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).toContain('bundleAssignedToChannel: false');
     expect(workflow).toContain('deviceDeliveryActivated: false');
     expect(workflow).not.toContain('--send-update-notification');
+  });
+
+  it('uses portable native-artifact SHA verification', () => {
+    expect(nativeBoundaryStep).toContain(
+      'node scripts/verify-native-release-assets.mjs',
+    );
+    expect(nativeBoundaryStep).not.toMatch(/\brg\b/);
+    expect(nativeBoundaryStep).not.toMatch(/\bgrep\b/);
+    expect(nativeBoundaryStep).not.toContain('dist/assets');
+    expect(nativeBoundaryStep).not.toContain('secrets.CAPGO_DEV_');
+    expect(nativeBoundaryStep).not.toContain('node_modules/.bin/capgo');
   });
 
   it('contains every Capgo network command in the five-minute owned runner', () => {
@@ -121,5 +156,71 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).not.toMatch(
       /if:\s*\$\{\{\s*inputs\.operation == 'validate'\s*\}\}[\s\S]{0,400}secrets\.CAPGO_DEV_(API|PRIVATE)/,
     );
+  });
+});
+
+describe('UPR Dev native release asset identity', () => {
+  it('accepts a nested regular-file asset containing the exact release SHA', () => {
+    withAssetFixture(({ assetsDir }) => {
+      const nested = join(assetsDir, 'nested output');
+      mkdirSync(nested);
+      writeFileSync(join(nested, '-entry.js'), `release=${RELEASE_SHA}`);
+
+      expect(
+        verifyNativeReleaseAssets({ assetsDir, releaseSha: RELEASE_SHA }),
+      ).toEqual({ fileCount: 1 });
+    });
+  });
+
+  it('rejects malformed, missing, and absent release identity', () => {
+    withAssetFixture(({ assetsDir }) => {
+      writeFileSync(join(assetsDir, 'entry.js'), 'no release identity');
+
+      expect(() => verifyNativeReleaseAssets({
+        assetsDir,
+        releaseSha: 'ABC',
+      })).toThrow(/lowercase 40-character Git SHA/);
+      expect(() => verifyNativeReleaseAssets({
+        assetsDir,
+        releaseSha: RELEASE_SHA,
+      })).toThrow(/do not contain the requested release SHA/);
+      expect(() => verifyNativeReleaseAssets({
+        assetsDir: join(assetsDir, 'missing'),
+        releaseSha: RELEASE_SHA,
+      })).toThrow();
+    });
+  });
+
+  it('rejects empty and symlinked asset trees', () => {
+    withAssetFixture(({ assetsDir, root }) => {
+      expect(() => verifyNativeReleaseAssets({
+        assetsDir,
+        releaseSha: RELEASE_SHA,
+      })).toThrow(/directory is empty/);
+
+      const source = join(root, 'source.js');
+      writeFileSync(source, RELEASE_SHA);
+      symlinkSync(source, join(assetsDir, 'linked.js'));
+      expect(() => verifyNativeReleaseAssets({
+        assetsDir,
+        releaseSha: RELEASE_SHA,
+      })).toThrow(/must not contain symlinks/);
+    });
+  });
+
+  it('fails closed when a generated asset cannot be read', () => {
+    withAssetFixture(({ assetsDir }) => {
+      const unreadable = join(assetsDir, 'unreadable.js');
+      writeFileSync(unreadable, RELEASE_SHA);
+      chmodSync(unreadable, 0o000);
+      try {
+        expect(() => verifyNativeReleaseAssets({
+          assetsDir,
+          releaseSha: RELEASE_SHA,
+        })).toThrow();
+      } finally {
+        chmodSync(unreadable, 0o600);
+      }
+    });
   });
 });

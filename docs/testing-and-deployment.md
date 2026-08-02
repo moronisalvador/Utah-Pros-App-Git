@@ -114,12 +114,24 @@ secret names, serializes runs across the provider side effect, embeds and reveri
 exact dev origin/Push mode/source SHA, and requests only the internal **UPR Dev** group.
 The manual `native_push_enabled:false` option embeds an exact dev-token retirement flag;
 authenticated boot additionally requires the OS-reported `.upr.dev` identity before it
-deletes the remembered token through the owner-scoped RPC and unregisters locally. The documented
-zero-dispatch evidence gate makes this a dev-only emergency replacement without changing
-official UPR or Cloudflare Production. Until its Apple
-record, profile, environments, dry archive, upload, install, and signed-device matrix
-are owner-verified, it is source—not a verified live release path. The official
+deletes the remembered token through the owner-scoped RPC and unregisters locally. Authorized
+dry archive run `30732945226` succeeded from exact `dev` source `e0a1ec6f` with
+`publish_to_testflight:false`: it verified the `.upr.dev` identity, dev-only distribution
+signature/profile, production APNs, dev origin, OTA/public-key embedding, native Push mode, and
+runner cleanup without uploading to TestFlight or delivering to a device. The Apple internal-group
+upload, install, and signed-device matrix remain owner-gated, so this is not yet a verified live
+release path. The official
 `ios-release.yml` remains manual/main-only and unchanged.
+
+The separate manual `.github/workflows/capgo-dev.yml` keeps credential-free
+validation portable across the pinned Ubuntu runner: its native release-SHA
+proof uses the pinned Node runtime to inspect Vite's configured
+`dist/app-assets` directory. The verifier fails closed on malformed or absent
+release identity, missing/empty/unreadable output, symlinks, unexpected entry
+types, or an absent SHA. Source contracts reject undeclared `rg`/`grep`
+dependencies and the stale `dist/assets` path. This verification makes no
+Capgo request and does not broaden the independently gated publish, channel
+assignment, device-delivery, signing, or production actions.
 
 Native Push activation also requires the two focused migrations to pass in
 order against a disposable local Supabase database. The behavior proof must
