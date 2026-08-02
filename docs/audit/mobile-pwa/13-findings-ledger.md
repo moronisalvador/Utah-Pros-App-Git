@@ -399,8 +399,10 @@ excluded from the supported product promise before release.
   GitHub environment with the three encrypted secrets present. A fresh dev-only RSA-4096 v2
   keypair rotation was accepted in `capgo-dev`, and the same public half was accepted in
   `ios-dev-signing`; only secret names, presence, and successful write-only submissions were
-  verified. The API key was unchanged. No archive was dispatched and no bundle was uploaded or
-  assigned.
+  verified. Fresh metadata timestamps for all three key submissions and an unchanged API-key
+  timestamp resolved the earlier pair-mismatch concern. PR #569 remains unmerged, and the protected
+  signing environment still lacks its five required private `IOS_DEV_*` Apple inputs. No archive was
+  dispatched and no bundle was uploaded or assigned.
 - **Relevant paths/lines / route or workflow / Supabase objects:** `src/main.jsx:50-77`;
   `src/App.jsx:624-640`; `src/lib/nativeUpdater.js`; `capacitor.config.json`;
   `.github/workflows/capgo-dev.yml`; `.github/workflows/ios-dev-testflight.yml`;
@@ -408,9 +410,10 @@ excluded from the supported product promise before release.
 - **Root cause:** Bundle upload/versioning, client readiness, channel assignment, binary capability,
   and database compatibility are not one release state machine.
 - **Recommended remediation / verification / dependencies:** Keep private/API values secret-only
-  and never use a transient key artifact. Under a separate exact owner gate, produce a signed UPR
-  Dev archive to verify the embedded public half and isolated identity; then, behind separate
-  upload/assignment/device gates, verify one-device canary isolation,
+  and never use a transient key artifact. Under separate exact owner gates, merge the reviewed
+  source to `dev`, privately populate only the isolated UPR Dev signing environment, and produce a
+  signed UPR Dev archive to verify the embedded public half and isolated identity; then, behind
+  separate upload/assignment/device gates, verify one-device canary isolation,
   interrupted update, failed acknowledgement, bad-bundle rollback, offline boot, statistics, and
   official-UPR non-regression. Production channel/delivery stays separately owner-gated. Depends on
   release telemetry (`MOB-OBS-024`) and the signed native pipeline.

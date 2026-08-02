@@ -3585,7 +3585,9 @@ gates.
   accepted replacement public/private submissions in `capgo-dev` and the same
   public-half submission in `ios-dev-signing`. Only names, presence, and
   successful submissions were verified because encrypted values cannot be read
-  back. The existing app-scoped `CAPGO_DEV_API_KEY` was left unchanged.
+  back. A follow-up metadata check confirmed fresh timestamps for all three key
+  submissions and an unchanged timestamp for the existing app-scoped
+  `CAPGO_DEV_API_KEY`.
   `CAPGO_DEV_PRIVATE_KEY_V2` and `CAPGO_DEV_API_KEY` never enter the signing or
   TestFlight workflow; production UPR stays updater-off.
   It serializes release runs and requests only the internal **UPR Dev** group. A `dev` push runs
@@ -3596,8 +3598,13 @@ gates.
   the dev-only emergency replacement path, and official UPR cannot enter it. Signing/provider
   references use only `IOS_DEV_*` names so they cannot fall back to the official app's
   credentials. The `.dev` Apple record/profile/group and dev-only GitHub
-  environments exist, but archive dispatch, upload, install, and the
-  signed-device matrix remain unverified external gates. Publishing this source to `dev` deploys the guarded web runtime and
+  environments exist, but PR #569 is still an unmerged draft and both release
+  workflows refuse any ref except `dev`. `ios-dev-signing` also lacks the five
+  private `IOS_DEV_*` Apple team/certificate/profile secrets required by the
+  archive job; repository Supabase build secrets are present. Merge and private
+  signing-secret entry require exact owner action before archive dispatch.
+  Upload, install, and the signed-device matrix remain later unverified external
+  gates. Publishing this source to `dev` deploys the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,

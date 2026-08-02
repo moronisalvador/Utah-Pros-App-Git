@@ -55,7 +55,9 @@ dev-only GitHub secret submissions were accepted: the public/private halves were
 replaced in `capgo-dev`, and the same public half was added to
 `ios-dev-signing`. Only secret names, presence, and successful submissions were
 verified because GitHub cannot read encrypted values back. The API key was left
-unchanged. The archive workflow reads only the public half from the protected
+unchanged. A follow-up metadata check confirmed that all three key submissions
+received fresh timestamps while the API-key timestamp stayed unchanged. The
+archive workflow reads only the public half from the protected
 UPR Dev signing environment and embeds it only in the `.upr.dev` app/IPA. App
 Store Connect/TestFlight remains a separately signed UPR Dev distribution path.
 Full operational contract:
@@ -63,10 +65,13 @@ Full operational contract:
 
 This source and write-only secret evidence do not prove key-value readback,
 cryptographic use by a signed archive, plan capacity, TestFlight install, or
-device update. Creating a paid plan, uploading signing material, dispatching a
-signed archive, changing official UPR signing/listing, activating a production
-Capgo channel, or delivering to production users remains an exact
-owner/provider gate.
+device update. The release workflows require merged `dev`; PR #569 remains an
+unmerged draft. The protected signing environment also still needs the five
+`IOS_DEV_*` Apple team/certificate/profile secrets named in the runbook before
+an archive can run. Merging to `dev`, entering signing material, creating a paid
+plan, dispatching a signed archive, changing official UPR signing/listing,
+activating a production Capgo channel, or delivering to production users
+remains an exact owner/provider gate.
 
 ## Shared integration rules
 

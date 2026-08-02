@@ -73,9 +73,20 @@ As of 2026-08-01:
   accepted replacement submissions for its public/private halves in
   `capgo-dev` and accepted the same public half in `ios-dev-signing`. Only
   secret names, presence, and successful submissions were verified; encrypted
-  values cannot be read back. The existing `CAPGO_DEV_API_KEY` was not changed.
+  values cannot be read back. A follow-up metadata check confirmed fresh
+  timestamps for all three key submissions and an unchanged timestamp for the
+  existing `CAPGO_DEV_API_KEY`.
 - The app-scoped Capgo API key is limited to `UPR Dev` with the
   `app_developer` role and expires 2027-08-01.
+- PR #569 remains an unmerged draft. Both release workflows enforce
+  `refs/heads/dev`, so neither can be dispatched from the feature branch.
+- `ios-dev-signing` still requires private owner entry of
+  `IOS_DEV_APPLE_TEAM_ID`, `IOS_DEV_APPLE_CERTIFICATE_BASE64`,
+  `IOS_DEV_APPLE_CERTIFICATE_PASSWORD`,
+  `IOS_DEV_APPLE_PROVISIONING_PROFILE_BASE64`, and
+  `IOS_DEV_APPLE_PROVISIONING_PROFILE_NAME`. The required repository-level
+  `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are present. TestFlight API
+  credentials remain a later upload gate.
 - No Capgo upload, subscription purchase, production activation, or installed
   device delivery has been performed by this setup. No archive or TestFlight
   workflow was dispatched.
@@ -125,29 +136,32 @@ exception does not apply to the private key or API key.
 
 ## First canary sequence
 
-1. Merge the reviewed source into `dev`; do not dispatch from a feature branch.
-2. Run **Capgo UPR Dev** with operation `validate` and confirmation
+1. After exact owner approval, merge the reviewed source into `dev`; do not
+   dispatch from a feature branch.
+2. Privately enter the five isolated `IOS_DEV_*` signing secrets listed above
+   in `ios-dev-signing`; never expose them in chat, logs, or repository files.
+3. Run **Capgo UPR Dev** with operation `validate` and confirmation
    `UPR DEV CAPGO VALIDATE`. This builds the native graph, proves the exact SHA,
    verifies the native service worker/manifest are absent, and makes no Capgo
    change.
-3. Dispatch **iOS dev TestFlight** with publication off. The archive must verify
+4. Dispatch **iOS dev TestFlight** with publication off. The archive must verify
    the `.upr.dev` identifier, canary channel, RSA-4096 public-key fingerprint,
    updater mode, Preview API origin, source SHA, signing, entitlements, and
    privacy manifest.
-4. After owner approval, upload only that verified OTA-capable UPR Dev archive
+5. After owner approval, upload only that verified OTA-capable UPR Dev archive
    to its internal TestFlight group and install it on a designated device.
-5. After a fresh exact owner approval, run **Capgo UPR Dev** with operation
+6. After a fresh exact owner approval, run **Capgo UPR Dev** with operation
    `publish` and confirmation `UPR DEV CAPGO PUBLISH`. The workflow first checks
    compatibility against `upr-dev-canary`, then encrypts and uploads an
    immutable version tied to native version/run/SHA **without assigning it to a
    channel**. It cannot deliver that bundle.
-6. After a separate exact bundle-assignment/device-delivery approval, assign
+7. After a separate exact bundle-assignment/device-delivery approval, assign
    only the reviewed staged version to `upr-dev-canary` and keep exposure at
    one designated UPR Dev device. Verify cold launch,
    signed-out launch, authenticated bootstrap, current route, background/resume,
    network interruption, account switch, and next cold launch. Confirm the
    bundle is accepted only after auth startup and the lazy route finish.
-7. Inspect the sanitized 30-day GitHub evidence artifact and Capgo install/fail
+8. Inspect the sanitized 30-day GitHub evidence artifact and Capgo install/fail
    statistics. Expand only after the named test matrix passes.
 
 The web source may change only behavior that the installed binary already
