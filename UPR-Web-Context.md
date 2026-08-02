@@ -4788,3 +4788,19 @@ credential-free tests, changed-file lint, migration hygiene, and source contract
 been applied to local, QA, or shared production; no notification was sent and no PWA/native device
 path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed
 baseline/bootstrap is implemented.
+
+**Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
+is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
+Cloudflare Production was still main `478330d9` when the first real reminder became due. That older
+`functions/api/notify.js` does not include `appointment.reminder` in its appointment-scoped
+audience set, so each crew-specific database event fell through to the active-internal admin
+fallback. One appointment produced two legitimate crew claims and eight bell rows
+(four admins × two events); four rows went to admins who were not current crew. The first row was
+20:59:00 and the last 21:00:02 America/Denver. The older Worker also lacks the reminder
+presentation entry, explaining the generic APNs lock-screen copy; stored bell copy was typed and
+its payload was empty. The five contained appointment/timesheet producer flags remained disabled,
+and repository-only `20260801215912` was not applied, so that repair did not cause the incident.
+`appointment.reminder` is currently observed disabled. Its minute cron remains active and can
+consume reminder claims while disabled, so keep the flag off until the dev audience/presentation
+repair is regression-tested, promoted code-first, and the exact Production revision is verified.
+Re-enabling the reminder is a separate owner action.

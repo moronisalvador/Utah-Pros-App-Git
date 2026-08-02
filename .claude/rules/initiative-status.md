@@ -159,17 +159,28 @@ The reversible notification producer containment also applied from exact reviewe
   occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
   delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
   Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
-  fail-closed, and both files keep the same five flags disabled. Candidate `930bd399` includes the
+  fail-closed, and both files keep the same five flags disabled. The candidate includes the
   reviewed private-crew compatibility correction: non-manager field users cannot edit private
-  crew, and unchanged crew skips the locked diff RPC. Reconciliation through `origin/dev`
-  `cd7d415a`, build, Worker `1934/1934`, focused producer/APNs `123/123`, producer QA `7/7`,
-  private-crew `4/4`, lint, migration hygiene, and the migration, worker-security,
-  anonymous-grant, mobile-security, project-law, design and release reviews pass. The current full
-  unit lane remains blocked only by four quiet-time locale/native-test regressions already routed
-  to their owning task; two QA five-second resource timeouts pass `56/56` on the exact unloaded
-  rerun. A final fetch/merge follows the owner-correct quiet-time commit. The sentinel-locked SQL
-  behavior proof is authored but cannot run until the governed local Supabase bootstrap exists.
-  No hosted SQL, deploy, delivery, flag, provider, or device action is implied.
+  crew, and unchanged crew skips the locked diff RPC. Reconciliation through current `origin/dev`
+  `ec6b3583`, build, full unit `1579/1579`, Worker `1934/1934`, QA `1016/1016`, focused
+  producer/APNs `123/123`, producer QA `7/7`, private-crew `4/4`, lint, migration hygiene, and the
+  migration, worker-security, anonymous-grant, mobile-security, project-law, design and release
+  reviews pass. The sentinel-locked SQL behavior proof is authored but cannot run until the
+  governed local Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider, or
+  device action is implied.
+- Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
+  production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
+  Cloudflare Production remains main `478330d9`. That older Worker does not classify
+  `appointment.reminder` as appointment-scoped, so two legitimate crew-specific reminder events
+  for one appointment fell through to the four-admin default audience: eight bell rows total,
+  four for non-current crew, between 20:59:00 and 21:00:02 America/Denver. Native delivery claims
+  corroborate the two events; generic native copy came from the older Worker's missing reminder
+  presentation. The five contained producer flags remain disabled and the repository-only producer
+  repair was not involved. `appointment.reminder` is currently observed disabled, so further
+  `notify_emit` fan-out is contained, although the still-active minute cron can consume reminder
+  claims while disabled. Keep it off until the already-landed dev audience/presentation repair is
+  regression-tested, promoted code-first, and the Production revision is verified; any re-enable
+  remains a separate owner action.
 - The production org's separate automated-SMS master switch is now
   `automation_settings.sms_sending_enabled=false`; the test org remains false.
   `missed_call_textback_enabled=true` remains configured for the production org but is inert behind
