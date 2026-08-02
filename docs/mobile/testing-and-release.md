@@ -285,7 +285,7 @@ upload, install, and device matrix remain independent owner gates. The manual
 `native_push_enabled:false` replacement
 also embeds the exact dev-token retirement flag; authenticated boot must prove the
 OS-reported `.upr.dev` identity before deleting its remembered owner-scoped token and
-unregistering locally. The exact containment and zero-dispatch evidence sequence lives in
+unregistering locally. The exact containment and owner-gated evidence sequence lives in
 `docs/mobile/dev-app-variant.md`; none of that lane changes the official main-only UPR
 release path.
 
