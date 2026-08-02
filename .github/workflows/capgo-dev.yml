@@ -93,32 +93,34 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Validate the dev-only Capgo credentials
+      - name: Validate the dev-only Capgo API credential
+        if: ${{ inputs.operation == 'publish' || inputs.operation == 'disable' }}
         shell: bash
         env:
           CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}
-          CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
-          CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}
-          OPERATION: ${{ inputs.operation }}
         run: |
           set -euo pipefail
-          required_names=()
-          if [[ "$OPERATION" = "publish" || "$OPERATION" = "disable" ]]; then
-            required_names+=(CAPGO_DEV_API_KEY)
+          if [[ -z "${CAPGO_DEV_API_KEY:-}" ]]; then
+            echo "Missing required capgo-dev environment value: CAPGO_DEV_API_KEY" >&2
+            exit 1
           fi
-          if [[ "$OPERATION" = "publish" ]]; then
-            required_names+=(CAPGO_DEV_PRIVATE_KEY_V2 CAPGO_DEV_PUBLIC_KEY_V2)
-          fi
-          for name in "${required_names[@]}"; do
+
+      - name: Validate the dev-only Capgo encryption credentials
+        if: ${{ inputs.operation == 'publish' }}
+        shell: bash
+        env:
+          CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}
+          CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}
+        run: |
+          set -euo pipefail
+          for name in CAPGO_DEV_PRIVATE_KEY_V2 CAPGO_DEV_PUBLIC_KEY_V2; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required capgo-dev environment value: $name" >&2
               exit 1
             fi
           done
-          if [[ "$OPERATION" = "publish" ]]; then
-            node --input-type=module -e \
-              "import { validateCapgoV2PublicKey } from './scripts/lib/capgo-public-key.mjs'; validateCapgoV2PublicKey(process.env.CAPGO_DEV_PUBLIC_KEY_V2);"
-          fi
+          node --input-type=module -e \
+            "import { validateCapgoV2PublicKey } from './scripts/lib/capgo-public-key.mjs'; validateCapgoV2PublicKey(process.env.CAPGO_DEV_PUBLIC_KEY_V2);"
 
       - name: Build the isolated native web bundle
         if: ${{ inputs.operation == 'validate' || inputs.operation == 'publish' }}

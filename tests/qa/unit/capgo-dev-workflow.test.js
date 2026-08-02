@@ -27,6 +27,14 @@ const publishStep = workflow.slice(
   workflow.indexOf('      - name: Stage encrypted bundle without channel assignment'),
   workflow.indexOf('      - name: Disable future UPR Dev update delivery'),
 );
+const apiCredentialStep = workflow.slice(
+  workflow.indexOf('      - name: Validate the dev-only Capgo API credential'),
+  workflow.indexOf('      - name: Validate the dev-only Capgo encryption credentials'),
+);
+const encryptionCredentialStep = workflow.slice(
+  workflow.indexOf('      - name: Validate the dev-only Capgo encryption credentials'),
+  workflow.indexOf('      - name: Build the isolated native web bundle'),
+);
 
 describe('UPR Dev Capgo workflow boundary', () => {
   it('is manual, serialized, read-only, and environment-gated', () => {
@@ -79,12 +87,22 @@ describe('UPR Dev Capgo workflow boundary', () => {
   });
 
   it('keeps credential-free validation independent of Capgo secrets', () => {
-    expect(workflow).toContain(
-      'if [[ "$OPERATION" = "publish" || "$OPERATION" = "disable" ]]',
+    expect(apiCredentialStep).toContain(
+      "if: ${{ inputs.operation == 'publish' || inputs.operation == 'disable' }}",
     );
-    expect(workflow).toContain('if [[ "$OPERATION" = "publish" ]]');
+    expect(apiCredentialStep).toContain(
+      'CAPGO_DEV_API_KEY: ${{ secrets.CAPGO_DEV_API_KEY }}',
+    );
+    expect(apiCredentialStep).not.toContain('CAPGO_DEV_PRIVATE_KEY_V2');
+    expect(encryptionCredentialStep).toContain(
+      "if: ${{ inputs.operation == 'publish' }}",
+    );
+    expect(encryptionCredentialStep).toContain(
+      'CAPGO_DEV_PRIVATE_KEY_V2: ${{ secrets.CAPGO_DEV_PRIVATE_KEY_V2 }}',
+    );
+    expect(encryptionCredentialStep).not.toContain('CAPGO_DEV_API_KEY');
     expect(workflow).not.toMatch(
-      /if \[\[ -z "\$\{CAPGO_DEV_API_KEY:-\}" \]\]/,
+      /if:\s*\$\{\{\s*inputs\.operation == 'validate'\s*\}\}[\s\S]{0,400}secrets\.CAPGO_DEV_(API|PRIVATE)/,
     );
   });
 });
