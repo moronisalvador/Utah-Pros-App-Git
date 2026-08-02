@@ -72,15 +72,36 @@ BEGIN
   END IF;
 
   IF to_regclass('public.notification_producer_occurrences') IS NOT NULL
-     OR to_regclass('public.notification_delivery_claims') IS NOT NULL THEN
+     OR to_regclass('public.notification_delivery_claims') IS NOT NULL
+     OR to_regprocedure(
+       'public.claim_guarded_native_push_delivery(uuid,uuid,uuid,text,text,uuid,uuid,uuid,text,text)'
+     ) IS NOT NULL
+     OR to_regprocedure(
+       'public.claim_guarded_notification_target_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid,uuid,text)'
+     ) IS NOT NULL
+     OR EXISTS (
+       SELECT 1
+       FROM information_schema.columns column
+       WHERE column.table_schema = 'public'
+         AND column.table_name = 'appointments'
+         AND column.column_name = 'created_by_employee_id'
+     ) THEN
     RAISE EXCEPTION
-      'notification producer authorization preflight found an unexpected prior occurrence/claim table'
+      'notification producer authorization preflight found unexpected prior candidate state'
       USING ERRCODE = '55000';
   END IF;
 
   IF to_regprocedure('public.notify_emit(text,jsonb)') IS NULL
+     OR to_regclass('public.native_push_delivery_claims') IS NULL
+     OR to_regclass('public.push_subscriptions') IS NULL
+     OR to_regprocedure(
+       'public.claim_native_push_delivery(uuid,uuid,uuid,uuid)'
+     ) IS NULL
      OR to_regprocedure(
        'public.update_appointment(uuid,date,time without time zone,time without time zone,text,text,text,text,uuid)'
+     ) IS NULL
+     OR to_regprocedure(
+       'public.delete_appointment(uuid,uuid,text)'
      ) IS NULL
      OR to_regprocedure('public.sync_appointment_crew(uuid,jsonb)') IS NULL
      OR to_regprocedure(
@@ -112,29 +133,137 @@ BEGIN
     SELECT count(*)
     FROM pg_policies policy
     WHERE policy.schemaname = 'public'
-      AND (
+      AND policy.tablename IN ('appointments', 'appointment_crew')
+  ) <> 8
+     OR EXISTS (
+       SELECT 1
+       FROM (
+         VALUES
         (
-          policy.tablename = 'appointments'
-          AND policy.policyname IN (
-            'all_select_appointments',
-            'all_insert_appointments',
-            'all_update_appointments',
-            'all_delete_appointments'
-          )
+          'appointments',
+          'all_select_appointments',
+          'SELECT',
+          ARRAY['anon'::name, 'authenticated'::name]
+        ),
+        (
+          'appointments',
+          'all_insert_appointments',
+          'INSERT',
+          ARRAY['anon'::name, 'authenticated'::name]
+        ),
+        (
+          'appointments',
+          'all_update_appointments',
+          'UPDATE',
+          ARRAY['anon'::name, 'authenticated'::name]
+        ),
+        (
+          'appointments',
+          'all_delete_appointments',
+          'DELETE',
+          ARRAY['anon'::name, 'authenticated'::name]
+        ),
+        (
+          'appointment_crew',
+          'all_select_appointment_crew',
+          'SELECT',
+          ARRAY['authenticated'::name]
+        ),
+        (
+          'appointment_crew',
+          'all_insert_appointment_crew',
+          'INSERT',
+          ARRAY['authenticated'::name]
+        ),
+        (
+          'appointment_crew',
+          'all_update_appointment_crew',
+          'UPDATE',
+          ARRAY['authenticated'::name]
+        ),
+        (
+          'appointment_crew',
+          'all_delete_appointment_crew',
+          'DELETE',
+          ARRAY['authenticated'::name]
         )
-        OR (
-          policy.tablename = 'appointment_crew'
-          AND policy.policyname IN (
-            'all_select_appointment_crew',
-            'all_insert_appointment_crew',
-            'all_update_appointment_crew',
-            'all_delete_appointment_crew'
-          )
-        )
-      )
-  ) <> 8 THEN
+    ) AS expected(tablename, policyname, command, roles)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_policies policy
+      WHERE policy.schemaname = 'public'
+        AND policy.tablename = expected.tablename
+        AND policy.policyname = expected.policyname
+        AND policy.cmd = expected.command
+        AND policy.permissive = 'PERMISSIVE'
+        AND policy.roles = expected.roles
+    )
+  ) THEN
     RAISE EXCEPTION
       'notification producer authorization preflight found appointment policy drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename = 'time_entry_change_requests'
+  ) <> 1
+     OR NOT EXISTS (
+    SELECT 1
+    FROM pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename = 'time_entry_change_requests'
+      AND policy.policyname = 'tecr_read'
+      AND policy.cmd = 'SELECT'
+      AND policy.permissive = 'PERMISSIVE'
+      AND policy.roles = ARRAY['authenticated'::name]
+  ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization preflight found timesheet read policy drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      VALUES
+        (
+          'public.appointments'::regclass,
+          'trg_enforce_private_appointment',
+          'public.enforce_private_appointment_role()'::regprocedure,
+          23::smallint
+        ),
+        (
+          'public.appointments'::regclass,
+          'trg_appointment_notify',
+          'public.trg_appt_notify()'::regprocedure,
+          17::smallint
+        ),
+        (
+          'public.appointment_crew'::regclass,
+          'trg_appointment_crew_notify',
+          'public.trg_appt_crew_notify()'::regprocedure,
+          5::smallint
+        )
+    ) AS expected(relation_id, trigger_name, function_id, trigger_type)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger trigger
+      WHERE trigger.tgrelid = expected.relation_id
+        AND trigger.tgname = expected.trigger_name
+        AND trigger.tgfoid = expected.function_id
+        AND trigger.tgtype = expected.trigger_type
+        AND trigger.tgenabled IN ('O', 'A')
+        AND trigger.tgqual IS NULL
+        AND trigger.tgattr = ''::int2vector
+        AND trigger.tgnargs = 0
+        AND NOT trigger.tgisinternal
+    )
+  ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization requires exact enabled appointment triggers'
       USING ERRCODE = '55000';
   END IF;
 
@@ -147,7 +276,8 @@ BEGIN
     )
       AND trigger.tgname IN (
         'trg_appointments_notification_producer_authority',
-        'trg_appointment_crew_notification_producer_authority'
+        'trg_appointment_crew_notification_producer_authority',
+        'trg_appointments_bind_creator'
       )
       AND NOT trigger.tgisinternal
   ) THEN
@@ -159,6 +289,15 @@ END;
 $preflight$;
 
 -- ─── 1. Actor identity and direct-table authorization ──────────────────────
+
+ALTER TABLE public.appointments
+  ADD COLUMN created_by_employee_id uuid
+  REFERENCES public.employees(id)
+  ON DELETE SET NULL;
+
+CREATE INDEX appointments_created_by_employee_id_idx
+  ON public.appointments(created_by_employee_id)
+  WHERE created_by_employee_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION public.is_current_notification_producer_actor()
 RETURNS boolean
@@ -190,6 +329,161 @@ REVOKE EXECUTE ON FUNCTION public.is_current_notification_producer_actor()
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.is_current_notification_producer_actor()
   TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.can_current_employee_read_time_entry_change_request(
+  p_requested_by uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.employees employee
+    WHERE employee.auth_user_id = (SELECT auth.uid())
+      AND employee.is_active IS TRUE
+      AND employee.is_external IS FALSE
+      AND (
+        employee.id = p_requested_by
+        OR employee.role::text IN (
+          'admin',
+          'office',
+          'project_manager',
+          'supervisor'
+        )
+      )
+  );
+$function$;
+
+ALTER FUNCTION public.can_current_employee_read_time_entry_change_request(uuid)
+  OWNER TO postgres;
+REVOKE EXECUTE ON FUNCTION public.can_current_employee_read_time_entry_change_request(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.can_current_employee_read_time_entry_change_request(uuid)
+  TO authenticated, service_role;
+
+ALTER TABLE public.time_entry_change_requests ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.time_entry_change_requests FROM PUBLIC, anon;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON TABLE public.time_entry_change_requests
+  FROM authenticated;
+GRANT SELECT ON TABLE public.time_entry_change_requests TO authenticated;
+
+ALTER POLICY tecr_read
+  ON public.time_entry_change_requests
+  TO authenticated
+  USING (
+    (
+      SELECT public.can_current_employee_read_time_entry_change_request(
+        requested_by
+      )
+    )
+  );
+
+CREATE OR REPLACE FUNCTION public.is_current_appointment_creator(
+  p_employee_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.employees employee
+    WHERE employee.id = p_employee_id
+      AND employee.auth_user_id = (SELECT auth.uid())
+      AND employee.is_active IS TRUE
+      AND employee.is_external IS FALSE
+      AND employee.role::text IN (
+        'admin',
+        'office',
+        'project_manager',
+        'field_tech',
+        'estimator',
+        'supervisor'
+      )
+  );
+$function$;
+
+ALTER FUNCTION public.is_current_appointment_creator(uuid)
+  OWNER TO postgres;
+REVOKE EXECUTE ON FUNCTION public.is_current_appointment_creator(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.is_current_appointment_creator(uuid)
+  TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.bind_appointment_creator()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_actor_id uuid;
+  v_request_role text := COALESCE(
+    NULLIF(auth.jwt() ->> 'role', ''),
+    NULLIF(current_setting('request.jwt.claim.role', true), '')
+  );
+BEGIN
+  IF v_request_role = 'service_role'
+     OR (
+       v_request_role IS NULL
+       AND session_user IN ('postgres', 'supabase_admin')
+     ) THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT employee.id
+    INTO v_actor_id
+  FROM public.employees employee
+  WHERE employee.auth_user_id = auth.uid()
+    AND employee.is_active IS TRUE
+    AND employee.is_external IS FALSE
+    AND employee.role::text IN (
+      'admin',
+      'office',
+      'project_manager',
+      'field_tech',
+      'estimator',
+      'supervisor'
+    );
+
+  IF v_actor_id IS NULL THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment creator required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.created_by_employee_id IS NOT NULL
+       AND NEW.created_by_employee_id IS DISTINCT FROM v_actor_id THEN
+      RAISE EXCEPTION 'NOT_AUTHORIZED: appointment creator does not match caller'
+        USING ERRCODE = '42501';
+    END IF;
+    NEW.created_by_employee_id := v_actor_id;
+  ELSIF NEW.created_by_employee_id IS DISTINCT FROM OLD.created_by_employee_id THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment creator is immutable'
+      USING ERRCODE = '42501';
+  END IF;
+
+  RETURN NEW;
+END;
+$function$;
+
+ALTER FUNCTION public.bind_appointment_creator()
+  OWNER TO postgres;
+-- Trigger-only owner binding; no role receives direct execution.
+REVOKE EXECUTE ON FUNCTION public.bind_appointment_creator()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TRIGGER trg_appointments_bind_creator
+  BEFORE INSERT OR UPDATE
+  ON public.appointments
+  FOR EACH ROW
+  EXECUTE FUNCTION public.bind_appointment_creator();
 
 CREATE OR REPLACE FUNCTION public.can_current_employee_access_appointment(
   p_appointment_id uuid
@@ -235,6 +529,65 @@ REVOKE EXECUTE ON FUNCTION public.can_current_employee_access_appointment(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.can_current_employee_access_appointment(uuid)
   TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.can_current_employee_mutate_appointment(
+  p_appointment_id uuid
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.employees employee
+    JOIN public.appointments appointment
+      ON appointment.id = p_appointment_id
+    WHERE employee.auth_user_id = (SELECT auth.uid())
+      AND employee.is_active IS TRUE
+      AND employee.is_external IS FALSE
+      AND employee.role::text IN (
+        'admin',
+        'office',
+        'project_manager',
+        'field_tech',
+        'estimator',
+        'supervisor'
+      )
+      AND (
+        (
+          employee.role::text IN (
+            'admin',
+            'office',
+            'project_manager',
+            'supervisor'
+          )
+          AND (
+            appointment.is_private IS FALSE
+            OR employee.role::text IN ('admin', 'project_manager')
+          )
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM public.appointment_crew crew
+          WHERE crew.appointment_id = appointment.id
+            AND crew.employee_id = employee.id
+        )
+        OR (
+          appointment.is_private IS FALSE
+          AND appointment.created_by_employee_id = employee.id
+        )
+      )
+  );
+$function$;
+
+ALTER FUNCTION public.can_current_employee_mutate_appointment(uuid)
+  OWNER TO postgres;
+REVOKE EXECUTE ON FUNCTION public.can_current_employee_mutate_appointment(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.can_current_employee_mutate_appointment(uuid)
+  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.is_current_appointment_manager()
 RETURNS boolean
@@ -286,7 +639,28 @@ AS $function$
         'supervisor'
       )
       AND (
-        appointment.is_private IS FALSE
+        (
+          employee.role::text IN (
+            'admin',
+            'office',
+            'project_manager',
+            'supervisor'
+          )
+          AND appointment.is_private IS FALSE
+        )
+        OR (
+          employee.role::text IN ('field_tech', 'estimator')
+          AND appointment.is_private IS FALSE
+          AND (
+            appointment.created_by_employee_id = employee.id
+            OR EXISTS (
+              SELECT 1
+              FROM public.appointment_crew crew
+              WHERE crew.appointment_id = appointment.id
+                AND crew.employee_id = employee.id
+            )
+          )
+        )
         OR employee.role::text IN ('admin', 'project_manager')
       )
   );
@@ -297,7 +671,7 @@ ALTER FUNCTION public.can_current_employee_manage_appointment_crew(uuid)
 REVOKE EXECUTE ON FUNCTION public.can_current_employee_manage_appointment_crew(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.can_current_employee_manage_appointment_crew(uuid)
-  TO authenticated;
+  TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.enforce_private_appointment_role()
 RETURNS trigger
@@ -330,6 +704,33 @@ ALTER FUNCTION public.enforce_private_appointment_role()
   OWNER TO postgres;
 -- Trigger-only privacy elevation guard; no role receives direct execution.
 REVOKE EXECUTE ON FUNCTION public.enforce_private_appointment_role()
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.is_trusted_notification_producer_caller()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+  SELECT
+    COALESCE(request_context.request_role = 'service_role', false)
+    OR (
+      request_context.request_role IS NULL
+      AND session_user IN ('postgres', 'supabase_admin')
+    )
+  FROM (
+    SELECT COALESCE(
+      NULLIF(auth.jwt() ->> 'role', ''),
+      NULLIF(current_setting('request.jwt.claim.role', true), '')
+    ) AS request_role
+  ) request_context;
+$function$;
+
+ALTER FUNCTION public.is_trusted_notification_producer_caller()
+  OWNER TO postgres;
+-- Internal RPC branch discriminator; no role receives direct execution.
+REVOKE EXECUTE ON FUNCTION public.is_trusted_notification_producer_caller()
   FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION public.require_notification_producer_actor(
@@ -444,12 +845,24 @@ DECLARE
     NULLIF(current_setting('request.jwt.claim.role', true), '')
   );
 BEGIN
+  IF TG_TABLE_NAME = 'appointment_crew'
+     AND TG_OP IN ('INSERT', 'UPDATE')
+     AND NOT EXISTS (
+       SELECT 1
+       FROM public.employees employee
+       WHERE employee.id = NEW.employee_id
+         AND employee.is_active IS TRUE
+         AND employee.is_external IS FALSE
+     ) THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment crew required'
+      USING ERRCODE = '42501';
+  END IF;
+
   IF v_request_role = 'service_role'
      OR (
        v_request_role IS NULL
        AND session_user IN ('postgres', 'supabase_admin')
-     )
-     OR public.is_current_notification_producer_actor() THEN
+     ) THEN
     IF TG_OP = 'DELETE' THEN
       RETURN OLD;
     END IF;
@@ -457,8 +870,27 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment employee required'
-    USING ERRCODE = '42501';
+  IF NOT public.is_current_notification_producer_actor() THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment employee required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF TG_TABLE_NAME = 'appointment_crew'
+     AND TG_OP = 'UPDATE'
+     AND (
+       NEW.id IS DISTINCT FROM OLD.id
+       OR NEW.appointment_id IS DISTINCT FROM OLD.appointment_id
+       OR NEW.employee_id IS DISTINCT FROM OLD.employee_id
+     ) THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment crew identity is immutable'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+
+  RETURN NEW;
 END;
 $function$;
 
@@ -492,6 +924,11 @@ ALTER POLICY all_insert_appointments
   WITH CHECK (
     (SELECT public.is_current_notification_producer_actor())
     AND (
+      SELECT public.is_current_appointment_creator(
+        created_by_employee_id
+      )
+    )
+    AND (
       is_private IS FALSE
       OR (SELECT public.is_current_appointment_manager())
     )
@@ -500,10 +937,10 @@ ALTER POLICY all_update_appointments
   ON public.appointments
   TO authenticated
   USING (
-    (SELECT public.can_current_employee_access_appointment(id))
+    (SELECT public.can_current_employee_mutate_appointment(id))
   )
   WITH CHECK (
-    (SELECT public.can_current_employee_access_appointment(id))
+    (SELECT public.can_current_employee_mutate_appointment(id))
     AND (
       is_private IS FALSE
       OR (SELECT public.is_current_appointment_manager())
@@ -513,7 +950,7 @@ ALTER POLICY all_delete_appointments
   ON public.appointments
   TO authenticated
   USING (
-    (SELECT public.can_current_employee_access_appointment(id))
+    (SELECT public.can_current_employee_mutate_appointment(id))
   );
 
 ALTER POLICY all_select_appointment_crew
@@ -668,14 +1105,223 @@ AS $function$
     )
     AND (
       p_employee_id IS NULL
-      OR EXISTS (
-        SELECT 1
-        FROM public.employees employee
-        WHERE employee.id = p_employee_id
-          AND employee.is_active IS TRUE
-          AND employee.is_external IS FALSE
+      OR (
+        EXISTS (
+          SELECT 1
+          FROM public.employees employee
+          WHERE employee.id = p_employee_id
+            AND employee.is_active IS TRUE
+            AND employee.is_external IS FALSE
+        )
+        AND CASE p_type_key
+          WHEN 'appointment.assigned' THEN
+            p_entity_type = 'appointment_crew'
+            AND EXISTS (
+              SELECT 1
+              FROM public.appointment_crew crew
+              WHERE crew.id = p_entity_id
+                AND crew.employee_id = p_employee_id
+            )
+          WHEN 'appointment.updated' THEN
+            p_entity_type = 'appointment'
+            AND EXISTS (
+              SELECT 1
+              FROM public.appointment_crew crew
+              WHERE crew.appointment_id = p_entity_id
+                AND crew.employee_id = p_employee_id
+            )
+          WHEN 'appointment.canceled' THEN
+            p_entity_type = 'appointment'
+            AND EXISTS (
+              SELECT 1
+              FROM public.appointment_crew crew
+              WHERE crew.appointment_id = p_entity_id
+                AND crew.employee_id = p_employee_id
+            )
+          WHEN 'timesheet.change_requested' THEN
+            p_entity_type = 'time_entry_change_request'
+            AND EXISTS (
+              SELECT 1
+              FROM public.time_entry_change_requests request
+              JOIN public.employees employee
+                ON employee.id = p_employee_id
+              WHERE request.id = p_entity_id
+                AND employee.role::text = 'admin'
+            )
+          WHEN 'timesheet.change_reviewed' THEN
+            p_entity_type = 'time_entry_change_request'
+            AND EXISTS (
+              SELECT 1
+              FROM public.time_entry_change_requests request
+              WHERE request.id = p_entity_id
+                AND request.requested_by = p_employee_id
+            )
+          ELSE false
+        END
       )
     );
+$function$;
+
+CREATE FUNCTION public.claim_guarded_native_push_delivery(
+  p_delivery_key uuid,
+  p_notification_event_id uuid,
+  p_employee_id uuid,
+  p_type_key text,
+  p_entity_type text,
+  p_entity_id uuid,
+  p_device_token_id uuid,
+  p_device_fingerprint uuid,
+  p_token text,
+  p_apns_environment text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_claimed boolean;
+BEGIN
+  IF current_user <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  WITH expired_claims AS (
+    SELECT existing.delivery_key
+    FROM public.native_push_delivery_claims existing
+    WHERE existing.claimed_at < now() - interval '90 days'
+    ORDER BY existing.claimed_at
+    LIMIT 1000
+  )
+  DELETE FROM public.native_push_delivery_claims existing
+  USING expired_claims
+  WHERE existing.delivery_key = expired_claims.delivery_key;
+
+  INSERT INTO public.native_push_delivery_claims (
+    delivery_key,
+    employee_id,
+    device_fingerprint
+  )
+  SELECT
+    p_delivery_key,
+    p_employee_id,
+    p_device_fingerprint
+  WHERE public.validate_notification_producer_delivery(
+    p_notification_event_id,
+    p_type_key,
+    p_entity_type,
+    p_entity_id,
+    p_employee_id
+  )
+    AND EXISTS (
+      SELECT 1
+      FROM public.device_tokens token
+      WHERE token.id = p_device_token_id
+        AND token.employee_id = p_employee_id
+        AND token.token = p_token
+        AND token.platform = 'ios'
+        AND token.apns_environment = p_apns_environment
+    )
+  ON CONFLICT (delivery_key) DO NOTHING
+  RETURNING true INTO v_claimed;
+
+  RETURN COALESCE(v_claimed, false);
+END;
+$function$;
+
+CREATE FUNCTION public.claim_guarded_notification_target_delivery(
+  p_delivery_key uuid,
+  p_notification_event_id uuid,
+  p_employee_id uuid,
+  p_type_key text,
+  p_channel text,
+  p_target_fingerprint uuid,
+  p_entity_type text,
+  p_entity_id uuid,
+  p_source_id uuid,
+  p_target text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_claimed boolean;
+BEGIN
+  IF current_user <> 'service_role' THEN
+    RAISE EXCEPTION 'service_role required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  IF p_channel NOT IN ('pwa_push', 'email') THEN
+    RAISE EXCEPTION 'unsupported guarded notification target channel'
+      USING ERRCODE = '22023';
+  END IF;
+
+  WITH expired_claims AS (
+    SELECT existing.delivery_key
+    FROM public.notification_delivery_claims existing
+    WHERE existing.claimed_at < now() - interval '90 days'
+    ORDER BY existing.claimed_at
+    LIMIT 1000
+  )
+  DELETE FROM public.notification_delivery_claims existing
+  USING expired_claims
+  WHERE existing.delivery_key = expired_claims.delivery_key;
+
+  INSERT INTO public.notification_delivery_claims (
+    delivery_key,
+    notification_event_id,
+    employee_id,
+    type_key,
+    channel,
+    target_fingerprint
+  )
+  SELECT
+    p_delivery_key,
+    p_notification_event_id,
+    p_employee_id,
+    p_type_key,
+    p_channel,
+    p_target_fingerprint
+  WHERE public.validate_notification_producer_delivery(
+    p_notification_event_id,
+    p_type_key,
+    p_entity_type,
+    p_entity_id,
+    p_employee_id
+  )
+    AND (
+      (
+        p_channel = 'pwa_push'
+        AND p_source_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.push_subscriptions subscription
+          WHERE subscription.id = p_source_id
+            AND subscription.employee_id = p_employee_id
+            AND subscription.endpoint = p_target
+        )
+      )
+      OR (
+        p_channel = 'email'
+        AND p_source_id IS NULL
+        AND NULLIF(btrim(p_target), '') IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM public.employees employee
+          WHERE employee.id = p_employee_id
+            AND lower(btrim(employee.email)) = lower(btrim(p_target))
+        )
+      )
+    )
+  ON CONFLICT (delivery_key) DO NOTHING
+  RETURNING true INTO v_claimed;
+
+  RETURN COALESCE(v_claimed, false);
+END;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.claim_notification_delivery(
@@ -790,6 +1436,30 @@ ALTER FUNCTION public.validate_notification_producer_delivery(
   uuid,
   uuid
 ) OWNER TO postgres;
+ALTER FUNCTION public.claim_guarded_native_push_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text
+) OWNER TO postgres;
+ALTER FUNCTION public.claim_guarded_notification_target_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  text,
+  uuid,
+  uuid,
+  text
+) OWNER TO postgres;
 ALTER FUNCTION public.release_notification_delivery_claim(uuid)
   OWNER TO postgres;
 REVOKE EXECUTE ON FUNCTION public.claim_notification_delivery(
@@ -825,6 +1495,54 @@ GRANT EXECUTE ON FUNCTION public.validate_notification_producer_delivery(
   text,
   uuid,
   uuid
+) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.claim_guarded_native_push_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.claim_guarded_native_push_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text
+) TO service_role;
+REVOKE EXECUTE ON FUNCTION public.claim_guarded_notification_target_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  text,
+  uuid,
+  uuid,
+  text
+) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.claim_guarded_notification_target_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  text,
+  uuid,
+  uuid,
+  text
 ) TO service_role;
 REVOKE EXECUTE ON FUNCTION public.release_notification_delivery_claim(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
@@ -1305,9 +2023,9 @@ BEGIN
     RAISE EXCEPTION 'Appointment not found';
   END IF;
 
-  IF v_actor_id IS NOT NULL
-     AND NOT public.can_current_employee_access_appointment(p_appointment_id) THEN
-    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment access required'
+  IF NOT public.is_trusted_notification_producer_caller()
+     AND NOT public.can_current_employee_mutate_appointment(p_appointment_id) THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment mutation access required'
       USING ERRCODE = '42501';
   END IF;
 
@@ -1416,6 +2134,88 @@ GRANT EXECUTE ON FUNCTION public.update_appointment(
   text,
   uuid
 ) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.delete_appointment(
+  p_appointment_id uuid,
+  p_actor_id uuid DEFAULT NULL::uuid,
+  p_reason text DEFAULT NULL::text
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_actor_id uuid;
+  v_date date;
+  v_time_start time;
+  v_time_end time;
+  v_status text;
+BEGIN
+  v_actor_id :=
+    public.require_notification_producer_actor(p_actor_id, false);
+
+  SELECT
+    appointment.date,
+    appointment.time_start,
+    appointment.time_end,
+    appointment.status::text
+    INTO v_date, v_time_start, v_time_end, v_status
+  FROM public.appointments appointment
+  WHERE appointment.id = p_appointment_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  IF NOT public.is_trusted_notification_producer_caller()
+     AND NOT public.can_current_employee_mutate_appointment(
+       p_appointment_id
+     ) THEN
+    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment mutation access required'
+      USING ERRCODE = '42501';
+  END IF;
+
+  INSERT INTO public.appointment_status_history (
+    appointment_id,
+    event_type,
+    old_date,
+    old_time_start,
+    old_time_end,
+    old_status,
+    actor_id,
+    reason
+  )
+  VALUES (
+    p_appointment_id,
+    'deleted',
+    v_date,
+    v_time_start,
+    v_time_end,
+    v_status,
+    v_actor_id,
+    p_reason
+  );
+
+  UPDATE public.job_tasks
+  SET appointment_id = NULL
+  WHERE appointment_id = p_appointment_id;
+
+  DELETE FROM public.appointment_crew
+  WHERE appointment_id = p_appointment_id;
+
+  DELETE FROM public.appointments
+  WHERE id = p_appointment_id;
+END;
+$function$;
+
+ALTER FUNCTION public.delete_appointment(uuid, uuid, text)
+  OWNER TO postgres;
+REVOKE EXECUTE ON FUNCTION public.delete_appointment(uuid, uuid, text)
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.delete_appointment(uuid, uuid, text)
+  TO authenticated, service_role;
 
 -- ─── 4. Timesheet producer caller binding and serialization ────────────────
 
@@ -1729,7 +2529,11 @@ BEGIN
     SELECT 1
     FROM pg_policies policy
     WHERE policy.schemaname = 'public'
-      AND policy.tablename IN ('appointments', 'appointment_crew')
+      AND policy.tablename IN (
+        'appointments',
+        'appointment_crew',
+        'time_entry_change_requests'
+      )
       AND 'anon' = ANY (policy.roles)
   )
      OR has_table_privilege('anon', 'public.appointments', 'SELECT')
@@ -1739,9 +2543,209 @@ BEGIN
      OR has_table_privilege('anon', 'public.appointment_crew', 'SELECT')
      OR has_table_privilege('anon', 'public.appointment_crew', 'INSERT')
      OR has_table_privilege('anon', 'public.appointment_crew', 'UPDATE')
-     OR has_table_privilege('anon', 'public.appointment_crew', 'DELETE') THEN
+     OR has_table_privilege('anon', 'public.appointment_crew', 'DELETE')
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'INSERT'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.time_entry_change_requests',
+       'TRIGGER'
+     ) THEN
     RAISE EXCEPTION
-      'notification producer authorization postflight found anonymous appointment access'
+      'notification producer authorization postflight found anonymous source access'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class relation
+    WHERE relation.oid = 'public.time_entry_change_requests'::regclass
+      AND relation.relrowsecurity IS TRUE
+  )
+     OR NOT has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'INSERT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.time_entry_change_requests',
+       'TRIGGER'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight found timesheet request ACL drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF (
+    SELECT count(*)
+    FROM pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename IN ('appointments', 'appointment_crew')
+  ) <> 8 THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight found unexpected appointment policies'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      VALUES
+        ('appointments', 'all_select_appointments', 'SELECT'),
+        ('appointments', 'all_insert_appointments', 'INSERT'),
+        ('appointments', 'all_update_appointments', 'UPDATE'),
+        ('appointments', 'all_delete_appointments', 'DELETE'),
+        ('appointment_crew', 'all_select_appointment_crew', 'SELECT'),
+        ('appointment_crew', 'all_insert_appointment_crew', 'INSERT'),
+        ('appointment_crew', 'all_update_appointment_crew', 'UPDATE'),
+        ('appointment_crew', 'all_delete_appointment_crew', 'DELETE')
+    ) AS expected(tablename, policyname, command)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_policies policy
+      WHERE policy.schemaname = 'public'
+        AND policy.tablename = expected.tablename
+        AND policy.policyname = expected.policyname
+        AND policy.cmd = expected.command
+        AND policy.permissive = 'PERMISSIVE'
+        AND policy.roles = ARRAY['authenticated'::name]
+    )
+  )
+     OR (
+       SELECT count(*)
+       FROM pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'time_entry_change_requests'
+     ) <> 1
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_policies policy
+       WHERE policy.schemaname = 'public'
+         AND policy.tablename = 'time_entry_change_requests'
+         AND policy.policyname = 'tecr_read'
+         AND policy.cmd = 'SELECT'
+         AND policy.permissive = 'PERMISSIVE'
+         AND policy.roles = ARRAY['authenticated'::name]
+         AND policy.qual ILIKE
+           '%can_current_employee_read_time_entry_change_request%'
+         AND policy.qual ILIKE '%requested_by%'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight found policy-shape drift'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM (
+      VALUES
+        (
+          'public.appointments'::regclass,
+          'trg_enforce_private_appointment',
+          'public.enforce_private_appointment_role()'::regprocedure,
+          23::smallint
+        ),
+        (
+          'public.appointments'::regclass,
+          'trg_appointment_notify',
+          'public.trg_appt_notify()'::regprocedure,
+          17::smallint
+        ),
+        (
+          'public.appointment_crew'::regclass,
+          'trg_appointment_crew_notify',
+          'public.trg_appt_crew_notify()'::regprocedure,
+          5::smallint
+        ),
+        (
+          'public.appointments'::regclass,
+          'trg_appointments_bind_creator',
+          'public.bind_appointment_creator()'::regprocedure,
+          23::smallint
+        ),
+        (
+          'public.appointments'::regclass,
+          'trg_appointments_notification_producer_authority',
+          'public.assert_notification_producer_write()'::regprocedure,
+          31::smallint
+        ),
+        (
+          'public.appointment_crew'::regclass,
+          'trg_appointment_crew_notification_producer_authority',
+          'public.assert_notification_producer_write()'::regprocedure,
+          31::smallint
+        )
+    ) AS expected(relation_id, trigger_name, function_id, trigger_type)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger trigger
+      WHERE trigger.tgrelid = expected.relation_id
+        AND trigger.tgname = expected.trigger_name
+        AND trigger.tgfoid = expected.function_id
+        AND trigger.tgtype = expected.trigger_type
+        AND trigger.tgenabled IN ('O', 'A')
+        AND trigger.tgqual IS NULL
+        AND trigger.tgattr = ''::int2vector
+        AND trigger.tgnargs = 0
+        AND NOT trigger.tgisinternal
+    )
+  ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight found trigger drift'
       USING ERRCODE = '55000';
   END IF;
 
@@ -1757,6 +2761,32 @@ BEGIN
      ) THEN
     RAISE EXCEPTION
       'notification producer authorization postflight requires forced RLS on private state'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns column
+    WHERE column.table_schema = 'public'
+      AND column.table_name = 'appointments'
+      AND column.column_name = 'created_by_employee_id'
+  )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_trigger trigger
+       WHERE trigger.tgrelid = 'public.appointments'::regclass
+         AND trigger.tgname = 'trg_appointments_bind_creator'
+         AND trigger.tgfoid =
+           'public.bind_appointment_creator()'::regprocedure
+         AND trigger.tgtype = 23
+         AND trigger.tgenabled IN ('O', 'A')
+         AND trigger.tgqual IS NULL
+         AND trigger.tgattr = ''::int2vector
+         AND trigger.tgnargs = 0
+         AND NOT trigger.tgisinternal
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight requires appointment creator binding'
       USING ERRCODE = '55000';
   END IF;
 
@@ -1783,6 +2813,46 @@ BEGIN
      OR NOT has_function_privilege(
        'service_role',
        'public.claim_notification_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.claim_guarded_native_push_delivery(uuid,uuid,uuid,text,text,uuid,uuid,uuid,text,text)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.claim_guarded_native_push_delivery(uuid,uuid,uuid,text,text,uuid,uuid,uuid,text,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'authenticated',
+       'public.claim_guarded_notification_target_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid,uuid,text)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'service_role',
+       'public.claim_guarded_notification_target_delivery(uuid,uuid,uuid,text,text,uuid,text,uuid,uuid,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.delete_appointment(uuid,uuid,text)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.can_current_employee_read_time_entry_change_request(uuid)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.can_current_employee_read_time_entry_change_request(uuid)',
+       'EXECUTE'
+     )
+     OR NOT has_function_privilege(
+       'authenticated',
+       'public.delete_appointment(uuid,uuid,text)',
        'EXECUTE'
      ) THEN
     RAISE EXCEPTION

@@ -11,6 +11,8 @@
 -- claims remain as private evidence so rollback cannot make a prior occurrence
 -- replayable. The pre-migration notify_emit body is restored for every other
 -- notification type, and browser/service RPC signatures remain callable.
+-- Caller-bound appointment creator/update/delete/crew authorization is retained;
+-- restoring spoofable or object-wide mutation would not be a safe recovery.
 -- ════════════════════════════════════════════════
 
 UPDATE public.notification_types
@@ -111,6 +113,30 @@ REVOKE EXECUTE ON FUNCTION public.validate_notification_producer_delivery(
   text,
   uuid,
   uuid
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.claim_guarded_native_push_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text
+) FROM PUBLIC, anon, authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.claim_guarded_notification_target_delivery(
+  uuid,
+  uuid,
+  uuid,
+  text,
+  text,
+  uuid,
+  text,
+  uuid,
+  uuid,
+  text
 ) FROM PUBLIC, anon, authenticated, service_role;
 REVOKE EXECUTE ON FUNCTION public.release_notification_delivery_claim(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
