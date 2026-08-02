@@ -157,6 +157,29 @@ describe('native notification presentation catalog', () => {
     });
   });
 
+  it('keeps generic reminder copy privacy-safe while retaining the exact route', () => {
+    const body = {
+      appointment_id: 'appointment-1',
+      presentation_context: {
+        appointment_title: 'Moisture check',
+        appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
+      },
+    };
+    const presentation = buildGenericNativeNotificationPresentation(
+      'appointment.reminder',
+      body,
+    );
+    expect(presentation).toEqual({
+      title: 'Appointment in one hour',
+      body: 'Open Utah Pros to review the appointment.',
+      url: '/tech/appointment/appointment-1',
+    });
+    expect(JSON.stringify(presentation)).not.toContain('Moisture check');
+    expect(JSON.stringify(presentation)).not.toContain('Jordan Lee');
+    expect(JSON.stringify(presentation)).not.toContain('9:00 AM');
+  });
+
   it('keeps the owner diagnostic presentation fixed and field-safe', () => {
     expect(buildNativeNotificationPresentation('owner.native_push_test', {
       title: 'Arbitrary title',

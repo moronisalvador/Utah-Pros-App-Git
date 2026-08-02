@@ -607,6 +607,82 @@ describe('sendNativePushToEmployee', () => {
   });
 
   it.each([
+    ['unset by default', {}],
+    ['explicitly false', { NATIVE_RICH_NOTIFICATION_PRESENTATION: 'false' }],
+  ])('keeps appointment reminder details private when rich presentation is %s', async (_label, richSetting) => {
+    const db = dbWithTokens([{
+      id: `token-reminder-${_label}`,
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+    const appointmentWhen = 'Fri, Jul 31 · 9:00 AM – 11:00 AM';
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, ...richSetting },
+      employeeId: 'employee-1',
+      typeKey: 'appointment.reminder',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        presentation_context: {
+          appointment_title: 'Moisture check',
+          appointment_when: appointmentWhen,
+          customer_name: 'Jordan Lee',
+        },
+      },
+      eventKey: `appointment.reminder:${_label}`,
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const serialized = fetchImpl.mock.calls[0][1].body;
+    const payload = JSON.parse(serialized);
+    expect(payload.aps.alert).toEqual({
+      title: 'Appointment in one hour',
+      body: 'Open Utah Pros to review the appointment.',
+    });
+    expect(serialized).not.toContain('Moisture check');
+    expect(serialized).not.toContain('Jordan Lee');
+    expect(serialized).not.toContain('9:00 AM');
+    expect(payload.data.url).toBe('/tech/appointment/appointment-1');
+  });
+
+  it('shows rich appointment reminder details only when the flag is exactly true', async () => {
+    const db = dbWithTokens([{
+      id: 'token-reminder-rich',
+      token: 'private-token',
+      updated_at: '2026-07-28T12:00:00.000Z',
+    }]);
+    const fetchImpl = vi.fn(async () => new Response('', { status: 200 }));
+
+    await sendNativePushToEmployee({
+      db,
+      env: { ...CONFIG, NATIVE_RICH_NOTIFICATION_PRESENTATION: 'true' },
+      employeeId: 'employee-1',
+      typeKey: 'appointment.reminder',
+      notificationBody: {
+        appointment_id: 'appointment-1',
+        presentation_context: {
+          appointment_title: 'Moisture check',
+          appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+          customer_name: 'Jordan Lee',
+        },
+      },
+      eventKey: 'appointment.reminder:rich',
+      fetchImpl,
+      signJwtImpl: vi.fn(async () => 'signed-jwt'),
+    });
+
+    const payload = JSON.parse(fetchImpl.mock.calls[0][1].body);
+    expect(payload.aps.alert).toEqual({
+      title: 'Appointment in one hour · Moisture check',
+      body: 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM',
+    });
+    expect(payload.data.url).toBe('/tech/appointment/appointment-1');
+  });
+
+  it.each([
     ['admin route', '/tech/admin/users', null],
     ['malformed encoding', '/tech/appointment/%2Fprivate', null],
     ['oversized path', `/tech/appointment/${'x'.repeat(2_100)}`, null],
