@@ -92,20 +92,21 @@ describe('native notification presentation catalog', () => {
   });
 
   it.each([
-    ['appointment.assigned', 'New appointment'],
-    ['appointment.updated', 'Appointment updated'],
-    ['appointment.canceled', 'Appointment canceled'],
-    ['appointment.reminder', 'Appointment in one hour'],
-  ])('routes %s to the exact native appointment', (typeKey, title) => {
+    ['appointment.assigned', 'New appointment', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.updated', 'Appointment updated', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.canceled', 'Appointment canceled', 'Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+    ['appointment.reminder', 'Appointment in one hour', 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM'],
+  ])('routes %s to the exact native appointment', (typeKey, title, message) => {
     expect(buildNativeNotificationPresentation(typeKey, {
       appointment_id: 'appt-1',
       presentation_context: {
         appointment_title: 'Moisture check',
         appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
       },
     })).toEqual({
       title: `${title} · Moisture check`,
-      body: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+      body: message,
       url: '/tech/appointment/appt-1',
     });
   });
@@ -198,6 +199,14 @@ describe('native notification presentation catalog', () => {
         appointment_when: 'Fri, Jul 31 · 10:00 AM',
       },
     }, 'Appointment canceled · Moisture check', 'Fri, Jul 31 · 10:00 AM'],
+    ['appointment.reminder', {
+      appointment_id: 'appointment-1',
+      presentation_context: {
+        appointment_title: 'Moisture check',
+        appointment_when: 'Fri, Jul 31 · 9:00 AM – 11:00 AM',
+        customer_name: 'Jordan Lee',
+      },
+    }, 'Appointment in one hour · Moisture check', 'Jordan Lee · Fri, Jul 31 · 9:00 AM – 11:00 AM'],
     ['estimate.accepted', {
       payload: { amount: 1250 },
       presentation_context: {
