@@ -101,7 +101,7 @@ jobs:
     environment: ios-dev-signing
     env:
       VITE_APNS_ENV: production
-      VITE_NATIVE_OTA_ENABLED: "false"
+      VITE_NATIVE_OTA_ENABLED: "true"
       VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
       VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
     steps:
@@ -183,8 +183,8 @@ jobs:
             echo "UPR Dev TestFlight must use production APNs." >&2
             exit 1
           fi
-          if [[ "$VITE_NATIVE_OTA_ENABLED" != "false" ]]; then
-            echo "UPR Dev TestFlight OTA must remain disabled until keyless secret isolation is approved." >&2
+          if [[ "$VITE_NATIVE_OTA_ENABLED" != "true" ]]; then
+            echo "UPR Dev TestFlight must embed the reviewed isolated updater contract." >&2
             exit 1
           fi
       - name: Select and verify Xcode 26.6
@@ -220,13 +220,19 @@ jobs:
       - name: Synchronize the iOS platform
         run: node_modules/.bin/cap sync ios
 
-      - name: Apply the keyless UPR Dev updater-off identity
+      - name: Apply the isolated UPR Dev updater config inside the signing job
         shell: bash
+        env:
+          CAPGO_DEV_PUBLIC_KEY_V2: ${{ secrets.CAPGO_DEV_PUBLIC_KEY_V2 }}
         run: |
           set -euo pipefail
+          if [[ -z "${CAPGO_DEV_PUBLIC_KEY_V2:-}" ]]; then
+            echo "Missing required UPR Dev public updater key." >&2
+            exit 1
+          fi
           node --input-type=module -e "
             import { configureIosCapgoDev } from './scripts/configure-ios-capgo-dev.mjs';
-            configureIosCapgoDev({ otaEnabled: false });
+            configureIosCapgoDev({ otaEnabled: true });
           "
 
       - name: Reject uncommitted Capacitor project drift
@@ -319,7 +325,7 @@ jobs:
     environment: ios-dev-testflight
     env:
       VITE_APNS_ENV: production
-      VITE_NATIVE_OTA_ENABLED: "false"
+      VITE_NATIVE_OTA_ENABLED: "true"
       VITE_NATIVE_PUSH_ENABLED: "${{ inputs.native_push_enabled && 'true' || 'false' }}"
       VITE_NATIVE_PUSH_RETIRE_DEV_TOKEN: "${{ inputs.native_push_enabled && 'false' || 'true' }}"
     steps:
