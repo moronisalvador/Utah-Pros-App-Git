@@ -7,12 +7,12 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-The standalone appointment-reminder containment repair is owned by the appointment-reminder task
-through its PR-to-`dev` handoff. Its exact files, shared `notify.js` overlap, reviewer roles, and
-inert activation gates are frozen in
+*(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
+through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert
+activation gates remain recorded in
 [`.claude/rules/appointment-reminder-wave-ownership.md`](appointment-reminder-wave-ownership.md).
-This lease does not include the separate five-producer authorization migration and ends when the
-standalone reminder PR is merged or explicitly parked.
+The separate five-producer candidate has since merged that exact `dev` baseline without rewriting
+history and does not duplicate the reminder migration.)*
 
 *(Released 2026-07-29: the mobile current-origin reconciliation lease over `.claude/**`,
 `AGENTS.md`, `CLAUDE.md`, `tooling/**` and the mobile integration seams — owner accepted the
@@ -167,20 +167,22 @@ The reversible notification producer containment also applied from exact reviewe
   occurrence IDs plus atomic service-only bell/Web Push/email/APNs target claims bind every
   delivery to the exact current recipient, endpoint/email or raw iOS token and APNs environment.
   Exact policy/trigger/signature drift checks fail closed. Its recovery rollback is intentionally
-  fail-closed, and both files keep the same five flags disabled. The later repository-only
-  `20260802040935_preserve_notify_emit_event_id.sql` reminder-containment migration composes with
-  this boundary: it preserves producer-supplied IDs for non-guarded types, retains UUID plus
-  occurrence-ledger validation for the five guarded types, and rolls back to the guarded
-  predecessor rather than the unsafe legacy dispatcher. Both migrations and rollbacks remain
-  unapplied. The candidate includes the
+  fail-closed, and both files keep the same five flags disabled. The later
+  `20260802040935_preserve_notify_emit_event_id.sql` reminder-containment source is now in `dev`
+  through PR #571 and composes with this boundary: it preserves producer-supplied IDs for
+  non-guarded types, retains UUID plus occurrence-ledger validation for the five guarded types,
+  records the exact validated predecessor, and rolls back to that predecessor rather than
+  inferring it from retained evidence tables. `20260801215912` remains branch-only; neither
+  migration is applied to QA or the shared project. The candidate includes the
   reviewed private-crew compatibility correction: non-manager field users cannot edit private
   crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
-  `ec6b3583`, build, full unit `1579/1579`, Worker `1934/1934`, QA `1016/1016`, focused
-  producer/APNs `123/123`, producer QA `7/7`, private-crew `4/4`, lint, migration hygiene, and the
-  migration, worker-security, anonymous-grant, mobile-security, project-law, design and release
-  reviews pass. The sentinel-locked SQL behavior proof is authored but cannot run until the
-  governed local Supabase bootstrap exists. No hosted SQL, deploy, delivery, flag, provider, or
-  device action is implied.
+  `9e723f4a`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1032/1032`, focused
+  producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`, changed-file lint,
+  migration hygiene, and diff integrity pass. The sentinel-locked SQL behavior proof is authored
+  but cannot run until the governed local Supabase bootstrap supplies its local stack key. Fresh
+  migration, worker-security, anonymous-grant, mobile-security, project-law, design, and release
+  reviews are required on the final post-#571 SHA before publication. No hosted SQL, deploy,
+  delivery, flag, provider, or device action is implied.
 - Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
   production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
   Cloudflare Production remains main `478330d9`. That older Worker does not classify

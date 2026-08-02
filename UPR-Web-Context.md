@@ -4536,8 +4536,8 @@ It adds no migration or live-database change.
   admin bell rows. The shared catalog type is now `enabled=false` and the
   single `upr_appointment_reminders` cron has been unscheduled, so no new
   reminder claims or sends occur. Preferences and existing claims remain.
-  Repository source keeps the reminder scoped to the named active/internal
-  current crew member, renders the appointment/client/Denver time for
+  Repository source landed in `dev` through PR #571 (`9e723f4a`), keeps the
+  reminder scoped to the named active/internal current crew member, and renders the appointment/client/Denver time for
   bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
   preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
   reminder copy. Production records the original migration as ledger
@@ -4865,20 +4865,22 @@ current token ownership. Guarded Web Push atomically binds the selected subscrip
 ID/employee/endpoint, and guarded email binds the employee's current normalized address; stale
 targets cannot reach a provider after logout, reassignment, deactivation, or address change. Bell
 and the three outbound channels retain service-only per-target claims. All five
-catalog flags are explicitly left disabled. This candidate has passed repository build, full
-credential-free tests, changed-file lint, migration hygiene, and source contracts only. It has not
+catalog flags are explicitly left disabled. After merging current `origin/dev` `9e723f4a` without
+rewriting history, this candidate passed build, full unit `1582/1582`, Worker `1945/1945`, QA
+`1032/1032`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
+changed-file lint, migration hygiene, and source contracts only. It has not
 been applied to local, QA, or shared production; no notification was sent and no PWA/native device
 path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed
 baseline/bootstrap is implemented.
 
-The later repository-only
-`20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are ordered after that
-producer repair. They accept either the current live dispatcher or its hardened predecessor,
+The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
+`dev` through PR #571 and remain ordered after that producer repair. They accept either the current
+live dispatcher or its hardened predecessor,
 preserve a usable producer occurrence ID for non-guarded types such as
 `appointment.reminder`, retain UUID plus occurrence-ledger validation for all five guarded types,
-and roll back to the guarded predecessor rather than the unsafe legacy dispatcher. They also keep
-the reminder flag disabled and cron absent. Neither migration has been applied to QA or the shared
-project.
+record the exact validated predecessor for rollback, and never infer it from retained occurrence
+tables. They also keep the reminder flag disabled and cron absent. `20260801215912` remains
+branch-only; neither migration has been applied to QA or the shared project.
 
 **Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
 is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
