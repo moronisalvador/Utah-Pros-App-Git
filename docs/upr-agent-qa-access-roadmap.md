@@ -537,9 +537,18 @@ Acceptance:
 Scope: clean local Supabase; migrations from zero; RLS/RPC/trigger/rollback and failure-injection
 tests; no hosted identities, storage state, deployed application, or provider calls.
 
-**Repository outcome (2026-07-23):** target-policy and runner refusal scaffold complete. Execution
-is blocked because no governed `supabase/config.toml`, local CLI/runtime, deterministic database
-seed, or representative-role fixture exists. No database lane was reported as passed or skipped.
+**Repository outcome (updated 2026-08-02):** the generic target-policy and runner refusal scaffold
+is complete, but a reusable all-migration `supabase/config.toml`, deterministic cross-domain seed,
+and representative-role fixture still do not exist. PR #573 now supplies one intentionally scoped
+exception: a project-pinned Supabase CLI `2.111.0` harness restores an exact SHA-pinned baseline,
+loads synthetic notification-producer fixtures, applies only the pinned prerequisite/candidate/
+successor train, proves forward → reverse rollback → clean reapply on two fresh loopback-only
+stacks, and removes all local residuals. Database/config/seed/proof inputs are hash-manifested;
+every runtime input must also be tracked, committed, clean, and is bound by the emitted exact
+commit SHA. Remote Docker contexts are refused before mutation. The development qualification
+passed; its final clean commit-bound rerun remains pending the separately authorized commit. This
+advances the named notification-producer slice; it does not complete generic P2a or
+authorize/replace hosted P2b.
 
 Acceptance:
 

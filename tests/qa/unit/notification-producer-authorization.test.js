@@ -191,6 +191,30 @@ describe('notification producer authorization migration', () => {
     expect(migration).toContain(
       'NEW.employee_id IS DISTINCT FROM OLD.employee_id',
     );
+    expect(isolatedProof).toContain(
+      'external employee mutated an appointment',
+    );
+    expect(isolatedProof).toContain(
+      'inactive employee mutated an appointment',
+    );
+    expect(isolatedProof).toContain(
+      'native delivery accepted a stale token, environment, or source id',
+    );
+    expect(isolatedProof).toContain(
+      'Web Push delivery accepted a stale source or endpoint',
+    );
+    expect(isolatedProof).toContain(
+      'email delivery accepted an inactive employee',
+    );
+    expect(isolatedProof).toContain(
+      'email delivery accepted an external employee',
+    );
+    expect(isolatedProof).toContain(
+      'email delivery accepted a removed appointment assignee',
+    );
+    expect(isolatedProof).toContain(
+      'definitive target release did not permit exactly one safe reclaim',
+    );
     expect(migration).toContain(
       "'public.enforce_private_appointment_role()'::regprocedure",
     );
@@ -351,6 +375,18 @@ describe('notification producer authorization migration', () => {
     );
     expect(migration).toContain(
       'ALTER TABLE public.notification_delivery_claims\n  FORCE ROW LEVEL SECURITY;',
+    );
+    expect(migration).toContain(
+      'REVOKE ALL PRIVILEGES ON TABLE public.notification_delivery_claims\n  FROM PUBLIC, anon, authenticated, service_role;',
+    );
+    expect(migration).toContain(
+      'notification producer authorization postflight found private table ACL drift',
+    );
+    expect(rollback).toContain(
+      'REVOKE ALL PRIVILEGES ON TABLE public.notification_delivery_claims\n  FROM PUBLIC, anon, authenticated, service_role;',
+    );
+    expect(rollback).toContain(
+      'notification producer recovery rollback found private table ACL drift',
     );
     expect(migration).toContain(
       'ON CONFLICT (delivery_key) DO NOTHING',

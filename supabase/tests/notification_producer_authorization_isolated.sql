@@ -6,13 +6,15 @@
 --   On a disposable local database only, proves the five contained notification
 --   producers bind browser actors to auth.uid(), deny inactive/external/cross-
 --   account writes, preserve crew row identity through a locked diff, serialize
---   timesheet submit/review decisions, and claim each delivery occurrence once.
+--   timesheet submit/review decisions, and atomically bind each bell/native/
+--   Web Push/email delivery claim to the current recipient and target.
 --
 -- DEPENDS ON:
 --   Packages:  PostgreSQL, Supabase CLI
 --   Internal:  20260801215912_notification_producer_authorization.sql
 --   Data:      reads  → appointments, appointment_crew, employees,
---                       job_time_entries, notification delivery/occurrence state
+--                       job_time_entries, device_tokens, push_subscriptions,
+--                       notification delivery/occurrence state
 --              writes → disposable test rows in those same local tables
 --
 -- NOTES / GOTCHAS:
@@ -68,6 +70,8 @@ BEGIN
   PERFORM set_config('upr.npa.service_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.private_appointment', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.entry', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.device_token', gen_random_uuid()::text, true);
+  PERFORM set_config('upr.npa.push_subscription', gen_random_uuid()::text, true);
   PERFORM set_config('upr.npa.occurrence', gen_random_uuid()::text, true);
   PERFORM set_config(
     'upr.npa.requested_occurrence',
@@ -119,6 +123,7 @@ FROM unnest(ARRAY[
 INSERT INTO public.employees (
   id,
   full_name,
+  email,
   auth_user_id,
   role,
   is_active,
@@ -128,6 +133,7 @@ VALUES
   (
     current_setting('upr.npa.employee_tech')::uuid,
     '[NPA isolated] Tech',
+    'npa-tech@example.invalid',
     current_setting('upr.npa.auth_tech')::uuid,
     'field_tech',
     true,
@@ -136,6 +142,7 @@ VALUES
   (
     current_setting('upr.npa.employee_other')::uuid,
     '[NPA isolated] Other tech',
+    NULL,
     current_setting('upr.npa.auth_other')::uuid,
     'field_tech',
     true,
@@ -144,6 +151,7 @@ VALUES
   (
     current_setting('upr.npa.employee_admin')::uuid,
     '[NPA isolated] Admin',
+    NULL,
     current_setting('upr.npa.auth_admin')::uuid,
     'admin',
     true,
@@ -152,6 +160,7 @@ VALUES
   (
     current_setting('upr.npa.employee_inactive')::uuid,
     '[NPA isolated] Inactive',
+    NULL,
     current_setting('upr.npa.auth_inactive')::uuid,
     'field_tech',
     false,
@@ -160,6 +169,7 @@ VALUES
   (
     current_setting('upr.npa.employee_external')::uuid,
     '[NPA isolated] External',
+    NULL,
     current_setting('upr.npa.auth_external')::uuid,
     'crm_partner',
     true,
@@ -215,6 +225,36 @@ VALUES (
   'field'
 );
 
+INSERT INTO public.device_tokens (
+  id,
+  employee_id,
+  token,
+  platform,
+  apns_environment
+)
+VALUES (
+  current_setting('upr.npa.device_token')::uuid,
+  current_setting('upr.npa.employee_tech')::uuid,
+  'npa-local-device-token',
+  'ios',
+  'sandbox'
+);
+
+INSERT INTO public.push_subscriptions (
+  id,
+  employee_id,
+  endpoint,
+  p256dh,
+  auth
+)
+VALUES (
+  current_setting('upr.npa.push_subscription')::uuid,
+  current_setting('upr.npa.employee_tech')::uuid,
+  'https://push.example.invalid/npa-current',
+  'npa-local-p256dh',
+  'npa-local-auth'
+);
+
 CREATE OR REPLACE FUNCTION pg_temp.expect_sqlstate(
   p_label text,
   p_statement text,
@@ -263,14 +303,17 @@ SELECT set_config(
   )::text,
   true
 );
-SELECT pg_temp.expect_sqlstate(
-  'external employee cannot update appointment',
-  format(
-    'UPDATE public.appointments SET title=%L WHERE id=%L::uuid',
-    '[NPA isolated] external write',
-    current_setting('upr.npa.appointment')
-  )
-);
+DO $external_appointment_update_denied$
+BEGIN
+  UPDATE public.appointments
+  SET title = '[NPA isolated] external write'
+  WHERE id = current_setting('upr.npa.appointment')::uuid;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'external employee mutated an appointment';
+  END IF;
+END;
+$external_appointment_update_denied$;
 
 SELECT set_config(
   'request.jwt.claims',
@@ -282,14 +325,17 @@ SELECT set_config(
   )::text,
   true
 );
-SELECT pg_temp.expect_sqlstate(
-  'inactive employee cannot update appointment',
-  format(
-    'UPDATE public.appointments SET title=%L WHERE id=%L::uuid',
-    '[NPA isolated] inactive write',
-    current_setting('upr.npa.appointment')
-  )
-);
+DO $inactive_appointment_update_denied$
+BEGIN
+  UPDATE public.appointments
+  SET title = '[NPA isolated] inactive write'
+  WHERE id = current_setting('upr.npa.appointment')::uuid;
+
+  IF FOUND THEN
+    RAISE EXCEPTION 'inactive employee mutated an appointment';
+  END IF;
+END;
+$inactive_appointment_update_denied$;
 
 SELECT set_config(
   'request.jwt.claims',
@@ -1124,6 +1170,399 @@ BEGIN
   END IF;
 END;
 $delivery_claim$;
+
+DO $guarded_delivery_claims$
+DECLARE
+  v_native_key uuid := gen_random_uuid();
+  v_native_fingerprint uuid := gen_random_uuid();
+  v_pwa_key uuid := gen_random_uuid();
+  v_pwa_fingerprint uuid := gen_random_uuid();
+  v_email_key uuid := gen_random_uuid();
+  v_email_fingerprint uuid := gen_random_uuid();
+  v_native_recipient_valid boolean;
+  v_native_token_valid boolean;
+  v_native_first boolean;
+  v_native_duplicate boolean;
+  v_native_row_valid boolean;
+  v_pwa_first boolean;
+  v_pwa_duplicate boolean;
+  v_email_first boolean;
+  v_email_duplicate boolean;
+  v_release_first boolean;
+  v_release_duplicate boolean;
+  v_reclaim boolean;
+BEGIN
+  v_native_recipient_valid := public.validate_notification_producer_delivery(
+    current_setting('upr.npa.occurrence')::uuid,
+    'appointment.updated',
+    'appointment',
+    current_setting('upr.npa.appointment')::uuid,
+    current_setting('upr.npa.employee_tech')::uuid
+  );
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.device_tokens token
+    WHERE token.id = current_setting('upr.npa.device_token')::uuid
+      AND token.employee_id = current_setting('upr.npa.employee_tech')::uuid
+      AND token.token = 'npa-local-device-token'
+      AND token.platform = 'ios'
+      AND token.apns_environment = 'sandbox'
+  ) INTO v_native_token_valid;
+  v_native_first := public.claim_guarded_native_push_delivery(
+       v_native_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       v_native_fingerprint,
+       'npa-local-device-token',
+       'sandbox'
+     );
+  v_native_duplicate := public.claim_guarded_native_push_delivery(
+       v_native_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       v_native_fingerprint,
+       'npa-local-device-token',
+       'sandbox'
+     );
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.native_push_delivery_claims claim
+    WHERE claim.delivery_key = v_native_key
+      AND claim.employee_id = current_setting('upr.npa.employee_tech')::uuid
+      AND claim.device_fingerprint = v_native_fingerprint
+  ) INTO v_native_row_valid;
+
+  IF v_native_first IS NOT TRUE
+     OR v_native_duplicate IS NOT FALSE
+     OR v_native_row_valid IS NOT TRUE THEN
+    RAISE EXCEPTION
+      'native delivery did not bind the current device exactly once (recipient=%, token=%, first=%, duplicate=%, row=%)',
+      v_native_recipient_valid,
+      v_native_token_valid,
+      v_native_first,
+      v_native_duplicate,
+      v_native_row_valid;
+  END IF;
+
+  IF public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       gen_random_uuid(),
+       'npa-stale-device-token',
+       'sandbox'
+     ) IS NOT FALSE
+     OR public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       gen_random_uuid(),
+       'npa-local-device-token',
+       'production'
+     ) IS NOT FALSE
+     OR public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       gen_random_uuid(),
+       gen_random_uuid(),
+       'npa-local-device-token',
+       'sandbox'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION
+      'native delivery accepted a stale token, environment, or source id';
+  END IF;
+
+  DELETE FROM public.device_tokens
+  WHERE id = current_setting('upr.npa.device_token')::uuid;
+  IF public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       gen_random_uuid(),
+       'npa-local-device-token',
+       'sandbox'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'native delivery accepted a deleted token';
+  END IF;
+  INSERT INTO public.device_tokens (
+    id,
+    employee_id,
+    token,
+    platform,
+    apns_environment
+  )
+  VALUES (
+    current_setting('upr.npa.device_token')::uuid,
+    current_setting('upr.npa.employee_tech')::uuid,
+    'npa-local-device-token',
+    'ios',
+    'sandbox'
+  );
+
+  UPDATE public.device_tokens
+  SET employee_id = current_setting('upr.npa.employee_other')::uuid
+  WHERE id = current_setting('upr.npa.device_token')::uuid;
+  IF public.claim_guarded_native_push_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.device_token')::uuid,
+       gen_random_uuid(),
+       'npa-local-device-token',
+       'sandbox'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'native delivery accepted a reassigned token';
+  END IF;
+  UPDATE public.device_tokens
+  SET employee_id = current_setting('upr.npa.employee_tech')::uuid
+  WHERE id = current_setting('upr.npa.device_token')::uuid;
+
+  v_pwa_first := public.claim_guarded_notification_target_delivery(
+       v_pwa_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       v_pwa_fingerprint,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-current'
+     );
+  v_pwa_duplicate := public.claim_guarded_notification_target_delivery(
+       v_pwa_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       v_pwa_fingerprint,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-current'
+     );
+  IF v_pwa_first IS NOT TRUE OR v_pwa_duplicate IS NOT FALSE THEN
+    RAISE EXCEPTION 'Web Push delivery was not claimed exactly once';
+  END IF;
+
+  IF public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       gen_random_uuid(),
+       'https://push.example.invalid/npa-current'
+     ) IS NOT FALSE
+     OR public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-stale'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'Web Push delivery accepted a stale source or endpoint';
+  END IF;
+
+  UPDATE public.push_subscriptions
+  SET employee_id = current_setting('upr.npa.employee_other')::uuid
+  WHERE id = current_setting('upr.npa.push_subscription')::uuid;
+  IF public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-current'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'Web Push delivery accepted a reassigned subscription';
+  END IF;
+  UPDATE public.push_subscriptions
+  SET employee_id = current_setting('upr.npa.employee_tech')::uuid
+  WHERE id = current_setting('upr.npa.push_subscription')::uuid;
+
+  v_email_first := public.claim_guarded_notification_target_delivery(
+       v_email_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       v_email_fingerprint,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       ' NPA-TECH@EXAMPLE.INVALID '
+     );
+  v_email_duplicate := public.claim_guarded_notification_target_delivery(
+       v_email_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       v_email_fingerprint,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-tech@example.invalid'
+     );
+  IF v_email_first IS NOT TRUE
+     OR v_email_duplicate IS NOT FALSE
+     OR public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-wrong@example.invalid'
+     ) IS NOT FALSE
+     OR public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'npa-tech@example.invalid'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION
+      'email delivery did not bind the normalized current address exactly once';
+  END IF;
+
+  UPDATE public.employees
+  SET is_active = false
+  WHERE id = current_setting('upr.npa.employee_tech')::uuid;
+  IF public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-tech@example.invalid'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'email delivery accepted an inactive employee';
+  END IF;
+  UPDATE public.employees
+  SET is_active = true,
+      is_external = true
+  WHERE id = current_setting('upr.npa.employee_tech')::uuid;
+  IF public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-tech@example.invalid'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'email delivery accepted an external employee';
+  END IF;
+  UPDATE public.employees
+  SET is_external = false
+  WHERE id = current_setting('upr.npa.employee_tech')::uuid;
+
+  DELETE FROM public.appointment_crew
+  WHERE appointment_id = current_setting('upr.npa.appointment')::uuid
+    AND employee_id = current_setting('upr.npa.employee_tech')::uuid;
+  IF public.claim_guarded_notification_target_delivery(
+       gen_random_uuid(),
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'email',
+       gen_random_uuid(),
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       NULL,
+       'npa-tech@example.invalid'
+     ) IS NOT FALSE THEN
+    RAISE EXCEPTION 'email delivery accepted a removed appointment assignee';
+  END IF;
+  INSERT INTO public.appointment_crew (
+    appointment_id,
+    employee_id,
+    role
+  )
+  VALUES (
+    current_setting('upr.npa.appointment')::uuid,
+    current_setting('upr.npa.employee_tech')::uuid,
+    'tech'
+  );
+
+  v_release_first := public.release_notification_delivery_claim(v_pwa_key);
+  v_release_duplicate := public.release_notification_delivery_claim(v_pwa_key);
+  v_reclaim := public.claim_guarded_notification_target_delivery(
+       v_pwa_key,
+       current_setting('upr.npa.occurrence')::uuid,
+       current_setting('upr.npa.employee_tech')::uuid,
+       'appointment.updated',
+       'pwa_push',
+       v_pwa_fingerprint,
+       'appointment',
+       current_setting('upr.npa.appointment')::uuid,
+       current_setting('upr.npa.push_subscription')::uuid,
+       'https://push.example.invalid/npa-current'
+     );
+  IF v_release_first IS NOT TRUE
+     OR v_release_duplicate IS NOT FALSE
+     OR v_reclaim IS NOT TRUE THEN
+    RAISE EXCEPTION
+      'definitive target release did not permit exactly one safe reclaim';
+  END IF;
+END;
+$guarded_delivery_claims$;
 
 RESET ROLE;
 

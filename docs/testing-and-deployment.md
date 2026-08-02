@@ -28,7 +28,8 @@ NOTES / GOTCHAS:
 | `npm run build` | Production Vite compilation and asset generation | Does not prove runtime variables, Workers, native behavior or live integrations |
 | `npm test` | Credential-free unit, Worker-contract and QA-policy Vitest lanes | Network and provider egress are blocked; each lane fails on zero discovered tests or any skip/todo |
 | `npm run test:browser` | Guarded Playwright desktop/390px synthetic fixture matrix plus retained-artifact scan | Exact local origin only; no hosted QA, real account, production data or provider proof |
-| `npm run test:db:local` | Isolated database runner contract | Refuses to start without the exact local origin/ref/sentinel; no governed local Supabase runtime exists yet |
+| `npm run test:db:local` | Generic isolated-database runner contract | Refuses to start without the exact local origin/ref/sentinel; the repository still has no generic all-migration local runtime/config |
+| `npm run test:db:notification-producer:local` | PR #573 scoped forward → rollback → clean-reapply qualification on two fresh local stacks | Requires every runtime input tracked/committed/clean, pins its full proof manifest, and proves only this migration train, never hosted QA or production |
 | `npm run lint` | Repository ESLint | Full-tree debt is reported non-blocking; the PR changed-file ratchet blocks any per-file/per-rule growth above its frozen shrink-only release baseline |
 | `npm run validate:lint-ratchet -- <git-base>` | Lints changed JS/JSX files and compares findings with the frozen release baseline | Existing baseline findings may shrink but must never grow; new files/rules start at zero |
 | `npm run validate:provenance` | Checks recent live-ledger evidence against reviewed source reachable from `HEAD` | Evidence must be refreshed read-only within six hours; this command never queries or writes Supabase |
@@ -166,19 +167,52 @@ The repository-internal P1/Foundation F3a slice is complete for credential-free 
 - retained artifacts are scanned fail-closed and all governed lanes require zero unexpected skips.
 
 This is scaffold and synthetic-browser evidence, not proof of real UPR journeys, native behavior,
-provider behavior, production behavior, or a pinned Linux visual baseline. P2a database execution
-is externally gated on a reviewed local Supabase config/runtime and deterministic seed/role
-fixtures. Hosted QA remains separately gated on a dedicated project, non-production credentials,
-allowed origins and provider sandboxes.
+provider behavior, production behavior, or a pinned Linux visual baseline. Generic P2a database
+execution remains gated on a reviewed all-migration local Supabase config/runtime and
+deterministic seed/role fixtures. PR #573 now has a narrower, project-scoped local qualification
+runtime; it is not the generic P2a foundation. Hosted QA remains separately gated on a dedicated
+project, non-production credentials, allowed origins and provider sandboxes.
 
 The five-producer authorization candidate adds
-`supabase/tests/notification_producer_authorization.test.sql`. Its included behavior suite refuses
-unless both `UPR_ISOLATED_DB=1` and `upr.isolated_test_database=on` are present, then transactionally
-tests anonymous/inactive/external/cross-account denial, actor binding, crew row-identity
-preservation, exact-retry timesheet idempotency, serialized review, and service-only delivery
-claims. It is registered in the governed local runner but has not run: this repository still lacks
-`supabase/config.toml` and a reviewed sequence that loads `db/baseline/schema.sql` before only the
-post-baseline migrations. Do not redirect it to `qa-staging`, dev/Preview, or shared production.
+`supabase/tests/notification_producer_authorization.test.sql`. Its behavior suite refuses unless
+both `UPR_ISOLATED_DB=1` and `upr.isolated_test_database=on` are present, then transactionally tests
+anonymous/inactive/external/cross-account denial, actor binding, crew row-identity preservation,
+exact-retry timesheet idempotency, serialized review, and service-only delivery claims.
+
+On 2026-08-02, development qualification passed the exact reviewed train on two fresh disposable
+PostgreSQL 17/Supabase stacks: baseline restore, idempotent synthetic seed, prerequisites
+`20260730214500` and `20260731223000`, forward `20260801215912` then
+`20260802040935`, behavior and lifecycle proofs, reverse rollback, rollback lifecycle proof, and a
+second clean forward reapply. The behavior matrix executes valid and invalid bell, native APNs,
+Web Push, and email claims; duplicate refusal; stale/wrong/deleted/reassigned target refusal;
+inactive/external/removed-assignee refusal; and definitive target release followed by one safe
+reclaim.
+
+The project-scoped CLI is pinned to `2.111.0`; the baseline, migrations, rollbacks, config, seed,
+isolated behavior suite, and both lifecycle proofs are SHA-256 manifest-pinned. Child processes
+scrub hosted credentials. Before any Docker mutation the runner verifies the selected engine is an
+existing local Unix socket or allowlisted Windows named pipe, passes that exact context to every
+Docker/Supabase command, and verifies the database container's project label plus exact disposable
+network identity before replacing its schema. The Docker bridge binds published ports to
+`127.0.0.1`; CLI output containing local keys is suppressed; and both stacks, networks, and
+workdirs were removed after success. Synthetic seed data contains no customer PII, is applied
+twice per stack to prove idempotence, and the local reminder cron executes only `SELECT 1`.
+
+The final runner additionally refuses any dirty/untracked runtime input before Docker, rechecks the
+manifest and HEAD after execution, and emits the exact commit SHA plus full input manifest. Because
+those guards require a committed candidate, the final commit-bound evidence rerun remains pending
+the separately authorized commit. The successful two-stack development run used the final proof
+inputs and local-engine/container checks, but must not be represented as that still-pending
+commit-bound release evidence.
+
+This result qualifies only the pinned PR #573 train. It is not hosted `qa-staging` proof, deployed
+Worker/native/provider proof, production proof, or permission to apply SQL, enable a flag, schedule
+a cron, merge, deploy, or deliver a notification. Do not redirect this command to `qa-staging`,
+dev/Preview, or the shared project. Local setup follows the official Supabase
+[CLI local-development](https://supabase.com/docs/guides/local-development/cli/getting-started),
+[configuration](https://supabase.com/docs/guides/local-development/cli/config), and
+[seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
+remaining deliberately repository-scoped and unlinked.
 
 ## Release flow
 

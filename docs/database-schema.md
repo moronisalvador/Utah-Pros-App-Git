@@ -873,9 +873,12 @@ before the owner-authorized live sweep.
   per-occurrence/employee/target claim.
 
 Both tables force RLS and grant no browser access. Occurrences are insertable only inside the
-private database producer helper; claims are inserted/deleted only by `SECURITY INVOKER`,
-`service_role`-asserting RPCs in the application path; the underlying table privileges and forced
-RLS policy are also service-role-only so the invoker RPCs can operate. Claims contain UUID
+private database producer helper; direct `service_role` access is SELECT-only. Claims are
+inserted/deleted only by `SECURITY INVOKER`, `service_role`-asserting RPCs in the application path;
+the underlying claims table grants `service_role` only SELECT/INSERT/DELETE so the invoker RPCs can
+operate without UPDATE/TRUNCATE/REFERENCES/TRIGGER rights. The recovery rollback revokes the
+forward RPCs and leaves both private evidence tables SELECT-only to `service_role`, with no
+PUBLIC/anon/authenticated ACL. Claims contain UUID
 fingerprints, not addresses, notification copy, provider payload, or credentials, and cleanup is
 bounded to 1,000 rows older than 90 days.
 
@@ -903,5 +906,12 @@ before provider use; bell uses the parallel occurrence validator. Preflight/post
 sets and enabled trigger bindings, including no `WHEN`, `UPDATE OF`, or trigger-argument narrowing.
 Its recovery rollback contains all five flags first and retains authorization/occurrence evidence
 rather than recreating the unsafe boundary.
-This schema is authored and tested statically only; it is absent from local, `qa-staging`, and the
+On 2026-08-02, the exact pinned train passed forward behavior/lifecycle, reverse rollback, rollback
+lifecycle, and clean forward reapply on two fresh disposable local stacks. The behavior proof
+executes the current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal recipient, current appointment assignment, duplicate, and release/reclaim
+predicates. That local qualification found and fixed PostgreSQL compilation/trigger defects plus
+an excess default `service_role` table grant before any hosted apply. All proof/config/seed sources
+are now manifest-pinned and the runner verifies its local Docker engine/container identity; its
+final commit-bound clean rerun remains pending. The schema remains absent from `qa-staging` and the
 shared project until separately authorized and verified.

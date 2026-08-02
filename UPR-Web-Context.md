@@ -4880,10 +4880,26 @@ and the three outbound channels retain service-only per-target claims. All five
 catalog flags are explicitly left disabled. After merging current `origin/dev` `8e51aa92` without
 rewriting history, this candidate passed build, full unit `1582/1582`, Worker `1945/1945`, QA
 `1037/1037`, focused producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`,
-changed-file lint, migration hygiene, and source contracts only. It has not
-been applied to local, QA, or shared production; no notification was sent and no PWA/native device
-path was exercised. The new sentinel-locked local SQL proof cannot run until the missing governed
-baseline/bootstrap is implemented.
+changed-file lint, migration hygiene, and source contracts. On 2026-08-02, the new scoped
+`npm run test:db:notification-producer:local` harness then passed the exact SHA-pinned train on two
+fresh loopback-only disposable Supabase/PostgreSQL 17 stacks: baseline + synthetic seed;
+`20260730214500` + contained `20260731223000`; forward `20260801215912` →
+`20260802040935`; negative authorization/RLS/deduplication/compatibility and lifecycle proofs;
+atomic current APNs token/environment, Web Push subscription/endpoint, normalized email,
+active-internal/current-assignee, duplicate, stale/deleted/reassigned target, and release/reclaim
+proofs; reverse rollback and rollback lifecycle proof; then a second clean forward reapply. That execution
+found and fixed a PostgreSQL reserved alias, an appointments-trigger cross-table field reference,
+an incorrect zero-row RLS proof expectation, and excess default `service_role` claims-table
+privileges. Forward postflight now requires exact least-privilege ACLs; recovery leaves both private
+evidence tables SELECT-only to `service_role`; PUBLIC/anon/authenticated remain denied. The pinned
+CLI is `2.111.0`; every baseline/migration/rollback/config/seed/proof input is hash-manifested;
+hosted credentials are scrubbed; remote Docker contexts are refused; the exact local
+engine/container/network identity is checked before schema replacement; local-key output is
+suppressed; seed data is synthetic/non-PII and idempotent; and both stacks/networks/workdirs were
+removed. The final runner now requires tracked/committed/clean runtime inputs and emits its exact
+commit SHA plus manifest, so its clean commit-bound rerun is still pending. This is local proof
+only: it has not been applied to QA or shared production; no notification was sent and no
+PWA/native device path was exercised.
 
 The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
 `dev` through PR #571 and remain ordered after that producer repair. They accept either the current

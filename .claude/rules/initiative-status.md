@@ -178,11 +178,25 @@ The reversible notification producer containment also applied from exact reviewe
   crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
   `8e51aa92`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1037/1037`, focused
   producer/APNs `195/195`, producer/reminder QA `20/20`, private-crew `4/4`, changed-file lint,
-  migration hygiene, and diff integrity pass. The sentinel-locked SQL behavior proof is authored
-  but cannot run until the governed local Supabase bootstrap supplies its local stack key. Fresh
-  migration, worker-security, anonymous-grant, mobile-security, project-law, design, and release
-  reviews are required on the final post-#571 SHA before publication. No hosted SQL, deploy,
-  delivery, flag, provider, or device action is implied.
+  migration hygiene, and diff integrity pass. On 2026-08-02 the new project-scoped, pinned
+  Supabase CLI `2.111.0` harness passed the exact train on two fresh loopback-only disposable
+  stacks: baseline + synthetic seed; forward `20260801215912` → `20260802040935`; full negative
+  authorization/RLS/deduplication/compatibility and lifecycle proofs; atomic current-target tests
+  for APNs/Web Push/email; stale/deleted/reassigned target, inactive/external/removed-assignee,
+  duplicate, and release/reclaim tests; reverse rollback; rollback lifecycle proof; and clean
+  forward reapply. Runtime qualification exposed and fixed an
+  information-schema reserved alias, a cross-table trigger field reference, an RLS proof that
+  mistook filtered zero-row updates for SQL errors, and a default-privilege leak that had left
+  excess `service_role` table rights. Exact ACL postflights now require no PUBLIC/anon/
+  authenticated access, forward least-privilege service rights, and rollback SELECT-only evidence
+  access. Every config/seed/proof source is now hash-manifested; the selected Docker engine must be
+  a verified local socket/pipe; every Docker/Supabase command receives that exact context; and the
+  database container label/network identity is checked before schema replacement. Both stacks,
+  networks, and workdirs were removed after success. The final runner now refuses dirty runtime
+  inputs and emits commit-bound evidence, so one clean rerun remains after a separately authorized
+  final commit. This is local proof only; fresh full gates and final reviews remain required on the
+  post-fix SHA before publication, then separately authorized `qa-staging` qualification remains a
+  hosted gate. No hosted SQL, deploy, delivery, flag, provider, or device action is implied.
 - Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
   production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
   Cloudflare Production remains main `478330d9`. That older Worker does not classify

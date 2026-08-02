@@ -89,10 +89,10 @@ BEGIN
      ) IS NOT NULL
      OR EXISTS (
        SELECT 1
-       FROM information_schema.columns column
-       WHERE column.table_schema = 'public'
-         AND column.table_name = 'appointments'
-         AND column.column_name = 'created_by_employee_id'
+       FROM information_schema.columns column_record
+       WHERE column_record.table_schema = 'public'
+         AND column_record.table_name = 'appointments'
+         AND column_record.column_name = 'created_by_employee_id'
      ) THEN
     RAISE EXCEPTION
       'notification producer authorization preflight found unexpected prior candidate state'
@@ -913,17 +913,18 @@ DECLARE
     NULLIF(current_setting('request.jwt.claim.role', true), '')
   );
 BEGIN
-  IF TG_TABLE_NAME = 'appointment_crew'
-     AND TG_OP IN ('INSERT', 'UPDATE')
-     AND NOT EXISTS (
-       SELECT 1
-       FROM public.employees employee
-       WHERE employee.id = NEW.employee_id
-         AND employee.is_active IS TRUE
-         AND employee.is_external IS FALSE
-     ) THEN
-    RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment crew required'
-      USING ERRCODE = '42501';
+  IF TG_TABLE_NAME = 'appointment_crew' THEN
+    IF TG_OP IN ('INSERT', 'UPDATE')
+       AND NOT EXISTS (
+         SELECT 1
+         FROM public.employees employee
+         WHERE employee.id = NEW.employee_id
+           AND employee.is_active IS TRUE
+           AND employee.is_external IS FALSE
+       ) THEN
+      RAISE EXCEPTION 'NOT_AUTHORIZED: active internal appointment crew required'
+        USING ERRCODE = '42501';
+    END IF;
   END IF;
 
   IF v_request_role = 'service_role'
@@ -943,15 +944,16 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
-  IF TG_TABLE_NAME = 'appointment_crew'
-     AND TG_OP = 'UPDATE'
-     AND (
-       NEW.id IS DISTINCT FROM OLD.id
-       OR NEW.appointment_id IS DISTINCT FROM OLD.appointment_id
-       OR NEW.employee_id IS DISTINCT FROM OLD.employee_id
-     ) THEN
-    RAISE EXCEPTION 'NOT_AUTHORIZED: appointment crew identity is immutable'
-      USING ERRCODE = '42501';
+  IF TG_TABLE_NAME = 'appointment_crew' THEN
+    IF TG_OP = 'UPDATE'
+       AND (
+         NEW.id IS DISTINCT FROM OLD.id
+         OR NEW.appointment_id IS DISTINCT FROM OLD.appointment_id
+         OR NEW.employee_id IS DISTINCT FROM OLD.employee_id
+       ) THEN
+      RAISE EXCEPTION 'NOT_AUTHORIZED: appointment crew identity is immutable'
+        USING ERRCODE = '42501';
+    END IF;
   END IF;
 
   IF TG_OP = 'DELETE' THEN
@@ -1145,7 +1147,7 @@ CREATE POLICY notification_delivery_claims_service_role
   USING (true)
   WITH CHECK (true);
 REVOKE ALL PRIVILEGES ON TABLE public.notification_delivery_claims
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, DELETE ON TABLE public.notification_delivery_claims
   TO service_role;
 
@@ -2887,12 +2889,97 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
+  IF EXISTS (
+       SELECT 1
+       FROM pg_class relation_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           relation_record.relacl,
+           acldefault('r', relation_record.relowner)
+         )
+       ) acl_record
+       WHERE relation_record.oid IN (
+         'public.notification_producer_occurrences'::regclass,
+         'public.notification_delivery_claims'::regclass
+       )
+         AND acl_record.grantee = 0
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_producer_occurrences',
+       'INSERT'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'INSERT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'TRIGGER'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer authorization postflight found private table ACL drift'
+      USING ERRCODE = '55000';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
-    FROM information_schema.columns column
-    WHERE column.table_schema = 'public'
-      AND column.table_name = 'appointments'
-      AND column.column_name = 'created_by_employee_id'
+    FROM information_schema.columns column_record
+    WHERE column_record.table_schema = 'public'
+      AND column_record.table_name = 'appointments'
+      AND column_record.column_name = 'created_by_employee_id'
   )
      OR NOT EXISTS (
        SELECT 1

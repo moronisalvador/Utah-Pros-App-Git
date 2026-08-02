@@ -81,8 +81,19 @@ WHERE type_key IN (
   'appointment.updated',
   'appointment.canceled',
   'timesheet.change_requested',
-  'timesheet.change_reviewed'
-);
+    'timesheet.change_reviewed'
+  );
+
+-- Retain private evidence for diagnosis, but make direct mutation inert during
+-- recovery. The forward RPC grants are separately revoked below.
+REVOKE ALL PRIVILEGES ON TABLE public.notification_producer_occurrences
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.notification_producer_occurrences
+  TO service_role;
+REVOKE ALL PRIVILEGES ON TABLE public.notification_delivery_claims
+  FROM PUBLIC, anon, authenticated, service_role;
+GRANT SELECT ON TABLE public.notification_delivery_claims
+  TO service_role;
 
 CREATE OR REPLACE FUNCTION public.notify_emit(
   p_type_key text,
@@ -221,6 +232,91 @@ BEGIN
   ) THEN
     RAISE EXCEPTION
       'notification producer recovery rollback did not contain every flag'
+      USING ERRCODE = '55000';
+  END IF;
+
+  IF EXISTS (
+       SELECT 1
+       FROM pg_class relation_record
+       CROSS JOIN LATERAL aclexplode(
+         COALESCE(
+           relation_record.relacl,
+           acldefault('r', relation_record.relowner)
+         )
+       ) acl_record
+       WHERE relation_record.oid IN (
+         'public.notification_producer_occurrences'::regclass,
+         'public.notification_delivery_claims'::regclass
+       )
+         AND acl_record.grantee = 0
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_producer_occurrences',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_producer_occurrences',
+       'INSERT'
+     )
+     OR has_table_privilege(
+       'anon',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'authenticated',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR NOT has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'SELECT'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'INSERT'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'UPDATE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'DELETE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'TRUNCATE'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'REFERENCES'
+     )
+     OR has_table_privilege(
+       'service_role',
+       'public.notification_delivery_claims',
+       'TRIGGER'
+     ) THEN
+    RAISE EXCEPTION
+      'notification producer recovery rollback found private table ACL drift'
       USING ERRCODE = '55000';
   END IF;
 
