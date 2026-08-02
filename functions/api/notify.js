@@ -90,10 +90,13 @@ const APPOINTMENT_AUDIENCE_TYPES = new Set([
   'appointment.updated',
   'appointment.canceled',
 ]);
-export const GUARDED_PRODUCER_TYPES = new Set([
-  ...APPOINTMENT_AUDIENCE_TYPES,
+const TIMESHEET_AUDIENCE_TYPES = new Set([
   'timesheet.change_requested',
   'timesheet.change_reviewed',
+]);
+export const GUARDED_PRODUCER_TYPES = new Set([
+  ...APPOINTMENT_AUDIENCE_TYPES,
+  ...TIMESHEET_AUDIENCE_TYPES,
 ]);
 
 function inboundConversationId(body = {}) {
@@ -180,16 +183,68 @@ async function resolveInboundMessageAudience(db, body) {
   );
 }
 
+async function loadTimeEntryChangeRequest(db, body) {
+  if (
+    body.entity_type !== 'time_entry_change_request'
+    || !UUID_RE.test(body.entity_id || '')
+  ) return null;
+
+  try {
+    const requests = await db.select(
+      'time_entry_change_requests',
+      `id=eq.${encodeURIComponent(body.entity_id)}`
+        + '&select=id,entry_id,requested_by,status,review_note&limit=1',
+    );
+    const request = requests?.[0];
+    return request?.id === body.entity_id
+      && UUID_RE.test(request.requested_by || '')
+      ? request
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTimesheetAudience(db, typeKey, body) {
+  const request = await loadTimeEntryChangeRequest(db, body);
+  if (!request) return [];
+
+  if (typeKey === 'timesheet.change_reviewed') {
+    return filterActiveInternalEmployeeIds(db, [request.requested_by]);
+  }
+
+  let admins = [];
+  try {
+    admins = await db.select(
+      'employees',
+      'role=in.(admin)&is_active=eq.true&select=id,role,is_external',
+    );
+  } catch {
+    return [];
+  }
+  return filterActiveInternalEmployeeIds(
+    db,
+    (admins || [])
+      .filter((employee) => employee.is_external !== true)
+      .map((employee) => employee.id),
+  );
+}
+
 /**
  * Who should receive this event, as an array of employee ids.
  *  1. appointment types always resolve from current assignment/crew state;
- *  2. inbound customer messages always resolve from current conversation access;
- *  3. other explicit body.recipient_ids win after active/internal validation;
- *  4. otherwise a role-based default (minus body.exclude_employee_id).
+ *  2. timesheet types always resolve from the canonical request row;
+ *  3. inbound customer messages always resolve from current conversation access;
+ *  4. other explicit body.recipient_ids win after active/internal validation;
+ *  5. otherwise a role-based default (minus body.exclude_employee_id).
  */
 export async function resolveAudience(db, typeKey, body = {}) {
   if (APPOINTMENT_AUDIENCE_TYPES.has(typeKey)) {
     return resolveAppointmentAudience(db, typeKey, body);
+  }
+
+  if (TIMESHEET_AUDIENCE_TYPES.has(typeKey)) {
+    return resolveTimesheetAudience(db, typeKey, body);
   }
 
   if (typeKey === 'message.inbound') {
@@ -200,9 +255,6 @@ export async function resolveAudience(db, typeKey, body = {}) {
     return filterActiveInternalEmployeeIds(db, body.recipient_ids);
   }
 
-  if (typeKey === 'timesheet.change_reviewed' && body.employee_id) {
-    return filterActiveInternalEmployeeIds(db, [body.employee_id]);
-  }
   if (typeKey === 'clock.abandoned') {
     // Admins (to follow up) PLUS the tech who left the clock running, so they get
     // their own nudge to clock out. The scan carries the tech id in
@@ -278,24 +330,60 @@ export function guardedProducerEntity(typeKey, body = {}) {
 }
 
 async function hydrateGuardedProducerBody(db, typeKey, body) {
-  if (typeKey !== 'appointment.assigned') return body;
-  if (!UUID_RE.test(body.appointment_crew_id || '')) return null;
-  try {
-    const rows = await db.select(
-      'appointment_crew',
-      `id=eq.${body.appointment_crew_id}`
-        + '&select=id,appointment_id,employee_id&limit=1',
-    );
-    const assignment = rows?.[0];
-    if (!assignment?.appointment_id || !assignment?.employee_id) return null;
-    return {
-      ...body,
-      appointment_id: assignment.appointment_id,
-      employee_id: assignment.employee_id,
-    };
-  } catch {
-    return null;
+  if (typeKey === 'appointment.assigned') {
+    if (!UUID_RE.test(body.appointment_crew_id || '')) return null;
+    try {
+      const rows = await db.select(
+        'appointment_crew',
+        `id=eq.${body.appointment_crew_id}`
+          + '&select=id,appointment_id,employee_id&limit=1',
+      );
+      const assignment = rows?.[0];
+      if (!assignment?.appointment_id || !assignment?.employee_id) return null;
+      return {
+        ...body,
+        appointment_id: assignment.appointment_id,
+        employee_id: assignment.employee_id,
+      };
+    } catch {
+      return null;
+    }
   }
+
+  if (TIMESHEET_AUDIENCE_TYPES.has(typeKey)) {
+    const request = await loadTimeEntryChangeRequest(db, body);
+    if (!request) return null;
+    const reviewed = typeKey === 'timesheet.change_reviewed';
+    const approved = request.status === 'approved';
+    if (
+      reviewed
+      && request.status !== 'approved'
+      && request.status !== 'rejected'
+    ) return null;
+
+    return {
+      notification_event_id: body.notification_event_id,
+      entity_type: 'time_entry_change_request',
+      entity_id: request.id,
+      employee_id: request.requested_by,
+      title: reviewed
+        ? `Timesheet change ${approved ? 'approved' : 'rejected'}`
+        : 'Timesheet change requested',
+      body: reviewed
+        ? (
+          String(request.review_note || '').trim()
+          || `Your requested correction was ${approved ? 'approved' : 'declined'}.`
+        )
+        : 'A technician requested a correction to a time entry.',
+      link: '/time-tracking',
+      payload: {
+        entry_id: request.entry_id,
+        ...(reviewed ? { approved } : {}),
+      },
+    };
+  }
+
+  return body;
 }
 
 async function validateGuardedProducerDelivery(
@@ -319,7 +407,15 @@ async function validateGuardedProducerDelivery(
 
 async function claimNotificationDelivery(
   db,
-  { notificationEventId, recipientId, typeKey, channel, target, entity },
+  {
+    notificationEventId,
+    recipientId,
+    typeKey,
+    channel,
+    target,
+    entity,
+    sourceId = null,
+  },
 ) {
   if (!GUARDED_PRODUCER_TYPES.has(typeKey)) return { claimed: true };
 
@@ -334,6 +430,24 @@ async function claimNotificationDelivery(
       channel,
       targetFingerprint,
     ]));
+    if (channel === 'pwa_push' || channel === 'email') {
+      const claimed = await db.rpc(
+        'claim_guarded_notification_target_delivery',
+        {
+          p_delivery_key: deliveryKey,
+          p_notification_event_id: notificationEventId,
+          p_employee_id: recipientId,
+          p_type_key: typeKey,
+          p_channel: channel,
+          p_target_fingerprint: targetFingerprint,
+          p_entity_type: entity.entityType,
+          p_entity_id: entity.entityId,
+          p_source_id: sourceId,
+          p_target: String(target || ''),
+        },
+      ) === true;
+      return { claimed, deliveryKey };
+    }
     const claimed = await db.rpc('claim_notification_delivery', {
       p_delivery_key: deliveryKey,
       p_notification_event_id: notificationEventId,
@@ -453,6 +567,14 @@ export async function dispatchToRecipient({
           typeKey: type.type_key,
           notificationBody: body,
           eventKey,
+          ...(GUARDED_PRODUCER_TYPES.has(type.type_key) ? {
+            guardedProducerClaim: {
+              notificationEventId: body.notification_event_id,
+              typeKey: type.type_key,
+              entityType: guardedEntity.entityType,
+              entityId: guardedEntity.entityId,
+            },
+          } : {}),
         };
         // The real APNs sender owns its bounded fetchWithTimeout default.
         // An explicitly injected sender receives the selected bounded/fake
@@ -496,6 +618,7 @@ export async function dispatchToRecipient({
           channel: 'pwa_push',
           target: s.endpoint,
           entity: guardedEntity,
+          sourceId: s.id,
         });
         if (!claim.claimed) continue;
 
@@ -523,7 +646,9 @@ export async function dispatchToRecipient({
     let email = null;
     try {
       const rows = await db.select('employees', `id=eq.${recipientId}&select=email,full_name`);
-      email = rows?.[0]?.email || null;
+      email = typeof rows?.[0]?.email === 'string'
+        ? rows[0].email.trim() || null
+        : null;
     } catch { email = null; }
     if (!email) {
       result.email = 'skipped_null';
