@@ -874,15 +874,34 @@ before the owner-authorized live sweep.
 
 Both tables force RLS and grant no browser access. Occurrences are insertable only inside the
 private database producer helper; claims are inserted/deleted only by `SECURITY INVOKER`,
-`service_role`-asserting RPCs. Claims contain UUID fingerprints, not addresses, notification copy,
-provider payload, or credentials, and cleanup is bounded to 1,000 rows older than 90 days.
+`service_role`-asserting RPCs in the application path; the underlying table privileges and forced
+RLS policy are also service-role-only so the invoker RPCs can operate. Claims contain UUID
+fingerprints, not addresses, notification copy, provider payload, or credentials, and cleanup is
+bounded to 1,000 rows older than 90 days.
 
 The migration alters the existing `appointments`/`appointment_crew` policies in place, removes
 anonymous ACLs, and scopes private rows to admins/project managers/assigned crew. A separate write
 predicate reserves private crew-membership changes and privacy elevation to active internal
-admins/project managers, so an assigned crew member cannot delegate private-row access. It
-preserves the deployed appointment/timesheet/notify RPC signatures and return shapes and replaces
-destructive crew rebuilding with a locked set diff. Its recovery rollback contains all five flags
-first and retains authorization/occurrence evidence rather than recreating the unsafe boundary.
+admins/project managers, so an assigned crew member cannot delegate private-row access. Public
+appointment mutations require a scheduling role (admin/office/project manager/supervisor) or an
+existing crew assignment. The additive nullable `appointments.created_by_employee_id` is
+server-bound from `auth.uid()` on new browser rows and immutable thereafter, allowing the creator
+to finish the existing create-then-assign flow without granting access to somebody else's
+appointment. Update/delete RPCs enforce the same object predicate. The migration preserves the
+deployed appointment/timesheet/notify RPC signatures and return shapes and replaces destructive
+crew rebuilding with a locked set diff. Browser updates can change a crew row's role but a trigger
+makes its `id`, `appointment_id`, and `employee_id` immutable, preserving the assignment identity
+bound into `appointment.assigned` occurrences; direct insert/update targets must also be active
+internal employees. It also replaces the broad authenticated
+`time_entry_change_requests` SELECT policy with an active-internal requester-own-row or
+admin/office/project-manager/supervisor predicate. Delivery validation joins every recipient back
+to the exact appointment crew row, appointment crew set, timesheet admin audience, or request
+owner represented by the occurrence. The guarded native claim combines that predicate with exact
+device-token ownership inside the same insert statement before APNs. Guarded Web Push/email claims
+combine it with the exact current subscription ID/employee/endpoint or normalized employee email
+before provider use; bell uses the parallel occurrence validator. Preflight/postflight require exactly the expected policy
+sets and enabled trigger bindings, including no `WHEN`, `UPDATE OF`, or trigger-argument narrowing.
+Its recovery rollback contains all five flags first and retains authorization/occurrence evidence
+rather than recreating the unsafe boundary.
 This schema is authored and tested statically only; it is absent from local, `qa-staging`, and the
 shared project until separately authorized and verified.
