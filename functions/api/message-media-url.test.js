@@ -126,6 +126,77 @@ describe('private message media URL route', () => {
     expect(h.db.signStorage).not.toHaveBeenCalled();
   });
 
+  it('uses the existing scoped-access RPC only when the new media RPC is exactly absent', async () => {
+    h.db.rpc
+      .mockRejectedValueOnce(new Error(
+        'Supabase RPC messaging_get_authorized_message_media: 404 '
+          + '{"code":"PGRST202","message":"Could not find the function"}',
+      ))
+      .mockResolvedValueOnce(true);
+    h.db.select.mockResolvedValueOnce([{
+      id: ID,
+      conversation_id: 'CONV',
+      media_urls: JSON.stringify([REF]),
+    }]);
+
+    const res = await onRequestPost({
+      request: request({ message_id: ID, index: 0 }),
+      env: {},
+    });
+
+    expect(res.status).toBe(200);
+    expect(h.db.select).toHaveBeenCalledWith(
+      'messages',
+      `id=eq.${ID}&select=id,conversation_id,media_urls&limit=1`,
+    );
+    expect(h.db.rpc).toHaveBeenNthCalledWith(
+      2,
+      'messaging_employee_can_access_conversation',
+      {
+        p_employee_id: 'employee-1',
+        p_conversation_id: 'CONV',
+      },
+    );
+    expect(h.db.signStorage).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the missing-RPC compatibility path closed to a non-participant', async () => {
+    h.db.rpc
+      .mockRejectedValueOnce(new Error(
+        'Supabase RPC messaging_get_authorized_message_media: 404 PGRST202',
+      ))
+      .mockResolvedValueOnce(false);
+    h.db.select.mockResolvedValueOnce([{
+      id: ID,
+      conversation_id: 'CONV',
+      media_urls: JSON.stringify([REF]),
+    }]);
+
+    const res = await onRequestPost({
+      request: request({ message_id: ID, index: 0 }),
+      env: {},
+    });
+
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'Attachment not found' });
+    expect(h.db.signStorage).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a generic RPC outage as permission to use compatibility reads', async () => {
+    h.db.rpc.mockRejectedValueOnce(
+      new Error('Supabase RPC messaging_get_authorized_message_media: 503 upstream timeout'),
+    );
+
+    const res = await onRequestPost({
+      request: request({ message_id: ID, index: 0 }),
+      env: {},
+    });
+
+    expect(res.status).toBe(503);
+    expect(h.db.select).not.toHaveBeenCalled();
+    expect(h.db.signStorage).not.toHaveBeenCalled();
+  });
+
   it('rejects traversal and wrong buckets', () => {
     expect(ownedMessageMediaPath(
       'upr-storage://message-attachments/callrail/../secret.jpg',
