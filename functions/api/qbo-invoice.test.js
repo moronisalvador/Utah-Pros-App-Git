@@ -25,7 +25,12 @@
  * ════════════════════════════════════════════════
  */
 import { describe, it, expect } from 'vitest';
-import { round2, qboLineAmount, qboFallbackAmount } from './qbo-invoice.js';
+import {
+  round2,
+  qboLineAmount,
+  qboFallbackAmount,
+  qboInvoiceDateFields,
+} from './qbo-invoice.js';
 
 // A value has at most 2 decimal places (what QBO will accept).
 const atMostTwoDecimals = (n) => {
@@ -70,5 +75,33 @@ describe('qbo-invoice money rounding', () => {
   it('qboFallbackAmount falls back to total, then 0 — always 2-decimal', () => {
     expect(qboFallbackAmount({ adjusted_total: null, total: 42.005 })).toBe(42.01);
     expect(qboFallbackAmount({})).toBe(0);
+  });
+});
+
+describe('qbo-invoice business dates', () => {
+  it('sends the stored UPR invoice and due dates to QuickBooks', () => {
+    expect(qboInvoiceDateFields({
+      invoice_date: '2026-08-03',
+      due_date: '2026-08-03',
+    })).toEqual({
+      TxnDate: '2026-08-03',
+      DueDate: '2026-08-03',
+    });
+  });
+
+  it('uses the invoice date as the due date when no separate due date exists', () => {
+    expect(qboInvoiceDateFields({
+      invoice_date: '2026-06-10T00:00:00.000Z',
+    })).toEqual({
+      TxnDate: '2026-06-10',
+      DueDate: '2026-06-10',
+    });
+  });
+
+  it('does not invent malformed provider dates', () => {
+    expect(qboInvoiceDateFields({
+      invoice_date: 'not-a-date',
+      due_date: '',
+    })).toEqual({});
   });
 });

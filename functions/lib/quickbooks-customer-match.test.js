@@ -5,8 +5,8 @@
  *
  * WHAT THIS DOES (plain language):
  *   Proves the pieces of the QuickBooks customer matcher that decide whether an
- *   existing customer is "the same person": phone-digit normalization, the two
- *   display-name conventions ("First Last" and "Last, First"), and the detector
+ *   existing customer is "the same person": exact email, phone-digit
+ *   normalization, the diagnostic display-name conventions, and the detector
  *   for QBO's "customer no longer exists" rejection — the INV-000104 incident
  *   where a contact pointed at a deleted QuickBooks customer.
  *
@@ -19,6 +19,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   normalizePhoneDigits,
+  disambiguatedCustomerPayload,
   displayNameVariants,
   isStaleCustomerRef,
   findExistingCustomer,
@@ -34,6 +35,25 @@ describe('normalizePhoneDigits', () => {
     expect(normalizePhoneDigits('555-0142')).toBe('5550142');
     expect(normalizePhoneDigits('')).toBe('');
     expect(normalizePhoneDigits(null)).toBe('');
+  });
+});
+
+describe('disambiguatedCustomerPayload', () => {
+  it('creates a distinct display name instead of adopting a name-only match', () => {
+    expect(disambiguatedCustomerPayload(
+      { id: 'abcd1234', phone: '(801) 555-0142' },
+      { DisplayName: 'Allison Berrett', GivenName: 'Allison' },
+    )).toEqual({
+      DisplayName: 'Allison Berrett (0142)',
+      GivenName: 'Allison',
+    });
+  });
+
+  it('falls back to the UPR contact identity when no phone is present', () => {
+    expect(disambiguatedCustomerPayload(
+      { id: 'abcd1234', phone: null },
+      { DisplayName: 'Allison Berrett' },
+    ).DisplayName).toBe('Allison Berrett (abcd)');
   });
 });
 
@@ -75,30 +95,28 @@ describe('findExistingCustomer (tiered matching, injected queries)', () => {
     expect(r.candidates).toHaveLength(2);
   });
 
-  it('falls back to the "Last, First" display-name convention', async () => {
+  it('never links a customer from a name-only suggestion', async () => {
     const many = vi.fn(async () => []);
-    const one = vi.fn(async (env, where) =>
-      where.includes("'Bailey, Emily'") ? cust('121', 'Bailey, Emily') : null);
+    const one = vi.fn(async () => cust('121', 'Allison Cachoral'));
     const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
-    expect(r).toMatchObject({ matchedBy: 'name', customer: { Id: '121' } });
+    expect(r).toBeNull();
+    expect(one).not.toHaveBeenCalled();
   });
 
-  it('matches by family name + phone digits when email and name miss', async () => {
+  it('matches by family name + phone digits when email misses', async () => {
     const many = vi.fn(async (env, where) => {
       if (where.startsWith('FamilyName')) {
         return [cust('7', 'Em B.', '801.555.0142'), cust('8', 'Other Bailey', '801-555-9999')];
       }
       return [];
     });
-    const one = vi.fn(async () => null);
-    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many });
     expect(r).toMatchObject({ matchedBy: 'phone', customer: { Id: '7' } });
   });
 
   it('returns null only when QBO answered "none" for every signal', async () => {
     const many = vi.fn(async () => []);
-    const one = vi.fn(async () => null);
-    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many, queryCustomer: one });
+    const r = await findExistingCustomer({}, contact, payload, { queryCustomers: many });
     expect(r).toBeNull();
   });
 

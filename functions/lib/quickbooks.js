@@ -311,9 +311,18 @@ export function normalizePhoneDigits(s) {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-// Both display-name conventions seen in the realm: "First Last" (synced) and
-// "Last, First" (hand-entered in QuickBooks — the format that caused the Emily
-// Bailey stale-link incident).
+export function disambiguatedCustomerPayload(contact, payload) {
+  const last4 = String(contact?.phone || '').replace(/\D/g, '').slice(-4);
+  const suffix = last4 || String(contact?.id || '').slice(0, 4) || 'UPR';
+  return {
+    ...payload,
+    DisplayName: `${payload.DisplayName} (${suffix})`,
+  };
+}
+
+// Both display-name conventions seen in the realm. These variants are useful
+// for diagnostics and manual review, but a name by itself is not identity proof
+// and is never enough for an automatic money-path link.
 export function displayNameVariants(name) {
   const n = normalizeWhitespace(name);
   if (!n) return [];
@@ -327,8 +336,11 @@ export function displayNameVariants(name) {
 
 // Dedup lookup before creating — every signal we hold, strongest first:
 //   1. exact email;
-//   2. exact DisplayName in either convention ("First Last" / "Last, First");
-//   3. same family name + same phone digits (candidate scan).
+//   2. same family name + same phone digits (candidate scan).
+// DisplayName-only matches are deliberately excluded: similar or identical
+// names are not sufficient evidence to attach an invoice to an existing QBO
+// customer. QBO duplicate-name handling creates a disambiguated customer
+// instead, which is safer than silently posting to the wrong account.
 // Returns { customer, matchedBy } on ONE confident match, null when QBO
 // answered "none" for every signal, and { ambiguous: true, candidates } when
 // distinct customers both look right — a money path never guesses between two
@@ -336,7 +348,6 @@ export function displayNameVariants(name) {
 // `deps` is test injection only; production callers pass nothing.
 export async function findExistingCustomer(env, contact, payload, deps = {}) {
   const many = deps.queryCustomers || queryCustomers;
-  const one = deps.queryCustomer || ((e, w) => many(e, w, 1).then((r) => r[0] || null));
 
   const email = (contact.email || '').trim();
   if (email) {
@@ -344,14 +355,6 @@ export async function findExistingCustomer(env, contact, payload, deps = {}) {
     if (byEmail.length === 1) return { customer: byEmail[0], matchedBy: 'email' };
     if (byEmail.length > 1) return { ambiguous: true, candidates: byEmail };
   }
-
-  const nameHits = [];
-  for (const variant of displayNameVariants(payload.DisplayName)) {
-    const hit = await one(env, `DisplayName = '${escQ(variant)}'`);
-    if (hit && !nameHits.some((c) => c.Id === hit.Id)) nameHits.push(hit);
-  }
-  if (nameHits.length === 1) return { customer: nameHits[0], matchedBy: 'name' };
-  if (nameHits.length > 1) return { ambiguous: true, candidates: nameHits };
 
   const phone = normalizePhoneDigits(contact.phone);
   const family = normalizeWhitespace(contact.name).split(' ').pop();
@@ -375,7 +378,7 @@ export function isStaleCustomerRef(err) {
 }
 
 // Repair a contact whose stored qbo_customer_id no longer resolves: re-match
-// against QBO on every signal (email / name variants / phone), or create the
+// against QBO on verified identity (email or family-name + phone), or create the
 // customer if it genuinely is not there, then write the mapping back. Refuses
 // to guess between multiple plausible customers. Returns { id, matchedBy }.
 export async function relinkQboCustomer(env, db, contactId) {
@@ -397,11 +400,11 @@ export async function relinkQboCustomer(env, db, contactId) {
     try {
       customer = await createCustomer(env, payload);
     } catch (e) {
-      // 6240 = duplicate DisplayName: someone created the customer between our
-      // search and the create. Re-query the exact name and adopt it.
+      // 6240 = duplicate DisplayName. A name alone is not identity proof, so
+      // create a disambiguated customer instead of adopting the existing name.
       if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-        customer = await queryCustomer(env, `DisplayName = '${escQ(payload.DisplayName)}'`);
-        matchedBy = 'name';
+        customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
+        matchedBy = 'created';
       }
       if (!customer) throw e;
     }

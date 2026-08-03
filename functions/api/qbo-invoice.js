@@ -17,7 +17,7 @@
 import { handleOptions, jsonResponse } from '../lib/cors.js';
 import { authorizeQboBrowserRequest } from '../lib/qbo-auth.js';
 import { supabase } from '../lib/supabase.js';
-import { getConnection, divisionToQbo, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
+import { getConnection, divisionToQbo, ensureQboCustomer, findClassId, createInvoice, updateInvoice, deleteInvoice, sendInvoice, relinkQboCustomer, isStaleCustomerRef } from '../lib/quickbooks.js';
 import { recordReconciliation } from '../lib/qbo-reconciliation.js';
 import { sha256hex } from '../lib/intuit.js';
 import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, prepareQboInvoiceCommand, qboCommandActor, qboCommandIdentityMatches, startQboInvoiceCommandAttempt, advanceQboInvoiceCommandAttempt, setQboInvoiceCommandState, stableJsonStringify } from '../lib/qbo-invoice-commands.js';
@@ -25,6 +25,18 @@ import { QBO_COMMAND_ID_RE, getQboInvoiceCommand, isTerminalQboInvoiceCommand, p
 export const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
 export const qboLineAmount = (li) => round2(li.line_total != null ? li.line_total : Number(li.quantity || 0) * Number(li.unit_price || 0));
 export const qboFallbackAmount = (inv) => round2(inv.adjusted_total ?? inv.total ?? 0);
+const qboDate = (value) => {
+  const date = String(value || '').split('T')[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
+};
+export function qboInvoiceDateFields(inv = {}) {
+  const txnDate = qboDate(inv.invoice_date);
+  const dueDate = qboDate(inv.due_date) || txnDate;
+  return {
+    ...(txnDate ? { TxnDate: txnDate } : {}),
+    ...(dueDate ? { DueDate: dueDate } : {}),
+  };
+}
 
 export async function qboInvoiceRequestId(action, invoiceId, clientRequestId, stage = 'primary') {
   const code = { create: 'c', update: 'u', send: 's', delete: 'd' }[action];
@@ -111,6 +123,10 @@ async function buildSaveIntent(db, env, request, inv) {
   const job = (await db.select('jobs', `id=eq.${inv.job_id}&select=division,job_number,claim_id,address,city,state,zip,date_of_loss&limit=1`))?.[0];
   if (!job) throw new Error('Job not found for invoice');
   let contact = inv.contact_id ? (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] : null;
+  if (!contact?.qbo_customer_id && inv.contact_id) {
+    await ensureQboCustomer(request, env, inv.contact_id);
+    contact = (await db.select('contacts', `id=eq.${inv.contact_id}&select=qbo_customer_id,name&limit=1`))?.[0] || contact;
+  }
   if (!contact?.qbo_customer_id) throw new Error('Invoice contact has no QuickBooks customer — sync the client first');
   const map = divisionToQbo(job.division);
   if (!map) throw new Error(`No QuickBooks mapping for division "${job.division}"`);
@@ -133,7 +149,7 @@ async function buildSaveIntent(db, env, request, inv) {
   if (inv.estimate_id) { const estimate = (await db.select('estimates', `id=eq.${inv.estimate_id}&select=qbo_estimate_id&limit=1`))?.[0]; if (estimate?.qbo_estimate_id) linkedTxn = [{ TxnId: String(estimate.qbo_estimate_id), TxnType: 'Estimate' }]; }
   const payCfg = await db.select('integration_config', 'key=in.(accept_card,accept_ach)&select=key,value') || [];
   const onlinePay = Object.fromEntries([['AllowOnlineCreditCardPayment', 'accept_card'], ['AllowOnlineACHPayment', 'accept_ach']].filter(([, key]) => payCfg.find((row) => row.key === key)?.value === 'true').map(([field]) => [field, true]));
-  const shared = { Line: lines, PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
+  const shared = { Line: lines, ...qboInvoiceDateFields(inv), PrivateNote: memo, CustomerMemo: { value: memo }, ...(docNumber ? { DocNumber: docNumber } : {}), ...(Object.keys(shipAddr).length ? { ShipAddr: shipAddr } : {}), ...(linkedTxn ? { LinkedTxn: linkedTxn } : {}), ...onlinePay };
   const action = inv.qbo_invoice_id ? 'update' : 'create';
   const payload = inv.qbo_invoice_id ? shared : { CustomerRef: { value: String(contact.qbo_customer_id) }, ...shared };
   // Fallback payloads are frozen now; they are selected only after a definitive 4xx.
@@ -356,7 +372,10 @@ export async function onRequestPost(context) {
   if (action === 'save') {
     const now = new Date().toISOString();
     const patch = { qbo_synced_at: now, qbo_sync_error: null };
-    if (!command.expected_qbo_invoice_id) { if (!fresh.sent_at) patch.sent_at = now; if (!fresh.due_date) patch.due_date = now.slice(0, 10); }
+    if (!command.expected_qbo_invoice_id) {
+      if (!fresh.sent_at) patch.sent_at = now;
+      if (!fresh.due_date) patch.due_date = qboInvoiceDateFields(fresh).DueDate || now.slice(0, 10);
+    }
     await db.update('invoices', `id=eq.${invoiceId}`, patch);
   }
   const response = action === 'delete' ? { deleted: command.expected_qbo_invoice_id } : action === 'send' ? { ok: true, emailed_to: command.intent_payload.recipient, email_status: providerResult.email_status || 'EmailSent' } : { ok: true, mode: command.expected_qbo_invoice_id ? 'updated' : 'created', qbo_invoice_id: target, doc_number: providerResult.doc_number, total: providerResult.total ?? null, online_pay_warning: command.provider_stage === 'without-online-pay' ? 'Invoice synced, but online card/ACH pay could not be turned on — enable QuickBooks Payments in QuickBooks first.' : null, customer_relink: command.provider_stage === 'customer-relinked' ? 'QuickBooks customer was re-linked automatically.' : null };
