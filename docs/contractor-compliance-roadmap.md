@@ -19,12 +19,13 @@ NOTES / GOTCHAS:
 
 # Contractor Compliance Roadmap
 
-**Status:** Tier 2 implementation, QA qualification, shared-database apply, and production code
-promotion completed 2026-08-03; controlled feature activation, canary, and identity-safe import
-remain.
-**Live state:** five additive migrations and the private bucket/cron are live; PR #574 is deployed.
-The database page flag remains OFF, automatic reminders remain OFF, and no provider send or
-real-document import has occurred.
+**Status:** Tier 2 implementation, QA qualification, shared-database apply, production promotion,
+controlled activation, and email canary completed 2026-08-03; identity-safe real-document import
+remains blocked on authoritative contact mapping.
+**Live state:** five additive migrations and the private bucket/cron are live; PRs #574 and #575
+are deployed. Production feature and reminder gates are enabled, Preview remains disabled, and
+one synthetic request was delivered before the canary profile was paused and made inactive. No
+real contractor document has been imported.
 **Route target:** `/contractors` (internal) and `/contractor-upload#token=…` (public capability; fragment is stripped before API use).
 
 ## Outcome
@@ -338,23 +339,30 @@ QuickBooks/Gusto without building a second tax filing or distribution system.
   `20260803220656`, `20260803220659`, `20260803220704`, and `20260803220711`. Postflight proved
   12/12 tables have forced RLS, 12 service-only policies, zero `anon`/`authenticated` table
   grants, zero anonymous target-RPC grants, a private 6 MiB PDF/JPEG/PNG bucket, one active
-  `23 13 * * *` cron, and zero uncovered foreign keys. All new business tables remain empty.
+  `23 13 * * *` cron, and zero uncovered foreign keys. All new business tables were empty before
+  the later synthetic canary.
 - GitHub CI run 1082 passed both `verify` and hosted `db-lane`; PR #574 merged to `main` at
-  `7388faad`. Production smoke returns 200 for `/contractors` and fail-closed 404s from both
-  public-intake and reminder endpoints while the rollout gates are dark.
-- Separate high-entropy token/rate salts are configured in Preview and Production. The Production
-  Worker feature switch has been changed to encrypted `true` for the next deployment; Preview and
-  both reminder switches remain false. The database page flag remains false pending post-deploy
-  authorization tests.
+  `7388faad`. PR #575 also passed both lanes and deployed the controlled activation record at
+  `b6cb241`. Production `/contractors` renders the admin dashboard; the database
+  `page:contractors` row is enabled and not force-disabled.
+- Separate high-entropy token/rate salts are configured in Preview and Production. Production
+  feature and reminder switches are encrypted and enabled; Preview keeps both disabled. A
+  production redeploy (`2ad85dab-2720-4e56-a119-a74ccbcf6b26`) consumed the reminder switch.
+  Unauthenticated internal upload, file, request, and reminder calls return 401; public intake
+  returns a generic error without a capability token.
+- One synthetic manual request was claimed exactly once, stored a provider message ID, and arrived
+  at the intended UPR mailbox with the branded secure-upload copy. Its profile is now inactive,
+  reminders are paused, an audit event records the retirement, and the reminder candidate count
+  is zero.
 - The reviewed audit sheet/folder were read without mutation. The folder currently contains six
   PDFs for Sunny Day, DMH Services, Reindor, and FORCOMP. No matching `contacts` rows exist, so
   import is blocked on authoritative contact identity/phone/email mapping instead of fabricating
-  CRM data. No provider email or real document upload has occurred.
+  CRM data. No real document upload has occurred.
 
 ## Rollback posture
 
 Code rollback disables the feature flag and reminder binding first. Additive tables and private
 objects remain inert for evidence preservation. The repository rollback revokes RPCs and browser
-surfaces before dropping new empty objects; once real documents, requests, or delivery evidence
-exist, destructive removal is not an operational rollback and requires a separate retention-aware
-owner decision.
+surfaces before dropping new objects; because synthetic request/delivery evidence now exists,
+destructive removal is not an operational rollback and requires a separate retention-aware owner
+decision.
