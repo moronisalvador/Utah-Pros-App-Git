@@ -2,23 +2,509 @@
   "_generated": "npm run generate:changelog — do not hand-edit",
   "since": "2026-07-01",
   "totals": {
-    "changes": 463,
-    "weeks": 5,
+    "changes": 554,
+    "weeks": 6,
     "areas": 13,
-    "testing": 23
+    "testing": 0
   },
   "weeks": [
+    {
+      "start": "2026-08-03",
+      "end": "2026-08-09",
+      "items": [
+        {
+          "sha": "0ebc949",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Bind receive-payment auth timeout",
+          "live": true
+        },
+        {
+          "sha": "17d269b",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Bind Capgo publish evidence to reached gate",
+          "live": true
+        },
+        {
+          "sha": "28d4457",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make Capgo evidence outcome-bound",
+          "live": true
+        },
+        {
+          "sha": "418e3ab",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Block unsafe Capgo publishing",
+          "live": true
+        },
+        {
+          "sha": "520f5d0",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Preserve legacy invoice payment flow",
+          "live": true
+        },
+        {
+          "sha": "6c7bc97",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Sample quiet hours at delivery boundary",
+          "live": true
+        },
+        {
+          "sha": "7179d1f",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Defer safely before delivery schema",
+          "live": true
+        },
+        {
+          "sha": "809f7c9",
+          "day": "2026-08-03",
+          "kind": "New",
+          "area": "Billing",
+          "text": "Add default-dark receive-payment UI gate",
+          "live": true
+        },
+        {
+          "sha": "8d742b1",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Enforce scheduled quiet hours at reservation",
+          "live": true
+        },
+        {
+          "sha": "92dbe0f",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Validate payment filter identifiers",
+          "live": true
+        },
+        {
+          "sha": "b551ed5",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Keep grouped receipt route dark",
+          "live": true
+        },
+        {
+          "sha": "c36b848",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Billing",
+          "text": "Bound authorization transport",
+          "live": true
+        },
+        {
+          "sha": "c4e221b",
+          "day": "2026-08-03",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Create job estimates from priced quotes",
+          "live": true
+        },
+        {
+          "sha": "d6cd3dc",
+          "day": "2026-08-03",
+          "kind": "Fixed",
+          "area": "Messaging",
+          "text": "Preserve authorized media during schema rollout",
+          "live": true
+        }
+      ],
+      "count": 14,
+      "areas": [
+        "Billing",
+        "Field App",
+        "Messaging",
+        "Platform"
+      ],
+      "testing": 0
+    },
     {
       "start": "2026-07-27",
       "end": "2026-08-02",
       "items": [
+        {
+          "sha": "a8e2378",
+          "day": "2026-08-02",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Allow dev Capgo patch updates",
+          "live": true
+        },
+        {
+          "sha": "b81ffcd",
+          "day": "2026-08-02",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Keep dev Capgo bundles above native",
+          "live": true
+        },
+        {
+          "sha": "070b24e",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Preserve job detail state after merge",
+          "live": true
+        },
+        {
+          "sha": "12ba247",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Render appointment reminder details",
+          "live": true
+        },
+        {
+          "sha": "18676a7",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Remove Capgo runner ripgrep dependency",
+          "live": true
+        },
+        {
+          "sha": "2595da3",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Keep Capgo keys out of artifacts",
+          "live": true
+        },
+        {
+          "sha": "2601fd8",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Isolate Capgo validate credentials",
+          "live": true
+        },
+        {
+          "sha": "284f87d",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden Capgo validate asset proof",
+          "live": true
+        },
+        {
+          "sha": "285bff8",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Route reading feedback through toast helper",
+          "live": true
+        },
+        {
+          "sha": "2b9bf30",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Restore bundle allowlist ordering",
+          "live": true
+        },
+        {
+          "sha": "2df5349",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Verify Capgo in iOS artifact",
+          "live": true
+        },
+        {
+          "sha": "39199f6",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Require healthy native route",
+          "live": true
+        },
+        {
+          "sha": "44523c1",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Keep updater health helper pure",
+          "live": true
+        },
+        {
+          "sha": "448590e",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Gate scheduled reservations on live consent",
+          "live": true
+        },
+        {
+          "sha": "4c11496",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Bound conversation worker authorization",
+          "live": true
+        },
+        {
+          "sha": "562ec9b",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Verify generated Capgo asset path",
+          "live": true
+        },
+        {
+          "sha": "651da3e",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Enforce membership before media signing",
+          "live": true
+        },
+        {
+          "sha": "701d6cb",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Embed Capgo public key in dev archive",
+          "live": true
+        },
+        {
+          "sha": "746138f",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Stage Capgo bundles without delivery",
+          "live": true
+        },
+        {
+          "sha": "7988bfa",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Keep generic reminder copy private",
+          "live": true
+        },
+        {
+          "sha": "8e133c4",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Pin historical foundation proof",
+          "live": true
+        },
+        {
+          "sha": "91857bb",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Isolate UPR Dev distribution configuration",
+          "live": true
+        },
+        {
+          "sha": "9400e03",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Align Capgo React runtime",
+          "live": true
+        },
+        {
+          "sha": "9a6d485",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Verify embedded Capgo key",
+          "live": true
+        },
+        {
+          "sha": "a670b1e",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Make reminder containment rollback exact",
+          "live": true
+        },
+        {
+          "sha": "b2b7251",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Contain UPR Dev push retirement",
+          "live": true
+        },
+        {
+          "sha": "b344096",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Isolate Capgo dev config",
+          "live": true
+        },
+        {
+          "sha": "b53296c",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Report lint shrink only for checked files",
+          "live": true
+        },
+        {
+          "sha": "bd14da6",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Add guarded UPR Dev TestFlight lane",
+          "live": true
+        },
+        {
+          "sha": "bd282a2",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Bound notification worker transports",
+          "live": true
+        },
+        {
+          "sha": "bf46704",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Authorize media uploads before reading bytes",
+          "live": true
+        },
+        {
+          "sha": "c4de221",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Harden reminder delivery",
+          "live": true
+        },
+        {
+          "sha": "c8c338e",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Settings & Access",
+          "text": "Reconcile retired UPR Dev push after login",
+          "live": true
+        },
+        {
+          "sha": "cf61483",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Gate Capgo bundle readiness",
+          "live": true
+        },
+        {
+          "sha": "d2e57b9",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Pin notification emitter rollback chain",
+          "live": true
+        },
+        {
+          "sha": "d8b566d",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Notifications",
+          "text": "Record reminder rollback predecessor",
+          "live": true
+        },
+        {
+          "sha": "e75bc54",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Harden dev TestFlight and Capgo activation",
+          "live": true
+        },
+        {
+          "sha": "ea406e8",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Preserve notification occurrence identity",
+          "live": true
+        },
+        {
+          "sha": "f485d1b",
+          "day": "2026-08-01",
+          "kind": "New",
+          "area": "Mobile App",
+          "text": "Verify embedded native release contract",
+          "live": true
+        },
+        {
+          "sha": "f6ec394",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Field App",
+          "text": "Restore document status theme parity",
+          "live": true
+        },
+        {
+          "sha": "f8ed08c",
+          "day": "2026-08-01",
+          "kind": "Fixed",
+          "area": "Mobile App",
+          "text": "Validate Capgo v2 public keys",
+          "live": true
+        },
         {
           "sha": "06dfe48",
           "day": "2026-07-31",
           "kind": "Fixed",
           "area": "CRM",
           "text": "Harden transcription worker boundary",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "08889f6",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Scope conversation search and creation",
+          "live": true
+        },
+        {
+          "sha": "0aa832a",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Harden revoked conversation access",
+          "live": true
+        },
+        {
+          "sha": "0ef2eab",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Field App",
+          "text": "Put What's New in the field app at /tech/whats-new",
+          "live": true
+        },
+        {
+          "sha": "15ba4e6",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Purge revoked conversation access",
+          "live": true
         },
         {
           "sha": "20436be",
@@ -26,7 +512,7 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Narrow recording source service grant",
-          "live": false
+          "live": true
         },
         {
           "sha": "206be74",
@@ -34,7 +520,7 @@
           "kind": "New",
           "area": "Billing",
           "text": "Add receive payment workflow",
-          "live": false
+          "live": true
         },
         {
           "sha": "2b33ce7",
@@ -50,7 +536,7 @@
           "kind": "Fixed",
           "area": "Billing",
           "text": "Recover invoice commands safely",
-          "live": false
+          "live": true
         },
         {
           "sha": "2daa0d9",
@@ -66,7 +552,15 @@
           "kind": "New",
           "area": "Billing",
           "text": "Receive and reconcile grouped payments",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "359f086",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Route unread actions through scoped RPC",
+          "live": true
         },
         {
           "sha": "360744d",
@@ -74,7 +568,23 @@
           "kind": "New",
           "area": "Platform",
           "text": "Add the commit-msg reminder, contract tests and docs",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "3843d47",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "General",
+          "text": "Secure desktop participant controls",
+          "live": true
+        },
+        {
+          "sha": "39c1a17",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "General",
+          "text": "Label conversation message senders",
+          "live": true
         },
         {
           "sha": "3f61e7f",
@@ -82,7 +592,7 @@
           "kind": "New",
           "area": "Billing",
           "text": "Add durable invoice command ledger",
-          "live": false
+          "live": true
         },
         {
           "sha": "3f743fe",
@@ -90,7 +600,15 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Harden branch fixture seed",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "3f97979",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Emit native selection feedback",
+          "live": true
         },
         {
           "sha": "44eae38",
@@ -98,7 +616,7 @@
           "kind": "New",
           "area": "Billing",
           "text": "Add durable command recovery helpers",
-          "live": false
+          "live": true
         },
         {
           "sha": "524dafa",
@@ -106,7 +624,7 @@
           "kind": "Fixed",
           "area": "Messaging",
           "text": "Redact recording proxy errors",
-          "live": false
+          "live": true
         },
         {
           "sha": "52a07d9",
@@ -114,7 +632,15 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Contain QBO receipt service grants",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "530b629",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Default native pushes to private copy",
+          "live": true
         },
         {
           "sha": "57e6c95",
@@ -122,7 +648,15 @@
           "kind": "New",
           "area": "Billing",
           "text": "Add grouped payment receipt services",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "5bd5a61",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "General",
+          "text": "Add native participant thread controls",
+          "live": true
         },
         {
           "sha": "5cc8bdb",
@@ -138,7 +672,39 @@
           "kind": "Fixed",
           "area": "Notifications",
           "text": "Contain unsafe producer types",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "5fac870",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Expire offline desktop chat access",
+          "live": true
+        },
+        {
+          "sha": "67c062a",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Keep native chat info visible",
+          "live": true
+        },
+        {
+          "sha": "6bc63aa",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Harden private send responses",
+          "live": true
+        },
+        {
+          "sha": "6e5bc18",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Close revoked mobile threads immediately",
+          "live": true
         },
         {
           "sha": "6eb3bc3",
@@ -154,7 +720,7 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Bump tracked rules inventory 13 -> 14",
-          "live": false
+          "live": true
         },
         {
           "sha": "7cf12ef",
@@ -162,7 +728,23 @@
           "kind": "New",
           "area": "Billing",
           "text": "Add multi-invoice receipt schema",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "7f8330b",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "General",
+          "text": "Add mobile-first participant controls",
+          "live": true
+        },
+        {
+          "sha": "84b0a22",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "Platform",
+          "text": "Let the page's own entry derive its release status",
+          "live": true
         },
         {
           "sha": "863757d",
@@ -170,7 +752,15 @@
           "kind": "New",
           "area": "Platform",
           "text": "Derive a weekly activity record from git history",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "876d184",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Expire offline mobile chat access",
+          "live": true
         },
         {
           "sha": "895a43d",
@@ -186,7 +776,7 @@
           "kind": "New",
           "area": "Platform",
           "text": "Isolate inbound recording sources",
-          "live": false
+          "live": true
         },
         {
           "sha": "9bc153c",
@@ -194,7 +784,23 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "Inject fixture credential securely",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "9de679c",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Require membership before sending messages",
+          "live": true
+        },
+        {
+          "sha": "a3a958e",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Polish native conversation participants",
+          "live": true
         },
         {
           "sha": "a4d0737",
@@ -202,7 +808,7 @@
           "kind": "New",
           "area": "Platform",
           "text": "Add the What's New page at /whats-new",
-          "live": false
+          "live": true
         },
         {
           "sha": "abb9f31",
@@ -218,7 +824,15 @@
           "kind": "Fixed",
           "area": "Field App",
           "text": "Honor mobile breakpoint contract",
-          "live": false
+          "live": true
+        },
+        {
+          "sha": "bf98879",
+          "day": "2026-07-31",
+          "kind": "New",
+          "area": "General",
+          "text": "Polish native conversation participants",
+          "live": true
         },
         {
           "sha": "c738e34",
@@ -237,12 +851,52 @@
           "live": true
         },
         {
+          "sha": "d063c8c",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Scope inbound notification recipients",
+          "live": true
+        },
+        {
+          "sha": "d3ab455",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Platform",
+          "text": "Centre the What's New reading column",
+          "live": true
+        },
+        {
+          "sha": "d8eeb8e",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "Interface",
+          "text": "Show What's New in the desktop More drawer",
+          "live": true
+        },
+        {
+          "sha": "e2d9b12",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Fence scheduled provider submissions",
+          "live": true
+        },
+        {
+          "sha": "e8d267c",
+          "day": "2026-07-31",
+          "kind": "Fixed",
+          "area": "General",
+          "text": "Bound messaging authentication calls",
+          "live": true
+        },
+        {
           "sha": "edcd872",
           "day": "2026-07-31",
           "kind": "Fixed",
           "area": "Billing",
           "text": "Preserve reconciliation outcomes",
-          "live": false
+          "live": true
         },
         {
           "sha": "f35413c",
@@ -250,7 +904,7 @@
           "kind": "New",
           "area": "Platform",
           "text": "Seed 39 plain-English highlights for July 2026",
-          "live": false
+          "live": true
         },
         {
           "sha": "0acff17",
@@ -1226,7 +1880,7 @@
           "kind": "Fixed",
           "area": "Platform",
           "text": "The catch-all was never the cause — close the poisoning for real",
-          "live": false
+          "live": true
         },
         {
           "sha": "6562743",
@@ -1525,7 +2179,7 @@
           "live": true
         }
       ],
-      "count": 189,
+      "count": 255,
       "areas": [
         "Billing",
         "CRM",
@@ -1540,7 +2194,7 @@
         "Settings & Access",
         "Translations"
       ],
-      "testing": 23
+      "testing": 0
     },
     {
       "start": "2026-07-20",
@@ -3784,9 +4438,97 @@
           "area": "Field App",
           "text": "Phase F migration — attachments/source/resolved_at columns + RPC cutover",
           "live": true
+        },
+        {
+          "sha": "23c9b45",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Auto-transcribe on recording-ready + 'waiting for recording' state",
+          "live": true
+        },
+        {
+          "sha": "2736fe5",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Rich email composer + live preview for Campaigns",
+          "live": true
+        },
+        {
+          "sha": "289eaaa",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Tracking-number titles in CRM Settings; read-only chip on Call Log",
+          "live": true
+        },
+        {
+          "sha": "3b50356",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Audience-selection tool backend — email_campaign_exclusions + widened preview_email_audience",
+          "live": true
+        },
+        {
+          "sha": "62cf56b",
+          "day": "2026-07-01",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Address upr-pattern-checker findings on rich editor changes",
+          "live": true
+        },
+        {
+          "sha": "902704e",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Wire up \"Design with AI\" in the campaign email builder",
+          "live": true
+        },
+        {
+          "sha": "b4d19e2",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Real audience selection tool for Campaigns",
+          "live": true
+        },
+        {
+          "sha": "c0d7dd1",
+          "day": "2026-07-01",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Separate speakers on CallRail's mono recordings",
+          "live": true
+        },
+        {
+          "sha": "ca604c6",
+          "day": "2026-07-01",
+          "kind": "Fixed",
+          "area": "CRM",
+          "text": "Optimize the Campaigns page for mobile",
+          "live": true
+        },
+        {
+          "sha": "e14163b",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Add {{phone}} as a 4th insertable email variable",
+          "live": true
+        },
+        {
+          "sha": "ec57268",
+          "day": "2026-07-01",
+          "kind": "New",
+          "area": "CRM",
+          "text": "Real touch drag-and-drop for the Leads pipeline board",
+          "live": true
         }
       ],
-      "count": 110,
+      "count": 121,
       "areas": [
         "Billing",
         "CRM",
