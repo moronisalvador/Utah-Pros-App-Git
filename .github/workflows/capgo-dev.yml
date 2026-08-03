@@ -69,6 +69,7 @@ jobs:
           persist-credentials: false
 
       - name: Enforce the isolated dev boundary
+        id: boundary
         shell: bash
         env:
           OPERATION: ${{ inputs.operation }}
@@ -94,6 +95,7 @@ jobs:
             exit 1
           fi
           if [[ "$OPERATION" == "publish" ]]; then
+            echo "publish_block_reached=true" >> "$GITHUB_OUTPUT"
             echo "Publish is blocked before credentials or provider traffic: pinned Capgo CLI 8.31.5 assigns an omitted channel to the app default (or production fallback). A provenance-safe unassigned upload contract does not exist yet." >&2
             exit 1
           fi
@@ -179,6 +181,8 @@ jobs:
           OPERATION: ${{ inputs.operation }}
           BUNDLE_VERSION: ${{ steps.bundle.outputs.bundle_version }}
           NATIVE_VERSION: ${{ steps.bundle.outputs.native_version }}
+          BOUNDARY_STEP_OUTCOME: ${{ steps.boundary.outcome }}
+          PUBLISH_BLOCK_REACHED: ${{ steps.boundary.outputs.publish_block_reached }}
           DISABLE_STEP_OUTCOME: ${{ steps.disable_delivery.outcome }}
         run: |
           node -e '
@@ -188,12 +192,18 @@ jobs:
               appId: process.env.CAPGO_DEV_APP_ID,
               channel: process.env.CAPGO_DEV_CHANNEL,
               operation: process.env.OPERATION,
+              operationSelected: process.env.OPERATION,
               candidateBundleVersion: process.env.BUNDLE_VERSION || null,
               nativeVersion: process.env.NATIVE_VERSION || null,
               sourceCommit: process.env.GITHUB_SHA,
               apiOrigin: process.env.VITE_NATIVE_API_ORIGIN,
               nativeOtaEnabled: process.env.VITE_NATIVE_OTA_ENABLED === "true",
-              publishBlockedBeforeProvider: process.env.OPERATION === "publish",
+              boundaryStepOutcome:
+                process.env.BOUNDARY_STEP_OUTCOME || "not-run",
+              publishBlockReached:
+                process.env.PUBLISH_BLOCK_REACHED === "true",
+              publishBlockedBeforeProvider:
+                process.env.PUBLISH_BLOCK_REACHED === "true",
               providerOperationSelected: process.env.OPERATION === "disable",
               disableProviderStepOutcome:
                 process.env.DISABLE_STEP_OUTCOME || "not-run",

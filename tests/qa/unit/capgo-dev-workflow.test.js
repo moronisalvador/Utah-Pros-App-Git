@@ -107,12 +107,27 @@ describe('UPR Dev Capgo workflow boundary', () => {
   });
 
   it('retains publish as a fail-closed operation with no provider path', () => {
+    const publishBranchStart = boundaryStep.indexOf(
+      'if [[ "$OPERATION" == "publish" ]]',
+    );
+    const publishBlockMarker = boundaryStep.indexOf(
+      'echo "publish_block_reached=true" >> "$GITHUB_OUTPUT"',
+    );
+
     expect(capgoCliPackage.version).toBe('8.31.5');
     expect(capgoCliSource).toContain('select("default_upload_channel")');
     expect(capgoCliSource).toContain('||"production"');
     expect(workflow).toContain('          - publish');
     expect(workflow).toContain('validate|publish|disable) ;;');
     expect(boundaryStep).toContain('if [[ "$OPERATION" == "publish" ]]');
+    expect(boundaryStep).toContain('id: boundary');
+    expect(boundaryStep).toContain(
+      'echo "publish_block_reached=true" >> "$GITHUB_OUTPUT"',
+    );
+    expect(publishBlockMarker).toBeGreaterThan(publishBranchStart);
+    expect(publishBlockMarker).toBeLessThan(
+      boundaryStep.indexOf('exit 1', publishBranchStart),
+    );
     expect(boundaryStep).toContain(
       'Publish is blocked before credentials or provider traffic:',
     );
@@ -172,6 +187,27 @@ describe('UPR Dev Capgo workflow boundary', () => {
       'workflowDeviceDeliveryActivationAttempted: false',
     );
     expect(workflow).toContain(
+      'BOUNDARY_STEP_OUTCOME: ${{ steps.boundary.outcome }}',
+    );
+    expect(workflow).toContain(
+      'PUBLISH_BLOCK_REACHED: ${{ steps.boundary.outputs.publish_block_reached }}',
+    );
+    expect(workflow).toContain(
+      'operationSelected: process.env.OPERATION',
+    );
+    expect(workflow).toContain(
+      'boundaryStepOutcome:',
+    );
+    expect(workflow).toContain(
+      'publishBlockReached:',
+    );
+    expect(workflow).toContain(
+      'publishBlockedBeforeProvider:',
+    );
+    expect(workflow).toContain(
+      'process.env.PUBLISH_BLOCK_REACHED === "true"',
+    );
+    expect(workflow).not.toContain(
       'publishBlockedBeforeProvider: process.env.OPERATION === "publish"',
     );
     expect(workflow).toContain(
