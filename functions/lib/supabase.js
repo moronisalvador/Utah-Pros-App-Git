@@ -101,7 +101,7 @@ export function supabase(env, fetchImpl = fetch) {
     // Raw bytes upload to Storage (e.g. a generated PDF) — the REST helpers
     // above only cover JSON bodies. Throws with a clear message if the
     // service-role key isn't configured, rather than silently no-oping.
-    async uploadStorage(bucket, path, bytes, contentType) {
+    async uploadStorage(bucket, path, bytes, contentType, { upsert = true } = {}) {
       if (!key) throw new Error('Supabase service-role key not configured');
       const res = await fetchImpl(`${url}/storage/v1/object/${bucket}/${path}`, {
         method: 'POST',
@@ -109,11 +109,24 @@ export function supabase(env, fetchImpl = fetch) {
           'Authorization': `Bearer ${key}`,
           'apikey':        key,
           'Content-Type':  contentType,
-          'x-upsert':      'true',
+          'x-upsert':      String(upsert),
         },
         body: bytes,
       });
       if (!res.ok) throw new Error(`Supabase STORAGE upload ${bucket}/${path}: ${res.status} ${await res.text()}`);
+      return true;
+    },
+
+    // Best-effort compensation for a metadata failure after a new private
+    // upload. Callers must pass a server-generated, already-authorized path;
+    // this is intentionally not exposed to browser code.
+    async deleteStorage(bucket, path) {
+      if (!key) throw new Error('Supabase service-role key not configured');
+      const res = await fetchImpl(`${url}/storage/v1/object/${bucket}/${path}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${key}`, apikey: key },
+      });
+      if (!res.ok) throw new Error(`Supabase STORAGE delete ${bucket}: ${res.status}`);
       return true;
     },
 
@@ -159,12 +172,13 @@ export function supabase(env, fetchImpl = fetch) {
       };
     },
 
-    async signStorage(bucket, path, expiresIn = 600) {
+    async signStorage(bucket, path, expiresIn = 600, { download = false } = {}) {
       if (!key) throw new Error('Supabase service-role key not configured');
+      const signBody = download ? { expiresIn, download } : { expiresIn };
       const res = await fetchImpl(`${url}/storage/v1/object/sign/${bucket}/${path}`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ expiresIn }),
+        body: JSON.stringify(signBody),
       });
       if (!res.ok) {
         throw new Error(`Supabase STORAGE sign ${bucket}/${path}: ${res.status} ${await res.text()}`);
