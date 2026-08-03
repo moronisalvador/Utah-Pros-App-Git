@@ -24,6 +24,10 @@ vi.mock('../lib/supabase.js', () => ({
 
 import { fetchWithTimeout } from '../lib/http.js';
 import {
+  DEFAULT_SMS_TIMEZONE,
+  isWithinQuietHours,
+} from '../lib/automated-send.js';
+import {
   authorizeRequest,
   checkCronSecret,
   processQueue,
@@ -199,6 +203,94 @@ describe('processQueue safety gates', () => {
     expect(calls.rpc.some(({ fn }) => fn === 'claim_scheduled_message')).toBe(false);
     expect(calls.update).toEqual([]);
     expect(sendAutomatedMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('defers without a legacy fallback while the delivery RPC schema is pending', async () => {
+    const { db, calls } = makeDb({ pending: due() });
+    const originalRpc = db.rpc.bind(db);
+    db.rpc = async (fn, params) => {
+      if (fn === 'claim_scheduled_message_v2') {
+        calls.rpc.push({ fn, params });
+        throw new Error(
+          'Supabase RPC claim_scheduled_message_v2: 404 '
+            + '{"code":"PGRST202","message":"Could not find the function"}',
+        );
+      }
+      return originalRpc(fn, params);
+    };
+
+    const result = await processQueue(db, {}, { now: SENDABLE_NOW });
+
+    expect(result).toMatchObject({
+      success: true,
+      processed: 0,
+      failed: 0,
+      deferred: true,
+      reason: 'delivery_schema_pending',
+    });
+    expect(calls.rpc).toEqual([{
+      fn: 'claim_scheduled_message_v2',
+      params: {
+        p_id: 's1',
+        p_claim_token: expect.any(String),
+      },
+    }]);
+    expect(sendAutomatedMessageMock).not.toHaveBeenCalled();
+    expect(calls.update).toEqual([]);
+  });
+
+  it('rechecks quiet hours per delivery when a batch crosses 21:00 Denver time', async () => {
+    const pending = [
+      ...due(),
+      ...due({ id: 's2' }),
+    ];
+    const { db, calls } = makeDb({ pending });
+    const deliveryTimes = [
+      new Date('2026-07-09T02:59:59Z'), // 20:59:59 MDT
+      new Date('2026-07-09T03:00:00Z'), // 21:00:00 MDT
+    ];
+    sendAutomatedMessageMock.mockImplementation(async (
+      _channel,
+      _contactId,
+      _template,
+      _variables,
+      _env,
+      extra,
+    ) => {
+      const deliveryNow = extra.clock();
+      if (isWithinQuietHours(deliveryNow, DEFAULT_SMS_TIMEZONE)) {
+        return { ok: false, skipped: true, reason: 'quiet_hours' };
+      }
+      const reservation = await extra.reserveDelivery();
+      return {
+        ok: true,
+        skipped: false,
+        deliveryAttemptId: reservation.attemptId,
+        messageId: 'message-1',
+      };
+    });
+
+    const result = await processQueue(db, {}, {
+      now: new Date('2026-07-09T02:59:00Z'),
+      clock: () => deliveryTimes.shift(),
+    });
+
+    expect(result).toMatchObject({ processed: 1, failed: 0 });
+    // Both messages reach the central gate, which samples the clock after its
+    // async compliance reads. Only the pre-21:00 delivery can reserve a provider
+    // attempt; the second is released for a later run.
+    expect(sendAutomatedMessageMock).toHaveBeenCalledTimes(2);
+    expect(calls.rpc.filter(({ fn }) => fn === 'reserve_scheduled_message_delivery')).toHaveLength(1);
+    const secondClaim = calls.rpc
+      .filter(({ fn }) => fn === 'claim_scheduled_message_v2')[1];
+    expect(calls.rpc).toContainEqual({
+      fn: 'release_scheduled_message_claim',
+      params: expect.objectContaining({
+        p_id: 's2',
+        p_claim_token: secondClaim.params.p_claim_token,
+        p_error_message: 'Deferred: quiet_hours',
+      }),
+    });
   });
 
   it.each([

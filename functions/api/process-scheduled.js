@@ -71,6 +71,19 @@ import { recordWorkerRun } from '../lib/worker-runs.js';
 
 const WORKER_NAME = 'process-scheduled';
 const BATCH_LIMIT = 20;
+const DELIVERY_RPC_NAMES = [
+  'claim_scheduled_message_v2',
+  'release_scheduled_message_claim',
+  'fail_scheduled_message_claim',
+  'reserve_scheduled_message_delivery',
+  'reconcile_scheduled_message_delivery',
+];
+
+function isMissingDeliverySchema(error) {
+  const message = String(error?.message || '');
+  return message.includes('PGRST202')
+    && DELIVERY_RPC_NAMES.some((name) => message.includes(name));
+}
 
 // ─── SECTION: Auth ──────────────
 export { checkCronSecret };
@@ -176,11 +189,16 @@ function parseMediaUrls(value) {
 }
 
 // ─── SECTION: Queue processing ──────────────
-export async function processQueue(db, env, { now = new Date() } = {}) {
+export async function processQueue(
+  db,
+  env,
+  { now = new Date(), clock = () => new Date() } = {},
+) {
   const startedAt = new Date().toISOString();
   const nowIso = now.toISOString();
   const processed = [];
   const errors = [];
+  let schemaPending = false;
 
   try {
     // ── TCPA quiet-hours guard: defer the whole due batch outside 8am–9pm ──
@@ -375,6 +393,7 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
             'sms_disabled',
             'dnd',
             'no_consent',
+            'quiet_hours',
           ]);
           if (
             expectedDenials.has(reservation?.outcome)
@@ -397,9 +416,12 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
               : 'delivery_reserved',
           };
         };
+        // Do not freeze the batch-start timestamp here. The central send gate
+        // samples this clock after its async kill-switch/consent reads and
+        // immediately before the database reservation/provider boundary.
         const gatedResult = await sendAutomatedMessage('sms', contact.id, null, {}, env, {
           body: clientBody,
-          now,
+          clock,
           destinationPhone: primaryParticipant.phone,
           mediaUrls,
           conversationId: scheduled.conversation_id,
@@ -448,6 +470,27 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
         errors.push({ id: scheduled.id, error: reason });
 
       } catch (err) {
+        if (isMissingDeliverySchema(err)) {
+          // The source deploy intentionally may precede the serialized database
+          // window. Keep the queue pending and return a healthy deferral; never
+          // fall back to the legacy claim/send path. If a partial schema-cache
+          // refresh failed after a claim, make one provider-free release attempt.
+          if (
+            claimToken
+            && !String(err?.message || '').includes('claim_scheduled_message_v2')
+          ) {
+            try {
+              await releaseClaim(
+                db,
+                scheduled.id,
+                claimToken,
+                'Deferred: delivery_schema_pending',
+              );
+            } catch { /* the token lease expires without any provider attempt */ }
+          }
+          schemaPending = true;
+          break;
+        }
         console.error(`Error processing scheduled ${scheduled.id}:`, err);
         // If a reservation was linked before an unexpected error, reconcile its
         // ledger state and never submit again. Without a reservation, only the
@@ -478,6 +521,21 @@ export async function processQueue(db, env, { now = new Date() } = {}) {
     console.error('process-scheduled error:', err);
     await recordRun(db, { status: 'error', processed: processed.length, errorMessage: err.message, startedAt });
     return { success: false, error: err.message };
+  }
+
+  if (schemaPending) {
+    await recordRun(db, {
+      status: 'completed',
+      processed: processed.length,
+      startedAt,
+    });
+    return {
+      success: true,
+      processed: processed.length,
+      failed: errors.length,
+      deferred: true,
+      reason: 'delivery_schema_pending',
+    };
   }
 
   await recordRun(db, { status: errors.length && !processed.length ? 'error' : 'completed', processed: processed.length, startedAt });
