@@ -4,7 +4,7 @@
 -- WHAT THIS DOES (plain language): On an isolated local database only, proves
 -- PM W-9 metadata redaction, insurance-only audit history, W-9 checklist role
 -- denial, and the accepted-W-9 provider-handoff gate with synthetic records.
--- DEPENDS ON: the three unapplied 20260803 contractor compliance migrations.
+-- DEPENDS ON: the four contractor migrations through read-auth hardening.
 -- NOTES / GOTCHAS: Never run against the shared UPR project.
 -- ════════════════════════════════════════════════
 DO $guard$
@@ -30,12 +30,13 @@ INSERT INTO public.employees (
   ('91000000-0000-4000-8000-000000000006', 'Compliance External Office', 'office', true, true, '92000000-0000-4000-8000-000000000006');
 
 INSERT INTO public.contacts (
-  id, name, company, email, role, trade_specialty
+  id, name, company, email, phone, role, trade_specialty
 ) VALUES (
   '93000000-0000-4000-8000-000000000001',
   'Synthetic Subcontractor',
   'Synthetic Trade LLC',
   'synthetic-contractor@example.invalid',
+  '+15550102026',
   'subcontractor',
   'roofing'
 );
@@ -204,10 +205,30 @@ BEGIN
   ] LOOP
     PERFORM set_config('request.jwt.claim.sub', v_auth, true);
     BEGIN
+      PERFORM public.get_contractor_compliance_dashboard(
+        NULL, NULL, 50, 0, NULL, NULL
+      );
+      RAISE EXCEPTION 'denied caller received contractor dashboard: %', v_auth;
+    EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+    END;
+    BEGIN
       PERFORM public.get_contractor_compliance_detail(
         '93000000-0000-4000-8000-000000000001', NULL, NULL
       );
       RAISE EXCEPTION 'denied caller received contractor detail: %', v_auth;
+    EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+    END;
+    BEGIN
+      PERFORM public.get_contractor_compliance_audit_periods();
+      RAISE EXCEPTION 'denied caller received contractor audit periods: %', v_auth;
+    EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
+    END;
+    BEGIN
+      PERFORM public.get_contractor_compliance_audit_manifest(
+        current_setting('contractor_compliance.test_audit_period')::uuid,
+        NULL, 'all', 'all', 'all', 50, 0
+      );
+      RAISE EXCEPTION 'denied caller received contractor audit manifest: %', v_auth;
     EXCEPTION WHEN SQLSTATE '42501' THEN NULL;
     END;
     BEGIN
@@ -219,5 +240,62 @@ BEGIN
     END;
   END LOOP;
 END $denied_roles$;
+
+RESET ROLE;
+
+DO $anon_acl$
+BEGIN
+  IF has_function_privilege(
+       'anon',
+       'public.get_contractor_compliance_dashboard(text,text,integer,integer,date,date)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.get_contractor_compliance_detail(uuid,date,date)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.get_contractor_compliance_audit_periods()',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.get_contractor_compliance_audit_manifest(uuid,text,text,text,text,integer,integer)',
+       'EXECUTE'
+     )
+     OR has_function_privilege(
+       'anon',
+       'public.get_contractor_w9_tax_year_checklist(integer,text,text,text,text,boolean,integer,integer)',
+       'EXECUTE'
+     ) THEN
+    RAISE EXCEPTION 'anon retained contractor compliance read RPC execution';
+  END IF;
+END $anon_acl$;
+
+SET LOCAL ROLE service_role;
+SELECT set_config('request.jwt.claim.sub', '', true);
+SELECT set_config('request.jwt.claim.role', 'service_role', true);
+
+DO $service_role_reads$
+BEGIN
+  PERFORM public.get_contractor_compliance_dashboard(
+    NULL, NULL, 50, 0, NULL, NULL
+  );
+  PERFORM public.get_contractor_compliance_detail(
+    '93000000-0000-4000-8000-000000000001', NULL, NULL
+  );
+  PERFORM public.get_contractor_compliance_audit_periods();
+  PERFORM public.get_contractor_compliance_audit_manifest(
+    current_setting('contractor_compliance.test_audit_period')::uuid,
+    NULL, 'all', 'all', 'all', 50, 0
+  );
+  PERFORM public.get_contractor_w9_tax_year_checklist(
+    2026, NULL, 'all', 'all', 'all', true, 50, 0
+  );
+END $service_role_reads$;
+
+RESET ROLE;
 
 ROLLBACK;
