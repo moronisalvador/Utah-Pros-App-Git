@@ -35,7 +35,16 @@ const state = {
   consentStatus: null,
   supabaseFetchImpls: [],
   failDbRead: false,
+  emailCalls: [],
+  emailSuppressed: false,
 };
+
+vi.mock('./email.js', () => ({
+  sendEmail: vi.fn(async (_env, options) => {
+    state.emailCalls.push(options);
+    return { ok: true, id: 'email-test', error: null };
+  }),
+}));
 
 vi.mock('./twilio.js', () => ({
   // Behaviour is overridable per-test via state.sendImpl (e.g. to throw a 429).
@@ -73,6 +82,7 @@ vi.mock('./supabase.js', () => ({
       if (table === 'crm_orgs') return [{ id: 'org-real' }];
       if (table === 'automation_settings') return [{ sms_sending_enabled: state.smsEnabled }];
       if (table === 'contacts') return [state.contact];
+      if (table === 'email_suppressions') return state.emailSuppressed ? [{ id: 'suppressed-1' }] : [];
       if (table === 'message_templates') return [];
       // No existing thread → the send path find-or-creates one.
       if (table === 'conversation_participants') return [];
@@ -143,6 +153,8 @@ beforeEach(() => {
   state.rpcs = [];
   state.supabaseFetchImpls = [];
   state.failDbRead = false;
+  state.emailCalls = [];
+  state.emailSuppressed = false;
   state.contact = OPTED_IN;
   state.consentStatus = { allowed: true, code: 'GLOBAL_OPT_IN' };
   state.sendImpl = null;
@@ -150,6 +162,36 @@ beforeEach(() => {
   state.failMaterialize = false;
   state.existingConversation = null;
   sendMessage.mockClear();
+});
+
+describe('sendAutomatedMessage — email idempotency', () => {
+  it('forwards a durable caller identity only after the suppression/DND gate', async () => {
+    state.contact = { ...OPTED_IN, email: 'contractor@example.test' };
+    const result = await sendAutomatedMessage('email', 'c1', null, {}, {}, {
+      subject: 'Compliance request',
+      html: '<p>Upload</p>',
+      idempotencyKey: 'contractor-compliance:request:stage',
+    });
+    expect(result).toMatchObject({ ok: true, skipped: false, resendId: 'email-test' });
+    expect(state.emailCalls).toHaveLength(1);
+    expect(state.emailCalls[0].idempotencyKey).toBe('contractor-compliance:request:stage');
+  });
+
+  it.each([
+    ['dnd', { dnd: true }, false],
+    ['suppressed', { dnd: false }, true],
+    ['no_email', { email: null }, false],
+  ])('blocks %s before the email provider', async (reason, contactPatch, suppressed) => {
+    state.contact = { ...OPTED_IN, email: 'contractor@example.test', ...contactPatch };
+    state.emailSuppressed = suppressed;
+    const result = await sendAutomatedMessage('email', 'c1', null, {}, {}, {
+      subject: 'Compliance request',
+      html: '<p>Upload</p>',
+      idempotencyKey: 'contractor-compliance:request:stage',
+    });
+    expect(result).toMatchObject({ ok: false, skipped: true, reason });
+    expect(state.emailCalls).toHaveLength(0);
+  });
 });
 
 describe('sendAutomatedMessage — SMS gate', () => {

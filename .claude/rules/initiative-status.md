@@ -7,6 +7,18 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
+### Contractor Compliance — repository complete; owner-gated integration pending
+
+Tier 2 plan: `docs/contractor-compliance-roadmap.md`. Cold-session dispatch:
+`docs/contractor-compliance-dispatch.md`. Ownership:
+`.claude/rules/contractor-compliance-wave-ownership.md`. The lease covers only new
+`contractor_compliance_*` and `contractor_w9_provider_*` database/Worker/UI objects plus narrow route/navigation,
+automated-email-idempotency, canonical-doc, and context edits. Planning and repository
+implementation are authorized. Migration apply, Storage/Cloudflare/provider configuration,
+deployment, outbound email, real-document import, commit, push, and PR are not authorized.
+Repository build/tests/static contracts and all required risk/UI reviewers passed 2026-08-03;
+the isolated SQL behavior proof remains pending an authorized applied local/QA schema.
+
 *(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
 through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert
 activation gates remain recorded in

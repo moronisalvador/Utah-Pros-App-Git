@@ -54,7 +54,7 @@
  *     A scheduled caller may add a service-only reserveDelivery callback after
  *     every compliance gate and cap maxProviderAttempts at one. This keeps the
  *     consent door structurally intact while preventing crash/retry duplicates.
- *   sendGatedEmail(env, { contact, subject, html, recipientId })
+ *   sendGatedEmail(env, { contact, subject, html, recipientId, idempotencyKey })
  *     — the actual gated send. Both sendAutomatedMessage('email', ...) and
  *     the bulk campaign worker (functions/api/send-email-campaign.js) call
  *     THIS, so the suppression/consent check can't be bypassed by either
@@ -63,7 +63,8 @@
  *     caller has one, makes the unsubscribe link resolve back to the exact
  *     campaign send so email_unsubscribe() can mark that row suppressed too
  *     — omit it for a non-campaign automated send (Phase 4d), which falls
- *     back to a plain ?email= unsubscribe link.
+ *     back to a plain ?email= unsubscribe link. `idempotencyKey`, when supplied
+ *     by a durable sender, is forwarded unchanged to the bounded email transport.
  *   renderTemplate(body, variables) — {{token}} substitution, exported for
  *     the campaign builder UI to preview a template before sending.
  *
@@ -143,7 +144,13 @@ function buildUnsubscribeUrl(env, email, recipientId) {
 }
 
 // ─── SECTION: sendGatedEmail — the one path to sendEmail() for marketing mail ──
-export async function sendGatedEmail(env, { contact, subject, html, recipientId } = {}) {
+export async function sendGatedEmail(env, {
+  contact,
+  subject,
+  html,
+  recipientId,
+  idempotencyKey,
+} = {}) {
   const db = supabase(env, fetchWithTimeout);
   const email = contact?.email || null;
   const suppressed = await isEmailSuppressed(db, email);
@@ -170,6 +177,7 @@ export async function sendGatedEmail(env, { contact, subject, html, recipientId 
       'List-Unsubscribe': `<${unsubscribeUrl}>`,
       'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
     },
+    idempotencyKey,
   });
 
   return { ok: result.ok, skipped: false, error: result.error, resendId: result.id };
@@ -823,5 +831,6 @@ export async function sendAutomatedMessage(channel, contactId, templateKey, vari
     contact,
     subject: extra.subject || '',
     html: rendered,
+    idempotencyKey: extra.idempotencyKey,
   });
 }

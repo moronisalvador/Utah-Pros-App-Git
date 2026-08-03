@@ -68,6 +68,11 @@ const {
   Collections,
   Commissions,
   Conversations,
+  ContractorDetail,
+  ContractorAudits,
+  ContractorTaxReadiness,
+  Contractors,
+  ContractorUpload,
   CrmAttribution,
   CrmAutomations,
   CrmCallLog,
@@ -420,6 +425,11 @@ function WebRoutes() {
       <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/terms" element={<TermsOfService />} />
       <Route path="/support" element={<Support />} />
+      {/* Public capability route. The page receives no anonymous database or
+          Storage access; its Worker independently validates the scoped token. */}
+      <Route path="/contractor-upload" element={
+        <ErrorBoundary section="Contractor Upload"><ContractorUpload /></ErrorBoundary>
+      } />
       {/* Public CRM build-status page — mirrors /crm/roadmap for a logged-out
           visitor via the anon-granted get_crm_build_progress RPC. The ONLY
           public CRM surface; every other /crm/* route stays behind page:crm. */}
@@ -468,6 +478,42 @@ function WebRoutes() {
         </Route>
 
         <Route path="production" element={<ErrorBoundary section="Production"><Production /></ErrorBoundary>} />
+        <Route path="contractors" element={
+          <RoleRoute roles={['admin', 'office', 'project_manager']}>
+            <FeatureRoute flag="page:contractors">
+              <AccessRoute navKey="contractors">
+                <ErrorBoundary section="Contractor Compliance"><Contractors /></ErrorBoundary>
+              </AccessRoute>
+            </FeatureRoute>
+          </RoleRoute>
+        } />
+        <Route path="contractors/:contractorId" element={
+          <RoleRoute roles={['admin', 'office', 'project_manager']}>
+            <FeatureRoute flag="page:contractors">
+              <AccessRoute navKey="contractors">
+                <ErrorBoundary section="Contractor Compliance Detail"><ContractorDetail /></ErrorBoundary>
+              </AccessRoute>
+            </FeatureRoute>
+          </RoleRoute>
+        } />
+        <Route path="contractors/audits" element={
+          <RoleRoute roles={['admin', 'office', 'project_manager']}>
+            <FeatureRoute flag="page:contractors">
+              <AccessRoute navKey="contractors">
+                <ErrorBoundary section="Contractor Insurance Audits"><ContractorAudits /></ErrorBoundary>
+              </AccessRoute>
+            </FeatureRoute>
+          </RoleRoute>
+        } />
+        <Route path="contractors/tax-readiness" element={
+          <RoleRoute roles={['admin', 'office']}>
+            <FeatureRoute flag="page:contractors">
+              <AccessRoute navKey="contractors">
+                <ErrorBoundary section="Contractor W-9 Readiness"><ContractorTaxReadiness /></ErrorBoundary>
+              </AccessRoute>
+            </FeatureRoute>
+          </RoleRoute>
+        } />
 
         {/* Property Meld restoration melds — owner-only preview (no nav link yet) */}
         <Route path="melds" element={

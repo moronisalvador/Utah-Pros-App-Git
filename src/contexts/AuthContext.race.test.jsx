@@ -420,6 +420,15 @@ describe('feature flag access resolution', () => {
     )).toBe(false);
   });
 
+  it('fails closed when the Contractor Compliance rollout row is missing', () => {
+    expect(resolveFeatureFlagAccess(
+      'page:contractors',
+      {},
+      employeeA,
+      {},
+    )).toBe(false);
+  });
+
   it('lets force-disabled override global enable and owner preview', () => {
     const flags = {
       'feature:test': featureFlag({

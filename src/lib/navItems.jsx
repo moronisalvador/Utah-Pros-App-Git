@@ -93,6 +93,7 @@ export const NAV_ITEMS = [
 
   { section: 'Operations' },
   { key: 'schedule',           label: 'Schedule',           path: '/schedule',           icon: IconSchedule },
+  { key: 'contractors',        label: 'Contractor Compliance', path: '/contractors',      icon: IconFileText, featureFlag: 'page:contractors' },
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'time_tracking',      label: 'Time Tracking',      path: '/time-tracking',      icon: IconTimeTracking, featureFlag: 'page:time_tracking' },
   { key: 'collections',        label: 'Collections',        path: '/collections',        icon: IconCollections,  featureFlag: 'page:collections' },
@@ -136,6 +137,7 @@ export const PRIMARY_ITEMS = [
 export const OVERFLOW_ITEMS = [
   { key: 'jobs',               label: 'Jobs',               path: '/jobs',               icon: IconJobs },
   { key: 'production',         label: 'Production',         path: '/production',         icon: IconProduction },
+  { key: 'contractors',        label: 'Contractor Compliance', path: '/contractors',      icon: IconFileText, featureFlag: 'page:contractors' },
   { key: 'schedule_templates', label: 'Schedule Templates', path: '/schedule/templates', icon: IconTemplates },
   { key: 'encircle_import',    label: 'Encircle Import',    path: '/import/encircle',    icon: IconImport },
   { key: 'oop_pricing',        label: 'OOP Pricing',        path: '/tools/oop-pricing',  icon: IconCalculator, featureFlag: 'tool:oop_pricing', allowedRoles: OOP_PRICING_ROLES },

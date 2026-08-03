@@ -105,6 +105,17 @@ be treated as current architecture without re-verification.
 - Public forms, e-signature, status and login bootstrap use purpose-built minimal
   capability/Worker contracts. They are explicit public exceptions, not a general anonymous table
   or privileged-RPC access pattern.
+- Contractor Compliance follows the same capability rule with a stricter private-file split:
+  authenticated browser roles read role-redacted readiness through narrow RPCs, while internal
+  file operations, public token intake, and renewal email run through purpose-built Workers.
+  The browser never receives a Storage path or direct table/bucket grant. Public upload bytes are
+  bounded and signature-checked before a random private object path and pending-review version are
+  recorded; short-lived signed retrieval is minted only after a fresh internal role check.
+- Named contractor insurance audits are materialized server-side snapshots, not UI date filters:
+  roster facts, accepted coverage/gap intervals, document versions, and request evidence can be
+  locked for reproduction. Annual W-9 readiness is a separate admin/office projection over the
+  same private version history; its only new state is bounded QuickBooks/Gusto handoff metadata.
+  UPR owns no 1099 generation, storage, or distribution path.
 - Owner automation that needs cross-table analysis stays behind a service-only role/non-exposed
   boundary; read-only dynamic SQL is still privileged and must not be browser-callable.
 

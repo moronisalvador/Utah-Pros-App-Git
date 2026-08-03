@@ -119,6 +119,14 @@ const CANONICAL_UUID_PATTERN = (
 );
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 const AUTHORIZATION_KEY_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,127}$/;
+// These surfaces carry private/provider-backed behavior and must stay dark
+// when compatible application code reaches an environment before its explicit
+// rollout row exists. Most legacy pages intentionally keep the historic
+// missing-row-is-unrestricted behavior below.
+const FAIL_CLOSED_FEATURE_FLAGS = new Set([
+  'page:contractors',
+  'tool:oop_pricing',
+]);
 const SUPPORTED_EMPLOYEE_ROLES = new Set([
   'admin',
   'office',
@@ -224,7 +232,7 @@ export function resolveFeatureFlagAccess(
   const flag = featureFlags[key];
   if (flag?.force_disabled) return false;
   if (key === 'page:crm' && employee?.role === 'crm_partner') return true;
-  if (key === 'tool:oop_pricing' && !flag) return false;
+  if (FAIL_CLOSED_FEATURE_FLAGS.has(key) && !flag) return false;
   if (!flag) return true;
   if (flag.enabled) return true;
   if (employee && flag.dev_only_user_id === employee.id) return true;
@@ -1922,7 +1930,7 @@ export function AuthProvider({ children }) {
   // ── Feature flag check helper ──
   // Force disabled is absolute. Otherwise: enabled = global access and
   // dev_only_user_id = preview access for that employee. Missing rows are
-  // generally unrestricted; OOP Pricing deliberately fails closed.
+  // generally unrestricted; named private/provider-backed surfaces fail closed.
   const isFeatureEnabled = useCallback(
     (key) => resolveFeatureFlagAccess(
       key,

@@ -181,6 +181,31 @@ For a new or changed workflow, document:
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
 
+## Contractor Compliance authorization (repository only)
+
+`/contractors` is web-only and requires the explicit default-OFF `page:contractors` rollout row,
+the `contractors` page permission, and an active internal admin/office/project-manager role.
+The role check is repeated by each internal Worker and the read RPCs. Admin/office may manage;
+project managers receive readiness only. Field, external, inactive, unmapped, and other roles are
+denied. Project-manager projections omit W-9 filenames, tax years, dates, hashes, document rows,
+Storage references, previews, and downloads.
+
+The public `/contractor-upload#token=…` page is a capability client, not anonymous database access.
+The fragment is removed from browser history after capture and is never sent in the page request or API URL.
+Only the Worker sees the raw token; Postgres stores its SHA-256 digest and enforces contractor,
+requested-type, expiry, pause/revoke/complete, and attempt bounds. The Worker validates MIME,
+magic bytes, and size before a service-role private Storage write. Upload never marks a document
+accepted. Signed retrieval is short-lived, `no-store`, and available only after a fresh
+admin/office document authorization. These source contracts are not live until separately
+authorized database, Cloudflare binding, deployment, and readback steps complete.
+
+`/contractors/audits` repeats the feature/page/role gates. Admin/office may create, materialize,
+lock, filter, and export named insurance manifests; project managers receive only insurance
+readiness and interval counts, with period payment/activity facts, external source IDs, and
+document IDs redacted server-side. `/contractors/tax-readiness` and both W-9 checklist/handoff
+RPCs are admin/office-only. They return no W-9 file metadata or tax identifier. A non-`not_ready`
+provider state also requires an accepted W-9 for that tax year in the mutation boundary.
+
 ## Credential-management authorization
 
 Credential-management Workers require a valid session, an employee row with `is_active=true`, and

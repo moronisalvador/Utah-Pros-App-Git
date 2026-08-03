@@ -101,10 +101,38 @@ as a standing regression prohibition, not a convention to copy. Apply evidence:
 | Billing | estimates, invoices, line items, adjustments, payments, job costs, vendors | Generated totals and trigger-owned payment/invoice/job rollups |
 | CRM | leads, stages, history, attribution, tasks, campaigns, sequences, automations | Canonical lead/sale rules, merge identity and auditable automated moves |
 | Communications | conversations, messages, templates, consent, notifications, device tokens | Consent/DND, provider idempotency, delivery and recipient visibility |
+| Contractor compliance | `contractor_compliance_profiles`, versioned documents, requests/deliveries/activity/attempts, audit snapshots, W-9 provider handoffs | Historical coverage, current vs audit readiness, private W-9s, scoped requests, durable reminder identity, sourced audit rosters, and annual QBO/Gusto handoff state |
 | Integrations/operations | integration configuration/credentials, provider events, `worker_runs` | Service-only secrets, webhook deduplication and observable scheduled work |
 
 Object names evolve; verify them against the current catalog rather than copying this table into
 code.
+
+## Contractor Compliance repository contract
+
+The source-only Contractor Compliance foundation is additive and not applied. It references
+`contacts.role = 'subcontractor'` as identity and does not write the legacy
+`contacts.w9_on_file` or `contacts.coi_expiration` summaries. Its normalized profile, immutable
+document-version, request, delivery, activity, and public-attempt objects preserve W-9 tax years
+and insurance/waiver coverage intervals explicitly.
+
+All new tables are forced-RLS and browser-inaccessible. Authenticated execution is limited to
+role-redacted dashboard/detail RPCs that reconstruct an active internal employee: admin/office
+manage; project managers receive readiness without W-9 metadata. Service-only Worker functions
+own file ingestion, review/request transitions, public-token resolution/rate claims, and durable
+reminder claims/results. The private `contractor-compliance-private` bucket has no browser object
+policy. See `docs/contractor-compliance-roadmap.md` for the frozen status/date contracts and the
+separate apply/configuration gates.
+
+Two later source-only migrations add annual workflows without changing the base truth model:
+
+- named insurance audit periods materialize roster rows, accepted WC/waiver and GL coverage/gap
+  intervals, document version references, and request/delivery snapshots. A locked period is
+  immutable; `active_in_period` and `paid_in_period` remain nullable unless a manual or external
+  source explicitly supplies them;
+- `contractor_w9_provider_handoffs` stores only tax-year QuickBooks/Gusto external IDs, provider
+  target, handoff/reconciliation status/date/reference, and actor/time.
+  The admin/office-only checklist derives W-9 status from private document versions. There are no
+  amounts, 1099 documents, recipient-access grants, delivery records, or provider-send functions.
 
 ## OOP pricing builder live contract
 

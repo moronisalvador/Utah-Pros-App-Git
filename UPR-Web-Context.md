@@ -9,6 +9,35 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
+## Contractor Compliance (2026-08-03 — repository implementation, not live)
+
+The web-only Operations surface targets `/contractors` with a no-login capability client at
+`/contractor-upload#token=…` (fragment-captured and stripped before header-only API use). It treats `contacts.role='subcontractor'` as identity and tracks
+versioned W-9, workers-comp/Utah-waiver, and general-liability evidence in new normalized,
+forced-RLS objects. Current and audit-period readiness are server-derived from explicit tax-year
+and coverage dates. Legacy `contacts.w9_on_file`/`coi_expiration`, retired vendor tables, and the
+job-specific `document_requests` table are untouched.
+
+Admin/office manage; project managers receive readiness without W-9 metadata or file access.
+Internal/public uploads validate PDF/JPEG/PNG bytes, remain capped at 6 MiB, land in a dedicated
+private bucket as `pending_review`, and use short-lived signed retrieval only after Worker role
+checks. Public links store a digest, are contractor/type/expiry/revoke scoped, and expose no
+anonymous table or bucket access. Email reminders use the existing automated-email consent/
+suppression/DND boundary and durable request/stage claims; no automatic SMS or scheduling/payment
+block is added.
+
+Named insurance-audit periods materialize and optionally lock roster, WC/waiver and GL coverage/
+gap intervals, accepted document-version references, and request history. Period activity/payment
+facts stay nullable until manually or externally sourced. The adjacent admin/office-only annual
+W-9 checklist derives `valid`/`missing`/`needs_review`/`rejected`/`stale_previous_year` from private
+versions and stores only QuickBooks/Gusto contractor IDs and handoff status/date/reference. UPR
+does not store reportable amounts or generate, store, file, email, or distribute 1099s.
+
+This is repository evidence only. The migrations are unapplied; Cloudflare feature/reminder/token/
+rate bindings, source-declared daily pg_cron job, Storage/catalog readback, deployment, provider canary, and real
+audit-sheet/Drive import are pending owner/external gates. Canonical plan and dispatch:
+`docs/contractor-compliance-roadmap.md` and `docs/contractor-compliance-dispatch.md`.
+
 ## QBO invoice/conversion recovery hardening (2026-07-31 — database applied; dev source shipped)
 
 Two sequenced migrations and their compatible Worker/client changes close the captured-provider-

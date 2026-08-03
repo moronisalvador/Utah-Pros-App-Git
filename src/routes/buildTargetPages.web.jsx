@@ -121,6 +121,11 @@ const TechHelp = lazyRetry(() => import('@/pages/tech/TechHelp'));
 const TechOOPPricing = lazyRetry(() => import('@/pages/tech/TechOOPPricingConfigured'));
 const TechDemoSheet = lazyRetry(() => import('@/pages/tech/TechDemoSheet'));
 const AdminMobileRoutes = lazyRetry(() => import('@/pages/tech/admin/AdminMobileRoutes'));
+const Contractors = lazyRetry(() => import('@/pages/Contractors'));
+const ContractorDetail = lazyRetry(() => import('@/pages/ContractorDetail'));
+const ContractorUpload = lazyRetry(() => import('@/pages/ContractorUpload'));
+const ContractorAudits = lazyRetry(() => import('@/pages/ContractorAudits'));
+const ContractorTaxReadiness = lazyRetry(() => import('@/pages/ContractorTaxReadiness'));
 
 export const IS_NATIVE_BUILD = false;
 
@@ -135,6 +140,11 @@ export default Object.freeze({
   Collections,
   Commissions,
   Conversations,
+  ContractorDetail,
+  ContractorAudits,
+  ContractorTaxReadiness,
+  Contractors,
+  ContractorUpload,
   CrmAttribution,
   CrmAutomations,
   CrmCallLog,

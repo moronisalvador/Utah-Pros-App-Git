@@ -249,6 +249,33 @@ remaining deliberately repository-scoped and unlinked.
 - Deploy, migration apply, provider mutation, outbound message and money movement require explicit
   authorization; verification does not broaden permission to perform them.
 
+### Contractor Compliance release sequence (repository source only)
+
+Contractor Compliance is deliberately dark until each gate is authorized and verified:
+
+1. review the additive migration/rollback and credential-free contracts; run migration-safety,
+   anonymous-grant, Worker-security, consent-path, UPR-pattern, design, and page-behavior reviews;
+2. apply only to isolated `qa-staging` in a fresh owner-approved window, then prove forced RLS,
+   direct-role denial, private bucket posture, role-redacted RPCs, date/alternative readiness,
+   public token/rate transitions, and claim/finalize idempotency;
+3. deploy compatible Worker/UI source with `page:contractors` OFF and both Cloudflare bindings
+   absent/false; verify routes remain dark and no reminder/provider call occurs;
+4. in a separately approved shared-production window, preflight live columns/object names and
+   apply the reviewed migration, then repeat value-free ACL/RLS/function/bucket checks;
+5. configure the capability-token secret, public rate-limit salt, and feature binding, enable the
+   database flag for named internal users, and verify admin/office management plus
+   project-manager redaction using synthetic documents only. Verify named audit materialization/
+   locking, unknown paid/activity facts, W-9 stale-year classification, provider-handoff rejection
+   without an accepted W-9, and exports that omit file/tax-identifier data;
+6. only after separate provider authorization, enable the reminder binding, verify the source-declared
+   daily `upr_contractor_compliance_reminders_daily` job, and run one
+   named synthetic suppressed/DND/send canary with delivery-ledger reconciliation; and
+7. obtain owner approval for the reviewed audit-sheet/Drive import mapping before touching real
+   contractor files. Duplicate detection uses hashes and preserves every historical version.
+
+Rollback disables reminder and feature bindings first, then the database flag. Private evidence
+remains inert; dropping populated compliance tables or objects is not an operational rollback.
+
 ### Conversation participant compatibility apply unit (2026-07-31)
 
 Production treats `20260731040337_conversation_participant_scoping.sql`,
