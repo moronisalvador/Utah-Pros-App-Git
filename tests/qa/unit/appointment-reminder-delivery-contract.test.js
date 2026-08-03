@@ -227,7 +227,10 @@ describe('appointment reminder delivery release contract', () => {
     expect(ownership).toContain('anon-grant-auditor');
     expect(ownership).toContain('mobile-readiness-release-auditor');
     expect(ownership).toContain(
-      'must not absorb its unapplied migration or delivery-claim schema',
+      'must not duplicate its separate migration or delivery-claim schema',
     );
+    expect(ownership).toContain('20260803182131');
+    expect(ownership).toContain('20260803182303');
+    expect(ownership).toContain('QA still has no');
   });
 });
