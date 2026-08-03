@@ -631,10 +631,11 @@ and private media remain separate. Exact migration, rollback, catalog-only role/
 evidence are recorded in
 `docs/audit/2026-07/evidence/mobile-readiness-s1d-notify-rpc-2026-07-26.md`.
 
-## Five contained notification producer authorization (repository candidate)
+## Five contained notification producer authorization (QA applied; Production pending)
 
-Migration `20260801215912_notification_producer_authorization.sql` is a source candidate, not a
-live database contract. It preserves the deployed browser/service RPC signatures while
+Reviewed source `20260801215912_notification_producer_authorization.sql` is applied to QA only as
+hosted ledger `20260803182131_notification_producer_authorization`; shared Production remains
+unchanged. It preserves the deployed browser/service RPC signatures while
 requiring browser calls to resolve one active, non-external internal employee from `auth.uid()`.
 `p_actor_id` remains in each compatibility signature but must be null or equal that resolved
 employee; time-entry review additionally requires the existing admin tier. Trusted
@@ -676,9 +677,16 @@ ID/employee/endpoint; guarded email proves the normalized address is still curre
 receives stale target data after logout, reassignment, deactivation, or address change. Unguarded
 notification types retain their deployed claims. Preflight/postflight also
 require the exact policy commands/roles/count and enabled, unrestricted trigger bindings so
-permissive policy or trigger drift stops the migration. The catalog flags remain disabled in
-forward and recovery source. No local/hosted apply, provider call, delivery, or device proof exists
-yet.
+permissive policy or trigger drift stops the migration. QA then applied the compatible dispatcher
+source `20260802040935_preserve_notify_emit_event_id.sql` as hosted ledger
+`20260803182303_preserve_notify_emit_event_id`. Catalog/postflight confirms both private evidence
+tables are empty with forced RLS, no browser-role access, and reviewed least-privilege service
+access; all five
+producer flags remain false, `appointment.reminder` is absent/fail-closed, and its cron is absent.
+Shared Production has neither migration. Three unindexed foreign keys and pre-existing
+browser-role grants on the RLS/no-policy `billing_2fa_codes`, `integration_config`, and
+`user_google_accounts` tables remain separate P2 cleanup. No provider call, delivery, activation,
+or device proof is implied.
 
 The QBO human-actor telemetry gap and the external-admin `qbo_attachments` metadata SELECT policy
 remain separate residuals. They were not changed or treated as notification/recording work.

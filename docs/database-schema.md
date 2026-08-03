@@ -863,9 +863,10 @@ on 2026-07-31 verified the exact committed source as
 `20260729183731_notification_delivery_diagnostic_claims`; the compatible Worker/UI was deployed
 before the owner-authorized live sweep.
 
-## Five-producer occurrence and delivery claims (repository candidate)
+## Five-producer occurrence and delivery claims (QA applied; Production pending)
 
-`20260801215912_notification_producer_authorization.sql` proposes two additive private tables:
+Reviewed source `20260801215912_notification_producer_authorization.sql`, applied to QA only as
+hosted ledger `20260803182131_notification_producer_authorization`, adds two private tables there:
 
 - `notification_producer_occurrences` gives only the three appointment and two timesheet producer
   types one unique occurrence key/UUID; and
@@ -911,7 +912,13 @@ lifecycle, and clean forward reapply on two fresh disposable local stacks. The b
 executes the current APNs token/environment, Web Push subscription/endpoint, normalized email,
 active-internal recipient, current appointment assignment, duplicate, and release/reclaim
 predicates. That local qualification found and fixed PostgreSQL compilation/trigger defects plus
-an excess default `service_role` table grant before any hosted apply. All proof/config/seed sources
-are now manifest-pinned and the runner verifies its local Docker engine/container identity; its
-final commit-bound clean rerun remains pending. The schema remains absent from `qa-staging` and the
-shared project until separately authorized and verified.
+an excess default `service_role` table grant before hosted qualification. All proof/config/seed
+sources are manifest-pinned and the runner verifies its local Docker engine/container identity;
+the clean commit-bound two-stack rerun passed at merge `1cec9b3b` with manifest
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+QA then applied the dispatcher compatibility source `20260802040935` next as hosted ledger
+`20260803182303_preserve_notify_emit_event_id`. Final QA readback found both private tables empty,
+forced RLS, no browser-role access, and the expected least-privilege service access. The five producer
+flags remain false; `appointment.reminder` and its cron are absent. Three new foreign keys lack
+leading indexes and require a separate additive P2 migration before Production apply/activation.
+The shared Production project has neither migration.
