@@ -39,6 +39,10 @@ const publishStep = workflow.slice(
   workflow.indexOf('      - name: Stage encrypted bundle without channel assignment'),
   workflow.indexOf('      - name: Disable future UPR Dev update delivery'),
 );
+const disableStep = workflow.slice(
+  workflow.indexOf('      - name: Disable future UPR Dev update delivery'),
+  workflow.indexOf('      - name: Write sanitized release evidence'),
+);
 const apiCredentialStep = workflow.slice(
   workflow.indexOf('      - name: Validate the dev-only Capgo API credential'),
   workflow.indexOf('      - name: Validate the dev-only Capgo encryption credentials'),
@@ -50,6 +54,10 @@ const encryptionCredentialStep = workflow.slice(
 const nativeBoundaryStep = workflow.slice(
   workflow.indexOf('      - name: Verify native cache and release boundaries'),
   workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
+);
+const bundleIdentityStep = workflow.slice(
+  workflow.indexOf('      - name: Compute immutable UPR Dev bundle identity'),
+  workflow.indexOf('      - name: Verify compatibility with the UPR Dev canary'),
 );
 const RELEASE_SHA = 'a'.repeat(40);
 
@@ -101,16 +109,59 @@ describe('UPR Dev Capgo workflow boundary', () => {
     expect(workflow).not.toContain('CAPGO_TOKEN');
   });
 
-  it('stages without delivery and keeps only the emergency disable mutation', () => {
+  it('stages without delivery and structurally blocks automated activation', () => {
     expect(workflow).toContain('test ! -e dist/sw.js');
     expect(workflow).toContain('test ! -e dist/manifest.json');
     expect(publishStep).toContain('capgo bundle upload "$CAPGO_DEV_APP_ID"');
+    expect(publishStep).toContain(
+      "if: ${{ inputs.operation == 'publish' }}",
+    );
     expect(publishStep).not.toContain('--channel');
+    expect(workflow).not.toContain('CAPGO_DEV_STAGING_CHANNEL');
+    expect(workflow).toContain(
+      'validate|publish|disable) ;;',
+    );
+    expect(workflow).toContain(
+      'Automated Capgo activation is blocked until provenance-bound activation exists.',
+    );
+    expect(workflow).not.toMatch(/^\s*-\s+activate\s*$/m);
+    expect(workflow).not.toContain('bundle_version:');
+    expect(workflow).not.toContain("inputs.operation == 'activate'");
+    expect(workflow).not.toContain('REQUESTED_BUNDLE_VERSION');
+    expect(workflow).not.toContain('--bundle "$REQUESTED_BUNDLE_VERSION"');
+    expect(workflow).not.toContain('--ignore-metadata-check');
+    expect(
+      workflow.match(
+        /capgo channel set "\$CAPGO_DEV_CHANNEL" "\$CAPGO_DEV_APP_ID"/g,
+      ),
+    ).toHaveLength(1);
+    expect(disableStep).toContain(
+      "if: ${{ inputs.operation == 'disable' }}",
+    );
+    expect(disableStep).toContain(
+      'capgo channel set "$CAPGO_DEV_CHANNEL" "$CAPGO_DEV_APP_ID"',
+    );
+    expect(disableStep).toContain('--no-ios');
+    expect(disableStep).toContain('--no-device');
+    expect(disableStep).not.toContain('--bundle');
+    expect(bundleIdentityStep).toContain(
+      'ota_patch="$((10#$native_patch + 1))"',
+    );
+    expect(bundleIdentityStep).toContain(
+      'bundle_version="${native_major}.${native_minor}.${ota_patch}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"',
+    );
+    expect(bundleIdentityStep).not.toContain(
+      'bundle_version="${native_version}-capgo.',
+    );
     expect(workflow).not.toContain('rollback_bundle');
     expect(workflow).not.toContain("inputs.operation == 'rollback'");
     expect(workflow).toContain('--no-ios');
-    expect(workflow).toContain('bundleAssignedToChannel: false');
-    expect(workflow).toContain('deviceDeliveryActivated: false');
+    expect(workflow).toContain(
+      'bundleAssignedToChannel: false',
+    );
+    expect(workflow).toContain(
+      'deviceDeliveryActivated: false',
+    );
     expect(workflow).not.toContain('--send-update-notification');
   });
 

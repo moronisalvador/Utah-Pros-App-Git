@@ -544,6 +544,8 @@ describe('UPR Dev TestFlight isolation contract', () => {
     expect(devPublishJob).toContain('TESTFLIGHT_INTERNAL_GROUP');
     expect(devPublishJob).toContain('bundle exec fastlane ios upload');
     expect(fastfile).toContain('distribute_external: false');
+    expect(fastfile).toContain('submit_beta_review: false');
+    expect(fastfile).toContain('notify_external_testers: false');
     expect(fastfile).not.toContain('distribute_external: true');
   });
 

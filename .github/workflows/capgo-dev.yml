@@ -5,13 +5,14 @@
 # WHAT THIS DOES (plain language):
 #   Builds, verifies, stages, or disables updates for the
 #   separately identified UPR Dev iOS app. It cannot address the official UPR
-#   app or any production Capgo channel.
+#   app or any production Capgo channel. Activation is intentionally absent
+#   until a provenance-bound release receipt or allowlist is implemented.
 #
 # DEPENDS ON:
 #   Internal: scripts/build-native.mjs, package-lock.json
 #   Data:     reads  → capgo-dev environment secret values
-#             writes → unassigned UPR Dev bundles for publish; UPR Dev channel
-#                      only for the emergency disable operation
+#             writes → encrypted UPR Dev bundles without channel assignment;
+#                      UPR Dev canary delivery selectors only for disable
 #
 # NOTES / GOTCHAS:
 #   - The environment is additionally restricted to refs/heads/dev in GitHub.
@@ -79,6 +80,13 @@ jobs:
           test "$VITE_NATIVE_API_ORIGIN" = "https://dev.utahpros.app"
           test "$VITE_NATIVE_OTA_ENABLED" = "true"
           test "$VITE_RELEASE_SHA" = "$GITHUB_SHA"
+          case "$OPERATION" in
+            validate|publish|disable) ;;
+            *)
+              echo "Unsupported operation. Automated Capgo activation is blocked until provenance-bound activation exists." >&2
+              exit 1
+              ;;
+          esac
           expected_confirmation="UPR DEV CAPGO ${OPERATION^^}"
           if [[ "$CONFIRMATION" != "$expected_confirmation" ]]; then
             echo "Confirmation must be exactly: $expected_confirmation" >&2
@@ -147,8 +155,13 @@ jobs:
           set -euo pipefail
           native_version="$(sed -nE 's/^MARKETING_VERSION = ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' ios/App/Version.xcconfig)"
           test -n "$native_version"
+          native_major="${native_version%%.*}"
+          native_remainder="${native_version#*.}"
+          native_minor="${native_remainder%%.*}"
+          native_patch="${native_version##*.}"
+          ota_patch="$((10#$native_patch + 1))"
           short_sha="${GITHUB_SHA:0:12}"
-          bundle_version="${native_version}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
+          bundle_version="${native_major}.${native_minor}.${ota_patch}-capgo.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}+${short_sha}"
           echo "native_version=$native_version" >> "$GITHUB_OUTPUT"
           echo "bundle_version=$bundle_version" >> "$GITHUB_OUTPUT"
 
@@ -214,6 +227,7 @@ jobs:
               schemaVersion: 1,
               appId: process.env.CAPGO_DEV_APP_ID,
               channel: process.env.CAPGO_DEV_CHANNEL,
+              stagingChannel: null,
               operation: process.env.OPERATION,
               bundleVersion: process.env.BUNDLE_VERSION || null,
               nativeVersion: process.env.NATIVE_VERSION || null,

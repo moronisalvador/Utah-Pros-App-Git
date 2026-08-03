@@ -208,6 +208,8 @@ platform :ios do
       ipa: ipa_path,
       skip_waiting_for_build_processing: INTERNAL_GROUP.nil?,
       distribute_external: false,
+      submit_beta_review: false,
+      notify_external_testers: false,
     }
     upload_options[:groups] = [INTERNAL_GROUP] if INTERNAL_GROUP
 

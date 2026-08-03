@@ -1,5 +1,5 @@
 # UPR Web Platform — Context Document
-Last updated: August 1, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
+Last updated: August 3, 2026 (restructured: this file is now the LEAN CURRENT-STATE REFERENCE
 only. All dated session logs, incident write-ups, shipped-phase narratives and plans-of-record
 moved to `docs/archive/web-context-changelog-2026-07.md` — history, not current state. Keep it
 that way: new sessions append a short dated entry to the ARCHIVE and update the relevant
@@ -3473,10 +3473,11 @@ Zero migrations, zero CRM-file edits.
 
 Camera, geolocation, native appearance, sign-in-time biometric verification, and the notification
 popover are integrated in source. Push enrollment and the official UPR Capgo updater remain
-exact-default-off. A separately identified UPR Dev Capgo canary is source-integrated but still
-awaits Capgo login/object/key/plan verification, signed archive, internal TestFlight install, and
-device rollout proof. Distribution signing/TestFlight/App Review remain separate owner/external
-gates.
+exact-default-off. The separately identified UPR Dev build is signed, installed through internal
+TestFlight, and has reached the dashboard on its designated device. Its Capgo updater/canary is
+source-integrated, but the attempted dev-only OTAs did not install and automated activation is now
+structurally blocked until provenance-bound assignment exists. Successful OTA/device rollout,
+official-UPR distribution signing, and App Review remain separate owner/external gates.
 
 - **Bundle id:** `com.utahprosrestoration.upr`
 - **Source:** `ios/App/App.xcodeproj` (SPM, not CocoaPods — Capacitor 8 default)
@@ -3501,7 +3502,11 @@ gates.
   out to both exact Apple environments, so a UPR Dev TestFlight production token does not require
   a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
   device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
-- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller)
+- **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
+  `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller).
+  The completed-module-graph allowlist includes the field-only
+  `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
+  real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
   - `@capacitor/camera` — TechDash + TechAppointment use native camera via `src/lib/nativeCamera.js`, fall back to photo library on simulators
   - `@capacitor/push-notifications` — `src/lib/pushNotifications.js` registers + upserts to `device_tokens` on login; APNs delivery via `functions/api/send-push.js`. Production TestFlight APNs delivery was physically proven on 2026-07-29. Source supports exact sandbox/production separation and the focused database boundary plus per-token topic are live; the remaining gates are compatible per-token/dev-app deployment, fresh runtime binding/re-enrollment, account-switch proof, and feature-specific signed-device matrices (including this participant UI). Broad S1h is not an activation prerequisite.
@@ -3555,16 +3560,31 @@ gates.
   validation, channel compatibility proof, v2-encrypted unassigned bundle
   staging, future-delivery disable, pruned native SW/manifest, and sanitized
   evidence artifact. The workflow cannot assign a staged bundle or deliver it
-  to a device; rollback is absent until a provenance-bound allowlist exists.
-  Live dev-only setup was verified 2026-08-01: Capgo app `UPR Dev`,
-  `upr-dev-canary` channel id `44318` as the default with the exact iOS-only,
-  patch-only, no-downgrade, no-progressive-rollout selector contract; GitHub
+  to a device: its operation allowlist is exactly `validate`/`publish`/`disable`,
+  every unknown operation fails before provider access, and it has no requested
+  bundle input or canary-assignment command. Rollback is also absent until a
+  provenance-bound release receipt or allowlist exists.
+  Bundle identities use the next patch line above the signed native version
+  (`1.0.0` native → `1.0.1-capgo.<run>.<attempt>+<sha>`), because SemVer sorts
+  `1.0.0-capgo...` below stable `1.0.0` and Capgo's no-downgrade-under-native
+  guard correctly rejects it. Syntax alone is not provenance, so forward
+  assignment stays structurally blocked until source binds it to the reviewed
+  publish receipt/SHA, native compatibility, encryption key, and device scope.
+  Live dev-only objects were verified 2026-08-01: Capgo app `UPR Dev`,
+  `upr-dev-canary` channel id `44318` as the default with iOS-only,
+  no-downgrade, and no-progressive-rollout selectors; GitHub
   environment `capgo-dev` restricted to `dev`; and encrypted secrets
   `CAPGO_DEV_API_KEY`, `CAPGO_DEV_PRIVATE_KEY_V2`, and
   `CAPGO_DEV_PUBLIC_KEY_V2` present without value readback. The app-scoped
-  `app_developer` API key expires 2027-08-01. No bundle upload/assignment,
-  device delivery, plan purchase, or production UPR change occurred. PR #569
-  merged this source into `dev` as `e0a1ec6f`. The first manual validate run
+  `app_developer` API key expires 2027-08-01. The last observed provider
+  compatibility strategy was Capgo `patch`, which later blocked
+  `1.0.0` → `1.0.1`; the required future activation policy is
+  `disable_auto_update=minor`, and its correction/readback remains a fresh
+  external gate. At that initial setup checkpoint,
+  no bundle upload/assignment, device delivery, plan purchase, or production
+  UPR change had occurred; later dev-only TestFlight/Capgo attempts are recorded
+  under the release pipeline below. PR #569 merged this source into `dev` as
+  `e0a1ec6f`. The first manual validate run
   (`30732493520`) built the native graph but failed before bundle identity or
   any Capgo command because the runner lacked `rg`; its probe also used stale
   `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
@@ -3613,14 +3633,34 @@ gates.
   `30732945226` verified `.upr.dev`, team `H6ZUT739T9`, version `1.0.0 (11.1)`,
   distribution signing/profile, production APNs, Preview origin, OTA/native
   Push enabled, `retireDevToken:false`, exact `e0a1ec6f`, and the embedded
-  Capgo public-key fingerprint. TestFlight upload was disabled/skipped and
-  runner signing assets were cleaned. Repository Supabase build secrets and all
-  three `ios-dev-testflight` App Store Connect API secret names are present.
-  Any later archive or upload remains separately gated.
-  Upload, install, and the signed-device matrix remain later unverified external
-  gates. Publishing this source to `dev` deploys the guarded web runtime and
+  Capgo public-key fingerprint. That `11.1` dry run did not upload, and runner
+  signing assets were cleaned. Repository Supabase build secrets and all three
+  `ios-dev-testflight` App Store Connect API secret names are present. The later
+  verified `19.1` upload/install is recorded below; a fresh exact-SHA build of
+  this reconciliation, the remaining signed-device matrix, and the first
+  successful OTA remain external gates. Publishing this source to `dev` deploys
+  the guarded web runtime and
   starts only the credential-free preflight; it does not create a credential, change an Apple or
   Cloudflare console setting, dispatch a signed archive, upload a build, or change Production.
+  Manual GitHub Actions run `30734568277` later built, signed, uploaded,
+  processed, and assigned UPR Dev `1.0.0 (19.1)` to the internal group. This was
+  not an Xcode Cloud build and does not make TestFlight uploads automatic on
+  `dev` pushes. Physical installation verified build `19.1`. Capgo activation
+  run `30734822512` safely assigned encrypted bundle
+  `1.0.0-capgo.4.1+562ec9b2e6bb`, but the device update request then returned
+  `disable_auto_update_under_native` / `Cannot revert under native version`;
+  that bundle is therefore retained as rejected evidence, not successful OTA
+  delivery. The next-patch generator/activation guard then published and
+  activated `1.0.1-capgo.7.1+b81ffcdd99a5` in runs `30735860100` and
+  `30735943439`. The physical device reached Capgo at 19:18 America/Denver, but
+  the update API returned `disable_auto_update_to_patch` because the canary had
+  been configured with Capgo's `patch` blocking strategy; that strategy permits
+  suffix-only changes and blocks `1.0.0` to `1.0.1`. Activation must enforce
+  Capgo's `minor` strategy, which keeps the same major/minor native line while
+  allowing the intended patch OTA. That historical result is retained as
+  failed-delivery evidence; automated activation is now structurally absent
+  until a receipt/allowlist binds the exact reviewed bundle and device scope.
+  A corrected physical-device install remains an external gate.
 - **Native notification bell:** preserves populated rows during silent Realtime/resume refresh,
   uses the shared field-tech popover scale/fade enter plus accelerated exit lifecycle, returns
   focus, closes on Escape/click-away/route/inactive-pane changes, and resolves immediately for
@@ -4897,9 +4937,12 @@ hosted credentials are scrubbed; remote Docker contexts are refused; the exact l
 engine/container/network identity is checked before schema replacement; local-key output is
 suppressed; seed data is synthetic/non-PII and idempotent; and both stacks/networks/workdirs were
 removed. The final runner now requires tracked/committed/clean runtime inputs and emits its exact
-commit SHA plus manifest, so its clean commit-bound rerun is still pending. This is local proof
-only: it has not been applied to QA or shared production; no notification was sent and no
-PWA/native device path was exercised.
+commit SHA plus manifest. Its clean commit-bound two-stack run passed at
+`f094d89b49807aea650cf52df4c629435541310c` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+Later reconciliation must preserve those inputs or rerun the proof against its new commit identity.
+This is local proof only: it has not been applied to QA or shared production; no notification was
+sent and no PWA/native device path was exercised.
 
 The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
 `dev` through PR #571 and remain ordered after that producer repair. They accept either the current
