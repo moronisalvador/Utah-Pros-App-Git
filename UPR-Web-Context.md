@@ -9,7 +9,7 @@ current-state section HERE. Counts (tables, RPCs, employees, workers) drift — 
 Internal business management platform for Utah Pros Restoration (UPR).
 Owner/developer: Moroni Salvador.
 
-## Contractor Compliance (2026-08-03 — repository implementation, not live)
+## Contractor Compliance (2026-08-03 — production foundation live, activation controlled)
 
 The web-only Operations surface targets `/contractors` with a no-login capability client at
 `/contractor-upload#token=…` (fragment-captured and stripped before header-only API use). It treats `contacts.role='subcontractor'` as identity and tracks
@@ -33,10 +33,20 @@ W-9 checklist derives `valid`/`missing`/`needs_review`/`rejected`/`stale_previou
 versions and stores only QuickBooks/Gusto contractor IDs and handoff status/date/reference. UPR
 does not store reportable amounts or generate, store, file, email, or distribute 1099s.
 
-This is repository evidence only. The migrations are unapplied; Cloudflare feature/reminder/token/
-rate bindings, source-declared daily pg_cron job, Storage/catalog readback, deployment, provider canary, and real
-audit-sheet/Drive import are pending owner/external gates. Canonical plan and dispatch:
-`docs/contractor-compliance-roadmap.md` and `docs/contractor-compliance-dispatch.md`.
+The five additive sources are qualified on `qa-staging` and live in the shared project under
+production ledgers `20260803220653`, `20260803220656`, `20260803220659`, `20260803220704`, and
+`20260803220711`. Production readback proves 12 forced-RLS/service-only tables, no browser table
+grants, no anonymous target-RPC grants, a private 6 MiB PDF/JPEG/PNG bucket, the active
+`23 13 * * *` reminder cron, and zero missing FK indexes. PR #574 passed CI and deployed merge
+`7388faad`; dark smoke returns 200 for `/contractors` and 404 from sensitive Worker routes.
+
+Preview and Production have distinct encrypted capability-token and rate-limit salts. Automatic
+reminders remain OFF. The Production Worker feature switch is staged as encrypted `true` for the
+next deployment, while `page:contractors` remains OFF in the database; the UI/public boundary is
+therefore still inaccessible. The reviewed Drive folder contains six PDFs for Sunny Day, DMH
+Services, Reindor, and FORCOMP, but none maps to an existing contact. No contact data is fabricated,
+no provider email has been sent, and no real document has been imported. Canonical plan and
+dispatch: `docs/contractor-compliance-roadmap.md` and `docs/contractor-compliance-dispatch.md`.
 
 ## QBO invoice/conversion recovery hardening (2026-07-31 — database applied; dev source shipped)
 
