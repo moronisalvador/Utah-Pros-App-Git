@@ -591,6 +591,9 @@ DECLARE
   v_recipient record;
   v_sms_sending_enabled boolean := false;
   v_consent_status jsonb;
+  v_reservation_now timestamptz;
+  v_reservation_time time;
+  v_test_now text;
   v_attempt_id uuid;
 BEGIN
   IF current_user <> 'service_role' THEN RAISE EXCEPTION 'scheduled reservation is service-role only' USING ERRCODE = '42501'; END IF;
@@ -698,6 +701,37 @@ BEGIN
   IF COALESCE((v_consent_status->>'allowed')::boolean, false) IS NOT TRUE
      OR v_consent_status->>'code' IS DISTINCT FROM 'GLOBAL_OPT_IN' THEN
     RETURN QUERY SELECT 'no_consent'::text, NULL::uuid;
+    RETURN;
+  END IF;
+
+  -- Authoritative final legal-time gate. The Worker also checks quiet hours,
+  -- but only this transaction can prove that no durable provider attempt is
+  -- linked after the 21:00 America/Denver boundary. Production always samples
+  -- clock_timestamp() here, immediately before the attempt insert. The
+  -- governed disposable test database may inject a fixed timestamp through a
+  -- custom GUC so the boundary proof is deterministic at any wall-clock hour.
+  v_reservation_now := clock_timestamp();
+  IF current_setting('upr.isolated_test_database', true) = 'on' THEN
+    v_test_now := NULLIF(
+      current_setting('upr.scheduled_delivery_test_now', true),
+      ''
+    );
+    IF v_test_now IS NOT NULL THEN
+      BEGIN
+        v_reservation_now := v_test_now::timestamptz;
+      EXCEPTION
+        WHEN invalid_datetime_format THEN
+          RAISE EXCEPTION 'scheduled delivery test clock is invalid'
+            USING ERRCODE = '22007';
+      END;
+    END IF;
+  END IF;
+  v_reservation_time := (
+    v_reservation_now AT TIME ZONE 'America/Denver'
+  )::time;
+  IF v_reservation_time < time '08:00'
+     OR v_reservation_time >= time '21:00' THEN
+    RETURN QUERY SELECT 'quiet_hours'::text, NULL::uuid;
     RETURN;
   END IF;
 

@@ -345,6 +345,7 @@ DECLARE
   v_disabled_id uuid := 'a1000000-0000-4000-8000-000000000022';
   v_dnd_id uuid := 'a1000000-0000-4000-8000-000000000023';
   v_no_consent_id uuid := 'a1000000-0000-4000-8000-000000000024';
+  v_quiet_hours_id uuid := 'a1000000-0000-4000-8000-000000000028';
   v_send_at timestamptz := now() + interval '2 minutes';
 BEGIN
   IF public.create_scheduled_message(
@@ -389,7 +390,13 @@ BEGIN
        'a1000000-0000-4000-8000-000000000004',
        'consent race body',
        v_send_at + interval '4 minutes'
-     ) IS DISTINCT FROM v_no_consent_id THEN
+     ) IS DISTINCT FROM v_no_consent_id
+     OR public.create_scheduled_message(
+       v_quiet_hours_id,
+       'a1000000-0000-4000-8000-000000000004',
+       'quiet-hours race body',
+       v_send_at + interval '5 minutes'
+     ) IS DISTINCT FROM v_quiet_hours_id THEN
     RAISE EXCEPTION 'final compliance race fixtures were not created';
   END IF;
 
@@ -443,9 +450,11 @@ DECLARE
   v_disabled_id uuid := 'a1000000-0000-4000-8000-000000000022';
   v_dnd_id uuid := 'a1000000-0000-4000-8000-000000000023';
   v_no_consent_id uuid := 'a1000000-0000-4000-8000-000000000024';
+  v_quiet_hours_id uuid := 'a1000000-0000-4000-8000-000000000028';
   v_disabled_token uuid := 'a1000000-0000-4000-8000-000000000025';
   v_dnd_token uuid := 'a1000000-0000-4000-8000-000000000026';
   v_no_consent_token uuid := 'a1000000-0000-4000-8000-000000000027';
+  v_quiet_hours_token uuid := 'a1000000-0000-4000-8000-000000000029';
   v_outcome text;
   v_attempt uuid;
 BEGIN
@@ -573,6 +582,50 @@ BEGIN
   UPDATE public.contacts
   SET opt_in_status = true
   WHERE id = 'a1000000-0000-4000-8000-000000000003';
+
+  PERFORM set_config(
+    'upr.scheduled_delivery_test_now',
+    '2026-07-09T03:00:00Z',
+    true
+  );
+  IF NOT public.claim_scheduled_message_v2(
+    v_quiet_hours_id,
+    v_quiet_hours_token
+  ) THEN
+    RAISE EXCEPTION 'quiet-hours race row was not claimed';
+  END IF;
+  SELECT outcome, attempt_id
+    INTO v_outcome, v_attempt
+  FROM public.reserve_scheduled_message_delivery(
+    v_quiet_hours_id,
+    v_quiet_hours_token,
+    'a1000000-0000-4000-8000-000000000003',
+    '+15550001901',
+    'quiet-hours race body',
+    'quiet-hours race body',
+    '[]'::jsonb
+  );
+  IF v_outcome IS DISTINCT FROM 'quiet_hours'
+     OR v_attempt IS NOT NULL
+     OR (SELECT delivery_attempt_id FROM public.scheduled_messages
+         WHERE id = v_quiet_hours_id) IS NOT NULL
+     OR (SELECT count(*) FROM public.message_send_attempts
+         WHERE client_request_id = v_quiet_hours_id) <> 0 THEN
+    RAISE EXCEPTION
+      'final quiet-hours denial crossed the provider-attempt boundary';
+  END IF;
+  IF NOT public.release_scheduled_message_claim(
+    v_quiet_hours_id,
+    v_quiet_hours_token,
+    'Deferred: quiet_hours'
+  ) THEN
+    RAISE EXCEPTION 'quiet-hours race claim was not released';
+  END IF;
+  PERFORM set_config(
+    'upr.scheduled_delivery_test_now',
+    '2026-07-08T18:00:00Z',
+    true
+  );
 END;
 $final_compliance_gate$;
 
