@@ -181,10 +181,11 @@ For a new or changed workflow, document:
 Known dated findings are in `docs/audit/2026-07/security-findings.md`. Update this canonical file in
 the same commit as a role, identity, route-gate, RLS or authorization-boundary change.
 
-## Contractor Compliance authorization (repository only)
+## Contractor Compliance authorization (production)
 
-`/contractors` is web-only and requires the explicit default-OFF `page:contractors` rollout row,
-the `contractors` page permission, and an active internal admin/office/project-manager role.
+`/contractors` is web-only and requires the explicit `page:contractors` rollout row (seeded OFF,
+enabled in Production on 2026-08-03), the `contractors` page permission, and an active internal
+admin/office/project-manager role.
 The role check is repeated by each internal Worker and the read RPCs. Admin/office may manage;
 project managers receive readiness only. Field, external, inactive, unmapped, and other roles are
 denied. Project-manager projections omit W-9 filenames, tax years, dates, hashes, document rows,
@@ -196,8 +197,10 @@ Only the Worker sees the raw token; Postgres stores its SHA-256 digest and enfor
 requested-type, expiry, pause/revoke/complete, and attempt bounds. The Worker validates MIME,
 magic bytes, and size before a service-role private Storage write. Upload never marks a document
 accepted. Signed retrieval is short-lived, `no-store`, and available only after a fresh
-admin/office document authorization. These source contracts are not live until separately
-authorized database, Cloudflare binding, deployment, and readback steps complete.
+admin/office document authorization. Production activation on 2026-08-03 verified the signed-in
+admin surface and negative unauthenticated Worker behavior: internal upload, file, request, and
+reminder endpoints returned 401, while the public endpoint returned a generic error without a
+capability token. Preview remains disabled.
 
 `/contractors/audits` repeats the feature/page/role gates. Admin/office may create, materialize,
 lock, filter, and export named insurance manifests; project managers receive only insurance
@@ -205,6 +208,13 @@ readiness and interval counts, with period payment/activity facts, external sour
 document IDs redacted server-side. `/contractors/tax-readiness` and both W-9 checklist/handoff
 RPCs are admin/office-only. They return no W-9 file metadata or tax identifier. A non-`not_ready`
 provider state also requires an accepted W-9 for that tax year in the mutation boundary.
+
+The production `page:contractors` flag is enabled and not force-disabled. Cloudflare Production
+has both exact Worker switches enabled as encrypted values; feature and reminder switches remain
+off in Preview. A synthetic request reached the intended mailbox, retained a provider message ID,
+and was then made inactive and reminder-paused with an audit event. This operational proof does
+not broaden the role predicates or authorize real-document import without an authoritative
+contact mapping.
 
 ## Credential-management authorization
 
