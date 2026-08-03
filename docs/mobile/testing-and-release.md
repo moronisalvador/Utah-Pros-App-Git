@@ -295,10 +295,13 @@ branch-restricted `capgo-dev` environment and an operation-specific exact
 confirmation. Its credential-free validate operation proves the exact SHA,
 native module graph, absent native service-worker/manifest files, and locked
 dependencies without requiring Capgo credentials or changing Capgo. Publish
-first checks the configured channel's patch compatibility, then v2-encrypts and
-stages an unassigned bundle. It cannot assign a channel or deliver to a device.
-Disable turns off future channel delivery but is not an instant device recall.
-Rollback remains manual and blocked until a provenance-bound allowlist exists.
+is retained as an explicit operation but fails after confirmation and before
+credentials, compatibility checks, upload, channel mutation, or provider
+traffic. Pinned Capgo CLI `8.31.5` otherwise maps an omitted upload channel to
+the app default (or a `production` fallback), so the repository does not claim
+unassigned staging. Disable turns off future channel delivery but is not an
+instant device recall. Provider-capable publish, assignment, activation, and
+rollback remain blocked until a provenance-bound allowlist exists.
 The signed TestFlight/device health, interruption, failed-acknowledgement,
 rollback, official-UPR non-regression, and Capgo statistics matrix remains
 mandatory.
