@@ -4945,9 +4945,13 @@ engine/container/network identity is checked before schema replacement; local-ke
 suppressed; seed data is synthetic/non-PII and idempotent; and both stacks/networks/workdirs were
 removed. The final runner now requires tracked/committed/clean runtime inputs and emits its exact
 commit SHA plus manifest. Its clean commit-bound two-stack run passed at
-`f094d89b49807aea650cf52df4c629435541310c` with 13 pinned inputs and manifest SHA-256
+the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
 `67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
-Later reconciliation must preserve those inputs or rerun the proof against its new commit identity.
+All 17 repository/runtime qualification inputs remain byte-unchanged from that
+merge through the later Capgo containment and documentation closeout commits,
+so that exact database proof remains applicable; any future change to one of
+those inputs requires a fresh two-stack run.
 This is local proof only: it has not been applied to QA or shared production; no notification was
 sent and no PWA/native device path was exercised.
 
