@@ -55,15 +55,18 @@ contractor external IDs plus a handoff status/date/reference entered by admin/of
 no provider API call and stores no reportable amount or 1099 artifact. QuickBooks and/or Gusto,
 not UPR, prepares, files, and distributes 1099s.
 
-Cloudflare must later receive independently approved `CONTRACTOR_COMPLIANCE_ENABLED`,
-`CONTRACTOR_COMPLIANCE_REMINDERS_ENABLED`, a high-entropy
-`CONTRACTOR_COMPLIANCE_TOKEN_SECRET`, and public rate-limit-salt configuration. The source-only
-migration declares an inert-by-default daily `pg_cron`/`pg_net` call to the exact-allowlisted
-production Worker URL using the existing `cron_worker_secret`; the Worker still returns 404
-unless both feature bindings are exactly `true`. The token secret deterministically derives an unguessable capability from a stable
+Cloudflare Production now has independently generated encrypted
+`CONTRACTOR_COMPLIANCE_ENABLED`, `CONTRACTOR_COMPLIANCE_REMINDERS_ENABLED`,
+`CONTRACTOR_COMPLIANCE_TOKEN_SECRET`, and rate-limit-salt values. Preview has distinct token/salt
+values and keeps both feature switches disabled. The live daily `pg_cron`/`pg_net` call targets
+the exact-allowlisted production Worker URL using the existing `cron_worker_secret`; the Worker
+returns 404 unless both feature bindings are exactly `true`. The token secret deterministically derives an unguessable capability from a stable
 request identity so a retry can recreate the same link while Postgres retains only its digest.
-Repository declarations do not prove those values, the bucket, the sender, or the schedule
-exists. Provider canaries and real-document import remain separate owner actions.
+Production readback verified the private bucket, active schedule, enabled Worker boundary, and
+one synthetic manual email delivery with a durable provider message ID. The canary profile was
+immediately paused and made inactive. Real-document import remains blocked until the reviewed
+Drive records can be mapped to authoritative contractor contacts; no Gmail/Drive/QBO/Gusto live
+ingestion was added.
 
 ### Capgo / Apple release boundary
 

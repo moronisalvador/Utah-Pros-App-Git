@@ -7,7 +7,7 @@ and a roadmap. Do not let this file grow past ~1 page — that is how the last r
 
 ## Active leases (check before touching a shared hotspot)
 
-### Contractor Compliance — production foundation live; controlled activation/import pending
+### Contractor Compliance — production active; identity-safe import pending
 
 Tier 2 plan: `docs/contractor-compliance-roadmap.md`. Cold-session dispatch:
 `docs/contractor-compliance-dispatch.md`. Ownership:
@@ -20,12 +20,12 @@ were behavior-proven on `qa-staging`, then applied to the shared project under p
 `20260803220711`. Production postflight found 12 forced-RLS tables, zero browser table grants,
 zero anonymous target-RPC grants, a private 6 MiB bucket, the active daily cron, and zero missing
 FK indexes. PR [#574](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/574) merged green
-CI at `7388faad`; production dark smoke passed. Preview and Production hold separate encrypted
-token/rate salts. Reminders remain disabled. The Production Worker feature switch is staged for
-the next deployment while the database `page:contractors` row remains disabled, so no public
-intake, UI access, cron email, provider send, or real-document import is active yet. The reviewed
-Drive folder contains six insurance/waiver PDFs, but no matching contractor contacts currently
-exist; do not fabricate phone/email identity to force an import.
+CI at `7388faad`; PR [#575](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/575) merged
+green CI at `b6cb241`. Production feature/reminder switches and `page:contractors` are enabled;
+Preview remains dark. Live admin and unauthenticated-negative smokes passed. One synthetic manual
+request was delivered once, then its profile was audited, paused, and made inactive; zero reminder
+candidates remain. The reviewed Drive folder contains six insurance/waiver PDFs, but no matching
+contractor contacts currently exist; do not fabricate phone/email identity to force an import.
 
 *(Released 2026-08-01: the standalone appointment-reminder containment repair landed in `dev`
 through PR #571 at merge `9e723f4a` from reviewed head `72cb52e1`. Its exact files and inert

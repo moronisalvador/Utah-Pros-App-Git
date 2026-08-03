@@ -107,9 +107,11 @@ as a standing regression prohibition, not a convention to copy. Apply evidence:
 Object names evolve; verify them against the current catalog rather than copying this table into
 code.
 
-## Contractor Compliance repository contract
+## Contractor Compliance production contract
 
-The source-only Contractor Compliance foundation is additive and not applied. It references
+The additive Contractor Compliance foundation is live in the shared project under production
+ledgers `20260803220653`, `20260803220656`, `20260803220659`, `20260803220704`, and
+`20260803220711`. It references
 `contacts.role = 'subcontractor'` as identity and does not write the legacy
 `contacts.w9_on_file` or `contacts.coi_expiration` summaries. Its normalized profile, immutable
 document-version, request, delivery, activity, and public-attempt objects preserve W-9 tax years
@@ -121,9 +123,9 @@ manage; project managers receive readiness without W-9 metadata. Service-only Wo
 own file ingestion, review/request transitions, public-token resolution/rate claims, and durable
 reminder claims/results. The private `contractor-compliance-private` bucket has no browser object
 policy. See `docs/contractor-compliance-roadmap.md` for the frozen status/date contracts and the
-separate apply/configuration gates.
+verified rollout evidence.
 
-Two later source-only migrations add annual workflows without changing the base truth model:
+Two later migrations add annual workflows without changing the base truth model:
 
 - named insurance audit periods materialize roster rows, accepted WC/waiver and GL coverage/gap
   intervals, document version references, and request/delivery snapshots. A locked period is
@@ -133,6 +135,14 @@ Two later source-only migrations add annual workflows without changing the base 
   target, handoff/reconciliation status/date/reference, and actor/time.
   The admin/office-only checklist derives W-9 status from private document versions. There are no
   amounts, 1099 documents, recipient-access grants, delivery records, or provider-send functions.
+
+Production postflight on 2026-08-03 proved 12/12 new tables have enabled and forced RLS, only
+service-role table policies, no `anon`/`authenticated` table grants, no anonymous execution on
+the target RPCs, a private 6 MiB PDF/JPEG/PNG bucket, the active daily
+`upr_contractor_compliance_reminders_daily` cron, and no uncovered foreign keys. The feature and
+reminder Workers are active in Production and remain disabled in Preview. One synthetic manual
+request was delivered and then its canary profile was paused and made inactive; no real contractor
+document has been imported.
 
 ## OOP pricing builder live contract
 
