@@ -79,7 +79,7 @@ describe('OOP pricing builder UI contract', () => {
   });
   it('keeps the tech total above editable sections and the full breakdown below them', () => {
     const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
-    const liveTotal = calculator.indexOf('{tech && <div className="oop-no-print" style={{ marginBottom: \'var(--space-3)\' }}><TechLiveTotal');
+    const liveTotal = calculator.indexOf('<TechLiveTotal calculation={calculation} />', calculator.indexOf('const techHeaderEl'));
     const editableSections = calculator.indexOf('<section className="oop-form oop-no-print"');
     const bottomBreakdown = calculator.lastIndexOf('{tech && <Breakdown calculation={calculation}');
     expect(liveTotal).toBeGreaterThan(-1);
@@ -92,10 +92,33 @@ describe('OOP pricing builder UI contract', () => {
     const stepper = calculator.slice(calculator.indexOf('function Stepper'), calculator.indexOf('function PricingInput'));
     expect(calculator).toContain('? <Stepper tech={tech} item={item} label="Days"');
     expect(calculator).toContain('gridTemplateColumns: `${tech ? \'var(--tech-min-tap)\'');
-    expect(calculator).toContain('role="status" aria-live="polite"');
+    expect(calculator).toContain('className="oop-stepper-value"');
+    expect(calculator).toContain('inputMode="numeric"');
+    expect(calculator).toContain('aria-label={`${ariaLabel} value`}');
     expect(calculator).toContain('label={`Decrease ${ariaLabel}`}');
     expect(calculator).toContain('label={`Increase ${ariaLabel}`}');
     expect(stepper).not.toContain('selection()');
+  });
+
+  it('keeps one sticky mobile action surface with a live total and collapsed economics', () => {
+    const calculator = read('src/components/oop/ConfiguredOopPricingCalculator.jsx');
+    const css = read('src/components/oop/oop-pricing.css');
+    expect(calculator).toContain('className="oop-tech-header-total"');
+    expect(calculator).toContain('className="oop-tech-header-actions"');
+    expect(calculator).toContain('<details className="oop-internal-details oop-no-print">');
+    expect(calculator).toContain('<summary>Internal economics');
+    expect(css).toContain('.oop-tech-header-total');
+    expect(css).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(css).toContain('.oop-tech-header-actions .btn-primary:last-child');
+    expect(css).toContain('.oop-internal-details');
+    expect(css).not.toContain('.oop-tech-bottom-dock');
+  });
+
+  it('offers the already-gated calculator from a job without duplicating access rules', () => {
+    const tools = read('src/pages/tech/v2/hub/HubTools.jsx');
+    expect(tools).toContain("canUseOopPricing(employee?.role)");
+    expect(tools).toContain("isFeatureEnabled('tool:oop_pricing')");
+    expect(tools).toContain("navigate(`/tech/tools/oop-pricing?jobId=${encodeURIComponent(jobId)}`)");
   });
 
   it('requires an explicit job choice when a selected claim has multiple jobs', () => {
