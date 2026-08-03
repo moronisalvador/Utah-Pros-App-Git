@@ -23,7 +23,7 @@
 # Mobile Production Readiness — Wave Ownership
 
 **Status:** active and binding for `UPRF-MOB-001`
-**Last verified:** 2026-08-01
+**Last verified:** 2026-08-03
 
 ## Current bounded wave
 
@@ -35,6 +35,13 @@ release auditor remain independent read-only/verification close-out roles.
 OTA/release files, browser console state, Apple inspection, and canonical docs
 remain serialized through the primary. This record grants no production,
 provider, signing, purchase, secret, TestFlight, or device-delivery authority.
+
+The 2026-08-03 owner-directed OOP slice is serialized through the same primary:
+`src/App.jsx`, the target registry/bundle guard, calculator/native-review source,
+Job Hub shortcut, tests and canonical docs have one writer. Independent agents
+are read-only design/lifecycle/authorization challengers. The new native page
+scope does not authorize the pending conversion migration apply, OOP flag
+activation, deployment, QuickBooks call, signing, TestFlight or device delivery.
 
 ## Team shape
 

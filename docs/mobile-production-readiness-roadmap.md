@@ -228,9 +228,18 @@ No private bucket flip was attempted and `MOB-SEC-015` remains open.
 
 The QBO residuals stay independent: customer/manual-payment sync still lack durable human-actor
 telemetry, and external admins remain within the authored `qbo_attachments` metadata SELECT policy.
-Cold-offline, exact field-only native route scope, admin-mobile native exclusion, push, OTA,
+Cold-offline, exact native route scope, broad admin-mobile native exclusion, push, OTA,
 account-deletion fulfillment, pilot support, `project_manager` billing authority and the QBO
 server-capability lifecycle remain explicit owner decisions rather than inferred approvals.
+
+**2026-08-03 owner scope decision:** the iOS product admits one bounded exception to the original
+field-only page set: an admin-only OOP estimate-review route reached only after the calculator
+creates a job-linked official estimate. The page may correct the saved service address and existing
+line descriptions, quantities and rates, but does not call `/api/qbo-estimate`: the existing
+endpoint lacks the durable retry/reconciliation contract required for phone timeouts. The full
+Admin Mobile subrouter, Collections, invoice/payment, generic QBO catalog, provider-send and
+estimate-to-invoice paths remain excluded. This is a product-scope decision, not evidence that the
+conversion migration, feature flag or deployed native binary is live.
 
 S1e recording-source authorization is live and verified: QA ledger
 `20260731224513_inbound_lead_recording_source_boundary`, production ledger
@@ -332,10 +341,11 @@ web/native builds pass. Independent review found no actionable offline P0/P1. Fu
 integration tree and optional GitHub delivery unavailable). Real multi-tab/upgrade and
 representative PWA/native device proof remain additional gates.
 
-The native source is now field-only by construction: a target-specific page registry plus final
-Vite module-graph guard excludes office, CRM, billing/QBO, desktop settings, and admin-mobile while
-the full browser build remains intact. Native preserves login/recovery/legal/support and both public
-signing routes. Shared account-deletion request UI is reachable from field settings. Enrolled
+The native source remains allowlist-only by construction: a target-specific page registry plus final
+Vite module-graph guard excludes office, CRM, desktop settings and broad admin-mobile/billing code
+while retaining the explicit admin-only OOP estimate-review exception above. The full browser build
+remains intact. Native preserves login/recovery/legal/support and both public signing routes. Shared
+account-deletion request UI is reachable from field settings. Enrolled
 biometrics fail closed, AppDelegate covers app-switcher snapshots, and the exact app privacy
 manifest declares 12 linked/non-tracking App Functionality data types, including Other Financial
 Info for retained OOP quote/pricing data.
