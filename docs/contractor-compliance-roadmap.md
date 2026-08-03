@@ -19,9 +19,12 @@ NOTES / GOTCHAS:
 
 # Contractor Compliance Roadmap
 
-**Status:** Tier 2 repository implementation complete and reviewed 2026-08-03; owner-gated
-integration and live verification remain.
-**Live state:** not applied, not deployed, not configured, and not provider-verified.
+**Status:** Tier 2 implementation, QA qualification, shared-database apply, and production code
+promotion completed 2026-08-03; controlled feature activation, canary, and identity-safe import
+remain.
+**Live state:** five additive migrations and the private bucket/cron are live; PR #574 is deployed.
+The database page flag remains OFF, automatic reminders remain OFF, and no provider send or
+real-document import has occurred.
 **Route target:** `/contractors` (internal) and `/contractor-upload#token=…` (public capability; fragment is stripped before API use).
 
 ## Outcome
@@ -318,19 +321,35 @@ QuickBooks/Gusto without building a second tax filing or distribution system.
 8. real contractor document/audit-sheet import;
 9. production smoke and later `dev → main` promotion.
 
-## Repository close-out evidence (2026-08-03)
+## Qualification and rollout evidence (2026-08-03)
 
-- `npm test`: 128 unit files / 1,583 tests, 129 Worker files / 1,973 tests, and 100 QA files /
-  1,076 tests passed; no unexpected skips.
+- Final local `npm test`: 129 unit files / 1,592 tests, 130 Worker files / 1,998 tests, and 104 QA
+  files / 1,091 tests passed (4,681 total); no unexpected skips.
 - `npm run build`, migration hygiene, credential-free focused migration/UI contracts,
-  changed-file lint, lint-ratchet check, artifact scan, strict bundle report, and `git diff
-  --check` passed. The pre-existing entry-graph bundle overage remains advisory and is 10,483
-  gzip bytes below the blocking line; Contractor Compliance routes and CSS remain lazy chunks.
+  changed-file lint, lint-ratchet check, tooling governance, artifact scan, strict bundle report,
+  and `git diff --check` passed. The entry graph is 10,270 gzip bytes below the blocking line;
+  Contractor Compliance routes and CSS remain lazy chunks.
 - Migration safety, anonymous-grant, Worker security, automated-send consent, project-law,
   design-consistency, and page-behavior reviews passed after findings were resolved.
-- The isolated SQL behavior source is registered but was not executed because no authorized
-  applied local/QA schema was available. No hosted database, Storage, Cloudflare, browser,
-  provider, import, deployment, publication, or live-send action occurred.
+- The isolated SQL behavior transaction passed on `qa-staging` and rolled back with zero residue.
+  The five QA ledgers are `20260803214228`, `20260803214235`, `20260803214243`,
+  `20260803215739`, and `20260803215741`.
+- The same five reviewed sources are live in production as `20260803220653`,
+  `20260803220656`, `20260803220659`, `20260803220704`, and `20260803220711`. Postflight proved
+  12/12 tables have forced RLS, 12 service-only policies, zero `anon`/`authenticated` table
+  grants, zero anonymous target-RPC grants, a private 6 MiB PDF/JPEG/PNG bucket, one active
+  `23 13 * * *` cron, and zero uncovered foreign keys. All new business tables remain empty.
+- GitHub CI run 1082 passed both `verify` and hosted `db-lane`; PR #574 merged to `main` at
+  `7388faad`. Production smoke returns 200 for `/contractors` and fail-closed 404s from both
+  public-intake and reminder endpoints while the rollout gates are dark.
+- Separate high-entropy token/rate salts are configured in Preview and Production. The Production
+  Worker feature switch has been changed to encrypted `true` for the next deployment; Preview and
+  both reminder switches remain false. The database page flag remains false pending post-deploy
+  authorization tests.
+- The reviewed audit sheet/folder were read without mutation. The folder currently contains six
+  PDFs for Sunny Day, DMH Services, Reindor, and FORCOMP. No matching `contacts` rows exist, so
+  import is blocked on authoritative contact identity/phone/email mapping instead of fabricating
+  CRM data. No provider email or real document upload has occurred.
 
 ## Rollback posture
 
