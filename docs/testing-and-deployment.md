@@ -177,8 +177,10 @@ This is scaffold and synthetic-browser evidence, not proof of real UPR journeys,
 provider behavior, production behavior, or a pinned Linux visual baseline. Generic P2a database
 execution remains gated on a reviewed all-migration local Supabase config/runtime and
 deterministic seed/role fixtures. PR #573 now has a narrower, project-scoped local qualification
-runtime; it is not the generic P2a foundation. Hosted QA remains separately gated on a dedicated
-project, non-production credentials, allowed origins and provider sandboxes.
+runtime; it is not the generic P2a foundation. Its exact reviewed migration train was subsequently
+applied and qualified on the dedicated hosted QA project with non-production credentials and
+provider traffic disabled; that evidence does not convert the branch into the generic P2a
+foundation.
 
 The five-producer authorization candidate adds
 `supabase/tests/notification_producer_authorization.test.sql`. Its behavior suite refuses unless
@@ -214,10 +216,16 @@ Its forward/rollback and clean-reapply cycles both cleaned their stacks, network
 The close-out documentation commits that record this receipt change none of the runner's 17
 runtime inputs; rerun the qualification whenever any one of those inputs changes.
 
-This result qualifies only the pinned PR #573 train. It is not hosted `qa-staging` proof, deployed
-Worker/native/provider proof, production proof, or permission to apply SQL, enable a flag, schedule
-a cron, merge, deploy, or deliver a notification. Do not redirect this command to `qa-staging`,
-dev/Preview, or the shared project. Local setup follows the official Supabase
+This local result qualifies only the pinned PR #573 train and remains distinct from hosted proof.
+Separately, QA applied exact source `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight retained forced RLS,
+least-privilege service access, all five flags false, no `appointment.reminder` row, and no reminder
+cron. The governed hosted lane recorded 163 passing assertions and zero assertion failures; 212
+skipped assertions plus 46 setup errors across 44 files / 90 suite nodes remain tracked baseline
+debt. Neither result is deployed
+Worker/native/provider or Production proof, nor permission to enable a flag, schedule a cron,
+deploy, or deliver a notification. Do not redirect the local command to `qa-staging`, dev/Preview,
+or the shared project. Local setup follows the official Supabase
 [CLI local-development](https://supabase.com/docs/guides/local-development/cli/getting-started),
 [configuration](https://supabase.com/docs/guides/local-development/cli/config), and
 [seed-data](https://supabase.com/docs/guides/local-development/seeding-your-database) models while
@@ -367,9 +375,10 @@ containment is `appointment.reminder.enabled=false` with no
 Production alone has the original migration ledger row
 `20260801232759 technician_quiet_time_and_appointment_reminders`;
 `qa-staging` does not. The reviewed `20260802040935` source landed in `dev`
-through PR #571 at `9e723f4a`, but remains applied nowhere. Treat QA
-application/behavioral proof, later Production apply, re-enable/reschedule,
-and provider/device proof as separate gates.
+through PR #571 at `9e723f4a` and is QA-only as hosted ledger `20260803182303`,
+ordered after `20260801215912` as hosted ledger `20260803182131`. QA still has
+no reminder catalog row or cron. Treat later Production apply,
+re-enable/reschedule, and provider/device proof as separate gates.
 
 Before activation, tests must also prove durable per-recipient/channel reminder delivery claims
 prevent bell/PWA/email replay and that server-authoritative appointment crew
