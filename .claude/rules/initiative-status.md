@@ -193,10 +193,13 @@ The reversible notification producer containment also applied from exact reviewe
   a verified local socket/pipe; every Docker/Supabase command receives that exact context; and the
   database container label/network identity is checked before schema replacement. Both stacks,
   networks, and workdirs were removed after success. The final runner now refuses dirty runtime
-  inputs and emits commit-bound evidence, so one clean rerun remains after a separately authorized
-  final commit. This is local proof only; fresh full gates and final reviews remain required on the
-  post-fix SHA before publication, then separately authorized `qa-staging` qualification remains a
-  hosted gate. No hosted SQL, deploy, delivery, flag, provider, or device action is implied.
+  inputs and emits commit-bound evidence. The clean two-stack rerun passed on the non-rewriting
+  reconciliation merge `1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and
+  manifest SHA-256 `67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`;
+  the full Node 22 gates and independent migration/security/release reviews also pass. This is local
+  proof only. Separately authorized `qa-staging` qualification, hosted CI/release review, shared
+  apply/deploy, activation, and device proof remain later gates. No hosted SQL, deploy, delivery,
+  flag, provider, or device action is implied.
 - Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
   production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
   Cloudflare Production remains main `478330d9`. That older Worker does not classify

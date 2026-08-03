@@ -199,11 +199,13 @@ workdirs were removed after success. Synthetic seed data contains no customer PI
 twice per stack to prove idempotence, and the local reminder cron executes only `SELECT 1`.
 
 The final runner additionally refuses any dirty/untracked runtime input before Docker, rechecks the
-manifest and HEAD after execution, and emits the exact commit SHA plus full input manifest. Because
-those guards require a committed candidate, the final commit-bound evidence rerun remains pending
-the separately authorized commit. The successful two-stack development run used the final proof
-inputs and local-engine/container checks, but must not be represented as that still-pending
-commit-bound release evidence.
+manifest and HEAD after execution, and emits the exact commit SHA plus full input manifest. The
+commit-bound two-stack run passed on the non-rewriting reconciliation merge
+`1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and manifest SHA-256
+`67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`.
+Its forward/rollback and clean-reapply cycles both cleaned their stacks, networks, and workdirs.
+The close-out documentation commits that record this receipt change none of the runner's 17
+runtime inputs; rerun the qualification whenever any one of those inputs changes.
 
 This result qualifies only the pinned PR #573 train. It is not hosted `qa-staging` proof, deployed
 Worker/native/provider proof, production proof, or permission to apply SQL, enable a flag, schedule
