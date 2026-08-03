@@ -3595,8 +3595,10 @@ owner/external gates.
   any Capgo command because the runner lacked `rg`; its probe also used stale
   `dist/assets` instead of Vite's `dist/app-assets`. The sanitized artifact
   historically retained `bundleAssignedToChannel:false` and
-  `deviceDeliveryActivated:false`; current evidence instead records that
-  `publish` was blocked before provider traffic. Full runbook:
+  `deviceDeliveryActivated:false`. The current workflow evidence schema would
+  record `publishBlockedBeforeProvider:true` only after a correctly confirmed
+  future `publish` dispatch reaches the fail-closed marker; no current publish
+  artifact is claimed here. Full runbook:
   `docs/mobile/capgo-dev-runbook.md`.
 - **TestFlight release pipeline:** `.github/workflows/ios-release.yml` — valid
   `workflow_dispatch`-only scaffold. A 2026-07-23 repair moved the signing-presence condition from
