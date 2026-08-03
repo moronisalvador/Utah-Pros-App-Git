@@ -2,7 +2,7 @@
   "_generated": "npm run generate:changelog — do not hand-edit",
   "since": "2026-07-01",
   "totals": {
-    "changes": 554,
+    "changes": 552,
     "weeks": 6,
     "areas": 13,
     "testing": 0
@@ -4448,14 +4448,6 @@
           "live": true
         },
         {
-          "sha": "2736fe5",
-          "day": "2026-07-01",
-          "kind": "New",
-          "area": "CRM",
-          "text": "Rich email composer + live preview for Campaigns",
-          "live": true
-        },
-        {
           "sha": "289eaaa",
           "day": "2026-07-01",
           "kind": "New",
@@ -4469,14 +4461,6 @@
           "kind": "New",
           "area": "CRM",
           "text": "Audience-selection tool backend — email_campaign_exclusions + widened preview_email_audience",
-          "live": true
-        },
-        {
-          "sha": "62cf56b",
-          "day": "2026-07-01",
-          "kind": "Fixed",
-          "area": "CRM",
-          "text": "Address upr-pattern-checker findings on rich editor changes",
           "live": true
         },
         {
@@ -4528,7 +4512,7 @@
           "live": true
         }
       ],
-      "count": 121,
+      "count": 119,
       "areas": [
         "Billing",
         "CRM",
