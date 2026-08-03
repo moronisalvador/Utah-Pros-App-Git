@@ -45,6 +45,8 @@ import MaterialIcon, { MATERIAL_LABELS } from '@/components/tech/MaterialIcon';
 import { toast } from '@/lib/toast';
 import { techKeys } from '@/lib/techQuery';
 import { createOfflineOperationId } from '@/lib/offlineOperationId';
+import { canUseOopPricing } from '@/lib/oopPricingAccess';
+import { canEditBilling } from '@/lib/claimUtils';
 
 /**
  * @param {{ job: object, jobId: string, address?: string, rooms: Array|null,
@@ -57,6 +59,8 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
   const queryClient = useQueryClient();
   const moistureEnabled = isFeatureEnabled('page:tech_moisture');
   const equipmentEnabled = isFeatureEnabled('page:tech_equipment');
+  const oopPricingEnabled = canUseOopPricing(employee?.role)
+    && isFeatureEnabled('tool:oop_pricing');
 
   const [readingSheetOpen, setReadingSheetOpen] = useState(false);
   const [equipmentSheetOpen, setEquipmentSheetOpen] = useState(false);
@@ -196,6 +200,11 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
     navigate(`/tech/tools/demo-sheet${qs ? '?' + qs : ''}`);
   };
 
+  const openOopPricing = () => {
+    if (!jobId) return;
+    navigate(`/tech/tools/oop-pricing?jobId=${encodeURIComponent(jobId)}`);
+  };
+
   // Latest reading per (room, material) → stalled count in the header.
   const stalledCount = (() => {
     const seen = new Set();
@@ -222,6 +231,20 @@ export default function HubTools({ job, jobId, address, rooms, onCreateRoom, onM
           </div>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
         </button>
+        {oopPricingEnabled && (
+          <button type="button" className="tv2-hub-tool-row" onClick={openOopPricing}>
+            <div className="tv2-hub-tool-row__icon">🧮</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="tv2-hub-tool-row__title">{t('stage.oopEstimate')}</div>
+              <div className="tv2-hub-tool-row__sub">
+                {t(canEditBilling(employee?.role)
+                  ? 'stage.oopEstimateDesc'
+                  : 'stage.oopQuoteDesc')}
+              </div>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          </button>
+        )}
       </section>
 
       {/* Moisture log */}
