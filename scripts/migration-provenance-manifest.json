@@ -404,6 +404,12 @@
       "name": "conversation_assignment_authority_containment",
       "path": "supabase/migrations/20260731213000_conversation_assignment_authority_containment.sql",
       "reviewedOriginCommit": "a48c55fa8529d58b11279ebcc8c24a6fc60b74c4"
+    },
+    {
+      "version": "20260801232759",
+      "name": "technician_quiet_time_and_appointment_reminders",
+      "path": "supabase/migrations/20260801163000_technician_quiet_time_and_appointment_reminders.sql",
+      "reviewedOriginCommit": "cd7d415ab086bba0d8ea33b12db3209c824a142f"
     }
   ],
   "selectedFunctions": [

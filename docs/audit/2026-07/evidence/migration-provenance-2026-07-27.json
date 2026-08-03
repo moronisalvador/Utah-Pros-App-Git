@@ -1,7 +1,7 @@
 {
-  "capturedAt": "2026-08-01T22:33:19Z",
+  "capturedAt": "2026-08-03T21:45:35Z",
   "projectRef": "glsmljpabrwonfiltiqm",
-  "captureBaseCommit": "8e7d4e0d991b0de8860807da13e42b71b1ba0042",
+  "captureBaseCommit": "627875774a460b5c2f438c7ff87bc86f8c6ca6d4",
   "method": "Supabase migration ledger plus read-only pg_proc/pg_policies catalog queries",
   "ledgerTail": [
     {
@@ -271,6 +271,10 @@
     {
       "name": "conversation_assignment_authority_containment",
       "version": "20260801145825"
+    },
+    {
+      "name": "technician_quiet_time_and_appointment_reminders",
+      "version": "20260801232759"
     }
   ],
   "functions": [
