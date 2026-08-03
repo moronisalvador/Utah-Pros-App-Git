@@ -43,6 +43,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getAuthHeader } from '@/lib/realtime';
 import { callQboInvoiceWorker } from '@/lib/qboInvoiceWorker';
 import { canEditBilling } from '@/lib/claimUtils';
+import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
 import { toast } from '@/lib/toast';
 import HelpLink from '@/components/HelpLink';
 import AutoGrowTextarea from '@/components/AutoGrowTextarea';
@@ -67,6 +68,7 @@ const XACT_STAGES = [
 ];
 
 const round2 = (n) => Math.round(Number(n || 0) * 100) / 100;
+const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 const today = () => new Date().toISOString().slice(0, 10);
 // Compact saved stamp: "06-22-26 2:30 PM"
 const fmtStamp = (iso) => {
@@ -625,7 +627,7 @@ export default function InvoiceEditor() {
             </PrimaryButton>
           )}
           {canEdit && balance > 0.005 && (
-            <GhostButton onClick={() => employee?.role === 'admin' && isFeatureEnabled('feature:qbo_receive_payment') && inv.contact_id && inv.qbo_invoice_id
+            <GhostButton onClick={() => QBO_RECEIVE_PAYMENT_UI_ENABLED && employee?.role === 'admin' && isFeatureEnabled('feature:qbo_receive_payment') && inv.contact_id && inv.qbo_invoice_id
               ? navigate(`/collections/receive-payment?contact=${encodeURIComponent(inv.contact_id)}&invoice=${encodeURIComponent(inv.id)}`)
               : receivePayment()} leftIcon={<IconDollar />}>Receive payment</GhostButton>
           )}
