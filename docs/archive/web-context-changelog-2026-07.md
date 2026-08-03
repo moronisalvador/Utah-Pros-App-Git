@@ -5776,6 +5776,18 @@ Compatibility preserves the frozen legacy claim signature only as a fail-closed 
 Worker pauses before sending; enforcement leaves the dormant broad policies inert behind revoked
 ACLs, preserves the provenance boundary, and revokes that stub from the service role.
 
+## 2026-08-03 — first authoritative contractor review queue
+
+The owner authorized matching the reviewed Drive PDFs to Gusto contractor identities for a
+production intake canary. DMH Services, Forcomp LLC, and Reindor LLC were created as active
+subcontractor contacts with Gusto reconciliation IDs; four matching PDFs entered private Storage
+as `pending_review`. The upload capabilities were never emailed and were revoked after verified
+use. All three reminder profiles remain paused, no email or SMS was sent, and no document was
+auto-accepted. Sunny Day had no authoritative Gusto match and Marcelo had no matching current file,
+so both were skipped. Production browser verification also found the detail page treating a full
+received timestamp as a date-only string; the shared Utah-time formatter now handles both shapes
+with regression coverage.
+
 The same review found that appointment/job/claim rows are browser-writable and therefore cannot be
 conversation authority. New, unapplied `20260731213000` replaces every independent member/contact
 decision with privileged role → explicit override → default technician → deny;

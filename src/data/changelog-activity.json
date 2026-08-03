@@ -2,7 +2,7 @@
   "_generated": "npm run generate:changelog — do not hand-edit",
   "since": "2026-07-01",
   "totals": {
-    "changes": 552,
+    "changes": 549,
     "weeks": 6,
     "areas": 13,
     "testing": 0
@@ -4440,22 +4440,6 @@
           "live": true
         },
         {
-          "sha": "23c9b45",
-          "day": "2026-07-01",
-          "kind": "New",
-          "area": "CRM",
-          "text": "Auto-transcribe on recording-ready + 'waiting for recording' state",
-          "live": true
-        },
-        {
-          "sha": "289eaaa",
-          "day": "2026-07-01",
-          "kind": "New",
-          "area": "CRM",
-          "text": "Tracking-number titles in CRM Settings; read-only chip on Call Log",
-          "live": true
-        },
-        {
           "sha": "3b50356",
           "day": "2026-07-01",
           "kind": "New",
@@ -4477,14 +4461,6 @@
           "kind": "New",
           "area": "CRM",
           "text": "Real audience selection tool for Campaigns",
-          "live": true
-        },
-        {
-          "sha": "c0d7dd1",
-          "day": "2026-07-01",
-          "kind": "Fixed",
-          "area": "CRM",
-          "text": "Separate speakers on CallRail's mono recordings",
           "live": true
         },
         {
@@ -4512,7 +4488,7 @@
           "live": true
         }
       ],
-      "count": 119,
+      "count": 116,
       "areas": [
         "Billing",
         "CRM",
