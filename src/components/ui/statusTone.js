@@ -26,11 +26,11 @@
  */
 
 const TONE_KEYWORDS = {
-  success: ['paid', 'active', 'complete', 'completed', 'approved', 'resolved', 'linked', 'won', 'sent', 'delivered', 'connected', 'enabled', 'live', 'success'],
-  danger: ['urgent', 'overdue', 'failed', 'error', 'declined', 'rejected', 'cancelled', 'canceled', 'lost', 'unpaid', 'past_due', 'blocked', 'needs_response', 'disabled'],
-  warning: ['pending', 'waiting', 'draft', 'review', 'partial', 'hold', 'on_hold', 'due', 'warning', 'dev_only', 'unregistered'],
-  info: ['active_work', 'in_progress', 'scheduled', 'confirmed', 'processing', 'sent_to', 'open', 'new', 'info', 'en_route'],
-  neutral: ['closed', 'inactive', 'archived', 'default', 'unknown', 'none', 'paused'],
+  success: ['ready', 'valid', 'reconciled', 'paid', 'active', 'complete', 'completed', 'approved', 'resolved', 'linked', 'won', 'sent', 'delivered', 'connected', 'enabled', 'live', 'success'],
+  danger: ['missing', 'expired', 'gap', 'urgent', 'overdue', 'failed', 'error', 'declined', 'rejected', 'cancelled', 'canceled', 'lost', 'unpaid', 'past_due', 'blocked', 'needs_response', 'disabled'],
+  warning: ['expiring', 'needs_review', 'pending', 'waiting', 'draft', 'review', 'partial', 'hold', 'on_hold', 'due', 'warning', 'dev_only', 'unregistered'],
+  info: ['active_work', 'in_progress', 'scheduled', 'confirmed', 'processing', 'sent_to', 'handed_off', 'open', 'new', 'info', 'en_route'],
+  neutral: ['closed', 'inactive', 'archived', 'default', 'unknown', 'none', 'paused', 'not_ready'],
 };
 
 /** Classify a raw status string into one of the five semantic tones. */

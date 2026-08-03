@@ -38,6 +38,7 @@ export const NAV_KEYS = [
   { key: 'leads', label: 'Leads', section: 'Main' },
   { key: 'customers', label: 'Customers', section: 'Main' },
   { key: 'production', label: 'Production', section: 'Operations' },
+  { key: 'contractors', label: 'Contractor Compliance', section: 'Operations' },
   { key: 'schedule', label: 'Schedule', section: 'Operations' },
   { key: 'time_tracking', label: 'Time Tracking', section: 'Operations' },
   { key: 'marketing', label: 'Marketing', section: 'Growth' },
@@ -73,6 +74,7 @@ export const PAGE_ACCESS_KEYS = [
   { key: 'schedule_templates', label: 'Schedule Templates', section: 'Operations' },
   { key: 'time_tracking',      label: 'Time Tracking',      section: 'Operations' },
   { key: 'collections',        label: 'Collections',        section: 'Operations' },
+  { key: 'contractors',        label: 'Contractor Compliance', section: 'Operations' },
   { key: 'leads',              label: 'Leads',              section: 'Operations' },
   { key: 'marketing',          label: 'Marketing',          section: 'Growth' },
   // CRM per-screen overrides (Phase 6b) — grant/revoke an individual employee

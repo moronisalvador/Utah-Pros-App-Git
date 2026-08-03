@@ -99,6 +99,9 @@
 /closed         / 200
 /collections    / 200
 /contacts       / 200
+/contractor-upload / 200
+/contractor-upload/* / 200
+/contractors    / 200
 /conversations  / 200
 /crm            / 200
 /customers      / 200
@@ -149,6 +152,7 @@
 /closed/*       / 200
 /collections/*  / 200
 /contacts/*     / 200
+/contractors/*  / 200
 /conversations/* / 200
 /crm/*          / 200
 /customers/*    / 200
