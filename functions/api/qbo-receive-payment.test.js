@@ -188,6 +188,14 @@ describe('QBO receive-payment boundary', () => {
     expect(mocks.createPayment).not.toHaveBeenCalled();
   });
 
+  it('passes its bounded Supabase transport to the authorization gate', async () => {
+    await onRequestPost(request());
+
+    expect(mocks.authorize).toHaveBeenCalledWith(
+      expect.any(Request), ENV, expect.any(Object), expect.any(Function),
+    );
+  });
+
   it.each(['GET', 'POST'])('stays inert unless the worker kill switch is explicitly enabled (%s)', async (method) => {
     const response = method === 'GET'
       ? await onRequestGet(request('GET', {}))

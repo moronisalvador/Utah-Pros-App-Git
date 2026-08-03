@@ -199,7 +199,7 @@ export async function onRequestOptions(context) { return handleOptions(context.r
 export async function onRequestGet(context) {
   const { request, env } = context;
   const db = supabase(env, fetchWithTimeout);
-  const auth = await authorizeQboBrowserRequest(request, env, db);
+  const auth = await authorizeQboBrowserRequest(request, env, db, fetchWithTimeout);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (!(await isReceivePaymentsGateOpen(env, db))) return jsonResponse({ error: 'Receive payments is disabled' }, 503, request, env);
   const contactId = new URL(request.url).searchParams.get('contact_id');
@@ -248,7 +248,7 @@ export async function onRequestPost(context) {
   const { request, env } = context;
   const startedAt = new Date().toISOString();
   const db = supabase(env, fetchWithTimeout);
-  const auth = await authorizeQboBrowserRequest(request, env, db);
+  const auth = await authorizeQboBrowserRequest(request, env, db, fetchWithTimeout);
   if (!auth.ok) return jsonResponse({ error: auth.error }, auth.status, request, env);
   if (!(await isReceivePaymentsGateOpen(env, db))) return jsonResponse({ error: 'Receive payments is disabled' }, 503, request, env);
   let body;
