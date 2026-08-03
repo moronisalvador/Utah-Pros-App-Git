@@ -28,6 +28,7 @@ NOTES / GOTCHAS:
 | Stripe | Checkout payment links and payment webhooks | Authorized Worker, signed/idempotent webhook |
 | Twilio | Current SMS transport and future communications | Provider adapter, consent-gated staff/automation paths, signed inbound/status webhooks |
 | Resend / email routing | Transactional/marketing email and replies | Suppression/unsubscribe/DND gates and signed webhooks |
+| Contractor compliance intake | Private W-9/insurance upload and renewal requests | Scoped hashed capability token → bounded Worker → private Supabase Storage; gated Resend email |
 | CallRail / Deepgram | Call/form ingest and planned staff person-to-person SMS transport | Separate voice/form and text adapters into canonical CRM/messaging data |
 | Google | Drive, Calendar, Ads and Maps/autocomplete | OAuth callbacks, scoped tokens and server-side provider calls |
 | Meta Ads | Advertising integration | OAuth callback and server-side API |
@@ -40,6 +41,29 @@ NOTES / GOTCHAS:
 
 Exact active providers and configuration must be confirmed against `functions/`, current environment
 bindings and provider consoles.
+
+### Contractor Compliance external boundary
+
+Repository source declares no new provider integration. Internal and public document bytes go only
+to the dedicated private Supabase bucket through bounded service-role Workers. Renewal messages use
+the existing `sendAutomatedMessage('email', ...)` suppression/DND/unsubscribe boundary and Resend
+transport with a stable request/stage idempotency key. No SMS fallback, Gmail/Drive ingestion, OCR,
+or accounting/payroll connector is present.
+
+QuickBooks/Gusto remain future reconciliation seams only. The annual W-9 checklist may retain
+contractor external IDs plus a handoff status/date/reference entered by admin/office, but it makes
+no provider API call and stores no reportable amount or 1099 artifact. QuickBooks and/or Gusto,
+not UPR, prepares, files, and distributes 1099s.
+
+Cloudflare must later receive independently approved `CONTRACTOR_COMPLIANCE_ENABLED`,
+`CONTRACTOR_COMPLIANCE_REMINDERS_ENABLED`, a high-entropy
+`CONTRACTOR_COMPLIANCE_TOKEN_SECRET`, and public rate-limit-salt configuration. The source-only
+migration declares an inert-by-default daily `pg_cron`/`pg_net` call to the exact-allowlisted
+production Worker URL using the existing `cron_worker_secret`; the Worker still returns 404
+unless both feature bindings are exactly `true`. The token secret deterministically derives an unguessable capability from a stable
+request identity so a retry can recreate the same link while Postgres retains only its digest.
+Repository declarations do not prove those values, the bucket, the sender, or the schedule
+exists. Provider canaries and real-document import remain separate owner actions.
 
 ### Capgo / Apple release boundary
 

@@ -299,6 +299,31 @@ remain provider-free, and group/broadcast sends cannot enter the CallRail adapte
 - Public document access returns a minimal purpose-built DTO or signed object URL, not a full
   internal row or listable bucket.
 
+### Contractor compliance
+
+- A contractor is a contact whose role is `subcontractor`; legacy W-9/COI summary fields are not
+  the compliance source of truth.
+- Required readiness groups are current Denver-calendar-year W-9, workers' compensation
+  certificate **or** Utah coverage waiver, and general liability.
+- Current readiness evaluates today in `America/Denver`. Audit readiness evaluates the explicit
+  requested date or interval; a currently stored PDF cannot fill a historical coverage gap.
+- Document versions and verified coverage intervals are retained. Uploads enter
+  `pending_review`; only an admin/office acceptance may satisfy a requirement.
+- Overall and requirement statuses are `ready`, `missing`, `needs_review`, `expiring`, `expired`,
+  `gap`, or `inactive`. The database derives them; clients do not reinterpret coverage.
+- The MVP has no manual compliance override and is warning-only. It never blocks assignment,
+  scheduling, billing, or payment.
+- Automatic renewal email uses roughly 60/30/14/7-day, expiration, and capped weekly-overdue
+  stages. Annual W-9 requests apply only to active contractors for the stored required year.
+  Accepted current evidence stops later claims. SMS is not an automatic channel.
+- A named insurance audit preserves a point-in-time roster, accepted WC/waiver and GL coverage
+  intervals, gaps, document versions, and request history. Current active status is not proof of
+  activity or payment during the period; those facts stay unknown until explicitly sourced.
+- Annual W-9 readiness is `valid`, `missing`, `needs_review`, `rejected`, or
+  `stale_previous_year`. Admin/office may record QuickBooks/Gusto external IDs and a provider
+  handoff status/date/reference only after a valid W-9. UPR does not track reportable amounts or
+  generate, store, correct, file, email, or distribute 1099 documents.
+
 ## Identity, rollout and access
 
 - Authentication, employee membership, authorization and feature rollout are separate decisions.
