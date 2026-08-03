@@ -4766,14 +4766,14 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   the live allowlist body (read-only hash
   `c72e0f7fd40a4abec42cce1cd912a45b`) replaces every producer-supplied
   `notification_event_id` with `gen_random_uuid()`, defeating cross-retry APNs
-  deduplication. Pending
+  deduplication. Reviewed source
   `20260802040935_preserve_notify_emit_event_id.sql` preserves a usable
   service-producer occurrence ID, generates one only when missing/blank, keeps
   `p_type_key` authoritative, and codifies the disabled/unscheduled reminder
   containment. Its paired rollback restores the prior function without
-  reactivating reminders. QA applied the reviewed source after
-  `20260801215912` as hosted ledger `20260803182303`; Production has neither
-  migration.
+  reactivating reminders. QA applied this source as hosted ledger
+  `20260803182303` after `20260801215912` was recorded as hosted ledger
+  `20260803182131`; Production has neither migration.
 - **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
@@ -4963,9 +4963,9 @@ sources in order: `20260801215912` as hosted ledger `20260803182131`, followed b
 lane retained all five producer flags as false, no `appointment.reminder` row, no reminder cron,
 and empty private occurrence/claim tables with forced RLS, no browser-role access, and
 service-only writer access. Hosted QA
-recorded 163 passing assertions and zero assertion failures; its 212 skips and 44 legacy
-setup-error files remain tracked baseline debt, not a replacement for the two-stack behavior
-proof. The three new unindexed foreign keys and pre-existing browser-role grants on three
+recorded 163 passing assertions and zero assertion failures; its 212 skipped assertions plus 46
+setup errors across 44 files / 90 suite nodes remain tracked baseline debt, not a replacement for
+the two-stack behavior proof. The three new unindexed foreign keys and pre-existing browser-role grants on three
 RLS/no-policy secret tables remain separate P2 cleanup. Shared Production has neither migration;
 no notification was sent and no PWA/native device path was exercised.
 

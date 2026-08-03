@@ -203,8 +203,9 @@ The reversible notification producer containment also applied from exact reviewe
   the full Node 22 gates and independent migration/security/release reviews also pass. Separately
   authorized QA qualification then completed with the exact source-to-ledger mapping above:
   catalog/postflight and governed hosted checks retained zero assertion failures, all five flags
-  off, and no reminder cron. The hosted suite's 212 skips and 44 legacy setup-error files remain
-  tracked baseline debt rather than substitutes for the clean two-stack behavior proof. Three
+  off, and no reminder cron. The hosted suite's 212 skipped assertions plus 46 setup errors across
+  44 files / 90 suite nodes remain tracked baseline debt rather than substitutes for the clean
+  two-stack behavior proof. Three
   unindexed foreign keys and pre-existing browser-role grants on three RLS/no-policy secret tables
   remain separate P2 cleanup work; neither was introduced by this candidate. Exact-head PR checks,
   merge, shared Production apply/deploy, activation, and device proof remain later gates. No
