@@ -1,6 +1,6 @@
 # SMS Consent Model — live law
 
-**Last verified:** 2026-07-31
+**Last verified:** 2026-08-03
 
 The binding consent rules for every UPR send path. Extracted 2026-07-31 from
 `sms-experience-wave-ownership.md` when that completed initiative's manifest was archived to
@@ -155,4 +155,12 @@ Compatibility migration `20260731220000_scheduled_message_delivery_compatibility
 queue and aborts with SQLSTATE `55000` without mutation unless the aggregate pending count is zero.
 Enforcement migration `20260731220100_scheduled_message_delivery_enforcement.sql` follows only
 after compatible clients/workers are deployed. Authored source and local proofs are not evidence
-that either migration, application code, or provider behavior is live.
+that either migration, application code, or provider behavior is live. Until the compatibility
+schema exists, `process-scheduled` recognizes only PostgREST `PGRST202` errors naming one of the
+new delivery RPCs, leaves the queue provider-free, and returns a healthy
+`delivery_schema_pending` deferral; timeout, permission, catalog, and other errors do not take
+that fallback. The compatibility migration is the authoritative final quiet-hours boundary: it
+samples `clock_timestamp()` immediately before the durable reservation and checks
+`America/Denver`, so a Worker-side time sample cannot reserve across the 21:00 boundary. The
+Worker also samples live time immediately before reservation/provider work; neither source claim
+means the migration or a scheduler is applied or enabled.

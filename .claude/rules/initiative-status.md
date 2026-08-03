@@ -20,11 +20,12 @@ handback. Its work landed in `dev` via PR #525, merged 2026-07-27; the holder br
 `codex/mobile-readiness-current-origin-review` had zero commits not already in `dev` at
 acceptance.)*
 
-The `dev → main` promotion hold is **ACTIVE** by owner direction on 2026-07-31. Draft PR
-[#565](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/565) stays open for dev testing and
-cross-session reconciliation; do not mark it ready, merge it, or otherwise promote `main` until the
-owner gives a new explicit instruction. Re-check the exact remote tips and PR head before any later
-promotion.
+The 2026-07-31 `dev → main` promotion hold was superseded by the owner's explicit 2026-08-03
+instruction to review and promote PR
+[#565](https://github.com/moronisalvador/Utah-Pros-App-Git/pull/565) only after the exact reconciled
+candidate passes local, database, native/web compatibility, reviewer, and hosted-CI gates. This is
+not blanket authorization for hosted SQL, provider traffic, feature/cron activation, or native
+distribution. Re-check the exact remote tips and PR head before publication and again before merge.
 
 ## Conversation participant scoping — compatibility live on QA + production; enforcement authored
 
@@ -95,6 +96,10 @@ promotion.
   callers are live on `dev` at merge `745de63c` through successful Cloudflare Preview deployment
   `7249c5de-a24d-4ffe-ba86-6a57168aa776`. The compatibility train is live on QA and production.
   No provider call, production-row mutation, production/main deployment, or device claim followed.
+  PR #565's subsequent compatibility hardening is authored locally only: neither scheduled-delivery
+  migration was applied in its work, and no flag, cron/scheduler, or provider was enabled or
+  exercised. Its missing-schema path defers provider-free, and its unapplied reservation source is
+  the authoritative final `America/Denver` quiet-hours boundary.
 
 ## QBO invoice/conversion recovery hardening — database applied; deployment gates remain
 
@@ -141,8 +146,10 @@ ledger. Its database rollout flag changed after the initial disabled apply proof
   `feature:qbo_receive_payment` enabled and not force-disabled, updated through an active internal
   admin employee identity; this supersedes the earlier disabled readback. Cloudflare Pages readback
   at `2026-08-01 00:14:45Z` shows `QBO_RECEIVE_PAYMENT_ENABLED=true` in **Preview** and no key in
-  **Production**. The two gates therefore expose the admin workflow on `dev`, while the production
-  Worker fails closed. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
+  **Production**. The server gates are open on dev while the production Worker fails closed. PR #565
+  additionally authors a local-only exact client gate, `VITE_QBO_RECEIVE_PAYMENT_UI_ENABLED=true`;
+  it defaults dark and has no hosted value/deployment proof, so it must not be read as grouped UI
+  exposure. Receipt/attempt/event and receipt-linked payment counts remain zero, with no
   `qbo-receive-payment` Worker run or QBO event since the database-flag change. This reconciliation
   did not flip either QBO gate, exercise the provider path, create a QBO Payment, or call the
   sandbox. Authenticated end-to-end proof and `main` promotion remain absent.

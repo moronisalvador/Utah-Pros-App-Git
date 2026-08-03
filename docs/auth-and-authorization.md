@@ -384,6 +384,9 @@ pending work; it never restores broad authenticated access or appointment-derive
 Unknown provider outcomes are retained for owner review and never automatically resubmitted.
 Neither rollback, migration apply, Worker deployment, scheduler-secret configuration, nor
 provider activation is authorized by this repository documentation.
+For PR #565 specifically, neither scheduled-delivery migration has been applied to a hosted
+database; no flag, cron/scheduler, or provider activation changed. The compatibility deferral and
+final Denver-time reservation check are authored source only.
 
 ## Prior SMS consent attestation (live database boundary verified 2026-07-23)
 
@@ -555,6 +558,23 @@ cross-customer invoice, and stale balance all fail before the QBO create call; d
 table/RPC access is denied. The migration was qualified in `qa-staging` before its owner-authorized
 production apply; the feature flag and environment gate remain disabled, and no provider or payment
 action has been performed under this foundation.
+
+PR #565 keeps QBO server authorization bounded on every caller path: the shared browser gate uses
+the timeout-bounded authorization transport, while server-secret callers retain only their existing
+webhook-secret route. Legacy QBO payment endpoints validate UPR payment IDs as UUIDs before any
+database/provider work, bound provider payment IDs, and strictly URL-encode every PostgREST filter
+value. These source hardenings neither authorize a provider action nor prove a deployed binding.
+
+## Message-media compatibility authorization (source only)
+
+`POST /api/message-media-url` normally reads media through the service-only
+`messaging_get_authorized_message_media(employee_id,message_id)` RPC. If—and only if—PostgREST
+returns the exact `PGRST202` missing-function response for that RPC, it may read the minimal message
+row and then independently require the already-live service-only
+`messaging_employee_can_access_conversation(employee_id,conversation_id)` RPC. Every other
+failure, including timeout, permission, or catalog error, remains closed; a row is never returned
+without that conversation-access decision. This is a serialized-migration compatibility seam, not
+proof that the new RPC, native client, or hosted deployment is live.
 
 ## Mobile S1c CallRail recording and notification HTTP authorization (2026-07-26)
 
