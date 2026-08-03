@@ -58,11 +58,12 @@ The repository OOP builder keeps rollout and authority separate:
 - the four new pricing/snapshot tables are forced-RLS with no direct browser grants, so config and
   internal-rate snapshots are exposed only through the role-gated RPC shapes; and
 - converting a saved quote into an official estimate is a separate financial-authority boundary:
-  the calculator hides the action unless the existing Estimates page and billing-edit role gate
-  both pass, and `convert_oop_quote_to_estimate` independently requires the same literal billing
-  role (`admin`; the compatibility token `manager` is retained although it is not a current enum
-  value). Eligible calculator roles that are not billing editors may price and save, but cannot
-  create an estimate;
+  the browser/PWA calculator hides the action unless the existing Estimates page and billing-edit
+  role gate both pass; the native calculator exposes it only to a literal admin and routes the
+  result to the narrow native OOP estimate-review screen. `convert_oop_quote_to_estimate`
+  independently requires the same literal billing role (`admin`; the compatibility token
+  `manager` is retained although it is not a current enum value). Eligible calculator roles that
+  are not billing editors may price and save, but cannot create an estimate;
 - DevTools may switch the calculator flag from owner preview to availability for all eligible roles
   (never all staff), while a missing flag or `force_disabled` remains the fail-closed client and
   server kill switch. Neither state grants database access.
@@ -72,7 +73,10 @@ The builder migration is live under reconciled ledger row
 tables are forced-RLS with no browser grants, client RPCs deny `anon`, and the literal role/flag
 boundary above is enforced server-side. The rollout flag remains disabled and preview-scoped.
 The additive quote-to-estimate migration `20260803192344_oop_quote_to_estimate.sql` is authored but
-not applied; until separately applied and deployed, the conversion action is not a live capability.
+not applied. It also narrows direct Estimate/line writes to the billing-editor boundary and adds
+an admin-only, OOP-provenance-checked atomic correction RPC with optimistic concurrency and an
+invoice-conversion lock. Until separately applied and deployed, conversion and native correction
+are not live capabilities.
 
 ## Worker authorization
 
@@ -522,7 +526,11 @@ non-external employee with `role='admin'`. The human-only invoice endpoint rejec
 `x-webhook-secret`; background-safe estimate/payment/query paths retain that exact server
 capability. Missing sessions return the deployed `401 {"error":"Unauthorized"}` contract; known
 employees outside that boundary return 403; auth/configuration failures fail closed. These
-admin-mobile QBO screens are web/PWA-only and are excluded from the field-only Capacitor bundle.
+admin-mobile QBO screens remain web/PWA-only. The owner-directed OOP exception bundles one narrow
+native estimate review/correction screen. It requires the estimate to retain an OOP source-quote
+link and writes only the service-address and existing line description/quantity/rate/order
+columns. It does not call a provider Worker; Collections, invoice, payment, QBO catalog,
+QuickBooks send and estimate-to-invoice screens remain excluded from Capacitor.
 
 S1b extends the same active, non-external `admin` browser boundary to
 `/api/qbo-sync-customer` and the HTTP GET/POST forms of `/api/qbo-payments-sync`, while preserving

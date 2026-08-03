@@ -1743,6 +1743,15 @@ convert_oop_quote_to_estimate(quote_id) — **AUTHORED, NOT APPLIED.** Billing-a
                                      estimate. Copies customer-visible evaluated lines, verifies the
                                      generated total, links/freezes the quote, and returns the same
                                      estimate on retry. It never calls QuickBooks.
+correct_oop_estimate(estimate_id, expected_updated_at, address, lines) — **AUTHORED, NOT APPLIED.**
+                                     Literal-admin-only atomic correction for an OOP-provenance
+                                     estimate that has not become an invoice. Locks and version-checks
+                                     the estimate, validates the exact existing line-id set and bounded
+                                     values, then updates only service-address and safe line columns.
+                                     Same-content response-loss retries converge without another write.
+billing_edit_access() — **AUTHORED, NOT APPLIED.** Active internal billing-editor predicate used by
+                                     narrowed Estimate and estimate-line write policies; internal
+                                     read access remains unchanged.
 ```
 
 ### Demo Sheet (May 8 2026 — port of standalone Netlify app)
@@ -3073,10 +3082,16 @@ via AddContactModal + intended-division picker + optional property address — N
 `src/components/AutoGrowTextarea.jsx` (shared, line-item
 description grows down + accepts line breaks for scope of work — also adopted by InvoiceEditor). Nav
 entries (`navItems.jsx`: sidebar + desktop overflow) + routes (`App.jsx`) gated by `page:estimates`.
-The authored OOP handoff adds a web/PWA-only **Create estimate** action for billing admins. It saves
-the current quote first, calls the atomic conversion RPC, and opens this same editor with the job,
-customer, address, notes, division, and canonical customer-visible pricing already saved. The user
-still reviews and explicitly saves/sends through the existing QBO flow.
+The authored OOP handoff adds **Create estimate** for billing admins. It saves the current quote
+first and calls the atomic conversion RPC with the job, customer, address, notes, division, and
+canonical customer-visible pricing. Browser/PWA opens this full editor. Native opens the bounded
+`NativeOopEstimateReview` page, which refuses non-OOP estimates, shows the saved lines/total, and
+lets a literal admin correct the service address plus existing line description/quantity/rate/order
+columns. It contains no native QuickBooks or email action; those stay in the web/PWA editor until
+the provider path has durable retry/reconciliation and content-bound confirmation. The conversion
+itself never calls QuickBooks. A Job Hub tool row deep-links eligible, flag-enabled users into the
+calculator with the validated job id already selected; non-billing roles see quote-for-admin-review
+copy instead of a promise that they can create the official estimate.
 
 **Builder rebuild (Jun 2026) — `InvoiceEditor.jsx` + `EstimateEditor.jsx`, full builders in the
 Collections design:** both editors were rebuilt to feel like a complete invoice/estimate builder
@@ -3579,8 +3594,10 @@ owner/external gates.
   a Production or topic-variable change. A compatible deployed signed build, re-enrollment and
   device proof remain required. Full doc: `docs/mobile/dev-app-variant.md`.
 - **Router split:** `src/App.jsx` renders `NativeRoutes` (only `/login` + `/tech/*`) when
-  `VITE_BUILD_TARGET=native`; admin pages are excluded from the native bundle (~40% smaller).
-  The completed-module-graph allowlist includes the field-only
+  `VITE_BUILD_TARGET=native`; broad admin pages remain excluded from the native bundle. The explicit
+  owner-directed exception is `NativeOopEstimateReview`, a standalone lazy page behind literal
+  admin + `tool:oop_pricing` gates; it imports no Admin Mobile, Collections, invoice/payment or
+  estimate-to-invoice/provider-send module. The completed-module-graph allowlist includes that bounded page and the field-only
   `src/pages/tech/techAppointmentCrew.js` helper used by the native appointment editor, and the
   real native Vite build remains the blocking proof that every reachable page/helper is declared.
 - **Plugins installed:**
