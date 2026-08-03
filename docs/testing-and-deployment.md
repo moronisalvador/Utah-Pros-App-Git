@@ -1057,3 +1057,26 @@ The compatible Worker/UI is deployed, and a 2026-07-31 read-only production ledg
 the exact committed additive claim-ledger migration as
 `20260729183731_notification_delivery_diagnostic_claims`. The endpoint still fails closed with
 `claim_unavailable` before contacting any provider if the ledger contract is unavailable.
+
+## OOP quote-to-estimate release sequence (authored 2026-08-03)
+
+The calculator UI is compatible with the old schema: pricing and ordinary quote saves still work,
+and only the new explicit conversion click consumes the additive RPC/column. Release in this order:
+
+1. run the CI-visible contract test, migration hygiene, changed-file lint, full test suite and build;
+2. apply the exact committed migration to an isolated/local database and run
+   the governed `npm run test:db:local` OOP proof, which includes
+   `supabase/tests/oop_quote_to_estimate_isolated.sql` (then repeat on `qa-staging` if used for the
+   release rehearsal);
+3. deploy the compatible UI to `dev`, apply the same reviewed migration to the shared database in a
+   low-traffic window, and verify grants, the linked draft, retry behavior and exact line total;
+4. verify the existing Estimate editor opens the draft and requires the normal human Save action
+   before any QuickBooks write; and
+5. only after qualification, use DevTools to make `tool:oop_pricing` available to eligible roles,
+   then promote the reviewed `dev → main` change.
+
+Before first use, the paired rollback removes the additive objects. After any quote is converted,
+that rollback deliberately refuses; containment is to return the OOP flag to owner preview or force
+disabled and revert the UI while preserving the quote/estimate provenance link. Applying the
+migration, flipping the flag, deploying, provider writes and production verification are each
+separate owner-authorized actions.

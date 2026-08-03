@@ -500,7 +500,7 @@ describe('conversation participant scoping — rollback source contract', () => 
         "procedure.proconfig = array['search_path=pg_catalog, public']::text[]",
       );
       expect(rollbackSql).toContain(
-        "lower( regexp_replace( btrim(v_legacy_claim_source), '[[:space:]]+', ' ', 'g' ) ) <> 'begin return false; end;'",
+        "lower( btrim( regexp_replace( v_legacy_claim_source, '[[:space:]]+', ' ', 'g' ) ) ) <> 'begin return false; end;'",
       );
       expect(rollbackSql).toContain(
         "not has_function_privilege( 'authenticated', 'public.claim_scheduled_message(uuid)', 'execute' )",

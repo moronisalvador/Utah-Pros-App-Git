@@ -147,11 +147,13 @@ BEGIN
        )
        OR v_legacy_claim_source IS NULL
        OR lower(
-         regexp_replace(
-           btrim(v_legacy_claim_source),
-           '[[:space:]]+',
-           ' ',
-           'g'
+         btrim(
+           regexp_replace(
+             v_legacy_claim_source,
+             '[[:space:]]+',
+             ' ',
+             'g'
+           )
          )
        ) <> 'begin return false; end;'
        OR NOT has_function_privilege(

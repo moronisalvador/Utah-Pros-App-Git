@@ -11,7 +11,7 @@
  *
  * Exports:
  *   Modal, IconButton, StatusPill (+ toneForStatus), EmptyState, ErrorState,
- *   PageHeader, SearchInput
+ *   PageHeader, SearchInput, SkeletonBlock
  *
  * NOTES / GOTCHAS:
  *   - Owned by UX-Quality F-S2 (.claude/rules/ux-alignment-wave-ownership.md).
@@ -27,3 +27,4 @@ export { default as EmptyState } from './EmptyState';
 export { default as ErrorState } from './ErrorState';
 export { default as PageHeader } from './PageHeader';
 export { default as SearchInput } from './SearchInput';
+export { default as SkeletonBlock } from './SkeletonBlock';

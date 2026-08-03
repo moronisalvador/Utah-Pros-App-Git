@@ -24,6 +24,9 @@
 --   restores raw browser writes or a functional legacy claim. The durable
 --   provenance and reservation evidence remain intentionally, because erasing
 --   either boundary could authorize a duplicate send.
+--   Reapplying this source is supported only from that exact paused posture.
+--   The preflight verifies every retained schema, policy, ACL, and function
+--   boundary before the idempotent DDL restores the forward lifecycle.
 -- ════════════════════════════════════════════════
 --
 -- ROLLOUT ORDER: deploy the hardened web/Worker callers first; they fail closed
@@ -46,6 +49,12 @@ DECLARE
   v_policy_count integer;
   v_table text;
   v_privilege text;
+  v_claim_token_columns integer;
+  v_delivery_attempt_columns integer;
+  v_provenance_columns text[];
+  v_provenance_constraints text[];
+  v_legacy_claim_source text;
+  v_function text;
 BEGIN
   IF to_regclass('public.scheduled_messages') IS NULL
      OR to_regclass('public.message_send_attempts') IS NULL
@@ -57,6 +66,311 @@ BEGIN
      OR to_regprocedure('public.get_service_sms_consent_status(uuid,text)') IS NULL
      OR to_regprocedure('extensions.digest(bytea,text)') IS NULL THEN
     RAISE EXCEPTION 'scheduled delivery compatibility: required messaging foundation is absent';
+  END IF;
+
+  SELECT
+    count(*) FILTER (
+      WHERE column_name = 'claim_token'
+        AND data_type = 'uuid'
+        AND is_nullable = 'YES'
+    ),
+    count(*) FILTER (
+      WHERE column_name = 'delivery_attempt_id'
+        AND data_type = 'uuid'
+        AND is_nullable = 'YES'
+    )
+    INTO v_claim_token_columns, v_delivery_attempt_columns
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+    AND table_name = 'scheduled_messages'
+    AND column_name IN ('claim_token', 'delivery_attempt_id');
+
+  IF v_claim_token_columns = 0 AND v_delivery_attempt_columns = 0 THEN
+    IF to_regclass(
+         'public.scheduled_message_creation_provenance'
+       ) IS NOT NULL
+       OR to_regclass(
+         'public.scheduled_messages_delivery_attempt_id_key'
+       ) IS NOT NULL THEN
+      RAISE EXCEPTION
+        'scheduled delivery compatibility: partial retained artifacts drifted';
+    END IF;
+  ELSIF v_claim_token_columns = 1 AND v_delivery_attempt_columns = 1 THEN
+    SELECT array_agg(
+      column_record.column_name || ':' ||
+      column_record.data_type || ':' ||
+      column_record.is_nullable || ':' ||
+      COALESCE(column_record.column_default, '')
+      ORDER BY column_record.ordinal_position
+    )
+      INTO v_provenance_columns
+    FROM information_schema.columns column_record
+    WHERE column_record.table_schema = 'public'
+      AND column_record.table_name =
+        'scheduled_message_creation_provenance';
+
+    IF to_regclass(
+         'public.scheduled_message_creation_provenance'
+       ) IS NULL
+       OR to_regclass(
+         'public.scheduled_messages_delivery_attempt_id_key'
+       ) IS NULL
+       OR v_provenance_columns IS DISTINCT FROM ARRAY[
+         'scheduled_message_id:uuid:NO:',
+         'created_by:uuid:NO:',
+         'conversation_id:uuid:NO:',
+         'recipient_contact_id:uuid:NO:',
+         'recipient_address:text:NO:',
+         'send_at:timestamp with time zone:NO:',
+         'body_fingerprint:text:NO:',
+         'created_at:timestamp with time zone:NO:now()'
+       ]::text[]
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_catalog.pg_class relation
+         JOIN pg_catalog.pg_namespace namespace
+           ON namespace.oid = relation.relnamespace
+         WHERE namespace.nspname = 'public'
+           AND relation.relname =
+             'scheduled_message_creation_provenance'
+           AND relation.relrowsecurity
+           AND relation.relforcerowsecurity
+       )
+       OR (
+         SELECT index_record.indexdef
+         FROM pg_catalog.pg_indexes index_record
+         WHERE index_record.schemaname = 'public'
+           AND index_record.indexname =
+             'scheduled_messages_delivery_attempt_id_key'
+       ) IS DISTINCT FROM
+         'CREATE UNIQUE INDEX scheduled_messages_delivery_attempt_id_key ON public.scheduled_messages USING btree (delivery_attempt_id) WHERE (delivery_attempt_id IS NOT NULL)'
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_catalog.pg_constraint constraint_record
+         WHERE constraint_record.conrelid =
+             'public.scheduled_messages'::regclass
+           AND constraint_record.conname =
+             'scheduled_messages_delivery_attempt_id_fkey'
+           AND pg_catalog.pg_get_constraintdef(
+             constraint_record.oid
+           ) =
+             'FOREIGN KEY (delivery_attempt_id) REFERENCES message_send_attempts(id) ON DELETE RESTRICT'
+       ) THEN
+      RAISE EXCEPTION
+        'scheduled delivery compatibility: retained schema artifacts drifted';
+    END IF;
+
+    SELECT array_agg(
+      constraint_record.conname || ':' ||
+      pg_catalog.pg_get_constraintdef(constraint_record.oid)
+      ORDER BY constraint_record.conname
+    )
+      INTO v_provenance_constraints
+    FROM pg_catalog.pg_constraint constraint_record
+    WHERE constraint_record.conrelid =
+      'public.scheduled_message_creation_provenance'::regclass;
+
+    IF v_provenance_constraints IS DISTINCT FROM ARRAY[
+         'scheduled_message_creation_provenance_conversation_id_fkey:FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE RESTRICT',
+         'scheduled_message_creation_provenance_created_by_fkey:FOREIGN KEY (created_by) REFERENCES employees(id) ON DELETE RESTRICT',
+         'scheduled_message_creation_provenance_pkey:PRIMARY KEY (scheduled_message_id)',
+         'scheduled_message_creation_provenance_recipient_contact_id_fkey:FOREIGN KEY (recipient_contact_id) REFERENCES contacts(id) ON DELETE RESTRICT',
+         'scheduled_message_creation_provenance_scheduled_message_id_fkey:FOREIGN KEY (scheduled_message_id) REFERENCES scheduled_messages(id) ON DELETE RESTRICT'
+       ]::text[]
+       OR (
+         SELECT count(*)
+         FROM pg_catalog.pg_policies policy
+         WHERE policy.schemaname = 'public'
+           AND policy.tablename =
+             'scheduled_message_creation_provenance'
+       ) <> 2
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_catalog.pg_policies policy
+         WHERE policy.schemaname = 'public'
+           AND policy.tablename =
+             'scheduled_message_creation_provenance'
+           AND policy.policyname =
+             'scheduled_message_creation_provenance_definer_access'
+           AND policy.permissive = 'PERMISSIVE'
+           AND policy.cmd = 'ALL'
+           AND policy.roles = ARRAY['postgres']::name[]
+           AND regexp_replace(
+             COALESCE(policy.qual, ''),
+             '\s+',
+             '',
+             'g'
+           ) = 'true'
+           AND regexp_replace(
+             COALESCE(policy.with_check, ''),
+             '\s+',
+             '',
+             'g'
+           ) = 'true'
+       )
+       OR NOT EXISTS (
+         SELECT 1
+         FROM pg_catalog.pg_policies policy
+         WHERE policy.schemaname = 'public'
+           AND policy.tablename =
+             'scheduled_message_creation_provenance'
+           AND policy.policyname =
+             'scheduled_message_creation_provenance_service_read'
+           AND policy.permissive = 'PERMISSIVE'
+           AND policy.cmd = 'SELECT'
+           AND policy.roles = ARRAY['service_role']::name[]
+           AND regexp_replace(
+             COALESCE(policy.qual, ''),
+             '\s+',
+             '',
+             'g'
+           ) = 'true'
+           AND policy.with_check IS NULL
+       ) THEN
+      RAISE EXCEPTION
+        'scheduled delivery compatibility: retained provenance artifacts drifted';
+    END IF;
+
+    FOREACH v_function IN ARRAY ARRAY[
+      'public.create_scheduled_message(uuid,uuid,text,timestamp with time zone)',
+      'public.claim_scheduled_message_v2(uuid,uuid)',
+      'public.release_scheduled_message_claim(uuid,uuid,text)',
+      'public.fail_scheduled_message_claim(uuid,uuid,text)',
+      'public.reserve_scheduled_message_delivery(uuid,uuid,uuid,text,text,text,jsonb)',
+      'public.reconcile_scheduled_message_delivery(uuid)'
+    ]
+    LOOP
+      IF has_function_privilege('service_role', v_function, 'EXECUTE')
+         OR has_function_privilege(
+           'authenticated',
+           v_function,
+           'EXECUTE'
+         )
+         OR has_function_privilege('anon', v_function, 'EXECUTE') THEN
+        RAISE EXCEPTION
+          'scheduled delivery compatibility: retained recovery function is callable: %',
+          v_function;
+      END IF;
+    END LOOP;
+
+    SELECT procedure.prosrc
+      INTO v_legacy_claim_source
+    FROM pg_catalog.pg_proc procedure
+    WHERE procedure.oid = to_regprocedure(
+      'public.claim_scheduled_message(uuid)'
+    )
+      AND procedure.prolang = (
+        SELECT language.oid
+        FROM pg_catalog.pg_language language
+        WHERE language.lanname = 'plpgsql'
+      )
+      AND procedure.proowner = 'postgres'::regrole
+      AND procedure.provolatile = 'v'
+      AND procedure.proparallel = 'u'
+      AND NOT procedure.prosecdef
+      AND procedure.proconfig =
+        ARRAY['search_path=pg_catalog, public']::text[];
+
+    FOREACH v_table IN ARRAY ARRAY[
+      'public.scheduled_messages',
+      'public.scheduled_message_creation_provenance'
+    ]
+    LOOP
+      FOREACH v_privilege IN ARRAY ARRAY[
+        'SELECT', 'INSERT', 'UPDATE', 'DELETE'
+      ]
+      LOOP
+        IF has_table_privilege(
+             'authenticated',
+             v_table,
+             v_privilege
+           )
+           OR has_table_privilege('anon', v_table, v_privilege) THEN
+          RAISE EXCEPTION
+            'scheduled delivery compatibility: retained browser ACL drifted on %',
+            v_table;
+        END IF;
+      END LOOP;
+    END LOOP;
+
+    IF NOT has_table_privilege(
+         'service_role',
+         'public.scheduled_messages',
+         'SELECT'
+       )
+       OR NOT has_table_privilege(
+         'service_role',
+         'public.scheduled_messages',
+         'INSERT'
+       )
+       OR NOT has_table_privilege(
+         'service_role',
+         'public.scheduled_messages',
+         'UPDATE'
+       )
+       OR NOT has_table_privilege(
+         'service_role',
+         'public.scheduled_messages',
+         'DELETE'
+       )
+       OR NOT has_table_privilege(
+         'service_role',
+         'public.scheduled_message_creation_provenance',
+         'SELECT'
+       )
+       OR has_table_privilege(
+         'service_role',
+         'public.scheduled_message_creation_provenance',
+         'INSERT'
+       )
+       OR has_table_privilege(
+         'service_role',
+         'public.scheduled_message_creation_provenance',
+         'UPDATE'
+       )
+       OR has_table_privilege(
+         'service_role',
+         'public.scheduled_message_creation_provenance',
+         'DELETE'
+       )
+       OR v_legacy_claim_source IS NULL
+       OR lower(
+         btrim(
+           regexp_replace(
+             v_legacy_claim_source,
+             '[[:space:]]+',
+             ' ',
+             'g'
+           )
+         )
+       ) <> 'begin return false; end;'
+       OR NOT has_function_privilege(
+         'authenticated',
+         'public.claim_scheduled_message(uuid)',
+         'EXECUTE'
+       )
+       OR has_function_privilege(
+         'anon',
+         'public.claim_scheduled_message(uuid)',
+         'EXECUTE'
+       )
+       OR NOT has_function_privilege(
+         'service_role',
+         'public.claim_scheduled_message(uuid)',
+         'EXECUTE'
+       )
+       OR EXISTS (
+         SELECT 1
+         FROM public.scheduled_messages
+         WHERE status = 'pending'
+           AND delivery_attempt_id IS NOT NULL
+       ) THEN
+      RAISE EXCEPTION
+        'scheduled delivery compatibility: retained recovery posture is not sealed';
+    END IF;
+  ELSE
+    RAISE EXCEPTION
+      'scheduled delivery compatibility: partial scheduled-message columns drifted';
   END IF;
 
   IF (
@@ -290,8 +604,8 @@ END;
 $scheduled_delivery_compat_preflight$;
 
 ALTER TABLE public.scheduled_messages
-  ADD COLUMN claim_token uuid,
-  ADD COLUMN delivery_attempt_id uuid
+  ADD COLUMN IF NOT EXISTS claim_token uuid,
+  ADD COLUMN IF NOT EXISTS delivery_attempt_id uuid
     REFERENCES public.message_send_attempts(id) ON DELETE RESTRICT;
 
 -- ALTER TABLE holds an ACCESS EXCLUSIVE lock until this migration transaction
@@ -322,7 +636,7 @@ COMMENT ON COLUMN public.scheduled_messages.claim_token IS
 COMMENT ON COLUMN public.scheduled_messages.delivery_attempt_id IS
   'Irreversible link to the single durable provider-attempt reservation for this scheduled text.';
 
-CREATE UNIQUE INDEX scheduled_messages_delivery_attempt_id_key
+CREATE UNIQUE INDEX IF NOT EXISTS scheduled_messages_delivery_attempt_id_key
   ON public.scheduled_messages (delivery_attempt_id)
   WHERE delivery_attempt_id IS NOT NULL;
 
@@ -331,7 +645,7 @@ CREATE UNIQUE INDEX scheduled_messages_delivery_attempt_id_key
 -- transaction closes raw browser queue access. The v2 claim checks every
 -- delivery-relevant value below before a Worker can reserve an attempt, so any
 -- non-pending legacy row can never be revived into the trusted delivery path.
-CREATE TABLE public.scheduled_message_creation_provenance (
+CREATE TABLE IF NOT EXISTS public.scheduled_message_creation_provenance (
   scheduled_message_id uuid PRIMARY KEY
     REFERENCES public.scheduled_messages(id) ON DELETE RESTRICT,
   created_by uuid NOT NULL REFERENCES public.employees(id) ON DELETE RESTRICT,
@@ -347,12 +661,39 @@ ALTER TABLE public.scheduled_message_creation_provenance ENABLE ROW LEVEL SECURI
 ALTER TABLE public.scheduled_message_creation_provenance FORCE ROW LEVEL SECURITY;
 -- The actor-derived SECURITY DEFINER function runs as postgres. FORCE RLS
 -- keeps even that owner constrained to this explicit internal-only policy.
-CREATE POLICY scheduled_message_creation_provenance_definer_access
-  ON public.scheduled_message_creation_provenance
-  FOR ALL TO postgres USING (true) WITH CHECK (true);
-CREATE POLICY scheduled_message_creation_provenance_service_read
-  ON public.scheduled_message_creation_provenance
-  FOR SELECT TO service_role USING (true);
+DO $scheduled_delivery_provenance_policy_bootstrap$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename =
+        'scheduled_message_creation_provenance'
+      AND policy.policyname =
+        'scheduled_message_creation_provenance_definer_access'
+  ) THEN
+    EXECUTE
+      'CREATE POLICY scheduled_message_creation_provenance_definer_access
+         ON public.scheduled_message_creation_provenance
+         FOR ALL TO postgres USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_policies policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename =
+        'scheduled_message_creation_provenance'
+      AND policy.policyname =
+        'scheduled_message_creation_provenance_service_read'
+  ) THEN
+    EXECUTE
+      'CREATE POLICY scheduled_message_creation_provenance_service_read
+         ON public.scheduled_message_creation_provenance
+         FOR SELECT TO service_role USING (true)';
+  END IF;
+END;
+$scheduled_delivery_provenance_policy_bootstrap$;
 REVOKE ALL ON TABLE public.scheduled_message_creation_provenance
   FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT ON TABLE public.scheduled_message_creation_provenance TO service_role;

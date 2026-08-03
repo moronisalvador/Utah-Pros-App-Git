@@ -54,6 +54,11 @@ it and pre-fills the single summary line + a recap banner. It does **not** touch
 Estimates are a parallel track that **converts into** invoices (`convert_estimate_to_invoice`); the
 editor (`EstimateEditor.jsx`) mirrors the invoice builder.
 
+The OOP calculator is an additional draft front door: a billing admin can explicitly turn a saved,
+job-linked, canonical OOP quote into one itemized draft estimate, then review it in the existing
+Estimate editor. The conversion itself performs no provider call. The existing human Save action
+remains the only step that mirrors the estimate to QuickBooks.
+
 ---
 
 ## 2. Data model

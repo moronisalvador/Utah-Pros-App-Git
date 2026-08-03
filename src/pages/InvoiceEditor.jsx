@@ -8,7 +8,9 @@
  *   list). You build the line items (each with a QuickBooks Item + Class, a typed
  *   description, quantity and rate), see the running Subtotal/Total, edit the due
  *   date, record payments, preview/print what the customer gets, and Save/Send the
- *   invoice to QuickBooks. Styled to match the My Money / Collections design.
+ *   invoice/source date and due date, record payments, preview/print what the
+ *   customer gets, and Save/Send the invoice to QuickBooks. Styled to match the
+ *   My Money / Collections design.
  *
  * WHERE IT LIVES:
  *   Route:        /invoices/:invoiceId
@@ -22,7 +24,7 @@
  *              @/lib/claimUtils (canEditBilling), @/contexts/AuthContext
  *   Data:      reads  → invoices, invoice_line_items, jobs, claims, contacts, payments
  *              writes → invoice_line_items (add/edit/reorder/remove), payments (record/
- *                       delete), invoices.due_date; QBO push/send via /api/qbo-invoice,
+ *                       delete), invoices.invoice_date/due_date; QBO push/send via /api/qbo-invoice,
  *                       payments via /api/qbo-payment, pay-link via /api/stripe-pay-link
  *
  * NOTES / GOTCHAS:
@@ -208,10 +210,10 @@ export default function InvoiceEditor() {
     try {
       const i = (await d.select('invoices', `id=eq.${invoiceId}&limit=1`))?.[0];
       if (!i) { toast('Invoice not found', 'error'); navigate('/collections', { replace: true }); return; }
-      // Invoices always default their due date to today until one is picked — prefill and
-      // persist it (not a content edit, so it must NOT flip the invoice back to draft).
+      // Keep a missing due date aligned with the stored invoice/source date. Falling
+      // back to today is only for a legacy row that has neither date.
       if (!i.due_date && canEditBilling(employeeRoleRef.current) && !i.locked) {
-        i.due_date = today();
+        i.due_date = i.invoice_date ? String(i.invoice_date).slice(0, 10) : today();
         d.update('invoices', `id=eq.${invoiceId}`, { due_date: i.due_date }).catch(() => {});
       }
       setInv(i);
@@ -417,10 +419,20 @@ export default function InvoiceEditor() {
     } catch (e) { toast('Failed to delete: ' + (e.message || e), 'error'); setBusy(false); }
   };
 
-  // ─── SECTION: Due date + payments ──────────────
+  // ─── SECTION: Invoice dates + payments ──────────────
+  const updateInvoiceDate = async (val) => {
+    setInv((prev) => ({ ...prev, invoice_date: val || null }));
+    try {
+      await db.update('invoices', `id=eq.${invoiceId}`, { invoice_date: val || null });
+      markDirty();
+    } catch (e) { toast('Failed to update invoice date: ' + (e.message || e), 'error'); }
+  };
   const updateDueDate = async (val) => {
     setInv((prev) => ({ ...prev, due_date: val || null }));
-    try { await db.update('invoices', `id=eq.${invoiceId}`, { due_date: val || null }); }
+    try {
+      await db.update('invoices', `id=eq.${invoiceId}`, { due_date: val || null });
+      markDirty();
+    }
     catch (e) { toast('Failed to update due date: ' + (e.message || e), 'error'); }
   };
   const recordPayment = async () => {
@@ -690,6 +702,12 @@ export default function InvoiceEditor() {
           <Field label="Job" value={job?.job_number ? `${job.job_number} · ${division}` : division} />
           {claim?.date_of_loss && <Field label="Date of loss" value={fmtDate(claim.date_of_loss)} />}
           <Field label="Sent" value={inv.sent_at ? fmtDate(inv.sent_at) : 'Not sent'} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Invoice date</div>
+            {canEdit
+              ? <DatePicker value={inv.invoice_date ? String(inv.invoice_date).slice(0, 10) : ''} onChange={(v) => updateInvoiceDate(v)} placeholder="Estimate completed" />
+              : <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{inv.invoice_date ? fmtDate(inv.invoice_date) : '—'}</div>}
+          </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: C.faint, marginBottom: 3 }}>Due date</div>
             {canEdit

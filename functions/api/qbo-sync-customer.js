@@ -18,6 +18,7 @@ import {
   getConnection,
   mapContactToCustomer,
   findExistingCustomer,
+  disambiguatedCustomerPayload,
   createCustomer,
 } from '../lib/quickbooks.js';
 
@@ -34,7 +35,8 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
   const payload = mapContactToCustomer(contact);
 
   try {
-    // Dedup: match an existing customer by email, name (both conventions), then phone.
+    // Dedup only on verified identity: exact email or family-name + exact phone.
+    // DisplayName alone is never enough to attach a money path to a customer.
     const match = await findExistingCustomer(env, contact, payload);
 
     // Distinct QBO customers both look right — never guess on a money path, and
@@ -62,9 +64,7 @@ async function syncOne(env, db, contact, { dryRun = false } = {}) {
       } catch (e) {
         // 6240 = duplicate name. Disambiguate with the phone's last 4 and retry once.
         if (e.qboCode === '6240' || /duplicate/i.test(e.message || '')) {
-          const last4 = (contact.phone || '').replace(/\D/g, '').slice(-4);
-          payload.DisplayName = `${payload.DisplayName} (${last4 || String(contact.id).slice(0, 4)})`;
-          customer = await createCustomer(env, payload);
+          customer = await createCustomer(env, disambiguatedCustomerPayload(contact, payload));
         } else {
           throw e;
         }

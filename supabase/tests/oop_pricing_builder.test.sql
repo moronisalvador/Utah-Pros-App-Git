@@ -13,11 +13,12 @@ GRANT SELECT ON oop_pricing_cross_tier_fixture TO authenticated;
 -- enforces both gates before touching synthetic fixtures.
 \ir oop_pricing_builder_isolated.sql
 \ir oop_pricing_builder_rollback_isolated.sql
+\ir oop_quote_to_estimate_isolated.sql
 
 BEGIN;
 SELECT plan(1);
 SELECT pass(
-  'OOP pricing builder forward and rollback contracts passed on the isolated local clone'
+  'OOP pricing builder, rollback, and estimate-conversion contracts passed on the isolated local clone'
 );
 SELECT * FROM finish();
 ROLLBACK;

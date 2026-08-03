@@ -66,6 +66,26 @@
   align-items: center;
   min-height: var(--tech-min-tap);
 }
+.oop-job-choice {
+  display: grid;
+  gap: var(--space-2);
+}
+.oop-job-choice__hint {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.oop-job-choice__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
 .oop-tech-link-press {
   touch-action: manipulation;
   transition: transform var(--motion-duration-fast) var(--motion-ease-standard);

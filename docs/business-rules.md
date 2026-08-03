@@ -111,8 +111,19 @@ against both and change both in one commit.
   `crm_partner`/external, inactive, unsupported, and unauthenticated actors are denied. The
   `tool:oop_pricing` flag is a separate fail-closed rollout gate: global means all eligible roles,
   never all staff; a missing or force-disabled flag denies.
-- OOP quotes are internal pricing artifacts and do not post to QuickBooks or bypass the separate
-  human Save-to-QuickBooks gate.
+- OOP quotes are internal pricing artifacts. An authorized billing admin may explicitly convert a
+  saved, job-linked, versioned quote into one draft UPR estimate. The database copies only the
+  canonical customer-visible evaluated lines, verifies that their generated line total equals the
+  quote total, links the source quote, and returns the same estimate on retry. A converted quote is
+  frozen so its pricing cannot drift from the official estimate.
+- Claim selection never silently chooses among multiple jobs. A claim with exactly one job may
+  auto-link it; a claim with multiple jobs requires the user to choose the destination job before
+  saving or estimate conversion. Choosing another claim clears the prior job candidates, and
+  changing the destination job is tracked as an unsaved quote change. A freeform, unlinked quote
+  remains allowed only after the user unlinks the claim.
+- Quote conversion never calls QuickBooks. It opens the existing Estimate editor, where the human
+  reviews the draft and uses the existing Save-to-QuickBooks action. That human gate remains the
+  only route from this workflow to a QBO provider write.
 - `feature:qbo_receive_payment` and `QBO_RECEIVE_PAYMENT_ENABLED=true` are independent default-OFF
   rollout gates for the new receipt path, and the money endpoint enforces both server-side. Neither
   flag grants authority; the Worker still requires an active, non-external literal `admin` before

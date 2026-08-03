@@ -49,6 +49,8 @@
 }
 .claim-picker--tech .claim-picker__menu { border-radius: var(--tech-radius-button); }
 .claim-picker__error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-3); color: var(--danger); }
+.claim-picker__details-loading { display: grid; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border-light); }
+.claim-picker__details-error { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--danger-border); background: var(--danger-bg); color: var(--danger); font-size: var(--text-xs); }
 .claim-picker__retry { min-height: var(--claim-picker-control-height); }
 .claim-picker__empty { padding: var(--space-3); color: var(--text-tertiary); font-size: var(--text-sm); }
 .claim-picker__option { display: block; width: 100%; min-height: var(--claim-picker-control-height); padding: var(--space-2) var(--space-3); border: 0; border-bottom: 1px solid var(--border-light); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-family: var(--font-sans); text-align: left; -webkit-tap-highlight-color: transparent; transition: background var(--motion-duration-fast) var(--motion-ease-standard), transform var(--motion-duration-fast) var(--motion-ease-standard); }
@@ -59,6 +61,8 @@
 .claim-picker__option-name { display: block; color: var(--text-primary); font-size: var(--text-base); font-weight: 600; }
 .claim-picker__option-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); color: var(--text-tertiary); font-size: var(--text-xs); }
 .claim-picker__option-number { color: var(--accent); font-family: var(--font-mono); }
+.claim-picker__option-loss-date { color: var(--text-secondary); }
+.claim-picker__option-address { display: block; margin-top: var(--space-1); color: var(--text-secondary); font-size: var(--text-xs); }
 @media (max-width: 768px) {
   .claim-picker--compact { --claim-picker-control-height: 44px; }
   .claim-picker__unlink.ui-icon-btn { width: 44px; height: 44px; min-width: 44px; }

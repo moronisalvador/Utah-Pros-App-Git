@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../lib/cors.js', () => ({ handleOptions: vi.fn(), jsonResponse: vi.fn((body, status) => ({ body, status })) }));
-const state = vi.hoisted(() => ({ commands: new Map(), provider: vi.fn(), ensureCustomer: vi.fn(), findClass: vi.fn(), defaultClassName: null, relink: vi.fn(async () => ({ id: 'new-customer', matchedBy: 'email' })), rpcs: [], updates: [], invoice: null, lines: [], recipient: 'billing@example.test', cas: { ok: true }, rpcFailure: null, ledgerFailure: null, auth: { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } } }));
+const state = vi.hoisted(() => ({ commands: new Map(), provider: vi.fn(), ensureCustomer: vi.fn(), findClass: vi.fn(), defaultClassName: null, qboCustomerId: 'customer-1', relink: vi.fn(async () => ({ id: 'new-customer', matchedBy: 'email' })), rpcs: [], updates: [], invoice: null, lines: [], recipient: 'billing@example.test', cas: { ok: true }, rpcFailure: null, ledgerFailure: null, auth: { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } } }));
 vi.mock('../lib/qbo-auth.js', () => ({ authorizeQboBrowserRequest: vi.fn(async () => state.auth) }));
 vi.mock('../lib/quickbooks.js', () => ({
   getConnection: vi.fn(async () => ({ refresh_token: 'r', realm_id: 'realm-1' })), divisionToQbo: vi.fn(() => ({ itemId: 'item-1', className: state.defaultClassName })),
@@ -13,7 +13,7 @@ vi.mock('../lib/qbo-reconciliation.js', () => ({ recordReconciliation: vi.fn() }
 vi.mock('../lib/supabase.js', () => ({ supabase: () => ({
   select: async (table) => {
     if (table === 'invoices') return [state.invoice]; if (table === 'jobs') return [{ division: 'water', job_number: 'W-1' }];
-    if (table === 'contacts') return [{ qbo_customer_id: 'customer-1', email: state.recipient }]; if (table === 'invoice_line_items') return state.lines;
+    if (table === 'contacts') return [{ qbo_customer_id: state.qboCustomerId, email: state.recipient }]; if (table === 'invoice_line_items') return state.lines;
     if (table === 'integration_config' || table === 'claims' || table === 'estimates') return []; return [];
   }, update: async (...args) => { state.updates.push(args); }, insert: vi.fn(),
   rpc: async (fn, params) => { state.rpcs.push({ fn, params }); if (state.rpcFailure) { const failure = state.rpcFailure; state.rpcFailure = null; throw failure; } if (fn === 'cas_qbo_invoice_link') return state.cas; return { ok: true }; },
@@ -42,7 +42,7 @@ const frozenCreateIntent = () => {
   return { action: 'save', expected_qbo_invoice_id: null, target_qbo_invoice_id: null, provider_action: 'create', primary_payload: primary, without_online_pay_payload: null, without_doc_number_payload: withoutDoc, customer_relink_contact_id: 'contact-1' };
 };
 const providerSucceededCreate = () => { const intent = frozenCreateIntent(); return { ok: true, id: commandId, invoice_id: invoiceId, action: 'save', initiator: 'browser', actor_auth_user_id: state.auth.user.id, actor_employee_id: state.auth.employee.id, realm_id: 'realm-1', expected_qbo_invoice_id: null, target_qbo_invoice_id: null, intent_payload: intent, provider_stage: 'primary', provider_action: 'create', provider_payload: intent.primary_payload, status: 'provider_succeeded', provider_result: { qbo_invoice_id: 'qbo-1', id: 'qbo-1', doc_number: 'W-1', total: 100 } }; };
-beforeEach(() => { state.commands.clear(); state.rpcs.length = 0; state.updates.length = 0; state.lines = []; state.defaultClassName = null; state.recipient = 'billing@example.test'; state.cas = { ok: true }; state.rpcFailure = null; state.ledgerFailure = null; state.auth = { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } }; state.invoice = { id: invoiceId, job_id: 'job-1', contact_id: 'contact-1', total: 100, qbo_invoice_id: null, qbo_doc_number: null }; state.ensureCustomer.mockReset(); state.findClass.mockReset(); state.relink.mockReset().mockResolvedValue({ id: 'new-customer', matchedBy: 'email' }); state.provider.mockReset().mockResolvedValue({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); });
+beforeEach(() => { state.commands.clear(); state.rpcs.length = 0; state.updates.length = 0; state.lines = []; state.defaultClassName = null; state.qboCustomerId = 'customer-1'; state.recipient = 'billing@example.test'; state.cas = { ok: true }; state.rpcFailure = null; state.ledgerFailure = null; state.auth = { ok: true, via: 'bearer', user: { id: '00000000-0000-4000-8000-0000000000a1' }, employee: { id: '00000000-0000-4000-8000-0000000000a2' } }; state.invoice = { id: invoiceId, job_id: 'job-1', contact_id: 'contact-1', total: 100, qbo_invoice_id: null, qbo_doc_number: null }; state.ensureCustomer.mockReset(); state.findClass.mockReset(); state.relink.mockReset().mockResolvedValue({ id: 'new-customer', matchedBy: 'email' }); state.provider.mockReset().mockResolvedValue({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); });
 
 describe('qbo invoice command ledger', () => {
   it('requires UUIDv4 keys and authorizes before ledger/provider access', async () => { state.auth = { ok: false, status: 403, error: 'Forbidden' }; expect((await onRequestPost({ request: request({}, commandId), env: {} })).status).toBe(403); state.auth = { ok: true, via: 'webhook' }; expect((await onRequestPost({ request: request({ invoice_id: invoiceId }, 'not-a-uuid'), env: {} })).status).toBe(400); });
@@ -54,6 +54,27 @@ describe('qbo invoice command ledger', () => {
   it('preserves retry identity when an ambiguous-provider ledger update fails', async () => { state.ledgerFailure = new Error('ledger temporarily unavailable'); state.provider.mockRejectedValueOnce(new Error('QBO timeout')).mockResolvedValueOnce({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); const first = await onRequestPost({ request: request(), env: {} }); expect(first).toMatchObject({ status: 500, body: { retry_same_request: true } }); expect(state.commands.get(commandId).status).toBe('provider_started'); const firstRequestId = state.provider.mock.calls[0][2].requestId; const second = await onRequestPost({ request: request(), env: {} }); expect(second.status).toBe(200); expect(state.provider.mock.calls[1][2].requestId).toBe(firstRequestId); });
   it('keeps the exact provider request identity after a post-provider CAS failure', async () => { state.rpcFailure = new Error('CAS connection dropped after QBO accepted'); const first = await onRequestPost({ request: request(), env: {} }); expect(first).toMatchObject({ status: 500, body: { retry_same_request: true, code: 'post-provider-finalization-failed' } }); expect(state.commands.get(commandId).status).toBe('ambiguous'); const firstRequestId = state.provider.mock.calls[0][2].requestId; const second = await onRequestPost({ request: request(), env: {} }); expect(second.status).toBe(200); expect(state.provider).toHaveBeenCalledTimes(2); expect(state.provider.mock.calls[1][2].requestId).toBe(firstRequestId); });
   it('relinks a stale create once through the persisted fallback attempt', async () => { const stale = new Error('stale customer'); stale.status = 400; state.provider.mockRejectedValueOnce(stale).mockResolvedValueOnce({ Id: 'qbo-1', DocNumber: 'W-1', TotalAmt: 100 }); const res = await onRequestPost({ request: request(), env: {} }); expect(res.status).toBe(200); expect(state.relink).toHaveBeenCalledTimes(1); expect(state.provider).toHaveBeenCalledTimes(2); expect(state.provider.mock.calls[1][1].CustomerRef.value).toBe('new-customer'); expect(state.commands.get(commandId).provider_stage).toBe('customer-relinked'); });
+  it('creates or safely links a missing QBO customer during the human invoice save', async () => {
+    state.qboCustomerId = null;
+    state.ensureCustomer.mockImplementationOnce(async () => {
+      state.qboCustomerId = 'customer-created';
+      return true;
+    });
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res.status).toBe(200);
+    expect(state.ensureCustomer).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'contact-1');
+    expect(state.provider.mock.calls[0][1].CustomerRef.value).toBe('customer-created');
+  });
+  it('sends UPR invoice and due dates in the frozen QuickBooks payload', async () => {
+    state.invoice.invoice_date = '2026-07-17';
+    state.invoice.due_date = '2026-07-17';
+    const res = await onRequestPost({ request: request(), env: {} });
+    expect(res.status).toBe(200);
+    expect(state.provider.mock.calls[0][1]).toMatchObject({
+      TxnDate: '2026-07-17',
+      DueDate: '2026-07-17',
+    });
+  });
   it('does not relink an update after a stale rejection', async () => { state.invoice.qbo_invoice_id = 'qbo-1'; const stale = new Error('stale customer'); stale.status = 400; state.provider.mockRejectedValueOnce(stale); const res = await onRequestPost({ request: request(), env: {} }); expect(res.status).toBe(500); expect(state.relink).not.toHaveBeenCalled(); });
   it('rejects a provider response whose Id differs from the frozen update target', async () => { state.invoice.qbo_invoice_id = 'qbo-A'; state.provider.mockResolvedValueOnce({ Id: 'qbo-B' }); const res = await onRequestPost({ request: request(), env: {} }); expect(res.status).toBe(409); expect(state.commands.get(commandId).status).toBe('needs_reconciliation'); expect(state.rpcs.some((x) => x.fn === 'cas_qbo_invoice_link')).toBe(false); });
   it('blocks a changed recipient before send CAS', async () => { state.invoice.qbo_invoice_id = 'qbo-A'; state.provider.mockImplementationOnce(async () => { state.recipient = 'two@example.test'; return { Id: 'qbo-A', EmailStatus: 'EmailSent' }; }); const res = await onRequestPost({ request: request({ invoice_id: invoiceId, action: 'send' }), env: {} }); expect(res.status).toBe(409); expect(state.rpcs.some((x) => x.fn === 'cas_qbo_invoice_link')).toBe(false); });

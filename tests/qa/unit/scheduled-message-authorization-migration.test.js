@@ -33,10 +33,10 @@ const isolatedProof = read('supabase/tests/scheduled_message_delivery.test.sql')
 
 describe('scheduled-message authorization migration', () => {
   it('adds a fenced lease, immutable RPC provenance, and exactly-one durable attempt link', () => {
-    expect(compatibility).toMatch(/ADD COLUMN claim_token uuid,[\s\S]*delivery_attempt_id uuid/);
-    expect(compatibility).toMatch(/CREATE UNIQUE INDEX scheduled_messages_delivery_attempt_id_key[\s\S]*WHERE delivery_attempt_id IS NOT NULL/);
-    expect(compatibility).toMatch(/CREATE TABLE public\.scheduled_message_creation_provenance[\s\S]*scheduled_message_id uuid PRIMARY KEY[\s\S]*created_by uuid NOT NULL[\s\S]*conversation_id uuid NOT NULL[\s\S]*recipient_contact_id uuid NOT NULL[\s\S]*recipient_address text NOT NULL[\s\S]*send_at timestamptz NOT NULL[\s\S]*body_fingerprint text NOT NULL/);
-    expect(compatibility).toMatch(/ALTER TABLE public\.scheduled_message_creation_provenance ENABLE ROW LEVEL SECURITY;[\s\S]*ALTER TABLE public\.scheduled_message_creation_provenance FORCE ROW LEVEL SECURITY;[\s\S]*FOR ALL TO postgres USING \(true\) WITH CHECK \(true\);[\s\S]*FOR SELECT TO service_role USING \(true\)[\s\S]*REVOKE ALL ON TABLE public\.scheduled_message_creation_provenance[\s\S]*GRANT SELECT ON TABLE public\.scheduled_message_creation_provenance TO service_role/);
+    expect(compatibility).toMatch(/ADD COLUMN IF NOT EXISTS claim_token uuid,[\s\S]*ADD COLUMN IF NOT EXISTS delivery_attempt_id uuid/);
+    expect(compatibility).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS scheduled_messages_delivery_attempt_id_key[\s\S]*WHERE delivery_attempt_id IS NOT NULL/);
+    expect(compatibility).toMatch(/CREATE TABLE IF NOT EXISTS public\.scheduled_message_creation_provenance[\s\S]*scheduled_message_id uuid PRIMARY KEY[\s\S]*created_by uuid NOT NULL[\s\S]*conversation_id uuid NOT NULL[\s\S]*recipient_contact_id uuid NOT NULL[\s\S]*recipient_address text NOT NULL[\s\S]*send_at timestamptz NOT NULL[\s\S]*body_fingerprint text NOT NULL/);
+    expect(compatibility).toMatch(/ALTER TABLE public\.scheduled_message_creation_provenance ENABLE ROW LEVEL SECURITY;[\s\S]*ALTER TABLE public\.scheduled_message_creation_provenance FORCE ROW LEVEL SECURITY;[\s\S]*FOR ALL TO postgres USING \(true\) WITH CHECK \(true\)[\s\S]*FOR SELECT TO service_role USING \(true\)[\s\S]*REVOKE ALL ON TABLE public\.scheduled_message_creation_provenance[\s\S]*GRANT SELECT ON TABLE public\.scheduled_message_creation_provenance TO service_role/);
     expect(compatibility).toMatch(/ACCESS EXCLUSIVE lock[\s\S]*v_legacy_pending bigint[\s\S]*SELECT count\(\*\)[\s\S]*WHERE status = 'pending'[\s\S]*v_legacy_pending <> 0[\s\S]*owner-led resolution before apply[\s\S]*ERRCODE = '55000'/);
     expect(compatibility).not.toMatch(/UPDATE public\.scheduled_messages message\s+SET status = 'failed'/);
     expect(compatibility).toMatch(/CREATE OR REPLACE FUNCTION public\.claim_scheduled_message\(p_id uuid\)[\s\S]*SECURITY INVOKER[\s\S]*RETURN false;/);
@@ -51,6 +51,18 @@ describe('scheduled-message authorization migration', () => {
     expect(compatibility).toMatch(/e6747ca478873d45faef76f7f3b2ff49[\s\S]*e106318eef49f04f16f295d881bc41fe[\s\S]*consent authority drifted/);
     expect(compatibility).toMatch(/extensions\.digest\(convert_to\(/);
     expect(compatibility).toMatch(/jsonb_array_length\(p_media_urls\) > 0 THEN 'mms' ELSE 'sms'/);
+  });
+
+  it('reapplies only from the exact fail-closed retained rollback posture', () => {
+    expect(compatibility).toMatch(/partial retained artifacts drifted/);
+    expect(compatibility).toMatch(/retained schema artifacts drifted/);
+    expect(compatibility).toMatch(/retained provenance artifacts drifted/);
+    expect(compatibility).toMatch(/retained recovery function is callable/);
+    expect(compatibility).toMatch(/retained recovery posture is not sealed/);
+    expect(compatibility).toMatch(/scheduled_messages_delivery_attempt_id_fkey[\s\S]*ON DELETE RESTRICT/);
+    expect(compatibility).toMatch(/scheduled_message_creation_provenance_pkey:PRIMARY KEY \(scheduled_message_id\)/);
+    expect(compatibility).toMatch(/lower\([\s\S]*btrim\([\s\S]*regexp_replace\([\s\S]*v_legacy_claim_source[\s\S]*'begin return false; end;'/);
+    expect(compatibility).toMatch(/CREATE POLICY scheduled_message_creation_provenance_definer_access[\s\S]*CREATE POLICY scheduled_message_creation_provenance_service_read/);
   });
 
   it('derives browser actors and preserves owner-only queue/cancel contracts', () => {
