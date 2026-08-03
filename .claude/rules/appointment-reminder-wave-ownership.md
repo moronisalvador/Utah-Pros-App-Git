@@ -1,6 +1,6 @@
 # Appointment Reminder Containment — Ownership
 
-**Last-verified:** 2026-08-01
+**Last-verified:** 2026-08-03
 
 ## Purpose
 
@@ -38,7 +38,7 @@ reminder activation, cron scheduling, Production deployment, provider traffic, o
 
 `functions/api/notify.js` and its test are shared hotspots with the separate five-producer
 authorization candidate. The standalone branch keeps the reminder outside that candidate's exact
-five guarded types and must not absorb its unapplied migration or delivery-claim schema.
+five guarded types and must not duplicate its separate migration or delivery-claim schema.
 
 ## Review roles
 
@@ -53,7 +53,11 @@ five guarded types and must not absorb its unapplied migration or delivery-claim
 
 ## Frozen containment and activation gates
 
-The reminder type stays disabled and the named cron stays absent. Activation requires, in separate
-reviewed lanes: durable per-recipient/channel reminder claims for bell/PWA/email; server-authoritative
-appointment-crew mutations with negative authorization proof; QA apply and behavior evidence; later
+The reminder type stays disabled and the named cron stays absent. QA-only application and
+producer-containment qualification evidence completed on 2026-08-03: reviewed source
+`20260801215912` maps to hosted ledger
+`20260803182131`, followed by `20260802040935` as hosted ledger `20260803182303`; QA still has no
+`appointment.reminder` catalog row or reminder cron. Activation still requires, in separate
+reviewed lanes: durable per-recipient/channel reminder claims for bell/PWA/email;
+server-authoritative appointment-crew mutations with negative authorization proof; later
 Production apply; a compatible Production Worker SHA; and provider/device receipt evidence.

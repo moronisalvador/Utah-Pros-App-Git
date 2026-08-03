@@ -1,6 +1,6 @@
 # Initiative Status — Live Coordination State
 
-**Last verified:** 2026-08-01 · This is the ONE always-loaded file recording what is currently in
+**Last verified:** 2026-08-03 · This is the ONE always-loaded file recording what is currently in
 flight, leased, or unapplied. Full initiative manifests live in `docs/archive/rules/` — they are
 history, not law. When an initiative completes, delete its row here; when one starts, add a row
 and a roadmap. Do not let this file grow past ~1 page — that is how the last rulebook died.
@@ -158,9 +158,10 @@ The reversible notification producer containment also applied from exact reviewe
   `qa-staging`, then the forward source was reapplied so QA also ends contained. No CallRail,
   provider, consent, message, appointment, or timesheet row/configuration changed. Re-enable only
   after caller-derived producer authorization and negative tests pass.
-- Candidate repair `20260801215912_notification_producer_authorization.sql` is repository-only on
-  `codex/notification-producer-authorization`; it has not been applied to `qa-staging` or the
-  shared project. It binds browser actor IDs to `auth.uid()`, closes anonymous appointment access,
+- Reviewed repair `20260801215912_notification_producer_authorization.sql` is applied to
+  `qa-staging` only as hosted ledger
+  `20260803182131_notification_producer_authorization`; it remains unapplied to the shared
+  Production project. It binds browser actor IDs to `auth.uid()`, closes anonymous appointment access,
   applies locked crew diffs, makes crew identity immutable and active-internal-only, and
   serializes/idempotently retries timesheet decisions. Timesheet audiences and copy are rebuilt
   from locked database rows, time-request reads are requester-or-management scoped, and durable
@@ -172,8 +173,11 @@ The reversible notification producer containment also applied from exact reviewe
   through PR #571 and composes with this boundary: it preserves producer-supplied IDs for
   non-guarded types, retains UUID plus occurrence-ledger validation for the five guarded types,
   records the exact validated predecessor, and rolls back to that predecessor rather than
-  inferring it from retained evidence tables. `20260801215912` remains branch-only; neither
-  migration is applied to QA or the shared project. The candidate includes the
+  inferring it from retained evidence tables. QA applied that reviewed compatibility source next
+  as hosted ledger `20260803182303_preserve_notify_emit_event_id`; neither migration is applied
+  to the shared Production project. QA postflight confirms all five producer flags remain false,
+  `appointment.reminder` is absent/fail-closed, the named reminder cron is absent, and both new
+  private tables are empty with forced RLS and service-only access. The candidate includes the
   reviewed private-crew compatibility correction: non-manager field users cannot edit private
   crew, and unchanged crew skips the locked diff RPC. Prior reconciliation through `origin/dev`
   `8e51aa92`, build, full unit `1582/1582`, Worker `1945/1945`, QA `1037/1037`, focused
@@ -196,10 +200,15 @@ The reversible notification producer containment also applied from exact reviewe
   inputs and emits commit-bound evidence. The clean two-stack rerun passed on the non-rewriting
   reconciliation merge `1cec9b3beddb755d6c8e7a2fd58818c1f5880f10` with 13 pinned inputs and
   manifest SHA-256 `67a764fc77cfd5db77bc7aebe2ec4b8bc257ce21c1784801a4edd221fd73d149`;
-  the full Node 22 gates and independent migration/security/release reviews also pass. This is local
-  proof only. Separately authorized `qa-staging` qualification, hosted CI/release review, shared
-  apply/deploy, activation, and device proof remain later gates. No hosted SQL, deploy, delivery,
-  flag, provider, or device action is implied.
+  the full Node 22 gates and independent migration/security/release reviews also pass. Separately
+  authorized QA qualification then completed with the exact source-to-ledger mapping above:
+  catalog/postflight and governed hosted checks retained zero assertion failures, all five flags
+  off, and no reminder cron. The hosted suite's 212 skips and 44 legacy setup-error files remain
+  tracked baseline debt rather than substitutes for the clean two-stack behavior proof. Three
+  unindexed foreign keys and pre-existing browser-role grants on three RLS/no-policy secret tables
+  remain separate P2 cleanup work; neither was introduced by this candidate. Exact-head PR checks,
+  merge, shared Production apply/deploy, activation, and device proof remain later gates. No
+  deploy, delivery, flag, provider, Production SQL, or device action is implied.
 - Separate live incident, read-only diagnosis on 2026-08-01: the reminder migration is recorded as
   production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, while
   Cloudflare Production remains main `478330d9`. That older Worker does not classify

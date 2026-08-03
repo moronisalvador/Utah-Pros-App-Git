@@ -1267,7 +1267,7 @@ admin_clock_out_entry(p_id, p_actor_id, p_clock_out=now()) — PR-6. Admin-only;
 delete_time_entry(p_id, p_reason, p_actor_id) — PR-6. Admin-only HARD delete; rejects approved rows (ENTRY_APPROVED_CANNOT_DELETE); snapshots full row → time_entry_deletions + system_events BEFORE delete.
 submit_time_entry_change_request(p_entry_id, p_proposed jsonb, p_tech_note, p_actor_id) — PR-6. Owner-only (NOT_OWNER otherwise); creates a pending time_entry_change_requests row, no mutation, notifies office via create_notification. proposed keys: work_date,hours,clock_in,clock_out,travel_minutes,description,notes.
 review_time_entry_change_request(p_request_id, p_approve, p_actor_id, p_review_note) — PR-6. Admin-only; approve → applies proposed via admin_upsert_time_entry (override_approved) + marks approved; reject → marks rejected; notifies the tech; logs system_events.
-NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, broad authenticated SELECT in the current hosted schema, writes via RPC only; the repository-only 20260801215912 candidate narrows reads to the active internal requester or admin tier) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
+NEW TABLES (PR-6): time_entry_change_requests (entry_id→job_time_entries ON DELETE CASCADE, requested_by, proposed jsonb, tech_note, status pending|approved|rejected, reviewed_by/note/at; partial unique index = one pending per entry; RLS on, broad authenticated SELECT remains in Production, writes via RPC only; QA ledger 20260803182131 from reviewed source 20260801215912 narrows reads to the active internal requester or admin tier) · time_entry_deletions (entry_id, snapshot jsonb, reason, deleted_by, deleted_at; audit trail for hard deletes).
 TIME-TRACKING PR-7 (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` admin UI rebuilt on the PR-5/PR-6 surface. The **Timesheet** tab now reads `get_timesheet_entries_admin` (was `get_timesheet_entries`), defaults to the current **semi-monthly** period (1st–15th / 16th–EOM, + Last Period preset), and adds **division** + **status** (open/unapproved/overlong/approved) filters. Admin-tier (role ∈ {admin,office,project_manager,supervisor}) gets: **inline cell edit** on hours + work_date (optimistic → `admin_upsert_time_entry` partial update → revert+toast on error); per-row **Clock out** (`admin_clock_out_entry`), **Edit** (modal, supports clock_in/out/travel_start/on_site_end/travel_minutes), **Duplicate**, **Backfill** (insert), **Delete** (inline reason → `delete_time_entry`); **bulk** approve/unapprove (`approve_time_entries`), bulk clock-out, bulk delete-with-reason; **Unapprove & edit** one-click on approved rows; row **badges** OPEN/12h+/auto/edit-pending/approved-lock. New **Requests** tab (admin only, with pending-count tab badge) lists pending `time_entry_change_requests`, shows a current→proposed **diff** + tech note, Approve/Reject via `review_time_entry_change_request`. **Field techs** (non-admin) see only their own rows and a **Request a Change** modal → `submit_time_entry_change_request` (no direct add/edit/delete; By Job + Payroll tabs hidden). **Realtime**: subscribes to `job_time_entries` + `time_entry_change_requests` via `realtimeClient` (realtime.js untouched), debounced reload. New components in the same file: `RequestsView`, `RequestModal`; `EntryModal` extended with clock-time fields; helper `useRealtimeReload`. New CSS: `.tt-tab-badge`, `.tt-badge` (open/danger/muted/edit), `.tt-inline-input`, `.tt-req-card/-head/-note/-diff`, `.tt-diff-*`. All writes go through the `admin_*`/`*_time_entry` RPCs only (no direct PostgREST writes — prereq for PR-8 RLS hardening).
 TIME-TRACKING PR-8 (Jun 27 2026, DB-only) — **`job_time_entries` RLS hardened.** Dropped the wide-open `allow_authenticated_job_time_entries` (cmd=ALL, USING true) + `allow_anon_read_job_time_entries` policies; replaced with a single `jte_select_all` (FOR SELECT TO anon, authenticated USING true). There is now **no write policy**, so direct PostgREST INSERT/UPDATE/DELETE by anon/authenticated are rejected (insert → RLS violation; update/delete → 0 rows). All writes continue to flow through SECURITY DEFINER functions owned by postgres (which bypass RLS): clock_appointment_action, clock_finish_entry, apply_midnight_clock_split, admin_upsert_time_entry, admin_clock_out_entry, delete_time_entry, approve_time_entries, upsert_time_entry, merge_jobs, and the appointment BEFORE DELETE trigger close_open_clocks_on_appt_delete. Reads stay open (tech app, office page RequestsView diff, MergeModal, realtime all SELECT directly). Migration `supabase/migrations/20260627_pr8_job_time_entries_rls.sql`. Validated on prod's real role config via an isolated throwaway harness (authenticated: direct INSERT denied, UPDATE/DELETE 0 rows, SELECT + definer write OK) before apply; `get_advisors(security)` shows no new findings for the table. Completes the time-tracking plan (PR-1→PR-8). Rollback: re-create the ALL policy `using(true) with check(true)`.
 TIME-TRACKING REDESIGN (Jun 27 2026, client-only) — `src/pages/TimeTracking.jsx` restyled to the shared **"My Money / Collections"** design language (`.coll-*` + `src/components/collections/collKit.jsx`/`collTokens.js`) so it matches the Overview dashboard, Collections page, and Invoice builder. Page is now `.coll-page` with a `.coll-header`, a dark-pill **SegControl** tab row (Status Board / Timesheet / Requests[+count badge] / By Job / Payroll) + a small period SegControl (semi-monthly default retained). Each tab uses **KpiGrid/Kpi** tiles (Open clocks + Pending approval are click-to-filter), a `.coll-toolbar` (SearchBox + status SegControl + a Filters PopoverButton with employee select + division ToggleChips), and grid-based `.coll-thead`/`.coll-row` tables with DivisionSquare dots and kit `Pill` badges (OPEN/12h+/AUTO/EDIT/APPROVED). Timesheet keeps employee group sub-header bars (`.tt-group-bar`). **No behavior change** — all PR-7/PR-8 logic preserved (inline edit hours/date → admin_upsert_time_entry, row Clock-out/Edit/Duplicate/Backfill/Delete-with-reason, bulk approve/clock-out/delete, Unapprove&edit, RequestsView diff + review, field-tech Request-a-change, realtime). Modals (EntryModal/RequestModal), inline-edit inputs and the request diff keep their existing `tt-*` classes. New CSS: `.coll-select`, `.coll-datein`, `.coll-check`, `.tt-group-bar` (appended to the `.coll-` block in index.css). The page now imports the page-scoped collections kit/tokens (first reuse outside Collections — sanctioned for this redesign).
@@ -4602,8 +4602,9 @@ It adds no migration or live-database change.
   bell/PWA and exact-true rich APNs, and fails closed inside quiet time if its
   preference lookup errors. Unset/false rich APNs uses fixed privacy-safe
   reminder copy. Production records the original migration as ledger
-  `20260801232759`; `qa-staging` does not have it, and pending
-  `20260802040935` is applied nowhere. Do not enable the type or reschedule the
+  `20260801232759`; `qa-staging` does not have it. The later compatibility
+  source `20260802040935` is QA-only as hosted ledger `20260803182303` and
+  remains unapplied to Production. Do not enable the type or reschedule the
   cron until the exact compatible Production Worker SHA is verified, durable
   per-recipient/channel reminder delivery claims prevent bell/PWA/email replay,
   and server-authoritative appointment crew mutation denies unmapped,
@@ -4761,7 +4762,7 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   replacement bodies and service-role-only ACL. The gap it deferred — the two
   `transcribe_call_worker_url` pg_cron command strings inlining their `net.http_post` with
   no allowlist — is closed by the follow-up below.
-- **Stable occurrence-ID repair (repository-only, unapplied 2026-08-01):**
+- **Stable occurrence-ID repair (QA-applied; Production pending 2026-08-03):**
   the live allowlist body (read-only hash
   `c72e0f7fd40a4abec42cce1cd912a45b`) replaces every producer-supplied
   `notification_event_id` with `gen_random_uuid()`, defeating cross-retry APNs
@@ -4770,7 +4771,9 @@ workflow configuration, like the Supabase pair. Guard: same test file,
   service-producer occurrence ID, generates one only when missing/blank, keeps
   `p_type_key` authoritative, and codifies the disabled/unscheduled reminder
   containment. Its paired rollback restores the prior function without
-  reactivating reminders. This migration is not applied to the shared project.
+  reactivating reminders. QA applied the reviewed source after
+  `20260801215912` as hosted ledger `20260803182303`; Production has neither
+  migration.
 - **Cron-command allowlist follow-up (applied 2026-07-31, ledger `20260731174734`):**
   `supabase/migrations/20260731100000_transcribe_call_cron_allowlist.sql` moves the two
   transcribe-call safety-net cron commands (`upr_calls_backfill_safety_net`,
@@ -4896,7 +4899,7 @@ source then reapplied, so QA also ends contained. CallRail configuration and the
 send/receive path were untouched. Re-enable only after caller-derived appointment/timesheet
 authorization and negative tests pass.
 
-**Repository-only producer repair candidate (2026-08-01):**
+**Five-producer repair (QA-applied; Production pending 2026-08-03):**
 `20260801215912_notification_producer_authorization.sql` and its paired recovery rollback preserve
 the deployed `update_appointment`, `sync_appointment_crew`, timesheet, and `notify_emit` signatures.
 The migration derives browser actors from `auth.uid()`, denies inactive/external users and supplied
@@ -4918,7 +4921,7 @@ appointment, crew-assignment, or timesheet-request entity; the Worker requires a
 database-validates that UUID and the recipient's exact crew/admin/requester relationship for the
 five types. Timesheet audiences, review outcome/note, entry ID, copy, and destination are
 reconstructed from the canonical request row; caller-supplied recipients/copy/link/payload are
-discarded. The candidate also narrows `time_entry_change_requests` SELECT from every authenticated
+discarded. The repair also narrows `time_entry_change_requests` SELECT from every authenticated
 session to the active internal requester or the existing admin tier, with exact policy/trigger
 shape drift checks before and after apply. The Worker revalidates each recipient before delivery;
 the APNs per-device claim atomically composes the same occurrence/entity/recipient predicate with
@@ -4954,8 +4957,17 @@ All 17 repository/runtime qualification inputs remain byte-unchanged from that
 merge through the later Capgo containment and documentation closeout commits,
 so that exact database proof remains applicable; any future change to one of
 those inputs requires a fresh two-stack run.
-This is local proof only: it has not been applied to QA or shared production; no notification was
-sent and no PWA/native device path was exercised.
+That commit-bound receipt remains the strong behavioral proof. QA then applied the exact reviewed
+sources in order: `20260801215912` as hosted ledger `20260803182131`, followed by
+`20260802040935` as hosted ledger `20260803182303`. Catalog/postflight and the governed hosted QA
+lane retained all five producer flags as false, no `appointment.reminder` row, no reminder cron,
+and empty private occurrence/claim tables with forced RLS, no browser-role access, and
+service-only writer access. Hosted QA
+recorded 163 passing assertions and zero assertion failures; its 212 skips and 44 legacy
+setup-error files remain tracked baseline debt, not a replacement for the two-stack behavior
+proof. The three new unindexed foreign keys and pre-existing browser-role grants on three
+RLS/no-policy secret tables remain separate P2 cleanup. Shared Production has neither migration;
+no notification was sent and no PWA/native device path was exercised.
 
 The later `20260802040935_preserve_notify_emit_event_id.sql` and paired rollback are now tracked on
 `dev` through PR #571 and remain ordered after that producer repair. They accept either the current
@@ -4963,8 +4975,8 @@ live dispatcher or its hardened predecessor,
 preserve a usable producer occurrence ID for non-guarded types such as
 `appointment.reminder`, retain UUID plus occurrence-ledger validation for all five guarded types,
 record the exact validated predecessor for rollback, and never infer it from retained occurrence
-tables. They also keep the reminder flag disabled and cron absent. `20260801215912` remains
-branch-only; neither migration has been applied to QA or the shared project.
+tables. They also keep the reminder flag disabled and cron absent. QA has both reviewed sources
+under the hosted ledger mappings above; shared Production has neither.
 
 **Production reminder rollout mismatch (read-only diagnosis, Aug 1 2026):** the reminder migration
 is live as production ledger `20260801232759_technician_quiet_time_and_appointment_reminders`, but
@@ -4976,7 +4988,8 @@ fallback. One appointment produced two legitimate crew claims and eight bell row
 20:59:00 and the last 21:00:02 America/Denver. The older Worker also lacks the reminder
 presentation entry, explaining the generic APNs lock-screen copy; stored bell copy was typed and
 its payload was empty. The five contained appointment/timesheet producer flags remained disabled,
-and repository-only `20260801215912` was not applied, so that repair did not cause the incident.
+and `20260801215912` had not been applied when the incident occurred, so that repair did not cause
+it.
 `appointment.reminder` is currently observed disabled, and fresh read-only evidence confirms the
 `upr_appointment_reminders` cron has zero rows. Production contains the reminder ledger
 `20260801232759`; QA does not contain that quiet-time/reminder migration. Keep the flag off and
