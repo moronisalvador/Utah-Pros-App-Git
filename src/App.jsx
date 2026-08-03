@@ -45,6 +45,7 @@ import { hideSplash } from '@/lib/nativeAppearance';
 import { anySettingsChildVisible } from '@/lib/navItems';
 import { OOP_PRICING_ROLES } from '@/lib/oopPricingAccess';
 import { isMoroni } from '@/lib/owner';
+import { isQboReceivePaymentUiEnabled } from '@/lib/qboReceivePaymentRollout';
 import { SETTINGS_REDIRECTS } from '@/lib/settingsRedirects';
 import { getAccountLandingPath } from '@/contexts/authBootstrap';
 import targetPages, {
@@ -154,6 +155,7 @@ const {
 } = targetPages;
 
 const IS_NATIVE = IS_NATIVE_BUILD;
+const QBO_RECEIVE_PAYMENT_UI_ENABLED = isQboReceivePaymentUiEnabled();
 
 // SAFE-02: stamp the native root marker so CSS can scope device-shell rules
 // (safe-area insets) to the Capacitor build ONLY. Set at module scope rather
@@ -520,7 +522,9 @@ function WebRoutes() {
           </FeatureRoute>
         } />
         <Route path="collections/receive-payment" element={
-          <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
+          QBO_RECEIVE_PAYMENT_UI_ENABLED
+            ? <AdminRoute><FeatureRoute flag="feature:qbo_receive_payment"><ErrorBoundary section="Receive payment"><ReceivePayment /></ErrorBoundary></FeatureRoute></AdminRoute>
+            : <Navigate to="/collections?tab=payments" replace />
         } />
         <Route path="collections/:claimId" element={
           <FeatureRoute flag="page:collections">
