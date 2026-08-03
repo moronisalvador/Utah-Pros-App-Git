@@ -109,6 +109,7 @@ const {
   Marketing,
   Melds,
   MyAccount,
+  NativeOopEstimateReview,
   NewBuildSimulator,
   NotificationDefaults,
   NotificationPresentation,
@@ -373,6 +374,13 @@ function TechRoutes() {
           </FeatureRoute>
         </RoleRoute>
       } />
+      {IS_NATIVE && (
+        <Route path="tech/tools/oop-pricing/estimate/:estimateId" element={
+          <AdminRoute><FeatureRoute flag="tool:oop_pricing">
+            <ErrorBoundary section="NativeOopEstimate"><NativeOopEstimateReview /></ErrorBoundary>
+          </FeatureRoute></AdminRoute>
+        } />
+      )}
       <Route path="tech/tools/demo-sheet" element={
         <ErrorBoundary section="TechDemoSheet"><TechDemoSheet /></ErrorBoundary>
       } />

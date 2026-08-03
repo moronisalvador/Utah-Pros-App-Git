@@ -1096,9 +1096,12 @@ and only the new explicit conversion click consumes the additive RPC/column. Rel
    `supabase/tests/oop_quote_to_estimate_isolated.sql` (then repeat on `qa-staging` if used for the
    release rehearsal);
 3. deploy the compatible UI to `dev`, apply the same reviewed migration to the shared database in a
-   low-traffic window, and verify grants, the linked draft, retry behavior and exact line total;
-4. verify the existing Estimate editor opens the draft and requires the normal human Save action
-   before any QuickBooks write; and
+   low-traffic window, and verify grants, narrowed direct-write policies, the linked draft,
+   conversion/correction retry behavior, conflict and converted-invoice refusals, and exact line total;
+4. verify browser/PWA opens the existing Estimate editor; verify the native admin-only review route
+   refuses non-OOP estimates, opens the same saved lines/total, lets an online admin correct only
+   service-address and existing safe line columns, preserves typed edits after a failed write, and
+   contains no QuickBooks/send action; neither conversion path may contact QuickBooks itself; and
 5. only after qualification, use DevTools to make `tool:oop_pricing` available to eligible roles,
    then promote the reviewed `dev → main` change.
 

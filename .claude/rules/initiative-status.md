@@ -288,6 +288,13 @@ preview user; no global activation occurred. **The dev→main promotion gate car
 per-token topic migration is CLEARED** — the worker/client code may now reach production, and
 all four ledger rows are mapped in the provenance manifest with fresh evidence.
 
+The later additive `20260803192344_oop_quote_to_estimate.sql` remains authored and unapplied. The
+2026-08-03 owner-directed source slice adds the compatible browser/PWA handoff plus one bounded
+admin-only native OOP estimate review/correction route; it does not import broad Admin Mobile,
+invoice/payment code, or a native provider-write path. No shared-database apply, OOP flag
+activation, deployment, QuickBooks call, signed native release or TestFlight delivery is implied
+by that repository state.
+
 Both formerly-pending migrations applied 2026-07-30 under explicit owner authorization:
 
 - `20260729220000_tech_onboarding_state.sql` → live ledger `20260730115220`. Postconditions and an
