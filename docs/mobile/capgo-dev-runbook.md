@@ -12,8 +12,8 @@ DEPENDS ON:
             .github/workflows/ios-dev-testflight.yml
   External: Capgo, GitHub Actions, Apple App Store Connect/TestFlight
   Data:     reads → build and release evidence only
-            writes → unassigned encrypted UPR Dev bundles or disables UPR Dev
-                     channel delivery selectors when explicitly dispatched
+            writes → only disables UPR Dev channel delivery selectors when
+                     explicitly dispatched; publish exits before provider traffic
 
 NOTES / GOTCHAS:
   - UPR Dev is isolated by app identifier, but it still uses the shared
@@ -37,6 +37,8 @@ NOTES / GOTCHAS:
 | Allowed binaries | UPR Dev development and distribution builds |
 | Automatic compatibility | same major/minor patch line (`disable_auto_update=minor`), allowing the next patch OTA; never below installed native `1.0.0` |
 | Direct install | disabled |
+| Automated publish | blocked before credentials or provider traffic |
+| Automated activation/rollback | absent until provenance-bound activation exists |
 | Production UPR | `com.utahprosrestoration.upr`; updater remains default-off |
 
 Capgo requires one channel to be default. The default may be
@@ -103,9 +105,15 @@ As of 2026-08-01:
   assigned two encrypted dev-only bundles. Neither OTA installed successfully:
   the first was below the native version and the next-patch bundle was blocked
   by the then-current Capgo patch strategy. Those failed deliveries are
-  retained as evidence, not success. The current workflow no longer exposes
-  assignment; no production activation, subscription purchase, official-UPR
-  delivery, or successful UPR Dev OTA has occurred.
+  retained as evidence, not success. The current workflow blocks `publish`
+  before credential access or provider traffic and exposes no assignment,
+  activation, or rollback command. No production activation, subscription
+  purchase, official-UPR delivery, or successful UPR Dev OTA has occurred.
+- The pinned `@capgo/cli` `8.31.5` implementation resolves an upload with no
+  explicit `--channel` to the app's `default_upload_channel`, falling back to
+  `production`. Therefore an "unassigned upload" claim is false for this
+  version. The workflow deliberately fails `publish` closed until a reviewed,
+  provenance-safe upload/assignment design is implemented.
 
 Repository declarations and accepted write-only secret submissions are not
 proof of secret-value readback or successful cryptographic use by a signed
@@ -129,8 +137,11 @@ Use the Capgo console at `https://console.capgo.app/`:
    native version off, `disable_auto_update=minor` so the next patch OTA remains
    compatible within the installed native major/minor line, and progressive
    rollout off.
-   Zero exposure comes from having no assigned bundle until the separate
-   assignment gate.
+   These are required future activation settings, not proof of current live
+   state. A fresh provider readback remains mandatory before any future
+   activation. Current zero-new-delivery containment comes from the repository
+   workflow having no publish/assignment path; emergency `disable` only turns
+   delivery selectors off.
 5. Create a dedicated API key with the narrowest write scope Capgo offers for
    this app. Do not reuse an account-owner, production, or personal CLI token.
 6. Create a Capgo v2 encryption keypair. Store both
@@ -168,17 +179,19 @@ exception does not apply to the private key or API key.
    privacy manifest.
 5. After owner approval, upload only that verified OTA-capable UPR Dev archive
    to its internal TestFlight group and install it on a designated device.
-6. After a fresh exact owner approval, run **Capgo UPR Dev** with operation
-   `publish` and confirmation `UPR DEV CAPGO PUBLISH`. The workflow first checks
-   compatibility against `upr-dev-canary`, then encrypts and uploads an
-   immutable version tied to native version/run/SHA **without assigning it to a
-   channel**. It cannot deliver that bundle.
-7. Stop before assignment. The workflow intentionally exposes only
-   `validate`, `publish`, and `disable`; it rejects every other operation and
-   has no bundle-selection or canary-assignment command. Forward assignment and
-   device delivery remain structurally unavailable until a provenance-bound
-   release receipt or allowlist proves the exact staged UPR Dev bundle, source
-   SHA, native compatibility, encryption key, and approved device scope.
+6. Do not use the current workflow to publish. The `publish` choice remains
+   visible so the intended operation is explicit, but after exact confirmation
+   it exits before Node setup, Capgo credentials, compatibility checks, upload,
+   channel mutation, or any other provider request. Its evidence artifact
+   records that fail-closed result. This prevents pinned CLI `8.31.5` from
+   silently assigning an omitted channel to the app default.
+7. The workflow intentionally exposes only `validate`, blocked `publish`, and
+   `disable`; it rejects every other operation and contains no bundle-upload,
+   bundle-selection, canary-assignment, activation, or rollback command.
+   Publishing, forward assignment, and device delivery remain structurally
+   unavailable until a provenance-bound release receipt or allowlist proves
+   the exact UPR Dev bundle, source SHA, native compatibility, encryption key,
+   and approved device scope.
 8. After that future source gate, its regression tests, and a fresh exact
    assignment/device-delivery approval, verify cold launch, signed-out launch,
    authenticated bootstrap, current route, background/resume, network
@@ -200,12 +213,12 @@ the dev channel. It does not instantly remove a bundle already active on a
 device.
 
 **Assignment and rollback remain blocked:** the workflow deliberately has
-neither an `activate` nor a `rollback` operation. A syntactically valid bundle
-name is not provenance. Do not assign or reassign the channel until a release
-receipt/allowlist proves the exact UPR Dev bundle, its source SHA, native
-compatibility, encryption key, approved device scope, and successful device
-evidence. Any future assignment is a fresh owner and device-delivery gate.
-Emergency containment uses `disable`.
+no provider-capable `publish`, `activate`, or `rollback` operation. A
+syntactically valid bundle name is not provenance. Do not upload, assign, or
+reassign a channel until a release receipt/allowlist proves the exact UPR Dev
+bundle, its source SHA, native compatibility, encryption key, approved device
+scope, and successful device evidence. Any future publish or assignment is a
+fresh owner and device-delivery gate. Emergency containment uses `disable`.
 
 **Automatic local recovery:** a newly applied bundle gets 30 seconds to reach
 the health gate. Missing acknowledgement leaves the bundle failed so the native
